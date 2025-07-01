@@ -10,10 +10,7 @@ use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
 use crate::{
     scheduling::task::TaskContext,
-    statistics::{
-        http_subscriber::{HttpSubscriber, NodeStatus},
-        PlanState, TaskExecutionStatus, TaskState,
-    },
+    statistics::{http_subscriber::HttpSubscriber, PlanState, TaskExecutionStatus, TaskState},
 };
 
 /// Create a test logical plan with proper plan IDs that match task context node IDs
@@ -141,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_build_query_graph_simple() {
-        let subscriber = HttpSubscriber::new("http://localhost:8080".to_string());
+        let subscriber = HttpSubscriber::new();
 
         // Create a simple logical plan
         let logical_plan = create_test_logical_plan();
@@ -203,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_adjacency_list_structure() {
-        let subscriber = HttpSubscriber::new("http://localhost:8080".to_string());
+        let subscriber = HttpSubscriber::new();
 
         let logical_plan = create_test_logical_plan();
         let mut plans = HashMap::new();
@@ -260,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_multiple_tasks_progress_aggregation() {
-        let subscriber = HttpSubscriber::new("http://localhost:8080".to_string());
+        let subscriber = HttpSubscriber::new();
 
         let logical_plan = create_simple_test_logical_plan();
 
@@ -341,7 +338,10 @@ mod tests {
 
         // The status should be based on the aggregation logic
         // With multiple statuses (Completed, Running, Created), it should be Running
-        assert_eq!(source_node.status, NodeStatus::Running);
+        assert_eq!(
+            source_node.status,
+            crate::statistics::http_subscriber::NodeStatus::Running
+        );
 
         // Find the node for node_id = 2
         let filter_node_id = HttpSubscriber::generate_node_id(&context4);
@@ -357,7 +357,10 @@ mod tests {
         assert_eq!(filter_node.failed, 0);
         assert_eq!(filter_node.canceled, 0);
         assert_eq!(filter_node.total, 3);
-        assert_eq!(filter_node.status, NodeStatus::Running);
+        assert_eq!(
+            filter_node.status,
+            crate::statistics::http_subscriber::NodeStatus::Running
+        );
 
         // Verify metadata contains correct plan_id, stage_id, and node_id
         assert_eq!(source_node.metadata.get("plan_id"), Some(&"1".to_string()));
@@ -438,5 +441,581 @@ mod tests {
 
         println!("All plan IDs found: {:?}", plan_ids);
         println!("═══════════════════════════════");
+    }
+
+    #[test]
+    fn test_query_graph_serialization() {
+        let subscriber = HttpSubscriber::new();
+
+        // Create a test logical plan
+        let logical_plan = create_test_logical_plan();
+
+        // Create plan state
+        let mut plans = HashMap::new();
+        plans.insert(1, create_test_plan_state(1, logical_plan));
+
+        // Create task states
+        let mut tasks = HashMap::new();
+        let source_context = create_test_task_context(1, 1, 1, 1);
+        let filter_context = create_test_task_context(1, 1, 2, 2);
+
+        tasks.insert(
+            source_context,
+            create_test_task_state("Source", TaskExecutionStatus::Completed),
+        );
+        tasks.insert(
+            filter_context,
+            create_test_task_state("Filter", TaskExecutionStatus::Running),
+        );
+
+        // Build the query graph
+        let original_query_graph = subscriber.build_query_graph(&plans, &tasks);
+
+        // Test QueryGraph serialization and deserialization
+        let serialized_graph = serde_json::to_string(&original_query_graph)
+            .expect("QueryGraph should serialize to JSON");
+
+        println!("Serialized QueryGraph JSON: {}", serialized_graph);
+
+        let deserialized_graph: crate::statistics::http_subscriber::QueryGraph =
+            serde_json::from_str(&serialized_graph)
+                .expect("QueryGraph should deserialize from JSON");
+
+        // Verify the deserialized graph matches the original
+        assert_eq!(deserialized_graph.version, original_query_graph.version);
+        assert_eq!(deserialized_graph.query_id, original_query_graph.query_id);
+        assert_eq!(
+            deserialized_graph.nodes.len(),
+            original_query_graph.nodes.len()
+        );
+        assert_eq!(
+            deserialized_graph.adjacency_list.len(),
+            original_query_graph.adjacency_list.len()
+        );
+
+        // Verify individual nodes
+        for original_node in &original_query_graph.nodes {
+            let deserialized_node = deserialized_graph
+                .nodes
+                .iter()
+                .find(|n| n.id == original_node.id)
+                .expect("Node should exist after deserialization");
+
+            assert_eq!(deserialized_node.id, original_node.id);
+            assert_eq!(deserialized_node.label, original_node.label);
+            assert_eq!(deserialized_node.description, original_node.description);
+            assert_eq!(deserialized_node.status, original_node.status);
+            assert_eq!(deserialized_node.pending, original_node.pending);
+            assert_eq!(deserialized_node.completed, original_node.completed);
+            assert_eq!(deserialized_node.canceled, original_node.canceled);
+            assert_eq!(deserialized_node.failed, original_node.failed);
+            assert_eq!(deserialized_node.total, original_node.total);
+            assert_eq!(deserialized_node.metadata, original_node.metadata);
+        }
+
+        // Verify adjacency list
+        for (key, value) in &original_query_graph.adjacency_list {
+            let deserialized_value = deserialized_graph
+                .adjacency_list
+                .get(key)
+                .expect("Adjacency list entry should exist");
+            assert_eq!(deserialized_value, value);
+        }
+    }
+
+    #[test]
+    fn test_query_payload_serialization() {
+        // Create a test QueryPayload
+        let original_payload = crate::statistics::http_subscriber::QueryPayload {
+            id: "test-query-123".to_string(),
+            optimized_plan: r#"{"version":"1.0.0","query_id":1,"nodes":[],"adjacency_list":{}}"#
+                .to_string(),
+            run_id: Some("run-456".to_string()),
+            logs: "Test log message".to_string(),
+        };
+
+        // Test serialization
+        let serialized_payload = serde_json::to_string(&original_payload)
+            .expect("QueryPayload should serialize to JSON");
+
+        println!("Serialized QueryPayload JSON: {}", serialized_payload);
+
+        // Test deserialization
+        let deserialized_payload: crate::statistics::http_subscriber::QueryPayload =
+            serde_json::from_str(&serialized_payload)
+                .expect("QueryPayload should deserialize from JSON");
+
+        // Verify the deserialized payload matches the original
+        assert_eq!(deserialized_payload.id, original_payload.id);
+        assert_eq!(
+            deserialized_payload.optimized_plan,
+            original_payload.optimized_plan
+        );
+        assert_eq!(deserialized_payload.run_id, original_payload.run_id);
+        assert_eq!(deserialized_payload.logs, original_payload.logs);
+    }
+
+    #[test]
+    fn test_node_status_serialization() {
+        let test_cases = vec![
+            (
+                crate::statistics::http_subscriber::NodeStatus::Created,
+                "\"created\"",
+            ),
+            (
+                crate::statistics::http_subscriber::NodeStatus::Running,
+                "\"running\"",
+            ),
+            (
+                crate::statistics::http_subscriber::NodeStatus::Completed,
+                "\"completed\"",
+            ),
+            (
+                crate::statistics::http_subscriber::NodeStatus::Failed,
+                "\"failed\"",
+            ),
+            (
+                crate::statistics::http_subscriber::NodeStatus::Canceled,
+                "\"canceled\"",
+            ),
+        ];
+
+        for (status, expected_json) in test_cases {
+            // Test serialization
+            let serialized =
+                serde_json::to_string(&status).expect("NodeStatus should serialize to JSON");
+            assert_eq!(serialized, expected_json);
+
+            // Test deserialization
+            let deserialized: crate::statistics::http_subscriber::NodeStatus =
+                serde_json::from_str(&serialized).expect("NodeStatus should deserialize from JSON");
+            assert_eq!(deserialized, status);
+        }
+    }
+
+    #[test]
+    fn test_metric_display_information_serialization() {
+        let original_metric = crate::statistics::http_subscriber::MetricDisplayInformation {
+            name: "execution_time".to_string(),
+            description: "Total execution time in seconds".to_string(),
+            value: 123.45,
+            unit: "seconds".to_string(),
+        };
+
+        // Test serialization
+        let serialized_metric = serde_json::to_string(&original_metric)
+            .expect("MetricDisplayInformation should serialize to JSON");
+
+        println!(
+            "Serialized MetricDisplayInformation JSON: {}",
+            serialized_metric
+        );
+
+        // Test deserialization
+        let deserialized_metric: crate::statistics::http_subscriber::MetricDisplayInformation =
+            serde_json::from_str(&serialized_metric)
+                .expect("MetricDisplayInformation should deserialize from JSON");
+
+        // Verify the deserialized metric matches the original
+        assert_eq!(deserialized_metric.name, original_metric.name);
+        assert_eq!(deserialized_metric.description, original_metric.description);
+        assert_eq!(deserialized_metric.value, original_metric.value);
+        assert_eq!(deserialized_metric.unit, original_metric.unit);
+    }
+
+    #[test]
+    fn test_complex_query_graph_with_metrics_serialization() {
+        // Create a complex QueryGraph with metrics to test all serialization paths
+        let metrics = vec![
+            crate::statistics::http_subscriber::MetricDisplayInformation {
+                name: "rows_processed".to_string(),
+                description: "Number of rows processed".to_string(),
+                value: 1000.0,
+                unit: "rows".to_string(),
+            },
+            crate::statistics::http_subscriber::MetricDisplayInformation {
+                name: "memory_used".to_string(),
+                description: "Memory usage in MB".to_string(),
+                value: 256.5,
+                unit: "MB".to_string(),
+            },
+        ];
+
+        let mut metadata = HashMap::new();
+        metadata.insert("plan_id".to_string(), "1".to_string());
+        metadata.insert("stage_id".to_string(), "1".to_string());
+        metadata.insert("node_id".to_string(), "1".to_string());
+        metadata.insert("custom_field".to_string(), "test_value".to_string());
+
+        let node = crate::statistics::http_subscriber::QueryGraphNode {
+            id: 12345,
+            label: "TestNode".to_string(),
+            description: "A test node with metrics".to_string(),
+            metadata,
+            status: crate::statistics::http_subscriber::NodeStatus::Running,
+            pending: 10,
+            completed: 20,
+            canceled: 1,
+            failed: 2,
+            total: 33,
+            metrics: Some(metrics.clone()),
+        };
+
+        let mut adjacency_list = HashMap::new();
+        adjacency_list.insert(1, vec![2, 3]);
+        adjacency_list.insert(2, vec![4]);
+
+        let original_graph = crate::statistics::http_subscriber::QueryGraph {
+            version: "2.0.0".to_string(),
+            query_id: 42,
+            nodes: vec![node],
+            adjacency_list,
+            metrics: Some(metrics),
+        };
+
+        // Test serialization
+        let serialized_graph = serde_json::to_string_pretty(&original_graph)
+            .expect("Complex QueryGraph should serialize to JSON");
+
+        println!("Serialized Complex QueryGraph JSON:\n{}", serialized_graph);
+
+        // Test deserialization
+        let deserialized_graph: crate::statistics::http_subscriber::QueryGraph =
+            serde_json::from_str(&serialized_graph)
+                .expect("Complex QueryGraph should deserialize from JSON");
+
+        // Verify all fields
+        assert_eq!(deserialized_graph.version, original_graph.version);
+        assert_eq!(deserialized_graph.query_id, original_graph.query_id);
+        assert_eq!(deserialized_graph.nodes.len(), original_graph.nodes.len());
+        assert_eq!(
+            deserialized_graph.adjacency_list.len(),
+            original_graph.adjacency_list.len()
+        );
+
+        // Verify metrics at graph level
+        assert!(deserialized_graph.metrics.is_some());
+        let deserialized_metrics = deserialized_graph.metrics.unwrap();
+        let original_metrics = original_graph.metrics.unwrap();
+        assert_eq!(deserialized_metrics.len(), original_metrics.len());
+
+        // Verify node details including metrics
+        let deserialized_node = &deserialized_graph.nodes[0];
+        let original_node = &original_graph.nodes[0];
+
+        assert_eq!(deserialized_node.id, original_node.id);
+        assert_eq!(deserialized_node.label, original_node.label);
+        assert_eq!(deserialized_node.description, original_node.description);
+        assert_eq!(deserialized_node.status, original_node.status);
+        assert_eq!(deserialized_node.pending, original_node.pending);
+        assert_eq!(deserialized_node.completed, original_node.completed);
+        assert_eq!(deserialized_node.canceled, original_node.canceled);
+        assert_eq!(deserialized_node.failed, original_node.failed);
+        assert_eq!(deserialized_node.total, original_node.total);
+        assert_eq!(deserialized_node.metadata, original_node.metadata);
+
+        // Verify node-level metrics
+        assert!(deserialized_node.metrics.is_some());
+        let deserialized_node_metrics = deserialized_node.metrics.as_ref().unwrap();
+        let original_node_metrics = original_node.metrics.as_ref().unwrap();
+        assert_eq!(deserialized_node_metrics.len(), original_node_metrics.len());
+
+        for (deserialized_metric, original_metric) in deserialized_node_metrics
+            .iter()
+            .zip(original_node_metrics.iter())
+        {
+            assert_eq!(deserialized_metric.name, original_metric.name);
+            assert_eq!(deserialized_metric.description, original_metric.description);
+            assert_eq!(deserialized_metric.value, original_metric.value);
+            assert_eq!(deserialized_metric.unit, original_metric.unit);
+        }
+    }
+
+    #[test]
+    fn test_serialization_round_trip_preserves_data() {
+        let subscriber = HttpSubscriber::new();
+
+        // Create a comprehensive test setup
+        let logical_plan = create_test_logical_plan();
+        let mut plans = HashMap::new();
+        plans.insert(1, create_test_plan_state(1, logical_plan));
+
+        let mut tasks = HashMap::new();
+
+        // Create multiple tasks with various states
+        let contexts_and_states = vec![
+            (
+                create_test_task_context(1, 1, 1, 1),
+                create_test_task_state("Source", TaskExecutionStatus::Completed),
+            ),
+            (
+                create_test_task_context(1, 1, 2, 2),
+                create_test_task_state("Filter", TaskExecutionStatus::Running),
+            ),
+            (
+                create_test_task_context(1, 1, 3, 3),
+                create_test_task_state("Project", TaskExecutionStatus::Created),
+            ),
+            (
+                create_test_task_context(1, 1, 4, 4),
+                create_test_task_state("Limit", TaskExecutionStatus::Failed),
+            ),
+        ];
+
+        for (context, task_state) in contexts_and_states {
+            tasks.insert(context, task_state);
+        }
+
+        // Build original query graph
+        let original_query_graph = subscriber.build_query_graph(&plans, &tasks);
+
+        // Perform multiple round-trip serializations
+        let mut current_graph = original_query_graph;
+        for i in 0..3 {
+            let serialized = serde_json::to_string(&current_graph).expect(&format!(
+                "Round trip {} serialization should succeed",
+                i + 1
+            ));
+
+            let deserialized: crate::statistics::http_subscriber::QueryGraph =
+                serde_json::from_str(&serialized).expect(&format!(
+                    "Round trip {} deserialization should succeed",
+                    i + 1
+                ));
+
+            // Verify that the data is preserved across serialization cycles
+            assert_eq!(deserialized.version, current_graph.version);
+            assert_eq!(deserialized.query_id, current_graph.query_id);
+            assert_eq!(deserialized.nodes.len(), current_graph.nodes.len());
+            assert_eq!(
+                deserialized.adjacency_list.len(),
+                current_graph.adjacency_list.len()
+            );
+
+            current_graph = deserialized;
+        }
+    }
+
+    #[test]
+    fn test_optimized_plan_query_graph_serialization() {
+        let subscriber = HttpSubscriber::new();
+
+        // Create a more complex logical plan that would benefit from optimization
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64),
+            Field::new("name", DataType::Utf8),
+            Field::new("age", DataType::Int32),
+            Field::new("salary", DataType::Float64),
+            Field::new("department", DataType::Utf8),
+        ]));
+
+        // Create an optimized plan: Source -> Filter -> Project -> Sort -> Limit
+        let source_plan = LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+                source_schema: schema,
+                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+            })),
+        ))
+        .arced()
+        .with_plan_id(1); // Node ID 1 for Source
+
+        // Add multiple operations to create a more complex optimized plan
+        let filter_plan = LogicalPlanBuilder::from(source_plan.arced())
+            .filter(
+                resolved_col("age")
+                    .gt(lit(25))
+                    .and(resolved_col("salary").gt(lit(50000.0))),
+            )
+            .unwrap()
+            .build()
+            .with_plan_id(2); // Node ID 2 for Filter
+
+        let project_plan = LogicalPlanBuilder::from(filter_plan.arced())
+            .select(vec![
+                resolved_col("id"),
+                resolved_col("name"),
+                resolved_col("department"),
+                resolved_col("salary"),
+            ])
+            .unwrap()
+            .build()
+            .with_plan_id(3); // Node ID 3 for Project
+
+        let sort_plan = LogicalPlanBuilder::from(project_plan.arced())
+            .sort(vec![resolved_col("salary")], vec![false], vec![true])
+            .unwrap()
+            .build()
+            .with_plan_id(4); // Node ID 4 for Sort
+
+        let limit_plan = LogicalPlanBuilder::from(sort_plan.arced())
+            .limit(10, false)
+            .unwrap()
+            .build()
+            .with_plan_id(5); // Node ID 5 for Limit
+
+        // Create plan state for the optimized plan
+        let mut plans = HashMap::new();
+        plans.insert(1, create_test_plan_state(1, limit_plan.arced()));
+
+        // Create task states for each operation in the optimized plan
+        let mut tasks = HashMap::new();
+        let source_context = create_test_task_context(1, 1, 1, 1);
+        let filter_context = create_test_task_context(1, 1, 2, 2);
+        let project_context = create_test_task_context(1, 1, 3, 3);
+        let sort_context = create_test_task_context(1, 1, 4, 4);
+        let limit_context = create_test_task_context(1, 1, 5, 5);
+
+        // Set different execution states to simulate a real query execution
+        let mut source_task = create_test_task_state("Source", TaskExecutionStatus::Completed);
+        source_task.pending = 0;
+        source_task.completed = 100;
+        source_task.failed = 0;
+        source_task.canceled = 0;
+        source_task.total = 100;
+
+        let mut filter_task = create_test_task_state("Filter", TaskExecutionStatus::Completed);
+        filter_task.pending = 0;
+        filter_task.completed = 45;
+        filter_task.failed = 0;
+        filter_task.canceled = 0;
+        filter_task.total = 45;
+
+        let mut project_task = create_test_task_state("Project", TaskExecutionStatus::Running);
+        project_task.pending = 10;
+        project_task.completed = 35;
+        project_task.failed = 0;
+        project_task.canceled = 0;
+        project_task.total = 45;
+
+        let mut sort_task = create_test_task_state("Sort", TaskExecutionStatus::Created);
+        sort_task.pending = 45;
+        sort_task.completed = 0;
+        sort_task.failed = 0;
+        sort_task.canceled = 0;
+        sort_task.total = 45;
+
+        let mut limit_task = create_test_task_state("Limit", TaskExecutionStatus::Created);
+        limit_task.pending = 10;
+        limit_task.completed = 0;
+        limit_task.failed = 0;
+        limit_task.canceled = 0;
+        limit_task.total = 10;
+
+        tasks.insert(source_context, source_task);
+        tasks.insert(filter_context, filter_task);
+        tasks.insert(project_context, project_task);
+        tasks.insert(sort_context, sort_task);
+        tasks.insert(limit_context, limit_task);
+
+        // Build the query graph from the optimized plan
+        let original_query_graph = subscriber.build_query_graph(&plans, &tasks);
+
+        // Verify the graph structure
+        assert_eq!(original_query_graph.version, "1.0.0");
+        assert_eq!(original_query_graph.query_id, 1);
+        assert_eq!(original_query_graph.nodes.len(), 5);
+
+        // Test serialization
+        let serialized_graph = serde_json::to_string_pretty(&original_query_graph)
+            .expect("Optimized QueryGraph should serialize to JSON");
+
+        // println!("=== Optimized Plan Query Graph ===");
+        // println!("Serialized Optimized QueryGraph JSON:\n{}", serialized_graph);
+
+        // Test deserialization
+        let deserialized_graph: crate::statistics::http_subscriber::QueryGraph =
+            serde_json::from_str(&serialized_graph)
+                .expect("Optimized QueryGraph should deserialize from JSON");
+
+        // Verify the deserialized graph matches the original
+        assert_eq!(deserialized_graph.version, original_query_graph.version);
+        assert_eq!(deserialized_graph.query_id, original_query_graph.query_id);
+        assert_eq!(
+            deserialized_graph.nodes.len(),
+            original_query_graph.nodes.len()
+        );
+        assert_eq!(
+            deserialized_graph.adjacency_list.len(),
+            original_query_graph.adjacency_list.len()
+        );
+
+        // Verify individual nodes and their states
+        for original_node in &original_query_graph.nodes {
+            let deserialized_node = deserialized_graph
+                .nodes
+                .iter()
+                .find(|n| n.id == original_node.id)
+                .expect("Node should exist after deserialization");
+
+            assert_eq!(deserialized_node.id, original_node.id);
+            assert_eq!(deserialized_node.label, original_node.label);
+            assert_eq!(deserialized_node.description, original_node.description);
+            assert_eq!(deserialized_node.status, original_node.status);
+            assert_eq!(deserialized_node.pending, original_node.pending);
+            assert_eq!(deserialized_node.completed, original_node.completed);
+            assert_eq!(deserialized_node.canceled, original_node.canceled);
+            assert_eq!(deserialized_node.failed, original_node.failed);
+            assert_eq!(deserialized_node.total, original_node.total);
+            assert_eq!(deserialized_node.metadata, original_node.metadata);
+        }
+
+        // Verify adjacency list (execution order dependencies)
+        for (key, value) in &original_query_graph.adjacency_list {
+            let deserialized_value = deserialized_graph
+                .adjacency_list
+                .get(key)
+                .expect("Adjacency list entry should exist");
+            assert_eq!(deserialized_value, value);
+        }
+
+        // Verify that the optimized plan shows proper execution pipeline
+        // Check that we have the expected node IDs
+        let expected_node_ids = vec![
+            HttpSubscriber::generate_node_id(&source_context),
+            HttpSubscriber::generate_node_id(&filter_context),
+            HttpSubscriber::generate_node_id(&project_context),
+            HttpSubscriber::generate_node_id(&sort_context),
+            HttpSubscriber::generate_node_id(&limit_context),
+        ];
+
+        let actual_node_ids: Vec<u32> = deserialized_graph.nodes.iter().map(|n| n.id).collect();
+        for expected_id in &expected_node_ids {
+            assert!(
+                actual_node_ids.contains(expected_id),
+                "Expected node ID {} not found in actual node IDs {:?}",
+                expected_id,
+                actual_node_ids
+            );
+        }
+
+        // Verify execution flow: Source -> Filter -> Project -> Sort -> Limit
+        let limit_node_id = HttpSubscriber::generate_node_id(&limit_context) as usize;
+        let sort_node_id = HttpSubscriber::generate_node_id(&sort_context) as usize;
+        let project_node_id = HttpSubscriber::generate_node_id(&project_context) as usize;
+        let filter_node_id = HttpSubscriber::generate_node_id(&filter_context) as usize;
+        let source_node_id = HttpSubscriber::generate_node_id(&source_context) as usize;
+
+        // Check dependencies in adjacency list
+        assert_eq!(
+            deserialized_graph.adjacency_list.get(&limit_node_id),
+            Some(&vec![sort_node_id])
+        );
+        assert_eq!(
+            deserialized_graph.adjacency_list.get(&sort_node_id),
+            Some(&vec![project_node_id])
+        );
+        assert_eq!(
+            deserialized_graph.adjacency_list.get(&project_node_id),
+            Some(&vec![filter_node_id])
+        );
+        assert_eq!(
+            deserialized_graph.adjacency_list.get(&filter_node_id),
+            Some(&vec![source_node_id])
+        );
+        assert_eq!(
+            deserialized_graph.adjacency_list.get(&source_node_id),
+            Some(&vec![])
+        );
     }
 }

@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env};
 
 use common_error::DaftResult;
 use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::{PlanState, StatisticsEvent, StatisticsSubscriber, TaskState};
 use crate::scheduling::task::TaskContext;
@@ -42,6 +43,14 @@ pub enum NodeStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryPayload {
+    pub id: String,
+    pub optimized_plan: String,
+    pub run_id: Option<String>,
+    pub logs: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricDisplayInformation {
     pub name: String,
     pub description: String,
@@ -49,17 +58,11 @@ pub struct MetricDisplayInformation {
     pub unit: String,
 }
 
-pub struct HttpSubscriber {
-    endpoint: String,
-    client: reqwest::Client,
-}
+pub struct HttpSubscriber;
 
 impl HttpSubscriber {
-    pub fn new(endpoint: String) -> Self {
-        Self {
-            endpoint,
-            client: reqwest::Client::new(),
-        }
+    pub fn new() -> Self {
+        Self
     }
 
     pub fn build_query_graph(
@@ -229,22 +232,63 @@ impl StatisticsSubscriber for HttpSubscriber {
     ) -> DaftResult<()> {
         let query_graph = self.build_query_graph(plans, tasks);
 
+        let endpoint = format!(
+            "{}/queries",
+            env::var("DAFT_DASHBOARD_URL")
+                .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
+        );
+
+        // Build headers
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+
+        if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
+            let auth_value = format!("Bearer {}", auth_token);
+            if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&auth_value) {
+                headers.insert(reqwest::header::AUTHORIZATION, header_value);
+            }
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(1))
+            .default_headers(headers)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let optimized_plan =
+            serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
+
+        // Extract query ID from the first plan state, or generate a new UUID if no plans exist
+        let query_id = plans
+            .values()
+            .next()
+            .map(|plan| plan.query_id.clone())
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let payload = QueryPayload {
+            id: query_id,
+            optimized_plan,
+            run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
+            logs: String::new(),
+        };
+
         // Send update asynchronously (fire and forget)
-        let client = self.client.clone();
-        let endpoint = self.endpoint.clone();
         tokio::spawn(async move {
-            let response = client.post(&endpoint).json(&query_graph).send().await;
+            let response = client.post(&endpoint).json(&payload).send().await;
 
             match response {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        tracing::debug!("Successfully sent query graph update");
+                        tracing::debug!("Successfully sent query information");
                     } else {
-                        tracing::warn!("Failed to send query graph update: {}", resp.status());
+                        tracing::warn!("Failed to send query information: {}", resp.status());
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Error sending query graph update: {}", e);
+                    tracing::warn!("Failed to broadcast metrics over {}: {}", endpoint, e);
                 }
             }
         });

@@ -134,8 +134,8 @@ impl PyDistributedPhysicalPlanRunner {
 
         let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
-        if let Ok(endpoint) = std::env::var("DAFT_DASHBOARD_URL") {
-            subscribers.push(Box::new(HttpSubscriber::new(endpoint)));
+        if std::env::var("DAFT_DASHBOARD_URL").is_ok() {
+            subscribers.push(Box::new(HttpSubscriber::new()));
         }
 
         let statistics_manager = StatisticsManager::new(subscribers);

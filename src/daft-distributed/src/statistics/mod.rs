@@ -9,7 +9,7 @@ use daft_logical_plan::LogicalPlanRef;
 use crate::scheduling::task::{TaskContext, TaskName};
 
 pub mod http_subscriber;
-pub use http_subscriber::{HttpSubscriber};
+pub use http_subscriber::HttpSubscriber;
 
 #[cfg(test)]
 mod http_subscriber_test;
