@@ -143,12 +143,12 @@ impl ObjectSource for LocalSource {
         &self,
         uri: &str,
         range: Option<Range<usize>>,
-        _io_stats: Option<IOStatsRef>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(file) = uri.strip_prefix(LOCAL_PROTOCOL) {
-            let size = self.get_size(uri, _io_stats).await?;
             if let Some(range) = range.clone() {
+                let size = self.get_size(uri, io_stats).await?;
                 if range.start >= size {
                     return Err(Error::UnableToReadBytes {
                         path: file.into(),

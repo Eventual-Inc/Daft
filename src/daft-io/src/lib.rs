@@ -25,6 +25,7 @@ use google_cloud::GCSSource;
 use huggingface::HFSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
+#[cfg(test)]
 mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
