@@ -29,7 +29,7 @@ rand = "0.8.5"
 regex = {version = "1.10.4"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
-retry-policies = "0.4.0"
+retry-policies = "0.5.1"
 serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
