@@ -29,8 +29,10 @@ use crate::{
 
 #[cfg(feature = "python")]
 mod actor_udf;
+mod distinct;
 mod explode;
 mod filter;
+mod groupby_agg;
 mod in_memory_source;
 mod limit;
 pub(crate) mod materialize;
@@ -41,6 +43,7 @@ mod scan_source;
 mod sink;
 mod translate;
 mod unpivot;
+mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;
