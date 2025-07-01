@@ -732,7 +732,7 @@ mod tests {
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
-    use daft_io::{IOClient, IOConfig};
+    use daft_io::{init_s3_config, IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
     use rstest::rstest;
 
@@ -829,8 +829,7 @@ mod tests {
             compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -873,8 +872,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -933,8 +931,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -984,8 +981,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1034,8 +1030,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1082,8 +1077,7 @@ mod tests {
     fn test_csv_read_local_escape() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny_escape.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1130,8 +1124,7 @@ mod tests {
     fn test_csv_read_local_comment() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny_comment.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1177,8 +1170,7 @@ mod tests {
     fn test_csv_read_local_limit() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1225,8 +1217,7 @@ mod tests {
     fn test_csv_read_local_projection() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1276,8 +1267,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1337,8 +1327,7 @@ mod tests {
     fn test_csv_read_local_larger_than_buffer_size() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1385,8 +1374,7 @@ mod tests {
     fn test_csv_read_local_larger_than_chunk_size() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1433,8 +1421,7 @@ mod tests {
     fn test_csv_read_local_throttled_streaming() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1481,8 +1468,7 @@ mod tests {
     fn test_csv_read_local_nulls() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1523,8 +1509,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1563,8 +1548,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let schema = Schema::new(vec![
@@ -1619,8 +1603,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1658,8 +1641,7 @@ mod tests {
     fn test_csv_read_local_wrong_type_yields_nulls() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1699,8 +1681,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1725,8 +1706,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1774,8 +1754,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1809,8 +1788,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1852,8 +1830,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1923,8 +1900,7 @@ mod tests {
             compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1946,8 +1922,7 @@ mod tests {
     fn test_csv_read_s3_no_headers() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/csv-dev/mvp_no_header.csv";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1981,8 +1956,7 @@ mod tests {
     fn test_csv_read_s3_no_headers_and_projection() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/csv-dev/mvp_no_header.csv";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -2016,8 +1990,7 @@ mod tests {
     fn test_csv_read_s3_limit() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -2048,8 +2021,7 @@ mod tests {
     fn test_csv_read_s3_projection() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -2076,8 +2048,7 @@ mod tests {
     fn test_csv_read_s3_larger_than_buffer_size() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/csv-dev/medium.csv";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -2100,8 +2071,7 @@ mod tests {
     fn test_csv_read_s3_larger_than_chunk_size() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/csv-dev/medium.csv";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -2124,8 +2094,7 @@ mod tests {
     fn test_csv_read_s3_throttled_streaming() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/csv-dev/medium.csv";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 

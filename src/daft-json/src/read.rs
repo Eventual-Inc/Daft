@@ -644,7 +644,7 @@ mod tests {
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
-    use daft_io::{IOClient, IOConfig};
+    use daft_io::{init_s3_config, IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
     use indexmap::IndexMap;
     use rstest::rstest;
@@ -753,8 +753,7 @@ mod tests {
             compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -782,8 +781,7 @@ mod tests {
     fn test_json_read_local_dtypes() -> DaftResult<()> {
         let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -847,8 +845,7 @@ mod tests {
     fn test_json_read_local_limit() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -883,8 +880,7 @@ mod tests {
     fn test_json_read_local_projection() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -926,8 +922,7 @@ mod tests {
     fn test_json_read_local_larger_than_buffer_size() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -962,8 +957,7 @@ mod tests {
     fn test_json_read_local_larger_than_chunk_size() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -998,8 +992,7 @@ mod tests {
     fn test_json_read_local_throttled_streaming() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1034,8 +1027,7 @@ mod tests {
     fn test_json_read_local_nulls() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1064,8 +1056,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1104,8 +1095,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1161,8 +1151,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let schema = Schema::new(vec![
@@ -1209,8 +1198,7 @@ mod tests {
     fn test_json_read_local_wrong_type_yields_nulls() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1273,8 +1261,7 @@ mod tests {
             compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1299,8 +1286,7 @@ mod tests {
     fn test_json_read_s3_limit() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1334,8 +1320,7 @@ mod tests {
     fn test_json_read_s3_projection() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1371,8 +1356,7 @@ mod tests {
     fn test_json_read_s3_larger_than_buffer_size() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1406,8 +1390,7 @@ mod tests {
     fn test_json_read_s3_larger_than_chunk_size() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1441,8 +1424,7 @@ mod tests {
     fn test_json_read_s3_throttled_streaming() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
