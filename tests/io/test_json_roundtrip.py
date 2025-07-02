@@ -9,13 +9,7 @@ import pytest
 import daft
 from daft import DataType, TimeUnit
 
-PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
-
-@pytest.mark.skipif(
-    not PYARROW_GE_11_0_0,
-    reason="PyArrow writing to JSON does not have good coverage for all types for versions <11.0.0",
-)
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
     [
@@ -69,10 +63,6 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
         #     # NOTE: Duration ends up being written as int64
         #     DataType.int64(),
         # ),
-        # TODO: Verify that these types throw an error when we write dataframes with them
-        # ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
-        # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
-        # ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, expected_inferred_dtype):
@@ -83,3 +73,113 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, e
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_inferred_dtype
     assert before.to_arrow() == after.with_column("foo", after["foo"].cast(expected_dtype)).to_arrow()
+
+
+def test_roundtrip_struct_types(tmp_path):
+    struct_data = [
+        {"name": "Alice", "age": 30, "city": "New York"},
+        {"name": "Bob", "age": 25, "city": "San Francisco"},
+        None,
+    ]
+
+    pa_struct_type = pa.struct({"name": pa.string(), "age": pa.int64(), "city": pa.string()})
+
+    expected_dtype = DataType.struct({"name": DataType.string(), "age": DataType.int64(), "city": DataType.string()})
+
+    before = daft.from_arrow(pa.table({"id": pa.array(range(3)), "person": pa.array(struct_data, type=pa_struct_type)}))
+    before = before.concat(before)
+    before.write_json(str(tmp_path))
+    after = daft.read_json(str(tmp_path))
+
+    assert before.schema()["person"].dtype == expected_dtype
+    assert after.schema()["person"].dtype == expected_dtype
+    assert before.to_arrow() == after.to_arrow()
+
+
+def test_roundtrip_map_types(tmp_path):
+    map_data = [
+        {"key1": "value1", "key2": "value2"},
+        {"key1": "value3"},
+        None,
+    ]
+
+    pa_map_type = pa.map_(pa.string(), pa.string())
+    expected_dtype = DataType.map(DataType.string(), DataType.string())
+
+    before = daft.from_arrow(pa.table({"id": pa.array(range(3)), "metadata": pa.array(map_data, type=pa_map_type)}))
+    before = before.concat(before)
+    before.write_json(str(tmp_path))
+    after = daft.read_json(str(tmp_path))
+
+    assert before.schema()["metadata"].dtype == expected_dtype
+    # In JSON we cannot determine if a type is MAP and not STRUCT.
+    # However, since casting from struct to map is not implemented, we'll just verify the data is preserved
+    # by checking that the struct representation matches the expected structure.
+    assert after.schema()["metadata"].dtype == DataType.struct({"key1": DataType.string(), "key2": DataType.string()})
+    # Verify the data length is preserved.
+    assert before.count_rows() == after.count_rows()
+
+
+def test_roundtrip_nested_struct_with_arrays(tmp_path):
+    """Test JSON roundtrip with nested structs containing arrays."""
+    nested_struct_data = [
+        {"name": "Alice", "scores": [85, 90, 78], "tags": ["student", "active"]},
+        {"name": "Bob", "scores": [92, 88, 95], "tags": ["student"]},
+        None,
+    ]
+
+    pa_nested_struct_type = pa.struct(
+        {"name": pa.string(), "scores": pa.list_(pa.int64()), "tags": pa.list_(pa.string())}
+    )
+
+    expected_dtype = DataType.struct(
+        {"name": DataType.string(), "scores": DataType.list(DataType.int64()), "tags": DataType.list(DataType.string())}
+    )
+
+    before = daft.from_arrow(
+        pa.table({"id": pa.array(range(3)), "student": pa.array(nested_struct_data, type=pa_nested_struct_type)})
+    )
+    before = before.concat(before)
+    before.write_json(str(tmp_path))
+    after = daft.read_json(str(tmp_path))
+    assert before.schema()["student"].dtype == expected_dtype
+    assert after.schema()["student"].dtype == expected_dtype
+    assert before.to_arrow() == after.to_arrow()
+
+
+def test_throws_error_on_duration_and_binary_types(tmp_path):
+    # TODO(desmond): Binary and Duration types currently produce inconsistent behaviours between our readers and writers.
+    # Our readers expect BINARY to be encoded as plain text, and DURATION to be encoded with i64. Arrow-rs expects BINARY
+    # to be hexadecimal encoded and DURATION to follow the ISO 8601 duration format. Until we reconcile this difference,
+    # opt for throwing an error on encountering these types.
+    duration_data = [
+        datetime.timedelta(days=1),
+        datetime.timedelta(days=2),
+        None,
+    ]
+
+    pa_duration_type = pa.duration("ms")
+
+    before_duration = daft.from_arrow(
+        pa.table({"id": pa.array(range(3)), "duration": pa.array(duration_data, type=pa_duration_type)})
+    )
+    before_duration = before_duration.concat(before_duration)
+
+    # Test that writing duration types throws NotImplementedError
+    with pytest.raises(
+        daft.exceptions.DaftCoreException,
+        match="Not Yet Implemented: JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types",
+    ):
+        before_duration.write_json(str(tmp_path))
+
+    binary_data = [b"hello", b"world", None]
+    pa_binary_type = pa.large_binary()
+    before_binary = daft.from_arrow(
+        pa.table({"id": pa.array(range(3)), "binary": pa.array(binary_data, type=pa_binary_type)})
+    )
+
+    with pytest.raises(
+        daft.exceptions.DaftCoreException,
+        match="Not Yet Implemented: JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types",
+    ):
+        before_binary.write_json(str(tmp_path))

@@ -9,7 +9,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
-    json_writer::create_native_json_writer,
+    json_writer::{create_native_json_writer, native_json_writer_supported},
     parquet_writer::{create_native_parquet_writer, native_parquet_writer_supported},
     AsyncFileWriter, WriterFactory,
 };
@@ -52,7 +52,7 @@ impl PhysicalWriterFactory {
             FileFormat::Parquet => {
                 Self::select_parquet_writer_type(output_file_info, file_schema, native_enabled)
             }
-            FileFormat::Json => Ok(WriterType::Native), // There is only a native implementation of the JSON writer.
+            FileFormat::Json => Self::select_json_writer_type(file_schema),
             _ => Ok(WriterType::Pyarrow), // Default to PyArrow for unsupported formats.
         }
     }
@@ -67,17 +67,23 @@ impl PhysicalWriterFactory {
             return Ok(WriterType::Pyarrow);
         }
 
-        let native_supported = native_parquet_writer_supported(
-            output_file_info.file_format,
-            &output_file_info.root_dir,
-            file_schema,
-        )?;
+        let native_supported =
+            native_parquet_writer_supported(&output_file_info.root_dir, file_schema)?;
 
         if native_supported {
             Ok(WriterType::Native)
         } else {
             Ok(WriterType::Pyarrow)
         }
+    }
+
+    fn select_json_writer_type(file_schema: &SchemaRef) -> DaftResult<WriterType> {
+        let native_supported = native_json_writer_supported(file_schema)?;
+        if !native_supported {
+            return Err(DaftError::NotImplemented("JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types".to_string()));
+        }
+        // There is only a native implementation of the JSON writer. PyArrow does not support JSON writes.
+        Ok(WriterType::Native)
     }
 }
 
