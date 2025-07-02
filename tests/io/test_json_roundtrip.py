@@ -10,6 +10,8 @@ import daft
 from daft import DataType, TimeUnit
 from tests.conftest import get_tests_daft_runner_name
 
+PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
+
 
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
@@ -104,7 +106,8 @@ def test_roundtrip_struct_types(tmp_path):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+    get_tests_daft_runner_name() != "native" or not PYARROW_GE_11_0_0,
+    reason="JSON writes are only implemented in the native runner, and map types require PyArrow >= 11.0.0",
 )
 def test_roundtrip_map_types(tmp_path):
     map_data = [
