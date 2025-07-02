@@ -290,6 +290,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-json"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d03b9340013413eb84868682ace00a1098c81a5ebc96d279f7ebf9a4cac3c0fd"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-cast",
+ "arrow-data",
+ "arrow-schema",
+ "chrono",
+ "half",
+ "indexmap 2.9.0",
+ "lexical-core 1.0.5",
+ "num",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "arrow-schema"
 version = "54.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3258,6 +3278,8 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-json",
  "arrow-schema",
  "arrow2",
  "async-trait",
