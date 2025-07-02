@@ -12,19 +12,18 @@ use crate::{
     stage::{StageConfig, StageExecutionContext},
 };
 
-pub(crate) struct TopNNode {
+pub(crate) struct SortNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     // Sort properties
     sort_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
-    limit: i64,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl TopNNode {
-    const NODE_NAME: NodeName = "TopN";
+impl SortNode {
+    const NODE_NAME: NodeName = "Sort";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -33,7 +32,6 @@ impl TopNNode {
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: i64,
         output_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -51,7 +49,6 @@ impl TopNNode {
             sort_by,
             descending,
             nulls_first,
-            limit,
             child,
         }
     }
@@ -62,7 +59,7 @@ impl TopNNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec!["TopN".to_string()];
+        let mut res = vec!["Sort".to_string()];
         res.push(format!(
             "Sort by: {}",
             self.sort_by.iter().map(|e| e.to_string()).join(", ")
@@ -75,12 +72,11 @@ impl TopNNode {
             "Nulls first = {}",
             self.nulls_first.iter().map(|e| e.to_string()).join(", ")
         ));
-        res.push(format!("Limit = {}", self.limit));
         res
     }
 }
 
-impl TreeDisplay for TopNNode {
+impl TreeDisplay for SortNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -105,7 +101,7 @@ impl TreeDisplay for TopNNode {
     }
 }
 
-impl DistributedPipelineNode for TopNNode {
+impl DistributedPipelineNode for SortNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -124,12 +120,11 @@ impl DistributedPipelineNode for TopNNode {
         // Pipeline the top-n
         let self_clone = self.clone();
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            Ok(LocalPhysicalPlan::top_n(
+            Ok(LocalPhysicalPlan::sort(
                 input,
                 self_clone.sort_by.clone(),
                 self_clone.descending.clone(),
                 self_clone.nulls_first.clone(),
-                self_clone.limit,
                 StatsState::NotMaterialized,
             ))
         })

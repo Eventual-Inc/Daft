@@ -457,7 +457,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn sort(
+    pub fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -476,7 +476,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn top_n(
+    pub fn top_n(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
