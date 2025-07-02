@@ -1685,6 +1685,7 @@ mod tests {
 
         let config = S3Config {
             anonymous: true,
+            region_name: Some("us-west-2".into()),
             ..Default::default()
         };
         let client = S3LikeSource::get_client(&config).await?;
