@@ -391,6 +391,23 @@ impl Schema {
         }))
         .to_string()
     }
+
+    pub fn min_fixed_byte_column(&self) -> Option<&str> {
+        self.fields
+            .iter()
+            .filter_map(|f| f.dtype.estimate_size_bytes().map(|s| (s, f.name.as_str())))
+            .fold(None, |min, (size, name)| match min {
+                Some((min_size, min_name)) => {
+                    if size < min_size {
+                        Some((size, name))
+                    } else {
+                        Some((min_size, min_name))
+                    }
+                }
+                None => Some((size, name)),
+            })
+            .map(|(_, name)| name)
+    }
 }
 
 impl Default for Schema {
