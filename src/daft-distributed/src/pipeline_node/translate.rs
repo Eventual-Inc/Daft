@@ -60,7 +60,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
         Ok(TreeNodeRecursion::Continue)
     }
 
-    fn f_up(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
+    fn f_up(&mut self, node: &LogicalPlanRef) -> DaftResult<TreeNodeRecursion> {
+        let logical_node_id =
+            node.node_id()
+                .expect("Optimized logical node must have a node_id") as NodeID;
         let node_id = self.get_next_node_id();
         let output = match node.as_ref() {
             LogicalPlan::Source(source) => {
@@ -70,6 +73,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         node_id,
                         info.clone(),
                         self.psets.clone(),
+                        logical_node_id,
                     ).arced(),
                     SourceInfo::Physical(info) => {
                         // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
@@ -83,6 +87,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                             info.pushdowns.clone(),
                             scan_tasks,
                             source.output_schema.clone(),
+                            logical_node_id
                         ).arced()
                     }
                     SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),
@@ -108,6 +113,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         memory_request,
                         actor_pool_project.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
+                        logical_node_id,
                     )?
                     .arced()
                 }
@@ -125,6 +131,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     predicate,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id,
                 )
                 .arced()
             }
@@ -134,6 +141,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 limit.limit as usize,
                 node.schema(),
                 self.curr_node.pop().unwrap(),
+                logical_node_id,
             )),
             LogicalPlan::Project(project) => {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
@@ -143,6 +151,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     projection,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id,
                 )
                 .arced()
             }
@@ -154,6 +163,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     to_explode,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id,
                 )
                 .arced()
             }
@@ -169,6 +179,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     unpivot.value_name.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id,
                 )
                 .arced()
             }
@@ -180,6 +191,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 sample.seed,
                 node.schema(),
                 self.curr_node.pop().unwrap(),
+                logical_node_id,
             )
             .arced(),
             LogicalPlan::Sink(sink) => SinkNode::new(
@@ -189,6 +201,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 sink.schema.clone(),
                 sink.input.schema(),
                 self.curr_node.pop().unwrap(),
+                logical_node_id,
             )
             .arced(),
             LogicalPlan::MonotonicallyIncreasingId(_) => {

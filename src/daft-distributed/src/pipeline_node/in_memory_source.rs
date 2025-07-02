@@ -32,9 +32,16 @@ impl InMemorySourceNode {
         node_id: NodeID,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        logical_plan_id: NodeID,
     ) -> Self {
-        let context =
-            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![],
+            vec![],
+            logical_plan_id,
+        );
         let config =
             PipelineNodeConfig::new(info.source_schema.clone(), stage_config.config.clone());
         Self {

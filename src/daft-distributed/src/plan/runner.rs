@@ -69,6 +69,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<PlanResult> {
         let plan_id = plan.id();
+        let plan_id_as_u32 = plan_id as u32;
         let stage_plan = plan.stage_plan().clone();
 
         let runtime = get_or_init_runtime();

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use common_error::DaftResult;
 use serde::{Deserialize, Serialize};
 
+use super::{PlanState, StatisticsEvent, StatisticsSubscriber, TaskState};
 use crate::scheduling::task::TaskContext;
-use super::{StatisticsEvent, StatisticsSubscriber, PlanState, TaskState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryGraph {
@@ -67,11 +67,11 @@ impl HttpSubscriber {
         tasks: &HashMap<TaskContext, TaskState>,
     ) -> QueryGraph {
         let mut nodes = Vec::new();
-        
+
         // Create nodes from task state
         for (context, task_state) in tasks {
             let node_id = Self::generate_node_id(context);
-            
+
             let node = QueryGraphNode {
                 id: node_id,
                 label: Self::extract_operation_name(&task_state.name),
@@ -105,7 +105,7 @@ impl HttpSubscriber {
     }
 
     fn generate_node_id(context: &TaskContext) -> u32 {
-        (context.plan_id as u32) << 16 | (context.stage_id as u32) << 8 | (context.node_id as u32)
+        ((context.plan_id as u32) << 16) | ((context.stage_id as u32) << 8) | (context.node_id)
     }
 
     fn extract_operation_name(task_name: &str) -> String {
@@ -140,11 +140,7 @@ impl StatisticsSubscriber for HttpSubscriber {
         let client = self.client.clone();
         let endpoint = self.endpoint.clone();
         tokio::spawn(async move {
-            let response = client
-                .post(&endpoint)
-                .json(&query_graph)
-                .send()
-                .await;
+            let response = client.post(&endpoint).json(&query_graph).send().await;
 
             match response {
                 Ok(resp) => {
@@ -162,4 +158,4 @@ impl StatisticsSubscriber for HttpSubscriber {
 
         Ok(())
     }
-} 
+}
