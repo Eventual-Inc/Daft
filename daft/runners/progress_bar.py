@@ -30,6 +30,7 @@ def get_tqdm(use_ray_tqdm: bool) -> Any:
                             kwargs["file"] = sys.stdout  # avoid the red block in IPython
 
                         super().__init__(*args, **kwargs)
+
             else:
                 tqdm = _tqdm
         except ImportError:

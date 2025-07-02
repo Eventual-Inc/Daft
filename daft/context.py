@@ -185,7 +185,7 @@ def set_execution_config(
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
     native_parquet_writer: bool | None = None,
-    flotilla: bool | None = None,
+    use_experimental_distributed_engine: bool | None = None,
     min_cpu_per_task: float | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -233,6 +233,9 @@ def set_execution_config(
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
+        use_experimental_distributed_engine: Whether to use the experimental distributed engine on the ray runner. Defaults to `True`.
+            Note: Not all operations are currently supported, and daft will fallback to the current engine if necessary.
+        min_cpu_per_task: Minimum CPU used for each task. Defaults to 1.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -266,7 +269,8 @@ def set_execution_config(
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,
             native_parquet_writer=native_parquet_writer,
-            flotilla=flotilla,
+            use_experimental_distributed_engine=use_experimental_distributed_engine,
+            min_cpu_per_task=min_cpu_per_task,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

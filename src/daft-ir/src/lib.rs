@@ -129,7 +129,6 @@ pub mod rel {
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        let limit: i64 = limit.try_into().map_err(|_| DaftError::ValueError("limit too large".to_string()))?;
         Ok(Limit { plan_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
     }
 
