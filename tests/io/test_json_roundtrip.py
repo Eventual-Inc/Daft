@@ -8,8 +8,12 @@ import pytest
 
 import daft
 from daft import DataType, TimeUnit
+from tests.conftest import get_tests_daft_runner_name
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
     [
@@ -75,6 +79,9 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, e
     assert before.to_arrow() == after.with_column("foo", after["foo"].cast(expected_dtype)).to_arrow()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
 def test_roundtrip_struct_types(tmp_path):
     struct_data = [
         {"name": "Alice", "age": 30, "city": "New York"},
@@ -96,6 +103,9 @@ def test_roundtrip_struct_types(tmp_path):
     assert before.to_arrow() == after.to_arrow()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
 def test_roundtrip_map_types(tmp_path):
     map_data = [
         {"key1": "value1", "key2": "value2"},
@@ -120,6 +130,9 @@ def test_roundtrip_map_types(tmp_path):
     assert before.count_rows() == after.count_rows()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
 def test_roundtrip_nested_struct_with_arrays(tmp_path):
     """Test JSON roundtrip with nested structs containing arrays."""
     nested_struct_data = [
@@ -147,6 +160,9 @@ def test_roundtrip_nested_struct_with_arrays(tmp_path):
     assert before.to_arrow() == after.to_arrow()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
 def test_throws_error_on_duration_and_binary_types(tmp_path):
     # TODO(desmond): Binary and Duration types currently produce inconsistent behaviours between our readers and writers.
     # Our readers expect BINARY to be encoded as plain text, and DURATION to be encoded with i64. Arrow-rs expects BINARY
