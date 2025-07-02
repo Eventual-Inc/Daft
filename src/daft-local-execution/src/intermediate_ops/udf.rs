@@ -29,6 +29,9 @@ use super::intermediate_op::{
 };
 use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
 
+const NUM_TEST_ITERATIONS: usize = 10;
+const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
+
 struct UdfHandle {
     udf_expr: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
@@ -62,12 +65,17 @@ impl UdfHandle {
         #[cfg(feature = "python")]
         {
             let py_expr = PyExpr::from(self.udf_expr.as_ref().clone());
+            let passthrough_exprs = self
+                .passthrough_columns
+                .iter()
+                .map(|expr| PyExpr::from(expr.as_ref().clone()))
+                .collect::<Vec<_>>();
             self.inner = Some(Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
                     py.import(pyo3::intern!(py, "daft.execution.udf"))?
                         .getattr(pyo3::intern!(py, "UdfHandle"))?
-                        .call1((py_expr,))?
+                        .call1((py_expr, passthrough_exprs))?
                         .unbind(),
                 )
             })?);
@@ -121,16 +129,23 @@ impl UdfHandle {
 
         // Iterate over MicroPartition batches
         for batch in input.get_tables()?.as_ref() {
+            use std::time::Instant;
+
             // Get the functions inputs
             let func_input = batch.eval_expression_list(input_exprs.as_slice())?;
-            // Call the UDF, getting the GIL contention time
+            // Call the UDF, getting the GIL contention time and total runtime
+            let start_time = Instant::now();
             let (mut result, gil_contention_time) = func.call_udf(func_input.columns())?;
+            let end_time = Instant::now();
+            let total_runtime = end_time - start_time;
+
+            // Rename if necessary
             if let Some(out_name) = out_name.as_ref() {
                 result = result.rename(out_name);
             }
 
             // Update the state
-            self.total_runtime += gil_contention_time;
+            self.total_runtime += total_runtime;
             self.total_gil_contention += gil_contention_time;
             self.num_batches += 1;
 
@@ -141,8 +156,9 @@ impl UdfHandle {
         }
 
         // Switch to external process if we hit the GIL contention threshold
-        if self.num_batches > 10
-            && (self.total_gil_contention.as_secs_f64() / self.total_runtime.as_secs_f64()) > 0.2
+        if self.num_batches > NUM_TEST_ITERATIONS
+            && (self.total_gil_contention.as_secs_f64() / self.total_runtime.as_secs_f64())
+                > GIL_CONTRIBUTION_THRESHOLD
         {
             self.create_handle()?;
         }
@@ -319,13 +335,14 @@ impl IntermediateOperator for UdfOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("UDF Executor:".to_string());
-        res.push(format!("UDF = {}", self.project));
         res.push(format!(
-            "Passthrough = [{}]",
-            self.passthrough_columns
-                .iter()
-                .flat_map(|expr| get_udf_names(expr.inner()))
-                .join(", ")
+            "UDF {} = {}",
+            get_udf_names(self.project.inner()).first().unwrap(),
+            self.project
+        ));
+        res.push(format!(
+            "Passthrough Columns = [{}]",
+            self.passthrough_columns.iter().join(", ")
         ));
         res.push(format!("Concurrency = {:?}", self.concurrency));
         if let Some(resource_request) = get_resource_request(&[self.project.clone()]) {

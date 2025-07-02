@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import traceback
 from multiprocessing.connection import Client
 
 import cloudpickle
@@ -42,7 +41,7 @@ def udf_event_loop(
             conn.send(("success", out_name, out_size))
     except Exception as e:
         try:
-            conn.send(("error", type(e).__name__, traceback.format_exc()))
+            conn.send(("error", e.__reduce__()))
         except Exception:
             # If the connection is broken, it's because the parent process has died.
             # We can just exit here.

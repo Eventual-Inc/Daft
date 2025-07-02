@@ -47,7 +47,7 @@ class SharedMemoryTransport:
 
 
 class UdfHandle:
-    def __init__(self, project_expr: PyExpr) -> None:
+    def __init__(self, project_expr: PyExpr, passthrough_exprs: list[PyExpr]) -> None:
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
@@ -72,7 +72,9 @@ class UdfHandle:
         self.transport = SharedMemoryTransport()
 
         # Serialize and send the expression projection
-        expr_projection = ExpressionsProjection([Expression._from_pyexpr(project_expr)])
+        expr_projection = ExpressionsProjection(
+            [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
+        )
         expr_projection_bytes = cloudpickle.dumps(expr_projection)
         self.handle_conn.send(("__ENTER__", expr_projection_bytes))
 
@@ -86,9 +88,8 @@ class UdfHandle:
 
         response = self.handle_conn.recv()
         if response[0] == "error":
-            error_type, tb_str = response[1], response[2]
-            exception_class = getattr(__builtins__, error_type, RuntimeError)
-            raise exception_class(tb_str)
+            exc_class, exc_args = response[1]
+            raise exc_class(*exc_args)
         elif response[0] == "success":
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
