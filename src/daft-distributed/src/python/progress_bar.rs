@@ -101,7 +101,6 @@ impl StatisticsSubscriber for FlotillaProgressBar {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
-            // Plan-level events don't affect individual task progress bars
             StatisticsEvent::PlanStarted { .. } => Ok(()),
             StatisticsEvent::PlanFinished { .. } => Ok(()),
         }

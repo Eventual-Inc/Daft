@@ -72,7 +72,13 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let plan_id_as_u32 = plan_id as u32;
         let stage_plan = plan.stage_plan().clone();
 
+        let query_id = uuid::Uuid::new_v4().to_string();
         let runtime = get_or_init_runtime();
+        statistics_manager.register_plan(plan_id_as_u32, query_id, plan.logical_plan().clone())?;
+        statistics_manager.handle_event(crate::statistics::StatisticsEvent::PlanStarted {
+            plan_id: plan_id_as_u32,
+        })?;
+
         let (result_sender, result_receiver) = create_channel(1);
 
         let this = self.clone();

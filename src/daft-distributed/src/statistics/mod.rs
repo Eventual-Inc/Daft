@@ -9,13 +9,19 @@ use daft_logical_plan::LogicalPlanRef;
 use crate::scheduling::task::{TaskContext, TaskName, TaskStatus};
 
 pub mod http_subscriber;
-pub use http_subscriber::{HttpSubscriber, MetricDisplayInformation, QueryGraph, QueryGraphNode};
+pub use http_subscriber::HttpSubscriber;
 
+const STATISTICS_LOG_TARGET: &str = "DaftStatisticsManager";
+
+#[cfg(test)]
+mod http_subscriber_test;
+
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PlanState {
-    pub plan_id: u32,
+    pub plan_id: usize,
+    pub query_id: String,
     pub logical_plan: LogicalPlanRef,
-    pub description: String,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +44,8 @@ pub enum TaskExecutionStatus {
     Canceled,
 }
 
+#[derive(Debug)]
+#[allow(dead_code)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum StatisticsEvent {
     SubmittedTask {
@@ -48,13 +56,13 @@ pub(crate) enum StatisticsEvent {
     ScheduledTask {
         context: TaskContext,
     },
-    TaskStarted {
-        context: TaskContext,
-    },
     FinishedTask {
         context: TaskContext,
     },
-    #[allow(dead_code)]
+    TaskStarted {
+        context: TaskContext,
+    },
+    // Additional events for more detailed tracking
     FailedTask {
         context: TaskContext,
         reason: String,
@@ -64,20 +72,18 @@ pub(crate) enum StatisticsEvent {
     },
     PlanStarted {
         plan_id: u32,
-        description: String,
     },
     PlanFinished {
         plan_id: u32,
-        description: String,
     },
 }
 
 impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
-    fn from((context, result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
-        match result {
-            Ok(status) => match status {
+    fn from((context, task_result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
+        match task_result {
+            Ok(task_status) => match task_status {
                 TaskStatus::Success { .. } => Self::FinishedTask { context },
-                TaskStatus::Failed { error, .. } => Self::FailedTask {
+                TaskStatus::Failed { error } => Self::FailedTask {
                     context,
                     reason: error.to_string(),
                 },
@@ -91,9 +97,9 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
                     reason: "Worker unavailable".to_string(),
                 },
             },
-            Err(e) => Self::FailedTask {
+            Err(error) => Self::FailedTask {
                 context,
-                reason: e.to_string(),
+                reason: error.to_string(),
             },
         }
     }
@@ -106,6 +112,14 @@ pub trait StatisticsSubscriber: Send + Sync + 'static {
         plans: &HashMap<u32, PlanState>,
         tasks: &HashMap<TaskContext, TaskState>,
     ) -> DaftResult<()>;
+
+    /// Optional flush method for subscribers that need to clean up pending operations
+    fn flush(
+        &self,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>>>
+    {
+        None
+    }
 }
 
 pub type StatisticsManagerRef = Arc<StatisticsManager>;
@@ -126,25 +140,49 @@ impl StatisticsManager {
         })
     }
 
+    /// Flush all subscribers that support flushing (e.g., HttpSubscriber)
+    pub async fn flush_all_subscribers(&self) -> DaftResult<()> {
+        tracing::info!(
+            target: STATISTICS_LOG_TARGET,
+            "Flushing {} subscribers",
+            self.subscribers.len()
+        );
+
+        for (i, subscriber) in self.subscribers.iter().enumerate() {
+            if let Some(flush_future) = subscriber.flush() {
+                tracing::info!(
+                    target: STATISTICS_LOG_TARGET,
+                    "Flushing subscriber {}",
+                    i
+                );
+                flush_future.await?;
+            }
+        }
+
+        tracing::info!(target: STATISTICS_LOG_TARGET, "All subscribers flushed successfully");
+        Ok(())
+    }
+
     pub fn register_plan(
         &self,
         plan_id: u32,
+        query_id: String,
         logical_plan: LogicalPlanRef,
-        description: String,
     ) -> DaftResult<()> {
         let mut plans = self.plans.lock().unwrap();
         plans.insert(
             plan_id,
             PlanState {
-                plan_id,
+                plan_id: plan_id as usize,
+                query_id,
                 logical_plan,
-                description,
             },
         );
         Ok(())
     }
 
     pub fn handle_event(&self, event: StatisticsEvent) -> DaftResult<()> {
+        tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager handling event: {:?}", event);
         // Update internal state based on event
         self.update_state(&event)?;
 
@@ -152,8 +190,14 @@ impl StatisticsManager {
         let plans = self.plans.lock().unwrap().clone();
         let tasks = self.tasks.lock().unwrap().clone();
 
+        tracing::info!(
+            target: STATISTICS_LOG_TARGET,
+            "StatisticsManager notifying {} subscribers",
+            self.subscribers.len()
+        );
         // Notify all subscribers
-        for subscriber in &self.subscribers {
+        for (i, subscriber) in self.subscribers.iter().enumerate() {
+            tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
             subscriber.handle_event(&event, &plans, &tasks)?;
         }
         Ok(())

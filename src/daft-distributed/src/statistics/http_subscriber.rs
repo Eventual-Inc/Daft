@@ -1,17 +1,26 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    env,
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
+use common_runtime::{get_io_runtime, RuntimeTask};
+use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::{PlanState, StatisticsEvent, StatisticsSubscriber, TaskState};
 use crate::scheduling::task::TaskContext;
+
+const HTTP_LOG_TARGET: &str = "DaftHttpSubscriber";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryGraph {
     pub version: String,
     pub query_id: u32,
     pub nodes: Vec<QueryGraphNode>,
-    pub adjacency_list: HashMap<String, Vec<String>>,
+    pub adjacency_list: HashMap<usize, Vec<usize>>,
     pub metrics: Option<Vec<MetricDisplayInformation>>,
 }
 
@@ -22,15 +31,15 @@ pub struct QueryGraphNode {
     pub description: String,
     pub metadata: HashMap<String, String>,
     pub status: NodeStatus,
-    pub pending: Option<u32>,
-    pub completed: Option<u32>,
-    pub canceled: Option<u32>,
-    pub failed: Option<u32>,
-    pub total: Option<u32>,
+    pub pending: u32,
+    pub completed: u32,
+    pub canceled: u32,
+    pub failed: u32,
+    pub total: u32,
     pub metrics: Option<Vec<MetricDisplayInformation>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeStatus {
     Created,
@@ -38,6 +47,14 @@ pub enum NodeStatus {
     Completed,
     Failed,
     Canceled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryPayload {
+    pub id: String,
+    pub optimized_plan: String,
+    pub run_id: Option<String>,
+    pub logs: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,63 +66,111 @@ pub struct MetricDisplayInformation {
 }
 
 pub struct HttpSubscriber {
-    endpoint: String,
-    client: reqwest::Client,
+    pending_requests: Arc<Mutex<Vec<RuntimeTask<()>>>>,
 }
 
 impl HttpSubscriber {
-    pub fn new(endpoint: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            endpoint,
-            client: reqwest::Client::new(),
+            pending_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    fn build_query_graph(
+    /// Flush all pending HTTP requests by waiting for them to complete
+    pub async fn flush_pending_requests(&self) -> DaftResult<()> {
+        let mut handles = {
+            let mut pending = self.pending_requests.lock().unwrap();
+            std::mem::take(&mut *pending)
+        };
+
+        tracing::info!(
+            target: HTTP_LOG_TARGET,
+            "Flushing {} pending HTTP requests",
+            handles.len()
+        );
+
+        // Wait for all handles to complete
+        for handle in handles.drain(..) {
+            if let Err(e) = handle.await {
+                tracing::warn!(
+                    target: HTTP_LOG_TARGET,
+                    "Error waiting for HTTP request to complete: {}",
+                    e
+                );
+            }
+        }
+
+        tracing::info!(target: HTTP_LOG_TARGET, "All pending HTTP requests completed");
+        Ok(())
+    }
+
+    pub fn build_query_graph(
         &self,
         plans: &HashMap<u32, PlanState>,
         tasks: &HashMap<TaskContext, TaskState>,
     ) -> QueryGraph {
-        let mut nodes = Vec::new();
+        // Mapping from query graph node ID to QueryGraphNode
+        let mut nodes_map: HashMap<u32, QueryGraphNode> = HashMap::new();
 
-        // Create nodes from task state
+        // Mapping from logical plan node ID to query graph node IDs
+        let mut logical_to_query_map: HashMap<usize, usize> = HashMap::new();
+
         for (context, task_state) in tasks {
             let node_id = Self::generate_node_id(context);
 
-            let node = QueryGraphNode {
-                id: node_id,
-                label: Self::extract_operation_name(&task_state.name),
-                description: task_state.name.clone(),
-                metadata: HashMap::from([
-                    ("plan_id".to_string(), context.plan_id.to_string()),
-                    ("stage_id".to_string(), context.stage_id.to_string()),
-                    ("node_id".to_string(), context.node_id.to_string()),
-                ]),
-                status: Self::convert_task_status(&task_state.status),
-                pending: Some(task_state.pending),
-                completed: Some(task_state.completed),
-                canceled: Some(task_state.canceled),
-                failed: Some(task_state.failed),
-                total: Some(task_state.total),
-                metrics: None,
-            };
-            nodes.push(node);
+            if let Some(existing_node) = nodes_map.get_mut(&node_id) {
+                // Collect task progress per node
+                existing_node.pending += task_state.pending;
+                existing_node.completed += task_state.completed;
+                existing_node.canceled += task_state.canceled;
+                existing_node.failed += task_state.failed;
+                existing_node.total += task_state.total;
+
+                // Update status - prioritize Failed > Running > Completed > Canceled > Created
+                let new_status = Self::convert_task_status(&task_state.status);
+                existing_node.status = Self::merge_node_status(&existing_node.status, &new_status);
+            } else {
+                let node = QueryGraphNode {
+                    id: node_id,
+                    label: Self::extract_operation_name(&task_state.name),
+                    description: task_state.name.clone(),
+                    metadata: HashMap::from([
+                        ("plan_id".to_string(), context.plan_id.to_string()),
+                        ("stage_id".to_string(), context.stage_id.to_string()),
+                        ("node_id".to_string(), context.node_id.to_string()),
+                    ]),
+                    status: Self::convert_task_status(&task_state.status),
+                    pending: task_state.pending,
+                    completed: task_state.completed,
+                    canceled: task_state.canceled,
+                    failed: task_state.failed,
+                    total: task_state.total,
+                    metrics: None,
+                };
+
+                logical_to_query_map.insert(context.logical_node_id as usize, node_id as usize);
+                nodes_map.insert(node_id, node);
+            }
         }
 
         // For now, use the first plan's ID if available, otherwise use 0
         let query_id = plans.keys().next().copied().unwrap_or(0);
 
+        // Build adjacency list from logical plan structure
+        let adjacency_list: HashMap<usize, Vec<usize>> =
+            self.build_adjacency_list(plans, &logical_to_query_map);
+
         QueryGraph {
             version: "1.0.0".to_string(),
             query_id,
-            nodes,
-            adjacency_list: HashMap::new(), // TODO: Build from plan structure
+            nodes: nodes_map.into_values().collect(),
+            adjacency_list,
             metrics: None,
         }
     }
 
-    fn generate_node_id(context: &TaskContext) -> u32 {
-        ((context.plan_id as u32) << 16) | ((context.stage_id as u32) << 8) | (context.node_id)
+    pub fn generate_node_id(context: &TaskContext) -> u32 {
+        ((context.plan_id as u32) << 16) | ((context.stage_id as u32) << 8) | context.node_id
     }
 
     fn extract_operation_name(task_name: &str) -> String {
@@ -125,6 +190,76 @@ impl HttpSubscriber {
             super::TaskExecutionStatus::Canceled => NodeStatus::Canceled,
         }
     }
+
+    fn merge_node_status(current: &NodeStatus, new: &NodeStatus) -> NodeStatus {
+        // Priority: Failed > Running > Completed > Canceled > Created
+        match (current, new) {
+            (NodeStatus::Failed, _) | (_, NodeStatus::Failed) => NodeStatus::Failed,
+            (NodeStatus::Running, _) | (_, NodeStatus::Running) => NodeStatus::Running,
+            (NodeStatus::Completed, _) | (_, NodeStatus::Completed) => NodeStatus::Completed,
+            (NodeStatus::Canceled, _) | (_, NodeStatus::Canceled) => NodeStatus::Canceled,
+            _ => NodeStatus::Created,
+        }
+    }
+
+    pub fn build_adjacency_list(
+        &self,
+        plans: &HashMap<u32, PlanState>,
+        logical_to_query_map: &HashMap<usize, usize>,
+    ) -> HashMap<usize, Vec<usize>> {
+        let mut adjacency_list: HashMap<usize, Vec<usize>> = HashMap::new();
+
+        if let Some((_, plan_state)) = plans.iter().next() {
+            // Build logical plan adjacency list first
+            let mut logical_adjacency: HashMap<usize, Vec<usize>> = HashMap::new();
+            self.build_logical_plan_adjacency_list(
+                &plan_state.logical_plan,
+                &mut logical_adjacency,
+            );
+
+            // Convert logical adjacency to query graph adjacency
+            for (logical_parent_id, logical_children) in logical_adjacency {
+                if let Some(query_parent_id) = logical_to_query_map.get(&logical_parent_id) {
+                    let mut query_graph_children = Vec::new();
+                    for logical_child_id in &logical_children {
+                        if let Some(query_child_node) = logical_to_query_map.get(logical_child_id) {
+                            query_graph_children.push(*query_child_node);
+                        }
+                    }
+                    adjacency_list.insert(*query_parent_id, query_graph_children);
+                }
+            }
+        }
+
+        adjacency_list
+    }
+
+    fn build_logical_plan_adjacency_list(
+        &self,
+        plan: &daft_logical_plan::LogicalPlan,
+        adjacency: &mut HashMap<usize, Vec<usize>>,
+    ) {
+        let plan_arc: std::sync::Arc<daft_logical_plan::LogicalPlan> =
+            std::sync::Arc::new(plan.clone());
+
+        let _ = plan_arc.apply(|node| {
+            if let Some(node_id) = node.node_id() {
+                let parent_id = *node_id;
+                let children = node.children();
+
+                let mut child_ids: Vec<usize> = Vec::new();
+                for child in children {
+                    if let Some(child_node_id) = child.node_id() {
+                        child_ids.push(*child_node_id);
+                    }
+                }
+
+                adjacency.insert(parent_id, child_ids);
+            }
+
+            Ok(common_treenode::TreeNodeRecursion::Continue)
+        });
+    }
 }
 
 impl StatisticsSubscriber for HttpSubscriber {
@@ -134,28 +269,94 @@ impl StatisticsSubscriber for HttpSubscriber {
         plans: &HashMap<u32, PlanState>,
         tasks: &HashMap<TaskContext, TaskState>,
     ) -> DaftResult<()> {
+        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber received event: {:?}", event);
+        tracing::info!(target: HTTP_LOG_TARGET, "Plans count: {}, Tasks count: {}", plans.len(), tasks.len());
+
         let query_graph = self.build_query_graph(plans, tasks);
 
-        // Send update asynchronously (fire and forget)
-        let client = self.client.clone();
-        let endpoint = self.endpoint.clone();
-        tokio::spawn(async move {
-            let response = client.post(&endpoint).json(&query_graph).send().await;
+        let endpoint = format!(
+            "{}/queries",
+            env::var("DAFT_DASHBOARD_URL")
+                .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
+        );
+
+        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
+
+        // Build headers
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+
+        if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
+            let auth_value = format!("Bearer {}", auth_token);
+            if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&auth_value) {
+                headers.insert(reqwest::header::AUTHORIZATION, header_value);
+            }
+        }
+
+        let optimized_plan =
+            serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
+
+        // Extract query ID from the first plan state, or generate a new UUID if no plans exist
+        let query_id = plans
+            .values()
+            .next()
+            .map(|plan| plan.query_id.clone())
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let payload = QueryPayload {
+            id: query_id,
+            optimized_plan,
+            run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
+            logs: String::new(),
+        };
+
+        // Send the HTTP request asynchronously and store the handle
+        let runtime = get_io_runtime(false);
+        tracing::info!(
+            target: HTTP_LOG_TARGET,
+            "HttpSubscriber spawning HTTP request task for endpoint: {}",
+            endpoint
+        );
+
+        let task_handle = runtime.spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(1))
+                .default_headers(headers)
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+
+            tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
+            let response = client.post(&endpoint).json(&payload).send().await;
 
             match response {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        tracing::debug!("Successfully sent query graph update");
+                        tracing::debug!(target: HTTP_LOG_TARGET, "Successfully sent query information");
                     } else {
-                        tracing::warn!("Failed to send query graph update: {}", resp.status());
+                        tracing::warn!(target: HTTP_LOG_TARGET, "Failed to send query information: {}", resp.status());
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Error sending query graph update: {}", e);
+                    tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
                 }
             }
         });
 
+        // Store the task handle for later cleanup/flushing
+        if let Ok(mut pending) = self.pending_requests.lock() {
+            pending.push(task_handle);
+        }
+
         Ok(())
+    }
+
+    fn flush(
+        &self,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>>>
+    {
+        Some(Box::pin(self.flush_pending_requests()))
     }
 }
