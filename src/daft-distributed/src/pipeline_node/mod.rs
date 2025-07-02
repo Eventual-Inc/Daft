@@ -45,6 +45,8 @@ mod sink;
 mod translate;
 mod unpivot;
 mod window;
+mod gather;
+mod top_n;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;

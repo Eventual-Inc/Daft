@@ -17,11 +17,7 @@ use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        groupby_agg::GroupbyAggNode, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode,
-        limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
-        DistributedPipelineNode, NodeID,
+        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode, gather::GatherNode, groupby_agg::GroupbyAggNode, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode, limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID
     },
     stage::StageConfig,
 };
@@ -223,10 +219,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Aggregate(aggregate) => {
-                if aggregate.groupby.is_empty() {
-                    todo!("FLOTILLA_MS2: Implement Aggregate without groupby")
-                }
-
                 let groupby = BoundExpr::bind_all(&aggregate.groupby, &aggregate.input.schema())?;
                 let aggregations = aggregate
                     .aggregations
@@ -260,16 +252,27 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced();
 
-                // Second stage repartition to distribute the dataset
-                let repartition = RepartitionNode::new(
-                    &self.stage_config,
-                    node_id,
-                    groupby.clone(),
-                    20, // TODO(colin): How do we determine this?
-                    first_stage_schema,
-                    initial_groupby,
-                )
-                .arced();
+                // Second stage:
+                // If 0 groupby columns, gather all data to a single node
+                // Else, repartition to distribute the dataset
+                let transfer = if groupby.is_empty() {
+                    GatherNode::new(
+                        &self.stage_config,
+                        node_id,
+                        first_stage_schema,
+                        initial_groupby,
+                    ).arced()
+                } else {
+                    RepartitionNode::new(
+                        &self.stage_config,
+                        node_id,
+                        groupby.clone(),
+                        20, // TODO(colin): How do we determine this?
+                        first_stage_schema,
+                        initial_groupby,
+                    )
+                    .arced()
+                };
 
                 // Third stage re-groupby-agg to compute the final result
                 let final_groupby = GroupbyAggNode::new(
@@ -278,7 +281,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     groupby,
                     second_stage_aggs,
                     second_stage_schema,
-                    repartition,
+                    transfer,
                 )
                 .arced();
 
@@ -409,8 +412,21 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Sort(_) => {
                 todo!("FLOTILLA_MS2: Implement Sort")
             }
-            LogicalPlan::TopN(_) => {
-                todo!("FLOTILLA_MS2: Implement TopN")
+            LogicalPlan::TopN(top_n) => {
+                // First stage: Perform a local topN
+                let local_topn = TopNNode::new(
+                    &self.stage_config,
+                    node_id,
+                    top_n.top_n,
+                    top_n.input.schema(),
+                );
+
+                let repartition = RepartitionNode::new(
+                    &self.stage_config,
+                    node_id,
+                    vec![],
+                    20, // TODO(colin): How do we determine this?
+                )
             }
             LogicalPlan::Pivot(_) => {
                 todo!("FLOTILLA_MS3: Implement Pivot")
