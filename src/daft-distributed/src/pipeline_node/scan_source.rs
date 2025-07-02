@@ -68,10 +68,9 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        let max_sources_per_scan_task = self.config.execution_config.max_sources_per_scan_task;
-        for scan_tasks in self.scan_tasks.chunks(max_sources_per_scan_task) {
+        for scan_task in self.scan_tasks.iter() {
             let task = self.make_source_tasks(
-                scan_tasks.to_vec().into(),
+                vec![scan_task.clone()].into(),
                 TaskContext::from((&self.context, task_id_counter.next())),
             )?;
             if result_tx
@@ -105,7 +104,6 @@ impl ScanSourceNode {
             Default::default(),
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }
@@ -120,7 +118,6 @@ impl ScanSourceNode {
             psets,
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }

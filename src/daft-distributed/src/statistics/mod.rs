@@ -4,12 +4,10 @@ use std::sync::{Arc, Mutex};
 use common_error::DaftResult;
 use daft_logical_plan::LogicalPlanRef;
 
-use crate::scheduling::task::{TaskContext, TaskName};
+use crate::scheduling::task::{TaskContext, TaskName, TaskStatus};
 
 pub mod http_subscriber;
 pub use http_subscriber::{HttpSubscriber, QueryGraph, QueryGraphNode, MetricDisplayInformation};
-
-pub mod usage_example;
 
 #[derive(Debug, Clone)]
 pub struct PlanState {
@@ -48,27 +46,55 @@ pub(crate) enum StatisticsEvent {
     ScheduledTask {
         context: TaskContext,
     },
-    FinishedTask {
-        context: TaskContext,
-    },
-    // Additional events for more detailed tracking
     TaskStarted {
         context: TaskContext,
     },
-    TaskFailed {
+    FinishedTask {
         context: TaskContext,
-        error: String,
     },
-    TaskCanceled {
+    #[allow(dead_code)]
+    FailedTask {
+        context: TaskContext,
+        reason: String,
+    },
+    CancelledTask {
         context: TaskContext,
     },
     PlanStarted {
         plan_id: u32,
-        plan_description: String,
+        description: String,
     },
     PlanFinished {
         plan_id: u32,
+        description: String,
     },
+}
+
+impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
+    fn from((context, result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
+        match result {
+            Ok(status) => match status {
+                TaskStatus::Success { .. } => Self::FinishedTask { context },
+                TaskStatus::Failed { error, .. } => Self::FailedTask {
+                    context,
+                    reason: error.to_string(),
+                },
+                TaskStatus::Cancelled => Self::CancelledTask { context },
+                TaskStatus::WorkerDied => Self::FailedTask {
+                    context,
+                    reason: "Worker died".to_string(),
+                },
+                TaskStatus::WorkerUnavailable => Self::FailedTask {
+                    context,
+                    reason: "Worker unavailable".to_string(),
+                },
+            },
+            Err(e) => Self::FailedTask {
+                context,
+                reason: e.to_string(),
+            },
+        }
+    }
 }
 
 pub trait StatisticsSubscriber: Send + Sync + 'static {
@@ -159,7 +185,7 @@ impl StatisticsManager {
                     task_state.completed += 1;
                 }
             }
-            StatisticsEvent::TaskFailed { context, .. } => {
+            StatisticsEvent::FailedTask { context, .. } => {
                 if let Some(task_state) = tasks.get_mut(context) {
                     task_state.status = TaskExecutionStatus::Failed;
                     if task_state.pending > 0 {
@@ -168,7 +194,7 @@ impl StatisticsManager {
                     task_state.failed += 1;
                 }
             }
-            StatisticsEvent::TaskCanceled { context } => {
+            StatisticsEvent::CancelledTask { context } => {
                 if let Some(task_state) = tasks.get_mut(context) {
                     task_state.status = TaskExecutionStatus::Canceled;
                     if task_state.pending > 0 {

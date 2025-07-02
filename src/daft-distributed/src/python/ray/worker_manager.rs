@@ -8,8 +8,8 @@ use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
-    scheduler::{SchedulableTask, WorkerSnapshot},
-    task::{SwordfishTask, TaskID, TaskResultHandleAwaiter},
+    scheduler::WorkerSnapshot,
+    task::{SwordfishTask, TaskContext},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -20,11 +20,9 @@ pub(crate) struct RayWorkerManager {
 }
 
 impl RayWorkerManager {
-    pub fn try_new() -> DaftResult<Self> {
-        let task_locals = Python::with_gil(|py| {
-            pyo3_async_runtimes::tokio::get_current_locals(py)
-                .expect("Failed to get current task locals")
-        });
+    pub fn try_new(py: Python) -> DaftResult<Self> {
+        let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)
+            .expect("Failed to get current task locals");
 
         Ok(Self {
             ray_workers: Arc::new(Mutex::new(HashMap::new())),
@@ -32,29 +30,30 @@ impl RayWorkerManager {
         })
     }
 
-    fn refresh_workers(&self) -> DaftResult<()> {
-        Python::with_gil(|py| {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+    fn refresh_workers(&self, py: Python) -> DaftResult<()> {
+        let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
 
-            // Get existing worker IDs to avoid duplicates
-            let mut workers_guard = self.ray_workers.lock().expect("Failed to lock ray_workers");
+        // Get existing worker IDs to avoid duplicates
+        let mut workers_guard = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
 
-            let ray_workers = flotilla_module
-                .call_method1(
-                    pyo3::intern!(py, "start_ray_workers"),
-                    (workers_guard
-                        .keys()
-                        .map(|id| id.as_ref())
-                        .collect::<Vec<_>>(),),
-                )?
-                .extract::<Vec<RaySwordfishWorker>>()?;
+        let ray_workers = flotilla_module
+            .call_method1(
+                pyo3::intern!(py, "start_ray_workers"),
+                (workers_guard
+                    .keys()
+                    .map(|id| id.as_ref())
+                    .collect::<Vec<_>>(),),
+            )?
+            .extract::<Vec<RaySwordfishWorker>>()?;
 
-            for worker in ray_workers {
-                workers_guard.insert(worker.id().clone(), worker);
-            }
+        for worker in ray_workers {
+            workers_guard.insert(worker.id().clone(), worker);
+        }
 
-            DaftResult::Ok(())
-        })
+        DaftResult::Ok(())
     }
 }
 
@@ -63,18 +62,20 @@ impl WorkerManager for RayWorkerManager {
 
     fn submit_tasks_to_workers(
         &self,
-        tasks_per_worker: HashMap<WorkerId, Vec<SchedulableTask<SwordfishTask>>>,
-    ) -> DaftResult<Vec<TaskResultHandleAwaiter<RayTaskResultHandle>>> {
-        // Refresh workers before submitting tasks to ensure we have the latest workers
-        self.refresh_workers()?;
-
+        tasks_per_worker: HashMap<WorkerId, Vec<SwordfishTask>>,
+    ) -> DaftResult<Vec<RayTaskResultHandle>> {
         Python::with_gil(|py| {
+            // Refresh workers before submitting tasks to ensure we have the latest workers
+            self.refresh_workers(py)?;
             let mut task_result_handles =
                 Vec::with_capacity(tasks_per_worker.values().map(|v| v.len()).sum());
 
-            let mut workers_guard = self.ray_workers.lock().expect("Failed to lock ray_workers");
+            let mut workers = self
+                .ray_workers
+                .lock()
+                .expect("Failed to lock RayWorkerManager");
             for (worker_id, tasks) in tasks_per_worker {
-                let handles = workers_guard
+                let handles = workers
                     .get_mut(&worker_id)
                     .expect("Worker should be present in RayWorkerManager")
                     .submit_tasks(tasks, py, &self.task_locals)?;
@@ -85,25 +86,42 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {
-        self.refresh_workers()?;
-        let workers_guard = self.ray_workers.lock().expect("Failed to lock ray_workers");
+        Python::with_gil(|py| self.refresh_workers(py))?;
+        let workers_guard = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
         Ok(workers_guard
             .values()
             .map(WorkerSnapshot::from)
             .collect::<Vec<_>>())
     }
 
-    fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId) {
-        let mut workers_guard = self.ray_workers.lock().expect("Failed to lock ray_workers");
-        workers_guard
-            .get_mut(worker_id)
+    fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId) {
+        let mut workers = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
+        workers
+            .get_mut(&worker_id)
             .expect("Worker should be present in RayWorkerManager")
-            .mark_task_finished(task_id);
+            .mark_task_finished(&task_context);
+    }
+
+    fn mark_worker_died(&self, worker_id: WorkerId) {
+        let mut workers_guard = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
+        workers_guard.remove(&worker_id);
     }
 
     fn shutdown(&self) -> DaftResult<()> {
         Python::with_gil(|py| {
-            let workers_guard = self.ray_workers.lock().expect("Failed to lock ray_workers");
+            let workers_guard = self
+                .ray_workers
+                .lock()
+                .expect("Failed to lock RayWorkerManager");
             for worker in workers_guard.values() {
                 worker.shutdown(py);
             }
