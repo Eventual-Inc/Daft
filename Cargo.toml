@@ -152,7 +152,7 @@ inherits = "dev"
 debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-libc = {version = "^0.2.150", default-features = false}
+libc = {version = "^0.2.174", default-features = false}
 tikv-jemallocator = {version = "0.6.0", features = [
   "disable_initial_exec_tls"
 ]}
@@ -280,7 +280,7 @@ pretty_assertions = "1.4.1"
 proptest = "1.5.0"
 prost = "0.13.5"
 prost-types = "0.13.5"
-rand = "^0.8"
+rand = "^0.9"
 rayon = "1.10.0"
 regex = "1.10.4"
 rstest = "0.18.2"
@@ -291,12 +291,12 @@ sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"
-sysinfo = "0.32.0"
+sysinfo = "0.35.2"
 tango-bench = "0.6.0"
-test-log = "0.2.16"
+test-log = "0.2.18"
 thiserror = "2.0.12"
 tiktoken-rs = "0.7.0"
-tokio = {version = "1.37.0", features = [
+tokio = {version = "1.46.0", features = [
   "net",
   "time",
   "bytes",
