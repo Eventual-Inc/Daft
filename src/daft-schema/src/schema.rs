@@ -391,6 +391,42 @@ impl Schema {
         }))
         .to_string()
     }
+
+    pub fn max_fixed_byte_column(&self) -> Option<&str> {
+        self.fields
+            .iter()
+            .filter(|f| f.dtype.is_fixed_size())
+            .filter_map(|f| f.fixed_byte_size().map(|s| (s, f.name.as_str())))
+            .fold(None, |max, (size, name)| match max {
+                Some((max_size, max_name)) => {
+                    if size > max_size {
+                        Some((size, name))
+                    } else {
+                        Some((max_size, max_name))
+                    }
+                }
+                None => Some((size, name)),
+            })
+            .map(|(_, name)| name)
+    }
+
+    pub fn min_fixed_byte_column(&self) -> Option<&str> {
+        self.fields
+            .iter()
+            .filter(|f| f.dtype.is_fixed_size())
+            .filter_map(|f| f.fixed_byte_size().map(|s| (s, f.name.as_str())))
+            .fold(None, |min, (size, name)| match min {
+                Some((min_size, min_name)) => {
+                    if size < min_size {
+                        Some((size, name))
+                    } else {
+                        Some((min_size, min_name))
+                    }
+                }
+                None => Some((size, name)),
+            })
+            .map(|(_, name)| name)
+    }
 }
 
 impl Default for Schema {
