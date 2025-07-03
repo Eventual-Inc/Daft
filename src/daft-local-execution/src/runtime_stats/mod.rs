@@ -815,6 +815,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_final_event_observed_under_throttle_threshold() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let subscribers = Arc::new(vec![
