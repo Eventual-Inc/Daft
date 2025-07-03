@@ -10,21 +10,21 @@ pub async fn test_full_get(
     parquet_file_path: &str,
     all_bytes: &Bytes,
 ) -> crate::Result<()> {
-    let first_bytes = client
+    let first_ten_bytes = client
         .get(parquet_file_path, Some((0..10).into()), None)
         .await?
         .bytes()
         .await?;
-    assert_eq!(first_bytes.len(), 10);
-    assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
+    assert_eq!(first_ten_bytes.len(), 10);
+    assert_eq!(first_ten_bytes.as_ref(), &all_bytes[..10]);
 
-    let first_bytes = client
+    let mid_ninety_bytes = client
         .get(parquet_file_path, Some(GetRange::Bounded(10..100)), None)
         .await?
         .bytes()
         .await?;
-    assert_eq!(first_bytes.len(), 90);
-    assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
+    assert_eq!(mid_ninety_bytes.len(), 90);
+    assert_eq!(mid_ninety_bytes.as_ref(), &all_bytes[10..100]);
 
     let last_ten_bytes = client
         .get(parquet_file_path, Some(GetRange::Suffix(10)), None)
@@ -58,6 +58,11 @@ pub async fn test_full_get(
             Some(GetRange::Offset(all_bytes.len() + 1)),
             None,
         )
+        .await;
+    assert!(invalid_range_ret.is_err());
+
+    let invalid_range_ret = client
+        .get(parquet_file_path, Some(GetRange::Bounded(10..10)), None)
         .await;
     assert!(invalid_range_ret.is_err());
 

@@ -21,7 +21,7 @@ use crate::{
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, GetResult,
+    FileFormat, GetResult, InvalidRangeRequestSnafu,
 };
 
 const AZURE_DELIMITER: &str = "/";
@@ -543,12 +543,12 @@ impl ObjectSource for AzureBlobSource {
         let blob_client = container_client.blob_client(key);
         let request_builder = blob_client.get();
         let request_builder = if let Some(range) = range {
-            match range {
-                GetRange::Bounded(u) => request_builder.range(u),
-                GetRange::Offset(n) => request_builder.range(n..),
+            match range.as_valid_range().context(InvalidRangeRequestSnafu)? {
+                GetRange::Bounded(u) => request_builder.range(u.start..u.end),
+                GetRange::Offset(n) => request_builder.range(*n..),
                 GetRange::Suffix(n) => {
                     let size = self.get_size(uri, io_stats.clone()).await?;
-                    request_builder.range(size.saturating_sub(n)..)
+                    request_builder.range(size.saturating_sub(*n)..)
                 }
             }
         } else {

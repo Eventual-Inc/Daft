@@ -209,11 +209,18 @@ impl GCSClientWrapper {
             object: key.into(),
             ..Default::default()
         };
-        use google_cloud_storage::http::objects::download::Range as GRange;
+        use google_cloud_storage::http::objects::download::Range as GcsRange;
         let (grange, size) = if let Some(range) = range {
-            range.as_grange().context(InvalidRangeRequestSnafu)?
+            match range.as_valid_range().context(InvalidRangeRequestSnafu)? {
+                GetRange::Bounded(r) => (
+                    GcsRange(Some(r.start as u64), Some(r.end as u64)),
+                    Some(r.len()),
+                ),
+                GetRange::Offset(o) => (GcsRange(Some(*o as u64), None), None),
+                GetRange::Suffix(n) => (GcsRange(None, Some(*n as u64)), Some(*n)),
+            }
         } else {
-            (GRange::default(), None)
+            (GcsRange::default(), None)
         };
         let owned_uri = uri.to_string();
         let response = client

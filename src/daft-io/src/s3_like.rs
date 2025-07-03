@@ -55,7 +55,7 @@ use crate::{
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     Error::InvalidArgument,
-    FileFormat, InvalidArgumentSnafu, SourceType,
+    FileFormat, InvalidArgumentSnafu, InvalidRangeRequestSnafu, SourceType,
 };
 
 const S3_DELIMITER: &str = "/";
@@ -716,7 +716,12 @@ impl S3LikeSource {
 
             let request = match &range {
                 None => request,
-                Some(range) => request.range(range.to_string()),
+                Some(range) => request.range(
+                    range
+                        .as_valid_range()
+                        .context(InvalidRangeRequestSnafu)?
+                        .to_string(),
+                ),
             };
 
             let response = request.send().await;
@@ -1685,7 +1690,6 @@ mod tests {
 
         let config = S3Config {
             anonymous: true,
-            region_name: Some("us-west-2".into()),
             ..Default::default()
         };
         let client = S3LikeSource::get_client(&config).await?;

@@ -23,7 +23,7 @@ use crate::{
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat,
+    FileFormat, InvalidRangeRequestSnafu,
 };
 
 #[derive(Debug, Snafu)]
@@ -259,7 +259,10 @@ impl ObjectSource for HFSource {
         let request = self.http_source.client.get(uri);
         let request = match range {
             None => request,
-            Some(range) => request.header(RANGE, range.to_string()),
+            Some(range) => {
+                let valid_range = range.as_valid_range().context(InvalidRangeRequestSnafu)?;
+                request.header(RANGE, valid_range.to_string())
+            }
         };
 
         let response = request

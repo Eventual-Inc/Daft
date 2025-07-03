@@ -1,9 +1,24 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::{
     fmt::Display,
     ops::{Range, RangeBounds},
 };
-
-use google_cloud_storage::http::objects::download::Range as GRange;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -18,7 +33,6 @@ pub enum InvalidGetRange {
     TooLarge { requested: usize, max: usize },
 }
 
-/// Inspired from the GetRange of arrow object store.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum GetRange {
     /// Request a specific range of bytes
@@ -30,7 +44,7 @@ pub enum GetRange {
 }
 
 impl GetRange {
-    pub fn is_valid(&self) -> Result<(), InvalidGetRange> {
+    pub fn as_valid_range(&self) -> Result<&Self, InvalidGetRange> {
         if let Self::Bounded(r) = self {
             if r.end <= r.start {
                 return Err(InvalidGetRange::Inconsistent {
@@ -39,11 +53,11 @@ impl GetRange {
                 });
             }
         }
-        Ok(())
+        Ok(self)
     }
+
     pub fn as_range(&self, len: usize) -> Result<Range<usize>, InvalidGetRange> {
-        self.is_valid()?;
-        match self {
+        match self.as_valid_range()? {
             Self::Bounded(r) => {
                 if r.start >= len {
                     Err(InvalidGetRange::StartTooLarge {
@@ -67,18 +81,6 @@ impl GetRange {
                 }
             }
             Self::Suffix(n) => Ok(len.saturating_sub(*n)..len),
-        }
-    }
-
-    pub fn as_grange(&self) -> Result<(GRange, Option<usize>), InvalidGetRange> {
-        self.is_valid()?;
-        match self {
-            Self::Bounded(r) => Ok((
-                GRange(Some(r.start as u64), Some(r.end as u64)),
-                Some(r.len()),
-            )),
-            Self::Offset(o) => Ok((GRange(Some(*o as u64), None), None)),
-            Self::Suffix(n) => Ok((GRange(None, Some(*n as u64)), Some(*n))),
         }
     }
 }
@@ -112,6 +114,8 @@ impl<T: RangeBounds<usize>> From<T> for GetRange {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound::{Excluded, Included, Unbounded};
+
     use crate::range::GetRange;
 
     #[test]
@@ -126,7 +130,21 @@ mod tests {
         assert_eq!(Into::<GetRange>::into(10..15), GetRange::Bounded(10..15),);
         assert_eq!(Into::<GetRange>::into(10..=15), GetRange::Bounded(10..16),);
         assert_eq!(Into::<GetRange>::into(10..), GetRange::Offset(10),);
+        assert_eq!(Into::<GetRange>::into(..15), GetRange::Bounded(0..15));
         assert_eq!(Into::<GetRange>::into(..=15), GetRange::Bounded(0..16));
+        assert_eq!(Into::<GetRange>::into(..), GetRange::Offset(0));
+        assert_eq!(
+            Into::<GetRange>::into((Excluded(10), Included(15))),
+            GetRange::Bounded(11..16)
+        );
+        assert_eq!(
+            Into::<GetRange>::into((Excluded(10), Excluded(15))),
+            GetRange::Bounded(11..15)
+        );
+        assert_eq!(
+            Into::<GetRange>::into((Excluded(10), Unbounded)),
+            GetRange::Offset(11)
+        );
     }
 
     #[test]
@@ -140,10 +158,6 @@ mod tests {
         let range = GetRange::Bounded(3..3);
         let err = range.as_range(2).unwrap_err().to_string();
         assert_eq!(err, "Range started at 3 and ended at 3");
-
-        let range = GetRange::Bounded(2..2);
-        let err = range.as_range(3).unwrap_err().to_string();
-        assert_eq!(err, "Range started at 2 and ended at 2");
 
         let range = GetRange::Suffix(3);
         assert_eq!(range.as_range(3).unwrap(), 0..3);
@@ -167,39 +181,5 @@ mod tests {
 
         let range = GetRange::Offset(1);
         assert_eq!(range.as_range(2).unwrap(), 1..2);
-    }
-
-    #[test]
-    fn test_as_grange() {
-        use google_cloud_storage::http::objects::download::Range as GRange;
-        fn assert_as_grange(
-            actual: (GRange, Option<usize>),
-            expected_range: GRange,
-            expected_len: Option<usize>,
-        ) {
-            let (range, len) = actual;
-            assert_eq!(range.0, expected_range.0);
-            assert_eq!(range.1, expected_range.1);
-            assert_eq!(len, expected_len)
-        }
-
-        let range = GetRange::Bounded(2..5);
-        assert_as_grange(
-            range.as_grange().unwrap(),
-            GRange(Some(2), Some(5)),
-            Some(3),
-        );
-
-        let range = GetRange::Bounded(3..3);
-        assert!(range.as_grange().is_err());
-
-        let range = GetRange::Suffix(3);
-        assert_as_grange(range.as_grange().unwrap(), GRange(None, Some(3)), Some(3));
-
-        let range = GetRange::Suffix(0);
-        assert_as_grange(range.as_grange().unwrap(), GRange(None, Some(0)), Some(0));
-
-        let range = GetRange::Offset(2);
-        assert_as_grange(range.as_grange().unwrap(), GRange(Some(2), None), None);
     }
 }

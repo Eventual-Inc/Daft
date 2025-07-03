@@ -181,6 +181,9 @@ use crate::range::GetRange;
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
+    /// Return the bytes with given range.
+    /// Will return [`Error::InvalidRangeRequest`] if range start is greater than range end
+    /// or range start is greater than object size.
     async fn get(
         &self,
         uri: &str,
