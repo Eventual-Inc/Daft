@@ -83,7 +83,7 @@ impl LocalPartitionStream {
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "daft.daft", name = "NativeExecutor")
+    pyclass(module = "daft.daft", name = "NativeExecutor", frozen)
 )]
 pub struct PyNativeExecutor {
     executor: NativeExecutor,
