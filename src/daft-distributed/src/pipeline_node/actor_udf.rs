@@ -171,6 +171,7 @@ impl ActorUDF {
         memory_request: u64,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: NodeID,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             stage_config,
@@ -178,6 +179,7 @@ impl ActorUDF {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
         let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
         Ok(Self {

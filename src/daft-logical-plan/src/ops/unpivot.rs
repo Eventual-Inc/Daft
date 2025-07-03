@@ -16,6 +16,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Unpivot {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
     pub ids: Vec<ExprRef>,
     pub values: Vec<ExprRef>,
@@ -36,6 +37,7 @@ impl Unpivot {
     ) -> Self {
         Self {
             plan_id: None,
+            node_id: None,
             input,
             ids,
             values,
@@ -48,6 +50,11 @@ impl Unpivot {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -85,6 +92,7 @@ impl Unpivot {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             ids,
             values,

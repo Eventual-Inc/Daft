@@ -21,7 +21,7 @@ pub(crate) struct InMemorySourceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     info: InMemoryInfo,
-    input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 }
 
 impl InMemorySourceNode {
@@ -31,17 +31,24 @@ impl InMemorySourceNode {
         stage_config: &StageConfig,
         node_id: NodeID,
         info: InMemoryInfo,
-        input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        logical_node_id: NodeID,
     ) -> Self {
-        let context =
-            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![],
+            vec![],
+            logical_node_id,
+        );
         let config =
             PipelineNodeConfig::new(info.source_schema.clone(), stage_config.config.clone());
         Self {
             config,
             context,
             info,
-            input_psets,
+            psets,
         }
     }
 
@@ -54,7 +61,7 @@ impl InMemorySourceNode {
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
-        let partition_refs = self.input_psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
+        let partition_refs = self.psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
 
         for partition_ref in partition_refs {
             let task = self.make_task_for_partition_refs(

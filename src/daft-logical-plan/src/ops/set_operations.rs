@@ -104,7 +104,7 @@ const V_MIN_COUNT: &str = "__min_count";
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Intersect {
     pub plan_id: Option<usize>,
-    // Upstream nodes.
+    pub node_id: Option<usize>,
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
     pub is_all: bool,
@@ -121,6 +121,7 @@ impl Intersect {
         check_structurally_equal(lhs_schema, rhs_schema, "intersect")?;
         Ok(Self {
             plan_id: None,
+            node_id: None,
             lhs,
             rhs,
             is_all,
@@ -129,6 +130,11 @@ impl Intersect {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -251,7 +257,7 @@ impl Intersect {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Union {
     pub plan_id: Option<usize>,
-    // Upstream nodes.
+    pub node_id: Option<usize>,
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
     pub quantifier: SetQuantifier,
@@ -287,6 +293,7 @@ impl Union {
         }
         Ok(Self {
             plan_id: None,
+            node_id: None,
             lhs,
             rhs,
             quantifier,
@@ -296,6 +303,11 @@ impl Union {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 

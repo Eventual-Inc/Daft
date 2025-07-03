@@ -27,7 +27,7 @@ pub(crate) struct SinkNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     sink_info: Arc<SinkInfo>,
-    data_schema: SchemaRef,
+    input_schema: SchemaRef,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -38,9 +38,10 @@ impl SinkNode {
         stage_config: &StageConfig,
         node_id: NodeID,
         sink_info: Arc<SinkInfo>,
-        file_schema: SchemaRef,
-        data_schema: SchemaRef,
+        schema: SchemaRef,
+        input_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: NodeID,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
@@ -48,13 +49,14 @@ impl SinkNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
-        let config = PipelineNodeConfig::new(file_schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
         Self {
             config,
             context,
             sink_info,
-            data_schema,
+            input_schema,
             child,
         }
     }
@@ -120,7 +122,7 @@ impl SinkNode {
         sender: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let file_schema = self.config.schema.clone();
-        let data_schema = self.data_schema.clone();
+        let data_schema = self.input_schema.clone();
         let materialized_stream = input.materialize(scheduler);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
         let task = make_new_task_from_materialized_outputs(
@@ -219,7 +221,7 @@ impl DistributedPipelineNode for SinkNode {
 
         let sink_node = self.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            sink_node.create_sink_plan(input, sink_node.data_schema.clone())
+            sink_node.create_sink_plan(input, sink_node.input_schema.clone())
         };
 
         let pipelined_node_with_writes =

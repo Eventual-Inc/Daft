@@ -175,10 +175,9 @@ impl TryFrom<ExprRef> for JoinPredicate {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Join {
     pub plan_id: Option<usize>,
-    // Upstream nodes.
+    pub node_id: Option<usize>,
     pub left: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
-
     pub on: JoinPredicate,
     pub join_type: JoinType,
     pub join_strategy: Option<JoinStrategy>,
@@ -202,6 +201,7 @@ impl Join {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             left,
             right,
             on,
@@ -214,6 +214,11 @@ impl Join {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
