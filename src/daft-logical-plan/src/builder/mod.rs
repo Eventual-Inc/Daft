@@ -321,7 +321,7 @@ impl LogicalPlanBuilder {
         expr_resolver.resolve_window_spec(window_spec, self.plan.clone())
     }
 
-    pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
+    pub fn limit(&self, limit: u64, eager: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
         Ok(self.with_new_plan(logical_plan))
     }
@@ -984,7 +984,13 @@ impl PyLogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
-        Ok(self.builder.limit(limit, eager)?.into())
+        if limit < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "LIMIT <n> must be greater than or equal to 0, instead got: {}",
+                limit
+            )));
+        }
+        Ok(self.builder.limit(limit as u64, eager)?.into())
     }
 
     pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {

@@ -22,7 +22,7 @@ def sanitize_table_for_deltalake(
 ) -> pa.Table:
     from deltalake.schema import _convert_pa_schema_to_delta
 
-    from daft.io._deltalake import large_dtypes_kwargs
+    from daft.io.delta_lake._deltalake import large_dtypes_kwargs
 
     arrow_table = table.to_arrow()
 

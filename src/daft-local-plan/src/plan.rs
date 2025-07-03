@@ -189,7 +189,7 @@ impl LocalPhysicalPlan {
 
     pub fn limit(
         input: LocalPhysicalPlanRef,
-        num_rows: i64,
+        num_rows: u64,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
@@ -481,7 +481,7 @@ impl LocalPhysicalPlan {
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: i64,
+        limit: u64,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
@@ -965,7 +965,7 @@ pub struct Filter {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
-    pub num_rows: i64,
+    pub num_rows: u64,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -994,7 +994,7 @@ pub struct TopN {
     pub sort_by: Vec<BoundExpr>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
-    pub limit: i64,
+    pub limit: u64,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

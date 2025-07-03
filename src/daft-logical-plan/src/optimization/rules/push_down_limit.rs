@@ -98,15 +98,15 @@ impl PushDownLimit {
                     LogicalPlan::Limit(LogicalLimit {
                         input,
                         limit: child_limit,
-                        eager: child_eagar,
+                        eager: child_eager,
                         ..
                     }) => {
                         let new_limit = limit.min(*child_limit as usize);
-                        let new_eager = eager | child_eagar;
+                        let new_eager = eager | child_eager;
 
                         let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
                             input.clone(),
-                            new_limit as i64,
+                            new_limit as u64,
                             new_eager,
                         )));
                         // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
@@ -131,7 +131,7 @@ impl PushDownLimit {
                             sort_by.clone(),
                             descending.clone(),
                             nulls_first.clone(),
-                            limit as i64,
+                            limit as u64,
                         )?));
 
                         Ok(Transformed::yes(new_plan))

@@ -458,13 +458,18 @@ impl SQLPlanner<'_> {
         }
 
         if let Some(limit) = &query.limit {
-            let limit = self.plan_expr(limit)?;
-            if let Expr::Literal(LiteralValue::Int64(limit)) = limit.as_ref() {
-                self.update_plan(|plan| plan.limit(*limit, true))?; // TODO: Should this be eager or not?
-            } else {
-                invalid_operation_err!(
-                    "LIMIT <n> must be a constant integer, instead got: {limit}"
-                );
+            let limit_expr = self.plan_expr(limit)?;
+            match limit_expr.as_ref() {
+                Expr::Literal(LiteralValue::Int64(limit)) if *limit >= 0 => {
+                    // TODO: Should this be eager or not?
+                    self.update_plan(|plan| plan.limit(*limit as u64, true))?;
+                }
+                Expr::Literal(LiteralValue::Int64(limit)) => invalid_operation_err!(
+                    "LIMIT <n> must be greater than or equal to 0, instead got: {limit}"
+                ),
+                _ => invalid_operation_err!(
+                    "LIMIT <n> must be a constant integer, instead got: {limit_expr}"
+                ),
             }
         }
 

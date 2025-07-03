@@ -51,7 +51,7 @@ def read_deltalake(
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
     """
-    from daft.delta_lake.delta_lake_scan import DeltaLakeScanOperator
+    from daft.io.delta_lake.delta_lake_scan import DeltaLakeScanOperator
 
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
