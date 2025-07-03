@@ -150,7 +150,7 @@ class MicroPartition:
         return self.to_record_batch()
 
     def to_record_batch(self) -> RecordBatch:
-        """Returns the MicroPartition as a RecordBatch."""
+        """Returns the MicroPartition as a single (concatenated) RecordBatch."""
         return RecordBatch._from_pyrecordbatch(self._micropartition.to_record_batch())
 
     def to_arrow(self, concat_record_batches: bool = False) -> pa.Table:
@@ -442,9 +442,8 @@ class MicroPartition:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], MicroPartition], tuple[dict[str, Series]]]:
-        names = self.column_names()
-        return MicroPartition.from_pydict, ({name: self.get_column_by_name(name) for name in names},)
+    def __reduce__(self) -> tuple[Callable[[list[RecordBatch]], MicroPartition], tuple[list[RecordBatch]]]:
+        return MicroPartition._from_record_batches, (self.get_record_batches(),)
 
     @classmethod
     def read_parquet_statistics(
