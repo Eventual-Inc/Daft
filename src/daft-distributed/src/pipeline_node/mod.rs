@@ -108,6 +108,7 @@ pub(super) struct PipelineNodeContext {
     pub node_name: NodeName,
     pub child_ids: Vec<NodeID>,
     pub child_names: Vec<NodeName>,
+    pub logical_node_id: NodeID,
 }
 
 impl PipelineNodeContext {
@@ -117,6 +118,7 @@ impl PipelineNodeContext {
         node_name: NodeName,
         child_ids: Vec<NodeID>,
         child_names: Vec<NodeName>,
+        logical_node_id: NodeID,
     ) -> Self {
         Self {
             plan_id: stage_config.plan_id,
@@ -125,6 +127,7 @@ impl PipelineNodeContext {
             node_name,
             child_ids,
             child_names,
+            logical_node_id,
         }
     }
 
@@ -136,6 +139,10 @@ impl PipelineNodeContext {
             ("node_name".to_string(), self.node_name.to_string()),
             ("child_ids".to_string(), self.child_ids.iter().join(",")),
             ("child_names".to_string(), self.child_names.iter().join(",")),
+            (
+                "logical_node_id".to_string(),
+                self.logical_node_id.to_string(),
+            ),
         ])
     }
 }

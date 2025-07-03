@@ -26,7 +26,7 @@ pub(crate) struct ScanSourceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
-    scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    scan_tasks: Vec<ScanTaskLikeRef>,
 }
 
 impl ScanSourceNode {
@@ -36,11 +36,18 @@ impl ScanSourceNode {
         stage_config: &StageConfig,
         node_id: NodeID,
         pushdowns: Pushdowns,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        scan_tasks: Vec<ScanTaskLikeRef>,
         schema: SchemaRef,
+        logical_node_id: NodeID,
     ) -> Self {
-        let context =
-            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![],
+            vec![],
+            logical_node_id,
+        );
         let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
         Self {
             config,
@@ -68,7 +75,7 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        for scan_task in self.scan_tasks.iter() {
+        for scan_task in &self.scan_tasks {
             let task = self.make_source_tasks(
                 vec![scan_task.clone()].into(),
                 TaskContext::from((&self.context, task_id_counter.next())),
@@ -216,7 +223,7 @@ Estimated Scan Bytes = {total_bytes}
                 let mut s = base_display(self);
                 writeln!(s, "Scan Tasks: [").unwrap();
 
-                for st in self.scan_tasks.iter() {
+                for st in &self.scan_tasks {
                     writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
                 }
                 s

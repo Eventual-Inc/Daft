@@ -33,6 +33,8 @@ use crate::{
 pub struct Window {
     /// An id for the plan.
     pub plan_id: Option<usize>,
+    /// An id for the node.
+    pub node_id: Option<usize>,
     /// The input plan.
     pub input: Arc<LogicalPlan>,
     /// The window functions to compute.
@@ -75,6 +77,7 @@ impl Window {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             window_functions,
             aliases,
@@ -82,6 +85,11 @@ impl Window {
             schema,
             stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
+        self
     }
 
     pub fn with_materialized_stats(mut self) -> Self {
@@ -94,6 +102,7 @@ impl Window {
     pub fn with_plan_id(&self, id: Option<usize>) -> LogicalPlan {
         LogicalPlan::Window(Self {
             plan_id: id,
+            node_id: self.node_id,
             input: self.input.clone(),
             window_functions: self.window_functions.clone(),
             aliases: self.aliases.clone(),
