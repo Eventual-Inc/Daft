@@ -442,7 +442,10 @@ class MicroPartition:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple[Callable[[list[RecordBatch]], MicroPartition], tuple[list[RecordBatch]]]:
+    def __reduce__(self) -> tuple[Callable, tuple]:  # type: ignore[type-arg]
+        batches = self.get_record_batches()
+        if len(batches) == 0:
+            return MicroPartition.empty, (self.schema(),)
         return MicroPartition._from_record_batches, (self.get_record_batches(),)
 
     @classmethod
