@@ -629,13 +629,13 @@ impl ObjectSource for AzureBlobSource {
         .await
     }
 
-    async fn iter_dir(
-        &self,
+    async fn iter_dir<'a>(
+        &'a self,
         uri: &str,
         posix: bool,
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    ) -> super::Result<BoxStream<'a, super::Result<FileMetadata>>> {
         let parsed_uri = parse_azure_uri(uri)?;
 
         match parsed_uri.container_and_key {
