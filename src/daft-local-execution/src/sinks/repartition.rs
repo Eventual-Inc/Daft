@@ -68,7 +68,11 @@ pub struct RepartitionSink {
 }
 
 impl RepartitionSink {
-    pub fn new(columns: Vec<BoundExpr>, num_partitions: usize, schema: SchemaRef) -> Self {
+    pub fn new(
+        columns: Vec<BoundExpr>,
+        num_partitions: usize,
+        schema: SchemaRef,
+    ) -> Self {
         Self {
             columns: Arc::new(columns),
             num_partitions,

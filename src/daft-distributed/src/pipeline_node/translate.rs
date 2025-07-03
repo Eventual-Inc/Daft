@@ -291,14 +291,17 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced();
 
                 // Last stage project to get the final result
-                ProjectNode::new(
+                let out = ProjectNode::new(
                     &self.stage_config,
                     node_id,
                     final_exprs,
                     aggregate.output_schema.clone(),
                     final_groupby,
                 )
-                .arced()
+                .arced();
+
+                eprintln!("[PIPELINE] Final Output");
+                out
             }
             LogicalPlan::Distinct(distinct) => {
                 let columns = distinct.columns.clone().unwrap_or_else(|| {

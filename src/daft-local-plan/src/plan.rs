@@ -266,7 +266,7 @@ impl LocalPhysicalPlan {
         })
         .arced()
     }
-    pub(crate) fn ungrouped_aggregate(
+    pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
         schema: SchemaRef,

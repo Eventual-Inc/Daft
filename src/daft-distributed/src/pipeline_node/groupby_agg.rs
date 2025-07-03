@@ -111,15 +111,25 @@ impl DistributedPipelineNode for GroupbyAggNode {
 
         // Pipeline the groupby
         let self_clone = self.clone();
-
+        let no_groupby = self_clone.groupby.is_empty();
+        
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            Ok(LocalPhysicalPlan::hash_aggregate(
-                input,
-                self_clone.aggs.clone(),
-                self_clone.groupby.clone(),
-                self_clone.config.schema.clone(),
-                StatsState::NotMaterialized,
-            ))
+            if no_groupby {
+                Ok(LocalPhysicalPlan::ungrouped_aggregate(
+                    input,
+                    self_clone.aggs.clone(),
+                    self_clone.config.schema.clone(),
+                    StatsState::NotMaterialized,
+                ))
+            } else {
+                Ok(LocalPhysicalPlan::hash_aggregate(
+                    input,
+                    self_clone.aggs.clone(),
+                    self_clone.groupby.clone(),
+                    self_clone.config.schema.clone(),
+                    StatsState::NotMaterialized,
+                ))
+            }
         })
     }
 
