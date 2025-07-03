@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_logical_plan::LogicalPlanRef;
@@ -44,11 +41,11 @@ pub enum TaskExecutionStatus {
     Canceled,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum StatisticsEvent {
-    SubmittedTask {
+    TaskSubmitted {
         context: TaskContext,
         name: TaskName,
     },
@@ -56,19 +53,23 @@ pub(crate) enum StatisticsEvent {
     ScheduledTask {
         context: TaskContext,
     },
-    FinishedTask {
+    TaskCompleted {
         context: TaskContext,
     },
     TaskStarted {
         context: TaskContext,
     },
-    // Additional events for more detailed tracking
-    FailedTask {
+    TaskFailed {
         context: TaskContext,
         reason: String,
     },
-    CancelledTask {
+    TaskCancelled {
         context: TaskContext,
+    },
+    PlanSubmitted {
+        plan_id: u32,
+        query_id: String,
+        logical_plan: LogicalPlanRef,
     },
     PlanStarted {
         plan_id: u32,
@@ -82,22 +83,22 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
     fn from((context, task_result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
         match task_result {
             Ok(task_status) => match task_status {
-                TaskStatus::Success { .. } => Self::FinishedTask { context },
-                TaskStatus::Failed { error } => Self::FailedTask {
+                TaskStatus::Success { .. } => Self::TaskCompleted { context },
+                TaskStatus::Failed { error } => Self::TaskFailed {
                     context,
                     reason: error.to_string(),
                 },
-                TaskStatus::Cancelled => Self::CancelledTask { context },
-                TaskStatus::WorkerDied => Self::FailedTask {
+                TaskStatus::Cancelled => Self::TaskCancelled { context },
+                TaskStatus::WorkerDied => Self::TaskFailed {
                     context,
                     reason: "Worker died".to_string(),
                 },
-                TaskStatus::WorkerUnavailable => Self::FailedTask {
+                TaskStatus::WorkerUnavailable => Self::TaskFailed {
                     context,
                     reason: "Worker unavailable".to_string(),
                 },
             },
-            Err(error) => Self::FailedTask {
+            Err(error) => Self::TaskFailed {
                 context,
                 reason: error.to_string(),
             },
@@ -106,12 +107,7 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
 }
 
 pub trait StatisticsSubscriber: Send + Sync + 'static {
-    fn handle_event(
-        &self,
-        event: &StatisticsEvent,
-        plans: &HashMap<u32, PlanState>,
-        tasks: &HashMap<TaskContext, TaskState>,
-    ) -> DaftResult<()>;
+    fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()>;
 
     /// Optional flush method for subscribers that need to clean up pending operations
     fn flush(
@@ -127,17 +123,11 @@ pub type StatisticsManagerRef = Arc<StatisticsManager>;
 #[derive(Default)]
 pub struct StatisticsManager {
     subscribers: Vec<Box<dyn StatisticsSubscriber>>,
-    plans: Mutex<HashMap<u32, PlanState>>,
-    tasks: Mutex<HashMap<TaskContext, TaskState>>,
 }
 
 impl StatisticsManager {
     pub fn new(subscribers: Vec<Box<dyn StatisticsSubscriber>>) -> StatisticsManagerRef {
-        Arc::new(Self {
-            subscribers,
-            plans: Mutex::new(HashMap::new()),
-            tasks: Mutex::new(HashMap::new()),
-        })
+        Arc::new(Self { subscribers })
     }
 
     /// Flush all subscribers that support flushing (e.g., HttpSubscriber)
@@ -163,105 +153,11 @@ impl StatisticsManager {
         Ok(())
     }
 
-    pub fn register_plan(
-        &self,
-        plan_id: u32,
-        query_id: String,
-        logical_plan: LogicalPlanRef,
-    ) -> DaftResult<()> {
-        let mut plans = self.plans.lock().unwrap();
-        plans.insert(
-            plan_id,
-            PlanState {
-                plan_id: plan_id as usize,
-                query_id,
-                logical_plan,
-            },
-        );
-        Ok(())
-    }
-
     pub fn handle_event(&self, event: StatisticsEvent) -> DaftResult<()> {
-        tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager handling event: {:?}", event);
-        // Update internal state based on event
-        self.update_state(&event)?;
-
-        // Get current state snapshots
-        let plans = self.plans.lock().unwrap().clone();
-        let tasks = self.tasks.lock().unwrap().clone();
-
-        tracing::info!(
-            target: STATISTICS_LOG_TARGET,
-            "StatisticsManager notifying {} subscribers",
-            self.subscribers.len()
-        );
-        // Notify all subscribers
         for (i, subscriber) in self.subscribers.iter().enumerate() {
             tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
-            subscriber.handle_event(&event, &plans, &tasks)?;
+            subscriber.handle_event(&event)?;
         }
-        Ok(())
-    }
-
-    fn update_state(&self, event: &StatisticsEvent) -> DaftResult<()> {
-        let mut tasks = self.tasks.lock().unwrap();
-
-        match event {
-            StatisticsEvent::SubmittedTask { context, name } => {
-                let task_state = tasks.entry(*context).or_insert_with(|| TaskState {
-                    name: name.clone(),
-                    status: TaskExecutionStatus::Created,
-                    pending: 0,
-                    completed: 0,
-                    canceled: 0,
-                    failed: 0,
-                    total: 0,
-                });
-                task_state.total += 1;
-            }
-            StatisticsEvent::ScheduledTask { context } => {
-                if let Some(task_state) = tasks.get_mut(context) {
-                    task_state.status = TaskExecutionStatus::Running;
-                    task_state.pending += 1;
-                }
-            }
-            StatisticsEvent::TaskStarted { context } => {
-                if let Some(task_state) = tasks.get_mut(context) {
-                    task_state.status = TaskExecutionStatus::Running;
-                }
-            }
-            StatisticsEvent::FinishedTask { context } => {
-                if let Some(task_state) = tasks.get_mut(context) {
-                    task_state.status = TaskExecutionStatus::Completed;
-                    if task_state.pending > 0 {
-                        task_state.pending -= 1;
-                    }
-                    task_state.completed += 1;
-                }
-            }
-            StatisticsEvent::FailedTask { context, .. } => {
-                if let Some(task_state) = tasks.get_mut(context) {
-                    task_state.status = TaskExecutionStatus::Failed;
-                    if task_state.pending > 0 {
-                        task_state.pending -= 1;
-                    }
-                    task_state.failed += 1;
-                }
-            }
-            StatisticsEvent::CancelledTask { context } => {
-                if let Some(task_state) = tasks.get_mut(context) {
-                    task_state.status = TaskExecutionStatus::Canceled;
-                    if task_state.pending > 0 {
-                        task_state.pending -= 1;
-                    }
-                    task_state.canceled += 1;
-                }
-            }
-            StatisticsEvent::PlanStarted { .. } | StatisticsEvent::PlanFinished { .. } => {
-                // Plan-level events don't update task state
-            }
-        }
-
         Ok(())
     }
 }

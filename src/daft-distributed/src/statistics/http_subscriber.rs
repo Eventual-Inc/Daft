@@ -67,43 +67,190 @@ pub struct MetricDisplayInformation {
 
 pub struct HttpSubscriber {
     pending_requests: Arc<Mutex<Vec<RuntimeTask<()>>>>,
+    plans: Mutex<HashMap<u32, PlanState>>,
+    tasks: Mutex<HashMap<TaskContext, TaskState>>,
 }
 
 impl HttpSubscriber {
     pub fn new() -> Self {
         Self {
             pending_requests: Arc::new(Mutex::new(Vec::new())),
+            plans: Mutex::new(HashMap::new()),
+            tasks: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Flush all pending HTTP requests by waiting for them to complete
-    pub async fn flush_pending_requests(&self) -> DaftResult<()> {
-        let mut handles = {
-            let mut pending = self.pending_requests.lock().unwrap();
-            std::mem::take(&mut *pending)
-        };
+    pub fn ingest_event(&self, event: StatisticsEvent) {
+        let mut plans = self.plans.lock().unwrap();
+        let mut tasks = self.tasks.lock().unwrap();
 
-        tracing::info!(
-            target: HTTP_LOG_TARGET,
-            "Flushing {} pending HTTP requests",
-            handles.len()
-        );
-
-        // Wait for all handles to complete
-        for handle in handles.drain(..) {
-            if let Err(e) = handle.await {
-                tracing::warn!(
-                    target: HTTP_LOG_TARGET,
-                    "Error waiting for HTTP request to complete: {}",
-                    e
+        match event {
+            StatisticsEvent::TaskSubmitted { context, name } => {
+                let task_state = tasks.entry(context).or_insert_with(|| TaskState {
+                    name: name.clone(),
+                    status: super::TaskExecutionStatus::Created,
+                    pending: 0,
+                    completed: 0,
+                    canceled: 0,
+                    failed: 0,
+                    total: 0,
+                });
+                task_state.total += 1;
+            }
+            StatisticsEvent::ScheduledTask { context } => {
+                if let Some(task_state) = tasks.get_mut(&context) {
+                    task_state.status = super::TaskExecutionStatus::Running;
+                    task_state.pending += 1;
+                }
+            }
+            StatisticsEvent::TaskCompleted { context } => {
+                if let Some(task_state) = tasks.get_mut(&context) {
+                    task_state.status = super::TaskExecutionStatus::Completed;
+                    if task_state.pending > 0 {
+                        task_state.pending -= 1;
+                    }
+                    task_state.completed += 1;
+                }
+            }
+            StatisticsEvent::TaskStarted { context } => {
+                if let Some(task_state) = tasks.get_mut(&context) {
+                    task_state.status = super::TaskExecutionStatus::Running;
+                }
+            }
+            StatisticsEvent::TaskFailed { context, .. } => {
+                if let Some(task_state) = tasks.get_mut(&context) {
+                    task_state.status = super::TaskExecutionStatus::Failed;
+                    if task_state.pending > 0 {
+                        task_state.pending -= 1;
+                    }
+                    task_state.failed += 1;
+                }
+            }
+            StatisticsEvent::TaskCancelled { context } => {
+                if let Some(task_state) = tasks.get_mut(&context) {
+                    task_state.status = super::TaskExecutionStatus::Canceled;
+                    if task_state.pending > 0 {
+                        task_state.pending -= 1;
+                    }
+                    task_state.canceled += 1;
+                }
+            }
+            StatisticsEvent::PlanSubmitted {
+                plan_id,
+                query_id,
+                logical_plan,
+            } => {
+                plans.insert(
+                    plan_id,
+                    PlanState {
+                        plan_id: plan_id as usize,
+                        query_id,
+                        logical_plan,
+                    },
                 );
+            }
+            StatisticsEvent::PlanStarted { .. } | StatisticsEvent::PlanFinished { .. } => {
+                // Plan-level events don't update task state
             }
         }
 
-        tracing::info!(target: HTTP_LOG_TARGET, "All pending HTTP requests completed");
+        // Clone for reporting to avoid holding the locks during the HTTP request
+        let plans_clone = plans.clone();
+        let tasks_clone = tasks.clone();
+        drop(plans);
+        drop(tasks);
+
+        if let Err(e) = self.report_state(&plans_clone, &tasks_clone) {
+            tracing::warn!("Failed to report state: {}", e);
+        }
+    }
+
+    pub fn report_state(
+        &self,
+        plans: &HashMap<u32, PlanState>,
+        tasks: &HashMap<TaskContext, TaskState>,
+    ) -> DaftResult<()> {
+        let query_graph = self.build_query_graph(plans, tasks);
+        let endpoint = format!(
+            "{}/queries",
+            env::var("DAFT_DASHBOARD_URL")
+                .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
+        );
+
+        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
+
+        // Build headers
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+
+        if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
+            let auth_value = format!("Bearer {}", auth_token);
+            if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&auth_value) {
+                headers.insert(reqwest::header::AUTHORIZATION, header_value);
+            }
+        }
+
+        let optimized_plan =
+            serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
+
+        // Extract query ID from the first plan state, or generate a new UUID if no plans exist
+        let query_id = plans
+            .values()
+            .next()
+            .map(|plan| plan.query_id.clone())
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let payload = QueryPayload {
+            id: query_id,
+            optimized_plan,
+            run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
+            logs: String::new(),
+        };
+
+        // Send the HTTP request asynchronously and store the handle
+        let runtime = get_io_runtime(false);
+        tracing::info!(
+            target: HTTP_LOG_TARGET,
+            "HttpSubscriber spawning HTTP request task for endpoint: {}",
+            endpoint
+        );
+
+        let task_handle = runtime.spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(1))
+                .default_headers(headers)
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+
+            tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
+            let response = client.post(&endpoint).json(&payload).send().await;
+
+            match response {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        tracing::debug!(target: HTTP_LOG_TARGET, "Successfully sent query information");
+                    } else {
+                        tracing::warn!(target: HTTP_LOG_TARGET, "Failed to send query information: {}", resp.status());
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
+                }
+            }
+        });
+
+        // Store the task handle for later cleanup/flushing
+        if let Ok(mut pending) = self.pending_requests.lock() {
+            pending.push(task_handle);
+        }
+
         Ok(())
     }
 
+    /// Exposed for tests only
     pub fn build_query_graph(
         &self,
         plans: &HashMap<u32, PlanState>,
@@ -202,7 +349,7 @@ impl HttpSubscriber {
         }
     }
 
-    pub fn build_adjacency_list(
+    fn build_adjacency_list(
         &self,
         plans: &HashMap<u32, PlanState>,
         logical_to_query_map: &HashMap<usize, usize>,
@@ -260,96 +407,38 @@ impl HttpSubscriber {
             Ok(common_treenode::TreeNodeRecursion::Continue)
         });
     }
+
+    pub async fn flush_pending_requests(&self) -> DaftResult<()> {
+        let mut handles = {
+            let mut pending = self.pending_requests.lock().unwrap();
+            std::mem::take(&mut *pending)
+        };
+
+        tracing::info!(
+            target: HTTP_LOG_TARGET,
+            "Flushing {} pending HTTP requests",
+            handles.len()
+        );
+
+        // Wait for all handles to complete
+        for handle in handles.drain(..) {
+            if let Err(e) = handle.await {
+                tracing::warn!(
+                    target: HTTP_LOG_TARGET,
+                    "Error waiting for HTTP request to complete: {}",
+                    e
+                );
+            }
+        }
+
+        tracing::info!(target: HTTP_LOG_TARGET, "All pending HTTP requests completed");
+        Ok(())
+    }
 }
 
 impl StatisticsSubscriber for HttpSubscriber {
-    fn handle_event(
-        &self,
-        event: &StatisticsEvent,
-        plans: &HashMap<u32, PlanState>,
-        tasks: &HashMap<TaskContext, TaskState>,
-    ) -> DaftResult<()> {
-        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber received event: {:?}", event);
-        tracing::info!(target: HTTP_LOG_TARGET, "Plans count: {}, Tasks count: {}", plans.len(), tasks.len());
-
-        let query_graph = self.build_query_graph(plans, tasks);
-
-        let endpoint = format!(
-            "{}/queries",
-            env::var("DAFT_DASHBOARD_URL")
-                .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
-        );
-
-        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
-
-        // Build headers
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            reqwest::header::HeaderValue::from_static("application/json"),
-        );
-
-        if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
-            let auth_value = format!("Bearer {}", auth_token);
-            if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&auth_value) {
-                headers.insert(reqwest::header::AUTHORIZATION, header_value);
-            }
-        }
-
-        let optimized_plan =
-            serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
-
-        // Extract query ID from the first plan state, or generate a new UUID if no plans exist
-        let query_id = plans
-            .values()
-            .next()
-            .map(|plan| plan.query_id.clone())
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-        let payload = QueryPayload {
-            id: query_id,
-            optimized_plan,
-            run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
-            logs: String::new(),
-        };
-
-        // Send the HTTP request asynchronously and store the handle
-        let runtime = get_io_runtime(false);
-        tracing::info!(
-            target: HTTP_LOG_TARGET,
-            "HttpSubscriber spawning HTTP request task for endpoint: {}",
-            endpoint
-        );
-
-        let task_handle = runtime.spawn(async move {
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(1))
-                .default_headers(headers)
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new());
-
-            tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
-            let response = client.post(&endpoint).json(&payload).send().await;
-
-            match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        tracing::debug!(target: HTTP_LOG_TARGET, "Successfully sent query information");
-                    } else {
-                        tracing::warn!(target: HTTP_LOG_TARGET, "Failed to send query information: {}", resp.status());
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
-                }
-            }
-        });
-
-        // Store the task handle for later cleanup/flushing
-        if let Ok(mut pending) = self.pending_requests.lock() {
-            pending.push(task_handle);
-        }
-
+    fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()> {
+        self.ingest_event(event.clone());
         Ok(())
     }
 
