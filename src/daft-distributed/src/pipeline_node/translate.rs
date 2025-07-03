@@ -61,10 +61,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
     }
 
     fn f_up(&mut self, node: &LogicalPlanRef) -> DaftResult<TreeNodeRecursion> {
-        let logical_node_id =
-            node.node_id()
-                .expect("Optimized logical node must have a node_id") as NodeID;
         let node_id = self.get_next_node_id();
+        let logical_node_id = node.node_id().map(|id| id as NodeID);
         let output = match node.as_ref() {
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {

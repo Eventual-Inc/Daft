@@ -103,7 +103,7 @@ fn create_test_task_context(
     stage_id: u16,
     node_id: u32,
     task_id: u32,
-    logical_node_id: u32,
+    logical_node_id: Option<u32>,
 ) -> TaskContext {
     TaskContext {
         logical_node_id,
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_generate_node_id() {
-        let context = create_test_task_context(1, 2, 3, 4, 3);
+        let context = create_test_task_context(1, 2, 3, 4, Some(3));
         let node_id = HttpSubscriber::generate_node_id(&context);
 
         // The node ID should be: (plan_id << 16) | (stage_id << 8) | node_id
@@ -157,10 +157,10 @@ mod tests {
         let mut tasks = HashMap::new();
 
         // Create tasks for different nodes in the plan
-        let source_context = create_test_task_context(1, 1, 1, 1, 1);
-        let filter_context = create_test_task_context(1, 1, 2, 2, 2);
-        let project_context = create_test_task_context(1, 1, 3, 3, 3);
-        let limit_context = create_test_task_context(1, 1, 4, 4, 4);
+        let source_context = create_test_task_context(1, 1, 1, 1, Some(1));
+        let filter_context = create_test_task_context(1, 1, 2, 2, Some(2));
+        let project_context = create_test_task_context(1, 1, 3, 3, Some(3));
+        let limit_context = create_test_task_context(1, 1, 4, 4, Some(4));
 
         tasks.insert(
             source_context,
@@ -214,10 +214,10 @@ mod tests {
 
         // Create a linear chain of tasks: 1 -> 2 -> 3 -> 4
         let mut tasks = HashMap::new();
-        let context1 = create_test_task_context(1, 1, 1, 1, 1);
-        let context2 = create_test_task_context(1, 1, 2, 2, 2);
-        let context3 = create_test_task_context(1, 1, 3, 3, 3);
-        let context4 = create_test_task_context(1, 1, 4, 4, 4);
+        let context1 = create_test_task_context(1, 1, 1, 1, Some(1));
+        let context2 = create_test_task_context(1, 1, 2, 2, Some(2));
+        let context3 = create_test_task_context(1, 1, 3, 3, Some(3));
+        let context4 = create_test_task_context(1, 1, 4, 4, Some(4));
 
         tasks.insert(
             context1,
@@ -274,9 +274,9 @@ mod tests {
 
         // Create multiple tasks for the same node (node_id = 1) with different task_ids
         // These should be aggregated into a single graph node
-        let context1 = create_test_task_context(1, 1, 1, 1, 1); // Task 1 for node 1
-        let context2 = create_test_task_context(1, 1, 1, 2, 1); // Task 2 for node 1
-        let context3 = create_test_task_context(1, 1, 1, 3, 1); // Task 3 for node 1
+        let context1 = create_test_task_context(1, 1, 1, 1, Some(1)); // Task 1 for node 1
+        let context2 = create_test_task_context(1, 1, 1, 2, Some(1)); // Task 2 for node 1
+        let context3 = create_test_task_context(1, 1, 1, 3, Some(1)); // Task 3 for node 1
 
         // Create task states with different progress metrics
         let mut task1 = create_test_task_state("Source", TaskExecutionStatus::Completed);
@@ -305,7 +305,7 @@ mod tests {
         tasks.insert(context3, task3);
 
         // Add a task for a different node to ensure we don't aggregate across different nodes
-        let context4 = create_test_task_context(1, 1, 2, 4, 2); // Task 4 for node 2
+        let context4 = create_test_task_context(1, 1, 2, 4, Some(2)); // Task 4 for node 2
         let mut task4 = create_test_task_state("Filter", TaskExecutionStatus::Running);
         task4.pending = 1;
         task4.completed = 2;
@@ -462,8 +462,8 @@ mod tests {
 
         // Create task states
         let mut tasks = HashMap::new();
-        let source_context = create_test_task_context(1, 1, 1, 1, 1);
-        let filter_context = create_test_task_context(1, 1, 2, 2, 2);
+        let source_context = create_test_task_context(1, 1, 1, 1, Some(1));
+        let filter_context = create_test_task_context(1, 1, 2, 2, Some(2));
 
         tasks.insert(
             source_context,
@@ -751,19 +751,19 @@ mod tests {
         // Create multiple tasks with various states
         let contexts_and_states = vec![
             (
-                create_test_task_context(1, 1, 1, 1, 1),
+                create_test_task_context(1, 1, 1, 1, Some(1)),
                 create_test_task_state("Source", TaskExecutionStatus::Completed),
             ),
             (
-                create_test_task_context(1, 1, 2, 2, 2),
+                create_test_task_context(1, 1, 2, 2, Some(2)),
                 create_test_task_state("Filter", TaskExecutionStatus::Running),
             ),
             (
-                create_test_task_context(1, 1, 3, 3, 3),
+                create_test_task_context(1, 1, 3, 3, Some(3)),
                 create_test_task_state("Project", TaskExecutionStatus::Created),
             ),
             (
-                create_test_task_context(1, 1, 4, 4, 4),
+                create_test_task_context(1, 1, 4, 4, Some(4)),
                 create_test_task_state("Limit", TaskExecutionStatus::Failed),
             ),
         ];
@@ -866,11 +866,11 @@ mod tests {
 
         // Create task states for each operation in the optimized plan
         let mut tasks = HashMap::new();
-        let source_context = create_test_task_context(1, 1, 1, 1, 1);
-        let filter_context = create_test_task_context(1, 1, 2, 2, 2);
-        let project_context = create_test_task_context(1, 1, 3, 3, 3);
-        let sort_context = create_test_task_context(1, 1, 4, 4, 4);
-        let limit_context = create_test_task_context(1, 1, 5, 5, 5);
+        let source_context = create_test_task_context(1, 1, 1, 1, Some(1));
+        let filter_context = create_test_task_context(1, 1, 2, 2, Some(2));
+        let project_context = create_test_task_context(1, 1, 3, 3, Some(3));
+        let sort_context = create_test_task_context(1, 1, 4, 4, Some(4));
+        let limit_context = create_test_task_context(1, 1, 5, 5, Some(5));
 
         // Set different execution states to simulate a real query execution
         let mut source_task = create_test_task_state("Source", TaskExecutionStatus::Completed);

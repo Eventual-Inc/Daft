@@ -295,7 +295,9 @@ impl HttpSubscriber {
                     metrics: None,
                 };
 
-                logical_to_query_map.insert(context.logical_node_id as usize, node_id as usize);
+                if let Some(logical_node_id) = context.logical_node_id {
+                    logical_to_query_map.insert(logical_node_id as usize, node_id as usize);
+                }
                 nodes_map.insert(node_id, node);
             }
         }
