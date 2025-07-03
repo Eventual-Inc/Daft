@@ -101,7 +101,7 @@ mkdocs-simple-hooks
 pymdown-extensions
 mkdocs-material[imaging]
 mkdocstrings-python
-ruff
+ruff==0.8.2
 mkdocs-minify-plugin
 mkdocs-redirects
 
