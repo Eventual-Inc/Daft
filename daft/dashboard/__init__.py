@@ -72,10 +72,7 @@ def broadcast_query_information(
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
-            "unoptimized_plan": unoptimized_plan,
             "optimized_plan": optimized_plan,
-            "plan_time_start": plan_time_start.isoformat(),
-            "plan_time_end": plan_time_end.isoformat(),
             "run_id": os.environ.get("DAFT_DASHBOARD_RUN_ID", None),
             "logs": "",  # todo: implement logs
         }

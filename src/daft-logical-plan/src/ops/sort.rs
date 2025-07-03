@@ -12,6 +12,7 @@ use crate::{logical_plan, logical_plan::CreationSnafu, stats::StatsState, Logica
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sort {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub sort_by: Vec<ExprRef>,
@@ -49,6 +50,7 @@ impl Sort {
         }
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             sort_by,
             descending,
@@ -59,6 +61,11 @@ impl Sort {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 

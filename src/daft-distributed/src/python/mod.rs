@@ -16,12 +16,13 @@ use tokio::sync::Mutex;
 use crate::{
     plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::StatisticsManager,
+    statistics::{HttpSubscriber, StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
+    statistics_manager: StatisticsManagerRef,
 }
 
 #[pymethods]
@@ -29,8 +30,10 @@ impl PythonPartitionRefStream {
     fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
+
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let inner = self.inner.clone();
+        let statistics_manager = self.statistics_manager.clone();
         // future into py requires that the future is Send + 'static, so we wrap the inner in an Arc<Mutex<>>
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let next = {
@@ -48,7 +51,13 @@ impl PythonPartitionRefStream {
                         .clone();
                     Some(ray_part_ref)
                 }
-                None => None,
+                None => {
+                    // Stream has completed - flush all statistics subscribers
+                    if let Err(e) = statistics_manager.flush_all_subscribers().await {
+                        tracing::warn!("Failed to flush statistics subscribers: {}", e);
+                    }
+                    None
+                }
             };
             Ok(next)
         })
@@ -129,14 +138,30 @@ impl PyDistributedPhysicalPlanRunner {
                 )
             })
             .collect();
-        let statistics_manager = StatisticsManager::new(vec![Box::new(
+
+        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> = vec![Box::new(
             FlotillaProgressBar::try_new(py, self.on_ray_actor)?,
-        )]);
+        )];
+
+        tracing::info!("Checking DAFT_DASHBOARD_URL environment variable");
+        match std::env::var("DAFT_DASHBOARD_URL") {
+            Ok(url) => {
+                tracing::info!("DAFT_DASHBOARD_URL is set to: {}", url);
+                tracing::info!("Adding HttpSubscriber to statistics manager");
+                subscribers.push(Box::new(HttpSubscriber::new()));
+            }
+            Err(_) => {
+                tracing::warn!("DAFT_DASHBOARD_URL not set, skipping HttpSubscriber");
+            }
+        }
+
+        let statistics_manager = StatisticsManager::new(subscribers);
         let plan_result = self
             .runner
-            .run_plan(&plan.plan, psets, statistics_manager)?;
+            .run_plan(&plan.plan, psets, statistics_manager.clone())?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
+            statistics_manager,
         };
         Ok(part_stream)
     }

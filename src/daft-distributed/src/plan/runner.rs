@@ -69,9 +69,16 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<PlanResult> {
         let plan_id = plan.id();
+        let query_id = uuid::Uuid::new_v4().to_string();
         let stage_plan = plan.stage_plan().clone();
 
         let runtime = get_or_init_runtime();
+        statistics_manager.handle_event(crate::statistics::StatisticsEvent::PlanSubmitted {
+            plan_id: plan_id as u32,
+            query_id,
+            logical_plan: plan.logical_plan().clone(),
+        })?;
+
         let (result_sender, result_receiver) = create_channel(1);
 
         let this = self.clone();

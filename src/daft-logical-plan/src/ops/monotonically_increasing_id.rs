@@ -12,6 +12,7 @@ use crate::{
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
     pub schema: Arc<Schema>,
     pub column_name: String,
@@ -34,6 +35,7 @@ impl MonotonicallyIncreasingId {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             schema: Arc::new(schema_with_id),
             column_name: column_name.to_string(),
@@ -43,6 +45,11 @@ impl MonotonicallyIncreasingId {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
