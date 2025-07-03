@@ -908,7 +908,7 @@ class DataFrame:
         import pyiceberg
         from packaging.version import parse
 
-        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
+        from daft.io.iceberg._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -1085,7 +1085,7 @@ class DataFrame:
         from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
-        from daft.io._deltalake import large_dtypes_kwargs
+        from daft.io.delta_lake._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         def _create_metadata_param(metadata: Optional[dict[str, str]]) -> Any:
@@ -1356,7 +1356,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        from daft.dataframe.lance_data_sink import LanceDataSink
+        from daft.io.lance.lance_data_sink import LanceDataSink
 
         if schema is None:
             schema = self.schema()
