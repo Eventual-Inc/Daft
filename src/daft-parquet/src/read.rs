@@ -1137,7 +1137,7 @@ mod tests {
         let file = PARQUET_FILE;
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1164,7 +1164,7 @@ mod tests {
         let file = PARQUET_FILE;
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let runtime_handle = get_io_runtime(true);

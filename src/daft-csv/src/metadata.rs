@@ -327,7 +327,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) =
@@ -356,7 +356,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) = read_csv_schema(
@@ -388,7 +388,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (_, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None).await?;
@@ -406,7 +406,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) = read_csv_schema(
@@ -441,7 +441,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) =
@@ -467,7 +467,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) =
@@ -496,7 +496,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) =
@@ -523,7 +523,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) =
@@ -561,7 +561,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let err = read_csv_schema(file.as_ref(), None, None, io_client, None).await;
@@ -586,7 +586,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let err = read_csv_schema(
@@ -641,7 +641,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, _) = read_csv_schema(file.as_ref(), None, None, io_client, None).await?;

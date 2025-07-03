@@ -47,13 +47,26 @@ impl StorageConfig {
 
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        if let Some(io_config) = &self.io_config {
-            res.push(format!(
-                "IO config = {}",
-                io_config.multiline_display().join(", ")
-            ));
+        let mut res = Vec::new();
+
+        match &self.io_config {
+            Some(io_config) => {
+                let has_any = io_config.multiline_display().is_empty();
+
+                if has_any {
+                    res.push(format!(
+                        "IO config = {}",
+                        io_config.multiline_display().join(", ")
+                    ));
+                } else {
+                    res.push("Local IO config".to_string());
+                }
+            }
+            None => {
+                res.push("Local IO config".to_string());
+            }
         }
+
         res.push(format!("Use multithreading = {}", self.multithreaded_io));
         res
     }
