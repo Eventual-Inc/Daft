@@ -47,7 +47,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Repartition(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
-            | LogicalPlan::Window(_) 
+            | LogicalPlan::Window(_)
             | LogicalPlan::Join(_)
             | LogicalPlan::Sort(_)
             | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),

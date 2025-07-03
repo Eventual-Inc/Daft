@@ -203,7 +203,12 @@ impl Column {
 
 impl std::fmt::Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "col({})", self.name())
+        match self {
+            Self::Bound(BoundColumn { index, field, .. }) => {
+                write!(f, "col({}: {})", index, field.name)
+            }
+            _ => write!(f, "col({})", self.name()),
+        }
     }
 }
 

@@ -6,7 +6,10 @@ use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        bound_col,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    },
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
     resolved_col,
 };
@@ -223,13 +226,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Aggregate(aggregate) => {
-                let groupby = BoundExpr::bind_all(&aggregate.groupby, &aggregate.input.schema())?;
+                let input_schema = aggregate.input.schema();
+                let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;
                 let aggregations = aggregate
                     .aggregations
                     .iter()
                     .map(|expr| {
                         let agg_expr = extract_agg_expr(expr)?;
-                        BoundAggExpr::try_new(agg_expr, &aggregate.input.schema())
+                        BoundAggExpr::try_new(agg_expr, &input_schema)
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
@@ -239,9 +243,22 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     final_exprs,
                 ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
                     &aggregations,
-                    &aggregate.input.schema(),
-                    &groupby,
+                    &input_schema,
+                    &group_by,
                 )?;
+                let final_group_by = if !first_stage_aggs.is_empty() {
+                    group_by
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| {
+                            let field = e.as_ref().to_field(&input_schema)?;
+                            Ok(BoundExpr::new_unchecked(bound_col(i, field)))
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?
+                } else {
+                    group_by.clone()
+                };
+                eprintln!("Final Group By: {:?}", final_group_by);
                 let first_stage_schema = Arc::new(first_stage_schema);
                 let second_stage_schema = Arc::new(second_stage_schema);
 
@@ -249,7 +266,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let initial_groupby = GroupbyAggNode::new(
                     &self.stage_config,
                     node_id,
-                    groupby.clone(),
+                    group_by,
                     first_stage_aggs,
                     first_stage_schema.clone(),
                     self.curr_node.pop().unwrap(),
@@ -259,7 +276,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // Second stage:
                 // If 0 groupby columns, gather all data to a single node
                 // Else, repartition to distribute the dataset
-                let transfer = if groupby.is_empty() {
+                let transfer = if final_group_by.is_empty() {
                     GatherNode::new(
                         &self.stage_config,
                         node_id,
@@ -271,8 +288,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     RepartitionNode::new(
                         &self.stage_config,
                         node_id,
-                        groupby.clone(),
-                        20, // TODO(colin): How do we determine this?
+                        final_group_by.clone(),
+                        4, // TODO(colin): How do we determine this?
                         first_stage_schema,
                         initial_groupby,
                     )
@@ -283,7 +300,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let final_groupby = GroupbyAggNode::new(
                     &self.stage_config,
                     node_id,
-                    groupby,
+                    final_group_by,
                     second_stage_aggs,
                     second_stage_schema,
                     transfer,

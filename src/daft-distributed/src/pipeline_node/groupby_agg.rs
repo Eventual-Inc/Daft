@@ -112,7 +112,7 @@ impl DistributedPipelineNode for GroupbyAggNode {
         // Pipeline the groupby
         let self_clone = self.clone();
         let no_groupby = self_clone.groupby.is_empty();
-        
+
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
             if no_groupby {
                 Ok(LocalPhysicalPlan::ungrouped_aggregate(

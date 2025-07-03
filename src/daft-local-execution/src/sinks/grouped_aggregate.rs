@@ -412,7 +412,6 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
-                    eprintln!("GroupedAggregateSink::finalize schema: {}", concated.schema().short_string());
                     Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
                         concated,
                     ))))

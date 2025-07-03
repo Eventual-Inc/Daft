@@ -19,7 +19,7 @@ pub(crate) struct TopNNode {
     sort_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
-    limit: i64,
+    limit: u64,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -33,7 +33,7 @@ impl TopNNode {
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: i64,
+        limit: u64,
         output_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
