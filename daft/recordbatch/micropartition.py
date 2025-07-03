@@ -446,7 +446,7 @@ class MicroPartition:
         batches = self.get_record_batches()
         if len(batches) == 0:
             return MicroPartition.empty, (self.schema(),)
-        return MicroPartition._from_record_batches, (self.get_record_batches(),)
+        return MicroPartition._from_record_batches, (batches,)
 
     @classmethod
     def read_parquet_statistics(
