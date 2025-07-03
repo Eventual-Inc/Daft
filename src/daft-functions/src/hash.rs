@@ -1,6 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::functions::{prelude::*, ScalarFunction};
+use daft_hash::HashFunctionKind;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -12,6 +13,9 @@ struct Args<T> {
 
     #[arg(optional)]
     seed: Option<T>,
+
+    #[arg(optional)]
+    hash_function: Option<String>,
 }
 
 #[typetag::serde]
@@ -21,7 +25,17 @@ impl ScalarUDF for HashFunction {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let Args { input, seed } = inputs.try_into()?;
+        let Args {
+            input,
+            seed,
+            hash_function,
+        } = inputs.try_into()?;
+
+        let hash_function = hash_function
+            .map(|s| s.parse::<HashFunctionKind>())
+            .transpose()?
+            .unwrap_or(HashFunctionKind::XxHash);
+
         if let Some(seed) = seed {
             match seed.len() {
                 1 if seed.data_type().is_list() => {
@@ -60,7 +74,7 @@ impl ScalarUDF for HashFunction {
                 )),
             }
         } else {
-            input.hash(None).map(|arr| arr.into_series())
+            input.hash(None).map(IntoSeries::into_series)
         }
     }
 
@@ -69,7 +83,7 @@ impl ScalarUDF for HashFunction {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let Args { input, seed } = inputs.try_into()?;
+        let Args { input, seed, .. } = inputs.try_into()?;
         let input = input.to_field(schema)?;
 
         if let Some(seed) = seed {
@@ -88,11 +102,14 @@ impl ScalarUDF for HashFunction {
 }
 
 #[must_use]
-pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
-    let inputs = match seed {
-        Some(seed) => vec![input, seed],
-        None => vec![input],
-    };
+pub fn hash(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef>) -> ExprRef {
+    let mut inputs = vec![input];
+    if let Some(seed) = seed {
+        inputs.push(seed);
+    }
+    if let Some(hash_function) = hash_function {
+        inputs.push(hash_function);
+    }
 
     ScalarFunction::new(HashFunction, inputs).into()
 }
