@@ -55,7 +55,7 @@ ray[data, client]==2.34.0
 pylance>=0.20.0
 
 #Iceberg
-pyiceberg==0.7.0
+pyiceberg==0.9.1
 pydantic==2.10.6
 tenacity==8.2.3
 
