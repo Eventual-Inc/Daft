@@ -41,7 +41,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Sink(_)
             | LogicalPlan::Sample(_)
             | LogicalPlan::Explode(_)
-            | LogicalPlan::ActorPoolProject(_)
+            | LogicalPlan::UDFProject(_)
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Sort(_)

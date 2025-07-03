@@ -1,4 +1,3 @@
-mod actor_pool_project;
 mod agg;
 mod concat;
 mod distinct;
@@ -18,10 +17,10 @@ mod sort;
 mod source;
 mod summarize;
 mod top_n;
+mod udf;
 mod unpivot;
 mod window;
 
-pub use actor_pool_project::ActorPoolProject;
 pub use agg::Aggregate;
 pub use concat::Concat;
 pub use distinct::Distinct;
@@ -41,5 +40,6 @@ pub use sort::Sort;
 pub use source::Source;
 pub use summarize::summarize;
 pub use top_n::TopN;
+pub use udf::UDFProject;
 pub use unpivot::Unpivot;
 pub use window::Window;

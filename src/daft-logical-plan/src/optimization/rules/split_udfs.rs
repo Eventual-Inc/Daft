@@ -1,9 +1,9 @@
-use std::{collections::HashSet, iter, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
-    is_actor_pool_udf,
+    is_udf,
     optimization::{get_required_columns, requires_computation},
     resolved_col, Column, Expr, ExprRef, ResolvedColumn,
 };
@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{ActorPoolProject, Project},
+    ops::{Project, UDFProject},
     LogicalPlan,
 };
 
@@ -59,7 +59,7 @@ impl SplitActorPoolProjects {
 ///
 /// ┌───────────────────────────────────────────────────────────SPLIT: split_projection()
 /// │                                                                                 │
-/// │   TruncateRootActorPoolUDF     TruncateAnyActorPoolUDFChildren        No-Op       │
+/// │   TruncateRootActorPoolUDF    TruncateAnyActorPoolUDFChildren       No-Op       │
 /// │   =======================     ==============================        =====       │
 /// │           ┌─────┐                       ┌─────┐                    ┌─────┐      │
 /// │           │ E1' │                       │ E2' │                    │ E3  │      │
@@ -186,7 +186,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
                 Ok(common_treenode::Transformed::no(node))
             }
             // Encountered actor pool UDF: chop off all children and add to self.next_children
-            _ if is_actor_pool_udf(&node) => {
+            _ if is_udf(&node) => {
                 let mut monotonically_increasing_expr_identifier = 0;
                 let inputs = node.children();
                 let new_inputs = inputs.iter().map(|e| {
@@ -206,6 +206,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
                         e.clone()
                     }
                 });
+
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
                 Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
@@ -227,7 +228,7 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
             // This rewriter should never encounter a actor pool UDF expression (they should always be truncated and replaced)
-            _ if is_actor_pool_udf(&node) => {
+            _ if is_udf(&node) => {
                 unreachable!(
                     "TruncateAnyActorPoolUDFChildren should never run on a actor pool UDF expression"
                 );
@@ -247,14 +248,14 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
             // Attempt to truncate any children that are actor pool UDFs, replacing them with a Expr::Column
             expr => {
                 // None of the direct children are actor pool UDFs, so we keep going
-                if !node.children().iter().any(is_actor_pool_udf) {
+                if !node.children().iter().any(is_udf) {
                     return Ok(common_treenode::Transformed::no(node));
                 }
 
                 let mut monotonically_increasing_expr_identifier = 0;
                 let inputs = expr.children();
                 let new_inputs = inputs.iter().map(|e| {
-                    if is_actor_pool_udf(e) {
+                    if is_udf(e) {
                         let intermediate_expr_name = format!(
                             "__TruncateAnyActorPoolUDFChildren_{}-{}-{}__",
                             self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
@@ -269,6 +270,7 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                         e.clone()
                     }
                 });
+
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
                 Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
@@ -285,11 +287,11 @@ fn split_projection(
     let (mut new_children_seen, mut new_children): (HashSet<String>, Vec<ExprRef>) =
         (HashSet::new(), Vec::new());
 
-    fn is_actor_pool_udf_and_should_truncate_children(expr: &ExprRef) -> bool {
+    fn is_udf_and_should_truncate_children(expr: &ExprRef) -> bool {
         let mut cond = true;
         expr.apply(|e| match e.as_ref() {
             Expr::Alias(..) => Ok(TreeNodeRecursion::Continue),
-            _ if is_actor_pool_udf(e) => Ok(TreeNodeRecursion::Stop),
+            _ if is_udf(e) => Ok(TreeNodeRecursion::Stop),
             _ => {
                 cond = false;
                 Ok(TreeNodeRecursion::Stop)
@@ -301,7 +303,7 @@ fn split_projection(
 
     for (expr_idx, expr) in projection.iter().enumerate() {
         // Run the TruncateRootActorPoolUDF TreeNodeRewriter
-        if is_actor_pool_udf_and_should_truncate_children(expr) {
+        if is_udf_and_should_truncate_children(expr) {
             let mut rewriter = TruncateRootActorPoolUDF::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
@@ -313,7 +315,7 @@ fn split_projection(
             }
 
         // Run the TruncateAnyActorPoolUDFChildren TreeNodeRewriter
-        } else if expr.exists(is_actor_pool_udf) {
+        } else if expr.exists(is_udf) {
             let mut rewriter = TruncateAnyActorPoolUDFChildren::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
@@ -355,7 +357,7 @@ fn try_optimize_project(
         .projection
         .iter()
         .map(|expr| {
-            if expr.exists(is_actor_pool_udf) && !matches!(expr.as_ref(), Expr::Alias(..)) {
+            if expr.exists(is_udf) && !matches!(expr.as_ref(), Expr::Alias(..)) {
                 expr.alias(expr.name())
             } else {
                 expr.clone()
@@ -376,10 +378,7 @@ fn recursive_optimize_project(
     // TODO: eliminate the need for recursive calls by doing a post-order traversal of the plan tree.
 
     // Base case: no actor pool UDFs at all
-    let has_actor_pool_udfs = projection
-        .projection
-        .iter()
-        .any(|expr| expr.exists(is_actor_pool_udf));
+    let has_actor_pool_udfs = projection.projection.iter().any(|expr| expr.exists(is_udf));
     if !has_actor_pool_udfs {
         return Ok(Transformed::no(plan));
     }
@@ -430,7 +429,7 @@ fn recursive_optimize_project(
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
     let (actor_pool_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
-        .partition(|expr| expr.exists(is_actor_pool_udf));
+        .partition(|expr| expr.exists(is_udf));
 
     // Build the new stateless Project: [...all columns that came before it, ...stateless_projections]
     let passthrough_columns = {
@@ -463,20 +462,13 @@ fn recursive_optimize_project(
         let mut child = new_plan;
 
         for expr in actor_pool_stages {
-            let expr_name = expr.name().to_string();
-            let projection = child
+            let passthrough_columns = child
                 .schema()
                 .field_names()
-                .filter_map(|name| {
-                    if name == expr_name {
-                        None
-                    } else {
-                        Some(resolved_col(name))
-                    }
-                })
-                .chain(iter::once(expr))
+                .map(resolved_col)
+                .filter(|c| c.name() != expr.name())
                 .collect();
-            child = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(child, projection)?)
+            child = LogicalPlan::UDFProject(UDFProject::try_new(child, expr, passthrough_columns)?)
                 .arced();
         }
         child
@@ -515,7 +507,7 @@ mod tests {
 
     use super::SplitActorPoolProjects;
     use crate::{
-        ops::{ActorPoolProject, Project},
+        ops::{Project, UDFProject},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownProjection,
@@ -599,9 +591,10 @@ mod tests {
 
         // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
         let expected = scan_plan.select(vec![resolved_col("a")])?.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![resolved_col("a"), actor_pool_project_expr.alias("b")],
+            actor_pool_project_expr.alias("b"),
+            vec![resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -636,22 +629,19 @@ mod tests {
         let expected = scan_plan
             .select(vec![resolved_col("a"), resolved_col("b")])?
             .build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_column_name_0),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_column_name_0),
+            vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
+            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_column_name_1),
             vec![
                 resolved_col("a"),
                 resolved_col("b"),
                 resolved_col(intermediate_column_name_0),
-                create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_column_name_1),
             ],
         )?)
         .arced();
@@ -675,28 +665,26 @@ mod tests {
             ],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
+            create_actor_pool_udf(vec![resolved_col(intermediate_column_name_0)]).alias("a_prime"),
             vec![
                 resolved_col(intermediate_column_name_0),
                 resolved_col(intermediate_column_name_1),
                 resolved_col("a"),
                 resolved_col("b"),
-                create_actor_pool_udf(vec![resolved_col(intermediate_column_name_0)])
-                    .alias("a_prime"),
             ],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
+            create_actor_pool_udf(vec![resolved_col(intermediate_column_name_1)]).alias("b_prime"),
             vec![
                 resolved_col(intermediate_column_name_0),
                 resolved_col(intermediate_column_name_1),
                 resolved_col("a"),
                 resolved_col("b"),
                 resolved_col("a_prime"),
-                create_actor_pool_udf(vec![resolved_col(intermediate_column_name_1)])
-                    .alias("b_prime"),
             ],
         )?)
         .arced();
@@ -729,12 +717,10 @@ mod tests {
 
         let intermediate_name = "__TruncateRootActorPoolUDF_0-1-0__";
         let expected = scan_plan.select(vec![resolved_col("a")])?.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
+            vec![resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -747,13 +733,10 @@ mod tests {
             vec![resolved_col(intermediate_name), resolved_col("a")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col(intermediate_name),
-                resolved_col("a"),
-                create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("b"),
-            ],
+            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("b"),
+            vec![resolved_col(intermediate_name), resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -765,20 +748,16 @@ mod tests {
 
         // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
         let expected = scan_plan.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-                resolved_col("a"),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
+            vec![resolved_col("a")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("b"),
-            ],
+            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("b"),
+            vec![resolved_col("a")],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -800,12 +779,10 @@ mod tests {
         let intermediate_name = "__TruncateRootActorPoolUDF_0-0-0__";
 
         let expected = scan_plan.select(vec![resolved_col("a")])?.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
+            vec![resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -818,26 +795,26 @@ mod tests {
             vec![resolved_col(intermediate_name)],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col(intermediate_name),
-                create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("a"),
-            ],
+            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("a"),
+            vec![resolved_col(intermediate_name)],
         )?)
         .arced();
         let expected =
             LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();
         assert_optimized_plan_eq(project_plan.clone(), expected)?;
 
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_plan.build(),
-            vec![create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name)],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
+            vec![], // No additional
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("a")],
+            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("a"),
+            vec![],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -868,22 +845,19 @@ mod tests {
         let expected = scan_plan
             .select(vec![resolved_col("a"), resolved_col("b")])?
             .build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
+            vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
+            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
             vec![
                 resolved_col("a"),
                 resolved_col("b"),
                 resolved_col(intermediate_name_0),
-                create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
             ],
         )?)
         .arced();
@@ -903,16 +877,16 @@ mod tests {
             ],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
+            create_actor_pool_udf(vec![
+                resolved_col(intermediate_name_0),
+                resolved_col(intermediate_name_1),
+            ])
+            .alias("c"),
             vec![
                 resolved_col(intermediate_name_0),
                 resolved_col(intermediate_name_1),
-                create_actor_pool_udf(vec![
-                    resolved_col(intermediate_name_0),
-                    resolved_col(intermediate_name_1),
-                ])
-                .alias("c"),
             ],
         )?)
         .arced();
@@ -922,29 +896,26 @@ mod tests {
 
         // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
         let expected = scan_plan.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-                resolved_col("b"),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
+            vec![resolved_col("b")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
-            ],
+            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
+            vec![resolved_col(intermediate_name_0)],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![create_actor_pool_udf(vec![
+            create_actor_pool_udf(vec![
                 resolved_col(intermediate_name_0),
                 resolved_col(intermediate_name_1),
             ])
-            .alias("c")],
+            .alias("c"),
+            vec![],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -974,22 +945,19 @@ mod tests {
         let expected = scan_plan
             .select(vec![resolved_col("a"), resolved_col("b")])?
             .build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
+            vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
+            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
             vec![
                 resolved_col("a"),
                 resolved_col("b"),
                 resolved_col(intermediate_name_0),
-                create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
             ],
         )?)
         .arced();
@@ -1022,12 +990,10 @@ mod tests {
             vec![resolved_col(intermediate_name_2)],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col(intermediate_name_2),
-                create_actor_pool_udf(vec![resolved_col(intermediate_name_2)]).alias("c"),
-            ],
+            create_actor_pool_udf(vec![resolved_col(intermediate_name_2)]).alias("c"),
+            vec![resolved_col(intermediate_name_2)],
         )?)
         .arced();
         let expected =
@@ -1036,20 +1002,16 @@ mod tests {
 
         // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
         let expected = scan_plan.build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-                resolved_col("b"),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
+            vec![resolved_col("b")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
-            ],
+            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
+            vec![resolved_col(intermediate_name_0)],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -1059,9 +1021,10 @@ mod tests {
                 .alias(intermediate_name_2)],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![create_actor_pool_udf(vec![resolved_col(intermediate_name_2)]).alias("c")],
+            create_actor_pool_udf(vec![resolved_col(intermediate_name_2)]).alias("c"),
+            vec![],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -1090,12 +1053,10 @@ mod tests {
         let expected = scan_plan.build();
         let expected =
             LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
+            vec![resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -1124,13 +1085,10 @@ mod tests {
             vec![resolved_col(intermediate_name_1), resolved_col("a")],
         )?)
         .arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col(intermediate_name_1),
-                resolved_col("a"),
-                create_actor_pool_udf(vec![resolved_col(intermediate_name_1)]).alias("c"),
-            ],
+            create_actor_pool_udf(vec![resolved_col(intermediate_name_1)]).alias("c"),
+            vec![resolved_col(intermediate_name_1), resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(
@@ -1163,12 +1121,10 @@ mod tests {
         let expected = scan_plan.build();
         let expected =
             LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
-            vec![
-                resolved_col("a"),
-                create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            ],
+            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
+            vec![resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::Project(Project::try_new(

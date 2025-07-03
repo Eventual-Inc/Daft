@@ -44,8 +44,8 @@ where
             LogicalPlan::Project(project) => json!({
                 "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
-            LogicalPlan::ActorPoolProject(project) => json!({
-                "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            LogicalPlan::UDFProject(project) => json!({
+                "project": project.project.to_string(),
             }),
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],
