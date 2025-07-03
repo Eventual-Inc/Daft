@@ -91,7 +91,7 @@ jobs:
     if: ${{ failure() }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.0
       with:
         payload: |
           {
@@ -126,7 +126,7 @@ jobs:
         fetch-depth: 0
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v6
       with:
         version: "0.6.17"
     - name: Set up Python ${{ env.PYTHON_VERSION }}
@@ -159,7 +159,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -205,7 +205,7 @@ jobs:
       if: runner.os == 'macos'
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v6
       with:
         version: "0.6.17"
     - name: Set up Python ${{ env.PYTHON_VERSION }}
@@ -236,7 +236,7 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.2.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -246,7 +246,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -278,7 +278,7 @@ jobs:
     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.0
       with:
         payload: |
           {
@@ -311,7 +311,7 @@ jobs:
     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.0
       with:
         payload: |
           {
