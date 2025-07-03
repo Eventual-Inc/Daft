@@ -341,7 +341,7 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def write_iceberg(self, table: IcebergTable, io_config: IOConfig) -> LogicalPlanBuilder:
-        from daft.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
+        from daft.io.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
