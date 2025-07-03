@@ -31,23 +31,9 @@ impl PythonPartitionRefStream {
         slf
     }
 
-    /// Flush all pending HTTP requests in statistics subscribers
-    fn flush_statistics<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
-        let statistics_manager = self.statistics_manager.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            statistics_manager
-                .flush_all_subscribers()
-                .await
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Failed to flush statistics: {}",
-                        e
-                    ))
-                })
-        })
-    }
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let inner = self.inner.clone();
+        let statistics_manager = self.statistics_manager.clone();
         // future into py requires that the future is Send + 'static, so we wrap the inner in an Arc<Mutex<>>
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let next = {
@@ -65,7 +51,13 @@ impl PythonPartitionRefStream {
                         .clone();
                     Some(ray_part_ref)
                 }
-                None => None,
+                None => {
+                    // Stream has completed - flush all statistics subscribers
+                    if let Err(e) = statistics_manager.flush_all_subscribers().await {
+                        tracing::warn!("Failed to flush statistics subscribers: {}", e);
+                    }
+                    None
+                }
             };
             Ok(next)
         })
