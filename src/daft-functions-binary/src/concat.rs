@@ -26,7 +26,7 @@ impl ScalarUDF for BinaryConcat {
     fn name(&self) -> &'static str {
         "binary_concat"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let BinaryConcatArgs { input, other } = inputs.try_into()?;
         let name = input.name();
         use DataType::{Binary, FixedSizeBinary, Null};
@@ -68,11 +68,7 @@ impl ScalarUDF for BinaryConcat {
         }
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let BinaryConcatArgs {
             input: left,
             other: right,

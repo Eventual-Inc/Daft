@@ -41,7 +41,7 @@ impl ScalarUDF for UrlDownload {
     fn name(&self) -> &'static str {
         "url_download"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let UrlDownloadArgs {
             input,
             multi_thread,
@@ -79,11 +79,7 @@ impl ScalarUDF for UrlDownload {
         Ok(result.into_series())
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UrlDownloadArgs { input, .. } = inputs.try_into()?;
         let field = input.to_field(schema)?;
         ensure!(field.dtype.is_string(), TypeError: "Input must be a string");

@@ -20,16 +20,12 @@ impl ScalarUDF for ListDistinct {
         "list_distinct"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         input.list_distinct()
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let field = inputs.required((0, "input"))?.to_field(schema)?;
         ensure!(
             field.dtype.is_list() || field.dtype.is_fixed_size_list(),
