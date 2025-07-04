@@ -644,6 +644,25 @@ pub fn populate_aggregation_stages_bound(
     schema: &Schema,
     group_by: &[BoundExpr],
 ) -> DaftResult<(Vec<BoundAggExpr>, Vec<BoundAggExpr>, Vec<BoundExpr>)> {
+    let (
+        (first_stage_aggs, _first_stage_schema),
+        (second_stage_aggs, _second_stage_schema),
+        final_exprs,
+    ) = populate_aggregation_stages_bound_with_schema(aggregations, schema, group_by)?;
+
+    Ok((first_stage_aggs, second_stage_aggs, final_exprs))
+}
+
+#[allow(clippy::type_complexity)]
+pub fn populate_aggregation_stages_bound_with_schema(
+    aggregations: &[BoundAggExpr],
+    schema: &Schema,
+    group_by: &[BoundExpr],
+) -> DaftResult<(
+    (Vec<BoundAggExpr>, Schema),
+    (Vec<BoundAggExpr>, Schema),
+    Vec<BoundExpr>,
+)> {
     let mut first_stage_aggs = IndexSet::new();
     let mut second_stage_aggs = IndexSet::new();
 
@@ -905,8 +924,8 @@ pub fn populate_aggregation_stages_bound(
     }
 
     Ok((
-        first_stage_aggs.into_iter().collect(),
-        second_stage_aggs.into_iter().collect(),
+        (first_stage_aggs.into_iter().collect(), first_stage_schema),
+        (second_stage_aggs.into_iter().collect(), second_stage_schema),
         final_exprs,
     ))
 }

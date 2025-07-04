@@ -44,11 +44,11 @@ impl StagePlanBuilder {
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::Limit(_)
-            | LogicalPlan::Repartition(_) => Ok(TreeNodeRecursion::Continue),
-            LogicalPlan::Sort(_)
+            | LogicalPlan::Repartition(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
-            | LogicalPlan::Window(_)
+            | LogicalPlan::Window(_) => Ok(TreeNodeRecursion::Continue),
+            LogicalPlan::Sort(_)
             | LogicalPlan::Concat(_)
             | LogicalPlan::TopN(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
@@ -148,10 +148,7 @@ impl StagePlanBuilder {
                     ) -> DaftResult<common_treenode::Transformed<Self::Node>> {
                         // For simple operations, we can pipeline them together
                         // until we hit a stage boundary (e.g., a HashJoin)
-                        if matches!(
-                            node.as_ref(),
-                            LogicalPlan::Join(_) | LogicalPlan::Aggregate(_)
-                        ) {
+                        if matches!(node.as_ref(), LogicalPlan::Join(_)) {
                             let ph = PlaceHolderInfo::new(
                                 node.schema(),
                                 Arc::new(ClusteringSpec::unknown()),

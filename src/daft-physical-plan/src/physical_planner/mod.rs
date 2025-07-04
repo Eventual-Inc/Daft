@@ -13,6 +13,7 @@ use crate::{optimization::optimizer::PhysicalOptimizer, PhysicalPlanRef};
 mod translate;
 pub use translate::{
     extract_agg_expr, populate_aggregation_stages, populate_aggregation_stages_bound,
+    populate_aggregation_stages_bound_with_schema,
 };
 
 mod display;

@@ -52,6 +52,8 @@ impl RepartitionNode {
             vec![child.name()],
         );
         let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+
+        debug_assert!(!columns.is_empty());
         Self {
             config,
             context,

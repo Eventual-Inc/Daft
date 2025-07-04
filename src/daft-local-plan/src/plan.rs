@@ -13,7 +13,7 @@ use daft_dsl::{
         BoundColumn,
     },
     functions::python::get_resource_request,
-    Column, WindowExpr, WindowFrame,
+    Column, WindowExpr, WindowFrame, WindowSpec,
 };
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
@@ -281,7 +281,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn hash_aggregate(
+    pub fn hash_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
         group_by: Vec<BoundExpr>,
@@ -298,7 +298,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn dedup(
+    pub fn dedup(
         input: LocalPhysicalPlanRef,
         columns: Vec<BoundExpr>,
         schema: SchemaRef,
@@ -313,7 +313,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn window_partition_only(
+    pub fn window_partition_only(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<BoundExpr>,
         schema: SchemaRef,
@@ -333,7 +333,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_partition_and_order_by(
+    pub fn window_partition_and_order_by(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
@@ -359,7 +359,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_partition_and_dynamic_frame(
+    pub fn window_partition_and_dynamic_frame(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
