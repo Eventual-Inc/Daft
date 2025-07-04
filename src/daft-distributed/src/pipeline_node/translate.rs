@@ -15,10 +15,19 @@ use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        groupby_agg::GroupbyAggNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
-        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
+        distinct::DistinctNode,
+        explode::ExplodeNode,
+        filter::FilterNode,
+        groupby_agg::{split_groupby_aggs, GroupbyAggNode},
+        in_memory_source::InMemorySourceNode,
+        limit::LimitNode,
+        project::ProjectNode,
+        repartition::RepartitionNode,
+        sample::SampleNode,
+        scan_source::ScanSourceNode,
+        sink::SinkNode,
+        unpivot::UnpivotNode,
+        window::WindowNode,
         DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
@@ -210,7 +219,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     todo!("FLOTILLA_MS2: Support repartitioning into unknown number of partitions");
                 };
 
-                debug_assert!(!repart_spec.by.is_empty());
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
                 RepartitionNode::new(
                     &self.stage_config,
@@ -237,25 +245,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                let (
-                    (first_stage_aggs, first_stage_schema),
-                    (second_stage_aggs, second_stage_schema),
-                    final_exprs,
-                ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
-                    &aggregations,
-                    &aggregate.input.schema(),
-                    &groupby,
-                )?;
-                let first_stage_schema = Arc::new(first_stage_schema);
-                let second_stage_schema = Arc::new(second_stage_schema);
+                let split_details =
+                    split_groupby_aggs(groupby, &aggregations, &aggregate.input.schema())?;
 
                 // First stage groupby-agg to reduce the dataset
                 let initial_groupby = GroupbyAggNode::new(
                     &self.stage_config,
                     node_id,
-                    groupby.clone(),
-                    first_stage_aggs,
-                    first_stage_schema.clone(),
+                    split_details.first_stage_group_by,
+                    split_details.first_stage_aggs,
+                    split_details.first_stage_schema.clone(),
                     self.curr_node.pop().unwrap(),
                 )
                 .arced();
@@ -264,9 +263,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let repartition = RepartitionNode::new(
                     &self.stage_config,
                     node_id,
-                    groupby.clone(),
+                    split_details.second_stage_group_by.clone(),
                     20, // TODO(colin): How do we determine this?
-                    first_stage_schema,
+                    split_details.first_stage_schema.clone(),
                     initial_groupby,
                 )
                 .arced();
@@ -275,22 +274,26 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let final_groupby = GroupbyAggNode::new(
                     &self.stage_config,
                     node_id,
-                    groupby,
-                    second_stage_aggs,
-                    second_stage_schema,
+                    split_details.second_stage_group_by,
+                    split_details.second_stage_aggs,
+                    split_details.second_stage_schema.clone(),
                     repartition,
                 )
                 .arced();
 
                 // Last stage project to get the final result
-                ProjectNode::new(
-                    &self.stage_config,
-                    node_id,
-                    final_exprs,
-                    aggregate.output_schema.clone(),
-                    final_groupby,
-                )
-                .arced()
+                if let Some(final_exprs) = split_details.final_exprs {
+                    ProjectNode::new(
+                        &self.stage_config,
+                        node_id,
+                        final_exprs,
+                        aggregate.output_schema.clone(),
+                        final_groupby,
+                    )
+                    .arced()
+                } else {
+                    final_groupby
+                }
             }
             LogicalPlan::Distinct(distinct) => {
                 let columns = distinct.columns.clone().unwrap_or_else(|| {

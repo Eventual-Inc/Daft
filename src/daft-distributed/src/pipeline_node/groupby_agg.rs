@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
+use common_error::DaftResult;
+use daft_dsl::expr::{
+    bound_col,
+    bound_expr::{BoundAggExpr, BoundExpr},
+};
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -11,6 +15,68 @@ use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     stage::{StageConfig, StageExecutionContext},
 };
+
+pub struct GroupbyAggSplit {
+    pub first_stage_aggs: Vec<BoundAggExpr>,
+    pub first_stage_schema: SchemaRef,
+    pub first_stage_group_by: Vec<BoundExpr>,
+
+    pub second_stage_aggs: Vec<BoundAggExpr>,
+    pub second_stage_schema: SchemaRef,
+    pub second_stage_group_by: Vec<BoundExpr>,
+
+    pub final_exprs: Option<Vec<BoundExpr>>,
+}
+
+pub(crate) fn split_groupby_aggs(
+    group_by: Vec<BoundExpr>,
+    aggs: &[BoundAggExpr],
+    input_schema: &SchemaRef,
+) -> DaftResult<GroupbyAggSplit> {
+    // Split the aggs into two stages and final projection
+    let (
+        (first_stage_aggs, first_stage_schema),
+        (second_stage_aggs, second_stage_schema),
+        final_exprs,
+    ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
+        aggs,
+        input_schema,
+        &group_by,
+    )?;
+
+    // Generate the expression for the second stage group_by
+    let second_stage_group_by = if !first_stage_aggs.is_empty() {
+        group_by
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let field = e.as_ref().to_field(input_schema)?;
+                Ok(BoundExpr::new_unchecked(bound_col(i, field)))
+            })
+            .collect::<DaftResult<Vec<_>>>()?
+    } else {
+        group_by.clone()
+    };
+
+    // If the final expr is a pointless projection, remove it
+    let final_exprs = if final_exprs.len() == second_stage_aggs.len() {
+        None
+    } else {
+        Some(final_exprs)
+    };
+
+    Ok(GroupbyAggSplit {
+        first_stage_aggs,
+        first_stage_schema: Arc::new(first_stage_schema),
+        first_stage_group_by: group_by,
+
+        second_stage_aggs,
+        second_stage_schema: Arc::new(second_stage_schema),
+        second_stage_group_by,
+
+        final_exprs,
+    })
+}
 
 pub(crate) struct GroupbyAggNode {
     config: PipelineNodeConfig,
