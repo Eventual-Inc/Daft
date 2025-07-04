@@ -213,7 +213,6 @@ impl GCSClientWrapper {
         let (grange, size) = if let Some(range) = range {
             match range.as_valid_range().context(InvalidRangeRequestSnafu)? {
                 GetRange::Bounded(r) => (
-                    // Gcs range end is included during convert to header
                     GcsRange(Some(r.start as u64), Some(r.end as u64 - 1)),
                     Some(r.len()),
                 ),
@@ -608,5 +607,31 @@ impl ObjectSource for GCSSource {
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_io_config::GCSConfig;
+
+    use crate::{google_cloud::GCSSource, integrations::test_full_get, object_io::ObjectSource};
+
+    #[tokio::test]
+    async fn test_full_get_from_gcs() -> crate::Result<()> {
+        let test_file_path = "gs://covid19-open-data/dm-c19-data/raw/SAPE22DT6a-mid-2019-ccg-2020-estimates-unformatted.xlsx";
+        let expected_md5 = "c4ed100cd2f99fd368c846317abcdaf5";
+
+        let config = GCSConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+        let client = GCSSource::get_client(&config).await?;
+        let test_file = client.get(test_file_path, None, None).await?;
+        let bytes = test_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, expected_md5);
+
+        test_full_get(client, &test_file_path, &bytes).await
     }
 }
