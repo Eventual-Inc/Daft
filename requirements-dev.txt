@@ -36,7 +36,7 @@ pandas-stubs==2.2.2.240807
 xxhash>=3.0.0
 Pillow==10.4.0
 opencv-python==4.10.0.84
-tiktoken==0.7.0
+tiktoken==0.9.0
 duckdb==1.1.2
 
 # TQDM
@@ -101,7 +101,7 @@ mkdocs-simple-hooks
 pymdown-extensions
 mkdocs-material[imaging]
 mkdocstrings-python
-ruff
+ruff==0.8.2
 mkdocs-minify-plugin
 mkdocs-redirects
 
