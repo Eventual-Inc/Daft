@@ -31,6 +31,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::{Arc, LazyLock};
 
+    use common_error::DaftError;
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
     use daft_logical_plan::{
@@ -208,6 +209,7 @@ mod tests {
         assert_eq!(plan, expected);
         Ok(())
     }
+
     #[rstest]
     fn test_limit(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
         let sql = "select test as a from tbl1 limit 10";
@@ -220,6 +222,23 @@ mod tests {
             .build();
 
         assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_negative_limit(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 limit -1";
+        let plan = planner.plan_sql(sql);
+        match plan {
+            Err(PlannerError::InvalidOperation { message }) => {
+                assert_eq!(
+                    message,
+                    "LIMIT <n> must be greater than or equal to 0, instead got: -1"
+                );
+            }
+            _ => panic!("Unexpected result"),
+        }
+
         Ok(())
     }
 

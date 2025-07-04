@@ -82,7 +82,7 @@ impl LimitNode {
                         &move |input| {
                             Ok(LocalPhysicalPlan::limit(
                                 input,
-                                remaining_limit as i64,
+                                remaining_limit as u64,
                                 StatsState::NotMaterialized,
                             ))
                         },
@@ -146,7 +146,7 @@ impl DistributedPipelineNode for LimitNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        let limit = self.limit as i64;
+        let limit = self.limit as u64;
         let local_limit_node =
             input_node.pipeline_instruction(stage_context, self.clone(), move |input_plan| {
                 Ok(LocalPhysicalPlan::limit(

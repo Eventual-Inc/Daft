@@ -438,6 +438,16 @@ impl RecordBatch {
         Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
 
+    pub fn concat_or_empty<T: AsRef<Self>>(
+        tables: &[T],
+        schema: Option<SchemaRef>,
+    ) -> DaftResult<Self> {
+        if tables.is_empty() {
+            return Self::empty(schema);
+        }
+        Self::concat(tables)
+    }
+
     pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(

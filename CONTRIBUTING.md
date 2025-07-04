@@ -42,9 +42,12 @@ To set up your development environment:
 
 1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.12)
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
-3. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
-4. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
-5. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
+3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
+4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
+5. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
+6. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
+7. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
+8. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
 
 ### Developing
 
@@ -57,6 +60,7 @@ To set up your development environment:
 7. `make lint`: lint all Python and Rust code
 8. `make check-format`: check that all Python and Rust code is formatted, alias `make format-check`
 9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
+10. `make build-release`: perform a full release build of Daft
 
 #### Note about Developing `daft-dashboard`
 

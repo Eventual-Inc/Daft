@@ -20,7 +20,7 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.dependencies import pa
-from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
+from daft.io.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 

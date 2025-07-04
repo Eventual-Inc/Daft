@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -12,23 +12,26 @@ use crate::{
     stage::{StageConfig, StageExecutionContext},
 };
 
-pub(crate) struct GroupbyAggNode {
+pub(crate) struct SortNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    groupby: Vec<BoundExpr>,
-    aggs: Vec<BoundAggExpr>,
+    // Sort properties
+    sort_by: Vec<BoundExpr>,
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl GroupbyAggNode {
-    const NODE_NAME: NodeName = "GroupbyAgg";
+impl SortNode {
+    const NODE_NAME: NodeName = "Sort";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
-        groupby: Vec<BoundExpr>,
-        aggs: Vec<BoundAggExpr>,
+        sort_by: Vec<BoundExpr>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
         output_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -43,8 +46,9 @@ impl GroupbyAggNode {
         Self {
             config,
             context,
-            groupby,
-            aggs,
+            sort_by,
+            descending,
+            nulls_first,
             child,
         }
     }
@@ -55,20 +59,24 @@ impl GroupbyAggNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec![];
+        let mut res = vec!["Sort".to_string()];
         res.push(format!(
-            "Groupby Agg: {}",
-            self.groupby.iter().map(|e| e.to_string()).join(", ")
+            "Sort by: {}",
+            self.sort_by.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!(
-            "Aggregations = {}",
-            self.aggs.iter().map(|e| e.to_string()).join(", ")
+            "Descending = {}",
+            self.descending.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "Nulls first = {}",
+            self.nulls_first.iter().map(|e| e.to_string()).join(", ")
         ));
         res
     }
 }
 
-impl TreeDisplay for GroupbyAggNode {
+impl TreeDisplay for SortNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -93,7 +101,7 @@ impl TreeDisplay for GroupbyAggNode {
     }
 }
 
-impl DistributedPipelineNode for GroupbyAggNode {
+impl DistributedPipelineNode for SortNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -109,27 +117,16 @@ impl DistributedPipelineNode for GroupbyAggNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        // Pipeline the groupby
+        // Pipeline the top-n
         let self_clone = self.clone();
-        let no_groupby = self_clone.groupby.is_empty();
-
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            if no_groupby {
-                Ok(LocalPhysicalPlan::ungrouped_aggregate(
-                    input,
-                    self_clone.aggs.clone(),
-                    self_clone.config.schema.clone(),
-                    StatsState::NotMaterialized,
-                ))
-            } else {
-                Ok(LocalPhysicalPlan::hash_aggregate(
-                    input,
-                    self_clone.aggs.clone(),
-                    self_clone.groupby.clone(),
-                    self_clone.config.schema.clone(),
-                    StatsState::NotMaterialized,
-                ))
-            }
+            Ok(LocalPhysicalPlan::sort(
+                input,
+                self_clone.sort_by.clone(),
+                self_clone.descending.clone(),
+                self_clone.nulls_first.clone(),
+                StatsState::NotMaterialized,
+            ))
         })
     }
 

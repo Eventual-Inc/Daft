@@ -336,7 +336,7 @@ impl ToFromProto for ir::rel::Limit {
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let input = self.input.to_proto()?.into();
-        let limit = self.limit as u64; // !! limit uses a signed int?
+        let limit = self.limit;
         Ok(Self::Message {
             input: Some(input),
             limit,

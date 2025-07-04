@@ -133,7 +133,14 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        plan.limit(i64::from(limit), false).map_err(Into::into)
+        let limit = u64::try_from(limit).map_err(|_| {
+            ConnectError::invalid_argument(format!(
+                "LIMIT <n> must be greater than or equal to 0, instead got: {}",
+                limit
+            ))
+        })?;
+
+        plan.limit(limit, false).map_err(Into::into)
     }
 
     async fn deduplicate(&self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {

@@ -89,8 +89,14 @@ impl RepartitionNode {
 
         let mut transposed_outputs: Vec<Vec<MaterializedOutput>> = vec![vec![]; num_partitions];
         for (worker_id, partitions) in base_outputs {
-            for (partition_group, partition) in transposed_outputs.iter_mut().zip(partitions) {
-                partition_group.push(MaterializedOutput::new(partition, worker_id.clone()));
+            // Each task produced num_partitions partitions
+            // But workers can execute multiple tasks, so worker_id is not enough to distinguish
+            // Double check, this is not enough but OK for now if ordering or overlap issue
+            assert_eq!(partitions.len() % num_partitions, 0);
+
+            for (group_idx, partition) in partitions.into_iter().enumerate() {
+                transposed_outputs[group_idx % num_partitions]
+                    .push(MaterializedOutput::new(partition, worker_id.clone()));
             }
         }
 

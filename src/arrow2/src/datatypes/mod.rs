@@ -229,6 +229,24 @@ impl DataType {
             }
         }
     }
+
+    /// Returns whether this datatype or any of its children contains a type that is incompatible with JSON writes.
+    /// Returns false if the datatype contains Duration or Binary types.
+    pub fn can_convert_to_json(&self) -> bool {
+        match self {
+            // Duration types are not currently supported in JSON.
+            DataType::Duration(_) => false,
+            // Binary types are not currently supported in JSON.
+            DataType::Binary | DataType::FixedSizeBinary(_) | DataType::LargeBinary => false,
+            _ => {
+                let mut can_convert = true;
+                self.direct_children(|child| {
+                    can_convert = can_convert && child.can_convert_to_json();
+                });
+                can_convert
+            }
+        }
+    }
 }
 
 #[cfg(feature = "arrow")]

@@ -47,13 +47,14 @@ impl StagePlanBuilder {
             | LogicalPlan::Repartition(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
-            | LogicalPlan::Window(_) => Ok(TreeNodeRecursion::Continue),
-            LogicalPlan::Sort(_)
-            | LogicalPlan::Concat(_)
-            | LogicalPlan::TopN(_)
+            | LogicalPlan::Window(_)
+            | LogicalPlan::Join(_)
+            | LogicalPlan::Sort(_)
+            | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),
+            LogicalPlan::Concat(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Pivot(_)
-            | LogicalPlan::Join(_) => {
+             => {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)
             }
@@ -148,20 +149,20 @@ impl StagePlanBuilder {
                     ) -> DaftResult<common_treenode::Transformed<Self::Node>> {
                         // For simple operations, we can pipeline them together
                         // until we hit a stage boundary (e.g., a HashJoin)
-                        if matches!(node.as_ref(), LogicalPlan::Join(_)) {
-                            let ph = PlaceHolderInfo::new(
-                                node.schema(),
-                                Arc::new(ClusteringSpec::unknown()),
-                            );
-                            let new_scan = LogicalPlan::Source(Source::new(
-                                node.schema(),
-                                SourceInfo::PlaceHolder(ph).into(),
-                            ));
-                            self.remaining = Some(node);
-                            Ok(Transformed::yes(new_scan.into()))
-                        } else {
-                            Ok(Transformed::no(node))
-                        }
+                        // if matches!(node.as_ref(), LogicalPlan::Join(_)) {
+                        //     let ph = PlaceHolderInfo::new(
+                        //         node.schema(),
+                        //         Arc::new(ClusteringSpec::unknown()),
+                        //     );
+                        //     let new_scan = LogicalPlan::Source(Source::new(
+                        //         node.schema(),
+                        //         SourceInfo::PlaceHolder(ph).into(),
+                        //     ));
+                        //     self.remaining = Some(node);
+                        //     Ok(Transformed::yes(new_scan.into()))
+                        // } else {
+                        Ok(Transformed::no(node))
+                        // }
                     }
 
                     fn f_up(

@@ -6,9 +6,11 @@ use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        bound_col,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    },
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
-    resolved_col,
 };
 use daft_logical_plan::{
     partitioning::RepartitionSpec, JoinStrategy, LogicalPlan, LogicalPlanRef, SourceInfo,
@@ -17,11 +19,12 @@ use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        groupby_agg::GroupbyAggNode, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode,
-        limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
-        DistributedPipelineNode, NodeID,
+        cross_join::CrossJoinNode, distinct::DistinctNode, explode::ExplodeNode,
+        filter::FilterNode, gather::GatherNode, groupby_agg::GroupbyAggNode,
+        hash_join::HashJoinNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
+        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
+        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode,
+        unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -212,6 +215,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 };
 
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
+
+                assert!(!columns.is_empty());
                 RepartitionNode::new(
                     &self.stage_config,
                     node_id,
@@ -223,17 +228,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Aggregate(aggregate) => {
-                if aggregate.groupby.is_empty() {
-                    todo!("FLOTILLA_MS2: Implement Aggregate without groupby")
-                }
-
-                let groupby = BoundExpr::bind_all(&aggregate.groupby, &aggregate.input.schema())?;
+                let input_schema = aggregate.input.schema();
+                let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;
                 let aggregations = aggregate
                     .aggregations
                     .iter()
                     .map(|expr| {
                         let agg_expr = extract_agg_expr(expr)?;
-                        BoundAggExpr::try_new(agg_expr, &aggregate.input.schema())
+                        BoundAggExpr::try_new(agg_expr, &input_schema)
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
@@ -243,9 +245,21 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     final_exprs,
                 ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
                     &aggregations,
-                    &aggregate.input.schema(),
-                    &groupby,
+                    &input_schema,
+                    &group_by,
                 )?;
+                let final_group_by = if !first_stage_aggs.is_empty() {
+                    group_by
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| {
+                            let field = e.as_ref().to_field(&input_schema)?;
+                            Ok(BoundExpr::new_unchecked(bound_col(i, field)))
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?
+                } else {
+                    group_by.clone()
+                };
                 let first_stage_schema = Arc::new(first_stage_schema);
                 let second_stage_schema = Arc::new(second_stage_schema);
 
@@ -253,32 +267,45 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let initial_groupby = GroupbyAggNode::new(
                     &self.stage_config,
                     node_id,
-                    groupby.clone(),
+                    group_by,
                     first_stage_aggs,
                     first_stage_schema.clone(),
                     self.curr_node.pop().unwrap(),
                 )
                 .arced();
 
-                // Second stage repartition to distribute the dataset
-                let repartition = RepartitionNode::new(
-                    &self.stage_config,
-                    node_id,
-                    groupby.clone(),
-                    20, // TODO(colin): How do we determine this?
-                    first_stage_schema,
-                    initial_groupby,
-                )
-                .arced();
+                // Second stage:
+                // If 0 groupby columns, gather all data to a single node
+                // Else, repartition to distribute the dataset
+                let transfer = if final_group_by.is_empty() {
+                    GatherNode::new(
+                        &self.stage_config,
+                        node_id,
+                        first_stage_schema,
+                        initial_groupby,
+                    )
+                    .arced()
+                } else {
+                    assert!(!final_group_by.is_empty());
+                    RepartitionNode::new(
+                        &self.stage_config,
+                        node_id,
+                        final_group_by.clone(),
+                        4, // TODO(colin): How do we determine this?
+                        first_stage_schema,
+                        initial_groupby,
+                    )
+                    .arced()
+                };
 
                 // Third stage re-groupby-agg to compute the final result
                 let final_groupby = GroupbyAggNode::new(
                     &self.stage_config,
                     node_id,
-                    groupby,
+                    final_group_by,
                     second_stage_aggs,
                     second_stage_schema,
-                    repartition,
+                    transfer,
                 )
                 .arced();
 
@@ -297,8 +324,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     distinct
                         .input
                         .schema()
-                        .field_names()
-                        .map(resolved_col)
+                        .fields()
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, field)| bound_col(idx, field.clone()))
                         .collect::<Vec<_>>()
                 });
                 let columns = BoundExpr::bind_all(&columns, &distinct.input.schema())?;
@@ -314,6 +343,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced();
 
                 // Second stage: Repartition to distribute the dataset
+                assert!(!columns.is_empty());
                 let repartition = RepartitionNode::new(
                     &self.stage_config,
                     node_id,
@@ -348,6 +378,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     BoundWindowExpr::bind_all(&window.window_functions, &window.input.schema())?;
 
                 // First stage: Repartition by the partition_by columns to colocate rows
+                assert!(!partition_by.is_empty());
                 let repartition = RepartitionNode::new(
                     &self.stage_config,
                     node_id,
@@ -381,36 +412,107 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         "Only hash join is supported in flotilla for now",
                     ));
                 }
-
-                let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
-                if !remaining_on.is_empty() {
-                    return Err(DaftError::not_implemented("Execution of non-equality join"));
-                }
-
                 let right = self.curr_node.pop().unwrap();
                 let left = self.curr_node.pop().unwrap();
-                let left_on = BoundExpr::bind_all(&left_on, &join.left.schema())?;
-                let right_on = BoundExpr::bind_all(&right_on, &join.right.schema())?;
 
-                HashJoinNode::new(
+                if join.on.is_empty() {
+                    CrossJoinNode::new(
+                        &self.stage_config,
+                        node_id,
+                        left,
+                        right,
+                        join.output_schema.clone(),
+                    )
+                    .arced()
+                } else {
+                    let (remaining_on, left_on, right_on, null_equals_nulls) =
+                        join.on.split_eq_preds();
+                    assert!(!left_on.is_empty());
+                    assert!(!right_on.is_empty());
+
+                    if !remaining_on.is_empty() {
+                        return Err(DaftError::not_implemented("Execution of non-equality join"));
+                    }
+
+                    let left_on = BoundExpr::bind_all(&left_on, &join.left.schema())?;
+                    let right_on = BoundExpr::bind_all(&right_on, &join.right.schema())?;
+
+                    HashJoinNode::new(
+                        &self.stage_config,
+                        node_id,
+                        20, // TODO(colin): How do we determine this?
+                        left_on,
+                        right_on,
+                        Some(null_equals_nulls),
+                        join.join_type,
+                        left,
+                        right,
+                        join.output_schema.clone(),
+                    )
+                    .arced()
+                }
+            }
+            LogicalPlan::Sort(sort) => {
+                let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
+
+                // First stage: Gather all data to a single node
+                let gather = GatherNode::new(
                     &self.stage_config,
                     node_id,
-                    20, // TODO(colin): How do we determine this?
-                    left_on,
-                    right_on,
-                    Some(null_equals_nulls),
-                    join.join_type,
-                    left,
-                    right,
-                    join.output_schema.clone(),
+                    sort.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced();
+
+                // Second stage: Perform a local sort
+                SortNode::new(
+                    &self.stage_config,
+                    node_id,
+                    sort_by,
+                    sort.descending.clone(),
+                    sort.nulls_first.clone(),
+                    sort.input.schema(),
+                    gather,
                 )
                 .arced()
             }
-            LogicalPlan::Sort(_) => {
-                todo!("FLOTILLA_MS2: Implement Sort")
-            }
-            LogicalPlan::TopN(_) => {
-                todo!("FLOTILLA_MS2: Implement TopN")
+            LogicalPlan::TopN(top_n) => {
+                let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
+
+                // First stage: Perform a local topN
+                let local_topn = TopNNode::new(
+                    &self.stage_config,
+                    node_id,
+                    sort_by.clone(),
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced();
+
+                // Second stage: Gather all data to a single node
+                let gather = GatherNode::new(
+                    &self.stage_config,
+                    node_id,
+                    top_n.input.schema(),
+                    local_topn,
+                )
+                .arced();
+
+                // Final stage: Do another topN to get the final result
+                TopNNode::new(
+                    &self.stage_config,
+                    node_id,
+                    sort_by,
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    gather,
+                )
+                .arced()
             }
             LogicalPlan::Pivot(_) => {
                 todo!("FLOTILLA_MS3: Implement Pivot")

@@ -29,9 +29,11 @@ use crate::{
 
 #[cfg(feature = "python")]
 mod actor_udf;
+mod cross_join;
 mod distinct;
 mod explode;
 mod filter;
+mod gather;
 mod groupby_agg;
 mod hash_join;
 mod in_memory_source;
@@ -42,6 +44,8 @@ mod repartition;
 mod sample;
 mod scan_source;
 mod sink;
+mod sort;
+mod top_n;
 mod translate;
 mod unpivot;
 mod window;
