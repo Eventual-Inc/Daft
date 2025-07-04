@@ -213,7 +213,8 @@ impl GCSClientWrapper {
         let (grange, size) = if let Some(range) = range {
             match range.as_valid_range().context(InvalidRangeRequestSnafu)? {
                 GetRange::Bounded(r) => (
-                    GcsRange(Some(r.start as u64), Some(r.end as u64)),
+                    // Gcs range end is included during convert to header
+                    GcsRange(Some(r.start as u64), Some(r.end as u64 - 1)),
                     Some(r.len()),
                 ),
                 GetRange::Offset(o) => (GcsRange(Some(*o as u64), None), None),
