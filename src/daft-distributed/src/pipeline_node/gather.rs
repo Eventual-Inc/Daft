@@ -71,6 +71,11 @@ impl GatherNode {
             .materialize(scheduler_handle.clone())
             .try_collect::<Vec<_>>()
             .await?;
+        // Remove any known empty partitions
+        let materialized = materialized
+            .into_iter()
+            .filter(|m| m.partition().num_rows().unwrap() > 0)
+            .collect::<Vec<_>>();
 
         let self_clone = self.clone();
         let task = make_new_task_from_materialized_outputs(

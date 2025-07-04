@@ -555,7 +555,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn cross_join(
+    pub fn cross_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         schema: SchemaRef,

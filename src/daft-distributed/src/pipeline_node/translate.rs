@@ -11,7 +11,6 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     },
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
-    resolved_col,
 };
 use daft_logical_plan::{
     partitioning::RepartitionSpec, JoinStrategy, LogicalPlan, LogicalPlanRef, SourceInfo,
@@ -20,9 +19,10 @@ use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode, gather::GatherNode,
-        groupby_agg::GroupbyAggNode, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode,
-        limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
+        cross_join::CrossJoinNode, distinct::DistinctNode, explode::ExplodeNode,
+        filter::FilterNode, gather::GatherNode, groupby_agg::GroupbyAggNode,
+        hash_join::HashJoinNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
+        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
         scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode,
         unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
     },
@@ -215,6 +215,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 };
 
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
+
+                assert!(!columns.is_empty());
                 RepartitionNode::new(
                     &self.stage_config,
                     node_id,
@@ -258,7 +260,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 } else {
                     group_by.clone()
                 };
-                eprintln!("Final Group By: {:?}", final_group_by);
                 let first_stage_schema = Arc::new(first_stage_schema);
                 let second_stage_schema = Arc::new(second_stage_schema);
 
@@ -285,6 +286,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )
                     .arced()
                 } else {
+                    assert!(!final_group_by.is_empty());
                     RepartitionNode::new(
                         &self.stage_config,
                         node_id,
@@ -308,25 +310,24 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced();
 
                 // Last stage project to get the final result
-                let out = ProjectNode::new(
+                ProjectNode::new(
                     &self.stage_config,
                     node_id,
                     final_exprs,
                     aggregate.output_schema.clone(),
                     final_groupby,
                 )
-                .arced();
-
-                eprintln!("[PIPELINE] Final Output");
-                out
+                .arced()
             }
             LogicalPlan::Distinct(distinct) => {
                 let columns = distinct.columns.clone().unwrap_or_else(|| {
                     distinct
                         .input
                         .schema()
-                        .field_names()
-                        .map(resolved_col)
+                        .fields()
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, field)| bound_col(idx, field.clone()))
                         .collect::<Vec<_>>()
                 });
                 let columns = BoundExpr::bind_all(&columns, &distinct.input.schema())?;
@@ -342,6 +343,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced();
 
                 // Second stage: Repartition to distribute the dataset
+                assert!(!columns.is_empty());
                 let repartition = RepartitionNode::new(
                     &self.stage_config,
                     node_id,
@@ -376,6 +378,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     BoundWindowExpr::bind_all(&window.window_functions, &window.input.schema())?;
 
                 // First stage: Repartition by the partition_by columns to colocate rows
+                assert!(!partition_by.is_empty());
                 let repartition = RepartitionNode::new(
                     &self.stage_config,
                     node_id,
@@ -409,30 +412,45 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         "Only hash join is supported in flotilla for now",
                     ));
                 }
-
-                let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
-                if !remaining_on.is_empty() {
-                    return Err(DaftError::not_implemented("Execution of non-equality join"));
-                }
-
                 let right = self.curr_node.pop().unwrap();
                 let left = self.curr_node.pop().unwrap();
-                let left_on = BoundExpr::bind_all(&left_on, &join.left.schema())?;
-                let right_on = BoundExpr::bind_all(&right_on, &join.right.schema())?;
 
-                HashJoinNode::new(
-                    &self.stage_config,
-                    node_id,
-                    20, // TODO(colin): How do we determine this?
-                    left_on,
-                    right_on,
-                    Some(null_equals_nulls),
-                    join.join_type,
-                    left,
-                    right,
-                    join.output_schema.clone(),
-                )
-                .arced()
+                if join.on.is_empty() {
+                    CrossJoinNode::new(
+                        &self.stage_config,
+                        node_id,
+                        left,
+                        right,
+                        join.output_schema.clone(),
+                    )
+                    .arced()
+                } else {
+                    let (remaining_on, left_on, right_on, null_equals_nulls) =
+                        join.on.split_eq_preds();
+                    assert!(!left_on.is_empty());
+                    assert!(!right_on.is_empty());
+
+                    if !remaining_on.is_empty() {
+                        return Err(DaftError::not_implemented("Execution of non-equality join"));
+                    }
+
+                    let left_on = BoundExpr::bind_all(&left_on, &join.left.schema())?;
+                    let right_on = BoundExpr::bind_all(&right_on, &join.right.schema())?;
+
+                    HashJoinNode::new(
+                        &self.stage_config,
+                        node_id,
+                        20, // TODO(colin): How do we determine this?
+                        left_on,
+                        right_on,
+                        Some(null_equals_nulls),
+                        join.join_type,
+                        left,
+                        right,
+                        join.output_schema.clone(),
+                    )
+                    .arced()
+                }
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
