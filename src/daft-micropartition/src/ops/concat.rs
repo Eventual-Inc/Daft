@@ -1,6 +1,7 @@
 use std::{borrow::Borrow, ops::Deref, sync::Mutex};
 
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsContext;
 use daft_stats::TableMetadata;
 
@@ -64,5 +65,19 @@ impl MicroPartition {
             metadata: TableMetadata { length: new_len },
             statistics: all_stats,
         })
+    }
+
+    pub fn concat_or_empty<I, T>(mps: I, schema: SchemaRef) -> DaftResult<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: Deref,
+        T::Target: Borrow<Self>,
+    {
+        let mps: Vec<_> = mps.into_iter().collect();
+        if mps.is_empty() {
+            return Ok(Self::empty(Some(schema)));
+        }
+
+        Self::concat(mps)
     }
 }
