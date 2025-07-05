@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pandas as pd
 import pytest
 
@@ -204,9 +206,7 @@ def test_offset_limit():
     )
 
 
-def test_limit_offset_with_orderby():
-    import random
-
+def test_limit_offset_with_sort():
     uids = [i for i in range(1024)]
     random.shuffle(uids)
     users = {"id": [], "name": []}
@@ -216,7 +216,122 @@ def test_limit_offset_with_orderby():
 
     df = daft.from_pydict(users)
 
-    with pytest.raises(ValueError) as excinfo:
-        df.select("id", "name").sort(by=col("id"), desc=True).limit(7).offset(3).show()
+    df0 = df.select("id", "name").sort(by=col("id"), desc=False).limit(7).offset(0)
+    pdf = df0.to_pandas()
+    assert len(pdf) == 7, f"Expected 7 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(0, 7)], name="name"), check_names=True, check_index=False
+    )
 
-    assert "Not Yet Implemented: OFFSET and SORT can't be used at the same time" in str(excinfo.value)
+    df1 = df.select("id", "name").sort(by=col("id"), desc=False).limit(0).offset(7)
+    pdf = df1.to_pandas()
+    assert len(pdf) == 0, f"Expected 0 rows, got {len(pdf)}"
+
+    df2 = df.select("id", "name").sort(by=col("id"), desc=False).limit(7).offset(2)
+    pdf = df2.to_pandas()
+    assert len(pdf) == 5, f"Expected 5 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(2, 7)], name="name"), check_names=True, check_index=False
+    )
+
+    df3 = df.select("id", "name").sort(by=col("id"), desc=False).limit(7).offset(7)
+    pdf = df3.to_pandas()
+    assert len(pdf) == 0, f"Expected 0 rows, got {len(pdf)}"
+
+    # 0..6 -> 1..6 -> 1..5 -> 3..5
+    df4 = df.select("id", "name").sort(by=col("id"), desc=False).limit(7).offset(1).limit(5).offset(2).limit(1024)
+    pdf = df4.to_pandas()
+    assert len(pdf) == 3, f"Expected 3 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(3, 6)], name="name"), check_names=True, check_index=False
+    )
+
+    # 0..17 -> 13..17 -> 13..15
+    df5 = (
+        df.select("id", "name")
+        .sort(by=col("id"), desc=False)
+        .limit(1024)
+        .limit(17)
+        .offset(5)
+        .offset(2)
+        .offset(6)
+        .limit(3)
+    )
+    pdf = df5.to_pandas()
+    assert len(pdf) == 3, f"Expected 3 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(13, 16)], name="name"), check_names=True, check_index=False
+    )
+
+
+def test_offset_limit_with_sort():
+    uids = [i for i in range(1024)]
+    random.shuffle(uids)
+    users = {"id": [], "name": []}
+    for uid in uids:
+        users["id"].append(uid)
+        users["name"].append(f"user_{uid}")
+
+    df = daft.from_pydict(users)
+
+    df0 = df.select("id", "name").sort(by=col("id"), desc=False).offset(2).limit(0)
+    pdf = df0.to_pandas()
+    assert len(pdf) == 0, f"Expected 0 rows, got {len(pdf)}"
+
+    df1 = df.select("id", "name").sort(by=col("id"), desc=False).offset(0).limit(7)
+    pdf = df1.to_pandas()
+    assert len(pdf) == 7, f"Expected 7 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(0, 7)], name="name"), check_names=True, check_index=False
+    )
+
+    df2 = df.select("id", "name").sort(by=col("id"), desc=False).offset(2).limit(7)
+    pdf = df2.to_pandas()
+    assert len(pdf) == 7, f"Expected 7 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(2, 9)], name="name"), check_names=True, check_index=False
+    )
+
+    df3 = df.select("id", "name").sort(by=col("id"), desc=False).offset(7).limit(7)
+    pdf = df3.to_pandas()
+    assert len(pdf) == 7, f"Expected 7 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(7, 14)], name="name"), check_names=True, check_index=False
+    )
+
+    # 7..24 -> 12..24 -> 12..23 -> 19..23
+    df4 = df.select("id", "name").sort(by=col("id"), desc=False).offset(7).limit(17).offset(5).limit(11).offset(7)
+    pdf = df4.to_pandas()
+    assert len(pdf) == 4, f"Expected 5 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(19, 23)], name="name"), check_names=True, check_index=False
+    )
+
+    # 24..30 -> 27..30
+    df5 = (
+        df.select("id", "name")
+        .sort(by=col("id"), desc=False)
+        .offset(7)
+        .offset(17)
+        .limit(15)
+        .limit(12)
+        .limit(6)
+        .offset(3)
+    )
+    pdf = df5.to_pandas()
+    assert len(pdf) == 3, f"Expected 3 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(27, 30)], name="name"), check_names=True, check_index=False
+    )
+
+    # 516..522 -> 519..522
+    df6 = df.select("id", "name")
+    for i in range(1, 517):
+        df6 = df6.offset(1)
+    df6 = df6.limit(15).limit(12).limit(6).offset(3)
+    df6.explain(show_all=True)
+    pdf = df6.to_pandas()
+    assert len(pdf) == 3, f"Expected 3 rows, got {len(pdf)}"
+    pd.testing.assert_series_equal(
+        pdf["name"], pd.Series([f"user_{i}" for i in range(519, 522)], name="name"), check_names=True, check_index=False
+    )

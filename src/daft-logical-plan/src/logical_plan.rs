@@ -654,33 +654,6 @@ impl LogicalPlan {
             Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
         }
     }
-
-    /// Perform analysis on LogicalPlan before optimization.
-    ///
-    /// FIXME(zhenchao): maybe a better design would be to add a analysis stage to LogicalPlan
-    pub fn analysis(&self) -> DaftResult<&Self> {
-        // TODO(zhenchao): Support OrderBy + Limit + Offset syntax
-        if self.has_offset() && self.has_sort() {
-            return Err(DaftError::not_implemented(
-                "OFFSET and SORT can't be used at the same time",
-            ));
-        }
-        Ok(self)
-    }
-
-    fn has_offset(&self) -> bool {
-        match self {
-            Self::Offset(_) => true,
-            _ => self.children().iter().any(|c| c.has_offset()),
-        }
-    }
-
-    fn has_sort(&self) -> bool {
-        match self {
-            Self::Sort(_) => true,
-            _ => self.children().iter().any(|c| c.has_sort()),
-        }
-    }
 }
 
 impl SubqueryPlan for LogicalPlan {

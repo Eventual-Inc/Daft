@@ -853,9 +853,6 @@ impl LogicalPlanBuilder {
 
         let unoptimized_plan = self.build();
 
-        // Run LogicalPlan analysis
-        unoptimized_plan.analysis()?;
-
         // Run LogicalPlan optimizations
         let optimizer = OptimizerBuilder::default()
             .when(
