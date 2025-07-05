@@ -449,15 +449,196 @@ pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
     match maybe_image {
         None => "None".to_string(),
         Some(image) => {
-            let thumb = image.fit_to(128, 128);
-            let mut bytes: Vec<u8> = vec![];
-            let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            thumb.encode(ImageFormat::PNG, &mut writer).unwrap();
-            drop(writer);
+            // Encode original image once
+            let mut large_bytes: Vec<u8> = vec![];
+            let mut large_writer = std::io::BufWriter::new(std::io::Cursor::new(&mut large_bytes));
+            image.encode(ImageFormat::PNG, &mut large_writer).unwrap();
+            drop(large_writer);
+            let image_b64 = base64::engine::general_purpose::STANDARD.encode(&large_bytes);
+
+            let unique_id = format!("img_{}_{}", arr.name().replace(".", "_"), idx);
+            
             format!(
-                "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                base64::engine::general_purpose::STANDARD.encode(&mut bytes),
-                str_val,
+                r#"<div style="position: relative; display: inline-block;">
+                    <img id="{}" 
+                         src="data:image/png;base64,{}" 
+                         alt="{}"
+                         style="max-height: 128px; width: auto; cursor: pointer; display: block;"
+                         onmouseover="showImageHover(this, event)"
+                         onmouseout="hideImageHover(this)"
+                         onmousemove="updateHoverPosition(this, event)"
+                         onclick="pinImage(this, event)"
+                    />
+                </div>
+                <script>
+                (function() {{
+                    // Create shared overlays if they don't exist
+                    if (!document.getElementById('daft-image-hover-overlay')) {{
+                        const hoverOverlay = document.createElement('div');
+                        hoverOverlay.id = 'daft-image-hover-overlay';
+                        hoverOverlay.style.cssText = `
+                            position: fixed; 
+                            pointer-events: none; 
+                            z-index: 1000; 
+                            display: none;
+                            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                            border-radius: 8px;
+                            overflow: hidden;
+                            max-width: 80vw;
+                            max-height: 80vh;
+                            background: white;
+                            padding: 4px;
+                        `;
+                        const hoverImg = document.createElement('img');
+                        hoverImg.id = 'daft-image-hover-img';
+                        hoverImg.style.cssText = 'display: block; max-width: 100%; max-height: 100%; object-fit: contain;';
+                        hoverOverlay.appendChild(hoverImg);
+                        document.body.appendChild(hoverOverlay);
+                    }}
+                    
+                    if (!document.getElementById('daft-image-pinned-overlay')) {{
+                        const pinnedOverlay = document.createElement('div');
+                        pinnedOverlay.id = 'daft-image-pinned-overlay';
+                        pinnedOverlay.style.cssText = `
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            width: 100vw;
+                            height: 100vh;
+                            background: rgba(0,0,0,0.8);
+                            z-index: 2000;
+                            display: none;
+                            align-items: center;
+                            justify-content: center;
+                            cursor: pointer;
+                        `;
+                        pinnedOverlay.onclick = function() {{ closePinnedImage(); }};
+                        
+                        const pinnedContainer = document.createElement('div');
+                        pinnedContainer.style.cssText = 'position: relative; max-width: 90vw; max-height: 90vh;';
+                        
+                        const pinnedImg = document.createElement('img');
+                        pinnedImg.id = 'daft-image-pinned-img';
+                        pinnedImg.style.cssText = 'max-width: 100%; max-height: 100%; object-fit: contain;';
+                        
+                        const closeBtn = document.createElement('button');
+                        closeBtn.innerHTML = '×';
+                        closeBtn.style.cssText = `
+                            position: absolute;
+                            top: -10px;
+                            right: -10px;
+                            width: 30px;
+                            height: 30px;
+                            border: none;
+                            background: #ff4444;
+                            color: white;
+                            border-radius: 50%;
+                            cursor: pointer;
+                            font-size: 16px;
+                            font-weight: bold;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+                        `;
+                        closeBtn.onclick = function(e) {{ e.stopPropagation(); closePinnedImage(); }};
+                        
+                        pinnedContainer.appendChild(pinnedImg);
+                        pinnedContainer.appendChild(closeBtn);
+                        pinnedOverlay.appendChild(pinnedContainer);
+                        document.body.appendChild(pinnedOverlay);
+                    }}
+                    
+                    window.currentImageData = window.currentImageData || {{}};
+                    
+                    window.showImageHover = function(img, event) {{
+                        const overlay = document.getElementById('daft-image-hover-overlay');
+                        const hoverImg = document.getElementById('daft-image-hover-img');
+                        
+                        // Use the same image source for hover
+                        hoverImg.src = img.src;
+                        
+                        overlay.style.display = 'block';
+                        updateHoverPosition(img, event);
+                    }};
+                    
+                    window.updateHoverPosition = function(img, event) {{
+                        const overlay = document.getElementById('daft-image-hover-overlay');
+                        if (overlay.style.display === 'none') return;
+                        
+                        const viewportWidth = window.innerWidth;
+                        const viewportHeight = window.innerHeight;
+                        
+                        let left = event.clientX + 20;
+                        let top = event.clientY + 20;
+                        
+                        // Get actual overlay dimensions after it's rendered
+                        const overlayRect = overlay.getBoundingClientRect();
+                        const overlayWidth = overlayRect.width || 400;
+                        const overlayHeight = overlayRect.height || 400;
+                        
+                        if (left + overlayWidth > viewportWidth) {{
+                            left = event.clientX - overlayWidth - 20;
+                        }}
+                        if (top + overlayHeight > viewportHeight) {{
+                            top = event.clientY - overlayHeight - 20;
+                        }}
+                        
+                        overlay.style.left = Math.max(10, left) + 'px';
+                        overlay.style.top = Math.max(10, top) + 'px';
+                    }};
+                    
+                    window.hideImageHover = function(img) {{
+                        const overlay = document.getElementById('daft-image-hover-overlay');
+                        overlay.style.display = 'none';
+                    }};
+                    
+                    window.pinImage = function(img, event) {{
+                        const overlay = document.getElementById('daft-image-pinned-overlay');
+                        const pinnedImg = document.getElementById('daft-image-pinned-img');
+                        let pinnedContainer = document.getElementById('daft-image-pinned-container');
+                        
+                        // If container doesn't exist, find it as a child of overlay
+                        if (!pinnedContainer) {{
+                            pinnedContainer = overlay.querySelector('div');
+                            if (pinnedContainer) {{
+                                pinnedContainer.id = 'daft-image-pinned-container';
+                            }}
+                        }}
+                        
+                        // Use the same image source for pinned view
+                        pinnedImg.src = img.src;
+                        
+                        if (pinnedContainer) {{
+                            // Position the image so its top aligns with the cursor
+                            const cursorY = event.clientY;
+                            const viewportHeight = window.innerHeight;
+                            
+                            // Ensure the image doesn't go off screen
+                            let top = cursorY;
+                            if (top > viewportHeight * 0.8) {{
+                                top = viewportHeight * 0.1;
+                            }}
+                            
+                            pinnedContainer.style.position = 'absolute';
+                            pinnedContainer.style.top = top + 'px';
+                            pinnedContainer.style.left = '50%';
+                            pinnedContainer.style.transform = 'translateX(-50%)'; // Center horizontally only
+                        }}
+                        
+                        overlay.style.display = 'block';
+                        
+                        // Hide hover overlay
+                        hideImageHover(img);
+                    }};
+                    
+                    window.closePinnedImage = function() {{
+                        const overlay = document.getElementById('daft-image-pinned-overlay');
+                        overlay.style.display = 'none';
+                    }};
+                }})();
+                </script>"#,
+                unique_id, image_b64, str_val
             )
         }
     }
@@ -471,15 +652,196 @@ pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize) -> String 
     match maybe_image {
         None => "None".to_string(),
         Some(image) => {
-            let thumb = image.fit_to(128, 128);
-            let mut bytes: Vec<u8> = vec![];
-            let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            thumb.encode(ImageFormat::PNG, &mut writer).unwrap();
-            drop(writer);
+            // Encode original image once
+            let mut large_bytes: Vec<u8> = vec![];
+            let mut large_writer = std::io::BufWriter::new(std::io::Cursor::new(&mut large_bytes));
+            image.encode(ImageFormat::PNG, &mut large_writer).unwrap();
+            drop(large_writer);
+            let image_b64 = base64::engine::general_purpose::STANDARD.encode(&large_bytes);
+
+            let unique_id = format!("img_{}_{}", arr.name().replace(".", "_"), idx);
+            
             format!(
-                "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
-                base64::engine::general_purpose::STANDARD.encode(&mut bytes),
-                str_val,
+                r#"<div style="position: relative; display: inline-block;">
+                    <img id="{}" 
+                         src="data:image/png;base64,{}" 
+                         alt="{}"
+                         style="max-height: 128px; width: auto; cursor: pointer; display: block;"
+                         onmouseover="showImageHover(this, event)"
+                         onmouseout="hideImageHover(this)"
+                         onmousemove="updateHoverPosition(this, event)"
+                         onclick="pinImage(this, event)"
+                    />
+                </div>
+                <script>
+                (function() {{
+                    // Create shared overlays if they don't exist
+                    if (!document.getElementById('daft-image-hover-overlay')) {{
+                        const hoverOverlay = document.createElement('div');
+                        hoverOverlay.id = 'daft-image-hover-overlay';
+                        hoverOverlay.style.cssText = `
+                            position: fixed; 
+                            pointer-events: none; 
+                            z-index: 1000; 
+                            display: none;
+                            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                            border-radius: 8px;
+                            overflow: hidden;
+                            max-width: 80vw;
+                            max-height: 80vh;
+                            background: white;
+                            padding: 4px;
+                        `;
+                        const hoverImg = document.createElement('img');
+                        hoverImg.id = 'daft-image-hover-img';
+                        hoverImg.style.cssText = 'display: block; max-width: 100%; max-height: 100%; object-fit: contain;';
+                        hoverOverlay.appendChild(hoverImg);
+                        document.body.appendChild(hoverOverlay);
+                    }}
+                    
+                    if (!document.getElementById('daft-image-pinned-overlay')) {{
+                        const pinnedOverlay = document.createElement('div');
+                        pinnedOverlay.id = 'daft-image-pinned-overlay';
+                        pinnedOverlay.style.cssText = `
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            width: 100vw;
+                            height: 100vh;
+                            background: rgba(0,0,0,0.8);
+                            z-index: 2000;
+                            display: none;
+                            align-items: center;
+                            justify-content: center;
+                            cursor: pointer;
+                        `;
+                        pinnedOverlay.onclick = function() {{ closePinnedImage(); }};
+                        
+                        const pinnedContainer = document.createElement('div');
+                        pinnedContainer.style.cssText = 'position: relative; max-width: 90vw; max-height: 90vh;';
+                        
+                        const pinnedImg = document.createElement('img');
+                        pinnedImg.id = 'daft-image-pinned-img';
+                        pinnedImg.style.cssText = 'max-width: 100%; max-height: 100%; object-fit: contain;';
+                        
+                        const closeBtn = document.createElement('button');
+                        closeBtn.innerHTML = '×';
+                        closeBtn.style.cssText = `
+                            position: absolute;
+                            top: -10px;
+                            right: -10px;
+                            width: 30px;
+                            height: 30px;
+                            border: none;
+                            background: #ff4444;
+                            color: white;
+                            border-radius: 50%;
+                            cursor: pointer;
+                            font-size: 16px;
+                            font-weight: bold;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+                        `;
+                        closeBtn.onclick = function(e) {{ e.stopPropagation(); closePinnedImage(); }};
+                        
+                        pinnedContainer.appendChild(pinnedImg);
+                        pinnedContainer.appendChild(closeBtn);
+                        pinnedOverlay.appendChild(pinnedContainer);
+                        document.body.appendChild(pinnedOverlay);
+                    }}
+                    
+                    window.currentImageData = window.currentImageData || {{}};
+                    
+                    window.showImageHover = function(img, event) {{
+                        const overlay = document.getElementById('daft-image-hover-overlay');
+                        const hoverImg = document.getElementById('daft-image-hover-img');
+                        
+                        // Use the same image source for hover
+                        hoverImg.src = img.src;
+                        
+                        overlay.style.display = 'block';
+                        updateHoverPosition(img, event);
+                    }};
+                    
+                    window.updateHoverPosition = function(img, event) {{
+                        const overlay = document.getElementById('daft-image-hover-overlay');
+                        if (overlay.style.display === 'none') return;
+                        
+                        const viewportWidth = window.innerWidth;
+                        const viewportHeight = window.innerHeight;
+                        
+                        let left = event.clientX + 20;
+                        let top = event.clientY + 20;
+                        
+                        // Get actual overlay dimensions after it's rendered
+                        const overlayRect = overlay.getBoundingClientRect();
+                        const overlayWidth = overlayRect.width || 400;
+                        const overlayHeight = overlayRect.height || 400;
+                        
+                        if (left + overlayWidth > viewportWidth) {{
+                            left = event.clientX - overlayWidth - 20;
+                        }}
+                        if (top + overlayHeight > viewportHeight) {{
+                            top = event.clientY - overlayHeight - 20;
+                        }}
+                        
+                        overlay.style.left = Math.max(10, left) + 'px';
+                        overlay.style.top = Math.max(10, top) + 'px';
+                    }};
+                    
+                    window.hideImageHover = function(img) {{
+                        const overlay = document.getElementById('daft-image-hover-overlay');
+                        overlay.style.display = 'none';
+                    }};
+                    
+                    window.pinImage = function(img, event) {{
+                        const overlay = document.getElementById('daft-image-pinned-overlay');
+                        const pinnedImg = document.getElementById('daft-image-pinned-img');
+                        let pinnedContainer = document.getElementById('daft-image-pinned-container');
+                        
+                        // If container doesn't exist, find it as a child of overlay
+                        if (!pinnedContainer) {{
+                            pinnedContainer = overlay.querySelector('div');
+                            if (pinnedContainer) {{
+                                pinnedContainer.id = 'daft-image-pinned-container';
+                            }}
+                        }}
+                        
+                        // Use the same image source for pinned view
+                        pinnedImg.src = img.src;
+                        
+                        if (pinnedContainer) {{
+                            // Position the image so its top aligns with the cursor
+                            const cursorY = event.clientY;
+                            const viewportHeight = window.innerHeight;
+                            
+                            // Ensure the image doesn't go off screen
+                            let top = cursorY;
+                            if (top > viewportHeight * 0.8) {{
+                                top = viewportHeight * 0.1;
+                            }}
+                            
+                            pinnedContainer.style.position = 'absolute';
+                            pinnedContainer.style.top = top + 'px';
+                            pinnedContainer.style.left = '50%';
+                            pinnedContainer.style.transform = 'translateX(-50%)'; // Center horizontally only
+                        }}
+                        
+                        overlay.style.display = 'block';
+                        
+                        // Hide hover overlay
+                        hideImageHover(img);
+                    }};
+                    
+                    window.closePinnedImage = function() {{
+                        const overlay = document.getElementById('daft-image-pinned-overlay');
+                        overlay.style.display = 'none';
+                    }};
+                }})();
+                </script>"#,
+                unique_id, image_b64, str_val
             )
         }
     }
