@@ -29,6 +29,7 @@ use unity::UnitySource;
 mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
+mod range;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
@@ -45,6 +46,7 @@ pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
+use crate::range::GetRange;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -114,6 +116,9 @@ pub enum Error {
 
     #[snafu(display("Unable to determine size of {}", path))]
     UnableToDetermineSize { path: String },
+
+    #[snafu(display("Invalid range request: {}", source))]
+    InvalidRangeRequest { source: range::InvalidGetRange },
 
     #[snafu(display("Unable to load Credentials for store: {store}\nDetails:\n{source:?}"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },
@@ -284,8 +289,13 @@ impl IOClient {
     ) -> Result<GetResult> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
+
         let get_result = source
-            .get(path.as_ref(), range.clone(), io_stats.clone())
+            .get(
+                path.as_ref(),
+                range.clone().map(GetRange::from),
+                io_stats.clone(),
+            )
             .await?;
         Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }
