@@ -439,23 +439,23 @@ impl LogicalPlan {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
                 Self::Shard(Shard { sharder, .. }) => Self::Shard(Shard::new(input.clone(), sharder.clone())),
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
-                        input.clone(), projection.clone(),
-                    ).unwrap()),
-                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
+                    input.clone(), projection.clone(),
+                ).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject { projection, .. }) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
-                Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
+                Self::Repartition(Repartition { repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
                 Self::Distinct(distinct) => Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone())),
-                Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
-                Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
+                Self::Aggregate(Aggregate { aggregations, groupby, .. }) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
+                Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, .. }) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name)).unwrap()),
-                Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) =>
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name)).unwrap()),
+                Self::Unpivot(Unpivot { ids, values, variable_name, value_name, output_schema, .. }) =>
                     Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
-                Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
+                Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone())),
                 Self::Window(Window { window_functions, aliases, window_spec, .. }) => Self::Window(Window::try_new(
                     input.clone(),
@@ -464,12 +464,12 @@ impl LogicalPlan {
                     window_spec.clone(),
                 ).unwrap()),
                 Self::TopN(TopN { sort_by, descending, nulls_first, limit, .. }) => Self::TopN(TopN::try_new(
-                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit
+                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit,
                 ).unwrap()),
-                Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
-                Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
-                Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
-                Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
+                Self::Concat(_)
+                | Self::Intersect(_)
+                | Self::Union(_)
+                | Self::Join(_) => panic!("{} ops should never have only one input, but got one", input.name()),
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
@@ -652,33 +652,6 @@ impl LogicalPlan {
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
             Self::Window(window) => window.with_plan_id(Some(plan_id)),
             Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
-        }
-    }
-
-    /// Perform analysis on LogicalPlan before optimization.
-    ///
-    /// FIXME(zhenchao): maybe a better design would be to add a analysis stage to LogicalPlan
-    pub fn analysis(&self) -> DaftResult<&Self> {
-        // TODO(zhenchao): Support OrderBy + Limit + Offset syntax
-        if self.has_offset() && self.has_sort() {
-            return Err(DaftError::not_implemented(
-                "OFFSET and SORT can't be used at the same time",
-            ));
-        }
-        Ok(self)
-    }
-
-    fn has_offset(&self) -> bool {
-        match self {
-            Self::Offset(_) => true,
-            _ => self.children().iter().any(|c| c.has_offset()),
-        }
-    }
-
-    fn has_sort(&self) -> bool {
-        match self {
-            Self::Sort(_) => true,
-            _ => self.children().iter().any(|c| c.has_sort()),
         }
     }
 }
