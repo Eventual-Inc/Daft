@@ -26,7 +26,7 @@ def test_daft_iceberg_table_open(local_iceberg_tables, local_iceberg_catalog):
 
 
 WORKING_SHOW_COLLECT = [
-    # "test_all_types",  # Commented out due to issue https://github.com/Eventual-Inc/Daft/issues/2996
+    "test_all_types",  # Commented out due to issue https://github.com/Eventual-Inc/Daft/issues/2996
     "test_limit",
     "test_null_nan",
     "test_null_nan_rewritten",
@@ -39,7 +39,7 @@ WORKING_SHOW_COLLECT = [
     "test_partitioned_by_years",
     "test_positional_mor_deletes",
     "test_positional_mor_double_deletes",
-    # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
+    "test_table_sanitized_character",
     "test_table_version",  # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
     "test_add_new_column",
@@ -50,6 +50,7 @@ WORKING_SHOW_COLLECT = [
 ]
 
 SORT_KEYS = {
+    "test_all_types": [],
     "test_limit": [],
     "test_null_nan": [],
     "test_null_nan_rewritten": [],
@@ -62,6 +63,7 @@ SORT_KEYS = {
     "test_partitioned_by_years": ["number"],
     "test_positional_mor_deletes": ["number"],
     "test_positional_mor_double_deletes": ["number"],
+    "test_table_sanitized_character": [],
     "test_table_version": [],
     "test_uuid_and_fixed_unpartitioned": ["fixed_col"],
     "test_add_new_column": ["idx"],
