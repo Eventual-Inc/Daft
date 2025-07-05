@@ -14,6 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+//
+// # Borrowed and modified from [`arrow-rs-object-store`](https://github.com/apache/arrow-rs-object-store/blob/v0.12.2/src/util.rs#L193).
 
 use std::{
     fmt::Display,
