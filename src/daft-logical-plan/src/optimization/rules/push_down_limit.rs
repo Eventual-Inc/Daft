@@ -68,23 +68,28 @@ impl PushDownLimit {
                             }
                             // Pushdown limit into the Source node as a "local" limit
                             SourceInfo::Physical(external_info) => {
-                                let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));
+                                let can_absorb =
+                                    external_info.scan_state.get_scan_op().0.can_absorb_limit();
+
+                                let (new_pushdowns, should_keep_limit) = if can_absorb {
+                                    (external_info.pushdowns.with_limit(Some(limit)), false)
+                                } else {
+                                    (external_info.pushdowns.clone(), true)
+                                };
+
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
                                 let new_source = LogicalPlan::Source(Source::new(
                                     source.output_schema.clone(),
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan = if external_info
-                                    .scan_state
-                                    .get_scan_op()
-                                    .0
-                                    .can_absorb_limit()
-                                {
-                                    new_source
-                                } else {
+
+                                let out_plan = if should_keep_limit {
                                     plan.with_new_children(&[new_source]).into()
+                                } else {
+                                    new_source
                                 };
+
                                 Ok(Transformed::yes(out_plan))
                             }
                             SourceInfo::PlaceHolder(..) => {
@@ -281,7 +286,6 @@ mod tests {
             scan_op,
             Pushdowns::default().with_limit(Some(smaller_limit as usize)),
         )
-        .limit(smaller_limit, false)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
