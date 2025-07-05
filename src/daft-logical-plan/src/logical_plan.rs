@@ -29,6 +29,7 @@ pub enum LogicalPlan {
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
+    Offset(Offset),
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
@@ -93,6 +94,7 @@ impl LogicalPlan {
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
+            Self::Offset(Offset { input, .. }) => input.schema(),
             Self::Explode(Explode {
                 exploded_schema, ..
             }) => exploded_schema.clone(),
@@ -122,6 +124,7 @@ impl LogicalPlan {
         match self {
             Self::Shard(..) => vec![IndexSet::new()],
             Self::Limit(..) => vec![IndexSet::new()],
+            Self::Offset(..) => vec![IndexSet::new()],
             Self::Sample(..) => vec![IndexSet::new()],
             Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
             Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
@@ -269,6 +272,7 @@ impl LogicalPlan {
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
+            Self::Offset(..) => "Offset",
             Self::Explode(..) => "Explode",
             Self::Unpivot(..) => "Unpivot",
             Self::Sort(..) => "Sort",
@@ -297,6 +301,7 @@ impl LogicalPlan {
             | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
+            | Self::Offset(Offset { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
@@ -337,6 +342,7 @@ impl LogicalPlan {
             Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
+            Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
             Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
             Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
@@ -373,6 +379,7 @@ impl LogicalPlan {
             Self::ActorPoolProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
+            Self::Offset(offset) => offset.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
@@ -403,6 +410,7 @@ impl LogicalPlan {
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Offset(Offset { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
@@ -436,6 +444,7 @@ impl LogicalPlan {
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
+                Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
                 Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
@@ -588,6 +597,7 @@ impl LogicalPlan {
             | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
+            | Self::Offset(Offset { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
             | Self::Unpivot(Unpivot { plan_id, .. })
             | Self::Sort(Sort { plan_id, .. })
@@ -618,6 +628,7 @@ impl LogicalPlan {
             }
             Self::Filter(filter) => Self::Filter(filter.clone().with_plan_id(plan_id)),
             Self::Limit(limit) => Self::Limit(limit.clone().with_plan_id(plan_id)),
+            Self::Offset(offset) => Self::Offset(offset.clone().with_plan_id(plan_id)),
             Self::Explode(explode) => Self::Explode(explode.clone().with_plan_id(plan_id)),
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.clone().with_plan_id(plan_id)),
             Self::Sort(sort) => Self::Sort(sort.clone().with_plan_id(plan_id)),
@@ -731,6 +742,7 @@ impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);
+impl_from_data_struct_for_logical_plan!(Offset);
 impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Unpivot);
 impl_from_data_struct_for_logical_plan!(Sort);

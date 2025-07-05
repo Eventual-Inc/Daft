@@ -522,6 +522,7 @@ message Rel {
     RelSubqueryAlias subquery_alias = 21;
     RelTopN top_n = 22;
     RelUnpivot unpivot = 23;
+    RelOffset offset = 24;
   }
 }
 
@@ -549,6 +550,11 @@ message RelFilter {
 message RelLimit {
   Rel input = 1;
   uint64 limit = 2;
+}
+
+message RelOffset {
+  Rel input = 1;
+  uint64 offset = 2;
 }
 
 message RelExplode {
@@ -696,6 +702,7 @@ message Pushdowns {
   optional Expr partition_filter = 2;
   optional Columns columns = 3;
   optional uint64 limit = 4;
+  optional uint64 offset = 5;
 
   // Columns in pushdowns are not bound in the representation.
   message Columns {
