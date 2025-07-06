@@ -19,7 +19,6 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ActorPoolProject {
-    pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
@@ -43,18 +42,12 @@ impl ActorPoolProject {
         let projected_schema = exprs_to_schema(&projection, input.schema())?;
 
         Ok(Self {
-            plan_id: None,
             node_id: None,
             input,
             projection,
             projected_schema,
             stats_state: StatsState::NotMaterialized,
         })
-    }
-
-    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
-        self.plan_id = Some(plan_id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {

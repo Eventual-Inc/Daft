@@ -52,7 +52,6 @@ pub type LogicalPlanRef = Arc<LogicalPlan>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubqueryAlias {
-    pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     pub input: LogicalPlanRef,
     pub name: Arc<str>,
@@ -61,16 +60,10 @@ pub struct SubqueryAlias {
 impl SubqueryAlias {
     pub fn new(input: LogicalPlanRef, name: impl Into<Arc<str>>) -> Self {
         Self {
-            plan_id: None,
             node_id: None,
             input,
             name: name.into(),
         }
-    }
-
-    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
-        self.plan_id = Some(plan_id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {
@@ -565,7 +558,7 @@ impl LogicalPlan {
         let mut schema = None;
 
         self.apply(|node| {
-            if let Some(plan_id) = node.plan_id() {
+            if let Some(plan_id) = node.node_id() {
                 if plan_id == &id {
                     if schema.is_some() {
                         return Err(DaftError::ValueError(format!(
@@ -585,70 +578,6 @@ impl LogicalPlan {
         })?;
 
         Ok(schema)
-    }
-
-    pub fn plan_id(&self) -> &Option<usize> {
-        match self {
-            Self::Source(Source { plan_id, .. })
-            | Self::Shard(Shard { plan_id, .. })
-            | Self::Project(Project { plan_id, .. })
-            | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
-            | Self::Filter(Filter { plan_id, .. })
-            | Self::Limit(Limit { plan_id, .. })
-            | Self::Explode(Explode { plan_id, .. })
-            | Self::Unpivot(Unpivot { plan_id, .. })
-            | Self::Sort(Sort { plan_id, .. })
-            | Self::Repartition(Repartition { plan_id, .. })
-            | Self::Distinct(Distinct { plan_id, .. })
-            | Self::Aggregate(Aggregate { plan_id, .. })
-            | Self::Pivot(Pivot { plan_id, .. })
-            | Self::Concat(Concat { plan_id, .. })
-            | Self::Intersect(Intersect { plan_id, .. })
-            | Self::Union(Union { plan_id, .. })
-            | Self::Join(Join { plan_id, .. })
-            | Self::Sink(Sink { plan_id, .. })
-            | Self::Sample(Sample { plan_id, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
-            | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
-            | Self::Window(Window { plan_id, .. })
-            | Self::TopN(TopN { plan_id, .. }) => plan_id,
-        }
-    }
-
-    pub fn with_plan_id(self: Arc<Self>, plan_id: usize) -> Self {
-        match self.as_ref() {
-            Self::Source(source) => Self::Source(source.clone().with_plan_id(plan_id)),
-            Self::Shard(shard) => Self::Shard(shard.clone().with_plan_id(plan_id)),
-            Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
-            Self::ActorPoolProject(project) => {
-                Self::ActorPoolProject(project.clone().with_plan_id(plan_id))
-            }
-            Self::Filter(filter) => Self::Filter(filter.clone().with_plan_id(plan_id)),
-            Self::Limit(limit) => Self::Limit(limit.clone().with_plan_id(plan_id)),
-            Self::Explode(explode) => Self::Explode(explode.clone().with_plan_id(plan_id)),
-            Self::Unpivot(unpivot) => Self::Unpivot(unpivot.clone().with_plan_id(plan_id)),
-            Self::Sort(sort) => Self::Sort(sort.clone().with_plan_id(plan_id)),
-            Self::Repartition(repartition) => {
-                Self::Repartition(repartition.clone().with_plan_id(plan_id))
-            }
-            Self::Distinct(distinct) => Self::Distinct(distinct.clone().with_plan_id(plan_id)),
-            Self::Aggregate(aggregate) => Self::Aggregate(aggregate.clone().with_plan_id(plan_id)),
-            Self::Pivot(pivot) => Self::Pivot(pivot.clone().with_plan_id(plan_id)),
-            Self::Concat(concat) => Self::Concat(concat.clone().with_plan_id(plan_id)),
-            Self::Intersect(intersect) => Self::Intersect(intersect.clone().with_plan_id(plan_id)),
-            Self::Union(union) => Self::Union(union.clone().with_plan_id(plan_id)),
-            Self::Join(join) => Self::Join(join.clone().with_plan_id(plan_id)),
-            Self::Sink(sink) => Self::Sink(sink.clone().with_plan_id(plan_id)),
-            Self::Sample(sample) => Self::Sample(sample.clone().with_plan_id(plan_id)),
-            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-                Self::MonotonicallyIncreasingId(
-                    monotonically_increasing_id.clone().with_plan_id(plan_id),
-                )
-            }
-            Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
-            Self::Window(window) => window.with_plan_id(Some(plan_id)),
-            Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
-        }
     }
 
     pub fn node_id(&self) -> &Option<usize> {

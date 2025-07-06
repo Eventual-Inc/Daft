@@ -12,7 +12,6 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
-    pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
@@ -48,7 +47,6 @@ impl Sample {
         seed: Option<u64>,
     ) -> Self {
         Self {
-            plan_id: None,
             node_id: None,
             input,
             fraction,
@@ -56,11 +54,6 @@ impl Sample {
             seed,
             stats_state: StatsState::NotMaterialized,
         }
-    }
-
-    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
-        self.plan_id = Some(plan_id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {

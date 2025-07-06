@@ -10,7 +10,6 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Distinct {
-    pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
@@ -21,17 +20,11 @@ pub struct Distinct {
 impl Distinct {
     pub(crate) fn new(input: Arc<LogicalPlan>, columns: Option<Vec<ExprRef>>) -> Self {
         Self {
-            plan_id: None,
             node_id: None,
             input,
             stats_state: StatsState::NotMaterialized,
             columns,
         }
-    }
-
-    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
-        self.plan_id = Some(plan_id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {

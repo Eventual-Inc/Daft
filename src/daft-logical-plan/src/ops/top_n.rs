@@ -23,8 +23,6 @@ use crate::{
 /// Daft logical optimizer.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TopN {
-    /// An id for the plan.
-    pub plan_id: Option<usize>,
     /// An id for the node.
     pub node_id: Option<usize>,
     /// Upstream node.
@@ -69,7 +67,6 @@ impl TopN {
         }
 
         Ok(Self {
-            plan_id: None,
             node_id: None,
             input,
             sort_by,
@@ -78,11 +75,6 @@ impl TopN {
             limit,
             stats_state: StatsState::NotMaterialized,
         })
-    }
-
-    pub fn with_plan_id(mut self, id: usize) -> Self {
-        self.plan_id = Some(id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {

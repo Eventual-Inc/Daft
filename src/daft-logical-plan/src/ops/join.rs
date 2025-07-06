@@ -174,7 +174,6 @@ impl TryFrom<ExprRef> for JoinPredicate {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Join {
-    pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     pub left: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
@@ -200,7 +199,6 @@ impl Join {
         let output_schema = infer_join_schema(&left.schema(), &right.schema(), join_type)?;
 
         Ok(Self {
-            plan_id: None,
             node_id: None,
             left,
             right,
@@ -210,11 +208,6 @@ impl Join {
             output_schema,
             stats_state: StatsState::NotMaterialized,
         })
-    }
-
-    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
-        self.plan_id = Some(plan_id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {

@@ -14,7 +14,6 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Filter {
-    pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
@@ -38,17 +37,11 @@ impl Filter {
             .context(CreationSnafu);
         }
         Ok(Self {
-            plan_id: None,
             node_id: None,
             input,
             predicate,
             stats_state: StatsState::NotMaterialized,
         })
-    }
-
-    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
-        self.plan_id = Some(plan_id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {

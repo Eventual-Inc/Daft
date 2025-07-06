@@ -31,8 +31,6 @@ use crate::{
 /// as long as they share the same window specification.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Window {
-    /// An id for the plan.
-    pub plan_id: Option<usize>,
     /// An id for the node.
     pub node_id: Option<usize>,
     /// The input plan.
@@ -76,7 +74,6 @@ impl Window {
         let schema = Arc::new(Schema::new(fields));
 
         Ok(Self {
-            plan_id: None,
             node_id: None,
             input,
             window_functions,
@@ -97,19 +94,6 @@ impl Window {
         let input_stats = self.input.materialized_stats();
         self.stats_state = StatsState::Materialized(input_stats.clone().into());
         self
-    }
-
-    pub fn with_plan_id(&self, id: Option<usize>) -> LogicalPlan {
-        LogicalPlan::Window(Self {
-            plan_id: id,
-            node_id: self.node_id,
-            input: self.input.clone(),
-            window_functions: self.window_functions.clone(),
-            aliases: self.aliases.clone(),
-            window_spec: self.window_spec.clone(),
-            schema: self.schema.clone(),
-            stats_state: self.stats_state.clone(),
-        })
     }
 }
 

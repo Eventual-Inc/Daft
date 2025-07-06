@@ -124,7 +124,7 @@ impl SparkAnalyzer<'_> {
         }?;
         let plan_id = common.plan_id.required("plan_id")?;
 
-        Ok(lp.with_plan_id(plan_id as _))
+        Ok(lp.with_node_id(plan_id as _))
     }
 
     async fn limit(&self, limit: Limit) -> ConnectResult<LogicalPlanBuilder> {

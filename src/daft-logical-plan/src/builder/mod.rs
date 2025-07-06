@@ -131,15 +131,14 @@ impl LogicalPlanBuilder {
 
     pub fn alias(&self, id: impl Into<Arc<str>>) -> Self {
         self.with_new_plan(LogicalPlan::SubqueryAlias(SubqueryAlias {
-            plan_id: None,
             node_id: None,
             input: self.plan.clone(),
             name: id.into(),
         }))
     }
 
-    pub fn with_plan_id(&self, id: usize) -> Self {
-        self.with_new_plan(self.plan.clone().with_plan_id(id))
+    pub fn with_node_id(&self, id: usize) -> Self {
+        self.with_new_plan(self.plan.clone().with_node_id(id))
     }
 
     pub fn in_memory_scan(

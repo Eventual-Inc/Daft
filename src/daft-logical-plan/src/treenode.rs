@@ -49,7 +49,6 @@ impl LogicalPlan {
 
         Ok(match self.as_ref() {
             Self::Project(Project {
-                plan_id,
                 node_id,
                 input,
                 projection,
@@ -61,7 +60,6 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_projection| {
                     Self::Project(Project {
-                        plan_id: *plan_id,
                         node_id: *node_id,
                         input: input.clone(),
                         projection: new_projection,
@@ -71,14 +69,12 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Filter(Filter {
-                plan_id,
                 node_id,
                 input,
                 predicate,
                 stats_state,
             }) => f(predicate.clone(), &input.schema())?.update_data(|expr| {
                 Self::Filter(Filter {
-                    plan_id: *plan_id,
                     node_id: *node_id,
                     input: input.clone(),
                     predicate: expr,
@@ -87,7 +83,6 @@ impl LogicalPlan {
                 .into()
             }),
             Self::Repartition(Repartition {
-                plan_id,
                 node_id,
                 input,
                 repartition_spec,
@@ -99,7 +94,6 @@ impl LogicalPlan {
                     .map_and_collect(|expr| f(expr, &input.schema()))?
                     .update_data(|expr| {
                         Self::Repartition(Repartition {
-                            plan_id: *plan_id,
                             node_id: *node_id,
                             input: input.clone(),
                             repartition_spec: RepartitionSpec::Hash(HashRepartitionConfig {
@@ -113,7 +107,6 @@ impl LogicalPlan {
                 _ => Transformed::no(self.clone()),
             },
             Self::ActorPoolProject(ActorPoolProject {
-                plan_id,
                 node_id,
                 input,
                 projection,
@@ -125,7 +118,6 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_projection| {
                     Self::ActorPoolProject(ActorPoolProject {
-                        plan_id: *plan_id,
                         node_id: *node_id,
                         input: input.clone(),
                         projection: new_projection,
@@ -135,7 +127,6 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Sort(Sort {
-                plan_id,
                 node_id,
                 input,
                 sort_by,
@@ -148,7 +139,6 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_sort_by| {
                     Self::Sort(Sort {
-                        plan_id: *plan_id,
                         node_id: *node_id,
                         input: input.clone(),
                         sort_by: new_sort_by,
@@ -159,7 +149,6 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Explode(Explode {
-                plan_id,
                 node_id,
                 input,
                 to_explode,
@@ -171,7 +160,6 @@ impl LogicalPlan {
                 .map_and_collect(|expr| f(expr, &input.schema()))?
                 .update_data(|new_to_explode| {
                     Self::Explode(Explode {
-                        plan_id: *plan_id,
                         node_id: *node_id,
                         input: input.clone(),
                         to_explode: new_to_explode,
@@ -181,7 +169,6 @@ impl LogicalPlan {
                     .into()
                 }),
             Self::Source(Source {
-                plan_id,
                 node_id,
                 output_schema,
                 source_info,
@@ -207,7 +194,6 @@ impl LogicalPlan {
 
                     f(filter.clone(), schema)?.update_data(|new_filter| {
                         Self::Source(Source {
-                            plan_id: *plan_id,
                             node_id: *node_id,
                             output_schema: output_schema.clone(),
                             source_info: Arc::new(SourceInfo::Physical(

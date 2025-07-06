@@ -6,7 +6,6 @@ use crate::{partitioning::RepartitionSpec, stats::StatsState, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Repartition {
-    pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
@@ -17,17 +16,11 @@ pub struct Repartition {
 impl Repartition {
     pub(crate) fn new(input: Arc<LogicalPlan>, repartition_spec: RepartitionSpec) -> Self {
         Self {
-            plan_id: None,
             node_id: None,
             input,
             repartition_spec,
             stats_state: StatsState::NotMaterialized,
         }
-    }
-
-    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
-        self.plan_id = Some(plan_id);
-        self
     }
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {
