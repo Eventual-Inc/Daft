@@ -889,40 +889,16 @@ impl LogicalPlanBuilder {
 
     /// Recursively walk the optimized plan and assign node IDs to each node
     fn assign_node_ids(plan: Arc<LogicalPlan>) -> DaftResult<Arc<LogicalPlan>> {
-        use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
+        use common_treenode::Transformed;
 
-        struct NodeIdAssigner {
-            node_id_counter: usize,
-        }
+        let mut node_id_counter: usize = 0;
 
-        impl NodeIdAssigner {
-            fn new() -> Self {
-                Self { node_id_counter: 0 }
-            }
-
-            fn get_next_node_id(&mut self) -> usize {
-                let id = self.node_id_counter;
-                self.node_id_counter += 1;
-                id
-            }
-        }
-
-        impl TreeNodeRewriter for NodeIdAssigner {
-            type Node = Arc<LogicalPlan>;
-
-            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-                Ok(Transformed::no(node))
-            }
-
-            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-                let node_id = self.get_next_node_id();
-                let new_node = node.with_node_id(node_id);
-                Ok(Transformed::yes(Arc::new(new_node)))
-            }
-        }
-
-        let mut assigner = NodeIdAssigner::new();
-        let transformed_plan = plan.rewrite(&mut assigner)?;
+        let transformed_plan = plan.transform_up(|node| {
+            let node_id = node_id_counter;
+            node_id_counter += 1;
+            let new_node = node.with_node_id(node_id);
+            Ok(Transformed::yes(Arc::new(new_node)))
+        })?;
         Ok(transformed_plan.data)
     }
 
