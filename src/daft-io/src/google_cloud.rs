@@ -621,6 +621,9 @@ mod tests {
         let test_file_path = "gs://covid19-open-data/dm-c19-data/raw/SAPE22DT6a-mid-2019-ccg-2020-estimates-unformatted.xlsx";
         let expected_md5 = "c4ed100cd2f99fd368c846317abcdaf5";
 
+        // TODO it's wired that will read 254635 bytes from the file, but the file size is 25933 bytes
+        // let test_file_path = "gs://covid19-open-data/v3/location/AF_BDG.json";
+
         let config = GCSConfig {
             anonymous: true,
             ..Default::default()

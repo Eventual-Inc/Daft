@@ -545,6 +545,7 @@ impl ObjectSource for AzureBlobSource {
         let request_builder = if let Some(range) = range {
             match range.as_valid_range().context(InvalidRangeRequestSnafu)? {
                 GetRange::Bounded(u) => request_builder.range(u.start..u.end),
+                // Note: if n is greater than file size, Azure will whole content.
                 GetRange::Offset(n) => request_builder.range(*n..),
                 GetRange::Suffix(n) => {
                     let size = self.get_size(uri, io_stats.clone()).await?;
