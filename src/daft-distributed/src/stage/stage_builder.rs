@@ -4,8 +4,10 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_logical_plan::{
-    ops::Source, partitioning::ClusteringSpecRef, source_info::PlaceHolderInfo, ClusteringSpec,
-    LogicalPlan, LogicalPlanRef, SourceInfo,
+    ops::Source,
+    partitioning::{ClusteringSpecRef, RepartitionSpec},
+    source_info::PlaceHolderInfo,
+    ClusteringSpec, LogicalPlan, LogicalPlanRef, SourceInfo,
 };
 use daft_schema::schema::SchemaRef;
 
@@ -43,8 +45,15 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
-            | LogicalPlan::Limit(_)
-            | LogicalPlan::Repartition(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            LogicalPlan::Repartition(repartition) => {
+                if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
+                    Ok(TreeNodeRecursion::Continue)
+                } else {
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                }
+            },
             LogicalPlan::Sort(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
