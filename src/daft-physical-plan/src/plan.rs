@@ -31,6 +31,7 @@ pub enum PhysicalPlan {
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     Aggregate(Aggregate),
+    Dedup(Dedup),
     Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
@@ -140,6 +141,7 @@ impl PhysicalPlan {
                     input.clustering_spec()
                 }
             }
+            Self::Dedup(Dedup { input, .. }) => input.clustering_spec(),
             Self::Pivot(Pivot { input, .. }) => input.clustering_spec(),
             Self::Concat(Concat { input, other }) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(
@@ -365,6 +367,19 @@ impl PhysicalPlan {
                     }
                 }
             }
+            Self::Dedup(Dedup { input, .. }) => {
+                let input_stats = input.approximate_stats();
+                // TODO we should use schema inference here
+                let est_bytes_per_row = input_stats.size_bytes / (input_stats.num_rows.max(1));
+                // Assume high cardinality for group by columns, and 80% of rows are unique.
+                let est_num_groups = input_stats.num_rows * 4 / 5;
+                ApproxStats {
+                    num_rows: est_num_groups,
+                    size_bytes: est_bytes_per_row * est_num_groups,
+                    acc_selectivity: input_stats.acc_selectivity * est_num_groups as f64
+                        / input_stats.num_rows as f64,
+                }
+            }
             Self::Unpivot(Unpivot { input, values, .. }) => {
                 let input_stats = input.approximate_stats();
                 let num_values = values.len();
@@ -401,6 +416,7 @@ impl PhysicalPlan {
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::TopN(TopN { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
+            Self::Dedup(Dedup { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
@@ -454,6 +470,7 @@ impl PhysicalPlan {
                 Self::Sort(Sort { sort_by, descending, nulls_first,  num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(),nulls_first.clone(), *num_partitions)),
                 Self::ShuffleExchange(ShuffleExchange { strategy, .. }) => Self::ShuffleExchange(ShuffleExchange { input: input.clone(), strategy: strategy.clone() }),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(input.clone(), aggregations.clone(), groupby.clone())),
+                Self::Dedup(Dedup { columns, .. }) => Self::Dedup(Dedup::new(input.clone(), columns.clone())),
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
@@ -508,6 +525,7 @@ impl PhysicalPlan {
             Self::Sort(..) => "Sort",
             Self::ShuffleExchange(..) => "ShuffleExchange",
             Self::Aggregate(..) => "Aggregate",
+            Self::Dedup(..) => "Dedup",
             Self::Pivot(..) => "Pivot",
             Self::HashJoin(..) => "HashJoin",
             Self::BroadcastJoin(..) => "BroadcastJoin",
@@ -547,6 +565,7 @@ impl PhysicalPlan {
             Self::Sort(sort) => sort.multiline_display(),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
+            Self::Dedup(dedup) => dedup.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
             Self::HashJoin(hash_join) => hash_join.multiline_display(),
             Self::BroadcastJoin(broadcast_join) => broadcast_join.multiline_display(),

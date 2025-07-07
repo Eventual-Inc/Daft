@@ -52,12 +52,13 @@ pub struct DaftExecutionConfig {
     pub parquet_inflation_factor: f64,
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
+    pub json_target_filesize: usize,
+    pub json_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
-    pub enable_native_executor: bool,
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
@@ -65,7 +66,8 @@ pub struct DaftExecutionConfig {
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
     pub native_parquet_writer: bool,
-    pub flotilla: bool,
+    pub use_experimental_distributed_engine: bool,
+    pub min_cpu_per_task: f64,
 }
 
 impl Default for DaftExecutionConfig {
@@ -85,12 +87,13 @@ impl Default for DaftExecutionConfig {
             parquet_inflation_factor: 3.0,
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
+            json_target_filesize: 512 * 1024 * 1024, // 512MB
+            json_inflation_factor: 0.5, // TODO(desmond): This can be tuned with more real world datasets.
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
-            enable_native_executor: false,
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
@@ -98,7 +101,8 @@ impl Default for DaftExecutionConfig {
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
             native_parquet_writer: true,
-            flotilla: false,
+            use_experimental_distributed_engine: true,
+            min_cpu_per_task: 0.5,
         }
     }
 }
@@ -112,19 +116,6 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.enable_aqe = true;
-        }
-        let exec_env_var_name = "DAFT_ENABLE_NATIVE_EXECUTOR";
-        if let Ok(val) = std::env::var(exec_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            log::warn!("DAFT_ENABLE_NATIVE_EXECUTOR will be deprecated and removed in the future. Please switch to using DAFT_RUNNER=NATIVE instead.");
-            cfg.enable_native_executor = true;
-        }
-        let daft_runner_var_name = "DAFT_RUNNER";
-        if let Ok(val) = std::env::var(daft_runner_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "native")
-        {
-            cfg.enable_native_executor = true;
         }
         let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";
         if let Ok(val) = std::env::var(ray_tracing_env_var_name)
@@ -150,7 +141,17 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(flotilla_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
-            cfg.flotilla = true;
+            cfg.use_experimental_distributed_engine = true;
+        }
+        let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
+        if let Ok(val) = std::env::var(min_cpu_var) {
+            match val.parse::<f64>() {
+                Ok(parsed) => cfg.min_cpu_per_task = parsed,
+                Err(_) => eprintln!(
+                    "Invalid {} value: {}, using default {}",
+                    min_cpu_var, val, cfg.min_cpu_per_task
+                ),
+            }
         }
         cfg
     }

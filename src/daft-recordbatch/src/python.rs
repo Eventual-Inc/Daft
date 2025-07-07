@@ -6,7 +6,11 @@ use daft_core::{
     prelude::*,
     python::{series::PySeries, PySchema},
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    python::PyExpr,
+    Expr,
+};
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -23,16 +27,6 @@ pub struct PyRecordBatch {
     pub record_batch: RecordBatch,
 }
 
-impl PyRecordBatch {
-    fn pyexpr_to_bound(&self, expr: PyExpr) -> DaftResult<BoundExpr> {
-        BoundExpr::try_new(expr.into(), &self.record_batch.schema)
-    }
-
-    fn pyexprs_to_bound(&self, exprs: Vec<PyExpr>) -> DaftResult<Vec<BoundExpr>> {
-        exprs.into_iter().map(|e| self.pyexpr_to_bound(e)).collect()
-    }
-}
-
 #[pymethods]
 impl PyRecordBatch {
     pub fn schema(&self) -> PyResult<PySchema> {
@@ -42,7 +36,7 @@ impl PyRecordBatch {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs = self.pyexprs_to_bound(exprs)?;
+        let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -56,7 +50,7 @@ impl PyRecordBatch {
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs = self.pyexprs_to_bound(exprs)?;
+        let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
         py.allow_threads(|| Ok(self.record_batch.filter(converted_exprs.as_slice())?.into()))
     }
 
@@ -67,7 +61,7 @@ impl PyRecordBatch {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
-        let converted_exprs = self.pyexprs_to_bound(sort_keys)?;
+        let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -87,7 +81,7 @@ impl PyRecordBatch {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
-        let converted_exprs = self.pyexprs_to_bound(sort_keys)?;
+        let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -101,8 +95,19 @@ impl PyRecordBatch {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg = self.pyexprs_to_bound(to_agg)?;
-        let converted_group_by = self.pyexprs_to_bound(group_by)?;
+        let converted_to_agg = BoundExpr::bind_all(&to_agg, &self.record_batch.schema)?
+            .into_iter()
+            .map(|expr| {
+                if let Expr::Agg(agg_expr) = expr.as_ref() {
+                    Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
+                } else {
+                    Err(DaftError::ValueError(
+                        format!("RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"),
+                    ))
+                }
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        let converted_group_by = BoundExpr::bind_all(&group_by, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -119,9 +124,9 @@ impl PyRecordBatch {
         values_col: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
-        let converted_group_by = self.pyexprs_to_bound(group_by)?;
-        let converted_pivot_col = self.pyexpr_to_bound(pivot_col)?;
-        let converted_values_col = self.pyexpr_to_bound(values_col)?;
+        let converted_group_by = BoundExpr::bind_all(&group_by, &self.record_batch.schema)?;
+        let converted_pivot_col = BoundExpr::try_new(pivot_col, &self.record_batch.schema)?;
+        let converted_values_col = BoundExpr::try_new(values_col, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -143,8 +148,8 @@ impl PyRecordBatch {
         right_on: Vec<PyExpr>,
         how: JoinType,
     ) -> PyResult<Self> {
-        let left_exprs = self.pyexprs_to_bound(left_on)?;
-        let right_exprs = self.pyexprs_to_bound(right_on)?;
+        let left_exprs = BoundExpr::bind_all(&left_on, &self.record_batch.schema)?;
+        let right_exprs = BoundExpr::bind_all(&right_on, &self.record_batch.schema)?;
         let null_equals_nulls = vec![false; left_exprs.len()];
         py.allow_threads(|| {
             Ok(self
@@ -168,8 +173,8 @@ impl PyRecordBatch {
         right_on: Vec<PyExpr>,
         is_sorted: bool,
     ) -> PyResult<Self> {
-        let left_exprs = self.pyexprs_to_bound(left_on)?;
-        let right_exprs = self.pyexprs_to_bound(right_on)?;
+        let left_exprs = BoundExpr::bind_all(&left_on, &self.record_batch.schema)?;
+        let right_exprs = BoundExpr::bind_all(&right_on, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -184,7 +189,7 @@ impl PyRecordBatch {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_explode = self.pyexprs_to_bound(to_explode)?;
+        let converted_to_explode = BoundExpr::bind_all(&to_explode, &self.record_batch.schema)?;
 
         py.allow_threads(|| {
             Ok(self
@@ -294,7 +299,7 @@ impl PyRecordBatch {
                 "Can not partition into negative number of partitions: {num_partitions}"
             )));
         }
-        let exprs = self.pyexprs_to_bound(exprs)?;
+        let exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -339,7 +344,7 @@ impl PyRecordBatch {
         boundaries: &Self,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
-        let exprs = self.pyexprs_to_bound(partition_keys)?;
+        let exprs = BoundExpr::bind_all(&partition_keys, &self.record_batch.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -359,7 +364,7 @@ impl PyRecordBatch {
         py: Python,
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
-        let exprs = self.pyexprs_to_bound(partition_keys)?;
+        let exprs = BoundExpr::bind_all(&partition_keys, &self.record_batch.schema)?;
         py.allow_threads(|| {
             let (tables, values) = self.record_batch.partition_by_value(exprs.as_slice())?;
             let pyrecordbatches = tables

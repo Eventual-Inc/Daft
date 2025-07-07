@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import asyncio
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterable, Union
+import os
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.dependencies import pa
 
@@ -13,11 +14,11 @@ ColumnInputType = Union["Expression", str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
-def get_arrow_version():
+def get_arrow_version() -> tuple[int, ...]:
     return tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
-def in_notebook():
+def in_notebook() -> bool:
     """Check if we are in a Jupyter notebook."""
     try:
         from IPython import get_ipython
@@ -31,7 +32,7 @@ def in_notebook():
     return True
 
 
-def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
+def pydict_to_rows(pydict: dict[str, list[Any]]) -> list[frozenset[tuple[str, Any]]]:
     """Converts a dataframe pydict to a list of rows representation.
 
     e.g.
@@ -52,7 +53,9 @@ def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
     ]
 
 
-def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
+def freeze(
+    input: dict[Any, Any] | list[Any] | Any,
+) -> frozenset[Any] | tuple[Any, ...] | Any:
     """Freezes mutable containers for equality comparison."""
     if isinstance(input, dict):
         return frozenset((key, freeze(value)) for key, value in input.items())
@@ -64,8 +67,8 @@ def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
 
 def map_operator_arrow_semantics_bool(
     operator: Callable[[Any, Any], Any],
-    left_pylist: list,
-    right_pylist: list,
+    left_pylist: list[Any],
+    right_pylist: list[Any],
 ) -> list[bool | None]:
     return [
         (bool(operator(left, right)) if (left is not None and right is not None) else None)
@@ -74,9 +77,9 @@ def map_operator_arrow_semantics_bool(
 
 
 def python_list_membership_check(
-    left_pylist: list,
-    right_pylist: list,
-) -> list:
+    left_pylist: list[Any],
+    right_pylist: list[Any],
+) -> list[Any]:
     try:
         right_pyset = set(right_pylist)
         return [elem in right_pyset for elem in left_pylist]
@@ -84,15 +87,15 @@ def python_list_membership_check(
         return [elem in right_pylist for elem in left_pylist]
 
 
-def python_list_between_check(value_pylist: list, lower_pylist: list, upper_pylist: list) -> list:
+def python_list_between_check(value_pylist: list[Any], lower_pylist: list[Any], upper_pylist: list[Any]) -> list[Any]:
     return [value <= upper and value >= lower for value, lower, upper in zip(value_pylist, lower_pylist, upper_pylist)]
 
 
 def map_operator_arrow_semantics(
     operator: Callable[[Any, Any], Any],
-    left_pylist: list,
-    right_pylist: list,
-) -> list:
+    left_pylist: list[Any],
+    right_pylist: list[Any],
+) -> list[Any]:
     return [
         operator(left, right) if (left is not None and right is not None) else None
         for (left, right) in zip(left_pylist, right_pylist)
@@ -101,11 +104,7 @@ def map_operator_arrow_semantics(
 
 def pyarrow_supports_fixed_shape_tensor() -> bool:
     """Whether pyarrow supports the fixed_shape_tensor canonical extension type."""
-    from daft.context import get_context
-
-    return hasattr(pa, "fixed_shape_tensor") and (
-        (get_context().get_or_create_runner().name != "ray") or get_arrow_version() >= (13, 0, 0)
-    )
+    return hasattr(pa, "fixed_shape_tensor")
 
 
 # Column utility functions
@@ -127,38 +126,23 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
     return [col(c) if isinstance(c, str) else c for c in column_iter]
 
 
-class SyncFromAsyncIterator:
-    """Convert an async iterator to a sync iterator.
+def detect_ray_state() -> bool:
+    ray_is_initialized = False
+    ray_is_in_job = False
+    in_ray_worker = False
+    try:
+        import ray
 
-    Note that the async iterator is created lazily upon first iteration.
-    """
+        if ray.is_initialized():
+            ray_is_initialized = True
+            # Check if running inside a Ray worker
+            if ray._private.worker.global_worker.mode == ray.WORKER_MODE:
+                in_ray_worker = True
+        # In a Ray job, Ray might not be initialized yet but we can pick up an environment variable as a heuristic here
+        elif os.getenv("RAY_JOB_ID") is not None:
+            ray_is_in_job = True
 
-    def __init__(self, async_iter_producer: Callable[[], AsyncIterator]):
-        self.async_iter_producer = async_iter_producer
-        self.async_iter = None
-        self.loop = asyncio.new_event_loop()
-        self.stopped = False
+    except ImportError:
+        pass
 
-    def __iter__(self):
-        if self.stopped:
-            raise StopIteration
-        return self
-
-    def __next__(self):
-        if self.stopped:
-            raise StopIteration
-
-        try:
-            return self.loop.run_until_complete(self._get_next())
-        except StopAsyncIteration:
-            self.stopped = True
-            self.loop.close()
-            raise StopIteration
-
-    async def _get_next(self):
-        if self.async_iter is None:
-            self.async_iter = self.async_iter_producer()
-        res = await self.async_iter.__anext__()
-        if res is None:
-            raise StopAsyncIteration
-        return res
+    return not in_ray_worker and (ray_is_initialized or ray_is_in_job)

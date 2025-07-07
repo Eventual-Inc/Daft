@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import daft.daft as native
-from daft.expressions import Expression, list_
+from daft.expressions import Expression, col, list_, lit
 
 
 def monotonically_increasing_id() -> Expression:
@@ -38,7 +38,8 @@ def monotonically_increasing_id() -> Expression:
         (Showing first 4 of 4 rows)
 
     """
-    return Expression._from_pyexpr(native.monotonically_increasing_id())
+    f = native.get_function_from_registry("monotonically_increasing_id")
+    return Expression._from_pyexpr(f())
 
 
 def columns_sum(*exprs: Expression | str) -> Expression:
@@ -326,3 +327,62 @@ def dense_rank() -> Expression:
         Expression: An expression that returns the dense rank of the current row.
     """
     return Expression._from_pyexpr(native.dense_rank())
+
+
+def format(f_string: str, *args: Expression | str) -> Expression:
+    """Format a string using the given arguments.
+
+    Args:
+        f_string: The format string.
+        *args: The arguments to format the string with.
+
+    Returns:
+        Expression: A string expression with the formatted result.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import format
+        >>> from daft import col
+        >>> df = daft.from_pydict({"first_name": ["Alice", "Bob"], "last_name": ["Smith", "Jones"]})
+        >>> df = df.with_column("greeting", format("Hello {} {}", col("first_name"), "last_name"))
+        >>> df.show()
+        ╭────────────┬───────────┬───────────────────╮
+        │ first_name ┆ last_name ┆ greeting          │
+        │ ---        ┆ ---       ┆ ---               │
+        │ Utf8       ┆ Utf8      ┆ Utf8              │
+        ╞════════════╪═══════════╪═══════════════════╡
+        │ Alice      ┆ Smith     ┆ Hello Alice Smith │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Bob        ┆ Jones     ┆ Hello Bob Jones   │
+        ╰────────────┴───────────┴───────────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    if f_string.count("{}") != len(args):
+        raise ValueError(
+            f"Format string {f_string} has {f_string.count('{}')} placeholders but {len(args)} arguments were provided"
+        )
+
+    parts = f_string.split("{}")
+    exprs = []
+
+    for part, arg in zip(parts, args):
+        if part:
+            exprs.append(lit(part))
+
+        if isinstance(arg, str):
+            exprs.append(col(arg))
+        else:
+            exprs.append(arg)
+
+    if parts[-1]:
+        exprs.append(lit(parts[-1]))
+
+    if not exprs:
+        return lit("")
+
+    result = exprs[0]
+    for expr in exprs[1:]:
+        result = result + expr
+
+    return result

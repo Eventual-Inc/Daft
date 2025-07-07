@@ -7,7 +7,6 @@ mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
 mod between;
-mod binary;
 mod bitwise;
 mod bool_agg;
 pub(crate) mod broadcast;
@@ -166,6 +165,10 @@ pub type GroupIndicesPair = (VecIndices, GroupIndices);
 
 pub trait IntoGroups {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
+}
+
+pub trait IntoUniqueIdxs {
+    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
 }
 
 pub trait DaftCountAggable {

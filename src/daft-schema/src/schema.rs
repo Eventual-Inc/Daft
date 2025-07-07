@@ -9,25 +9,28 @@ use common_display::{
     DisplayAs,
 };
 use common_error::{DaftError, DaftResult};
-use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::{field::Field, prelude::DataType};
 
 pub type SchemaRef = Arc<Schema>;
 
-use derivative::Derivative;
+use educe::Educe;
 
-#[derive(Debug, Display, Serialize, Deserialize, Derivative, Eq, Clone)]
-#[derivative(Hash, PartialEq)]
-#[display("{}\n", make_schema_vertical_table(
-    self.fields.iter().map(|field| (field.name.clone(), field.dtype.to_string()))
-))]
+#[derive(Debug, Serialize, Deserialize, Educe, Eq, Clone)]
+#[educe(Hash, PartialEq)]
 pub struct Schema {
     fields: Vec<Field>,
 
-    #[derivative(Hash = "ignore", PartialEq = "ignore")]
+    #[educe(Hash(ignore))]
+    #[educe(PartialEq(ignore))]
     name_to_indices: HashMap<String, Vec<usize>>,
+}
+
+impl std::fmt::Display for Schema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.display_with_metadata(false))
+    }
 }
 
 impl Schema {
@@ -94,6 +97,19 @@ impl Schema {
             .iter()
             .map(|i| (*i, &self.fields[*i]))
             .collect()
+    }
+
+    pub fn append(&mut self, field: Field) {
+        let index = self.fields.len();
+        let name = field.name.clone();
+
+        self.fields.push(field);
+
+        if let Some(indices) = self.name_to_indices.get_mut(&name) {
+            indices.push(index);
+        } else {
+            self.name_to_indices.insert(name, vec![index]);
+        }
     }
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
@@ -357,6 +373,23 @@ impl Schema {
             })
             .collect::<DaftResult<Vec<_>>>()?;
         Ok(Self::new(new_fields))
+    }
+
+    pub fn display_with_metadata(&self, show_metadata: bool) -> String {
+        make_schema_vertical_table(self.fields.iter().map(|field| {
+            let metadata_str = if show_metadata && !field.metadata.is_empty() {
+                let items: Vec<String> = field
+                    .metadata
+                    .iter()
+                    .map(|(k, v)| format!("\"{}\": \"{}\"", k, v))
+                    .collect();
+                format!("{{{}}}", items.join(", "))
+            } else {
+                String::new()
+            };
+            (field.name.clone(), field.dtype.to_string(), metadata_str)
+        }))
+        .to_string()
     }
 }
 

@@ -257,7 +257,7 @@ def test_table_numeric_trigonometry(fun: str, is_arc: bool, is_co: bool) -> None
     trigonometry_table = table.eval_expression_list([getattr(col("a"), fun)()])
     assert (
         all(
-            x == y or (math.isnan(x) and math.isnan(y))
+            x == pytest.approx(y, rel=1e-9) or (math.isnan(x) and math.isnan(y))
             for x, y in zip(trigonometry_table.get_column_by_name("a").to_pylist(), np_result.to_list())
         )
         is True
@@ -425,7 +425,7 @@ def test_table_round_bad_input() -> None:
 
     table = MicroPartition.from_pydict({"a": [1, 2, 3]})
 
-    with pytest.raises(ValueError, match="decimal can not be negative: -2"):
+    with pytest.raises(ValueError, match="failed to cast"):
         table.eval_expression_list([col("a").round(-2)])
 
 

@@ -40,10 +40,47 @@ impl From<ScalarFunction> for ExprRef {
     }
 }
 
+/// This is a factory for scalar function implementations.
+///
+/// TODO:
+///   Rename to ScalarFunction (or similar) once ScalarFunction is migrated
+///   to ScalarUDF, and update ScalarUDF to ScalarFunctionImpl (or similar).
+///   Then update Expr::Function(ScalarUDF) to Expr::Function(ScalarFunctionFactory)
+///   which will enable *name* resolution within the DSL, but then we now have
+///   the ability for *type* resolution during planning via get_function. We can
+///   build rule-based type resolution at a later time.
+///
+pub trait ScalarFunctionFactory: Send + Sync {
+    /// The name of this function.
+    fn name(&self) -> &'static str;
+
+    /// Any additional aliases for this function.
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Returns a ScalarUDF for the given fields.
+    ///
+    /// Note:
+    ///   When the time comes, we should replace FunctionArgs<ExprRef> with bound ExprRef.
+    ///   This way we have the pair (Expr, Field) so we don't have to keep re-computing
+    ///   expression types each time we resolve a function. At present, I wanted to keep
+    ///   this signature the exact same as function_args_to_field.
+    ///
+    fn get_function(
+        &self,
+        args: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Arc<dyn ScalarUDF>>;
+}
+
+/// This is a concrete implementation of a ScalarFunction.
 #[typetag::serde(tag = "type")]
-pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
+pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     /// The name of the function.
     fn name(&self) -> &'static str;
+
+    /// Any additional aliases for this function.
     fn aliases(&self) -> &'static [&'static str] {
         &[]
     }
@@ -163,5 +200,31 @@ impl Display for ScalarFunction {
         }
         write!(f, ")")?;
         Ok(())
+    }
+}
+
+/// Function factory which is backed by a single dynamic ScalarUDF.
+pub struct DynamicScalarFunction(Arc<dyn ScalarUDF>);
+
+impl From<Arc<dyn ScalarUDF>> for DynamicScalarFunction {
+    fn from(value: Arc<dyn ScalarUDF>) -> Self {
+        Self(value)
+    }
+}
+
+impl ScalarFunctionFactory for DynamicScalarFunction {
+    /// Delegate to inner.
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    /// Delegate to inner.
+    fn aliases(&self) -> &'static [&'static str] {
+        self.0.aliases()
+    }
+
+    /// All typing for implementation variants is done during evaluation, hence dynamic.
+    fn get_function(&self, _: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Arc<dyn ScalarUDF>> {
+        Ok(self.0.clone())
     }
 }

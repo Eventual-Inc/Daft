@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import Callable, TypeVar
+from typing import Any, Callable, TypeVar
 
 from daft.dependencies import np, pil_image
 
@@ -13,7 +13,7 @@ _NUMPY_REGISTERED = False
 _PILLOW_REGISTERED = False
 
 
-def register_viz_hook(klass: type[HookClass], hook: Callable[[object], str]):
+def register_viz_hook(klass: type[HookClass], hook: Callable[[Any], str]) -> None:
     """Registers a visualization hook that returns the appropriate HTML for visualizing a specific class in HTML."""
     _VIZ_HOOKS_REGISTRY[klass] = hook
 
@@ -21,9 +21,9 @@ def register_viz_hook(klass: type[HookClass], hook: Callable[[object], str]):
 def get_viz_hook(val: object) -> Callable[[object], str] | None:
     global _NUMPY_REGISTERED
     global _PILLOW_REGISTERED
-    if np.module_available() and not _NUMPY_REGISTERED:
+    if np.module_available() and not _NUMPY_REGISTERED:  # type: ignore[attr-defined]
 
-        def _viz_numpy(val: np.ndarray) -> str:
+        def _viz_numpy(val: np.ndarray[Any, Any]) -> str:
             return f"&ltnp.ndarray<br>shape={val.shape}<br>dtype={val.dtype}&gt"
 
         register_viz_hook(np.ndarray, _viz_numpy)

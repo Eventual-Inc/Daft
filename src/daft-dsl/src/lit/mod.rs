@@ -1,6 +1,5 @@
 mod conversions;
 mod deserializer;
-mod serializer;
 use std::{
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
@@ -594,6 +593,23 @@ impl LiteralValue {
             ))),
         }
     }
+
+    // =================
+    //  Factory Methods
+    // =================
+
+    pub fn new_struct<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (String, Self)>,
+    {
+        // A "struct" literal is a strange concept, and only makes
+        // sense that it predates the struct expression. The literals
+        // tell us the type, so need to give before construction.
+        let iter_with_types = iter
+            .into_iter()
+            .map(|(name, lit)| (Field::new(name, lit.get_type()), lit));
+        Self::Struct(IndexMap::from_iter(iter_with_types))
+    }
 }
 
 pub trait Literal: Sized {
@@ -646,7 +662,7 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
     macro_rules! unwrap_unchecked {
         ($expr:expr, $variant:ident) => {
             match $expr {
-                LiteralValue::$variant(val, ..) => Some(*val),
+                LiteralValue::$variant(val, ..) => Some(val.clone()),
                 LiteralValue::Null => None,
                 _ => unreachable!("datatype is already checked"),
             }
@@ -748,6 +764,16 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
             let sa = StructArray::new(Field::new("literal", struct_dtype), data, None);
             sa.into_series()
         }
+        #[cfg(feature = "python")]
+        DataType::Python => {
+            let pynone = Arc::new(pyo3::Python::with_gil(|py| py.None()));
+
+            let data = values.iter().map(|lit| {
+                unwrap_unchecked!(lit, Python).map_or_else(|| pynone.clone(), |pyobj| pyobj.0)
+            });
+
+            PythonArray::from(("literal", data.collect::<Vec<_>>())).into_series()
+        }
         _ => {
             return Err(DaftError::ValueError(format!(
                 "Unsupported data type: {:?}",
@@ -766,7 +792,6 @@ impl From<LiteralValue> for ExprRef {
 #[cfg(test)]
 mod test {
     use common_error::DaftResult;
-    use common_io_config::IOConfig;
     use daft_core::prelude::*;
 
     use super::{Literal, LiteralValue};
@@ -844,17 +869,6 @@ mod test {
         assert!(actual.is_err());
     }
 
-    #[test]
-    fn test_lit_value_serde() -> DaftResult<()> {
-        let lit = literal_value(1.0);
-        assert_eq!(lit, LiteralValue::Float64(1.0));
-
-        let lit = literal_value(CountMode::All);
-        assert_eq!(lit, LiteralValue::Utf8("All".to_string()));
-
-        Ok(())
-    }
-
     fn roundtrip<V: Literal + FromLiteral + Clone + std::fmt::Debug + PartialEq>(
         value: V,
     ) -> DaftResult<()> {
@@ -876,18 +890,6 @@ mod test {
         roundtrip(1u64)?;
         roundtrip(1f64)?;
         roundtrip("test".to_string())?;
-        roundtrip(IOConfig::default())?;
-        roundtrip(CountMode::All)?;
-        roundtrip(ImageFormat::PNG)?;
-        roundtrip(ImageMode::L)?;
-        roundtrip(ImageMode::LA)?;
-        roundtrip(ImageMode::RGBA)?;
-        roundtrip(ImageMode::L16)?;
-        roundtrip(ImageMode::LA16)?;
-        roundtrip(ImageMode::RGB16)?;
-        roundtrip(ImageMode::RGBA16)?;
-        roundtrip(ImageMode::RGB32F)?;
-        roundtrip(ImageMode::RGBA32F)?;
 
         Ok(())
     }

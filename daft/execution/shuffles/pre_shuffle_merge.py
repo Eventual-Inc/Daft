@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import logging
 from collections import defaultdict
-from typing import Dict
 
 import ray.experimental  # noqa: TID253
 
@@ -11,17 +12,14 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.execution.physical_plan import InProgressPhysicalPlan, stage_id_counter
-from daft.runners.partitioning import (
-    PartitionT,
-)
 
 logger = logging.getLogger(__name__)
 
 
 def pre_shuffle_merge(
-    map_plan: InProgressPhysicalPlan[PartitionT],
+    map_plan: InProgressPhysicalPlan[ray.ObjectRef],
     pre_shuffle_merge_threshold: int,
-) -> InProgressPhysicalPlan[PartitionT]:
+) -> InProgressPhysicalPlan[ray.ObjectRef]:
     """Merges intermediate partitions from the map_plan based on memory constraints.
 
     The function processes incoming map tasks and merges their outputs when:
@@ -37,7 +35,7 @@ def pre_shuffle_merge(
     NUM_MAPS_THRESHOLD = 4
 
     stage_id = next(stage_id_counter)
-    in_flight_maps: Dict[str, SingleOutputPartitionTask[PartitionT]] = {}
+    in_flight_maps: dict[str, SingleOutputPartitionTask[ray.ObjectRef]] = {}
     no_more_input = False
 
     while True:
@@ -64,8 +62,10 @@ def pre_shuffle_merge(
             location_map = ray.experimental.get_object_locations(partitions)
 
             # Group partitions by node
-            node_groups = defaultdict(list)
-            unknown_location_group = []  # Special group for partitions without known location
+            node_groups: dict[str, list[tuple[SingleOutputPartitionTask[ray.ObjectRef], int]]] = defaultdict(list)
+            unknown_location_group: list[
+                tuple[SingleOutputPartitionTask[ray.ObjectRef], int]
+            ] = []  # Special group for partitions without known location
 
             for partition, size in materialized_maps:
                 partition_ref = partition.partition()
@@ -79,7 +79,9 @@ def pre_shuffle_merge(
                     node_groups[node_id].append((partition, size))
 
             # Function to create merge groups for a list of partitions
-            def create_merge_groups(partitions_list):
+            def create_merge_groups(
+                partitions_list: list[tuple[SingleOutputPartitionTask[ray.ObjectRef], int]],
+            ) -> list[list[SingleOutputPartitionTask[ray.ObjectRef]]]:
                 if not partitions_list:
                     return []
 
@@ -109,7 +111,7 @@ def pre_shuffle_merge(
                 return groups
 
             # Process each node's partitions and unknown location partitions
-            merge_groups = {}
+            merge_groups: dict[str | None, list[list[SingleOutputPartitionTask[ray.ObjectRef]]]] = {}
 
             # Process node-specific groups
             for node_id, node_partitions in node_groups.items():
@@ -125,7 +127,7 @@ def pre_shuffle_merge(
                     for partition in group:
                         del in_flight_maps[partition.id()]
                     total_size = sum(m.partition_metadata().size_bytes or 0 for m in group)
-                    merge_step = PartitionTaskBuilder[PartitionT](
+                    merge_step = PartitionTaskBuilder[ray.ObjectRef](
                         inputs=[p.partition() for p in group],
                         partial_metadatas=[m.partition_metadata() for m in group],
                         resource_request=ResourceRequest(memory_bytes=total_size),

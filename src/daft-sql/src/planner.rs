@@ -10,6 +10,7 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
     has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
     ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
@@ -59,6 +60,11 @@ impl<T> Bindings<T> {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+
+    /// Inserts all bindings from the iterator of binding pairs.
+    fn extend<I: IntoIterator<Item = (String, T)>>(&mut self, iter: I) {
+        self.0.extend(iter);
+    }
 }
 
 impl<T> Default for Bindings<T> {
@@ -80,9 +86,6 @@ struct OrderByExprs {
 pub(crate) struct PlannerContext {
     /// Bindings for common table expressions (cte).
     bound_ctes: Bindings<LogicalPlanBuilder>,
-    /// tables that are bound to the sql context only.
-    /// We don't bind them directly to the session because they are scoped to the sql context, not the session.
-    bound_tables: Bindings<LogicalPlanRef>,
 }
 
 impl PlannerContext {
@@ -90,7 +93,6 @@ impl PlannerContext {
     fn new() -> Self {
         Self {
             bound_ctes: Bindings::default(),
-            bound_tables: Bindings::default(),
         }
     }
 
@@ -169,6 +171,16 @@ impl SQLPlanner<'_> {
         }
     }
 
+    /// Binds each CTE and returning self for use in a builder pattern.
+    pub fn with_ctes(&mut self, ctes: HashMap<String, LogicalPlanBuilder>) -> &mut Self {
+        // !! IMPORTANT: name resolution requires adding an alias to each CTE !!
+        let ctes_with_alias = ctes
+            .iter()
+            .map(|(alias, plan)| (alias.to_string(), plan.alias(alias.as_str())));
+        self.context.borrow_mut().bound_ctes.extend(ctes_with_alias);
+        self
+    }
+
     /// Set `self.current_plan`. Should only be called once per query.
     fn set_plan(&mut self, plan: LogicalPlanBuilder) {
         debug_assert!(self.current_plan.is_none());
@@ -204,13 +216,12 @@ impl SQLPlanner<'_> {
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
         let name_str = name.to_string();
         let ctx = self.context.borrow();
-        let table = ctx.bound_tables.get(&name_str);
-        if let Some(table) = table {
-            Ok(LogicalPlanBuilder::from(table.clone()).alias(name_str))
+        let cte = ctx.bound_ctes.get(&name_str);
+        if let Some(plan) = cte {
+            Ok(LogicalPlanBuilder::from(plan.clone()).alias(name_str))
         } else {
             let table = self.session().get_table(name)?;
-
-            let plan = table.get_logical_plan()?;
+            let plan = table.to_logical_plan()?;
             Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
         }
     }
@@ -243,10 +254,6 @@ impl SQLPlanner<'_> {
                 .insert(cte.alias.name.value.clone(), plan);
         }
         Ok(())
-    }
-
-    pub fn bind_table(&self, name: String, plan: LogicalPlanRef) {
-        self.context_mut().bound_tables.insert(name, plan);
     }
 
     pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
@@ -438,20 +445,31 @@ impl SQLPlanner<'_> {
 
         match &selection.distinct {
             Some(Distinct::Distinct) => {
-                self.update_plan(|plan| plan.distinct())?;
+                self.update_plan(|plan| plan.distinct(None))?;
             }
-            Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
+            Some(Distinct::On(columns)) => {
+                let columns = columns
+                    .iter()
+                    .map(|c| self.plan_expr(c))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                self.update_plan(|plan| plan.distinct(Some(columns)))?;
+            }
             None => {}
         }
 
         if let Some(limit) = &query.limit {
-            let limit = self.plan_expr(limit)?;
-            if let Expr::Literal(LiteralValue::Int64(limit)) = limit.as_ref() {
-                self.update_plan(|plan| plan.limit(*limit, true))?; // TODO: Should this be eager or not?
-            } else {
-                invalid_operation_err!(
-                    "LIMIT <n> must be a constant integer, instead got: {limit}"
-                );
+            let limit_expr = self.plan_expr(limit)?;
+            match limit_expr.as_ref() {
+                Expr::Literal(LiteralValue::Int64(limit)) if *limit >= 0 => {
+                    // TODO: Should this be eager or not?
+                    self.update_plan(|plan| plan.limit(*limit as u64, true))?;
+                }
+                Expr::Literal(LiteralValue::Int64(limit)) => invalid_operation_err!(
+                    "LIMIT <n> must be greater than or equal to 0, instead got: {limit}"
+                ),
+                _ => invalid_operation_err!(
+                    "LIMIT <n> must be a constant integer, instead got: {limit_expr}"
+                ),
             }
         }
 
@@ -1298,45 +1316,49 @@ impl SQLPlanner<'_> {
                 syntax: _,
                 expr,
             } => {
-                use daft_functions::temporal::{self as dt};
+                use daft_functions_temporal as dt;
                 let expr = self.plan_expr(expr)?;
 
+                fn scalar<UDF: ScalarUDF + 'static>(udf: UDF, input: ExprRef) -> ExprRef {
+                    ScalarFunction::new(udf, vec![input]).into()
+                }
+
                 match field {
-                    DateTimeField::Year => Ok(dt::dt_year(expr)),
-                    DateTimeField::Quarter => Ok(dt::dt_quarter(expr)),
-                    DateTimeField::Month => Ok(dt::dt_month(expr)),
-                    DateTimeField::Day => Ok(dt::dt_day(expr)),
+                    DateTimeField::Year => Ok(scalar(dt::Year, expr)),
+                    DateTimeField::Quarter => Ok(scalar(dt::Quarter, expr)),
+                    DateTimeField::Month => Ok(scalar(dt::Month, expr)),
+                    DateTimeField::Day => Ok(scalar(dt::Day, expr)),
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_week" =>
                     {
-                        Ok(dt::dt_day_of_week(expr))
+                        Ok(scalar(dt::DayOfWeek, expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_month" =>
                     {
-                        Ok(dt::dt_day_of_month(expr))
+                        Ok(scalar(dt::DayOfMonth, expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_year" =>
                     {
-                        Ok(dt::dt_day_of_year(expr))
+                        Ok(scalar(dt::DayOfYear, expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "week_of_year" =>
                     {
-                        Ok(dt::dt_week_of_year(expr))
+                        Ok(scalar(dt::WeekOfYear, expr))
                     }
-                    DateTimeField::Date => Ok(dt::dt_date(expr)),
-                    DateTimeField::Hour => Ok(dt::dt_hour(expr)),
-                    DateTimeField::Minute => Ok(dt::dt_minute(expr)),
-                    DateTimeField::Second => Ok(dt::dt_second(expr)),
-                    DateTimeField::Millisecond => Ok(dt::dt_millisecond(expr)),
-                    DateTimeField::Microsecond => Ok(dt::dt_microsecond(expr)),
-                    DateTimeField::Nanosecond => Ok(dt::dt_nanosecond(expr)),
+                    DateTimeField::Date => Ok(scalar(dt::Date, expr)),
+                    DateTimeField::Hour => Ok(scalar(dt::Hour, expr)),
+                    DateTimeField::Minute => Ok(scalar(dt::Minute, expr)),
+                    DateTimeField::Second => Ok(scalar(dt::Second, expr)),
+                    DateTimeField::Millisecond => Ok(scalar(dt::Millisecond, expr)),
+                    DateTimeField::Microsecond => Ok(scalar(dt::Microsecond, expr)),
+                    DateTimeField::Nanosecond => Ok(scalar(dt::Nanosecond, expr)),
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "unix_date" =>
                     {
-                        Ok(dt::dt_unix_date(expr))
+                        Ok(scalar(dt::UnixDate, expr))
                     }
                     other => unsupported_sql_err!("EXTRACT ({other})"),
                 }

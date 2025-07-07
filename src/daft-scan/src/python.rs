@@ -157,7 +157,7 @@ pub mod pylib {
                     hive_partitioning,
                 );
 
-                let operator = executor.block_on(task)??;
+                let operator = executor.block_within_async_context(task)??;
                 let operator = Arc::new(operator);
 
                 Ok(Self {
@@ -279,6 +279,10 @@ pub mod pylib {
         }
         fn can_absorb_select(&self) -> bool {
             self.can_absorb_select
+        }
+
+        fn can_absorb_shard(&self) -> bool {
+            false
         }
 
         fn multiline_display(&self) -> Vec<String> {
@@ -603,7 +607,7 @@ pub mod pylib {
             Arc::new(FileFormatConfig::Parquet(default::Default::default())),
             Arc::new(schema),
             Arc::new(Default::default()),
-            Pushdowns::new(None, None, columns.map(Arc::new), None),
+            Pushdowns::new(None, None, columns.map(Arc::new), None, None),
             None,
         );
         Ok(st.estimate_in_memory_size_bytes(None).unwrap())

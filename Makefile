@@ -23,7 +23,7 @@ endif
 
 .venv:  ## Set up virtual environment
 ifeq (, $(shell which uv))
-	python3 -m venv $(VENV)
+	$(PYTHON_VERSION) -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 else
 	uv venv $(VENV) -p $(PYTHON_VERSION)
@@ -59,8 +59,13 @@ build: check-toolchain .venv  ## Compile and install Daft for development
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --extras=all --uv
 
 .PHONY: build-release
-build-release: check-toolchain frontend .venv  ## Compile and install a faster Daft binary
+build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
+
+.PHONY: build-whl
+build-whl: check-toolchain .venv  ## Compile Daft for development, only generate whl file without installation
+	cargo clean --target-dir target
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build
 
 .PHONY: test
 test: .venv build  ## Run tests
@@ -82,11 +87,31 @@ docs: .venv ## Build Daft documentation
 docs-serve: .venv ## Build Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
 
-.PHONY: frontend
-frontend: .venv ## Build daft-dashboard frontend assets
-	cd src/daft-dashboard/frontend && \
-		bun run build
+.PHONY: daft-proto
+daft-proto: check-toolchain .venv ## Build Daft proto sources to avoid protoc build-time dependency.
+	trap 'mv src/daft-proto/build.rs src/daft-proto/.build.rs' EXIT && mv src/daft-proto/.build.rs src/daft-proto/build.rs && cargo build -p daft-proto
+
+.PHONY: check-format
+check-format: check-toolchain .venv  ## Check if code is properly formatted
+	source $(VENV_BIN)/activate && pre-commit run --all-files
+
+.PHONY: format-check
+format-check: check-format  ## Alias for check-format
+
+format: check-toolchain .venv  ## Format Python and Rust code
+	source $(VENV_BIN)/activate && pre-commit run ruff-format --all-files
+	source $(VENV_BIN)/activate && pre-commit run fmt --all-files
+
+.PHONY: lint
+lint: check-toolchain .venv  ## Lint Python and Rust code
+	source $(VENV_BIN)/activate && pre-commit run ruff --all-files
+	source $(VENV_BIN)/activate && pre-commit run clippy --all-files
+
+.PHONY: precommit
+precommit:  check-toolchain .venv  ## Run all pre-commit hooks
+	source $(VENV_BIN)/activate && pre-commit run --all-files
 
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
+	rm -rf ./target

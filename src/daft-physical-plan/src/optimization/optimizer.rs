@@ -92,7 +92,7 @@ mod tests {
 
     // rule that increments Limit's limit by 1 per pass
     struct CountingRule {
-        pub cutoff: i64,
+        pub cutoff: u64,
     }
 
     impl PhysicalOptimizerRule for CountingRule {

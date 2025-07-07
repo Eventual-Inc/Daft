@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    ExprRef, WindowBoundary, WindowExpr, WindowFrame,
+    WindowBoundary, WindowExpr, WindowFrame,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -20,11 +20,12 @@ use super::{
 use crate::ExecutionTaskSpawner;
 
 struct WindowPartitionAndOrderByParams {
-    window_exprs: Vec<WindowExpr>,
+    window_exprs: Vec<BoundWindowExpr>,
     aliases: Vec<String>,
-    partition_by: Vec<ExprRef>,
-    order_by: Vec<ExprRef>,
+    partition_by: Vec<BoundExpr>,
+    order_by: Vec<BoundExpr>,
     descending: Vec<bool>,
+    nulls_first: Vec<bool>,
     original_schema: SchemaRef,
 }
 
@@ -33,7 +34,7 @@ impl WindowSinkParams for WindowPartitionAndOrderByParams {
         &self.original_schema
     }
 
-    fn partition_by(&self) -> &[ExprRef] {
+    fn partition_by(&self) -> &[BoundExpr] {
         &self.partition_by
     }
 
@@ -48,11 +49,12 @@ pub struct WindowPartitionAndOrderBySink {
 
 impl WindowPartitionAndOrderBySink {
     pub fn new(
-        window_exprs: &[WindowExpr],
+        window_exprs: &[BoundWindowExpr],
         aliases: &[String],
-        partition_by: &[ExprRef],
-        order_by: &[ExprRef],
+        partition_by: &[BoundExpr],
+        order_by: &[BoundExpr],
         descending: &[bool],
+        nulls_first: &[bool],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
         Ok(Self {
@@ -62,6 +64,7 @@ impl WindowPartitionAndOrderBySink {
                 partition_by: partition_by.to_vec(),
                 order_by: order_by.to_vec(),
                 descending: descending.to_vec(),
+                nulls_first: nulls_first.to_vec(),
                 original_schema: schema.clone(),
             }),
         })
@@ -130,29 +133,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             continue;
                         }
 
-                        let input_schema = &all_partitions[0].schema;
-
                         let params = params.clone();
 
-                        let partition_by = params
-                            .partition_by
-                            .iter()
-                            .map(|expr| BoundExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        let order_by = params
-                            .order_by
-                            .iter()
-                            .map(|expr| BoundExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        let window_exprs = params
-                            .window_exprs
-                            .iter()
-                            .map(|expr| BoundWindowExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        if partition_by.is_empty() {
+                        if params.partition_by.is_empty() {
                             return Err(DaftError::ValueError(
                                 "Partition by cannot be empty for window functions".into(),
                             ));
@@ -165,7 +148,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 return RecordBatch::empty(Some(params.original_schema.clone()));
                             }
 
-                            let groupby_table = input_data.eval_expression_list(&partition_by)?;
+                            let groupby_table =
+                                input_data.eval_expression_list(&params.partition_by)?;
                             let (_, groupvals_indices) = groupby_table.make_groups()?;
 
                             let mut partitions = groupvals_indices
@@ -179,15 +163,15 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 .collect::<Vec<_>>();
 
                             for partition in &mut partitions {
-                                // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
+                                // Sort the partition by the order_by columns
                                 *partition = partition.sort(
-                                    &order_by,
+                                    &params.order_by,
                                     &params.descending,
-                                    &params.descending,
+                                    &params.nulls_first,
                                 )?;
 
                                 for (window_expr, name) in
-                                    window_exprs.iter().zip(params.aliases.iter())
+                                    params.window_exprs.iter().zip(params.aliases.iter())
                                 {
                                     *partition = match window_expr.as_ref() {
                                         WindowExpr::Agg(agg_expr) => {
@@ -201,7 +185,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                             partition.window_agg_dynamic_frame(
                                                 name.clone(),
                                                 &BoundAggExpr::new_unchecked(agg_expr.clone()),
-                                                &order_by,
+                                                &params.order_by,
                                                 &params.descending,
                                                 1,
                                                 &dtype,
@@ -211,12 +195,16 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                         WindowExpr::RowNumber => {
                                             partition.window_row_number(name.clone())?
                                         }
-                                        WindowExpr::Rank => {
-                                            partition.window_rank(name.clone(), &order_by, false)?
-                                        }
-                                        WindowExpr::DenseRank => {
-                                            partition.window_rank(name.clone(), &order_by, true)?
-                                        }
+                                        WindowExpr::Rank => partition.window_rank(
+                                            name.clone(),
+                                            &params.order_by,
+                                            false,
+                                        )?,
+                                        WindowExpr::DenseRank => partition.window_rank(
+                                            name.clone(),
+                                            &params.order_by,
+                                            true,
+                                        )?,
                                         WindowExpr::Offset {
                                             input,
                                             offset,
@@ -288,7 +276,13 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                 .order_by
                 .iter()
                 .zip(self.window_partition_and_order_by_params.descending.iter())
-                .map(|(e, d)| format!("{} {}", e, if *d { "desc" } else { "asc" }))
+                .zip(self.window_partition_and_order_by_params.nulls_first.iter())
+                .map(|((e, d), n)| format!(
+                    "{} {} {}",
+                    e,
+                    if *d { "desc" } else { "asc" },
+                    if *n { "nulls first" } else { "nulls last" }
+                ))
                 .join(", ")
         ));
         display

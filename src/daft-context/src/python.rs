@@ -32,13 +32,8 @@ impl PyDaftContext {
     }
 
     pub fn get_or_create_runner(&self, py: Python) -> PyResult<PyObject> {
-        let mut lock = self
-            .inner
-            .state
-            .write()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))?;
+        let runner = py.allow_threads(|| self.inner.get_or_create_runner())?;
 
-        let runner = lock.get_or_create_runner()?;
         match runner.as_ref() {
             Runner::Ray(ray) => {
                 let pyobj = ray.pyobj.as_ref();
@@ -48,57 +43,44 @@ impl PyDaftContext {
                 let pyobj = native.pyobj.as_ref();
                 Ok(pyobj.clone_ref(py))
             }
-            Runner::Py(py_runner) => {
-                let pyobj = py_runner.pyobj.as_ref();
-                Ok(pyobj.clone_ref(py))
-            }
         }
     }
     #[getter(_daft_execution_config)]
-    pub fn get_daft_execution_config(&self) -> PyResult<PyDaftExecutionConfig> {
-        let state = self.inner.state.read().unwrap();
-        let config = state.config.execution.clone();
+    pub fn get_daft_execution_config(&self, py: Python) -> PyResult<PyDaftExecutionConfig> {
+        let config = py.allow_threads(|| self.inner.execution_config());
         let config = PyDaftExecutionConfig { config };
         Ok(config)
     }
 
     #[getter(_daft_planning_config)]
-    pub fn get_daft_planning_config(&self) -> PyResult<PyDaftPlanningConfig> {
-        let state = self.inner.state.read().unwrap();
-        let config = state.config.planning.clone();
+    pub fn get_daft_planning_config(&self, py: Python) -> PyResult<PyDaftPlanningConfig> {
+        let config = py.allow_threads(|| self.inner.planning_config());
         let config = PyDaftPlanningConfig { config };
         Ok(config)
     }
 
     #[setter(_daft_execution_config)]
-    pub fn set_daft_execution_config(&self, config: PyDaftExecutionConfig) {
-        let mut state = self.inner.state.write().unwrap();
-        state.config.execution = config.config;
+    pub fn set_daft_execution_config(&self, py: Python, config: PyDaftExecutionConfig) {
+        py.allow_threads(|| self.inner.set_execution_config(config.config));
     }
 
     #[setter(_daft_planning_config)]
-    pub fn set_daft_planning_config(&self, config: PyDaftPlanningConfig) {
-        let mut state = self.inner.state.write().unwrap();
-        state.config.planning = config.config;
+    pub fn set_daft_planning_config(&self, py: Python, config: PyDaftPlanningConfig) {
+        py.allow_threads(|| self.inner.set_planning_config(config.config));
     }
 
     #[getter(_runner)]
     pub fn get_runner(&self, py: Python) -> Option<PyObject> {
-        let state = self.inner.state.read().unwrap();
-        state.runner.clone().map(|r| r.to_pyobj(py))
+        let runner = py.allow_threads(|| self.inner.runner());
+        runner.map(|r| r.to_pyobj(py))
     }
 
     #[setter(_runner)]
-    pub fn set_runner(&self, runner: Option<PyObject>) -> PyResult<()> {
-        if let Some(runner) = runner {
-            let runner = Runner::from_pyobj(runner)?;
-            let runner = Arc::new(runner);
-            self.inner.set_runner(runner)?;
-            Ok(())
-        } else {
-            self.inner.state.write().unwrap().runner = None;
-            Ok(())
-        }
+    pub fn set_runner(&self, py: Python, runner: PyObject) -> PyResult<()> {
+        let runner = Runner::from_pyobj(runner)?;
+        let runner = Arc::new(runner);
+        py.allow_threads(|| self.inner.set_runner(runner))?;
+        Ok(())
     }
 }
 impl From<DaftContext> for PyDaftContext {
@@ -108,10 +90,10 @@ impl From<DaftContext> for PyDaftContext {
 }
 
 #[pyfunction]
-pub fn get_runner_config_from_env() -> PyRunnerConfig {
-    PyRunnerConfig {
-        _inner: super::get_runner_config_from_env(),
-    }
+pub fn get_runner_config_from_env() -> PyResult<PyRunnerConfig> {
+    Ok(PyRunnerConfig {
+        _inner: super::get_runner_config_from_env()?,
+    })
 }
 
 #[pyfunction]
@@ -150,14 +132,5 @@ pub fn set_runner_ray(
 #[pyfunction(signature = (num_threads = None))]
 pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> {
     let ctx = super::set_runner_native(num_threads)?;
-    Ok(ctx.into())
-}
-
-#[pyfunction(signature = (use_thread_pool = None, num_threads = None))]
-pub fn set_runner_py(
-    use_thread_pool: Option<bool>,
-    num_threads: Option<usize>,
-) -> PyResult<PyDaftContext> {
-    let ctx = super::set_runner_py(use_thread_pool, num_threads)?;
     Ok(ctx.into())
 }

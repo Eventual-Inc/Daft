@@ -1,6 +1,6 @@
 # I/O
 
-Daft offers a variety of approaches to creating a DataFrame from reading various data sources (in-memory data, files, data catalogs, and integrations) and writing to various data sources. See more about [I/O](../io.md) in Daft User Guide.
+Daft offers a variety of approaches to creating a DataFrame from reading various data sources (in-memory data, files, data catalogs, and integrations) and writing to various data sources. See more about [I/O](../io/index.md) in Daft User Guide.
 
 ## Input
 
@@ -123,7 +123,7 @@ Daft supports diverse input sources and output sinks, this section covers lower-
         filters: ["!^_"]
         heading_level: 3
 
-::: daft.io.sink.WriteOutput
+::: daft.io.sink.WriteResult
     options:
         filters: ["!^_"]
         heading_level: 3

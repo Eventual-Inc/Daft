@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import tempfile
 
@@ -94,3 +96,68 @@ def test_url_upload():
         # Verify files were created
         assert os.path.exists(os.path.join(tmp_dir, "test1.txt"))
         assert os.path.exists(os.path.join(tmp_dir, "test2.txt"))
+
+
+def test_url_parse():
+    df = daft.from_pydict(
+        {
+            "urls": [
+                "https://user:pass@example.com:8080/path?query=value#fragment",
+                "http://localhost/api",
+                "ftp://files.example.com/file.txt",
+            ]
+        }
+    )
+
+    actual = (
+        daft.sql(
+            """
+        SELECT url_parse(urls) FROM df
+        """
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    expected = df.select(col("urls").url_parse()).collect().to_pydict()
+
+    assert actual == expected
+
+    actual_components = (
+        daft.sql(
+            """
+        SELECT
+            urls.scheme as scheme,
+            urls.host as host,
+            urls.port as port,
+            urls.path as path,
+            urls.query as query,
+            urls.fragment as fragment,
+            urls.username as username,
+            urls.password as password
+        FROM (
+            SELECT url_parse(urls) FROM df
+        )
+        """
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    expected_components = (
+        df.select(col("urls").url_parse())
+        .select(
+            col("urls").struct.get("scheme").alias("scheme"),
+            col("urls").struct.get("host").alias("host"),
+            col("urls").struct.get("port").alias("port"),
+            col("urls").struct.get("path").alias("path"),
+            col("urls").struct.get("query").alias("query"),
+            col("urls").struct.get("fragment").alias("fragment"),
+            col("urls").struct.get("username").alias("username"),
+            col("urls").struct.get("password").alias("password"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual_components == expected_components

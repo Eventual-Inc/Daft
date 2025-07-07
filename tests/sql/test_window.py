@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import random
 
@@ -737,6 +739,54 @@ def test_order_by_only_desc():
     )
 
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["value"])
+
+
+@pytest.mark.parametrize(
+    "desc,nulls_first",
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
+def test_order_by_nulls(desc, nulls_first):
+    """Test window functions with ORDER BY NULLS FIRST and NULLS LAST."""
+    ids = list(range(1, 7))
+    values = [10, None, 20, None, 30, 30]
+    data = {
+        "id": ids,
+        "value": values,
+    }
+    df = daft.from_pydict(data)
+    catalog = SQLCatalog({"test_data": df})
+    desc_str = "DESC" if desc else "ASC"
+    nulls_first_str = "NULLS FIRST" if nulls_first else "NULLS LAST"
+    sql_result = daft.sql(
+        f"""
+        SELECT
+            id,
+            value,
+            ROW_NUMBER() OVER(ORDER BY value {desc_str} {nulls_first_str}) AS row_num,
+            RANK() OVER(ORDER BY value {desc_str} {nulls_first_str}) AS rank_val,
+            DENSE_RANK() OVER(ORDER BY value {desc_str} {nulls_first_str}) AS dense_rank_val
+        FROM test_data
+        ORDER BY id
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().order_by("value", desc=desc, nulls_first=nulls_first)
+
+    daft_result = (
+        df.with_column("row_num", row_number().over(window_spec))
+        .with_column("rank_val", rank().over(window_spec))
+        .with_column("dense_rank_val", dense_rank().over(window_spec))
+        .sort(["id"], desc=True)
+        .collect()
+    )
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["id"])
 
 
 def test_order_by_only_multiple_columns():

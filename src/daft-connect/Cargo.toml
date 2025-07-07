@@ -12,6 +12,7 @@ daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-functions = {workspace = true, optional = true, features = ["python"]}
+daft-functions-temporal = {workspace = true, optional = true}
 daft-functions-utf8 = {workspace = true, optional = true, features = ["python"]}
 daft-io = {path = "../daft-io", optional = true, features = ["python"]}
 daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
@@ -55,7 +56,8 @@ python = [
   "dep:daft-context",
   "dep:daft-catalog",
   "dep:daft-functions",
-  "dep:daft-functions-utf8"
+  "dep:daft-functions-utf8",
+  "dep:daft-functions-temporal"
 ]
 
 [lints]

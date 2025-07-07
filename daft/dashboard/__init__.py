@@ -30,7 +30,7 @@ def _should_run() -> bool:
     return True
 
 
-def launch(noop_if_initialized: bool = False):
+def launch(noop_if_initialized: bool = False) -> None:
     """Launches the Daft dashboard server on port 3238.
 
     The server serves HTML/CSS/JS bundles, so you are able to point your browser towards `http://localhost:3238` and view information regarding your queries.
@@ -50,29 +50,50 @@ def launch(noop_if_initialized: bool = False):
 
 
 def broadcast_query_information(
-    mermaid_plan: str,
+    unoptimized_plan: str,
+    optimized_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
-):
+) -> None:
+    import ssl
+
     headers = {
         "Content-Type": "application/json",
     }
+
+    if (url := os.environ.get("DAFT_DASHBOARD_URL")) is not None:
+        url = f"{url}/queries"
+    else:
+        url = native.DAFT_DASHBOARD_QUERIES_URL
+
+    if (auth_token := os.environ.get("DAFT_DASHBOARD_AUTH_TOKEN")) is not None:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
-            "mermaid_plan": mermaid_plan,
-            "plan_time_start": str(plan_time_start),
-            "plan_time_end": str(plan_time_end),
+            "unoptimized_plan": unoptimized_plan,
+            "optimized_plan": optimized_plan,
+            "plan_time_start": plan_time_start.isoformat(),
+            "plan_time_end": plan_time_end.isoformat(),
+            "run_id": os.environ.get("DAFT_DASHBOARD_RUN_ID", None),
             "logs": "",  # todo: implement logs
         }
     ).encode("utf-8")
 
-    req = request.Request(native.DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
+    ctx = ssl.create_default_context()
+
+    # if it's a localhost uri we can skip ssl verification
+    if "localhost" in url:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    req = request.Request(url, headers=headers, data=data)
 
     try:
-        request.urlopen(req, timeout=1)
+        request.urlopen(req, timeout=1, context=ctx)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {native.DAFT_DASHBOARD_QUERIES_URL}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {url}: {e}")
 
 
 __all__ = [

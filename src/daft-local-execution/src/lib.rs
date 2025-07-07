@@ -76,15 +76,26 @@ impl<T: 'static> TaskSet<T> {
         }
     }
 
-    fn spawn<F>(&mut self, future: F)
+    fn spawn_local<F>(&mut self, future: F)
     where
         F: std::future::Future<Output = T> + 'static,
     {
         self.inner.spawn_local(future);
     }
 
-    async fn join_next(&mut self) -> Option<Result<T, tokio::task::JoinError>> {
-        self.inner.join_next().await
+    fn spawn<F>(&mut self, future: F)
+    where
+        F: std::future::Future<Output = T> + Send + 'static,
+        T: Send,
+    {
+        self.inner.spawn(future);
+    }
+
+    async fn join_next(&mut self) -> Option<Result<T, Error>> {
+        self.inner
+            .join_next()
+            .await
+            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
     }
 
     async fn shutdown(&mut self) {
@@ -119,6 +130,7 @@ pub(crate) struct ExecutionRuntimeContext {
     default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
     progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
+    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
 }
 
 impl ExecutionRuntimeContext {
@@ -127,25 +139,27 @@ impl ExecutionRuntimeContext {
         default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
         progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
             memory_manager,
             progress_bar_manager,
+            rt_stats_handler,
         }
     }
-    pub fn spawn(
+    pub fn spawn_local(
         &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + 'static,
         node_name: &str,
     ) {
         let node_name = node_name.to_string();
         self.worker_set
-            .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
+            .spawn_local(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
-    pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, tokio::task::JoinError>> {
+    pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, Error>> {
         self.worker_set.join_next().await
     }
 
@@ -185,6 +199,11 @@ impl ExecutionRuntimeContext {
     pub(crate) fn memory_manager(&self) -> Arc<MemoryManager> {
         self.memory_manager.clone()
     }
+
+    #[must_use]
+    pub(crate) fn runtime_stats_handler(&self) -> Arc<RuntimeStatsEventHandler> {
+        self.rt_stats_handler.clone()
+    }
 }
 
 impl Drop for ExecutionRuntimeContext {
@@ -199,6 +218,7 @@ pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
     runtime_context: Arc<RuntimeStatsContext>,
+    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     outer_span: tracing::Span,
 }
 
@@ -207,12 +227,14 @@ impl ExecutionTaskSpawner {
         runtime_ref: RuntimeRef,
         memory_manager: Arc<MemoryManager>,
         runtime_context: Arc<RuntimeStatsContext>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
         span: tracing::Span,
     ) -> Self {
         Self {
             runtime_ref,
             memory_manager,
             runtime_context,
+            rt_stats_handler,
             outer_span: span,
         }
     }
@@ -231,6 +253,7 @@ impl ExecutionTaskSpawner {
         let timed_fut = TimedFuture::new(
             instrumented,
             self.runtime_context.clone(),
+            self.rt_stats_handler.clone(),
             self.outer_span.clone(),
         );
         let memory_manager = self.memory_manager.clone();
@@ -249,6 +272,7 @@ impl ExecutionTaskSpawner {
         let timed_fut = TimedFuture::new(
             instrumented,
             self.runtime_context.clone(),
+            self.rt_stats_handler.clone(),
             self.outer_span.clone(),
         );
         self.runtime_ref.spawn(timed_fut)
@@ -257,6 +281,8 @@ impl ExecutionTaskSpawner {
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+
+use crate::runtime_stats::RuntimeStatsEventHandler;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

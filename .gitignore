@@ -65,3 +65,7 @@ next-env.d.ts
 
 # docs build
 site
+
+# added by vim
+*.swp
+*.swo

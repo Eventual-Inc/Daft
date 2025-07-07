@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import lance
 import pyarrow as pa
 import pytest
@@ -45,3 +47,8 @@ def test_lancedb_read_limit(lance_dataset_path):
     df = df.limit(1)
     df = df.select("vector")
     assert df.to_pydict() == {"vector": data["vector"][:1]}
+
+
+def test_lancedb_with_version(lance_dataset_path):
+    df = daft.read_lance(lance_dataset_path, version=1)
+    assert df.to_pydict() == data

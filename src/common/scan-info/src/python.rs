@@ -176,6 +176,7 @@ pub mod pylib {
                 partition_filters.map(|f| f.expr),
                 columns.map(Arc::new),
                 limit,
+                None,
             );
             Self(Arc::new(pushdowns))
         }

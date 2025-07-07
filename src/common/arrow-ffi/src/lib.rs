@@ -42,8 +42,13 @@ pub fn to_py_array<'py>(
         array.data_type().clone(),
         true,
     )));
-    let new_arr = fix_child_array_slice_offsets(array);
-    let arrow_arr = Box::new(ffi::export_array_to_c(new_arr));
+
+    // fix_child_array_slice_offsets serializes and deserializes into ipc, and is a parallelizable operation.
+    // We allow threads here to avoid blocking the GIL.
+    let arrow_arr = py.allow_threads(|| {
+        let fixed_array = fix_child_array_slice_offsets(array);
+        Box::new(ffi::export_array_to_c(fixed_array))
+    });
 
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
     let array_ptr: *const ffi::ArrowArray = &*arrow_arr;

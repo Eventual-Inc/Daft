@@ -11,12 +11,13 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn, WindowSpec,
+    left_col, resolved_col, right_col, unresolved_col, Column, Expr, ExprRef, UnresolvedColumn,
+    WindowSpec,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
@@ -320,9 +321,18 @@ impl LogicalPlanBuilder {
         expr_resolver.resolve_window_spec(window_spec, self.plan.clone())
     }
 
-    pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
+    pub fn limit(&self, limit: u64, eager: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> DaftResult<Self> {
+        let sharder = Sharder::new(
+            ShardingStrategy::from(strategy),
+            world_size as usize,
+            rank as usize,
+        );
+        Ok(self.with_new_plan(ops::Shard::new(self.plan.clone(), sharder)))
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
@@ -455,8 +465,13 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(ops::summarize(self)?))
     }
 
-    pub fn distinct(&self) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
+    pub fn distinct(&self, columns: Option<Vec<ExprRef>>) -> DaftResult<Self> {
+        let distinct_resolver = ExprResolver::default();
+        let columns = columns
+            .map(|columns| distinct_resolver.resolve(columns, self.plan.clone()))
+            .transpose()?;
+
+        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone(), columns).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -704,6 +719,15 @@ impl LogicalPlanBuilder {
         partition_cols: Option<Vec<String>>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
+        let partition_cols = partition_cols
+            .map(|cols| {
+                let expr_resolver = ExprResolver::default();
+
+                let cols = cols.into_iter().map(unresolved_col).collect();
+                expr_resolver.resolve(cols, self.plan.clone())
+            })
+            .transpose()?;
+
         use crate::sink_info::DeltaLakeCatalogInfo;
         let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
             catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {
@@ -776,6 +800,7 @@ impl LogicalPlanBuilder {
                     |builder| builder.reorder_joins(),
                 )
                 .simplify_expressions()
+                .split_granular_projections()
                 .build();
 
             let optimized_plan = optimizer.optimize(
@@ -830,6 +855,7 @@ impl LogicalPlanBuilder {
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()
+            .split_granular_projections()
             .build();
 
         let optimized_plan = optimizer.optimize(
@@ -958,7 +984,17 @@ impl PyLogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
-        Ok(self.builder.limit(limit, eager)?.into())
+        if limit < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "LIMIT <n> must be greater than or equal to 0, instead got: {}",
+                limit
+            )));
+        }
+        Ok(self.builder.limit(limit as u64, eager)?.into())
+    }
+
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {
+        Ok(self.builder.shard(strategy, world_size, rank)?.into())
     }
 
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
@@ -1027,8 +1063,13 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.summarize()?.into())
     }
 
-    pub fn distinct(&self) -> PyResult<Self> {
-        Ok(self.builder.distinct()?.into())
+    pub fn distinct(&self, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let columns = if columns.is_empty() {
+            None
+        } else {
+            Some(pyexprs_to_exprs(columns))
+        };
+        Ok(self.builder.distinct(columns)?.into())
     }
 
     #[pyo3(signature = (fraction, with_replacement, seed=None))]

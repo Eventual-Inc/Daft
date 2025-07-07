@@ -60,7 +60,7 @@ fn is_boolean(bytes: &[u8]) -> bool {
 }
 
 fn is_float(bytes: &[u8]) -> bool {
-    fast_float::parse::<f64, _>(bytes).is_ok()
+    fast_float2::parse::<f64, _>(bytes).is_ok()
 }
 
 fn is_integer(bytes: &[u8]) -> bool {

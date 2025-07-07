@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{expr::window::WindowSpec, WindowExpr};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{LogicalPlan, Result},
@@ -28,7 +29,7 @@ use crate::{
 ///
 /// Multiple window function expressions can be stored in a single Window operator
 /// as long as they share the same window specification.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Window {
     /// An id for the plan.
     pub plan_id: Option<usize>,
@@ -128,7 +129,19 @@ impl Window {
                 .order_by
                 .iter()
                 .zip(self.window_spec.descending.iter())
-                .map(|(e, desc)| format!("{} {}", e.name(), if *desc { "DESC" } else { "ASC" }))
+                .zip(self.window_spec.nulls_first.iter())
+                .map(|((e, desc), nulls_first)| {
+                    format!(
+                        "{} {} {}",
+                        e.name(),
+                        if *desc { "DESC" } else { "ASC" },
+                        if *nulls_first {
+                            "NULLS FIRST"
+                        } else {
+                            "NULLS LAST"
+                        }
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             lines.push(format!("  Order by: [{}]", order_cols));

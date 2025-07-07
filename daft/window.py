@@ -40,7 +40,7 @@ class Window:
     unbounded_following = _PyWindowBoundary.unbounded_following()
     current_row = _PyWindowBoundary.offset(0)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._spec = _WindowSpec.new()
 
     def partition_by(self, *cols: ManyColumnsInputType) -> Window:
@@ -77,7 +77,9 @@ class Window:
         window._spec = self._spec.with_partition_by([expr._expr for expr in expressions])
         return window
 
-    def order_by(self, *cols: ManyColumnsInputType, desc: bool | list[bool] = False) -> Window:
+    def order_by(
+        self, *cols: ManyColumnsInputType, desc: bool | list[bool] = False, nulls_first: bool | list[bool] | None = None
+    ) -> Window:
         """Orders rows within each partition by specified columns or expressions.
 
         Args:
@@ -85,6 +87,9 @@ class Window:
                    Can be column names as strings, Expression objects, or iterables of these.
             desc: Sort descending (True) or ascending (False). Can be a single boolean value applied to all columns,
                  or a list of boolean values corresponding to each column. Default is False (ascending).
+            nulls_first: Whether to position NULL values at the beginning (True) or end (False) of the partition.
+                Can be a single boolean value applied to all columns, or a list of boolean values corresponding to each column.
+                Default is None, which means NULL values are positioned at the end for ascending order (default) and at the beginning for descending order.
 
         Returns:
             Window: A window specification with the given ordering.
@@ -109,8 +114,17 @@ class Window:
                 raise ValueError("Length of descending flags must match number of order by columns")
             desc_flags = desc
 
+        if nulls_first is None:
+            nulls_first_flags = desc_flags
+        elif isinstance(nulls_first, bool):
+            nulls_first_flags = [nulls_first] * len(expressions)
+        else:
+            if len(nulls_first) != len(expressions):
+                raise ValueError("Length of nulls first flags must match number of order by columns")
+            nulls_first_flags = nulls_first
+
         window = Window()
-        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], desc_flags)
+        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], desc_flags, nulls_first_flags)
         return window
 
     def rows_between(
