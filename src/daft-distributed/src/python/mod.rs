@@ -40,12 +40,12 @@ impl PythonPartitionRefStream {
             let next = match next {
                 Some(result) => {
                     let result = result?;
-                    let ray_part_refs = result
+                    let ray_part_ref = result
                         .as_any()
                         .downcast_ref::<RayPartitionRef>()
                         .expect("Failed to downcast to RayPartitionRef")
                         .clone();
-                    Some(ray_part_refs)
+                    Some(ray_part_ref)
                 }
                 None => None,
             };
