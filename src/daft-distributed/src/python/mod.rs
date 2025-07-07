@@ -40,13 +40,18 @@ impl PythonPartitionRefStream {
             let next = match next {
                 Some(result) => {
                     let result = result?;
-                    let ray_part_ref = result
-                        .partition()
-                        .as_any()
-                        .downcast_ref::<RayPartitionRef>()
-                        .expect("Failed to downcast to RayPartitionRef")
-                        .clone();
-                    Some(ray_part_ref)
+                    let ray_part_refs = result
+                        .partitions()
+                        .iter()
+                        .map(|partition| {
+                            partition
+                                .as_any()
+                                .downcast_ref::<RayPartitionRef>()
+                                .expect("Failed to downcast to RayPartitionRef")
+                                .clone()
+                        })
+                        .collect::<Vec<_>>();
+                    Some(ray_part_refs)
                 }
                 None => None,
             };

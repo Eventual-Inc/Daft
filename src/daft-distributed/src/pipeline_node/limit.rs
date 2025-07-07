@@ -66,35 +66,37 @@ impl LimitNode {
 
         while let Some(materialized_output) = materialized_result_stream.next().await {
             let materialized_output = materialized_output?;
-            let num_rows = materialized_output.partition().num_rows()?;
+            for next_input in materialized_output.split_by_partitions() {
+                let num_rows = next_input.num_rows()?;
 
-            let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
-                Ordering::Less => {
-                    remaining_limit -= num_rows;
-                    (PipelineOutput::Materialized(materialized_output), false)
+                let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
+                    Ordering::Less => {
+                        remaining_limit -= num_rows;
+                        (PipelineOutput::Materialized(next_input), false)
+                    }
+                    Ordering::Equal => (PipelineOutput::Materialized(next_input), true),
+                    Ordering::Greater => {
+                        let task = make_new_task_from_materialized_outputs(
+                            TaskContext::from((&self.context, task_id_counter.next())),
+                            vec![next_input],
+                            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                            &move |input| {
+                                Ok(LocalPhysicalPlan::limit(
+                                    input,
+                                    remaining_limit as u64,
+                                    StatsState::NotMaterialized,
+                                ))
+                            },
+                        )?;
+                        (PipelineOutput::Task(task), true)
+                    }
+                };
+                if result_tx.send(to_send).await.is_err() {
+                    break;
                 }
-                Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
-                Ordering::Greater => {
-                    let task = make_new_task_from_materialized_outputs(
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                        vec![materialized_output],
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                        &move |input| {
-                            Ok(LocalPhysicalPlan::limit(
-                                input,
-                                remaining_limit as u64,
-                                StatsState::NotMaterialized,
-                            ))
-                        },
-                    )?;
-                    (PipelineOutput::Task(task), true)
+                if should_break {
+                    break;
                 }
-            };
-            if result_tx.send(to_send).await.is_err() {
-                break;
-            }
-            if should_break {
-                break;
             }
         }
         Ok(())
