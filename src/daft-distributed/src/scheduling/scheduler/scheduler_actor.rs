@@ -351,7 +351,7 @@ impl Future for SubmittedTask {
                 }
                 Poll::Ready(result)
             }
-            // If the receiver is dropped, return no results
+            // If the sender is dropped (i.e. the task is cancelled), return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
                 if let Some(notify_token) = self.notify_token.take() {
