@@ -27,3 +27,14 @@ def test_list_map_with_udf():
         daft.col("letters").list.map(daft.element().apply(lambda s: s.upper(), return_dtype=str))
     ).to_pydict()["letters"]
     assert actual == expected
+
+
+def test_map_chaining():
+    df = daft.from_pydict({"numbers": [[1, 2, 3], [4, 5, 6, 7]]})
+    actual = df.select(daft.col("numbers").list.map(daft.element() * 2).list.map(daft.element() * 4)).to_pydict()[
+        "numbers"
+    ]
+
+    expected = [[8, 16, 24], [32, 40, 48, 56]]
+
+    assert actual == expected

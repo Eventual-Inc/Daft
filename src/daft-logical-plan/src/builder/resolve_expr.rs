@@ -216,11 +216,7 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
                 udf: sf.udf.clone(),
                 inputs: FunctionArgs::new_unchecked(new_inputs),
             };
-            Ok(Transformed::new(
-                Expr::ScalarFunction(sf).arced(),
-                true,
-                TreeNodeRecursion::Jump,
-            ))
+            Ok(Transformed::yes(Expr::ScalarFunction(sf).arced()))
         } else {
             Ok(Transformed::no(e.clone()))
         }
