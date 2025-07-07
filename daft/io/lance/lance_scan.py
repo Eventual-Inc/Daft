@@ -46,13 +46,13 @@ class LanceDBScanOperator(ScanOperator):
         return []
 
     def can_absorb_filter(self) -> bool:
-        return False
+        return True
 
     def can_absorb_limit(self) -> bool:
         return False
 
     def can_absorb_select(self) -> bool:
-        return False
+        return True
 
     def multiline_display(self) -> list[str]:
         return [
@@ -72,8 +72,9 @@ class LanceDBScanOperator(ScanOperator):
                 else pushdowns.columns + filter_required_column_names
             )
 
-        # TODO: figure out how to translate Pushdowns into LanceDB filters
-        filters = None
+        from daft.expressions import Expression
+
+        filters = Expression._from_pyexpr(pushdowns.filters).to_arrow_expr() if pushdowns.filters is not None else None
         fragments = self._ds.get_fragments()
         for i, fragment in enumerate(fragments):
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
