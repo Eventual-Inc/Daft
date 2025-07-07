@@ -170,59 +170,58 @@ fn replace_element_with_column_ref(expr: ExprRef, replacement: ExprRef) -> DaftR
 }
 
 fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
-    if expr.has_element() {
-        expr.transform_down(|e| {
-            let expr_ref = e.as_ref();
-            if let Expr::ScalarFunction(sf) = expr_ref {
-                // the `list` type should always be the first element
-                let inputs = sf.inputs.clone();
-                let list_col = inputs
-                    .first()
-                    .expect("list should have at least one element");
+    // Functions that can support an eval/map context
+    const EVAL_FUNCTIONS: &[&str] = &["list_map"];
 
-                let exploded = list_col.clone().explode()?;
+    expr.transform_down(|e| {
+        let expr_ref = e.as_ref();
+        if let Expr::ScalarFunction(sf) = expr_ref
+            && EVAL_FUNCTIONS.contains(&sf.name())
+        {
+            // the `list` type should always be the first element
+            let inputs = sf.inputs.clone();
+            let list_col = inputs
+                .first()
+                .expect("list should have at least one element");
 
-                let mut new_inputs = Vec::with_capacity(inputs.len());
-                new_inputs.push(FunctionArg::Unnamed(list_col.clone()));
+            let exploded = list_col.clone().explode()?;
 
-                for input in inputs.iter().skip(1) {
-                    ensure!(
-                       !matches!(input.inner().as_ref(), Expr::Column(..)),
-                       ValueError: "unexpected column reference"
+            let mut new_inputs = Vec::with_capacity(inputs.len());
+            new_inputs.push(FunctionArg::Unnamed(list_col.clone()));
 
-                    );
+            for input in inputs.iter().skip(1) {
+                ensure!(
+                   !matches!(input.inner().as_ref(), Expr::Column(..)),
+                   ValueError: "unexpected column reference"
 
-                    let replaced = match input {
-                        daft_dsl::functions::FunctionArg::Named { name, arg } => {
-                            daft_dsl::functions::FunctionArg::Named {
-                                name: name.clone(),
-                                arg: replace_element_with_column_ref(
-                                    arg.clone(),
-                                    exploded.clone(),
-                                )?,
-                            }
+                );
+
+                let replaced = match input {
+                    daft_dsl::functions::FunctionArg::Named { name, arg } => {
+                        daft_dsl::functions::FunctionArg::Named {
+                            name: name.clone(),
+                            arg: replace_element_with_column_ref(arg.clone(), exploded.clone())?,
                         }
-                        daft_dsl::functions::FunctionArg::Unnamed(arg) => {
-                            daft_dsl::functions::FunctionArg::Unnamed(
-                                replace_element_with_column_ref(arg.clone(), exploded.clone())?,
-                            )
-                        }
-                    };
-                    new_inputs.push(replaced);
-                }
-                let sf = ScalarFunction {
-                    udf: sf.udf.clone(),
-                    inputs: FunctionArgs::new_unchecked(new_inputs),
+                    }
+                    daft_dsl::functions::FunctionArg::Unnamed(arg) => {
+                        daft_dsl::functions::FunctionArg::Unnamed(replace_element_with_column_ref(
+                            arg.clone(),
+                            exploded.clone(),
+                        )?)
+                    }
                 };
-                Ok(Transformed::yes(Expr::ScalarFunction(sf).arced()))
-            } else {
-                Ok(Transformed::no(e.clone()))
+                new_inputs.push(replaced);
             }
-        })
-        .map(|res| res.data)
-    } else {
-        Ok(expr)
-    }
+            let sf = ScalarFunction {
+                udf: sf.udf.clone(),
+                inputs: FunctionArgs::new_unchecked(new_inputs),
+            };
+            Ok(Transformed::yes(Expr::ScalarFunction(sf).arced()))
+        } else {
+            Ok(Transformed::no(e.clone()))
+        }
+    })
+    .map(|res| res.data)
 }
 
 fn resolve_to_basic_and_outer_cols(expr: ExprRef, plan: &LogicalPlanRef) -> DaftResult<ExprRef> {
