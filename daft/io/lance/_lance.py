@@ -28,6 +28,46 @@ def read_lance(
     Args:
         url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
+        version : optional, int | str
+            If specified, load a specific version of the Lance dataset. Else, loads the
+            latest version. A version number (`int`) or a tag (`str`) can be provided.
+        asof : optional, datetime or str
+            If specified, find the latest version created on or earlier than the given
+            argument value. If a version is already specified, this arg is ignored.
+        block_size : optional, int
+            Block size in bytes. Provide a hint for the size of the minimal I/O request.
+        commit_lock : optional, lance.commit.CommitLock
+            A custom commit lock.  Only needed if your object store does not support
+            atomic commits.  See the user guide for more details.
+        index_cache_size : optional, int
+            Index cache size. Index cache is a LRU cache with TTL. This number specifies the
+            number of index pages, for example, IVF partitions, to be cached in
+            the host memory. Default value is ``256``.
+
+            Roughly, for an ``IVF_PQ`` partition with ``n`` rows, the size of each index
+            page equals the combination of the pq code (``nd.array([n,pq], dtype=uint8))``
+            and the row ids (``nd.array([n], dtype=uint64)``).
+            Approximately, ``n = Total Rows / number of IVF partitions``.
+            ``pq = number of PQ sub-vectors``.
+        storage_options : optional, dict
+            Extra options that make sense for a particular storage connection. This is
+            used to store connection parameters like credentials, endpoint, etc.
+        default_scan_options : optional, dict
+            Default scan options that are used when scanning the dataset.  This accepts
+            the same arguments described in :py:meth:`lance.LanceDataset.scanner`.  The
+            arguments will be applied to any scan operation.
+
+            This can be useful to supply defaults for common parameters such as
+            ``batch_size``.
+
+            It can also be used to create a view of the dataset that includes meta
+            fields such as ``_rowid`` or ``_rowaddr``.  If ``default_scan_options`` is
+            provided then the schema returned by :py:meth:`lance.LanceDataset.schema` will
+            include these fields if the appropriate scan options are set.
+        metadata_cache_size_bytes : optional, int
+            Size of the metadata cache in bytes. This cache is used to store metadata
+            information about the dataset, such as schema and statistics. If not specified,
+            a default size will be used.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
