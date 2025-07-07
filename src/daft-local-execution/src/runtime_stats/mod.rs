@@ -816,6 +816,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "flaky, see https://github.com/Eventual-Inc/Daft/issues/4697"]
+    /// TODO(cory): try to get this test working again
     async fn test_final_event_observed_under_throttle_threshold() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let subscribers = Arc::new(vec![
