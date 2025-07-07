@@ -136,6 +136,15 @@ impl PushDownFilter {
                             return Ok(Transformed::no(plan));
                         }
 
+                        //deduplicate
+                        let data_only_filter = {
+                            let mut seen = HashSet::new();
+                            data_only_filter
+                                .into_iter()
+                                .filter(|e| seen.insert(e.clone()))
+                                .collect::<Vec<_>>()
+                        };
+
                         let data_filter = combine_conjunction(data_only_filter.clone());
                         let partition_filter = combine_conjunction(partition_only_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
@@ -168,17 +177,26 @@ impl PushDownFilter {
                             if !post_filters.is_empty()
                                 && post_filters.len() == filters_to_push.len()
                             {
-                                // If there are no remaining filters, we can drop the filter op.
                                 return Ok(Transformed::no(plan));
                             }
 
                             let mut seen = HashSet::new();
+                            let pushed_filters_set = if pushed_filters.len() == 1 {
+                                split_conjunction(&pushed_filters[0])
+                                    .into_iter()
+                                    .collect::<HashSet<_>>()
+                            } else {
+                                pushed_filters
+                                    .iter()
+                                    .flat_map(split_conjunction)
+                                    .collect::<HashSet<_>>()
+                            };
                             post_filters
                                 .into_iter()
                                 .chain(
                                     data_only_filter
                                         .iter()
-                                        .filter(|f| !pushed_filters.contains(f))
+                                        .filter(|f| !pushed_filters_set.contains(*f))
                                         .cloned(),
                                 )
                                 .filter(|e| seen.insert(e.clone()))
@@ -188,10 +206,14 @@ impl PushDownFilter {
                             Vec::new()
                         };
 
-                        let needing_filter_op = remaining_filters
-                            .into_iter()
-                            .chain(needing_filter_op)
-                            .collect::<Vec<_>>();
+                        let needing_filter_op = {
+                            let mut seen = HashSet::new();
+                            remaining_filters
+                                .into_iter()
+                                .chain(needing_filter_op)
+                                .filter(|e| seen.insert(e.clone()))
+                                .collect::<Vec<_>>()
+                        };
 
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source: LogicalPlan = Source::new(
@@ -918,7 +940,6 @@ mod tests {
             right_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
-
         let pred = resolved_col("b").is_null();
         let plan = left_scan_plan
             .join(
