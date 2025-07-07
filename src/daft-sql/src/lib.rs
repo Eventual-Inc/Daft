@@ -126,6 +126,7 @@ mod tests {
     #[rstest]
     #[case::basic("select * from tbl1")]
     #[case::select_with_limit("select * from tbl1 limit 1")]
+    #[case::limit_with_offset("select * from tbl1 offset 2 limit 7")]
     #[case::exclude("select * exclude utf8 from tbl1")]
     #[case::exclude2("select * exclude (utf8, i32) from tbl1")]
     #[case("select utf8 from tbl1")]
@@ -225,6 +226,29 @@ mod tests {
     }
 
     #[rstest]
+    fn test_limit_offset(
+        mut planner: SQLPlanner,
+        tbl_1: LogicalPlanRef,
+        #[values(
+            "select test as a from tbl1 limit 10 offset 7",
+            "select test as a from tbl1 offset 7 limit 10"
+        )]
+        sql: &str,
+    ) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::from(tbl_1)
+            .alias("tbl1")
+            .select(vec![unresolved_col("test").alias("a")])?
+            .offset(7)?
+            .limit(10, true)?
+            .build();
+
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
     fn test_negative_limit(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
         let sql = "select test as a from tbl1 limit -1";
         let plan = planner.plan_sql(sql);
@@ -233,6 +257,23 @@ mod tests {
                 assert_eq!(
                     message,
                     "LIMIT <n> must be greater than or equal to 0, instead got: -1"
+                );
+            }
+            _ => panic!("Unexpected result"),
+        }
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_negative_offset(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 offset -1";
+        let plan = planner.plan_sql(sql);
+        match plan {
+            Err(PlannerError::InvalidOperation { message }) => {
+                assert_eq!(
+                    message,
+                    "OFFSET <n> must be greater than or equal to 0, instead got: -1"
                 );
             }
             _ => panic!("Unexpected result"),
