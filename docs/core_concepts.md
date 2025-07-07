@@ -2424,8 +2424,7 @@ UDFs can also be parametrized with new resource requests after being initialized
 
 ### Debugging UDFs
 
-UDFs can be debugged using python's built-in debugger, [pdb](https://docs.python.org/3/library/pdb.html), by setting breakpoints in your UDF. The debugger
-will function normally as if you are debugging any other python script.
+When running Daft locally, UDFs can be debugged using python's built-in debugger, [pdb](https://docs.python.org/3/library/pdb.html), by setting breakpoints in your UDF.
 
 === "🐍 Python"
     ``` python
