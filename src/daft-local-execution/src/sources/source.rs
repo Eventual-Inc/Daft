@@ -121,8 +121,12 @@ impl PipelineNode for SourceNode {
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
+        let counting_sender = CountingSender::new(
+            destination_sender,
+            self.runtime_stats.clone(),
+            progress_bar,
+            runtime_handle.rt_stats_handler.clone(),
+        );
         runtime_handle.spawn_local(
             async move {
                 let mut has_data = false;

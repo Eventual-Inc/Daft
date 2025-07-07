@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -13,14 +14,16 @@ pub struct Distinct {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub stats_state: StatsState,
+    pub columns: Option<Vec<ExprRef>>,
 }
 
 impl Distinct {
-    pub(crate) fn new(input: Arc<LogicalPlan>) -> Self {
+    pub(crate) fn new(input: Arc<LogicalPlan>, columns: Option<Vec<ExprRef>>) -> Self {
         Self {
             plan_id: None,
             input,
             stats_state: StatsState::NotMaterialized,
+            columns,
         }
     }
 
@@ -52,7 +55,20 @@ impl Distinct {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![format!("Distinct")];
+        let distinct_label = if let Some(columns) = &self.columns {
+            format!(
+                "Distinct: On {}",
+                columns
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        } else {
+            "Distinct".to_string()
+        };
+
+        let mut res = vec![distinct_label];
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }

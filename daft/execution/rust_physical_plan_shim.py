@@ -169,6 +169,20 @@ def local_aggregate(
     )
 
 
+def local_dedup(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    columns: list[PyExpr],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    dedup_step = execution_step.Dedup(
+        columns=ExpressionsProjection([Expression._from_pyexpr(pyexpr) for pyexpr in columns]),
+    )
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=dedup_step,
+        resource_request=ResourceRequest(),
+    )
+
+
 def pivot(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     group_by: list[PyExpr],

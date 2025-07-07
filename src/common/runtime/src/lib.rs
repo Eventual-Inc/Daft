@@ -155,6 +155,23 @@ impl Runtime {
     {
         RuntimeTask::new(self.runtime.handle(), future)
     }
+
+    pub fn spawn_blocking<F, R>(&self, f: F) -> RuntimeTask<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        match self.pool_type {
+            PoolType::Compute => {
+                panic!("Cannot spawn blocking task on compute runtime from a non-compute thread");
+            }
+            PoolType::IO | PoolType::Custom(_) => {
+                let mut join_set = JoinSet::new();
+                join_set.spawn_blocking_on(f, self.runtime.handle());
+                RuntimeTask { joinset: join_set }
+            }
+        }
+    }
 }
 
 fn init_compute_runtime(num_worker_threads: usize) -> RuntimeRef {

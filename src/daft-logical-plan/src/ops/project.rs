@@ -28,6 +28,10 @@ pub struct Project {
 }
 
 impl Project {
+    pub fn new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> DaftResult<Self> {
+        Ok(Self::try_new(input, projection)?)
+    }
+
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{any::Any, collections::HashMap, ops::Range, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -20,7 +20,7 @@ fn invalid_unity_path(path: &str) -> crate::Error {
     crate::Error::NotFound {
         path: path.to_string(),
         source: Box::new(DaftError::ValueError(format!(
-            "Expected Unity Catalog volume path to be in the form `dbfs:/Volumes/catalog/schema/volume/path`, instead found: {}",
+            "Expected Unity Catalog volume path to be in the form `vol+dbfs:/Volumes/catalog/schema/volume/path`, instead found: {}",
             path
         ))),
     }
@@ -128,12 +128,6 @@ impl UnitySource {
     ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
         let url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
 
-        debug_assert_eq!(
-            url.scheme().to_lowercase(),
-            "dbfs",
-            "UnitySource should only be used for paths with scheme `dbfs`."
-        );
-
         let mut segments = url
             .path_segments()
             .ok_or_else(|| invalid_unity_path(path))?;
@@ -214,5 +208,9 @@ impl ObjectSource for UnitySource {
         source
             .ls(&source_path, posix, continuation_token, page_size, io_stats)
             .await
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }

@@ -10,7 +10,7 @@ mod local;
 mod object_io;
 mod object_store_glob;
 mod retry;
-mod s3_like;
+pub mod s3_like;
 mod stats;
 mod stream_utils;
 #[cfg(feature = "python")]
@@ -25,6 +25,8 @@ use google_cloud::GCSSource;
 use huggingface::HFSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
+#[cfg(test)]
+mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -37,8 +39,7 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, GetResult};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::s3_config_from_env;
-use s3_like::S3LikeSource;
+pub use s3_like::{s3_config_from_env, S3LikeSource, S3MultipartWriter, S3PartBuffer};
 use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
@@ -185,7 +186,7 @@ impl From<Error> for std::io::Error {
     }
 }
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]
 pub struct IOClient {
@@ -201,7 +202,7 @@ impl IOClient {
         })
     }
 
-    async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
         let (source_type, path) = parse_url(input)?;
 
         {
@@ -438,7 +439,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
-        "dbfs" => Ok((SourceType::Unity, fixed_input)),
+        "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))

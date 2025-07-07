@@ -37,7 +37,7 @@ from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, TimeUnit
-from daft.dependencies import pa
+from daft.dependencies import pa, pc
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
@@ -376,6 +376,16 @@ class Expression:
             return obj
         else:
             return lit(obj)
+
+    def to_arrow_expr(self) -> pc.Expression:
+        """Returns this expression as a pyarrow.compute.Expression for integrations with other systems."""
+        from daft.expressions.visitor import _PyArrowExpressionVisitor
+
+        return _PyArrowExpressionVisitor().visit(self)
+
+    def as_py(self) -> Any:
+        """Returns this literal expression as a python value, raises a ValueError if this is not a literal expression."""
+        return self._expr.as_py()
 
     @staticmethod
     def udf(
@@ -1681,7 +1691,7 @@ class Expression:
         return self._eval_expressions("serialize", format)
 
     def jq(self, filter: builtins.str) -> Expression:
-        """Applies a [https://jqlang.github.io/jq/manual/](jq) filter to the expression (string), returning the results as a string.
+        """Applies a [jq](https://jqlang.github.io/jq/manual/) filter to the expression (string), returning the results as a string.
 
         Args:
             file (str): The jq filter.
@@ -1690,8 +1700,8 @@ class Expression:
             Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
 
         Warning:
-            This expression uses [https://github.com/01mf02/jaq](jaq) as its filter executor which can differ from the
-            [https://jqlang.org/](jq) command-line tool. Please consult [https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq][jq vs. jaq]
+            This expression uses [jaq](https://github.com/01mf02/jaq) as its filter executor which can differ from the
+            [jq](https://jqlang.org/) command-line tool. Please consult [jq vs. jaq](https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq)
             for a detailed look into possible differences.
 
         Examples:
@@ -1891,6 +1901,35 @@ class Expression:
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
 
+    def url_parse(self) -> Expression:
+        """Parses URLs in a string column and extracts URL components.
+
+        Returns:
+            Expression: a Struct expression containing the parsed URL components:
+                - scheme (str): The URL scheme (e.g., "https", "http")
+                - username (str): The username, if present
+                - password (str): The password, if present
+                - host (str): The hostname or IP address
+                - port (int): The port number, if specified
+                - path (str): The path component
+                - query (str): The query string, if present
+                - fragment (str): The fragment/anchor, if present
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
+            ... )
+            >>> # Parse URLs and expand all components
+            >>> df.select(daft.col("urls").url_parse()).select(daft.col("urls").struct.get("*")).collect()  # doctest: +SKIP
+
+        Note:
+            Invalid URLs will result in null values for all components.
+            The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
+        """
+        f = native.get_function_from_registry("url_parse")
+        return Expression._from_pyexpr(f(self._expr))
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -1973,14 +2012,19 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         """
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-        if io_config.unity.endpoint is None:
-            from daft.catalog.__unity import UnityCatalog
-            from daft.session import current_catalog
 
-            catalog = current_catalog()
-            if isinstance(catalog, UnityCatalog):
-                unity_catalog = catalog._inner
-                io_config = io_config.replace(unity=unity_catalog.to_io_config().unity)
+        if io_config.unity.endpoint is None:
+            try:
+                from daft.catalog.__unity import UnityCatalog
+            except ImportError:
+                pass
+            else:
+                from daft.session import current_catalog
+
+                catalog = current_catalog()
+                if isinstance(catalog, UnityCatalog):
+                    unity_catalog = catalog._inner
+                    io_config = io_config.replace(unity=unity_catalog.to_io_config().unity)
 
         max_connections_expr = Expression._to_expression(max_connections)._expr
         on_error_expr = Expression._to_expression(on_error)._expr

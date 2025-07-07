@@ -201,7 +201,7 @@ impl Column {
     }
 }
 
-impl Display for Column {
+impl std::fmt::Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "col({})", self.name())
     }

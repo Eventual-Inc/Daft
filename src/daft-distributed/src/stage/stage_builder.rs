@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_logical_plan::{
@@ -14,7 +15,7 @@ use super::{
 
 pub(crate) struct StagePlanBuilder {
     stages: HashMap<StageID, Stage>,
-    stage_id_counter: usize,
+    stage_id_counter: StageID,
 }
 
 impl StagePlanBuilder {
@@ -28,7 +29,7 @@ impl StagePlanBuilder {
     fn next_stage_id(&mut self) -> StageID {
         let curr = self.stage_id_counter;
         self.stage_id_counter += 1;
-        StageID(curr)
+        curr
     }
 
     fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
@@ -40,6 +41,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Sink(_)
             | LogicalPlan::Sample(_)
             | LogicalPlan::Explode(_)
+            | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Sort(_)
@@ -50,7 +52,6 @@ impl StagePlanBuilder {
             | LogicalPlan::Concat(_)
             | LogicalPlan::TopN(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
-            | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Pivot(_)
             | LogicalPlan::Join(_) => {
                 can_translate = false;
@@ -58,7 +59,8 @@ impl StagePlanBuilder {
             }
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
-            | LogicalPlan::SubqueryAlias(_) => panic!("Intersect, Union, and SubqueryAlias should be optimized away before planning stages")
+            | LogicalPlan::SubqueryAlias(_)
+            | LogicalPlan::Shard(_) => panic!("Intersect, Union, SubqueryAlias, and Shard should be optimized away before planning stages")
         });
         can_translate
     }
@@ -115,7 +117,7 @@ impl StagePlanBuilder {
                 }
                 let schema = plan.schema();
                 let stage = Stage {
-                    id: stage_id.clone(),
+                    id: stage_id,
                     type_: StageType::HashJoin {
                         plan,
                         left_on,
@@ -129,7 +131,7 @@ impl StagePlanBuilder {
                     ],
                     output_channels: vec![self.create_output_channel(schema, None)?],
                 };
-                self.stages.insert(stage_id.clone(), stage);
+                self.stages.insert(stage_id, stage);
                 Ok(stage_id)
             }
             // For other operations, group into a MapPipeline stage
@@ -192,24 +194,29 @@ impl StagePlanBuilder {
                 // Create a MapPipeline stage
                 let stage_id = self.next_stage_id();
                 let stage = Stage {
-                    id: stage_id.clone(),
+                    id: stage_id,
                     type_: StageType::MapPipeline { plan: new_plan },
                     input_channels,
                     output_channels: vec![self.create_output_channel(schema, None)?],
                 };
 
                 // TODO: Add upstream stage to output channel stages
-                self.stages.insert(stage_id.clone(), stage);
+                self.stages.insert(stage_id, stage);
                 Ok(stage_id)
             }
         }
     }
 
-    pub fn build_stage_plan(mut self, plan: LogicalPlanRef) -> DaftResult<StagePlan> {
+    pub fn build_stage_plan(
+        mut self,
+        plan: LogicalPlanRef,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<StagePlan> {
         let root_stage_id = self.build_stages_from_plan(plan)?;
         Ok(StagePlan {
             stages: self.stages,
             root_stage: root_stage_id,
+            config,
         })
     }
 
@@ -219,7 +226,7 @@ impl StagePlanBuilder {
         channel_idx: usize,
     ) -> DaftResult<InputChannel> {
         let stage = self.stages.get(&from_stage).ok_or_else(|| {
-            common_error::DaftError::InternalError(format!("Stage {} not found", from_stage.0))
+            common_error::DaftError::InternalError(format!("Stage {} not found", from_stage))
         })?;
 
         let output_channel = &stage.output_channels[channel_idx];

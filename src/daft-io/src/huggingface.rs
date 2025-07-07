@@ -1,6 +1,6 @@
 use std::{
-    collections::HashMap, num::ParseIntError, ops::Range, str::FromStr, string::FromUtf8Error,
-    sync::Arc,
+    any::Any, collections::HashMap, num::ParseIntError, ops::Range, str::FromStr,
+    string::FromUtf8Error, sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -461,6 +461,10 @@ impl ObjectSource for HFSource {
             files,
             continuation_token: None,
         })
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 
