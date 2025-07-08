@@ -3742,7 +3742,7 @@ class DataFrame:
         return df
 
     @DataframePublicAPI
-    def map_rows(self, func: Callable[..., Any], output_schema: Schema) -> "DataFrame":
+    def map_rows(self, func: Callable[[dict[str, Any]], Any], output_schema: Schema) -> "DataFrame":
         """Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
 
         Args:
