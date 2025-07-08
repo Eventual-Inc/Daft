@@ -73,7 +73,7 @@ impl Drop for FlotillaProgressBar {
 }
 
 impl StatisticsSubscriber for FlotillaProgressBar {
-    fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()> {
+    fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()> {
         match event {
             StatisticsEvent::TaskSubmitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;

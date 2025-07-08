@@ -16,13 +16,12 @@ use tokio::sync::Mutex;
 use crate::{
     plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{HttpSubscriber, StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
+    statistics::{HttpSubscriber, StatisticsManager, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
-    statistics_manager: StatisticsManagerRef,
 }
 
 #[pymethods]
@@ -33,7 +32,6 @@ impl PythonPartitionRefStream {
 
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let inner = self.inner.clone();
-        let statistics_manager = self.statistics_manager.clone();
         // future into py requires that the future is Send + 'static, so we wrap the inner in an Arc<Mutex<>>
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let next = {
@@ -50,13 +48,7 @@ impl PythonPartitionRefStream {
                         .clone();
                     Some(ray_part_ref)
                 }
-                None => {
-                    // Stream has completed - flush all statistics subscribers
-                    if let Err(e) = statistics_manager.flush_all_subscribers().await {
-                        tracing::warn!("Failed to flush statistics subscribers: {}", e);
-                    }
-                    None
-                }
+                None => None,
             };
             Ok(next)
         })
@@ -157,10 +149,9 @@ impl PyDistributedPhysicalPlanRunner {
         let statistics_manager = StatisticsManager::new(subscribers);
         let plan_result = self
             .runner
-            .run_plan(&plan.plan, psets, statistics_manager.clone())?;
+            .run_plan(&plan.plan, psets, statistics_manager)?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
-            statistics_manager,
         };
         Ok(part_stream)
     }

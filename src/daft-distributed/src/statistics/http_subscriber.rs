@@ -1,32 +1,34 @@
-use std::{
-    collections::HashMap,
-    env,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, env, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeTask};
 use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use tokio::sync::watch;
 
-use super::{PlanState, StatisticsEvent, StatisticsSubscriber, TaskState};
-use crate::scheduling::task::TaskContext;
+use crate::{
+    pipeline_node::NodeID,
+    plan::PlanID,
+    scheduling::task::TaskContext,
+    statistics::{
+        PlanState, StatisticsEvent, StatisticsSubscriber, TaskExecutionStatus, TaskState,
+    },
+};
 
 const HTTP_LOG_TARGET: &str = "DaftHttpSubscriber";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct QueryGraph {
     pub version: String,
-    pub query_id: u32,
+    pub plan_id: PlanID,
     pub nodes: Vec<QueryGraphNode>,
-    pub adjacency_list: HashMap<usize, Vec<usize>>,
+    pub adjacency_list: HashMap<NodeID, Vec<NodeID>>,
     pub metrics: Option<Vec<MetricDisplayInformation>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryGraphNode {
-    pub id: u32,
+    pub id: NodeID,
     pub label: String,
     pub description: String,
     pub metadata: HashMap<String, String>,
@@ -49,9 +51,11 @@ pub enum NodeStatus {
     Canceled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+type QueryID = String;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QueryPayload {
-    pub id: String,
+    pub id: QueryID,
     pub optimized_plan: String,
     pub run_id: Option<String>,
     pub logs: String,
@@ -65,127 +69,90 @@ pub struct MetricDisplayInformation {
     pub unit: String,
 }
 
+#[derive(Debug)]
+pub struct PlanData {
+    pub plan_state: PlanState,
+    pub tasks: HashMap<TaskContext, TaskState>,
+    pub adjacency_list: HashMap<NodeID, Vec<NodeID>>,
+}
+
+impl PlanData {
+    pub fn new(plan_state: PlanState) -> Self {
+        // Build adjacency list once from the logical plan
+        let adjacency_list = Self::build_adjacency_list_from_logical_plan(&plan_state.logical_plan);
+
+        Self {
+            plan_state,
+            tasks: HashMap::new(),
+            adjacency_list,
+        }
+    }
+
+    fn build_adjacency_list_from_logical_plan(
+        logical_plan: &daft_logical_plan::LogicalPlanRef,
+    ) -> HashMap<NodeID, Vec<NodeID>> {
+        let mut adjacency_list: HashMap<NodeID, Vec<NodeID>> = HashMap::new();
+
+        let _ = logical_plan.apply(|node| {
+            if let Some(node_id) = node.node_id() {
+                let parent_id = *node_id as NodeID;
+                let children = node.children();
+
+                let mut child_ids: Vec<NodeID> = Vec::new();
+                for child in children {
+                    if let Some(child_node_id) = child.node_id() {
+                        child_ids.push(*child_node_id as NodeID);
+                    }
+                }
+
+                adjacency_list.insert(parent_id, child_ids);
+            }
+
+            Ok(common_treenode::TreeNodeRecursion::Continue)
+        });
+
+        adjacency_list
+    }
+}
+
 pub struct HttpSubscriber {
-    pending_requests: Arc<Mutex<Vec<RuntimeTask<()>>>>,
-    plans: Mutex<HashMap<u32, PlanState>>,
-    tasks: Mutex<HashMap<TaskContext, TaskState>>,
+    plan_data: HashMap<PlanID, PlanData>,
+    sender: watch::Sender<Arc<QueryPayload>>,
+    _task_handle: RuntimeTask<()>,
 }
 
 impl HttpSubscriber {
+    const DEFAULT_DASHBOARD_URL: &str = "http://localhost:3238/api/queries";
+
     pub fn new() -> Self {
+        let (sender, receiver) = watch::channel(Arc::new(QueryPayload::default()));
+
+        // Spawn long-lived task that handles HTTP requests
+        let runtime = get_io_runtime(false);
+        let task_handle = runtime.spawn(Self::http_sender_task(receiver));
+
         Self {
-            pending_requests: Arc::new(Mutex::new(Vec::new())),
-            plans: Mutex::new(HashMap::new()),
-            tasks: Mutex::new(HashMap::new()),
+            plan_data: HashMap::new(),
+            sender,
+            _task_handle: task_handle,
         }
     }
 
-    pub fn ingest_event(&self, event: StatisticsEvent) {
-        let mut plans = self.plans.lock().unwrap();
-        let mut tasks = self.tasks.lock().unwrap();
+    async fn http_sender_task(mut receiver: watch::Receiver<Arc<QueryPayload>>) {
+        // Create the HTTP client once and reuse it for all requests
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(1))
+            .build()
+            .unwrap();
 
-        match event {
-            StatisticsEvent::TaskSubmitted { context, name } => {
-                let task_state = tasks.entry(context).or_insert_with(|| TaskState {
-                    name: name.clone(),
-                    status: super::TaskExecutionStatus::Created,
-                    pending: 0,
-                    completed: 0,
-                    canceled: 0,
-                    failed: 0,
-                    total: 0,
-                });
-                task_state.total += 1;
-            }
-            StatisticsEvent::ScheduledTask { context } => {
-                if let Some(task_state) = tasks.get_mut(&context) {
-                    task_state.status = super::TaskExecutionStatus::Running;
-                    task_state.pending += 1;
-                }
-            }
-            StatisticsEvent::TaskCompleted { context } => {
-                if let Some(task_state) = tasks.get_mut(&context) {
-                    task_state.status = super::TaskExecutionStatus::Completed;
-                    if task_state.pending > 0 {
-                        task_state.pending -= 1;
-                    }
-                    task_state.completed += 1;
-                }
-            }
-            StatisticsEvent::TaskStarted { context } => {
-                if let Some(task_state) = tasks.get_mut(&context) {
-                    task_state.status = super::TaskExecutionStatus::Running;
-                }
-            }
-            StatisticsEvent::TaskFailed { context, .. } => {
-                if let Some(task_state) = tasks.get_mut(&context) {
-                    task_state.status = super::TaskExecutionStatus::Failed;
-                    if task_state.pending > 0 {
-                        task_state.pending -= 1;
-                    }
-                    task_state.failed += 1;
-                }
-            }
-            StatisticsEvent::TaskCancelled { context } => {
-                if let Some(task_state) = tasks.get_mut(&context) {
-                    task_state.status = super::TaskExecutionStatus::Canceled;
-                    if task_state.pending > 0 {
-                        task_state.pending -= 1;
-                    }
-                    task_state.canceled += 1;
-                }
-            }
-            StatisticsEvent::PlanSubmitted {
-                plan_id,
-                query_id,
-                logical_plan,
-            } => {
-                plans.insert(
-                    plan_id,
-                    PlanState {
-                        plan_id: plan_id as usize,
-                        query_id,
-                        logical_plan,
-                    },
-                );
-            }
-            StatisticsEvent::PlanStarted { .. } | StatisticsEvent::PlanFinished { .. } => {
-                // Plan-level events don't update task state
-            }
-        }
-
-        // Clone for reporting to avoid holding the locks during the HTTP request
-        let plans_clone = plans.clone();
-        let tasks_clone = tasks.clone();
-        drop(plans);
-        drop(tasks);
-
-        if let Err(e) = self.report_state(&plans_clone, &tasks_clone) {
-            tracing::warn!("Failed to report state: {}", e);
-        }
-    }
-
-    pub fn report_state(
-        &self,
-        plans: &HashMap<u32, PlanState>,
-        tasks: &HashMap<TaskContext, TaskState>,
-    ) -> DaftResult<()> {
-        let query_graph = self.build_query_graph(plans, tasks);
-        let endpoint = format!(
-            "{}/queries",
-            env::var("DAFT_DASHBOARD_URL")
-                .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
-        );
-
-        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
-
-        // Build headers
+        // Build headers for the requests
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
             reqwest::header::HeaderValue::from_static("application/json"),
         );
 
+        // Add the auth token to the headers if it exists
         if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
             let auth_value = format!("Bearer {}", auth_token);
             if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&auth_value) {
@@ -193,40 +160,30 @@ impl HttpSubscriber {
             }
         }
 
-        let optimized_plan =
-            serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
-
-        // Extract query ID from the first plan state, or generate a new UUID if no plans exist
-        let query_id = plans
-            .values()
-            .next()
-            .map(|plan| plan.query_id.clone())
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-        let payload = QueryPayload {
-            id: query_id,
-            optimized_plan,
-            run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
-            logs: String::new(),
-        };
-
-        // Send the HTTP request asynchronously and store the handle
-        let runtime = get_io_runtime(false);
-        tracing::info!(
-            target: HTTP_LOG_TARGET,
-            "HttpSubscriber spawning HTTP request task for endpoint: {}",
-            endpoint
+        // Build the endpoint for the requests
+        let endpoint = format!(
+            "{}/queries",
+            env::var("DAFT_DASHBOARD_URL").unwrap_or_else(|_| Self::DEFAULT_DASHBOARD_URL.into())
         );
 
-        let task_handle = runtime.spawn(async move {
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(1))
-                .default_headers(headers)
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new());
+        while receiver.changed().await.is_ok() {
+            let query_payload = receiver.borrow_and_update().clone();
 
+            // Skip if no nodes (empty initial state)
+            if query_payload.id.is_empty() {
+                continue;
+            }
+
+            tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
+
+            // Send the HTTP request using the reused client
             tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
-            let response = client.post(&endpoint).json(&payload).send().await;
+            let response = client
+                .post(&endpoint)
+                .headers(headers.clone())
+                .json(&query_payload)
+                .send()
+                .await;
 
             match response {
                 Ok(resp) => {
@@ -240,30 +197,127 @@ impl HttpSubscriber {
                     tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
                 }
             }
-        });
-
-        // Store the task handle for later cleanup/flushing
-        if let Ok(mut pending) = self.pending_requests.lock() {
-            pending.push(task_handle);
         }
-
-        Ok(())
     }
 
-    /// Exposed for tests only
-    pub fn build_query_graph(
-        &self,
-        plans: &HashMap<u32, PlanState>,
-        tasks: &HashMap<TaskContext, TaskState>,
-    ) -> QueryGraph {
-        // Mapping from query graph node ID to QueryGraphNode
-        let mut nodes_map: HashMap<u32, QueryGraphNode> = HashMap::new();
+    pub fn ingest_event(&mut self, event: &StatisticsEvent) {
+        match event {
+            StatisticsEvent::TaskSubmitted { context, name } => {
+                let plan_id = context.plan_id;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
+                    let task_state = plan_data
+                        .tasks
+                        .entry(*context)
+                        .or_insert_with(|| TaskState {
+                            name: name.clone(),
+                            status: TaskExecutionStatus::Created,
+                            pending: 0,
+                            completed: 0,
+                            canceled: 0,
+                            failed: 0,
+                            total: 0,
+                        });
+                    task_state.total += 1;
+                }
+                // If plan doesn't exist yet, ignore the task - it will be processed when PlanSubmitted arrives
+            }
+            StatisticsEvent::ScheduledTask { context } => {
+                let plan_id = context.plan_id;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
+                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
+                        task_state.status = TaskExecutionStatus::Running;
+                        task_state.pending += 1;
+                    }
+                }
+            }
+            StatisticsEvent::TaskCompleted { context } => {
+                let plan_id = context.plan_id;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
+                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
+                        task_state.status = TaskExecutionStatus::Completed;
+                        if task_state.pending > 0 {
+                            task_state.pending -= 1;
+                        }
+                        task_state.completed += 1;
+                    }
+                }
+            }
+            StatisticsEvent::TaskStarted { context } => {
+                let plan_id = context.plan_id;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
+                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
+                        task_state.status = TaskExecutionStatus::Running;
+                    }
+                }
+            }
+            StatisticsEvent::TaskFailed { context, .. } => {
+                let plan_id = context.plan_id;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
+                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
+                        task_state.status = TaskExecutionStatus::Failed;
+                        if task_state.pending > 0 {
+                            task_state.pending -= 1;
+                        }
+                        task_state.failed += 1;
+                    }
+                }
+            }
+            StatisticsEvent::TaskCancelled { context } => {
+                let plan_id = context.plan_id;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
+                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
+                        task_state.status = TaskExecutionStatus::Canceled;
+                        if task_state.pending > 0 {
+                            task_state.pending -= 1;
+                        }
+                        task_state.canceled += 1;
+                    }
+                }
+            }
+            StatisticsEvent::PlanSubmitted {
+                plan_id,
+                query_id,
+                logical_plan,
+            } => {
+                let plan_state = PlanState {
+                    plan_id: *plan_id,
+                    query_id: query_id.clone(),
+                    logical_plan: logical_plan.clone(),
+                };
+                self.plan_data.insert(*plan_id, PlanData::new(plan_state));
+            }
+            StatisticsEvent::PlanStarted { .. } | StatisticsEvent::PlanFinished { .. } => {
+                // Plan-level events don't update task state
+            }
+        }
 
-        // Mapping from logical plan node ID to query graph node IDs
-        let mut logical_to_query_map: HashMap<usize, usize> = HashMap::new();
+        // Plan id and data should be populated now
+        let plan_id = event.plan_id();
+        let plan_data = self
+            .plan_data
+            .get(&plan_id)
+            .expect("Plan ID not found in plan_data");
 
-        for (context, task_state) in tasks {
-            let node_id = Self::generate_node_id(context);
+        // Build the query graph
+        let query_graph = Self::build_query_graph(plan_data);
+        let query_payload = Arc::new(QueryPayload {
+            id: plan_data.plan_state.query_id.clone(),
+            optimized_plan: serde_json::to_string(&query_graph)
+                .unwrap_or_else(|_| "{}".to_string()),
+            run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
+            logs: String::new(),
+        });
+
+        // Send the query payload
+        let _ = self.sender.send(query_payload);
+    }
+
+    pub fn build_query_graph(plan_data: &PlanData) -> QueryGraph {
+        // Mapping from logical node ID to QueryGraphNode
+        let mut nodes_map: HashMap<NodeID, QueryGraphNode> = HashMap::new();
+
+        for (context, task_state) in &plan_data.tasks {
+            let node_id = context.logical_node_id;
 
             if let Some(existing_node) = nodes_map.get_mut(&node_id) {
                 // Collect task progress per node
@@ -294,32 +348,17 @@ impl HttpSubscriber {
                     total: task_state.total,
                     metrics: None,
                 };
-
-                if let Some(logical_node_id) = context.logical_node_id {
-                    logical_to_query_map.insert(logical_node_id as usize, node_id as usize);
-                }
                 nodes_map.insert(node_id, node);
             }
         }
 
-        // For now, use the first plan's ID if available, otherwise use 0
-        let query_id = plans.keys().next().copied().unwrap_or(0);
-
-        // Build adjacency list from logical plan structure
-        let adjacency_list: HashMap<usize, Vec<usize>> =
-            self.build_adjacency_list(plans, &logical_to_query_map);
-
         QueryGraph {
             version: "1.0.0".to_string(),
-            query_id,
+            plan_id: plan_data.plan_state.plan_id,
             nodes: nodes_map.into_values().collect(),
-            adjacency_list,
+            adjacency_list: plan_data.adjacency_list.clone(),
             metrics: None,
         }
-    }
-
-    pub fn generate_node_id(context: &TaskContext) -> u32 {
-        ((context.plan_id as u32) << 16) | ((context.stage_id as u32) << 8) | context.node_id
     }
 
     fn extract_operation_name(task_name: &str) -> String {
@@ -330,13 +369,13 @@ impl HttpSubscriber {
         }
     }
 
-    fn convert_task_status(status: &super::TaskExecutionStatus) -> NodeStatus {
+    fn convert_task_status(status: &TaskExecutionStatus) -> NodeStatus {
         match status {
-            super::TaskExecutionStatus::Created => NodeStatus::Created,
-            super::TaskExecutionStatus::Running => NodeStatus::Running,
-            super::TaskExecutionStatus::Completed => NodeStatus::Completed,
-            super::TaskExecutionStatus::Failed => NodeStatus::Failed,
-            super::TaskExecutionStatus::Canceled => NodeStatus::Canceled,
+            TaskExecutionStatus::Created => NodeStatus::Created,
+            TaskExecutionStatus::Running => NodeStatus::Running,
+            TaskExecutionStatus::Completed => NodeStatus::Completed,
+            TaskExecutionStatus::Failed => NodeStatus::Failed,
+            TaskExecutionStatus::Canceled => NodeStatus::Canceled,
         }
     }
 
@@ -350,104 +389,11 @@ impl HttpSubscriber {
             _ => NodeStatus::Created,
         }
     }
-
-    fn build_adjacency_list(
-        &self,
-        plans: &HashMap<u32, PlanState>,
-        logical_to_query_map: &HashMap<usize, usize>,
-    ) -> HashMap<usize, Vec<usize>> {
-        let mut adjacency_list: HashMap<usize, Vec<usize>> = HashMap::new();
-
-        if let Some((_, plan_state)) = plans.iter().next() {
-            // Build logical plan adjacency list first
-            let mut logical_adjacency: HashMap<usize, Vec<usize>> = HashMap::new();
-            self.build_logical_plan_adjacency_list(
-                &plan_state.logical_plan,
-                &mut logical_adjacency,
-            );
-
-            // Convert logical adjacency to query graph adjacency
-            for (logical_parent_id, logical_children) in logical_adjacency {
-                if let Some(query_parent_id) = logical_to_query_map.get(&logical_parent_id) {
-                    let mut query_graph_children = Vec::new();
-                    for logical_child_id in &logical_children {
-                        if let Some(query_child_node) = logical_to_query_map.get(logical_child_id) {
-                            query_graph_children.push(*query_child_node);
-                        }
-                    }
-                    adjacency_list.insert(*query_parent_id, query_graph_children);
-                }
-            }
-        }
-
-        adjacency_list
-    }
-
-    fn build_logical_plan_adjacency_list(
-        &self,
-        plan: &daft_logical_plan::LogicalPlan,
-        adjacency: &mut HashMap<usize, Vec<usize>>,
-    ) {
-        let plan_arc: std::sync::Arc<daft_logical_plan::LogicalPlan> =
-            std::sync::Arc::new(plan.clone());
-
-        let _ = plan_arc.apply(|node| {
-            if let Some(node_id) = node.node_id() {
-                let parent_id = *node_id;
-                let children = node.children();
-
-                let mut child_ids: Vec<usize> = Vec::new();
-                for child in children {
-                    if let Some(child_node_id) = child.node_id() {
-                        child_ids.push(*child_node_id);
-                    }
-                }
-
-                adjacency.insert(parent_id, child_ids);
-            }
-
-            Ok(common_treenode::TreeNodeRecursion::Continue)
-        });
-    }
-
-    pub async fn flush_pending_requests(&self) -> DaftResult<()> {
-        let mut handles = {
-            let mut pending = self.pending_requests.lock().unwrap();
-            std::mem::take(&mut *pending)
-        };
-
-        tracing::info!(
-            target: HTTP_LOG_TARGET,
-            "Flushing {} pending HTTP requests",
-            handles.len()
-        );
-
-        // Wait for all handles to complete
-        for handle in handles.drain(..) {
-            if let Err(e) = handle.await {
-                tracing::warn!(
-                    target: HTTP_LOG_TARGET,
-                    "Error waiting for HTTP request to complete: {}",
-                    e
-                );
-            }
-        }
-
-        tracing::info!(target: HTTP_LOG_TARGET, "All pending HTTP requests completed");
-        Ok(())
-    }
 }
 
 impl StatisticsSubscriber for HttpSubscriber {
-    fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()> {
-        self.ingest_event(event.clone());
+    fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()> {
+        self.ingest_event(event);
         Ok(())
-    }
-
-    fn flush(
-        &self,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>>>
-    {
-        Some(Box::pin(self.flush_pending_requests()))
     }
 }

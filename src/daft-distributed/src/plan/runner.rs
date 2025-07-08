@@ -13,7 +13,7 @@ use crate::{
         worker::{Worker, WorkerManager},
     },
     stage::StagePlan,
-    statistics::StatisticsManagerRef,
+    statistics::{StatisticsEvent, StatisticsManagerRef},
     utils::{
         channel::{create_channel, Sender},
         joinset::create_join_set,
@@ -38,6 +38,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         psets: HashMap<String, Vec<PartitionRef>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         sender: Sender<MaterializedOutput>,
+        statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
             return Err(DaftError::ValueError(format!(
@@ -59,6 +60,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
                 break;
             }
         }
+        statistics_manager.handle_event(StatisticsEvent::PlanFinished { plan_id })?;
         Ok(())
     }
 
@@ -73,8 +75,8 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let stage_plan = plan.stage_plan().clone();
 
         let runtime = get_or_init_runtime();
-        statistics_manager.handle_event(crate::statistics::StatisticsEvent::PlanSubmitted {
-            plan_id: plan_id as u32,
+        statistics_manager.handle_event(StatisticsEvent::PlanSubmitted {
+            plan_id,
             query_id,
             logical_plan: plan.logical_plan().clone(),
         })?;
@@ -92,8 +94,15 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             );
 
             joinset.spawn(async move {
-                this.execute_stages(plan_id, stage_plan, psets, scheduler_handle, result_sender)
-                    .await
+                this.execute_stages(
+                    plan_id,
+                    stage_plan,
+                    psets,
+                    scheduler_handle,
+                    result_sender,
+                    statistics_manager,
+                )
+                .await
             });
             joinset
         });

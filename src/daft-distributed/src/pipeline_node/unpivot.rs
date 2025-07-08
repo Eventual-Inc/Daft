@@ -36,7 +36,7 @@ impl UnpivotNode {
         value_name: String,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
+        logical_node_id: NodeID,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,

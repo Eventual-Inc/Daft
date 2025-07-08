@@ -32,7 +32,7 @@ impl InMemorySourceNode {
         node_id: NodeID,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        logical_node_id: Option<NodeID>,
+        logical_node_id: NodeID,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,

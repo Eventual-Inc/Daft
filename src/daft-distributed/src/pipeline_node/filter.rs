@@ -28,7 +28,7 @@ impl FilterNode {
         predicate: BoundExpr,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
+        logical_node_id: NodeID,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,

@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
 use daft_logical_plan::LogicalPlanRef;
 
-use crate::scheduling::task::{TaskContext, TaskName, TaskStatus};
+use crate::{
+    plan::PlanID,
+    scheduling::task::{TaskContext, TaskName, TaskStatus},
+};
 
 pub mod http_subscriber;
 pub use http_subscriber::HttpSubscriber;
@@ -16,7 +19,7 @@ mod http_subscriber_test;
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PlanState {
-    pub plan_id: usize,
+    pub plan_id: PlanID,
     pub query_id: String,
     pub logical_plan: LogicalPlanRef,
 }
@@ -67,16 +70,32 @@ pub(crate) enum StatisticsEvent {
         context: TaskContext,
     },
     PlanSubmitted {
-        plan_id: u32,
+        plan_id: PlanID,
         query_id: String,
         logical_plan: LogicalPlanRef,
     },
     PlanStarted {
-        plan_id: u32,
+        plan_id: PlanID,
     },
     PlanFinished {
-        plan_id: u32,
+        plan_id: PlanID,
     },
+}
+
+impl StatisticsEvent {
+    pub fn plan_id(&self) -> PlanID {
+        match self {
+            Self::PlanSubmitted { plan_id, .. } => *plan_id,
+            Self::PlanStarted { plan_id } => *plan_id,
+            Self::PlanFinished { plan_id } => *plan_id,
+            Self::TaskSubmitted { context, .. } => context.plan_id,
+            Self::ScheduledTask { context } => context.plan_id,
+            Self::TaskCompleted { context } => context.plan_id,
+            Self::TaskStarted { context } => context.plan_id,
+            Self::TaskFailed { context, .. } => context.plan_id,
+            Self::TaskCancelled { context } => context.plan_id,
+        }
+    }
 }
 
 impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
@@ -107,54 +126,26 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
 }
 
 pub trait StatisticsSubscriber: Send + Sync + 'static {
-    fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()>;
-
-    /// Optional flush method for subscribers that need to clean up pending operations
-    fn flush(
-        &self,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>>>
-    {
-        None
-    }
+    fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()>;
 }
 
 pub type StatisticsManagerRef = Arc<StatisticsManager>;
 
 #[derive(Default)]
 pub struct StatisticsManager {
-    subscribers: Vec<Box<dyn StatisticsSubscriber>>,
+    subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
 }
 
 impl StatisticsManager {
     pub fn new(subscribers: Vec<Box<dyn StatisticsSubscriber>>) -> StatisticsManagerRef {
-        Arc::new(Self { subscribers })
-    }
-
-    /// Flush all subscribers that support flushing (e.g., HttpSubscriber)
-    pub async fn flush_all_subscribers(&self) -> DaftResult<()> {
-        tracing::info!(
-            target: STATISTICS_LOG_TARGET,
-            "Flushing {} subscribers",
-            self.subscribers.len()
-        );
-
-        for (i, subscriber) in self.subscribers.iter().enumerate() {
-            if let Some(flush_future) = subscriber.flush() {
-                tracing::info!(
-                    target: STATISTICS_LOG_TARGET,
-                    "Flushing subscriber {}",
-                    i
-                );
-                flush_future.await?;
-            }
-        }
-
-        tracing::info!(target: STATISTICS_LOG_TARGET, "All subscribers flushed successfully");
-        Ok(())
+        Arc::new(Self {
+            subscribers: Mutex::new(subscribers),
+        })
     }
 
     pub fn handle_event(&self, event: StatisticsEvent) -> DaftResult<()> {
-        for (i, subscriber) in self.subscribers.iter().enumerate() {
+        let mut subscribers = self.subscribers.lock().unwrap();
+        for (i, subscriber) in subscribers.iter_mut().enumerate() {
             tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
             subscriber.handle_event(&event)?;
         }
