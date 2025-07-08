@@ -569,7 +569,36 @@ def udf(
     return _udf
 
 
-class FuncDecorator:
+@dataclasses.dataclass
+class UDFFunction:
+    """`@daft.func` Decorator to convert a Python function into a `UDF`.
+
+    Unlike `@daft.udf(...)`, `@daft.func` operates on single values instead of batches.
+
+    Examples:
+    >>> @daft.func()
+    ... # or you can specify the return type like our existing daft.udf
+    ... # @daft.func(return_dtype=daft.DataType.int64())
+    ... def my_sum(a: int, b: int) -> int:
+    ...     return a + b
+    >>>
+    >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    >>> df.select(my_sum(col("x"), col("y"))).collect()
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 5     │
+    ├╌╌╌╌╌╌╌┤
+    │ 7     │
+    ├╌╌╌╌╌╌╌┤
+    │ 9     │
+    ╰───────╯
+    <BLANKLINE>
+    (Showing first 3 of 3 rows)
+    """
+
     def __init__(self) -> None:
         self.batch = udf
 
@@ -607,4 +636,4 @@ class FuncDecorator:
         return _udf
 
 
-func = FuncDecorator()
+func = UDFFunction()
