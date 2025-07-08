@@ -77,7 +77,7 @@ impl MaterializedOutput {
         (self.partition, self.worker_id)
     }
 
-    pub fn split_by_partitions(&self) -> Vec<Self> {
+    pub fn split_into_materialized_outputs(&self) -> Vec<Self> {
         self.partition
             .iter()
             .map(|partition| Self::new(vec![partition.clone()], self.worker_id.clone()))
@@ -368,8 +368,8 @@ fn try_make_in_memory_scan_from_materialized_outputs(
 ) -> DaftResult<Option<SubmittableTask<SwordfishTask>>> {
     if materialized_outputs
         .iter()
-        .map(|m| m.partition().num_rows().unwrap_or(0))
-        .sum::<usize>()
+        .map(|m| m.num_rows())
+        .sum::<DaftResult<usize>>()?
         == 0
     {
         Ok(None)

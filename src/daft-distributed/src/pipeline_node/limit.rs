@@ -67,7 +67,7 @@ impl LimitNode {
         while let Some(materialized_output) = materialized_result_stream.next().await {
             let materialized_output = materialized_output?;
 
-            for next_input in materialized_output.split_by_partitions() {
+            for next_input in materialized_output.split_into_materialized_outputs() {
                 let num_rows = next_input.num_rows()?;
 
                 let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
