@@ -45,8 +45,8 @@ def read_lance(
             the host memory. Default value is ``256``.
 
             Roughly, for an ``IVF_PQ`` partition with ``n`` rows, the size of each index
-            page equals the combination of the pq code (``nd.array([n,pq], dtype=uint8))``
-            and the row ids (``nd.array([n], dtype=uint64)``).
+            page equals the combination of the pq code (``np.array([n,pq], dtype=uint8))``
+            and the row ids (``np.array([n], dtype=uint64)``).
             Approximately, ``n = Total Rows / number of IVF partitions``.
             ``pq = number of PQ sub-vectors``.
         storage_options : optional, dict
