@@ -28,14 +28,14 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
 
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
 impl<T: Task> SchedulableTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -57,7 +57,7 @@ impl<T: Task> SchedulableTask<T> {
         self,
     ) -> (
         T,
-        OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
@@ -97,7 +97,7 @@ impl<T: Task> Ord for SchedulableTask<T> {
 
 pub(super) struct ScheduledTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
@@ -130,7 +130,7 @@ impl<T: Task> ScheduledTask<T> {
     ) -> (
         WorkerId,
         T,
-        OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.worker_id, self.task, self.result_tx, self.cancel_token)

@@ -52,19 +52,19 @@ pub(crate) type NodeName = &'static str;
 /// to schedule follow-up pipeline nodes on the same worker.
 #[derive(Clone, Debug)]
 pub(crate) struct MaterializedOutput {
-    partition: PartitionRef,
+    partition: Vec<PartitionRef>,
     worker_id: WorkerId,
 }
 
 impl MaterializedOutput {
-    pub fn new(partition: PartitionRef, worker_id: WorkerId) -> Self {
+    pub fn new(partition: Vec<PartitionRef>, worker_id: WorkerId) -> Self {
         Self {
             partition,
             worker_id,
         }
     }
 
-    pub fn partition(&self) -> &PartitionRef {
+    pub fn partitions(&self) -> &[PartitionRef] {
         &self.partition
     }
 
@@ -73,8 +73,29 @@ impl MaterializedOutput {
         &self.worker_id
     }
 
-    pub fn into_inner(self) -> (PartitionRef, WorkerId) {
+    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId) {
         (self.partition, self.worker_id)
+    }
+
+    pub fn split_by_partitions(&self) -> Vec<Self> {
+        self.partition
+            .iter()
+            .map(|partition| Self::new(vec![partition.clone()], self.worker_id.clone()))
+            .collect()
+    }
+
+    pub fn num_rows(&self) -> DaftResult<usize> {
+        self.partition
+            .iter()
+            .map(|partition| partition.num_rows())
+            .sum()
+    }
+
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        self.partition
+            .iter()
+            .map(|partition| partition.size_bytes().map(|size| size.unwrap_or(0)))
+            .sum()
     }
 }
 
@@ -297,10 +318,10 @@ where
     let mut worker_id_counts: HashMap<WorkerId, usize> = HashMap::new();
 
     for materialized_output in materialized_outputs {
-        let (partition_ref, worker_id) = materialized_output.into_inner();
-        total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
-        total_num_rows += partition_ref.num_rows().unwrap_or(0);
-        partition_refs.push(partition_ref);
+        total_size_bytes += materialized_output.size_bytes()?;
+        total_num_rows += materialized_output.num_rows()?;
+        let (output_refs, worker_id) = materialized_output.into_inner();
+        partition_refs.extend(output_refs);
         let count = worker_id_counts.entry(worker_id.clone()).or_insert(0);
         *count += 1;
     }
