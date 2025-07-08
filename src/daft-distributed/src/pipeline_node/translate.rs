@@ -15,19 +15,10 @@ use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        distinct::DistinctNode,
-        explode::ExplodeNode,
-        filter::FilterNode,
-        groupby_agg::{split_groupby_aggs, GroupbyAggNode},
-        in_memory_source::InMemorySourceNode,
-        limit::LimitNode,
-        project::ProjectNode,
-        repartition::RepartitionNode,
-        sample::SampleNode,
-        scan_source::ScanSourceNode,
-        sink::SinkNode,
-        unpivot::UnpivotNode,
-        window::WindowNode,
+        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
+        groupby_agg::gen_agg_nodes, in_memory_source::InMemorySourceNode, limit::LimitNode,
+        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
+        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
         DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
@@ -225,51 +216,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                let split_details =
-                    split_groupby_aggs(groupby, &aggregations, &aggregate.input.schema())?;
-
-                // First stage groupby-agg to reduce the dataset
-                let initial_groupby = GroupbyAggNode::new(
-                    &self.stage_config,
-                    node_id,
-                    split_details.first_stage_group_by,
-                    split_details.first_stage_aggs,
-                    split_details.first_stage_schema.clone(),
+                gen_agg_nodes(
                     self.curr_node.pop().unwrap(),
-                )
-                .arced();
-
-                // Second stage repartition to distribute the dataset
-                let repartition = RepartitionNode::new(
                     &self.stage_config,
                     node_id,
-                    split_details.second_stage_group_by.clone(),
-                    None,
-                    split_details.first_stage_schema.clone(),
-                    initial_groupby,
-                )
-                .arced();
-
-                // Third stage re-groupby-agg to compute the final result
-                let final_groupby = GroupbyAggNode::new(
-                    &self.stage_config,
-                    node_id,
-                    split_details.second_stage_group_by,
-                    split_details.second_stage_aggs,
-                    split_details.second_stage_schema.clone(),
-                    repartition,
-                )
-                .arced();
-
-                // Last stage project to get the final result
-                ProjectNode::new(
-                    &self.stage_config,
-                    node_id,
-                    split_details.final_exprs,
+                    groupby,
+                    aggregations,
                     aggregate.output_schema.clone(),
-                    final_groupby,
-                )
-                .arced()
+                )?
             }
             LogicalPlan::Repartition(repartition) => {
                 let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {

@@ -12,65 +12,12 @@ use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        project::ProjectNode, repartition::RepartitionNode, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
+    },
     stage::{StageConfig, StageExecutionContext},
 };
-
-pub struct GroupbyAggSplit {
-    pub first_stage_aggs: Vec<BoundAggExpr>,
-    pub first_stage_schema: SchemaRef,
-    pub first_stage_group_by: Vec<BoundExpr>,
-
-    pub second_stage_aggs: Vec<BoundAggExpr>,
-    pub second_stage_schema: SchemaRef,
-    pub second_stage_group_by: Vec<BoundExpr>,
-
-    pub final_exprs: Vec<BoundExpr>,
-}
-
-pub(crate) fn split_groupby_aggs(
-    group_by: Vec<BoundExpr>,
-    aggs: &[BoundAggExpr],
-    input_schema: &SchemaRef,
-) -> DaftResult<GroupbyAggSplit> {
-    // Split the aggs into two stages and final projection
-    let (
-        (first_stage_aggs, first_stage_schema),
-        (second_stage_aggs, second_stage_schema),
-        final_exprs,
-    ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
-        aggs,
-        input_schema,
-        &group_by,
-    )?;
-    let second_stage_schema = Arc::new(second_stage_schema);
-
-    // Generate the expression for the second stage group_by
-    let second_stage_group_by = if !first_stage_aggs.is_empty() {
-        group_by
-            .iter()
-            .enumerate()
-            .map(|(i, e)| {
-                let field = e.as_ref().to_field(input_schema)?;
-                Ok(BoundExpr::new_unchecked(bound_col(i, field)))
-            })
-            .collect::<DaftResult<Vec<_>>>()?
-    } else {
-        group_by.clone()
-    };
-
-    Ok(GroupbyAggSplit {
-        first_stage_aggs,
-        first_stage_schema: Arc::new(first_stage_schema),
-        first_stage_group_by: group_by,
-
-        second_stage_aggs,
-        second_stage_schema,
-        second_stage_group_by,
-
-        final_exprs,
-    })
-}
 
 pub(crate) struct GroupbyAggNode {
     config: PipelineNodeConfig,
@@ -195,5 +142,170 @@ impl DistributedPipelineNode for GroupbyAggNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+}
+
+pub struct GroupbyAggSplit {
+    pub first_stage_aggs: Vec<BoundAggExpr>,
+    pub first_stage_schema: SchemaRef,
+    pub first_stage_group_by: Vec<BoundExpr>,
+
+    pub second_stage_aggs: Vec<BoundAggExpr>,
+    pub second_stage_schema: SchemaRef,
+    pub second_stage_group_by: Vec<BoundExpr>,
+
+    pub final_exprs: Vec<BoundExpr>,
+}
+
+fn split_groupby_aggs(
+    group_by: &[BoundExpr],
+    aggs: &[BoundAggExpr],
+    input_schema: &SchemaRef,
+) -> DaftResult<GroupbyAggSplit> {
+    // Split the aggs into two stages and final projection
+    let (
+        (first_stage_aggs, first_stage_schema),
+        (second_stage_aggs, second_stage_schema),
+        final_exprs,
+    ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
+        aggs,
+        input_schema,
+        group_by,
+    )?;
+    let second_stage_schema = Arc::new(second_stage_schema);
+
+    // Generate the expression for the second stage group_by
+    let second_stage_group_by = if !first_stage_aggs.is_empty() {
+        group_by
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let field = e.as_ref().to_field(input_schema)?;
+                Ok(BoundExpr::new_unchecked(bound_col(i, field)))
+            })
+            .collect::<DaftResult<Vec<_>>>()?
+    } else {
+        group_by.to_vec()
+    };
+
+    Ok(GroupbyAggSplit {
+        first_stage_aggs,
+        first_stage_schema: Arc::new(first_stage_schema),
+        first_stage_group_by: group_by.to_vec(),
+
+        second_stage_aggs,
+        second_stage_schema,
+        second_stage_group_by,
+
+        final_exprs,
+    })
+}
+
+pub(crate) fn gen_repartition_only_nodes(
+    input_node: Arc<dyn DistributedPipelineNode>,
+    stage_config: &StageConfig,
+    node_id: NodeID,
+    groupby: Vec<BoundExpr>,
+    aggregations: Vec<BoundAggExpr>,
+    output_schema: SchemaRef,
+) -> Arc<dyn DistributedPipelineNode> {
+    let repartition = RepartitionNode::new(
+        stage_config,
+        node_id,
+        groupby.clone(),
+        None,
+        input_node.config().schema.clone(),
+        input_node,
+    )
+    .arced();
+
+    GroupbyAggNode::new(
+        stage_config,
+        node_id,
+        groupby,
+        aggregations,
+        output_schema,
+        repartition,
+    )
+    .arced()
+}
+
+pub(crate) fn gen_pre_agg_repartition_nodes(
+    input_node: Arc<dyn DistributedPipelineNode>,
+    stage_config: &StageConfig,
+    node_id: NodeID,
+    split_details: GroupbyAggSplit,
+    output_schema: SchemaRef,
+) -> Arc<dyn DistributedPipelineNode> {
+    let initial_groupby = GroupbyAggNode::new(
+        stage_config,
+        node_id,
+        split_details.first_stage_group_by,
+        split_details.first_stage_aggs,
+        split_details.first_stage_schema.clone(),
+        input_node,
+    )
+    .arced();
+
+    // Second stage repartition to distribute the dataset
+    let repartition = RepartitionNode::new(
+        stage_config,
+        node_id,
+        split_details.second_stage_group_by.clone(),
+        None,
+        split_details.first_stage_schema.clone(),
+        initial_groupby,
+    )
+    .arced();
+
+    // Third stage re-groupby-agg to compute the final result
+    let final_groupby = GroupbyAggNode::new(
+        stage_config,
+        node_id,
+        split_details.second_stage_group_by,
+        split_details.second_stage_aggs,
+        split_details.second_stage_schema.clone(),
+        repartition,
+    )
+    .arced();
+
+    // Last stage project to get the final result
+    ProjectNode::new(
+        stage_config,
+        node_id,
+        split_details.final_exprs,
+        output_schema,
+        final_groupby,
+    )
+    .arced()
+}
+
+pub(crate) fn gen_agg_nodes(
+    input_node: Arc<dyn DistributedPipelineNode>,
+    stage_config: &StageConfig,
+    node_id: NodeID,
+    groupby: Vec<BoundExpr>,
+    aggregations: Vec<BoundAggExpr>,
+    output_schema: SchemaRef,
+) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+    let split_details = split_groupby_aggs(&groupby, &aggregations, &input_node.config().schema)?;
+
+    if split_details.first_stage_aggs.is_empty() {
+        Ok(gen_repartition_only_nodes(
+            input_node,
+            stage_config,
+            node_id,
+            groupby,
+            aggregations,
+            output_schema,
+        ))
+    } else {
+        Ok(gen_pre_agg_repartition_nodes(
+            input_node,
+            stage_config,
+            node_id,
+            split_details,
+            output_schema,
+        ))
     }
 }
