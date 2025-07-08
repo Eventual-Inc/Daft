@@ -3757,30 +3757,23 @@ class DataFrame:
             >>>     row["y"] = row["x"] * 2
             >>>     return row
             >>> df.map_rows(f, output_schema).collect()
-            ╭────────────────────────────╮
-            │ struct                     │
-            │ ---                        │
-            │ Struct[x: Int64, y: Int64] │
-            ╞════════════════════════════╡
-            │ {x: 1,                     │
-            │ y: 2,                      │
-            │ }                          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ {x: 2,                     │
-            │ y: 4,                      │
-            │ }                          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ {x: 3,                     │
-            │ y: 6,                      │
-            │ }                          │
-            ╰────────────────────────────╯
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 2     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
         """
         return_dtype = output_schema.to_struct_type()
-
-        return self.select(struct(*self.columns).apply(func, return_dtype))
+        return self.select(struct(*self.columns).apply(func, return_dtype).struct.get("*"))
 
 
 @dataclass
