@@ -1,7 +1,7 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
@@ -10,14 +10,16 @@ use daft_dsl::{
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
     resolved_col,
 };
-use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{
+    partitioning::RepartitionSpec, JoinStrategy, LogicalPlan, LogicalPlanRef, SourceInfo,
+};
 use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
         distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        groupby_agg::gen_agg_nodes, in_memory_source::InMemorySourceNode, limit::LimitNode,
-        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
+        groupby_agg::gen_agg_nodes, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode,
+        limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
         scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
         DistributedPipelineNode, NodeID,
     },
@@ -201,6 +203,22 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Concat(_) => {
                 todo!("FLOTILLA_MS1: Implement Concat")
             }
+            LogicalPlan::Repartition(repartition) => {
+                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
+                    todo!("FLOTILLA_MS3: Support other types of repartition");
+                };
+
+                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
+                RepartitionNode::new(
+                    &self.stage_config,
+                    node_id,
+                    columns,
+                    repart_spec.num_partitions,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
             LogicalPlan::Aggregate(aggregate) => {
                 if aggregate.groupby.is_empty() {
                     todo!("FLOTILLA_MS2: Implement Aggregate without groupby")
@@ -224,22 +242,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     aggregations,
                     aggregate.output_schema.clone(),
                 )?
-            }
-            LogicalPlan::Repartition(repartition) => {
-                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
-                    todo!("FLOTILLA_MS2: Support other types of repartition");
-                };
-
-                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-                RepartitionNode::new(
-                    &self.stage_config,
-                    node_id,
-                    columns,
-                    repart_spec.num_partitions,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )
-                .arced()
             }
             LogicalPlan::Distinct(distinct) => {
                 let columns = distinct.columns.clone().unwrap_or_else(|| {
@@ -324,6 +326,36 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
+            LogicalPlan::Join(join) => {
+                if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
+                    return Err(DaftError::not_implemented(
+                        "Only hash join is supported in flotilla for now",
+                    ));
+                }
+
+                let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
+                if !remaining_on.is_empty() {
+                    return Err(DaftError::not_implemented("Execution of non-equality join"));
+                }
+
+                let right = self.curr_node.pop().unwrap();
+                let left = self.curr_node.pop().unwrap();
+                let left_on = BoundExpr::bind_all(&left_on, &join.left.schema())?;
+                let right_on = BoundExpr::bind_all(&right_on, &join.right.schema())?;
+
+                HashJoinNode::new(
+                    &self.stage_config,
+                    node_id,
+                    left_on,
+                    right_on,
+                    Some(null_equals_nulls),
+                    join.join_type,
+                    left,
+                    right,
+                    join.output_schema.clone(),
+                )
+                .arced()
+            }
             LogicalPlan::Sort(_) => {
                 todo!("FLOTILLA_MS2: Implement Sort")
             }
@@ -332,9 +364,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             }
             LogicalPlan::Pivot(_) => {
                 todo!("FLOTILLA_MS3: Implement Pivot")
-            }
-            LogicalPlan::Join(_) => {
-                todo!("FLOTILLA_MS2: Implement Join")
             }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)

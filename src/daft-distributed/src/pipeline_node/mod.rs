@@ -33,6 +33,7 @@ mod distinct;
 mod explode;
 mod filter;
 mod groupby_agg;
+mod hash_join;
 mod in_memory_source;
 mod limit;
 pub(crate) mod materialize;
