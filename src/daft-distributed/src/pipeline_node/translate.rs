@@ -1,18 +1,17 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
+    join::normalize_join_keys,
     resolved_col,
 };
-use daft_logical_plan::{
-    partitioning::RepartitionSpec, JoinStrategy, LogicalPlan, LogicalPlanRef, SourceInfo,
-};
+use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
 use crate::{
@@ -327,19 +326,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Join(join) => {
-                if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
-                    return Err(DaftError::not_implemented(
-                        "Only hash join is supported in flotilla for now",
-                    ));
-                }
-
                 let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
                 if !remaining_on.is_empty() {
-                    return Err(DaftError::not_implemented("Execution of non-equality join"));
+                    todo!("FLOTILLA_MS?: Implement non-equality joins")
                 }
 
                 let right = self.curr_node.pop().unwrap();
                 let left = self.curr_node.pop().unwrap();
+
+                let (left_on, right_on) = normalize_join_keys(
+                    left_on,
+                    right_on,
+                    join.left.schema(),
+                    join.right.schema(),
+                )?;
                 let left_on = BoundExpr::bind_all(&left_on, &join.left.schema())?;
                 let right_on = BoundExpr::bind_all(&right_on, &join.right.schema())?;
 
