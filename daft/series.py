@@ -134,7 +134,7 @@ class Series:
 
         # If output is Python objects, we can just use the Python list directly.
         if (dtype and dtype == DataType.python()) or pyobj == "force":
-            pys = PySeries.from_pylist(name, data, dtype=DataType.python()._dtype)
+            pys = PySeries.from_pylist(name, data, DataType.python()._dtype)
             return Series._from_pyseries(pys)
 
         # Otherwise, try to infer from parameters provided
@@ -146,13 +146,13 @@ class Series:
                 np_arr = np.array(data)
                 arrow_array = pa.array(np_arr)
             else:
-                arrow_array = pa.array(data, dtype=dtype.to_arrow_dtype() if dtype else None)
+                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
             return Series.from_arrow(arrow_array, name=name, dtype=dtype)
         except pa.lib.ArrowInvalid:
             if pyobj == "disallow":
                 raise
             dtype = DataType._infer_dtype_from_pylist(data) or DataType.python()
-            pys = PySeries.from_pylist(name, data, dtype=dtype._dtype)
+            pys = PySeries.from_pylist(name, data, dtype._dtype)
             return Series._from_pyseries(pys)
 
     @classmethod
