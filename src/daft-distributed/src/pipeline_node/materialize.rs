@@ -62,7 +62,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
         mut finalized_tasks_receiver: Receiver<DaftResult<FinalizedTask>>,
         tx: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: OrderedJoinSet<DaftResult<Vec<MaterializedOutput>>> =
+        let mut pending_tasks: OrderedJoinSet<DaftResult<Option<MaterializedOutput>>> =
             OrderedJoinSet::new();
         loop {
             let num_pending = pending_tasks.num_pending();
@@ -72,7 +72,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                     let finalized_task = finalized_task?;
                     match finalized_task {
                         FinalizedTask::Materialized(materialized_output) => {
-                            pending_tasks.spawn(async move { Ok(vec![materialized_output]) });
+                            pending_tasks.spawn(async move { Ok(Some(materialized_output)) });
                         }
                         FinalizedTask::Running(submitted_task) => {
                             pending_tasks.spawn(submitted_task);
@@ -80,7 +80,8 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                     }
                 }
                 Some(result) = pending_tasks.join_next(), if num_pending > 0 => {
-                    for materialized_output in result?? {
+                    let materialized_output = result??;
+                    if let Some(materialized_output) = materialized_output {
                         if tx.send(materialized_output).await.is_err() {
                             break;
                         }
@@ -260,8 +261,8 @@ mod tests {
         let mut sorted_expected: Vec<_> = expected_specs.iter().collect();
 
         sorted_results.sort_by(|a, b| {
-            let a_rows = a.as_ref().unwrap().partition().num_rows().unwrap();
-            let b_rows = b.as_ref().unwrap().partition().num_rows().unwrap();
+            let a_rows = a.as_ref().unwrap().num_rows().unwrap();
+            let b_rows = b.as_ref().unwrap().num_rows().unwrap();
             a_rows.cmp(&b_rows)
         });
 
@@ -269,11 +270,8 @@ mod tests {
 
         for (result, expected) in sorted_results.iter().zip(sorted_expected.iter()) {
             let materialized_output = result.as_ref().expect("Result should be Ok");
-            assert_eq!(materialized_output.partition().num_rows()?, expected.0);
-            assert_eq!(
-                materialized_output.partition().size_bytes()?,
-                Some(expected.1)
-            );
+            assert_eq!(materialized_output.num_rows()?, expected.0);
+            assert_eq!(materialized_output.size_bytes()?, expected.1);
         }
         Ok(())
     }
@@ -316,7 +314,7 @@ mod tests {
         // Create input stream with different pipeline output types
         let inputs = vec![
             Ok(PipelineOutput::Materialized(MaterializedOutput::new(
-                partitions[0].clone(),
+                vec![partitions[0].clone()],
                 "".into(),
             ))),
             Ok(PipelineOutput::Task(SubmittableTask::new(
@@ -360,7 +358,7 @@ mod tests {
                 let which_pipeline_output = rng.gen_range(0..3);
                 let pipeline_output = match which_pipeline_output {
                     0 => Ok(PipelineOutput::Materialized(MaterializedOutput::new(
-                        partitions[i].clone(),
+                        vec![partitions[i].clone()],
                         "".into(),
                     ))),
                     1 => {
@@ -435,7 +433,7 @@ mod tests {
                 let which_pipeline_output = rng.gen_range(0..3);
                 let pipeline_output = match which_pipeline_output {
                     0 => Ok(PipelineOutput::Materialized(MaterializedOutput::new(
-                        partitions[i].clone(),
+                        vec![partitions[i].clone()],
                         "".into(),
                     ))),
                     1 => Ok(PipelineOutput::Task(SubmittableTask::new(
@@ -500,7 +498,7 @@ mod tests {
 
         let inputs = vec![
             Ok(PipelineOutput::Materialized(MaterializedOutput::new(
-                partitions[0].clone(),
+                vec![partitions[0].clone()],
                 "".into(),
             ))),
             Ok(PipelineOutput::Task(SubmittableTask::new(
@@ -551,7 +549,7 @@ mod tests {
             for i in 0..num_partitions {
                 let pipeline_output = match owned_output_types[i] {
                     0 => Ok(PipelineOutput::Materialized(MaterializedOutput::new(
-                        partitions[i].clone(),
+                        vec![partitions[i].clone()],
                         "".into(),
                     ))),
                     1 => {
@@ -627,7 +625,7 @@ mod tests {
                 let which_pipeline_output = rng.gen_range(0..3);
                 let pipeline_output = match which_pipeline_output {
                     0 => Ok(PipelineOutput::Materialized(MaterializedOutput::new(
-                        partitions[i].clone(),
+                        vec![partitions[i].clone()],
                         "".into(),
                     ))),
                     1 => Ok(PipelineOutput::Task(SubmittableTask::new(
