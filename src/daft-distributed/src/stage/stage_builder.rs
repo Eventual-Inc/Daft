@@ -4,8 +4,10 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_logical_plan::{
-    ops::Source, partitioning::ClusteringSpecRef, source_info::PlaceHolderInfo, ClusteringSpec,
-    LogicalPlan, LogicalPlanRef, SourceInfo,
+    ops::Source,
+    partitioning::{ClusteringSpecRef, RepartitionSpec},
+    source_info::PlaceHolderInfo,
+    ClusteringSpec, LogicalPlan, LogicalPlanRef, SourceInfo,
 };
 use daft_schema::schema::SchemaRef;
 
@@ -43,11 +45,32 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
-            | LogicalPlan::Limit(_)
-            | LogicalPlan::Repartition(_)
             | LogicalPlan::Distinct(_)
-            | LogicalPlan::Aggregate(_)
-            | LogicalPlan::Window(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            LogicalPlan::Repartition(repartition) => {
+                if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
+                    Ok(TreeNodeRecursion::Continue)
+                } else {
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                }
+            },
+            LogicalPlan::Aggregate(aggregate) => {
+                if aggregate.groupby.is_empty() {
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            },
+            LogicalPlan::Window(window) => {
+                if window.window_spec.partition_by.is_empty() {
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            },
             LogicalPlan::Sort(_)
             | LogicalPlan::Concat(_)
             | LogicalPlan::TopN(_)

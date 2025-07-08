@@ -171,6 +171,14 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
     return handles
 
 
+def try_autoscale(num_cpus: int) -> None:
+    from ray.autoscaler.sdk import request_resources
+
+    request_resources(
+        num_cpus=num_cpus,
+    )
+
+
 class FlotillaRunnerCore:
     """Core functionality for running distributed physical plans with Flotilla.
 

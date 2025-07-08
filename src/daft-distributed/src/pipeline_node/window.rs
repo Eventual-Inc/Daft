@@ -7,7 +7,7 @@ use daft_dsl::{
     WindowExpr, WindowFrame,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
@@ -75,7 +75,17 @@ impl WindowNode {
             vec![child.node_id()],
             vec![child.name()],
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            Arc::new(
+                HashClusteringConfig::new(
+                    child.config().clustering_spec.num_partitions(),
+                    partition_by.clone().into_iter().map(|e| e.into()).collect(),
+                )
+                .into(),
+            ),
+        );
         Self {
             config,
             context,

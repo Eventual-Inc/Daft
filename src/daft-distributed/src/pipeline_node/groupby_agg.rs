@@ -7,7 +7,7 @@ use daft_dsl::expr::{
     bound_expr::{BoundAggExpr, BoundExpr},
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
@@ -105,7 +105,17 @@ impl GroupbyAggNode {
             vec![child.node_id()],
             vec![child.name()],
         );
-        let config = PipelineNodeConfig::new(output_schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            output_schema,
+            stage_config.config.clone(),
+            Arc::new(
+                HashClusteringConfig::new(
+                    child.config().clustering_spec.num_partitions(),
+                    groupby.clone().into_iter().map(|e| e.into()).collect(),
+                )
+                .into(),
+            ),
+        );
         Self {
             config,
             context,

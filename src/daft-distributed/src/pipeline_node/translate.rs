@@ -210,26 +210,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Concat(_) => {
                 todo!("FLOTILLA_MS1: Implement Concat")
             }
-            LogicalPlan::Repartition(repartition) => {
-                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
-                    todo!("FLOTILLA_MS3: Support other types of repartition");
-                };
-                let Some(num_partitions) = repart_spec.num_partitions else {
-                    // TODO(colin): What's a good way to estimate the best # of partitions?
-                    todo!("FLOTILLA_MS2: Support repartitioning into unknown number of partitions");
-                };
-
-                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-                RepartitionNode::new(
-                    &self.stage_config,
-                    node_id,
-                    columns,
-                    num_partitions,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )
-                .arced()
-            }
             LogicalPlan::Aggregate(aggregate) => {
                 if aggregate.groupby.is_empty() {
                     todo!("FLOTILLA_MS2: Implement Aggregate without groupby")
@@ -264,7 +244,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.stage_config,
                     node_id,
                     split_details.second_stage_group_by.clone(),
-                    20, // TODO(colin): How do we determine this?
+                    None,
                     split_details.first_stage_schema.clone(),
                     initial_groupby,
                 )
@@ -295,6 +275,22 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     final_groupby
                 }
             }
+            LogicalPlan::Repartition(repartition) => {
+                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
+                    todo!("FLOTILLA_MS2: Support other types of repartition");
+                };
+
+                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
+                RepartitionNode::new(
+                    &self.stage_config,
+                    node_id,
+                    columns,
+                    repart_spec.num_partitions,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
             LogicalPlan::Distinct(distinct) => {
                 let columns = distinct.columns.clone().unwrap_or_else(|| {
                     distinct
@@ -321,7 +317,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.stage_config,
                     node_id,
                     columns.clone(),
-                    20, // TODO(colin): How do we determine this?
+                    None,
                     distinct.input.schema(),
                     initial_distinct,
                 )
@@ -355,7 +351,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.stage_config,
                     node_id,
                     partition_by.clone(),
-                    20, // TODO(colin): How do we determine this?
+                    None,
                     window.input.schema(),
                     self.curr_node.pop().unwrap(),
                 )
