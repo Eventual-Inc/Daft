@@ -146,6 +146,7 @@ Project1 --> Limit0
         assert_eq!(mermaid_repr, expected);
         Ok(())
     }
+
     #[test]
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display_simple() -> DaftResult<()> {

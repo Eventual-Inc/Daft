@@ -211,14 +211,31 @@ mod tests {
     }
 
     #[rstest]
-    fn test_limit(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
-        let sql = "select test as a from tbl1 limit 10";
+    fn test_limit_offset(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 limit 10 offset 7";
         let plan = planner.plan_sql(sql)?;
 
         let expected = LogicalPlanBuilder::from(tbl_1)
             .alias("tbl1")
             .select(vec![unresolved_col("test").alias("a")])?
             .limit(10, true)?
+            .offset(7)?
+            .build();
+
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_offset_limit(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 offset 7 limit 10";
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::from(tbl_1)
+            .alias("tbl1")
+            .select(vec![unresolved_col("test").alias("a")])?
+            .limit(10, true)?
+            .offset(7)?
             .build();
 
         assert_eq!(plan, expected);
@@ -234,6 +251,23 @@ mod tests {
                 assert_eq!(
                     message,
                     "LIMIT <n> must be greater than or equal to 0, instead got: -1"
+                );
+            }
+            _ => panic!("Unexpected result"),
+        }
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_negative_offset(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 offset -1";
+        let plan = planner.plan_sql(sql);
+        match plan {
+            Err(PlannerError::InvalidOperation { message }) => {
+                assert_eq!(
+                    message,
+                    "OFFSET <n> must be greater than or equal to 0, instead got: -1"
                 );
             }
             _ => panic!("Unexpected result"),
