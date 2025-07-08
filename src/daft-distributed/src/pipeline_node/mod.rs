@@ -10,7 +10,7 @@ use common_display::{
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMemoryInfo};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
@@ -35,6 +35,7 @@ mod in_memory_source;
 mod limit;
 pub(crate) mod materialize;
 mod project;
+mod repartition;
 mod sample;
 mod scan_source;
 mod sink;
@@ -76,7 +77,7 @@ impl MaterializedOutput {
         (self.partition, self.worker_id)
     }
 
-    pub fn split_by_partitions(&self) -> Vec<Self> {
+    pub fn split_into_materialized_outputs(&self) -> Vec<Self> {
         self.partition
             .iter()
             .map(|partition| Self::new(vec![partition.clone()], self.worker_id.clone()))
@@ -109,15 +110,19 @@ pub(crate) enum PipelineOutput<T: Task> {
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,
-    // TODO: add clustering spec, may be useful for determining shuffles
-    // pub clustering_spec: ClusteringSpecRef,
+    pub clustering_spec: ClusteringSpecRef,
 }
 
 impl PipelineNodeConfig {
-    pub fn new(schema: SchemaRef, execution_config: Arc<DaftExecutionConfig>) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        execution_config: Arc<DaftExecutionConfig>,
+        clustering_spec: ClusteringSpecRef,
+    ) -> Self {
         Self {
             schema,
             execution_config,
+            clustering_spec,
         }
     }
 }
@@ -358,6 +363,28 @@ where
         node.context().to_hashmap(),
     );
     Ok(SubmittableTask::new(task))
+}
+
+fn try_make_in_memory_scan_from_materialized_outputs(
+    task_context: TaskContext,
+    materialized_outputs: Vec<MaterializedOutput>,
+    node: &Arc<dyn DistributedPipelineNode>,
+) -> DaftResult<Option<SubmittableTask<SwordfishTask>>> {
+    if materialized_outputs
+        .iter()
+        .map(|m| m.num_rows())
+        .sum::<DaftResult<usize>>()?
+        == 0
+    {
+        Ok(None)
+    } else {
+        Ok(Some(make_new_task_from_materialized_outputs(
+            task_context,
+            materialized_outputs,
+            node,
+            &|input| Ok(input),
+        )?))
+    }
 }
 
 fn append_plan_to_existing_task<F>(
