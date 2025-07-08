@@ -600,8 +600,8 @@ class _DaftFunc:
 
     batch = udf
 
-    def __init__(self, f: UserDefinedPyFuncLike) -> None:
-        self._f = f
+    def __init__(self, func: UserDefinedPyFuncLike) -> None:
+        self._func = func
 
     def __call__(self, *, return_dtype: DataTypeLike | None = None) -> UDF:
         try:
@@ -611,7 +611,7 @@ class _DaftFunc:
                 raise ImportError("return_dtype is required when function has no return annotation")
 
         if return_dtype is None:
-            type_hints = get_type_hints(self._f)
+            type_hints = get_type_hints(self._func)
             return_annotation = type_hints.get("return")
             if return_annotation is None:
                 raise ValueError("return_dtype is required when function has no return annotation")
@@ -620,12 +620,12 @@ class _DaftFunc:
             inferred_return_dtype = DataType._infer_type(return_dtype)
 
         def batch_func(*series: Series) -> list[Any]:
-            return [self._f(*args) for args in zip(*series)]
+            return [self._func(*args) for args in zip(*series)]
 
-        name = getattr(self._f, "__module__", "")
+        name = getattr(self._func, "__module__", "")
         if name:
             name = name + "."
-        name = name + getattr(self._f, "__qualname__")
+        name = name + getattr(self._func, "__qualname__")
 
         return UDF(
             inner=batch_func,

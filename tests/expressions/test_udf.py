@@ -570,3 +570,19 @@ def test_func_requires_return_dtype_when_no_annotation():
         @daft.func()
         def my_func(a: int, b: int):
             return f"{a + b}"
+
+
+def test_func_batch_same_as_udf():
+    @daft.func.batch(return_dtype=int)
+    def my_batch_sum(a, b):
+        return a + b
+
+    @daft.udf(return_dtype=int)
+    def my_udf(a, b):
+        return a + b
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    using_batch = df.select(my_batch_sum(col("x"), col("y"))).to_pydict()
+    using_udf = df.select(my_udf(col("x"), col("y"))).to_pydict()
+
+    assert using_batch == using_udf
