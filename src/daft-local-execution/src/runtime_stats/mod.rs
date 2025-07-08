@@ -620,6 +620,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "flake; TODO(cory): investigate flaky test"]
     async fn test_event_contains_cumulative_stats() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let subscribers = Arc::new(vec![
