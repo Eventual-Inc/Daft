@@ -6,8 +6,8 @@ use daft_recordbatch::RecordBatch;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
@@ -83,7 +83,7 @@ impl BlockingSink for CrossJoinCollectSink {
             .expect("Cross join collect state should have tables before finalize is called");
 
         self.state_bridge.set_state(Arc::new(tables));
-        Ok(None).into()
+        Ok(BlockingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

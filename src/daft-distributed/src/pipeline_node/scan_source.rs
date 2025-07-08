@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::SchemaRef;
 
 use super::{
@@ -48,7 +48,13 @@ impl ScanSourceNode {
             vec![],
             logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(
+                scan_tasks.len(),
+            )),
+        );
         Self {
             config,
             context,

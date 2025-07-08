@@ -5,7 +5,9 @@ use std::sync::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
+use futures::{stream, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -59,7 +61,8 @@ impl DistributedPhysicalPlan {
     }
 }
 
-pub(crate) type PlanResultStream = JoinableForwardingStream<ReceiverStream<MaterializedOutput>>;
+pub(crate) type PlanResultStream =
+    JoinableForwardingStream<Box<dyn Stream<Item = PartitionRef> + Send + Unpin + 'static>>;
 
 pub(crate) struct PlanResult {
     joinset: JoinSet<DaftResult<()>>,
@@ -72,6 +75,9 @@ impl PlanResult {
     }
 
     pub fn into_stream(self) -> PlanResultStream {
-        JoinableForwardingStream::new(ReceiverStream::new(self.rx), self.joinset)
+        JoinableForwardingStream::new(
+            Box::new(ReceiverStream::new(self.rx).flat_map(|mat| stream::iter(mat.into_inner().0))),
+            self.joinset,
+        )
     }
 }

@@ -181,7 +181,11 @@ impl ActorUDF {
             vec![child.name()],
             logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Ok(Self {
             config,
             context,
@@ -221,7 +225,7 @@ impl ActorUDF {
                     };
 
                     let task = self.make_actor_udf_task_for_materialized_outputs(
-                        vec![materialized_output],
+                        materialized_output,
                         worker_id,
                         actors,
                         TaskContext::from((&self.context, task_id_counter.next())),
@@ -277,17 +281,13 @@ impl ActorUDF {
 
     fn make_actor_udf_task_for_materialized_outputs(
         &self,
-        materialized_outputs: Vec<MaterializedOutput>,
+        materialized_output: MaterializedOutput,
         worker_id: WorkerId,
         actors: Vec<PyObjectWrapper>,
         task_context: TaskContext,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
         // Extract all partitions from materialized outputs
-        let mut partitions = Vec::new();
-        for materialized_output in materialized_outputs {
-            let (partition, _) = materialized_output.into_inner();
-            partitions.push(partition);
-        }
+        let partitions = materialized_output.partitions().to_vec();
 
         let in_memory_info = InMemoryInfo::new(
             self.config.schema.clone(),

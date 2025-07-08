@@ -292,7 +292,7 @@ impl Task for SwordfishTask {
 
 #[derive(Debug)]
 pub(crate) enum TaskStatus {
-    Success { result: Vec<MaterializedOutput> },
+    Success { result: MaterializedOutput },
     Failed { error: DaftError },
     Cancelled,
     WorkerDied,
@@ -389,7 +389,7 @@ pub(super) mod tests {
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
-        task_result: Vec<MaterializedOutput>,
+        task_result: MaterializedOutput,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
@@ -409,7 +409,7 @@ pub(super) mod tests {
         task_name: TaskName,
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
-        task_result: Vec<MaterializedOutput>,
+        task_result: MaterializedOutput,
         resource_request: TaskResourceRequest,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<Duration>,
@@ -431,7 +431,7 @@ pub(super) mod tests {
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: vec![MaterializedOutput::new(partition_ref, "".into())],
+                task_result: MaterializedOutput::new(vec![partition_ref], "".into()),
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,
                 failure: None,

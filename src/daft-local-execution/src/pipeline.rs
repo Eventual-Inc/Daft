@@ -51,6 +51,7 @@ use crate::{
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
         pivot::PivotSink,
+        repartition::RepartitionSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
         top_n::TopNSink,
@@ -1046,6 +1047,24 @@ pub fn physical_plan_to_pipeline(
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
+        }
+        LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
+            input,
+            columns,
+            num_partitions,
+            stats_state,
+            schema,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let repartition_op =
+                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
+            BlockingSinkNode::new(
+                Arc::new(repartition_op),
+                child_node,
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
         }
     };
 

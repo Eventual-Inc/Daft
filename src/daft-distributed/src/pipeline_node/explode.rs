@@ -38,7 +38,11 @@ impl ExplodeNode {
             vec![child.name()],
             logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Self {
             config,
             context,
