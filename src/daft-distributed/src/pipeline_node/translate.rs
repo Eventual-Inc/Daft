@@ -205,18 +205,13 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
                     todo!("FLOTILLA_MS2: Support other types of repartition");
                 };
-                let Some(num_partitions) = repart_spec.num_partitions else {
-                    // TODO(colin): What's a good way to estimate the best # of partitions?
-                    todo!("FLOTILLA_MS2: Support repartitioning into unknown number of partitions");
-                };
 
-                debug_assert!(!repart_spec.by.is_empty());
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
                 RepartitionNode::new(
                     &self.stage_config,
                     node_id,
                     columns,
-                    num_partitions,
+                    repart_spec.num_partitions,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )

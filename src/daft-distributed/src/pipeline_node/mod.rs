@@ -10,7 +10,7 @@ use common_display::{
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMemoryInfo};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
@@ -110,15 +110,19 @@ pub(crate) enum PipelineOutput<T: Task> {
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,
-    // TODO: add clustering spec, may be useful for determining shuffles
-    // pub clustering_spec: ClusteringSpecRef,
+    pub clustering_spec: ClusteringSpecRef,
 }
 
 impl PipelineNodeConfig {
-    pub fn new(schema: SchemaRef, execution_config: Arc<DaftExecutionConfig>) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        execution_config: Arc<DaftExecutionConfig>,
+        clustering_spec: ClusteringSpecRef,
+    ) -> Self {
         Self {
             schema,
             execution_config,
+            clustering_spec,
         }
     }
 }

@@ -4,7 +4,7 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, TryStreamExt};
 
@@ -38,10 +38,13 @@ impl RepartitionNode {
         stage_config: &StageConfig,
         node_id: NodeID,
         columns: Vec<BoundExpr>,
-        num_partitions: usize,
+        num_partitions: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
+        let num_partitions =
+            num_partitions.unwrap_or_else(|| child.config().clustering_spec.num_partitions());
+
         let context = PipelineNodeContext::new(
             stage_config,
             node_id,
@@ -49,7 +52,18 @@ impl RepartitionNode {
             vec![child.node_id()],
             vec![child.name()],
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            Arc::new(
+                HashClusteringConfig::new(
+                    num_partitions,
+                    columns.clone().into_iter().map(|e| e.into()).collect(),
+                )
+                .into(),
+            ),
+        );
+
         Self {
             config,
             context,

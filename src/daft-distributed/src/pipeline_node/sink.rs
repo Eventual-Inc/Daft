@@ -49,7 +49,11 @@ impl SinkNode {
             vec![child.node_id()],
             vec![child.name()],
         );
-        let config = PipelineNodeConfig::new(file_schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            file_schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Self {
             config,
             context,
