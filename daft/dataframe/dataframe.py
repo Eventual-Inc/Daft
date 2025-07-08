@@ -3748,6 +3748,9 @@ class DataFrame:
         Args:
             func: Function to run per row in the dataframe
             output_schema: The new schema of the dataframe after applying the function
+        Warning:
+            This is just syntactic sugar on top of a UDF and does not benefit from executing on batches.
+            As a result, this method is much slower than using the native expression API's. Only use it if you cannot implement your logic otherwise.
 
         Examples:
             >>> import daft
