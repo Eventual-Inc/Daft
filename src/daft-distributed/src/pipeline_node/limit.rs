@@ -66,6 +66,7 @@ impl LimitNode {
 
         while let Some(materialized_output) = materialized_result_stream.next().await {
             let materialized_output = materialized_output?;
+
             for next_input in materialized_output.split_by_partitions() {
                 let num_rows = next_input.num_rows()?;
 
@@ -92,13 +93,14 @@ impl LimitNode {
                     }
                 };
                 if result_tx.send(to_send).await.is_err() {
-                    break;
+                    return Ok(());
                 }
                 if should_break {
-                    break;
+                    return Ok(());
                 }
             }
         }
+
         Ok(())
     }
 
