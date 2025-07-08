@@ -67,6 +67,12 @@ deltalake==0.19.2; platform_system != "Windows"
 databricks-sdk==0.12.0
 unitycatalog==0.1.1
 
+# mcap
+mcap==1.3.0
+mcap-ros2-support==0.5.5
+mcap-protobuf-support==0.5.3
+
+
 #SQL
 sqlalchemy==2.0.36
 connectorx==0.2.3; platform_system == "Linux" and platform_machine == "aarch64"

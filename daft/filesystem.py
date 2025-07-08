@@ -219,6 +219,7 @@ def _infer_filesystem(
             _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
             _set_if_not_none(translated_kwargs, "region", s3_config.region_name)
             _set_if_not_none(translated_kwargs, "anonymous", s3_config.anonymous)
+            _set_if_not_none(translated_kwargs, "force_virtual_addressing", s3_config.force_virtual_addressing)
             if s3_config.num_tries is not None:
                 try:
                     from pyarrow.fs import AwsStandardS3RetryStrategy
@@ -361,6 +362,56 @@ def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
         return f"{base_path.rstrip('/')}/{'/'.join(sub_paths)}"
 
 
+def normalize_storage_path(path: str, io_config: IOConfig | None = None) -> str:
+    """Normalize storage path: infer and add protocol prefix based on IO configuration.
+
+    1. Keep existing protocol paths unchanged
+    2. Add protocol prefix for protocol-less paths based on io_config
+    3. Preserve local paths as-is
+    """
+    protocol = get_protocol_from_path(path)
+    if protocol != "file":
+        return path
+
+    if io_config:
+        if io_config.s3:
+            return f"s3://{path.lstrip('/')}"
+        elif io_config.azure:
+            return f"abfs://{path.lstrip('/')}"
+        elif io_config.gcs:
+            return f"gs://{path.lstrip('/')}"
+
+    return path
+
+
+def list_files(
+    root_dir: str | pathlib.Path,
+    io_config: IOConfig | None,
+    resolved_path: str | None = None,
+    fs: pafs.FileSystem | None = None,
+) -> list[str]:
+    if resolved_path is None or fs is None:
+        [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+
+    try:
+        file_info = fs.get_file_info(resolved_path)
+        if file_info.type == pafs.FileType.File:
+            return [resolved_path]
+    except FileNotFoundError:
+        return []
+
+    selector = pafs.FileSelector(resolved_path, recursive=True)
+
+    try:
+        file_infos = fs.get_file_info(selector)
+    except NotADirectoryError:
+        return [resolved_path]
+    except FileNotFoundError:
+        return []
+
+    return [file_info.path for file_info in file_infos if file_info.type == pafs.FileType.File]
+
+
 def overwrite_files(
     written_file_paths: list[str],
     root_dir: str | pathlib.Path,
@@ -375,23 +426,13 @@ def overwrite_files(
 
         written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths)
         for dir in written_dirs:
-            file_selector = pafs.FileSelector(dir, recursive=True)
-            try:
-                all_file_paths.extend(
-                    [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-                )
-            except FileNotFoundError:
-                continue
+            all_file_paths.extend(list_files(dir, io_config, resolved_path=dir, fs=fs))
+
     else:
         # Get all files in the root directory.
-
-        file_selector = pafs.FileSelector(resolved_path, recursive=True)
-        try:
-            all_file_paths.extend(
-                [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-            )
-        except FileNotFoundError:
-            # The root directory does not exist, so there are no files to delete.
+        all_file_paths = list_files(root_dir, io_config, resolved_path=resolved_path, fs=fs)
+        if all_file_paths is None:
+            # If the root directory does not exist, there are no files to delete.
             return
 
     all_file_paths_df = MicroPartition.from_pydict({"path": all_file_paths})
