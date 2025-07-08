@@ -27,7 +27,7 @@ from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, Preview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
-from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.expressions import Expression, ExpressionsProjection, col, lit, struct
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import (
@@ -3740,6 +3740,47 @@ class DataFrame:
             total_rows=dataframe_num_rows,
         )
         return df
+
+    @DataframePublicAPI
+    def map_rows(self, func: Callable[..., Any], output_schema: Schema) -> "DataFrame":
+        """Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
+
+        Args:
+            func: Function to run per row in the dataframe
+            output_schema: The new schema of the dataframe after applying the function
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>> output_schema = daft.Schema.from_pydict({"x": daft.DataType.int64(), "y": daft.DataType.int64()})
+            >>> def f(row):
+            >>>     row["y"] = row["x"] * 2
+            >>>     return row
+            >>> df.map_rows(f, output_schema).collect()
+            ╭────────────────────────────╮
+            │ struct                     │
+            │ ---                        │
+            │ Struct[x: Int64, y: Int64] │
+            ╞════════════════════════════╡
+            │ {x: 1,                     │
+            │ y: 2,                      │
+            │ }                          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ {x: 2,                     │
+            │ y: 4,                      │
+            │ }                          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ {x: 3,                     │
+            │ y: 6,                      │
+            │ }                          │
+            ╰────────────────────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return_dtype = output_schema.to_struct_type()
+
+        return self.select(struct(*self.columns).apply(func, return_dtype))
 
 
 @dataclass
