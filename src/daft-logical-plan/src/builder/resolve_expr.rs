@@ -171,18 +171,19 @@ fn replace_element_with_column_ref(expr: ExprRef, replacement: ExprRef) -> DaftR
 
 fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
     // Functions that can support an eval/map context
-    const EVAL_FUNCTIONS: &[&str] = &["list_map"];
+    use daft_dsl::functions::ScalarUDF;
+    let eval_functions: &[&str] = &[daft_functions_list::ListMap {}.name()];
 
     expr.transform_down(|e| {
         let expr_ref = e.as_ref();
         if let Expr::ScalarFunction(sf) = expr_ref
-            && EVAL_FUNCTIONS.contains(&sf.name())
+            && eval_functions.contains(&sf.name())
         {
             // the `list` type should always be the first element
             let inputs = sf.inputs.clone();
-            let list_col = inputs
-                .first()
-                .expect("list should have at least one element");
+            let list_col = inputs.first().ok_or_else(|| {
+                DaftError::ValueError("list should have at least one element".to_string())
+            })?;
 
             let exploded = list_col.clone().explode()?;
 

@@ -11,12 +11,16 @@ struct ListMapArgs<T> {
 }
 
 #[typetag::serde]
+
 impl ScalarUDF for ListMap {
     fn name(&self) -> &'static str {
         "list_map"
     }
 
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        // Since we evaluate the children first,
+        // the `.element()...` expr is already evaluated by the time this `evaluate` is called here.
+        // So we don't really need to perform any work, but instead just put it back in to the list array
         let ListMapArgs {
             input: list_arr,
             expr: result_arr,

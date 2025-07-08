@@ -41,7 +41,7 @@ pub use bool_and::*;
 use daft_dsl::functions::FunctionModule;
 pub use series::SeriesListExtension;
 
-use crate::list_map::ListMap;
+pub use crate::list_map::ListMap;
 pub struct ListFunctions;
 
 impl FunctionModule for ListFunctions {

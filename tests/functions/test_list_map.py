@@ -38,3 +38,18 @@ def test_map_chaining():
     expected = [[8, 16, 24], [32, 40, 48, 56]]
 
     assert actual == expected
+
+
+def test_map_nested():
+    df = daft.from_pydict({"sentences": [["this is a test", "another test"]]})
+
+    words = (
+        df.select(daft.col("sentences").list.map(daft.element().str.split(" ")).alias("words"))
+        .explode("words")
+        .explode("words")
+        .to_pydict()["words"]
+    )
+
+    expected = ["this", "is", "a", "test", "another", "test"]
+
+    assert words == expected
