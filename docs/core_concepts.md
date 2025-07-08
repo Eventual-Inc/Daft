@@ -2422,6 +2422,32 @@ UDFs can also be parametrized with new resource requests after being initialized
     )
     ```
 
+### Debugging UDFs
+
+When running Daft locally, UDFs can be debugged using python's built-in debugger, [pdb](https://docs.python.org/3/library/pdb.html), by setting breakpoints in your UDF.
+
+=== "🐍 Python"
+    ``` python
+    @daft.udf(return_dtype=daft.DataType.python())
+    def my_udf(*cols):
+        breakpoint()
+        ...
+    ```
+
+If you are setting breakpoints via IDEs like VS Code, Cursor, or others that use [debugpy](https://github.com/microsoft/debugpy), you need to set `debugpy.debug_this_thread()` in the UDF. This is because `debugpy` does not automatically detect native threads.
+
+=== "🐍 Python"
+    ``` python
+    import debugpy
+
+    @daft.udf(return_dtype=daft.DataType.python())
+    def my_udf(*cols):
+        debugpy.debug_this_thread()
+        ...
+    ```
+
+
+
 ## Multimodal Data
 
 Daft is built to work comfortably with multimodal data types, including URLs and images.
