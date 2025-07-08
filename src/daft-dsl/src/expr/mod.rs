@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 
 use super::functions::FunctionExpr;
 use crate::{
+    expr::bound_expr::BoundExpr,
     functions::{
         function_display_without_formatter, function_semantic_id,
         python::PythonUDF,
@@ -203,7 +204,11 @@ impl Column {
 
 impl std::fmt::Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "col({})", self.name())
+        if let Self::Bound(BoundColumn { index, field, .. }) = self {
+            write!(f, "col({}: {})", index, field.name)
+        } else {
+            write!(f, "col({})", self.name())
+        }
     }
 }
 
@@ -2069,6 +2074,17 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     let fields = exprs
         .iter()
         .map(|e| e.to_field(&input_schema))
+        .collect::<DaftResult<Vec<_>>>()?;
+    Ok(Arc::new(Schema::new(fields)))
+}
+
+pub fn bound_exprs_to_schema(
+    exprs: &[BoundExpr],
+    input_schema: SchemaRef,
+) -> DaftResult<SchemaRef> {
+    let fields = exprs
+        .iter()
+        .map(|e| e.inner().to_field(&input_schema))
         .collect::<DaftResult<Vec<_>>>()?;
     Ok(Arc::new(Schema::new(fields)))
 }

@@ -25,7 +25,7 @@ pub struct GroupbyAggSplit {
     pub second_stage_schema: SchemaRef,
     pub second_stage_group_by: Vec<BoundExpr>,
 
-    pub final_exprs: Option<Vec<BoundExpr>>,
+    pub final_exprs: Vec<BoundExpr>,
 }
 
 pub(crate) fn split_groupby_aggs(
@@ -43,6 +43,7 @@ pub(crate) fn split_groupby_aggs(
         input_schema,
         &group_by,
     )?;
+    let second_stage_schema = Arc::new(second_stage_schema);
 
     // Generate the expression for the second stage group_by
     let second_stage_group_by = if !first_stage_aggs.is_empty() {
@@ -58,20 +59,13 @@ pub(crate) fn split_groupby_aggs(
         group_by.clone()
     };
 
-    // If the final expr is a pointless projection, remove it
-    let final_exprs = if final_exprs.len() == second_stage_aggs.len() {
-        None
-    } else {
-        Some(final_exprs)
-    };
-
     Ok(GroupbyAggSplit {
         first_stage_aggs,
         first_stage_schema: Arc::new(first_stage_schema),
         first_stage_group_by: group_by,
 
         second_stage_aggs,
-        second_stage_schema: Arc::new(second_stage_schema),
+        second_stage_schema,
         second_stage_group_by,
 
         final_exprs,

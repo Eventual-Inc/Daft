@@ -262,18 +262,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced();
 
                 // Last stage project to get the final result
-                if let Some(final_exprs) = split_details.final_exprs {
-                    ProjectNode::new(
-                        &self.stage_config,
-                        node_id,
-                        final_exprs,
-                        aggregate.output_schema.clone(),
-                        final_groupby,
-                    )
-                    .arced()
-                } else {
-                    final_groupby
-                }
+                ProjectNode::new(
+                    &self.stage_config,
+                    node_id,
+                    split_details.final_exprs,
+                    aggregate.output_schema.clone(),
+                    final_groupby,
+                )
+                .arced()
             }
             LogicalPlan::Repartition(repartition) => {
                 let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
