@@ -914,11 +914,23 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 });
                 final_stage(map_groups_col);
             }
-            AggExpr::ApproxSketch(..) => {
-                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            // Only necessary for Flotilla
+            AggExpr::ApproxSketch(expr, sketch_type) => {
+                let approx_sketch_col =
+                    first_stage!(AggExpr::ApproxSketch(expr.clone(), *sketch_type));
+                let merged_sketch_col = second_stage!(AggExpr::MergeSketch(
+                    approx_sketch_col.clone(),
+                    *sketch_type
+                ));
+                final_stage(merged_sketch_col);
             }
-            AggExpr::MergeSketch(..) => {
-                unimplemented!("User-facing merge_sketch aggregation is not implemented")
+            AggExpr::MergeSketch(expr, sketch_type) => {
+                // Merging is commutative and associative, so just keep doing it
+                let merge_sketch_col =
+                    first_stage!(AggExpr::MergeSketch(expr.clone(), *sketch_type));
+                let merged_sketch_col =
+                    second_stage!(AggExpr::MergeSketch(merge_sketch_col.clone(), *sketch_type));
+                final_stage(merged_sketch_col);
             }
         }
     }

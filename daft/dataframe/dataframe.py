@@ -3469,7 +3469,7 @@ class DataFrame:
         self.collect()
         result = self._result
         assert result is not None
-        return result.to_pydict()
+        return result.to_pydict(schema=self.schema())
 
     @DataframePublicAPI
     def to_pylist(self) -> list[Any]:

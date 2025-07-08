@@ -205,15 +205,15 @@ class MaterializedResult(Generic[PartitionT]):
 
 
 class PartitionSet(Generic[PartitionT]):
-    def _get_merged_micropartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema | None = None) -> MicroPartition:
         raise NotImplementedError()
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         raise NotImplementedError()
 
-    def to_pydict(self) -> dict[str, list[Any]]:
+    def to_pydict(self, schema: Schema | None = None) -> dict[str, list[Any]]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
-        merged_partition = self._get_merged_micropartition()
+        merged_partition = self._get_merged_micropartition(schema)
         return merged_partition.to_pydict()
 
     def to_pandas(
@@ -288,11 +288,11 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
     def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
         return sorted(self._partitions.items())
 
-    def _get_merged_micropartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema | None = None) -> MicroPartition:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        return MicroPartition.concat([part.partition() for id, part in ids_and_partitions])
+        return MicroPartition.concat([part.partition() for _, part in ids_and_partitions])
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
