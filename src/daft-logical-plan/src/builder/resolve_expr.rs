@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{any::TypeId, collections::HashSet, sync::Arc};
 
 use common_error::{ensure, DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
@@ -171,13 +171,13 @@ fn replace_element_with_column_ref(expr: ExprRef, replacement: ExprRef) -> DaftR
 
 fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
     // Functions that can support an eval/map context
-    use daft_dsl::functions::ScalarUDF;
-    let eval_functions: &[&str] = &[daft_functions_list::ListMap {}.name()];
+
+    let eval_functions: &[TypeId] = &[TypeId::of::<daft_functions_list::ListMap>()];
 
     expr.transform_down(|e| {
         let expr_ref = e.as_ref();
         if let Expr::ScalarFunction(sf) = expr_ref
-            && eval_functions.contains(&sf.name())
+            && eval_functions.contains(&sf.udf.type_id())
         {
             // the `list` type should always be the first element
             let inputs = sf.inputs.clone();
