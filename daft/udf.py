@@ -569,8 +569,7 @@ def udf(
     return _udf
 
 
-@dataclasses.dataclass
-class UDFFunction:
+class _DaftFunc:
     """`@daft.func` Decorator to convert a Python function into a `UDF`.
 
     Unlike `@daft.udf(...)`, `@daft.func` operates on single values instead of batches.
@@ -636,4 +635,4 @@ class UDFFunction:
         return _udf
 
 
-func = UDFFunction()
+func = _DaftFunc()
