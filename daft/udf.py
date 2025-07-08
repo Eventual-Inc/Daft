@@ -567,3 +567,44 @@ def udf(
         return udf
 
     return _udf
+
+
+class FuncDecorator:
+    def __init__(self) -> None:
+        self.batch = udf
+
+    def __call__(self, *, return_dtype: DataTypeLike | None = None) -> Callable[[UserDefinedPyFuncLike], UDF]:
+        def _udf(f: UserDefinedPyFuncLike) -> UDF:
+            try:
+                from typing import get_type_hints
+            except ImportError:
+                if return_dtype is None:
+                    raise ImportError("return_dtype is required when function has no return annotation")
+
+            if return_dtype is None:
+                type_hints = get_type_hints(f)
+                return_annotation = type_hints.get("return")
+                if return_annotation is None:
+                    raise ValueError("return_dtype is required when function has no return annotation")
+                inferred_return_dtype = DataType._infer_type(return_annotation)
+            else:
+                inferred_return_dtype = DataType._infer_type(return_dtype)
+
+            def batch_func(*series: Series) -> list[Any]:
+                return [f(*args) for args in zip(*series)]
+
+            name = getattr(f, "__module__", "")
+            if name:
+                name = name + "."
+            name = name + getattr(f, "__qualname__")
+
+            return UDF(
+                inner=batch_func,
+                name=name,
+                return_dtype=inferred_return_dtype,
+            )
+
+        return _udf
+
+
+func = FuncDecorator()

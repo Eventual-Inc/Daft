@@ -123,7 +123,7 @@ from daft.session import (
     detach_function,
 )
 from daft.sql import sql, sql_expr
-from daft.udf import udf
+from daft.udf import udf, func
 from daft.viz import register_viz_hook
 from daft.window import Window
 
@@ -173,6 +173,7 @@ __all__ = [
     "from_pydict",
     "from_pylist",
     "from_ray_dataset",
+    "func",
     "get_catalog",
     "get_table",
     "has_catalog",
