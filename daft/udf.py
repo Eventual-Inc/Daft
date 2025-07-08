@@ -575,6 +575,8 @@ class _DaftFunc:
     Unlike `@daft.udf(...)`, `@daft.func` operates on single values instead of batches.
 
     Examples:
+    >>> import daft
+    >>>:from daft import col
     >>> @daft.func()
     ... # or you can specify the return type like our existing daft.udf
     ... # @daft.func(return_dtype=daft.DataType.int64())
