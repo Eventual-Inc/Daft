@@ -81,16 +81,16 @@ class Series:
                 DataType from the data.
         """
         _ensure_registered_super_ext_type()
-        if DataType.from_arrow_type(array.type) == DataType.python():
+        if (dtype and dtype.is_python()) or DataType.from_arrow_type(array.type).is_python():
             # If the Arrow type is not natively supported, go through the Python list path.
-            return Series.from_pylist(array.to_pylist(), name=name, dtype=DataType.python())
+            return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
-                return series.cast(DataType.from_arrow_type(array.type))
+                return series.cast(dtype or DataType.from_arrow_type(array.type))
             else:
-                pys = PySeries.from_arrow(name, array)
+                pys = PySeries.from_arrow(name, array, dtype=dtype._dtype if dtype else None)
                 return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
             array = ensure_chunked_array(array)
@@ -100,7 +100,7 @@ class Series:
                 combined_array = arr_type.wrap_array(combined_storage_array)
             else:
                 combined_array = array.combine_chunks()
-            return Series.from_arrow(combined_array)
+            return Series.from_arrow(combined_array, dtype=dtype)
         else:
             raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 
@@ -109,14 +109,14 @@ class Series:
         data: list[Any],
         name: str = "list_series",
         dtype: DataType | None = None,
-        pyobj: Literal["allow", "disallow"] = "allow",
+        pyobj: Literal["allow", "disallow", "force"] = "allow",
     ) -> Series:
         """Construct a Series from a Python list.
 
         If `dtype` is not defined, then the resulting type depends on the setting of `pyobj`:
             - ``"allow"``: Arrow-backed types if possible, else PyObject;
             - ``"disallow"``: Arrow-backed types only, raising error if not convertible;
-        If you want to always store as PyObject types, set `dtype=daft.DataType.python()`.
+            - ``"force"``: Always store as PyObject types. Equivalent to `dtype=daft.DataType.python()`.
 
         Args:
             data: The Python list whose data we wish to put in the Series.
@@ -129,12 +129,12 @@ class Series:
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
 
-        if pyobj not in {"allow", "disallow"}:
-            raise ValueError(f"pyobj: expected either 'allow' or 'disallow', but got {pyobj})")
+        if pyobj not in {"allow", "disallow", "force"}:
+            raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
 
-        # If dtype is known, use it for casting directly
-        if dtype:
-            pys = PySeries.from_pylist(name, data, dtype=dtype._dtype)
+        # If output is Python objects, we can just use the Python list directly.
+        if (dtype and dtype == DataType.python()) or pyobj == "force":
+            pys = PySeries.from_pylist(name, data, dtype=DataType.python()._dtype)
             return Series._from_pyseries(pys)
 
         # Otherwise, try to infer from parameters provided
@@ -146,12 +146,13 @@ class Series:
                 np_arr = np.array(data)
                 arrow_array = pa.array(np_arr)
             else:
-                arrow_array = pa.array(data)
-            return Series.from_arrow(arrow_array, name=name)
+                arrow_array = pa.array(data, dtype=dtype.to_arrow_dtype() if dtype else None)
+            return Series.from_arrow(arrow_array, name=name, dtype=dtype)
         except pa.lib.ArrowInvalid:
             if pyobj == "disallow":
                 raise
-            pys = PySeries.from_pylist(name, data)
+            dtype = DataType._infer_dtype_from_pylist(data) or DataType.python()
+            pys = PySeries.from_pylist(name, data, dtype=dtype._dtype)
             return Series._from_pyseries(pys)
 
     @classmethod
@@ -251,7 +252,7 @@ class Series:
         """
         pylist = self.to_pylist()
         pylist = [typefn(val) if val is not None else None for val in pylist]
-        return Series.from_pylist(pylist, self.name(), dtype=DataType._from_pydatatype(dtype))
+        return Series.from_pylist(pylist, self.name(), pyobj="disallow", dtype=DataType._from_pydatatype(dtype))
 
     @staticmethod
     def concat(series: list[Series]) -> Series:

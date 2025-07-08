@@ -1151,16 +1151,18 @@ impl PythonArray {
                 pycast_then_arrowcast!(self, DataType::FixedSizeBinary(*size), "fixed_size_bytes")
             }
             DataType::Utf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
-            dt @ DataType::UInt8
-            | dt @ DataType::UInt16
-            | dt @ DataType::UInt32
-            | dt @ DataType::UInt64
-            | dt @ DataType::Int8
-            | dt @ DataType::Int16
-            | dt @ DataType::Int32
-            | dt @ DataType::Int64 => pycast_then_arrowcast!(self, dt, "int"),
+            dt @ (DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64) => {
+                pycast_then_arrowcast!(self, dt, "int")
+            }
             // DataType::Float16 => todo!(),
-            dt @ DataType::Float32 | dt @ DataType::Float64 => {
+            dt @ (DataType::Float32 | DataType::Float64) => {
                 pycast_then_arrowcast!(self, dt, "float")
             }
             DataType::List(child_dtype) => {

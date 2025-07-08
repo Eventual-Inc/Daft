@@ -5,12 +5,10 @@ from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
-from daft.dependencies import pa
+from daft.dependencies import np, pa, pil_image
 
 if TYPE_CHECKING:
     import builtins
-
-    import numpy as np
 
 
 class TimeUnit:
@@ -97,6 +95,46 @@ class DataType:
             "We do not support creating a DataType via __init__ "
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
+
+    @staticmethod
+    def _infer_dtype_from_pylist(data: list[Any]) -> DataType | None:
+        curr_dtype = None
+
+        for item in data:
+            if item is None:
+                continue
+
+            elif pil_image.module_available() and isinstance(item, pil_image.Image):
+                item_dtype = DataType.image(item.mode)
+                if curr_dtype is None:
+                    curr_dtype = item_dtype
+                elif not curr_dtype.is_image():
+                    return None
+                elif curr_dtype.image_mode and curr_dtype.image_mode != item_dtype.image_mode:
+                    curr_dtype = DataType.image()
+                else:
+                    assert curr_dtype.image_mode == item_dtype.image_mode or curr_dtype.image_mode is None
+                    pass
+
+            elif np.module_available() and isinstance(item, (np.ndarray, np.generic)):  # type: ignore[attr-defined]
+                inner_dtype = DataType.from_numpy_dtype(item.dtype)
+                shape = item.shape
+
+                if len(shape) == 0:
+                    return None
+                item_dtype = DataType.list(inner_dtype) if len(shape) == 1 else DataType.tensor(inner_dtype, shape)
+
+                if curr_dtype is None:
+                    curr_dtype = item_dtype
+                elif curr_dtype != item_dtype:
+                    return None
+                else:
+                    pass
+
+            else:
+                return None
+
+        return curr_dtype
 
     @classmethod
     def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
