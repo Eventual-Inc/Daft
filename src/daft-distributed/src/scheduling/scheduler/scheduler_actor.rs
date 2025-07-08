@@ -157,7 +157,7 @@ where
                 // Report to statistics manager
                 for task in &scheduled_tasks {
                     let task_context = task.task().task_context();
-                    statistics_manager.handle_event(StatisticsEvent::ScheduledTask {
+                    statistics_manager.handle_event(StatisticsEvent::TaskScheduled {
                         context: task_context,
                     })?;
                 }

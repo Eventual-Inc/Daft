@@ -53,7 +53,7 @@ pub(crate) enum StatisticsEvent {
         name: TaskName,
     },
     #[allow(dead_code)]
-    ScheduledTask {
+    TaskScheduled {
         context: TaskContext,
     },
     TaskCompleted {
@@ -89,7 +89,7 @@ impl StatisticsEvent {
             Self::PlanStarted { plan_id } => *plan_id,
             Self::PlanFinished { plan_id } => *plan_id,
             Self::TaskSubmitted { context, .. } => context.plan_id,
-            Self::ScheduledTask { context } => context.plan_id,
+            Self::TaskScheduled { context } => context.plan_id,
             Self::TaskCompleted { context } => context.plan_id,
             Self::TaskStarted { context } => context.plan_id,
             Self::TaskFailed { context, .. } => context.plan_id,
