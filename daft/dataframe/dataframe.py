@@ -3754,8 +3754,8 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>> output_schema = daft.Schema.from_pydict({"x": daft.DataType.int64(), "y": daft.DataType.int64()})
             >>> def f(row):
-            >>>     row["y"] = row["x"] * 2
-            >>>     return row
+            ...     row["y"] = row["x"] * 2
+            ...     return row
             >>> df.map_rows(f, output_schema).collect()
             ╭───────┬───────╮
             │ x     ┆ y     │
