@@ -43,6 +43,8 @@ mod repartition;
 mod sample;
 mod scan_source;
 mod sink;
+mod sort;
+mod top_n;
 mod translate;
 mod unpivot;
 mod window;

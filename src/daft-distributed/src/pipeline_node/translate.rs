@@ -19,8 +19,8 @@ use crate::{
         distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode, gather::GatherNode,
         hash_join::HashJoinNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
         project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
-        DistributedPipelineNode, NodeID,
+        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode,
+        unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -392,11 +392,72 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Sort(_) => {
-                todo!("FLOTILLA_MS3: Implement Sort")
+            LogicalPlan::Sort(sort) => {
+                let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
+
+                // First stage: Gather all data to a single node
+                let gather = GatherNode::new(
+                    &self.stage_config,
+                    node_id,
+                    logical_node_id,
+                    sort.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced();
+
+                // Second stage: Perform a local sort
+                SortNode::new(
+                    &self.stage_config,
+                    node_id,
+                    logical_node_id,
+                    sort_by,
+                    sort.descending.clone(),
+                    sort.nulls_first.clone(),
+                    sort.input.schema(),
+                    gather,
+                )
+                .arced()
             }
-            LogicalPlan::TopN(_) => {
-                todo!("FLOTILLA_MS3: Implement TopN")
+            LogicalPlan::TopN(top_n) => {
+                let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
+
+                // First stage: Perform a local topN
+                let local_topn = TopNNode::new(
+                    &self.stage_config,
+                    node_id,
+                    logical_node_id,
+                    sort_by.clone(),
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced();
+
+                // Second stage: Gather all data to a single node
+                let gather = GatherNode::new(
+                    &self.stage_config,
+                    node_id,
+                    logical_node_id,
+                    top_n.input.schema(),
+                    local_topn,
+                )
+                .arced();
+
+                // Final stage: Do another topN to get the final result
+                TopNNode::new(
+                    &self.stage_config,
+                    node_id,
+                    logical_node_id,
+                    sort_by,
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    gather,
+                )
+                .arced()
             }
             LogicalPlan::Pivot(_) => {
                 todo!("FLOTILLA_MS3: Implement Pivot")
