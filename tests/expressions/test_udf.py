@@ -6,6 +6,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
@@ -472,10 +473,6 @@ def test_udf_empty(batch_size, use_actor_pool):
     assert result.to_pydict() == {"a": []}
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() not in {"native", "ray"},
-    reason="requires Native or Ray Runner to be in use",
-)
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 def test_udf_with_error(use_actor_pool):
     import re
@@ -500,3 +497,105 @@ def test_udf_with_error(use_actor_pool):
         r"- b \(Utf8, length=3\)$"
     )
     assert re.search(pattern, str(exc_info.value)), f"String doesn't end with expected pattern: {exc_info.value!s}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray"
+    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    reason="requires Flotilla to be in use",
+)
+@pytest.mark.parametrize("use_actor_pool", [True, False])
+def test_udf_retry_with_process_killed_ray(use_actor_pool):
+    import os
+
+    import ray
+
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+
+    @ray.remote
+    class HasFailedAlready:
+        def __init__(self):
+            self.has_failed = False
+
+        def should_fail(self) -> bool:
+            if self.has_failed:
+                return False
+            self.has_failed = True
+            return True
+
+    @udf(return_dtype=DataType.int64())
+    def random_exit_udf(a, b, has_failed_already: HasFailedAlready):
+        if ray.get(has_failed_already.should_fail.remote()):
+            os._exit(0)
+        return a
+
+    if use_actor_pool:
+        random_exit_udf = random_exit_udf.with_concurrency(1)
+
+    expr = random_exit_udf(col("a"), col("b"), HasFailedAlready.remote())
+    df = df.select(expr)
+    df.collect()
+
+
+def test_non_batched_udf():
+    @daft.func()
+    def my_stringify_and_sum(a: int, b: int) -> str:
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    actual = df.select(my_stringify_and_sum(col("x"), col("y"))).to_pydict()
+
+    expected = {"x": ["5", "7", "9"]}
+
+    assert actual == expected
+
+
+def test_non_batched_udf_alternative_signature():
+    @daft.func
+    def my_stringify_and_sum(a: int, b: int) -> str:
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    actual = df.select(my_stringify_and_sum(col("x"), col("y"))).to_pydict()
+
+    expected = {"x": ["5", "7", "9"]}
+
+    assert actual == expected
+
+
+def test_non_batched_udf_should_infer_dtype_from_function():
+    @daft.func()
+    def list_string_return_type(a: int, b: int) -> list[str]:
+        return [f"{a + b}"]
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    df = df.select(list_string_return_type(col("x"), col("y")))
+
+    schema = df.schema()
+    expected_schema = daft.Schema.from_pydict({"x": daft.DataType.list(daft.DataType.string())})
+
+    assert schema == expected_schema
+
+
+def test_func_requires_return_dtype_when_no_annotation():
+    with pytest.raises(ValueError, match="return_dtype is required when function has no return annotation"):
+
+        @daft.func()
+        def my_func(a: int, b: int):
+            return f"{a + b}"
+
+
+def test_func_batch_same_as_udf():
+    @daft.func.batch(return_dtype=int)
+    def my_batch_sum(a, b):
+        return a + b
+
+    @daft.udf(return_dtype=int)
+    def my_udf(a, b):
+        return a + b
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    using_batch = df.select(my_batch_sum(col("x"), col("y"))).to_pydict()
+    using_udf = df.select(my_udf(col("x"), col("y"))).to_pydict()
+
+    assert using_batch == using_udf

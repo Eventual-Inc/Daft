@@ -4,16 +4,16 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{stats::StatsState, ClusteringSpec, InMemoryInfo};
 
 use super::{DistributedPipelineNode, PipelineNodeContext, PipelineOutput, RunningPipelineNode};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig},
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask},
+        task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext},
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{create_channel, Sender},
 };
 
@@ -32,11 +32,24 @@ impl InMemorySourceNode {
         node_id: NodeID,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
-        let context =
-            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
-        let config =
-            PipelineNodeConfig::new(info.source_schema.clone(), stage_config.config.clone());
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![],
+            vec![],
+            logical_node_id,
+        );
+
+        let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
+
+        let config = PipelineNodeConfig::new(
+            info.source_schema.clone(),
+            stage_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_partitions)),
+        );
         Self {
             config,
             context,
@@ -52,11 +65,15 @@ impl InMemorySourceNode {
     async fn execution_loop(
         self: Arc<Self>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let partition_refs = self.input_psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
 
         for partition_ref in partition_refs {
-            let task = self.make_task_for_partition_refs(vec![partition_ref])?;
+            let task = self.make_task_for_partition_refs(
+                vec![partition_ref],
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )?;
             if result_tx
                 .send(PipelineOutput::Task(SubmittableTask::new(task)))
                 .await
@@ -71,6 +88,7 @@ impl InMemorySourceNode {
     fn make_task_for_partition_refs(
         &self,
         partition_refs: Vec<PartitionRef>,
+        task_context: TaskContext,
     ) -> DaftResult<SwordfishTask> {
         let mut total_size_bytes = 0;
         let mut total_num_rows = 0;
@@ -92,6 +110,7 @@ impl InMemorySourceNode {
             LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
         let task = SwordfishTask::new(
+            task_context,
             in_memory_source_plan,
             self.config.execution_config.clone(),
             psets,
@@ -99,7 +118,6 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }
@@ -131,8 +149,8 @@ impl DistributedPipelineNode for InMemorySourceNode {
 
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx);
-        stage_context.joinset.spawn(execution_loop);
+        let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
+        stage_context.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }

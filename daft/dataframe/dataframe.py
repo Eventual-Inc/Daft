@@ -16,15 +16,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Literal,
-    Optional,
-    TypeVar,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union, overload
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -282,7 +274,7 @@ class DataFrame:
             if get_context().get_or_create_runner().name != "native":
                 # Check if flotilla is enabled for distributed execution
                 daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.flotilla:
+                if daft_execution_config.use_experimental_distributed_engine:
                     try:
                         from daft.daft import DistributedPhysicalPlan
 
@@ -824,6 +816,75 @@ class DataFrame:
             )
 
     @DataframePublicAPI
+    def write_json(
+        self,
+        root_dir: Union[str, pathlib.Path],
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        partition_cols: Optional[list[ColumnInputType]] = None,
+        io_config: Optional[IOConfig] = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
+
+        Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
+
+        Args:
+            root_dir (str): root file path to write JSON files to.
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+
+        Returns:
+            DataFrame: The filenames that were written out as strings.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
+
+        !!! Currently only supported with the Native runner!
+        """
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        cols: Optional[list[Expression]] = None
+        if partition_cols is not None:
+            cols = self.__column_input_to_expression(tuple(partition_cols))
+
+        builder = self._builder.write_tabular(
+            root_dir=root_dir,
+            partition_cols=cols,
+            write_mode=WriteMode.from_str(write_mode),
+            file_format=FileFormat.Json,
+            io_config=io_config,
+        )
+        # Block and write, then retrieve data
+        write_df = DataFrame(builder)
+        write_df.collect()
+        assert write_df._result is not None
+
+        if len(write_df) > 0:
+            # Populate and return a new disconnected DataFrame
+            result_df = DataFrame(write_df._builder)
+            result_df._result_cache = write_df._result_cache
+            result_df._preview = write_df._preview
+            return result_df
+        else:
+            from daft import from_pydict
+            from daft.recordbatch.recordbatch_io import write_empty_tabular
+
+            file_path = write_empty_tabular(root_dir, FileFormat.Json, self.schema(), io_config=io_config)
+
+            return from_pydict(
+                {
+                    "path": [file_path],
+                }
+            )
+
+    @DataframePublicAPI
     def write_iceberg(
         self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
     ) -> "DataFrame":
@@ -847,7 +908,7 @@ class DataFrame:
         import pyiceberg
         from packaging.version import parse
 
-        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
+        from daft.io.iceberg._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -1024,7 +1085,7 @@ class DataFrame:
         from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
-        from daft.io._deltalake import large_dtypes_kwargs
+        from daft.io.delta_lake._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         def _create_metadata_param(metadata: Optional[dict[str, str]]) -> Any:
@@ -1239,6 +1300,7 @@ class DataFrame:
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
+        schema: Optional[Schema] = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1294,9 +1356,11 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        from daft.dataframe.lance_data_sink import LanceDataSink
+        from daft.io.lance.lance_data_sink import LanceDataSink
 
-        sink = LanceDataSink(uri, self.schema(), mode, io_config, **kwargs)
+        if schema is None:
+            schema = self.schema()
+        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
         return self.write_sink(sink)
 
     ###
@@ -1312,7 +1376,18 @@ class DataFrame:
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
         return column_inputs_to_expressions(column_input)
 
-    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
+    if TYPE_CHECKING:
+
+        @overload
+        def __getitem__(self, item: int) -> Expression: ...
+        @overload
+        def __getitem__(self, item: str) -> Expression: ...
+        @overload
+        def __getitem__(self, item: slice) -> "DataFrame": ...
+        @overload
+        def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
+
+    def __getitem__(self, item: Union[int, str, slice, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)."""
         result: Optional[Expression]
 
@@ -1957,15 +2032,13 @@ class DataFrame:
 
         Args:
             num (int): maximum rows to allow.
-            eager (bool): whether to maximize for latency (time to first result) by eagerly executing
-                only one partition at a time, or throughput by executing multiple limits at a time
 
         Returns:
             DataFrame: Limited DataFrame
 
         Examples:
             >>> import daft
-            >>> df = df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
             >>> df_limited = df.limit(5)  # returns 5 rows
             >>> df_limited.show()
             ╭───────╮
@@ -3680,7 +3753,18 @@ class GroupedDataFrame:
             if field.dtype == DataType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
-    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, DataFrame]:
+    if TYPE_CHECKING:
+
+        @overload
+        def __getitem__(self, item: int) -> Expression: ...
+        @overload
+        def __getitem__(self, item: str) -> Expression: ...
+        @overload
+        def __getitem__(self, item: slice) -> DataFrame: ...
+        @overload
+        def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
+
+    def __getitem__(self, item: Union[int, str, slice, Iterable[Union[str, int]]]) -> Union[Expression, DataFrame]:
         """Gets a column from the DataFrame as an Expression."""
         return self.df.__getitem__(item)
 

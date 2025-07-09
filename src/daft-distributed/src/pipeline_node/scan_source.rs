@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::SchemaRef;
 
 use super::{
@@ -16,9 +16,9 @@ use crate::{
     pipeline_node::NodeID,
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask},
+        task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext},
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{create_channel, Sender},
 };
 
@@ -38,10 +38,23 @@ impl ScanSourceNode {
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
-        let context =
-            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![],
+            vec![],
+            logical_node_id,
+        );
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(
+                scan_tasks.len(),
+            )),
+        );
         Self {
             config,
             context,
@@ -57,18 +70,22 @@ impl ScanSourceNode {
     async fn execution_loop(
         self: Arc<Self>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
-            let empty_scan_task = self.make_empty_scan_task()?;
+            let empty_scan_task = self
+                .make_empty_scan_task(TaskContext::from((&self.context, task_id_counter.next())))?;
             let _ = result_tx
                 .send(PipelineOutput::Task(SubmittableTask::new(empty_scan_task)))
                 .await;
             return Ok(());
         }
 
-        let max_sources_per_scan_task = self.config.execution_config.max_sources_per_scan_task;
-        for scan_tasks in self.scan_tasks.chunks(max_sources_per_scan_task) {
-            let task = self.make_source_tasks(scan_tasks.to_vec().into())?;
+        for scan_task in self.scan_tasks.iter() {
+            let task = self.make_source_tasks(
+                vec![scan_task.clone()].into(),
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )?;
             if result_tx
                 .send(PipelineOutput::Task(SubmittableTask::new(task)))
                 .await
@@ -84,6 +101,7 @@ impl ScanSourceNode {
     fn make_source_tasks(
         &self,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        task_context: TaskContext,
     ) -> DaftResult<SwordfishTask> {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             scan_tasks.clone(),
@@ -93,26 +111,26 @@ impl ScanSourceNode {
         );
 
         let task = SwordfishTask::new(
+            task_context,
             physical_scan,
             self.config.execution_config.clone(),
             Default::default(),
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }
 
-    fn make_empty_scan_task(&self) -> DaftResult<SwordfishTask> {
+    fn make_empty_scan_task(&self, task_context: TaskContext) -> DaftResult<SwordfishTask> {
         let transformed_plan = LocalPhysicalPlan::empty_scan(self.config.schema.clone());
         let psets = HashMap::new();
         let task = SwordfishTask::new(
+            task_context,
             transformed_plan,
             self.config.execution_config.clone(),
             psets,
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }
@@ -133,8 +151,8 @@ impl DistributedPipelineNode for ScanSourceNode {
 
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx);
-        stage_context.joinset.spawn(execution_loop);
+        let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
+        stage_context.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }

@@ -258,17 +258,17 @@ daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
-derivative = "2.2.0"
 derive_builder = "0.20.2"
+educe = "0.6.0"
 futures = "0.3.30"
 html-escape = "0.2.13"
-indexmap = "2.1.0"
-itertools = "0.11"
+indexmap = "2.9.0"
+itertools = "0.14"
 jaq-core = "2.2.0"
 jaq-json = {version = "1.1.2", features = ["serde_json"]}
 jaq-std = "2.1.1"
 mur3 = "0.1.0"
-num-derive = "0.3.3"
+num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 opentelemetry = {version = "0.29", features = ["trace", "metrics"]}
@@ -294,8 +294,8 @@ sqlparser = "0.51.0"
 sysinfo = "0.32.0"
 tango-bench = "0.6.0"
 test-log = "0.2.16"
-thiserror = "1.0.63"
-tiktoken-rs = "0.5.9"
+thiserror = "2.0.12"
+tiktoken-rs = "0.7.0"
 tokio = {version = "1.37.0", features = [
   "net",
   "time",
@@ -310,11 +310,11 @@ tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
 tonic = "0.12.3"
 tonic-build = "0.12.3"
-tracing = "0.1"
+tracing = {version = "0.1", features = ["log"]}
 typed-builder = "0.20.0"
 typetag = "0.2.18"
 url = "2.4.0"
-uuid = {version = "1.10.0", features = ["v4"]}
+uuid = {version = "1.17.0", features = ["v4"]}
 xxhash-rust = "0.8.12"
 
 [workspace.dependencies.arrow2]
@@ -325,8 +325,8 @@ path = "src/arrow2"
 version = "1.3.3"
 
 [workspace.dependencies.derive_more]
-features = ["display", "from", "constructor"]
-version = "1.0.0"
+features = ["display", "from"]
+version = "2.0.1"
 
 [workspace.dependencies.log]
 features = ["std"]
@@ -343,11 +343,11 @@ path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono"]
-version = "0.23.3"
+version = "0.25.1"
 
 [workspace.dependencies.pyo3-async-runtimes]
 features = ["attributes", "tokio-runtime"]
-version = "0.23"
+version = "0.25"
 
 [workspace.dependencies.pyo3-log]
 version = "0.12.1"

@@ -19,11 +19,11 @@ impl ScalarUDF for Capitalize {
     fn name(&self) -> &'static str {
         "capitalize"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, capitalize_impl)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

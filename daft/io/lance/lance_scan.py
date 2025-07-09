@@ -4,73 +4,29 @@
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Optional
 
-from daft import context
-from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
-from daft.dataframe import DataFrame
-from daft.io.object_store_options import io_config_to_storage_options
+from daft.daft import PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
 from daft.io.scan import ScanOperator
-from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     import lance
+    import pyarrow
 
 
+# TODO support fts and fast_search
 def _lancedb_table_factory_function(
-    ds: "lance.LanceDataset", fragment_id: int, required_columns: Optional[list[str]]
+    ds: "lance.LanceDataset",
+    fragment_ids: Optional[list[int]] = None,
+    required_columns: Optional[list[str]] = None,
+    filter: Optional["pyarrow.compute.Expression"] = None,
+    limit: Optional[int] = None,
 ) -> Iterator[PyRecordBatch]:
-    fragment = ds.get_fragment(fragment_id)
-    assert fragment is not None, RuntimeError(f"Unable to find lance fragment {fragment_id}")
-    return (
-        RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
-        for rb in fragment.to_batches(columns=required_columns)
-    )
-
-
-@PublicAPI
-def read_lance(url: str, io_config: Optional[IOConfig] = None) -> DataFrame:
-    """Create a DataFrame from a LanceDB table.
-
-    Args:
-        url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
-        io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
-
-    Returns:
-        DataFrame: a DataFrame with the schema converted from the specified LanceDB table
-
-    Note:
-        This function requires the use of [LanceDB](https://lancedb.github.io/lancedb/), which is the Python library for the LanceDB project.
-        To ensure that this is installed with Daft, you may install: `pip install daft[lance]`
-
-    Examples:
-        Read a local LanceDB table:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
-        >>> df.show()
-
-        Read a LanceDB table from a public S3 bucket:
-        >>> from daft.io import S3Config
-        >>> s3_config = S3Config(region="us-west-2", anonymous=True)
-        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
-        >>> df.show()
-    """
-    try:
-        import lance
-    except ImportError as e:
-        raise ImportError(
-            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
-        ) from e
-
-    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, url)
-
-    ds = lance.dataset(url, storage_options=storage_options)
-    iceberg_operator = LanceDBScanOperator(ds)
-
-    handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
-    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
-    return DataFrame(builder)
+    fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
+    if not fragments:
+        raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
+    scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
+    return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
 
 
 class LanceDBScanOperator(ScanOperator):
@@ -118,8 +74,8 @@ class LanceDBScanOperator(ScanOperator):
 
         # TODO: figure out how to translate Pushdowns into LanceDB filters
         filters = None
-        fragments = self._ds.get_fragments(filter=filters)
-        for i, fragment in enumerate(fragments):
+        fragments = self._ds.get_fragments()
+        for fragment in fragments:
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
             size_bytes = None
             stats = None
@@ -135,7 +91,7 @@ class LanceDBScanOperator(ScanOperator):
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
                 func_name=_lancedb_table_factory_function.__name__,
-                func_args=(self._ds, fragment.fragment_id, required_columns),
+                func_args=(self._ds, [fragment.fragment_id], required_columns, filters, pushdowns.limit),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
                 size_bytes=size_bytes,

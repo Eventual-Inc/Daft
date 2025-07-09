@@ -39,7 +39,7 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
-spark = ["googleapis-common-protos == 1.56.4", "grpcio >= 1.48, < 1.57", "grpcio-status >= 1.48, < 1.57", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark"]
+spark = ["googleapis-common-protos == 1.56.4", "grpcio >= 1.48, < 1.57", "grpcio-status >= 1.48, < 1.57", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 unity = ["httpx <= 0.27.2", "unitycatalog"]
 viz = []

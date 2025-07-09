@@ -13,7 +13,8 @@ use tracing::{instrument, Span};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
+        BlockingSinkSinkResult, BlockingSinkState,
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
@@ -25,6 +26,7 @@ struct WindowPartitionAndOrderByParams {
     partition_by: Vec<BoundExpr>,
     order_by: Vec<BoundExpr>,
     descending: Vec<bool>,
+    nulls_first: Vec<bool>,
     original_schema: SchemaRef,
 }
 
@@ -53,6 +55,7 @@ impl WindowPartitionAndOrderBySink {
         partition_by: &[BoundExpr],
         order_by: &[BoundExpr],
         descending: &[bool],
+        nulls_first: &[bool],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
         Ok(Self {
@@ -62,6 +65,7 @@ impl WindowPartitionAndOrderBySink {
                 partition_by: partition_by.to_vec(),
                 order_by: order_by.to_vec(),
                 descending: descending.to_vec(),
+                nulls_first: nulls_first.to_vec(),
                 original_schema: schema.clone(),
             }),
         })
@@ -160,11 +164,11 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 .collect::<Vec<_>>();
 
                             for partition in &mut partitions {
-                                // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
+                                // Sort the partition by the order_by columns
                                 *partition = partition.sort(
                                     &params.order_by,
                                     &params.descending,
-                                    &params.descending,
+                                    &params.nulls_first,
                                 )?;
 
                                 for (window_expr, name) in
@@ -230,7 +234,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                            empty_result,
+                        ))));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -238,7 +244,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         results.into(),
                         None,
                     );
-                    Ok(Some(Arc::new(final_result)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                        final_result,
+                    ))))
                 },
                 Span::current(),
             )
@@ -273,7 +281,13 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                 .order_by
                 .iter()
                 .zip(self.window_partition_and_order_by_params.descending.iter())
-                .map(|(e, d)| format!("{} {}", e, if *d { "desc" } else { "asc" }))
+                .zip(self.window_partition_and_order_by_params.nulls_first.iter())
+                .map(|((e, d), n)| format!(
+                    "{} {} {}",
+                    e,
+                    if *d { "desc" } else { "asc" },
+                    if *n { "nulls first" } else { "nulls last" }
+                ))
                 .join(", ")
         ));
         display

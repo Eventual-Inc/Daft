@@ -8,7 +8,7 @@ use daft_dsl::{
     binary_op,
     expr::window::{WindowBoundary, WindowFrame},
     functions::{FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
-    Expr, ExprRef, Operator, WindowExpr, WindowSpec,
+    unresolved_col, Expr, ExprRef, Operator, WindowExpr, WindowSpec,
 };
 use daft_session::Session;
 use sqlparser::ast::{
@@ -26,6 +26,13 @@ use crate::{
     planner::SQLPlanner,
     unsupported_sql_err,
 };
+pub struct SQLElement;
+
+impl SQLFunction for SQLElement {
+    fn to_expr(&self, _: &[FunctionArg], _: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        Ok(unresolved_col(""))
+    }
+}
 pub struct SQLConcat;
 
 impl SQLFunction for SQLConcat {
@@ -67,6 +74,7 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
     functions.add_fn("concat", SQLConcat);
+    functions.add_fn("element", SQLElement);
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
         // Note:
         //  FunctionModule came from SQLModule, but SQLModule still remains.
@@ -474,6 +482,11 @@ impl SQLPlanner<'_> {
                         window_spec
                             .descending
                             .push(order.asc.is_some_and(|asc| !asc));
+                        window_spec.nulls_first.push(
+                            order
+                                .nulls_first
+                                .unwrap_or_else(|| order.asc.is_some_and(|asc| !asc)),
+                        );
                     }
                 }
 

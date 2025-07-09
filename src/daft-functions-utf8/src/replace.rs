@@ -24,19 +24,19 @@ impl ScalarUDF for RegexpReplace {
     fn name(&self) -> &'static str {
         "regexp_replace"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;
         series_replace(input, pattern, replacement, true)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        function_args_to_field_impl(inputs, schema)
+        get_return_field_impl(inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -52,19 +52,19 @@ impl ScalarUDF for Replace {
     fn name(&self) -> &'static str {
         "replace"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;
         series_replace(input, pattern, replacement, false)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        function_args_to_field_impl(inputs, schema)
+        get_return_field_impl(inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -89,10 +89,7 @@ pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bo
     .into()
 }
 
-fn function_args_to_field_impl(
-    inputs: FunctionArgs<ExprRef>,
-    schema: &Schema,
-) -> DaftResult<Field> {
+fn get_return_field_impl(inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
     ensure!(inputs.len() == 3, "Replace expects 3 arguments");
     let input = inputs.required((0, "input"))?.to_field(schema)?;
     let pattern = inputs.required((1, "pattern"))?.to_field(schema)?;

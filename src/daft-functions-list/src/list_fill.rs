@@ -14,50 +14,43 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListFill;
 
+#[derive(FunctionArgs)]
+struct Args<T> {
+    input: T,
+    elem: T,
+}
+
 #[typetag::serde]
 impl ScalarUDF for ListFill {
     fn name(&self) -> &'static str {
         "list_fill"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        match inputs.as_slice() {
-            [num, elem] => {
-                let num = num.cast(&DataType::Int64)?;
-                let num_array = num.i64()?;
-                elem.list_fill(num_array)
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let Args { input: num, elem } = inputs.try_into()?;
+
+        let num = num.cast(&DataType::Int64)?;
+        let num_array = num.i64()?;
+        elem.list_fill(num_array)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let inputs = inputs.into_inner();
-        match inputs.as_slice() {
-            [n, elem] => {
-                let num_field = n.to_field(schema)?;
-                let elem_field = elem.to_field(schema)?;
-                if !num_field.dtype.is_integer() {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected num field to be of numeric type, received: {}",
-                        num_field.dtype
-                    )));
-                }
-                elem_field.to_list_field()
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
+        let Args { input: n, elem } = inputs.try_into()?;
+
+        let num_field = n.to_field(schema)?;
+        let elem_field = elem.to_field(schema)?;
+
+        if !num_field.dtype.is_integer() {
+            return Err(DaftError::TypeError(format!(
+                "Expected num field to be of numeric type, received: {}",
+                num_field.dtype
+            )));
         }
+        elem_field.to_list_field()
     }
 }
 
@@ -92,15 +85,8 @@ mod tests {
         ]);
 
         let fill = ListFill {};
-        let DaftError::SchemaMismatch(e) =
-            fill.to_field(&[col0_null.clone()], &schema).unwrap_err()
-        else {
-            panic!("Expected SchemaMismatch error");
-        };
-        assert_eq!(e, "Expected 2 input args, got 1");
-        let DaftError::TypeError(e) = fill
-            .to_field(&[col0_null.clone(), col1_str.clone()], &schema)
-            .unwrap_err()
+        let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
+        let DaftError::TypeError(e) = dbg!(fill.get_return_field(args, &schema).unwrap_err())
         else {
             panic!("Expected TypeError error");
         };
@@ -108,15 +94,23 @@ mod tests {
             e,
             "Expected num field to be of numeric type, received: Null"
         );
+        let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
+        let DaftError::TypeError(e) = fill.get_return_field(args, &schema).unwrap_err() else {
+            panic!("Expected TypeError error");
+        };
+        assert_eq!(
+            e,
+            "Expected num field to be of numeric type, received: Null"
+        );
 
-        let list_of_null = fill
-            .to_field(&[col0_num.clone(), col1_null.clone()], &schema)
-            .unwrap();
+        let args = FunctionArgs::new_unnamed(vec![col0_num.clone(), col1_null.clone()]);
+
+        let list_of_null = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Null)));
         assert_eq!(list_of_null, expected);
-        let list_of_str = fill
-            .to_field(&[col0_num.clone(), col1_str.clone()], &schema)
-            .unwrap();
+        let args = FunctionArgs::new_unnamed(vec![col0_num.clone(), col1_str.clone()]);
+
+        let list_of_str = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Utf8)));
         assert_eq!(list_of_str, expected);
     }
@@ -130,10 +124,12 @@ mod tests {
         )
         .into_series();
 
-        let error = fill.evaluate_from_series(&[num.clone()]).unwrap_err();
+        let args = FunctionArgs::new_unnamed(vec![num.clone()]);
+
+        let error = fill.call(args).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "DaftError::ValueError Expected 2 input args, got 1"
+            "DaftError::ValueError Required argument `elem` not found"
         );
     }
 
@@ -147,10 +143,9 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            fill.evaluate_from_series(&[num.clone(), str.clone()])
-                .unwrap()
-        }));
+        let args = FunctionArgs::new_unnamed(vec![num.clone(), str.clone()]);
+        let error =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fill.call(args).unwrap()));
         assert!(error.is_err());
     }
 
@@ -164,7 +159,8 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let result = fill.evaluate_from_series(&[num.clone(), str.clone()])?;
+        let args = FunctionArgs::new_unnamed(vec![num.clone(), str.clone()]);
+        let result = fill.call(args)?;
         // the expected result should be a list of strings: [[None], [], ["world", "world", "world"]]
         let flat_child = Utf8Array::from_iter(
             "s2",

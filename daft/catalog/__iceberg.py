@@ -11,7 +11,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.table import Table as InnerTable
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
-from daft.io._iceberg import read_iceberg
+from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame

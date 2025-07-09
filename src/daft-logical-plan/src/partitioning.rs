@@ -156,6 +156,10 @@ impl ClusteringSpec {
     pub fn unknown() -> Self {
         Self::Unknown(UnknownClusteringConfig::new(0))
     }
+
+    pub fn unknown_with_num_partitions(num_partitions: usize) -> Self {
+        Self::Unknown(UnknownClusteringConfig::new(num_partitions))
+    }
 }
 
 pub fn translate_clustering_spec(

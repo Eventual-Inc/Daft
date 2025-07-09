@@ -22,6 +22,8 @@ Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 * `About Daft`_
 * `Getting Started`_
 * `Benchmarks`_
+* `Contributing`_
+* `Telemetry`_
 * `Related Projects`_
 * `License`_
 
@@ -89,18 +91,16 @@ More Resources
 Contributing
 ------------
 
-To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_
+We <3 developers! To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_ This document describes the development lifecycle and toolchain for working on Daft. It also details how to add new functionality to the core engine and expose it through a Python API.
 
 Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22>`_ to get yourself warmed up with Daft. Comment in the issue to pick it up, and feel free to ask any questions!
 
 Telemetry
 ---------
 
-To help improve Daft, we collect non-identifiable data via our own analytics as well as Scarf (https://scarf.sh).
+To help improve Daft, we collect non-identifiable data via Scarf (https://scarf.sh).
 
-To disable this behavior, set the following environment variables:
-- ``DAFT_ANALYTICS_ENABLED=0``
-- ``SCARF_NO_ANALYTICS=true`` or ``DO_NOT_TRACK=true``
+To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``.
 
 The data that we collect is:
 

@@ -8,13 +8,16 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::{
-    make_new_task_from_materialized_output, DistributedPipelineNode, PipelineOutput,
+    make_new_task_from_materialized_outputs, DistributedPipelineNode, PipelineOutput,
     RunningPipelineNode,
 };
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
-    stage::{StageConfig, StageExecutionContext},
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, TaskContext},
+    },
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{create_channel, Sender},
 };
 
@@ -34,15 +37,21 @@ impl LimitNode {
         limit: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
             node_id,
             Self::NODE_NAME,
-            vec![*child.node_id()],
+            vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Self {
             config,
             context,
@@ -56,42 +65,48 @@ impl LimitNode {
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
+        task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let mut remaining_limit = self.limit;
         let mut materialized_result_stream = input.materialize(scheduler_handle.clone());
 
         while let Some(materialized_output) = materialized_result_stream.next().await {
             let materialized_output = materialized_output?;
-            let num_rows = materialized_output.partition().num_rows()?;
 
-            let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
-                Ordering::Less => {
-                    remaining_limit -= num_rows;
-                    (PipelineOutput::Materialized(materialized_output), false)
+            for next_input in materialized_output.split_into_materialized_outputs() {
+                let num_rows = next_input.num_rows()?;
+
+                let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
+                    Ordering::Less => {
+                        remaining_limit -= num_rows;
+                        (PipelineOutput::Materialized(next_input), false)
+                    }
+                    Ordering::Equal => (PipelineOutput::Materialized(next_input), true),
+                    Ordering::Greater => {
+                        let task = make_new_task_from_materialized_outputs(
+                            TaskContext::from((&self.context, task_id_counter.next())),
+                            vec![next_input],
+                            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                            &move |input| {
+                                Ok(LocalPhysicalPlan::limit(
+                                    input,
+                                    remaining_limit as u64,
+                                    StatsState::NotMaterialized,
+                                ))
+                            },
+                        )?;
+                        (PipelineOutput::Task(task), true)
+                    }
+                };
+                if result_tx.send(to_send).await.is_err() {
+                    return Ok(());
                 }
-                Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
-                Ordering::Greater => {
-                    let task = make_new_task_from_materialized_output(
-                        materialized_output,
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                        &move |input| {
-                            Ok(LocalPhysicalPlan::limit(
-                                input,
-                                remaining_limit as i64,
-                                StatsState::NotMaterialized,
-                            ))
-                        },
-                    )?;
-                    (PipelineOutput::Task(task), true)
+                if should_break {
+                    return Ok(());
                 }
-            };
-            if result_tx.send(to_send).await.is_err() {
-                break;
-            }
-            if should_break {
-                break;
             }
         }
+
         Ok(())
     }
 
@@ -141,7 +156,7 @@ impl DistributedPipelineNode for LimitNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        let limit = self.limit as i64;
+        let limit = self.limit as u64;
         let local_limit_node =
             input_node.pipeline_instruction(stage_context, self.clone(), move |input_plan| {
                 Ok(LocalPhysicalPlan::limit(
@@ -155,9 +170,10 @@ impl DistributedPipelineNode for LimitNode {
         let execution_loop = self.execution_loop(
             local_limit_node,
             result_tx,
-            stage_context.scheduler_handle.clone(),
+            stage_context.scheduler_handle(),
+            stage_context.task_id_counter(),
         );
-        stage_context.joinset.spawn(execution_loop);
+        stage_context.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }
