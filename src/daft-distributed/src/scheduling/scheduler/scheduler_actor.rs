@@ -111,7 +111,7 @@ where
             // Register statistics for all tasks
             for task in &enqueueable_tasks {
                 let task_context = task.task_context();
-                statistics_manager.handle_event(StatisticsEvent::SubmittedTask {
+                statistics_manager.handle_event(StatisticsEvent::TaskSubmitted {
                     context: task_context,
                     name: task.task.task_name().clone(),
                 })?;

@@ -20,18 +20,14 @@ impl ScalarUDF for ListBoolOr {
         "list_bool_or"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
+    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let input = args.required((0, "input"))?;
         input.list_bool_or()
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        ensure!(args.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", args.len());
+        let input = args.required((0, "input"))?.to_field(schema)?;
         let inner_field = input.to_exploded_field()?;
 
         Ok(Field::new(inner_field.name.as_str(), DataType::Boolean))

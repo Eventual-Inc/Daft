@@ -2537,11 +2537,14 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
+ "reqwest",
  "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "uuid 1.17.0",
 ]
 
 [[package]]

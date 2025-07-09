@@ -41,6 +41,7 @@ impl RepartitionNode {
         num_partitions: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
         let num_partitions =
             num_partitions.unwrap_or_else(|| child.config().clustering_spec.num_partitions());
@@ -51,6 +52,7 @@ impl RepartitionNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
