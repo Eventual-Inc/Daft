@@ -73,7 +73,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
+from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -165,6 +165,7 @@ __all__ = [
     "detach_table",
     "drop_namespace",
     "drop_table",
+    "element",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
