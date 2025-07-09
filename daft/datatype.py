@@ -117,12 +117,16 @@ class DataType:
                     pass
 
             elif np.module_available() and isinstance(item, (np.ndarray, np.generic)):  # type: ignore[attr-defined]
-                inner_dtype = DataType.from_numpy_dtype(item.dtype)
+                try:
+                    inner_dtype = DataType.from_numpy_dtype(item.dtype)
+                except Exception:
+                    return None
+
                 shape = item.shape
 
                 if len(shape) == 0:
                     return None
-                item_dtype = DataType.list(inner_dtype) if len(shape) == 1 else DataType.tensor(inner_dtype, shape)
+                item_dtype = DataType.list(inner_dtype) if len(shape) == 1 else DataType.tensor(inner_dtype)
 
                 if curr_dtype is None:
                     curr_dtype = item_dtype
