@@ -556,7 +556,7 @@ class DataFrame:
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
-            preview_partition = preview_results._get_merged_micropartition()
+            preview_partition = preview_results._get_merged_micropartition(self.schema())
             self._preview = Preview(
                 partition=preview_partition,
                 total_rows=len(self),
@@ -3641,7 +3641,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,
@@ -3734,7 +3734,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,

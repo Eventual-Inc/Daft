@@ -175,7 +175,7 @@ impl DistributedPipelineNode for WindowNode {
         // Pipeline the window op
         let self_clone = self.clone();
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            match (self_clone.order_by.is_empty(), self_clone.frame.is_some()) {
+            match (!self_clone.order_by.is_empty(), self_clone.frame.is_some()) {
                 (false, false) => Ok(LocalPhysicalPlan::window_partition_only(
                     input,
                     self_clone.partition_by.clone(),
