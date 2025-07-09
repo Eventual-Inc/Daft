@@ -44,6 +44,8 @@ impl StagePlanBuilder {
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
             | LogicalPlan::Window(_)
+            | LogicalPlan::Sort(_)
+            | LogicalPlan::TopN(_)
             | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
@@ -67,9 +69,7 @@ impl StagePlanBuilder {
                     }
                 }
             }
-            LogicalPlan::Sort(_)
-            | LogicalPlan::TopN(_)
-            | LogicalPlan::Concat(_)
+            LogicalPlan::Concat(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Pivot(_) => {
                 can_translate = false;
