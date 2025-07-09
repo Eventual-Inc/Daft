@@ -80,7 +80,7 @@ impl StatisticsSubscriber for FlotillaProgressBar {
                 Ok(())
             }
             // For progress bar we don't care if it is scheduled, for now.
-            StatisticsEvent::ScheduledTask { .. } => Ok(()),
+            StatisticsEvent::TaskScheduled { .. } => Ok(()),
             StatisticsEvent::TaskStarted { .. } => Ok(()), // Progress bar doesn't need to handle task start separately
             StatisticsEvent::TaskCompleted { context } => {
                 self.update_bar(BarId::from(context))?;

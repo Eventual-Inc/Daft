@@ -223,7 +223,7 @@ impl HttpSubscriber {
                 }
                 // If plan doesn't exist yet, ignore the task - it will be processed when PlanSubmitted arrives
             }
-            StatisticsEvent::ScheduledTask { context } => {
+            StatisticsEvent::TaskScheduled { context } => {
                 let plan_id = context.plan_id;
                 if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
                     if let Some(task_state) = plan_data.tasks.get_mut(context) {
