@@ -57,6 +57,7 @@ impl WindowNode {
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -74,6 +75,7 @@ impl WindowNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

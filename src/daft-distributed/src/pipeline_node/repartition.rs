@@ -37,11 +37,11 @@ impl RepartitionNode {
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
         columns: Vec<BoundExpr>,
         num_partitions: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let num_partitions =
             num_partitions.unwrap_or_else(|| child.config().clustering_spec.num_partitions());

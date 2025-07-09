@@ -26,6 +26,7 @@ impl DistinctNode {
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
         columns: Vec<BoundExpr>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -36,6 +37,7 @@ impl DistinctNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
