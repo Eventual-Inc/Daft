@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::SchemaRef;
 
 use super::{
@@ -41,7 +41,13 @@ impl ScanSourceNode {
     ) -> Self {
         let context =
             PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(
+                scan_tasks.len(),
+            )),
+        );
         Self {
             config,
             context,
@@ -68,10 +74,9 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        let max_sources_per_scan_task = self.config.execution_config.max_sources_per_scan_task;
-        for scan_tasks in self.scan_tasks.chunks(max_sources_per_scan_task) {
+        for scan_task in self.scan_tasks.iter() {
             let task = self.make_source_tasks(
-                scan_tasks.to_vec().into(),
+                vec![scan_task.clone()].into(),
                 TaskContext::from((&self.context, task_id_counter.next())),
             )?;
             if result_tx
@@ -105,7 +110,6 @@ impl ScanSourceNode {
             Default::default(),
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }
@@ -120,7 +124,6 @@ impl ScanSourceNode {
             psets,
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }

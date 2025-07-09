@@ -10,8 +10,8 @@ use daft_writers::{AsyncFileWriter, WriterFactory};
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
@@ -24,6 +24,8 @@ pub enum WriteFormat {
     PartitionedParquet,
     Csv,
     PartitionedCsv,
+    Json,
+    PartitionedJson,
     Iceberg,
     PartitionedIceberg,
     Deltalake,
@@ -123,7 +125,7 @@ impl BlockingSink for WriteSink {
                         results.into(),
                         None,
                     ));
-                    Ok(Some(mp))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(mp)))
                 },
                 Span::current(),
             )
@@ -136,6 +138,8 @@ impl BlockingSink for WriteSink {
             WriteFormat::PartitionedParquet => "PartitionedParquetSink",
             WriteFormat::Csv => "CsvSink",
             WriteFormat::PartitionedCsv => "PartitionedCsvSink",
+            WriteFormat::Json => "JsonSink",
+            WriteFormat::PartitionedJson => "PartitionedJsonSink",
             WriteFormat::Iceberg => "IcebergSink",
             WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
             WriteFormat::Deltalake => "DeltalakeSink",

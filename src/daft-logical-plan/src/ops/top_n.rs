@@ -32,7 +32,7 @@ pub struct TopN {
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
     /// Limit on number of rows.
-    pub limit: i64,
+    pub limit: u64,
     /// The plan statistics.
     pub stats_state: StatsState,
 }
@@ -43,7 +43,7 @@ impl TopN {
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: i64,
+        limit: u64,
     ) -> Result<Self> {
         if sort_by.is_empty() {
             return Err(DaftError::InternalError(

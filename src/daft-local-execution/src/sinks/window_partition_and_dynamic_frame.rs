@@ -13,7 +13,8 @@ use tracing::{instrument, Span};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
+        BlockingSinkSinkResult, BlockingSinkState,
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
@@ -26,6 +27,7 @@ struct WindowPartitionAndDynamicFrameParams {
     partition_by: Vec<BoundExpr>,
     order_by: Vec<BoundExpr>,
     descending: Vec<bool>,
+    nulls_first: Vec<bool>,
     frame: WindowFrame,
     original_schema: SchemaRef,
 }
@@ -57,6 +59,7 @@ impl WindowPartitionAndDynamicFrameSink {
         partition_by: &[BoundExpr],
         order_by: &[BoundExpr],
         descending: &[bool],
+        nulls_first: &[bool],
         frame: &WindowFrame,
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
@@ -69,6 +72,7 @@ impl WindowPartitionAndDynamicFrameSink {
                     partition_by: partition_by.to_vec(),
                     order_by: order_by.to_vec(),
                     descending: descending.to_vec(),
+                    nulls_first: nulls_first.to_vec(),
                     frame: frame.clone(),
                     original_schema: schema.clone(),
                 },
@@ -165,8 +169,8 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                             }).collect::<Vec<_>>();
 
                             for partition in &mut partitions {
-                                // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
-                                *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
+                                // Sort the partition by the order_by columns
+                                *partition = partition.sort(&params.order_by, &params.descending, &params.nulls_first)?;
 
                                 for (agg_expr, name) in params.aggregations.iter().zip(params.aliases.iter()) {
                                     let dtype = agg_expr.as_ref().to_field(&params.original_schema)?.dtype;
@@ -188,7 +192,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(empty_result))));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -196,7 +200,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                         results.into(),
                         None,
                     );
-                    Ok(Some(Arc::new(final_result)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(final_result))))
                 },
                 Span::current(),
             )
@@ -235,7 +239,17 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                         .descending
                         .iter()
                 )
-                .map(|(e, d)| format!("{} {}", e, if *d { "desc" } else { "asc" }))
+                .zip(
+                    self.window_partition_and_dynamic_frame_params
+                        .nulls_first
+                        .iter()
+                )
+                .map(|((e, d), n)| format!(
+                    "{} {} {}",
+                    e,
+                    if *d { "desc" } else { "asc" },
+                    if *n { "nulls first" } else { "nulls last" }
+                ))
                 .join(", ")
         ));
         display.push(format!(

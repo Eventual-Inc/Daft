@@ -4,7 +4,7 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{stats::StatsState, ClusteringSpec, InMemoryInfo};
 
 use super::{DistributedPipelineNode, PipelineNodeContext, PipelineOutput, RunningPipelineNode};
 use crate::{
@@ -35,8 +35,14 @@ impl InMemorySourceNode {
     ) -> Self {
         let context =
             PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
-        let config =
-            PipelineNodeConfig::new(info.source_schema.clone(), stage_config.config.clone());
+
+        let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
+
+        let config = PipelineNodeConfig::new(
+            info.source_schema.clone(),
+            stage_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_partitions)),
+        );
         Self {
             config,
             context,
@@ -105,7 +111,6 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }
