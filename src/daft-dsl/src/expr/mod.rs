@@ -38,7 +38,7 @@ use crate::{
         scalar::scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction, FUNCTION_REGISTRY,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -1834,6 +1834,17 @@ impl Expr {
                 _ => Ok(Transformed::no(e)),
             })?
             .data)
+    }
+
+    pub fn explode(self: Arc<Self>) -> DaftResult<ExprRef> {
+        let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
+        let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
+
+        Ok(Self::ScalarFunction(ScalarFunction {
+            udf: f,
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
+        })
+        .arced())
     }
 }
 

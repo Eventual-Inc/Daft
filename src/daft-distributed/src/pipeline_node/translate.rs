@@ -33,7 +33,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
 
 struct LogicalPlanToPipelineNodeTranslator {
     stage_config: StageConfig,
-    node_id_counter: NodeID,
+    pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<Arc<dyn DistributedPipelineNode>>,
 }
@@ -42,15 +42,15 @@ impl LogicalPlanToPipelineNodeTranslator {
     fn new(stage_config: StageConfig, psets: Arc<HashMap<String, Vec<PartitionRef>>>) -> Self {
         Self {
             stage_config,
-            node_id_counter: 0,
+            pipeline_node_id_counter: 0,
             psets,
             curr_node: Vec::new(),
         }
     }
 
-    fn get_next_node_id(&mut self) -> NodeID {
-        self.node_id_counter += 1;
-        self.node_id_counter
+    fn get_next_pipeline_node_id(&mut self) -> NodeID {
+        self.pipeline_node_id_counter += 1;
+        self.pipeline_node_id_counter
     }
 }
 
@@ -61,8 +61,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
         Ok(TreeNodeRecursion::Continue)
     }
 
-    fn f_up(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
-        let node_id = self.get_next_node_id();
+    fn f_up(&mut self, node: &LogicalPlanRef) -> DaftResult<TreeNodeRecursion> {
+        let node_id = self.get_next_pipeline_node_id();
+        let logical_node_id = node.node_id();
         let output = match node.as_ref() {
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
@@ -71,6 +72,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         node_id,
                         info.clone(),
                         self.psets.clone(),
+                        logical_node_id.map(|id| id as NodeID),
                     ).arced(),
                     SourceInfo::Physical(info) => {
                         // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
@@ -84,6 +86,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                             info.pushdowns.clone(),
                             scan_tasks,
                             source.output_schema.clone(),
+                            logical_node_id.map(|id| id as NodeID),
                         ).arced()
                     }
                     SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),
@@ -109,6 +112,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         memory_request,
                         actor_pool_project.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
+                        logical_node_id.map(|id| id as NodeID),
                     )?
                     .arced()
                 }
@@ -126,6 +130,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     predicate,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id.map(|id| id as NodeID),
                 )
                 .arced()
             }
@@ -135,6 +140,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 limit.limit as usize,
                 node.schema(),
                 self.curr_node.pop().unwrap(),
+                logical_node_id.map(|id| id as NodeID),
             )),
             LogicalPlan::Project(project) => {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
@@ -144,6 +150,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     projection,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id.map(|id| id as NodeID),
                 )
                 .arced()
             }
@@ -155,6 +162,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     to_explode,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id.map(|id| id as NodeID),
                 )
                 .arced()
             }
@@ -170,6 +178,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     unpivot.value_name.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id.map(|id| id as NodeID),
                 )
                 .arced()
             }
@@ -181,6 +190,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 sample.seed,
                 node.schema(),
                 self.curr_node.pop().unwrap(),
+                logical_node_id.map(|id| id as NodeID),
             )
             .arced(),
             LogicalPlan::Sink(sink) => SinkNode::new(
@@ -190,6 +200,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 sink.schema.clone(),
                 sink.input.schema(),
                 self.curr_node.pop().unwrap(),
+                logical_node_id.map(|id| id as NodeID),
             )
             .arced(),
             LogicalPlan::MonotonicallyIncreasingId(_) => {
@@ -214,6 +225,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     repart_spec.num_partitions,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
+                    logical_node_id.map(|id| id as NodeID),
                 )
                 .arced()
             }
