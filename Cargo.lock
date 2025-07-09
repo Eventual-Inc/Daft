@@ -2536,6 +2536,7 @@ dependencies = [
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-physical-plan",
  "daft-schema",
  "futures",
  "itertools 0.14.0",

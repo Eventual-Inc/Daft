@@ -134,6 +134,15 @@ class MicroPartition:
             micropartitions.append(t._micropartition)
         return MicroPartition._from_pymicropartition(_PyMicroPartition.concat(micropartitions))
 
+    @classmethod
+    def concat_or_empty(cls, to_merge: list[MicroPartition], schema: Schema) -> MicroPartition:
+        micropartitions = []
+        for t in to_merge:
+            if not isinstance(t, MicroPartition):
+                raise TypeError(f"Expected a MicroPartition for concat, got {type(t)}")
+            micropartitions.append(t._micropartition)
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.concat_or_empty(micropartitions, schema._schema))
+
     def slice(self, start: int, end: int) -> MicroPartition:
         if not isinstance(start, int):
             raise TypeError(f"expected int for start but got {type(start)}")

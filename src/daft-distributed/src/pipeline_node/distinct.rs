@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
+use daft_local_plan::LocalPhysicalPlan;
+use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
@@ -13,21 +12,22 @@ use crate::{
     stage::{StageConfig, StageExecutionContext},
 };
 
-pub(crate) struct ProjectNode {
+pub(crate) struct DistinctNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    projection: Vec<BoundExpr>,
+    columns: Vec<BoundExpr>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl ProjectNode {
-    const NODE_NAME: NodeName = "Project";
+impl DistinctNode {
+    const NODE_NAME: NodeName = "Distinct";
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        projection: Vec<BoundExpr>,
+        columns: Vec<BoundExpr>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -42,18 +42,18 @@ impl ProjectNode {
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            translate_clustering_spec(
-                child.config().clustering_spec.clone(),
-                &projection
-                    .iter()
-                    .map(|e| e.inner().clone())
-                    .collect::<Vec<_>>(),
+            Arc::new(
+                HashClusteringConfig::new(
+                    child.config().clustering_spec.num_partitions(),
+                    columns.clone().into_iter().map(|e| e.into()).collect(),
+                )
+                .into(),
             ),
         );
         Self {
             config,
             context,
-            projection,
+            columns,
             child,
         }
     }
@@ -63,33 +63,23 @@ impl ProjectNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use daft_dsl::functions::python::get_resource_request;
         use itertools::Itertools;
         let mut res = vec![];
         res.push(format!(
-            "Project: {}",
-            self.projection.iter().map(|e| e.to_string()).join(", ")
+            "Distinct: By {}",
+            self.columns.iter().map(|e| e.to_string()).join(", ")
         ));
-        if let Some(resource_request) = get_resource_request(&self.projection) {
-            let multiline_display = resource_request.multiline_display();
-            res.push(format!(
-                "Resource request = {{ {} }}",
-                multiline_display.join(", ")
-            ));
-        } else {
-            res.push("Resource request = None".to_string());
-        }
         res
     }
 }
 
-impl TreeDisplay for ProjectNode {
+impl TreeDisplay for DistinctNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
         match level {
             DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
+                writeln!(display, "{}", self.context.node_name).unwrap();
             }
             _ => {
                 let multiline_display = self.multiline_display().join("\n");
@@ -104,11 +94,11 @@ impl TreeDisplay for ProjectNode {
     }
 
     fn get_name(&self) -> String {
-        self.name().to_string()
+        self.context.node_name.to_string()
     }
 }
 
-impl DistributedPipelineNode for ProjectNode {
+impl DistributedPipelineNode for DistinctNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -124,18 +114,16 @@ impl DistributedPipelineNode for ProjectNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        let projection = self.projection.clone();
-        let schema = self.config.schema.clone();
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::project(
+        // Pipeline the distinct op
+        let self_clone = self.clone();
+        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
+            Ok(LocalPhysicalPlan::dedup(
                 input,
-                projection.clone(),
-                schema.clone(),
+                self_clone.columns.clone(),
+                self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
             ))
-        };
-
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        })
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

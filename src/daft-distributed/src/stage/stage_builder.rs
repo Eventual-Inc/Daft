@@ -45,6 +45,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
+            | LogicalPlan::Distinct(_)
             | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
@@ -54,10 +55,23 @@ impl StagePlanBuilder {
                     Ok(TreeNodeRecursion::Stop)
                 }
             },
+            LogicalPlan::Aggregate(aggregate) => {
+                if aggregate.groupby.is_empty() {
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            },
+            LogicalPlan::Window(window) => {
+                if window.window_spec.partition_by.is_empty() {
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            },
             LogicalPlan::Sort(_)
-            | LogicalPlan::Distinct(_)
-            | LogicalPlan::Aggregate(_)
-            | LogicalPlan::Window(_)
             | LogicalPlan::Concat(_)
             | LogicalPlan::TopN(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
@@ -157,10 +171,7 @@ impl StagePlanBuilder {
                     ) -> DaftResult<common_treenode::Transformed<Self::Node>> {
                         // For simple operations, we can pipeline them together
                         // until we hit a stage boundary (e.g., a HashJoin)
-                        if matches!(
-                            node.as_ref(),
-                            LogicalPlan::Join(_) | LogicalPlan::Aggregate(_)
-                        ) {
+                        if matches!(node.as_ref(), LogicalPlan::Join(_)) {
                             let ph = PlaceHolderInfo::new(
                                 node.schema(),
                                 Arc::new(ClusteringSpec::unknown()),
