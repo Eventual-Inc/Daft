@@ -538,7 +538,20 @@ def test_udf_retry_with_process_killed_ray(use_actor_pool):
 
 
 def test_non_batched_udf():
-    @daft.func(return_dtype=str)
+    @daft.func()
+    def my_stringify_and_sum(a: int, b: int) -> str:
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    actual = df.select(my_stringify_and_sum(col("x"), col("y"))).to_pydict()
+
+    expected = {"x": ["5", "7", "9"]}
+
+    assert actual == expected
+
+
+def test_non_batched_udf_alternative_signature():
+    @daft.func
     def my_stringify_and_sum(a: int, b: int) -> str:
         return f"{a + b}"
 
