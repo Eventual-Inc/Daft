@@ -277,15 +277,13 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def items(self) -> list[tuple[PartID, MaterializedResult[ray.ObjectRef]]]:
         return [(pid, result) for pid, result in sorted(self._results.items())]
 
-    def _get_merged_micropartition(self, schema: Schema | None = None) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
         ids_and_partitions = self.items()
-        if len(ids_and_partitions) == 0:
-            return MicroPartition.empty(schema)
-
-        assert ids_and_partitions[0][0] == 0
-        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+        if len(ids_and_partitions) > 0:
+            assert ids_and_partitions[0][0] == 0
+            assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
-        return MicroPartition.concat(all_partitions)
+        return MicroPartition.concat_or_empty(all_partitions, schema)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()

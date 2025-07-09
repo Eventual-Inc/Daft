@@ -11,7 +11,7 @@ use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler};
+use super::{default::DefaultScheduler, linear::LinearScheduler, PendingTask, Scheduler};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
@@ -29,8 +29,8 @@ use crate::{
     },
 };
 
-pub(crate) type SchedulerSender<T> = UnboundedSender<SchedulableTask<T>>;
-pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<SchedulableTask<T>>;
+pub(crate) type SchedulerSender<T> = UnboundedSender<PendingTask<T>>;
+pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<PendingTask<T>>;
 
 const SCHEDULER_LOG_TARGET: &str = "DaftFlotillaScheduler";
 const SCHEDULER_TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -90,7 +90,7 @@ where
     }
 
     fn handle_new_tasks(
-        maybe_new_task: Option<SchedulableTask<W::Task>>,
+        maybe_new_task: Option<PendingTask<W::Task>>,
         task_rx: &mut SchedulerReceiver<W::Task>,
         statistics_manager: &StatisticsManagerRef,
         scheduler: &mut S,
@@ -111,7 +111,7 @@ where
             // Register statistics for all tasks
             for task in &enqueueable_tasks {
                 let task_context = task.task_context();
-                statistics_manager.handle_event(StatisticsEvent::SubmittedTask {
+                statistics_manager.handle_event(StatisticsEvent::TaskSubmitted {
                     context: task_context,
                     name: task.task.task_name().clone(),
                 })?;
@@ -148,7 +148,7 @@ where
             scheduler.update_worker_state(&worker_snapshots);
 
             // 1: Get all tasks that are ready to be scheduled
-            let scheduled_tasks = scheduler.get_schedulable_tasks();
+            let scheduled_tasks = scheduler.schedule_tasks();
             // 2: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
@@ -157,7 +157,7 @@ where
                 // Report to statistics manager
                 for task in &scheduled_tasks {
                     let task_context = task.task().task_context();
-                    statistics_manager.handle_event(StatisticsEvent::ScheduledTask {
+                    statistics_manager.handle_event(StatisticsEvent::TaskScheduled {
                         context: task_context,
                     })?;
                 }
@@ -238,10 +238,10 @@ impl<T: Task> SchedulerHandle<T> {
 
     pub fn prepare_task_for_submission(
         submittable_task: SubmittableTask<T>,
-    ) -> (SchedulableTask<T>, SubmittedTask) {
+    ) -> (PendingTask<T>, SubmittedTask) {
         let task_id = submittable_task.task.task_id();
 
-        let schedulable_task = SchedulableTask::new(
+        let schedulable_task = PendingTask::new(
             submittable_task.task,
             submittable_task.result_tx,
             submittable_task.cancel_token.clone(),

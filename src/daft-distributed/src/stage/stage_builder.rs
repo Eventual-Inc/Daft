@@ -2,16 +2,14 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
+use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_logical_plan::{
     partitioning::{ClusteringSpecRef, RepartitionSpec},
     JoinStrategy, LogicalPlan, LogicalPlanRef,
 };
 use daft_schema::schema::SchemaRef;
 
-use super::{
-    ChannelID, DataChannel, InputChannel, OutputChannel, Stage, StageID, StagePlan, StageType,
-};
+use super::{DataChannel, OutputChannel, Stage, StageID, StagePlan, StageType};
 
 pub(crate) struct StagePlanBuilder {
     stages: HashMap<StageID, Stage>,
@@ -108,47 +106,13 @@ impl StagePlanBuilder {
             )));
         }
 
-        struct MapPipelineBuilder {
-            remaining: Option<LogicalPlanRef>,
-        }
-        impl TreeNodeRewriter for MapPipelineBuilder {
-            type Node = Arc<LogicalPlan>;
-
-            fn f_down(
-                &mut self,
-                node: Self::Node,
-            ) -> DaftResult<common_treenode::Transformed<Self::Node>> {
-                Ok(Transformed::no(node))
-            }
-
-            fn f_up(
-                &mut self,
-                node: Self::Node,
-            ) -> DaftResult<common_treenode::Transformed<Self::Node>> {
-                Ok(Transformed::no(node))
-            }
-        }
-
-        let mut rewriter = MapPipelineBuilder { remaining: None };
-
-        let output = plan.rewrite(&mut rewriter)?;
-        let new_plan = output.data;
-        let input_channels = if output.transformed {
-            let remaining = rewriter
-                .remaining
-                .expect("We should have remaining plan if plan was transformed");
-            let child_stage = self.build_stages_from_plan(remaining)?;
-            vec![self.create_input_channel(child_stage, 0)?]
-        } else {
-            vec![]
-        };
-        let schema = new_plan.schema();
+        let schema = plan.schema();
         // Create a MapPipeline stage
         let stage_id = self.next_stage_id();
         let stage = Stage {
             id: stage_id,
-            type_: StageType::MapPipeline { plan: new_plan },
-            input_channels,
+            type_: StageType::MapPipeline { plan },
+            input_channels: vec![],
             output_channels: vec![self.create_output_channel(schema, None)?],
         };
 
@@ -167,23 +131,6 @@ impl StagePlanBuilder {
             stages: self.stages,
             root_stage: root_stage_id,
             config,
-        })
-    }
-
-    fn create_input_channel(
-        &self,
-        from_stage: StageID,
-        channel_idx: usize,
-    ) -> DaftResult<InputChannel> {
-        let stage = self.stages.get(&from_stage).ok_or_else(|| {
-            common_error::DaftError::InternalError(format!("Stage {} not found", from_stage))
-        })?;
-
-        let output_channel = &stage.output_channels[channel_idx];
-        Ok(InputChannel {
-            from_stage,
-            channel_id: ChannelID(channel_idx),
-            data_channel: output_channel.data_channel.clone(),
         })
     }
 

@@ -205,30 +205,30 @@ class MaterializedResult(Generic[PartitionT]):
 
 
 class PartitionSet(Generic[PartitionT]):
-    def _get_merged_micropartition(self, schema: Schema | None = None) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
         raise NotImplementedError()
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         raise NotImplementedError()
 
-    def to_pydict(self, schema: Schema | None = None) -> dict[str, list[Any]]:
+    def to_pydict(self, schema: Schema) -> dict[str, list[Any]]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
         merged_partition = self._get_merged_micropartition(schema)
         return merged_partition.to_pydict()
 
     def to_pandas(
         self,
-        schema: Schema | None = None,
+        schema: Schema,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
-        merged_partition = self._get_merged_micropartition()
+        merged_partition = self._get_merged_micropartition(schema)
         return merged_partition.to_pandas(
             schema=schema,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
 
-    def to_arrow(self) -> pa.Table:
-        merged_partition = self._get_merged_micropartition()
+    def to_arrow(self, schema: Schema) -> pa.Table:
+        merged_partition = self._get_merged_micropartition(schema)
         return merged_partition.to_arrow()
 
     def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:
@@ -288,11 +288,12 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
     def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
         return sorted(self._partitions.items())
 
-    def _get_merged_micropartition(self, schema: Schema | None = None) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
         ids_and_partitions = self.items()
-        assert ids_and_partitions[0][0] == 0
-        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        return MicroPartition.concat([part.partition() for _, part in ids_and_partitions])
+        if len(ids_and_partitions) > 0:
+            assert ids_and_partitions[0][0] == 0
+            assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+        return MicroPartition.concat_or_empty([part.partition() for _, part in ids_and_partitions], schema)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()

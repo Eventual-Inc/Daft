@@ -231,20 +231,20 @@ impl ScalarUDF for MyToUpperCase {
     }
 
     // Then we add an implementation for it.
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let s = inputs.required(0)?;
         // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
         let arr = s
             .utf8()
-            .expect("type should have been validated already during `function_args_to_field`")
+            .expect("type should have been validated already during `get_return_field`")
             .into_iter()
             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
             .collect::<Utf8Array>();
         Ok(arr.into_series())
     }
 
-    // We also need a `function_args_to_field` which is used during planning to ensure that the args and datatypes are compatible.
-    fn function_args_to_field(
+    // We also need a `get_return_field` which is used during planning to ensure that the args and datatypes are compatible.
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

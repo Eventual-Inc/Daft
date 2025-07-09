@@ -44,7 +44,7 @@ pub(crate) struct WindowNode {
     nulls_first: Vec<bool>,
     frame: Option<WindowFrame>,
     min_periods: usize,
-    aggregations: Vec<BoundWindowExpr>,
+    window_exprs: Vec<BoundWindowExpr>,
     aliases: Vec<String>,
 
     child: Arc<dyn DistributedPipelineNode>,
@@ -57,13 +57,14 @@ impl WindowNode {
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         frame: Option<WindowFrame>,
         min_periods: usize,
-        aggregations: Vec<BoundWindowExpr>,
+        window_exprs: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -74,6 +75,7 @@ impl WindowNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -95,7 +97,7 @@ impl WindowNode {
             nulls_first,
             frame,
             min_periods,
-            aggregations,
+            window_exprs,
             aliases,
             child,
         }
@@ -173,13 +175,13 @@ impl DistributedPipelineNode for WindowNode {
         // Pipeline the window op
         let self_clone = self.clone();
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            match (self_clone.order_by.is_empty(), self_clone.frame.is_some()) {
+            match (!self_clone.order_by.is_empty(), self_clone.frame.is_some()) {
                 (false, false) => Ok(LocalPhysicalPlan::window_partition_only(
                     input,
                     self_clone.partition_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    window_to_agg_exprs(self_clone.aggregations.clone())?,
+                    window_to_agg_exprs(self_clone.window_exprs.clone())?,
                     self_clone.aliases.clone(),
                 )),
                 (true, false) => Ok(LocalPhysicalPlan::window_partition_and_order_by(
@@ -190,7 +192,7 @@ impl DistributedPipelineNode for WindowNode {
                     self_clone.nulls_first.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    self_clone.aggregations.clone(),
+                    self_clone.window_exprs.clone(),
                     self_clone.aliases.clone(),
                 )),
                 (true, true) => Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
@@ -203,7 +205,7 @@ impl DistributedPipelineNode for WindowNode {
                     self_clone.min_periods,
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    window_to_agg_exprs(self_clone.aggregations.clone())?,
+                    window_to_agg_exprs(self_clone.window_exprs.clone())?,
                     self_clone.aliases.clone(),
                 )),
                 (false, true) => Err(DaftError::InternalError(

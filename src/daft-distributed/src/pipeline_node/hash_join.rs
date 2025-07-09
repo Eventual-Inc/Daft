@@ -47,6 +47,7 @@ impl HashJoinNode {
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Option<Vec<bool>>,
@@ -61,6 +62,7 @@ impl HashJoinNode {
             Self::NODE_NAME,
             vec![left.node_id(), right.node_id()],
             vec![left.name(), right.name()],
+            logical_node_id,
         );
         let num_partitions = left.config().clustering_spec.num_partitions();
         let partition_cols = left_on
