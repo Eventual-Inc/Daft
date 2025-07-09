@@ -148,7 +148,7 @@ class Series:
             else:
                 arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
             return Series.from_arrow(arrow_array, name=name, dtype=dtype)
-        except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError):
+        except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError, pa.lib.ArrowNotImplementedError):
             if pyobj == "disallow":
                 raise
             dtype = DataType._infer_dtype_from_pylist(data) or DataType.python()
@@ -742,25 +742,25 @@ class Series:
                 [
                     builtins.list[Any],
                     builtins.str,
-                    Literal["allow", "disallow"],
+                    DataType,
                 ],
                 Series,
             ],
             tuple[
                 builtins.list[Any],
                 builtins.str,
-                Literal["allow", "disallow"],
+                DataType,
             ],
         ]
         | tuple[
-            Callable[[pa.Array | pa.ChunkedArray, builtins.str], Series],
-            tuple[pa.Array | pa.ChunkedArray, builtins.str],
+            Callable[[pa.Array | pa.ChunkedArray, builtins.str, DataType], Series],
+            tuple[pa.Array | pa.ChunkedArray, builtins.str, DataType],
         ]
     ):
         if self.datatype().is_python():
-            return (Series.from_pylist, (self.to_pylist(), self.name()))
+            return (Series.from_pylist, (self.to_pylist(), self.name(), self.datatype()))
         else:
-            return (Series.from_arrow, (self.to_arrow(), self.name()))
+            return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
 
     def _debug_bincode_serialize(self) -> bytes:
         return self._series._debug_bincode_serialize()
@@ -812,12 +812,14 @@ class Series:
 
 
 def item_to_series(name: str, item: Any) -> Series:
+    # Fast path
+    if isinstance(item, Series):
+        return item
+
     if isinstance(item, list):
         series = Series.from_pylist(item, name)
     elif np.module_available() and isinstance(item, np.ndarray):  # type: ignore[attr-defined]
         series = Series.from_numpy(item, name)
-    elif isinstance(item, Series):
-        series = item
     elif isinstance(item, (pa.Array, pa.ChunkedArray)):
         series = Series.from_arrow(item, name)
     elif pd.module_available() and isinstance(item, pd.Series):  # type: ignore[attr-defined]

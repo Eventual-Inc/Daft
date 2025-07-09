@@ -532,7 +532,7 @@ class RecordBatch:
         multithreaded_io: bool | None = None,
     ) -> RecordBatch:
         if not isinstance(paths, Series):
-            paths = Series.from_pylist(paths, name="uris").cast(DataType.string())
+            paths = Series.from_pylist(paths, name="uris", dtype=DataType.string())
         assert paths.name() == "uris", f"Expected input series to have name 'uris', but found: {paths.name()}"
         return RecordBatch._from_pyrecordbatch(
             _read_parquet_statistics(
