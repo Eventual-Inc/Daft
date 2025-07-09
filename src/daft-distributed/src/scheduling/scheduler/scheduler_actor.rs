@@ -168,7 +168,7 @@ where
             // 3: Send autoscaling request if needed
             let autoscaling_request = scheduler.get_autoscaling_request();
             if let Some(request) = autoscaling_request {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = request, "Sending autoscaling request");
+                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
                 worker_manager.try_autoscale(request)?;
             }
 
