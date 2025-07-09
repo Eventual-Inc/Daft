@@ -20,7 +20,7 @@ impl ScalarUDF for MonotonicallyIncreasingId {
         ))
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Field> {
+    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Field> {
         if !inputs.is_empty() {
             return Err(DaftError::ValueError(format!(
                 "Expected 0 input args, got {}",

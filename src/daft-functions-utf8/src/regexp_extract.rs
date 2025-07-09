@@ -46,7 +46,11 @@ impl ScalarUDF for RegexpExtract {
         })
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 2 || inputs.len() == 3,
             SchemaMismatch: "Expected 2 or 3 input args, got {}",

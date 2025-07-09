@@ -46,7 +46,11 @@ impl ScalarUDF for CosineDistanceFunction {
         Ok(output.into_series())
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args {
             input: source,
             query,

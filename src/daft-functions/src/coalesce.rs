@@ -66,7 +66,11 @@ impl ScalarUDF for Coalesce {
             }
         }
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let inputs = inputs.into_inner();
         let inputs = inputs.as_slice();
 
@@ -260,7 +264,7 @@ mod tests {
 
         let coalesce = super::Coalesce {};
         let output = coalesce
-            .get_return_type(FunctionArgs::new_unnamed(vec![col_0, fallback]), &schema)
+            .get_return_field(FunctionArgs::new_unnamed(vec![col_0, fallback]), &schema)
             .unwrap();
         assert_eq!(output, expected);
     }
@@ -280,7 +284,7 @@ mod tests {
 
         let coalesce = super::Coalesce {};
         let output = coalesce
-            .get_return_type(
+            .get_return_field(
                 FunctionArgs::new_unnamed(vec![col_0, col_1, fallback]),
                 &schema,
             )
@@ -302,7 +306,7 @@ mod tests {
         let expected = "could not determine supertype of Date and Boolean".to_string();
         let coalesce = super::Coalesce {};
         let DaftError::TypeError(e) = coalesce
-            .get_return_type(
+            .get_return_field(
                 FunctionArgs::new_unnamed(vec![col_0, col_1, col_2]),
                 &schema,
             )

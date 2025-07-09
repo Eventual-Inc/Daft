@@ -30,7 +30,11 @@ impl ScalarUDF for ListChunk {
 
         input.list_chunk(size as _)
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(inputs.len() == 2, SchemaMismatch: "Expected 2 input args, got {}", inputs.len());
         let input_field = inputs.required((0, "input"))?.to_field(schema)?;
 

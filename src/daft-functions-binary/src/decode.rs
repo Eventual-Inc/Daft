@@ -34,7 +34,11 @@ impl ScalarUDF for BinaryDecode {
         "decode"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args { input, codec } = inputs.try_into()?;
         let input = input.to_field(schema)?;
 
@@ -89,7 +93,11 @@ impl ScalarUDF for BinaryTryDecode {
         "try_decode"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args { input, codec } = inputs.try_into()?;
         let input = input.to_field(schema)?;
 

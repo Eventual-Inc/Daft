@@ -29,7 +29,11 @@ impl ScalarUDF for BinarySlice {
     fn name(&self) -> &'static str {
         "binary_slice"
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let BinarySliceArgs {
             input,
             start,

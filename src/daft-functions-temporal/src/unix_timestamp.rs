@@ -42,7 +42,11 @@ impl ScalarUDF for UnixTimestamp {
             .and_then(|s| s.cast(&DataType::Int64))
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args { input, .. } = inputs.try_into()?;
         let field = input.to_field(schema)?;
 

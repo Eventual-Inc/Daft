@@ -25,7 +25,7 @@ macro_rules! exp {
                 stringify!($name)
             }
 
-            fn get_return_type(
+            fn get_return_field(
                 &self,
                 inputs: FunctionArgs<ExprRef>,
                 schema: &Schema,

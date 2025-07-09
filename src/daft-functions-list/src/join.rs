@@ -32,7 +32,11 @@ impl ScalarUDF for ListJoin {
 
         Ok(input.join(delimiter.utf8()?)?.into_series())
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 2,
             SchemaMismatch: "Expected 2 arguments, received: {}",

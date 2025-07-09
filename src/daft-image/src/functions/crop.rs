@@ -21,7 +21,11 @@ impl ScalarUDF for ImageCrop {
         let bbox = inputs.required((1, "bbox"))?;
         crate::series::crop(input, bbox)
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(inputs.len() == 2, "image_crop requires 2 arguments");
 
         let input = inputs.required((0, "input"))?.to_field(schema)?;

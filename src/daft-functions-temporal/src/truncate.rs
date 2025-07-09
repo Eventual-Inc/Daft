@@ -31,7 +31,11 @@ impl ScalarUDF for Truncate {
         input.dt_truncate(&interval, &relative_to)
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args {
             input, relative_to, ..
         } = inputs.try_into()?;

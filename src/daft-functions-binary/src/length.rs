@@ -20,7 +20,11 @@ impl ScalarUDF for BinaryLength {
     fn name(&self) -> &'static str {
         "binary_length"
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         let input = input.to_field(schema)?;
         ensure!(

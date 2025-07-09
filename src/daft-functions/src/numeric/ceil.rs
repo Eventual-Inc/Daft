@@ -40,7 +40,11 @@ impl ScalarUDF for Ceil {
         "ceil"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         to_field_numeric(self, &input, schema)
     }

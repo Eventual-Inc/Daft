@@ -25,7 +25,11 @@ impl ScalarUDF for ListSlice {
         let end = inputs.required((2, "end"))?;
         input.list_slice(start, end)
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 3,
             SchemaMismatch: "Expected 3 input args, got {}",

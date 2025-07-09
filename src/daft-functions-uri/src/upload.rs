@@ -76,7 +76,11 @@ impl ScalarUDF for UrlUpload {
         "url_upload"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let UrlUploadArgs {
             input, location, ..
         } = inputs.try_into()?;

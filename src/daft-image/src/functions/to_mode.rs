@@ -27,7 +27,11 @@ impl ScalarUDF for ImageToMode {
         "to_mode"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let ImageToModeArgs { input, mode } = inputs.try_into()?;
 
         let field = input.to_field(schema)?;

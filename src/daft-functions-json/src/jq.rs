@@ -29,7 +29,7 @@ impl ScalarUDF for Jq {
         "Applies a jq filter to a JSON string expression, returning the result as a string."
     }
 
-    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let JqArgs { input, .. } = args.try_into()?;
         let input = input.to_field(schema)?;
         ensure!(input.dtype == DataType::Utf8, TypeError: "Input must be a string type");

@@ -27,7 +27,7 @@ macro_rules! log {
                 stringify!($name)
             }
 
-            fn get_return_type(
+            fn get_return_field(
                 &self,
                 inputs: FunctionArgs<ExprRef>,
                 schema: &Schema,
@@ -91,7 +91,11 @@ impl ScalarUDF for Log {
         input.log(base)
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let LogArgs { input, base: _ } = inputs.try_into()?;
         let field = input.to_field(schema)?;
         let dtype = match field.dtype {

@@ -176,8 +176,8 @@ impl ScalarUDF for MyToUpperCase {
         Ok(arr.into_series())
     }
 
-    // We also need a `get_return_type` which is used during planning to ensure that the args and datatypes are compatible.
-    fn get_return_type(
+    // We also need a `get_return_field` which is used during planning to ensure that the args and datatypes are compatible.
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

@@ -63,7 +63,11 @@ impl ScalarUDF for Clip {
         "clip"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let ClipArgs { input, min, max } = inputs.try_into()?;
 
         let input_field = input.to_field(schema)?;

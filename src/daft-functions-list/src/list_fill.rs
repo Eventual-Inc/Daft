@@ -34,7 +34,11 @@ impl ScalarUDF for ListFill {
         elem.list_fill(num_array)
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args { input: n, elem } = inputs.try_into()?;
 
         let num_field = n.to_field(schema)?;
@@ -82,7 +86,8 @@ mod tests {
 
         let fill = ListFill {};
         let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
-        let DaftError::TypeError(e) = dbg!(fill.get_return_type(args, &schema).unwrap_err()) else {
+        let DaftError::TypeError(e) = dbg!(fill.get_return_field(args, &schema).unwrap_err())
+        else {
             panic!("Expected TypeError error");
         };
         assert_eq!(
@@ -90,7 +95,7 @@ mod tests {
             "Expected num field to be of numeric type, received: Null"
         );
         let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
-        let DaftError::TypeError(e) = fill.get_return_type(args, &schema).unwrap_err() else {
+        let DaftError::TypeError(e) = fill.get_return_field(args, &schema).unwrap_err() else {
             panic!("Expected TypeError error");
         };
         assert_eq!(
@@ -100,12 +105,12 @@ mod tests {
 
         let args = FunctionArgs::new_unnamed(vec![col0_num.clone(), col1_null.clone()]);
 
-        let list_of_null = fill.get_return_type(args, &schema).unwrap();
+        let list_of_null = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Null)));
         assert_eq!(list_of_null, expected);
         let args = FunctionArgs::new_unnamed(vec![col0_num.clone(), col1_str.clone()]);
 
-        let list_of_str = fill.get_return_type(args, &schema).unwrap();
+        let list_of_str = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Utf8)));
         assert_eq!(list_of_str, expected);
     }

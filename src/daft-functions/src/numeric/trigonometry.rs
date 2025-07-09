@@ -28,7 +28,7 @@ macro_rules! trigonometry {
                 TrigonometricFunction::$variant.fn_name()
             }
 
-            fn get_return_type(
+            fn get_return_field(
                 &self,
                 inputs: FunctionArgs<ExprRef>,
                 schema: &Schema,
@@ -148,7 +148,11 @@ impl ScalarUDF for Atan2 {
         &["arctan2"]
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Atan2Args { x, y } = inputs.try_into()?;
 
         let x_field = x.to_field(schema)?;

@@ -27,7 +27,11 @@ impl ScalarUDF for IsInf {
     fn name(&self) -> &'static str {
         "is_inf"
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let UnaryArg { input: data } = inputs.try_into()?;
         let data = data.to_field(schema)?;
         match &data.dtype {

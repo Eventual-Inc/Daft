@@ -32,7 +32,11 @@ impl ScalarUDF for Split {
         binary_utf8_evaluate(inputs, "delimiter", |s, pat| series_split(s, pat, false))
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         binary_utf8_to_field(
             inputs,
             schema,
@@ -56,7 +60,11 @@ impl ScalarUDF for RegexpSplit {
         binary_utf8_evaluate(inputs, "delimiter", |s, pat| series_split(s, pat, true))
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         binary_utf8_to_field(
             inputs,
             schema,

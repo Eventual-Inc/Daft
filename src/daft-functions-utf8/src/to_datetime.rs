@@ -39,7 +39,11 @@ impl ScalarUDF for ToDatetime {
         data.with_utf8_array(|arr| Ok(to_datetime_impl(arr, format, tz)?.into_series()))
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(!inputs.is_empty() && inputs.len() <= 3, SchemaMismatch: "Expected between 1 and 3 arguments, got {}", inputs.len());
         let data_field = inputs.required((0, "input"))?.to_field(schema)?;
         let format_expr = inputs.required((1, "format"))?;

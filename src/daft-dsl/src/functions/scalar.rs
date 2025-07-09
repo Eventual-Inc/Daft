@@ -30,7 +30,7 @@ impl ScalarFunction {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf.get_return_type(self.inputs.clone(), schema)
+        self.udf.get_return_field(self.inputs.clone(), schema)
     }
 }
 
@@ -103,7 +103,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     /// ```
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
 
-    /// `get_return_type_from_args` is used during planning to ensure that args and datatypes are compatible.
+    /// `get_return_field` is used during planning to ensure that args and datatypes are compatible.
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
     /// ```rs, no_run
     /// impl ScalarUDF for MyToUppercase {
@@ -121,7 +121,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///     }
     /// }
     /// ```
-    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
 
     fn docstring(&self) -> &'static str {
         "No documentation available"

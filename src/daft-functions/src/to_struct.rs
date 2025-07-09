@@ -23,7 +23,11 @@ impl ScalarUDF for ToStructFunction {
 
         Ok(StructArray::new(field, inputs, None).into_series())
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let inputs = inputs.into_inner();
         if inputs.is_empty() {
             return Err(DaftError::ValueError(

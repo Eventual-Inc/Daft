@@ -30,7 +30,11 @@ impl ScalarUDF for ToDate {
         input.with_utf8_array(|arr| Ok(to_date_impl(arr, pattern)?.into_series()))
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         binary_utf8_to_field(
             inputs,
             schema,

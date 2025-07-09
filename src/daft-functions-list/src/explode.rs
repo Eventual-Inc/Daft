@@ -27,7 +27,11 @@ impl ScalarUDF for Explode {
         input.explode()
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 1,
             SchemaMismatch: "Expected 1 input arg, got {}",

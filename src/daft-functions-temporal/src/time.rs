@@ -16,7 +16,11 @@ impl ScalarUDF for Time {
         input.dt_time()
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         let field = input.to_field(schema)?;
         match field.dtype {

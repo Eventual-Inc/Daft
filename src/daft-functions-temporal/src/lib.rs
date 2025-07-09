@@ -43,7 +43,7 @@ macro_rules! impl_temporal {
                     input.$dt()
 
                 }
-                fn get_return_type(
+                fn get_return_field(
                     &self,
                     inputs: FunctionArgs<ExprRef>,
                     schema: &Schema,

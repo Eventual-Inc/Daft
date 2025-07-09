@@ -59,7 +59,11 @@ impl ScalarUDF for FillNan {
     fn name(&self) -> &'static str {
         "fill_nan"
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args { input, fill_value } = inputs.try_into()?;
         let data_field = input.to_field(schema)?;
         let fill_value_field = fill_value.to_field(schema)?;

@@ -25,7 +25,11 @@ impl ScalarUDF for ListMax {
         input.list_max()
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         let field = input.to_field(schema)?.to_exploded_field()?;

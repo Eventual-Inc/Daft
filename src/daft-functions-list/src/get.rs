@@ -27,7 +27,7 @@ impl ScalarUDF for ListGet {
         input.list_get(idx, _default)
     }
 
-    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(
             args.len() == 3,
             SchemaMismatch: "Expected 3 input args, got {}",

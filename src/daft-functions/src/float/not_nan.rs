@@ -26,7 +26,11 @@ impl ScalarUDF for NotNan {
         })
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         let data_field = input.to_field(schema)?;
         match &data_field.dtype {

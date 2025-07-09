@@ -45,7 +45,11 @@ impl ScalarUDF for Repeat {
         })
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 2,
             TypeError: "Expected 2 input args, got {}", inputs.len()

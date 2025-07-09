@@ -23,7 +23,11 @@ impl ScalarUDF for Capitalize {
         unary_utf8_evaluate(inputs, capitalize_impl)
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         unary_utf8_to_field(inputs, schema, self.name(), DataType::Utf8)
     }
 

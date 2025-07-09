@@ -23,7 +23,11 @@ impl ScalarUDF for ListValueCounts {
         input.list_value_counts()
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input arg, got {}", inputs.len());
         let field = inputs.required((0, "input"))?.to_field(schema)?;
         ensure!(field.dtype.is_list() || field.dtype.is_fixed_size_list(), TypeError: "Expected input to be list or fixed size list, got {}", field.dtype);

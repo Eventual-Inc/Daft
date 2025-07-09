@@ -25,7 +25,7 @@ impl ScalarUDF for ListBoolOr {
         input.list_bool_or()
     }
 
-    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(args.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", args.len());
         let input = args.required((0, "input"))?.to_field(schema)?;
         let inner_field = input.to_exploded_field()?;

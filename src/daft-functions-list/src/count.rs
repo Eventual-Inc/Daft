@@ -33,7 +33,11 @@ impl ScalarUDF for ListCount {
         Ok(input.list_count(mode)?.into_series())
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let ListCountArgs { input, .. } = inputs.try_into()?;
 
         let input_field = input.to_field(schema)?;

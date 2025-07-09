@@ -22,7 +22,11 @@ impl ScalarUDF for Deserialize {
         "Deserializes the expression (string) using the specified format and data type."
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         get_field(inputs, schema)
     }
 
@@ -49,7 +53,11 @@ impl ScalarUDF for TryDeserialize {
         "Deserializes the expression (string) using the specified format and data type, insert null on parsing failures."
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         get_field(inputs, schema)
     }
 

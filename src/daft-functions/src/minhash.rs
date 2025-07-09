@@ -56,7 +56,11 @@ impl ScalarUDF for MinHashFunction {
             }
         }
     }
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let Args {
             input, num_hashes, ..
         } = inputs.try_into()?;

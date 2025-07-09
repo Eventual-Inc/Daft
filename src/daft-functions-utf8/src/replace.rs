@@ -28,7 +28,11 @@ impl ScalarUDF for RegexpReplace {
         series_replace(input, pattern, replacement, true)
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         function_args_to_field_impl(inputs, schema)
     }
 
@@ -52,7 +56,11 @@ impl ScalarUDF for Replace {
         series_replace(input, pattern, replacement, false)
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         function_args_to_field_impl(inputs, schema)
     }
 

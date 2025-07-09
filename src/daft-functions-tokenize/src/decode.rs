@@ -53,7 +53,7 @@ impl ScalarUDF for TokenizeDecodeFunction {
         "tokenize_decode"
     }
 
-    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let input = args.required((0, "input"))?.to_field(schema)?;
         ensure!(
             matches!(&input.dtype, DataType::List(inner) if inner.is_integer()),

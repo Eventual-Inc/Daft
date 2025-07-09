@@ -33,7 +33,11 @@ impl ScalarUDF for ListSort {
         data.list_sort(&desc, &nulls_first)
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let data = inputs.required((0, "input"))?.to_field(schema)?;
         if let Some(desc) = inputs
             .optional((1, "desc"))?

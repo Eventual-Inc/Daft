@@ -62,7 +62,7 @@ impl ScalarUDF for TokenizeEncodeFunction {
             use_special_tokens,
         )
     }
-    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let input = args.required((0, "input"))?.to_field(schema)?;
         ensure!(
             input.dtype.is_string(),

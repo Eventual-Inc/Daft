@@ -25,7 +25,11 @@ impl ScalarUDF for LengthBytes {
         })
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         unary_utf8_to_field(inputs, schema, self.name(), DataType::UInt64)
     }
     fn docstring(&self) -> &'static str {

@@ -34,7 +34,11 @@ impl ScalarUDF for ImageEncode {
         "image_encode"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let ImageEncodeArgs { input, .. } = inputs.try_into()?;
 
         let field = input.to_field(schema)?;

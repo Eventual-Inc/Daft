@@ -38,7 +38,11 @@ impl ScalarUDF for Normalize {
         "normalize"
     }
 
-    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let NormalizeArgs { input, .. } = inputs.try_into()?;
 
         let input = input.to_field(schema)?;
