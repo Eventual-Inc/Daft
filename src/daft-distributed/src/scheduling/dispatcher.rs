@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 
 use super::{
-    scheduler::{SchedulableTask, ScheduledTask},
+    scheduler::{PendingTask, ScheduledTask},
     task::{Task, TaskResultAwaiter, TaskStatus},
     worker::{Worker, WorkerManager},
 };
@@ -73,7 +73,7 @@ impl<W: Worker> Dispatcher<W> {
         &mut self,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         statistics_manager: &StatisticsManagerRef,
-    ) -> DaftResult<Vec<SchedulableTask<W::Task>>> {
+    ) -> DaftResult<Vec<PendingTask<W::Task>>> {
         let mut failed_tasks = Vec::new();
         let mut task_results = Vec::new();
 
@@ -125,12 +125,12 @@ impl<W: Worker> Dispatcher<W> {
                         // Task worker died, add the task to the failed tasks, and mark the worker as dead
                         TaskStatus::WorkerDied => {
                             worker_manager.mark_worker_died(worker_id);
-                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            let schedulable_task = PendingTask::new(task, result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                         // Task worker unavailable, add the task to the failed tasks
                         TaskStatus::WorkerUnavailable => {
-                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            let schedulable_task = PendingTask::new(task, result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                     },
