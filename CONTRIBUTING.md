@@ -236,7 +236,7 @@ impl ScalarUDF for MyToUpperCase {
         // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
         let arr = s
             .utf8()
-            .expect("type should have been validated already during `function_args_to_field`")
+            .expect("type should have been validated already during `get_return_field`")
             .into_iter()
             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
             .collect::<Utf8Array>();

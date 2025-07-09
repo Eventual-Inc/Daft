@@ -65,7 +65,7 @@ pub trait ScalarFunctionFactory: Send + Sync {
     ///   When the time comes, we should replace FunctionArgs<ExprRef> with bound ExprRef.
     ///   This way we have the pair (Expr, Field) so we don't have to keep re-computing
     ///   expression types each time we resolve a function. At present, I wanted to keep
-    ///   this signature the exact same as function_args_to_field.
+    ///   this signature the exact same as get_return_field.
     ///
     fn get_function(
         &self,
@@ -94,7 +94,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///
     ///         let arr = s
     ///             .utf8()
-    ///             .expect("type should have been validated already during `function_args_to_field`")
+    ///             .expect("type should have been validated already during `get_return_field`")
     ///             .into_iter()
     ///             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
     ///             .collect::<Utf8Array>();
@@ -109,7 +109,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
     /// ```rs, no_run
     /// impl ScalarUDF for MyToUppercase {
-    ///     fn function_args_to_field(
+    ///     fn get_return_field(
     ///         &self,
     ///         inputs: FunctionArgs<ExprRef>,
     ///         schema: &Schema,

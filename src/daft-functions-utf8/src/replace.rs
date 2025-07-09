@@ -36,7 +36,7 @@ impl ScalarUDF for RegexpReplace {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        function_args_to_field_impl(inputs, schema)
+        get_return_field_impl(inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -64,7 +64,7 @@ impl ScalarUDF for Replace {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        function_args_to_field_impl(inputs, schema)
+        get_return_field_impl(inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -89,10 +89,7 @@ pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bo
     .into()
 }
 
-fn function_args_to_field_impl(
-    inputs: FunctionArgs<ExprRef>,
-    schema: &Schema,
-) -> DaftResult<Field> {
+fn get_return_field_impl(inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
     ensure!(inputs.len() == 3, "Replace expects 3 arguments");
     let input = inputs.required((0, "input"))?.to_field(schema)?;
     let pattern = inputs.required((1, "pattern"))?.to_field(schema)?;
