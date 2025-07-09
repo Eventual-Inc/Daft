@@ -38,7 +38,6 @@ impl ConnectSession {
         lp: LogicalPlanBuilder,
     ) -> ConnectResult<BoxStream<DaftResult<Arc<MicroPartition>>>> {
         let runner = get_context().get_or_create_runner()?;
-
         let result_set = tokio::task::spawn_blocking(move || {
             Python::with_gil(|py| {
                 Ok::<_, DaftError>(runner.run_iter_tables(py, lp, None)?.collect::<Vec<_>>())
@@ -355,7 +354,7 @@ impl ConnectSession {
         let input = input.required("input")?;
 
         let plan = Box::pin(translator.to_logical_plan(*input)).await?;
-        let plan = plan.limit(num_rows as i64, true)?;
+        let plan = plan.limit(num_rows as u64, true)?;
 
         let results = translator.session.run_query(plan).await?;
         let results = results.try_collect::<Vec<_>>().await?;

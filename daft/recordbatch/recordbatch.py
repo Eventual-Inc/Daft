@@ -85,6 +85,10 @@ class RecordBatch:
         return tab
 
     @staticmethod
+    def _from_series(series: list[Series]) -> RecordBatch:
+        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pyseries_list([s._series for s in series]))
+
+    @staticmethod
     def from_arrow_table(arrow_table: pa.Table) -> RecordBatch:
         assert isinstance(arrow_table, pa.Table)
         schema = Schema._from_field_name_and_types(
@@ -462,8 +466,8 @@ class RecordBatch:
 
     def __reduce__(
         self,
-    ) -> tuple[Callable[[dict[str, Any]], RecordBatch], tuple[dict[str, Series]]]:
-        return RecordBatch.from_pydict, ({column.name(): column for column in self.columns()},)
+    ) -> tuple[Callable[[list[Series]], RecordBatch], tuple[list[Series]]]:
+        return RecordBatch._from_series, (self.columns(),)
 
     @classmethod
     def read_parquet(

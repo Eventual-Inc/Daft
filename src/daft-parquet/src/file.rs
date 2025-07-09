@@ -322,7 +322,7 @@ pub struct ParquetFileReader {
 }
 
 impl ParquetFileReader {
-    const DEFAULT_CHUNK_SIZE: usize = 2048;
+    const DEFAULT_CHUNK_SIZE: usize = 128 * 1024;
     // Set to 2GB because that's the maximum size of strings allowable by Parquet (using i32 offsets).
     // See issue: https://github.com/Eventual-Inc/Daft/issues/3007
     const MAX_PAGE_SIZE: usize = 2 * 1024 * 1024 * 1024;

@@ -36,10 +36,12 @@ parking_lot = {workspace = true}
 pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
+reqwest = {version = "0.12.19", default-features = false}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
+uuid.workspace = true
 
 [features]
 python = [

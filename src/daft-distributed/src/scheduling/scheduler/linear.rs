@@ -50,12 +50,14 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
     fn num_pending_tasks(&self) -> usize {
         self.pending_tasks.len()
     }
+
+    fn get_autoscaling_request(&mut self) -> Option<usize> {
+        todo!("FLOTILLA_MS1: Implement get_autoscaling_request for linear scheduler")
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     #[ignore]
     fn test_linear_scheduler_spread_scheduling() {

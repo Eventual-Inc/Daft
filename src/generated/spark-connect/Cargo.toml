@@ -1,6 +1,6 @@
 [dependencies]
-prost = "0.13.3"
-prost-types = "0.13.3"
+prost = {workspace = true}
+prost-types = {workspace = true}
 tonic = {workspace = true}
 
 [lints]

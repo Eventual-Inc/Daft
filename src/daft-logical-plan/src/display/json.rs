@@ -37,6 +37,10 @@ where
     fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         match node {
             LogicalPlan::Source(_) => json!({}),
+            // TODO(desmond): is this correct?
+            LogicalPlan::Shard(shard) => json!({
+                "sharder": shard.sharder,
+            }),
             LogicalPlan::Project(project) => json!({
                 "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
@@ -205,7 +209,7 @@ mod tests {
             )?
             .limit(1000, false)?
             .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 

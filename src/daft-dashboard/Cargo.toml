@@ -1,6 +1,5 @@
 [dependencies]
 anyhow = "1.0"
-chrono = {workspace = true, features = ["serde"]}
 http-body-util = "0.1"
 hyper = {features = ["full"], version = "1.6"}
 hyper-util = {features = ["tokio"], version = "0.1"}

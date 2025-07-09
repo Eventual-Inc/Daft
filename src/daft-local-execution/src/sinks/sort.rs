@@ -7,8 +7,8 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::ExecutionTaskSpawner;
 
@@ -103,7 +103,7 @@ impl BlockingSink for SortSink {
                         &params.descending,
                         &params.nulls_first,
                     )?);
-                    Ok(Some(sorted))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(sorted)))
                 },
                 Span::current(),
             )

@@ -148,6 +148,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 }
 
                 // these depend solely on their input
+                PhysicalPlan::Dedup(..) |
                 PhysicalPlan::Filter(..) |
                 PhysicalPlan::Limit(..) |
                 PhysicalPlan::Sample(..) |

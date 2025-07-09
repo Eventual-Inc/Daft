@@ -11,7 +11,7 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
@@ -132,6 +132,7 @@ impl LogicalPlanBuilder {
     pub fn alias(&self, id: impl Into<Arc<str>>) -> Self {
         self.with_new_plan(LogicalPlan::SubqueryAlias(SubqueryAlias {
             plan_id: None,
+            node_id: None,
             input: self.plan.clone(),
             name: id.into(),
         }))
@@ -321,9 +322,18 @@ impl LogicalPlanBuilder {
         expr_resolver.resolve_window_spec(window_spec, self.plan.clone())
     }
 
-    pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
+    pub fn limit(&self, limit: u64, eager: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> DaftResult<Self> {
+        let sharder = Sharder::new(
+            ShardingStrategy::from(strategy),
+            world_size as usize,
+            rank as usize,
+        );
+        Ok(self.with_new_plan(ops::Shard::new(self.plan.clone(), sharder)))
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
@@ -456,8 +466,13 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(ops::summarize(self)?))
     }
 
-    pub fn distinct(&self) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
+    pub fn distinct(&self, columns: Option<Vec<ExprRef>>) -> DaftResult<Self> {
+        let distinct_resolver = ExprResolver::default();
+        let columns = columns
+            .map(|columns| distinct_resolver.resolve(columns, self.plan.clone()))
+            .transpose()?;
+
+        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone(), columns).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -866,8 +881,53 @@ impl LogicalPlanBuilder {
             },
         )?;
 
-        let builder = Self::new(optimized_plan, cfg);
+        // Assign node IDs to the optimized plan
+        let builder = if std::env::var("DAFT_INSTRUMENT_LOGICAL_PLAN").is_ok() {
+            let optimized_plan_with_node_ids = Self::assign_node_ids(optimized_plan)?;
+            Self::new(optimized_plan_with_node_ids, cfg)
+        } else {
+            Self::new(optimized_plan, cfg)
+        };
         Ok(builder)
+    }
+
+    /// Recursively walk the optimized plan and assign node IDs to each node
+    fn assign_node_ids(plan: Arc<LogicalPlan>) -> DaftResult<Arc<LogicalPlan>> {
+        use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
+
+        struct NodeIdAssigner {
+            node_id_counter: usize,
+        }
+
+        impl NodeIdAssigner {
+            fn new() -> Self {
+                Self { node_id_counter: 0 }
+            }
+
+            fn get_next_node_id(&mut self) -> usize {
+                let id = self.node_id_counter;
+                self.node_id_counter += 1;
+                id
+            }
+        }
+
+        impl TreeNodeRewriter for NodeIdAssigner {
+            type Node = Arc<LogicalPlan>;
+
+            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                Ok(Transformed::no(node))
+            }
+
+            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                let node_id = self.get_next_node_id();
+                let new_node = node.with_node_id(node_id);
+                Ok(Transformed::yes(Arc::new(new_node)))
+            }
+        }
+
+        let mut assigner = NodeIdAssigner::new();
+        let transformed_plan = plan.rewrite(&mut assigner)?;
+        Ok(transformed_plan.data)
     }
 
     pub fn build(&self) -> Arc<LogicalPlan> {
@@ -970,7 +1030,17 @@ impl PyLogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
-        Ok(self.builder.limit(limit, eager)?.into())
+        if limit < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "LIMIT <n> must be greater than or equal to 0, instead got: {}",
+                limit
+            )));
+        }
+        Ok(self.builder.limit(limit as u64, eager)?.into())
+    }
+
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {
+        Ok(self.builder.shard(strategy, world_size, rank)?.into())
     }
 
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
@@ -1039,8 +1109,13 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.summarize()?.into())
     }
 
-    pub fn distinct(&self) -> PyResult<Self> {
-        Ok(self.builder.distinct()?.into())
+    pub fn distinct(&self, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let columns = if columns.is_empty() {
+            None
+        } else {
+            Some(pyexprs_to_exprs(columns))
+        };
+        Ok(self.builder.distinct(columns)?.into())
     }
 
     #[pyo3(signature = (fraction, with_replacement, seed=None))]

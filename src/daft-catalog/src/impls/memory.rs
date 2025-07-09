@@ -310,9 +310,8 @@ impl Table for MemoryTable {
             return Err(DaftError::SchemaMismatch(format!("Expected overwritten table to preserve the schema, found:\nTable schema:\n{}\nNew schema:\n{}", schema, plan.schema())).into());
         }
 
-        let runner = get_context().get_or_create_runner()?;
-
         let pset = MicroPartitionSet::empty();
+        let runner = get_context().get_or_create_runner()?;
         pyo3::Python::with_gil(|py| {
             for (i, res) in runner.run_iter_tables(py, plan, None)?.enumerate() {
                 let mp = res?;

@@ -79,6 +79,8 @@ pub trait ScalarFunctionFactory: Send + Sync {
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     /// The name of the function.
     fn name(&self) -> &'static str;
+
+    /// Any additional aliases for this function.
     fn aliases(&self) -> &'static [&'static str] {
         &[]
     }

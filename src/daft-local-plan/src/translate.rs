@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_file_formats::WriteMode;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
-    expr::{
-        bound_col,
-        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    },
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     join::normalize_join_keys,
-    WindowExpr,
+    resolved_col, WindowExpr,
 };
 use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
@@ -49,6 +47,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 )),
             }
         }
+        LogicalPlan::Shard(_) => Err(DaftError::InternalError(
+            "Sharding should have been folded into a source".to_string(),
+        )),
         LogicalPlan::Filter(filter) => {
             let input = translate(&filter.input)?;
             let predicate = BoundExpr::try_new(filter.predicate.clone(), input.schema())?;
@@ -176,6 +177,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     partition_by,
                     order_by,
                     window.window_spec.descending.clone(),
+                    window.window_spec.nulls_first.clone(),
                     window.schema.clone(),
                     window.stats_state.clone(),
                     window_functions,
@@ -198,6 +200,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         partition_by,
                         order_by,
                         window.window_spec.descending.clone(),
+                        window.window_spec.nulls_first.clone(),
                         window.window_spec.frame.clone().unwrap(),
                         window.window_spec.min_periods,
                         window.schema.clone(),
@@ -210,6 +213,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     input,
                     order_by,
                     window.window_spec.descending.clone(),
+                    window.window_spec.nulls_first.clone(),
                     window.schema.clone(),
                     window.stats_state.clone(),
                     window_functions,
@@ -329,17 +333,16 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();
             let input = translate(&distinct.input)?;
-            let col_exprs = input
-                .schema()
-                .into_iter()
-                .enumerate()
-                .map(|(i, f)| BoundExpr::new_unchecked(bound_col(i, f.clone())))
-                .collect();
 
-            Ok(LocalPhysicalPlan::hash_aggregate(
+            let columns = distinct
+                .columns
+                .clone()
+                .unwrap_or_else(|| schema.field_names().map(resolved_col).collect::<Vec<_>>());
+            let columns = BoundExpr::bind_all(&columns, &schema)?;
+
+            Ok(LocalPhysicalPlan::dedup(
                 input,
-                vec![],
-                col_exprs,
+                columns,
                 schema,
                 distinct.stats_state.clone(),
             ))
@@ -372,14 +375,27 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let data_schema = input.schema().clone();
             match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => {
-                    let info = info.clone().bind(&data_schema)?;
-                    Ok(LocalPhysicalPlan::physical_write(
+                    let bound_info = info.clone().bind(&data_schema)?;
+                    let physical_write = LocalPhysicalPlan::physical_write(
                         input,
                         data_schema,
                         sink.schema.clone(),
-                        info,
+                        bound_info.clone(),
                         sink.stats_state.clone(),
-                    ))
+                    );
+                    if matches!(
+                        info.write_mode,
+                        WriteMode::Overwrite | WriteMode::OverwritePartitions
+                    ) {
+                        Ok(LocalPhysicalPlan::commit_write(
+                            physical_write,
+                            sink.schema.clone(),
+                            bound_info,
+                            sink.stats_state.clone(),
+                        ))
+                    } else {
+                        Ok(physical_write)
+                    }
                 }
                 #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(info) => match &info.catalog {

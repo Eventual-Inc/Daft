@@ -10,8 +10,11 @@ use serde::{Deserialize, Serialize};
 
 mod json;
 
-//
+/// Signature of a deserialization implementation e.g. strings to arbitrary series.
 pub type Deserializer = fn(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series>;
+
+/// Signature of a serialization implementation e.g. arbitrary series to string.
+pub type Serializer = fn(input: Series) -> DaftResult<Utf8Array>;
 
 /// Supported formsts for the serialize and deserialize functions.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -67,6 +70,18 @@ impl Format {
     pub(crate) fn try_deserializer(&self) -> Deserializer {
         match self {
             Self::Json => json::try_deserialize,
+        }
+    }
+
+    pub(crate) fn serializer(&self) -> Serializer {
+        match self {
+            Self::Json => json::serialize,
+        }
+    }
+
+    pub(crate) fn try_serializer(&self) -> Serializer {
+        match self {
+            Self::Json => json::try_serialize,
         }
     }
 }

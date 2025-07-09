@@ -11,7 +11,7 @@ pub struct TopN {
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
-    pub limit: i64,
+    pub limit: u64,
     pub num_partitions: usize,
 }
 
@@ -21,7 +21,7 @@ impl TopN {
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: i64,
+        limit: u64,
         num_partitions: usize,
     ) -> Self {
         Self {
