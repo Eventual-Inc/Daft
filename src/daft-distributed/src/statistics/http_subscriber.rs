@@ -94,19 +94,21 @@ impl PlanData {
         let mut adjacency_list: HashMap<NodeID, Vec<NodeID>> = HashMap::new();
 
         let _ = logical_plan.apply(|node| {
-            if let Some(node_id) = node.node_id() {
-                let parent_id = *node_id as NodeID;
-                let children = node.children();
+            let node_id = node
+                .node_id()
+                .expect("Node ID must be set for optimized logical plan");
+            let parent_id = node_id as NodeID;
+            let children = node.children();
 
-                let mut child_ids: Vec<NodeID> = Vec::new();
-                for child in children {
-                    if let Some(child_node_id) = child.node_id() {
-                        child_ids.push(*child_node_id as NodeID);
-                    }
-                }
-
-                adjacency_list.insert(parent_id, child_ids);
+            let mut child_ids: Vec<NodeID> = Vec::new();
+            for child in children {
+                let child_node_id = child
+                    .node_id()
+                    .expect("Node ID must be set for optimized logical plan");
+                child_ids.push(child_node_id as NodeID);
             }
+
+            adjacency_list.insert(parent_id, child_ids);
 
             Ok(common_treenode::TreeNodeRecursion::Continue)
         });

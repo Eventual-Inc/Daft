@@ -93,30 +93,14 @@ impl Window {
         self
     }
 
-    pub fn with_plan_id(&self, id: Option<usize>) -> LogicalPlan {
-        LogicalPlan::Window(Self {
-            plan_id: id,
-            node_id: self.node_id,
-            input: self.input.clone(),
-            window_functions: self.window_functions.clone(),
-            aliases: self.aliases.clone(),
-            window_spec: self.window_spec.clone(),
-            schema: self.schema.clone(),
-            stats_state: self.stats_state.clone(),
-        })
+    pub fn with_plan_id(mut self, id: usize) -> Self {
+        self.plan_id = Some(id);
+        self
     }
 
-    pub fn with_node_id(&self, id: Option<usize>) -> LogicalPlan {
-        LogicalPlan::Window(Self {
-            plan_id: self.plan_id,
-            node_id: id,
-            input: self.input.clone(),
-            window_functions: self.window_functions.clone(),
-            aliases: self.aliases.clone(),
-            window_spec: self.window_spec.clone(),
-            schema: self.schema.clone(),
-            stats_state: self.stats_state.clone(),
-        })
+    pub fn with_node_id(mut self, id: usize) -> Self {
+        self.node_id = Some(id);
+        self
     }
 }
 

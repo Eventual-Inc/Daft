@@ -882,14 +882,8 @@ impl LogicalPlanBuilder {
         )?;
 
         // Assign node IDs to the optimized plan
-        let builder = if std::env::var("DAFT_INSTRUMENT_LOGICAL_PLAN").is_ok() {
-            let optimized_plan_with_node_ids = Self::assign_node_ids(optimized_plan)?;
-            Self::new(optimized_plan_with_node_ids, cfg)
-        } else {
-            Self::new(optimized_plan, cfg)
-        };
-
-        Ok(builder)
+        let optimized_plan_with_node_ids = Self::assign_node_ids(optimized_plan)?;
+        Ok(Self::new(optimized_plan_with_node_ids, cfg))
     }
 
     /// Recursively walk the optimized plan and assign node IDs to each node
