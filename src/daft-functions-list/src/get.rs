@@ -20,27 +20,23 @@ impl ScalarUDF for ListGet {
         "list_get"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let idx = inputs.required((1, "index"))?;
-        let _default = inputs.required((2, "default"))?;
+    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let input = args.required((0, "input"))?;
+        let idx = args.required((1, "index"))?;
+        let _default = args.required((2, "default"))?;
         input.list_get(idx, _default)
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(
-            inputs.len() == 3,
+            args.len() == 3,
             SchemaMismatch: "Expected 3 input args, got {}",
-            inputs.len()
+            args.len()
         );
 
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
-        let idx = inputs.required(1)?.to_field(schema)?;
-        let _default = inputs.required(2)?.to_field(schema)?;
+        let input = args.required((0, "input"))?.to_field(schema)?;
+        let idx = args.required(1)?.to_field(schema)?;
+        let _default = args.required(2)?.to_field(schema)?;
 
         ensure!(
             input.dtype.is_list() || input.dtype.is_fixed_size_list(),

@@ -17,7 +17,7 @@ impl ScalarUDF for ListMap {
         "list_map"
     }
 
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         // Since we evaluate the children first,
         // the `.element()...` expr is already evaluated by the time this `evaluate` is called here.
         // So we don't really need to perform any work, but instead just put it back in to the list array
@@ -36,7 +36,7 @@ impl ScalarUDF for ListMap {
         Ok(res.into_series())
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

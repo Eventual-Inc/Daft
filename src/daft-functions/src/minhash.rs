@@ -25,7 +25,7 @@ impl ScalarUDF for MinHashFunction {
     fn name(&self) -> &'static str {
         "minhash"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args {
             input,
             num_hashes,
@@ -56,7 +56,7 @@ impl ScalarUDF for MinHashFunction {
             }
         }
     }
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
