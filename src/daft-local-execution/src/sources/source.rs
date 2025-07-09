@@ -16,7 +16,7 @@ use crate::{
     channel::{create_channel, Receiver},
     pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
-    runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext},
+    runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
 };
 
@@ -35,7 +35,7 @@ impl RuntimeStatsBuilder for SourceStatsBuilder {
         _rows_received: u64,
         rows_emitted: u64,
     ) {
-        stats.insert("rows emitted", HumanCount(rows_emitted).to_string());
+        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
     }
 }
 

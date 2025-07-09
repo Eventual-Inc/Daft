@@ -49,6 +49,9 @@ pub trait RuntimeStatsBuilder: Send + Sync + std::any::Any {
     );
 }
 
+pub const ROWS_RECEIVED_KEY: &str = "rows received";
+pub const ROWS_EMITTED_KEY: &str = "rows emitted";
+
 pub struct BaseStatsBuilder {}
 
 impl RuntimeStatsBuilder for BaseStatsBuilder {
@@ -62,8 +65,8 @@ impl RuntimeStatsBuilder for BaseStatsBuilder {
         rows_received: u64,
         rows_emitted: u64,
     ) {
-        stats.insert("rows received", HumanCount(rows_received).to_string());
-        stats.insert("rows emitted", HumanCount(rows_emitted).to_string());
+        stats.insert(ROWS_RECEIVED_KEY, HumanCount(rows_received).to_string());
+        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
     }
 }
 
@@ -727,24 +730,24 @@ mod tests {
 
         // Test initial state
         let stats = rt_context.render();
-        assert_eq!(stats.get("rows received").unwrap(), "0");
-        assert_eq!(stats.get("rows emitted").unwrap(), "0");
+        assert_eq!(stats.get(ROWS_RECEIVED_KEY).unwrap(), "0");
+        assert_eq!(stats.get(ROWS_EMITTED_KEY).unwrap(), "0");
 
         // Test incremental updates
         rt_context.mark_rows_received(100);
         rt_context.mark_rows_received(50);
         let stats = rt_context.render();
-        assert_eq!(stats.get("rows received").unwrap(), "150");
+        assert_eq!(stats.get(ROWS_RECEIVED_KEY).unwrap(), "150");
 
         rt_context.mark_rows_emitted(75);
         let stats = rt_context.render();
-        assert_eq!(stats.get("rows emitted").unwrap(), "75");
+        assert_eq!(stats.get(ROWS_EMITTED_KEY).unwrap(), "75");
 
         // Test reset
         rt_context.reset();
         let stats = rt_context.render();
-        assert_eq!(stats.get("rows received").unwrap(), "0");
-        assert_eq!(stats.get("rows emitted").unwrap(), "0");
+        assert_eq!(stats.get(ROWS_RECEIVED_KEY).unwrap(), "0");
+        assert_eq!(stats.get(ROWS_EMITTED_KEY).unwrap(), "0");
     }
 
     #[tokio::test]

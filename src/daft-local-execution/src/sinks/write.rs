@@ -17,7 +17,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    runtime_stats::RuntimeStatsBuilder,
+    runtime_stats::{RuntimeStatsBuilder, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -36,8 +36,8 @@ impl RuntimeStatsBuilder for WriteStatsBuilder {
         rows_received: u64,
         rows_emitted: u64,
     ) {
-        stats.insert("rows received", HumanCount(rows_received).to_string());
-        stats.insert("files written", HumanCount(rows_emitted).to_string());
+        stats.insert(ROWS_RECEIVED_KEY, HumanCount(rows_received).to_string());
+        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
         stats.insert(
             "bytes written",
             HumanBytes(
