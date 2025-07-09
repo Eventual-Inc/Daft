@@ -6,6 +6,7 @@ pub mod dedup;
 pub mod grouped_aggregate;
 pub mod hash_join_build;
 pub mod pivot;
+pub mod repartition;
 pub mod sort;
 pub mod top_n;
 pub mod window_base;

@@ -6,7 +6,7 @@ use crate::PhysicalPlanRef;
 pub struct Limit {
     // Upstream node.
     pub input: PhysicalPlanRef,
-    pub limit: i64,
+    pub limit: u64,
     pub eager: bool,
     pub num_partitions: usize,
 }
@@ -14,7 +14,7 @@ pub struct Limit {
 impl Limit {
     pub(crate) fn new(
         input: PhysicalPlanRef,
-        limit: i64,
+        limit: u64,
         eager: bool,
         num_partitions: usize,
     ) -> Self {

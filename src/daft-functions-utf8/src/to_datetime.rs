@@ -18,7 +18,7 @@ impl ScalarUDF for ToDatetime {
     fn name(&self) -> &'static str {
         "to_datetime"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
         let format = inputs.required((1, "format"))?;
         ensure!(format.data_type().is_string() && format.len() == 1, ValueError: "format must be a string literal");
@@ -39,7 +39,7 @@ impl ScalarUDF for ToDatetime {
         data.with_utf8_array(|arr| Ok(to_datetime_impl(arr, format, tz)?.into_series()))
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

@@ -30,9 +30,16 @@ pub enum BlockingSinkStatus {
     Finished(Box<dyn BlockingSinkState>),
 }
 
+pub enum BlockingSinkFinalizeOutput {
+    HasMoreOutput {
+        states: Vec<Box<dyn BlockingSinkState>>,
+        output: Option<Arc<MicroPartition>>,
+    },
+    Finished(Option<Arc<MicroPartition>>),
+}
+
 pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<BlockingSinkStatus>>;
-pub(crate) type BlockingSinkFinalizeResult =
-    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkFinalizeOutput>>;
 pub trait BlockingSink: Send + Sync {
     fn sink(
         &self,
@@ -264,9 +271,22 @@ impl PipelineNode for BlockingSinkNode {
                     rt_stats_handler,
                     info_span!("BlockingSink::Finalize"),
                 );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                loop {
+                    let finalized_result = op.finalize(finished_states, &spawner).await??;
+                    match finalized_result {
+                        BlockingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                            if let Some(output) = output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                            finished_states = states;
+                        }
+                        BlockingSinkFinalizeOutput::Finished(output) => {
+                            if let Some(output) = output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                            break;
+                        }
+                    }
                 }
                 Ok(())
             },

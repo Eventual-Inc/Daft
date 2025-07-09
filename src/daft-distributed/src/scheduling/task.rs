@@ -48,15 +48,23 @@ pub(crate) struct TaskContext {
     pub stage_id: StageID,
     pub node_id: NodeID,
     pub task_id: TaskID,
+    pub logical_node_id: Option<NodeID>,
 }
 
 impl TaskContext {
-    pub fn new(plan_id: PlanID, stage_id: StageID, node_id: NodeID, task_id: TaskID) -> Self {
+    pub fn new(
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
+        task_id: TaskID,
+        logical_node_id: Option<NodeID>,
+    ) -> Self {
         Self {
             plan_id,
             stage_id,
             node_id,
             task_id,
+            logical_node_id,
         }
     }
 }
@@ -78,6 +86,7 @@ impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
             node_context.stage_id,
             node_context.node_id,
             task_id,
+            node_context.logical_node_id,
         )
     }
 }
@@ -283,7 +292,7 @@ impl Task for SwordfishTask {
 
 #[derive(Debug)]
 pub(crate) enum TaskStatus {
-    Success { result: Vec<MaterializedOutput> },
+    Success { result: MaterializedOutput },
     Failed { error: DaftError },
     Cancelled,
     WorkerDied,
@@ -380,7 +389,7 @@ pub(super) mod tests {
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
-        task_result: Vec<MaterializedOutput>,
+        task_result: MaterializedOutput,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
@@ -400,7 +409,7 @@ pub(super) mod tests {
         task_name: TaskName,
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
-        task_result: Vec<MaterializedOutput>,
+        task_result: MaterializedOutput,
         resource_request: TaskResourceRequest,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<Duration>,
@@ -422,7 +431,7 @@ pub(super) mod tests {
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: vec![MaterializedOutput::new(partition_ref, "".into())],
+                task_result: MaterializedOutput::new(vec![partition_ref], "".into()),
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,
                 failure: None,
@@ -571,55 +580,55 @@ pub(super) mod tests {
 
         // Test 1: Different plan_ids (lower plan_id should have higher priority)
         let task1 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 1),
+            task_context: TaskContext::new(1, 1, 1, 1, Some(1)),
         };
         let task2 = SwordfishTaskPriority {
-            task_context: TaskContext::new(2, 1, 1, 1),
+            task_context: TaskContext::new(2, 1, 1, 1, Some(1)),
         };
         assert!(task1 > task2); // plan_id 1 < plan_id 2, so task1 has higher priority (larger in ordering)
 
         // Test 2: Same plan_id, different stage_ids (higher stage_id should have higher priority)
         let task1 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 2, 1, 1),
+            task_context: TaskContext::new(1, 2, 1, 1, Some(1)),
         };
         let task2 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 1),
+            task_context: TaskContext::new(1, 1, 1, 1, Some(1)),
         };
         assert!(task1 > task2); // stage_id 2 > stage_id 1, so task1 has higher priority (larger in ordering)
 
         // Test 3: Same plan_id and stage_id, different node_ids (higher node_id should have higher priority)
         let task1 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 2, 1),
+            task_context: TaskContext::new(1, 1, 2, 1, Some(2)),
         };
         let task2 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 1),
+            task_context: TaskContext::new(1, 1, 1, 1, Some(1)),
         };
         assert!(task1 > task2); // node_id 2 > node_id 1, so task1 has higher priority (larger in ordering)
 
         // Test 4: Same plan_id, stage_id, and node_id, different task_ids (lower task_id should have higher priority)
         let task1 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 1),
+            task_context: TaskContext::new(1, 1, 1, 1, Some(1)),
         };
         let task2 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 2),
+            task_context: TaskContext::new(1, 1, 1, 2, Some(1)),
         };
         assert!(task1 > task2); // task_id 1 < task_id 2, so task1 has higher priority (larger in ordering)
 
         // Test 5: Complex case with multiple differences
         let task1 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 2, 2, 1), // plan_id=1, stage_id=2, node_id=2, task_id=1
+            task_context: TaskContext::new(1, 2, 2, 1, Some(2)), // plan_id=1, stage_id=2, node_id=2, task_id=1
         };
         let task2 = SwordfishTaskPriority {
-            task_context: TaskContext::new(2, 1, 1, 1), // plan_id=2, stage_id=1, node_id=1, task_id=1
+            task_context: TaskContext::new(2, 1, 1, 1, Some(1)), // plan_id=2, stage_id=1, node_id=1, task_id=1
         };
         assert!(task1 > task2); // task1 has lower plan_id, so it has higher priority (larger in ordering)
 
         // Test 6: Equality
         let task1 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 1),
+            task_context: TaskContext::new(1, 1, 1, 1, Some(1)),
         };
         let task2 = SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 1),
+            task_context: TaskContext::new(1, 1, 1, 1, Some(1)),
         };
         assert_eq!(task1, task2);
     }
@@ -634,19 +643,19 @@ pub(super) mod tests {
 
         // Add tasks in random order - ensuring unique task_ids within each stage
         heap.push(SwordfishTaskPriority {
-            task_context: TaskContext::new(2, 1, 1, 1), // plan_id=2, stage_id=1, node_id=1, task_id=1
+            task_context: TaskContext::new(2, 1, 1, 1, Some(1)), // plan_id=2, stage_id=1, node_id=1, task_id=1
         });
         heap.push(SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 2, 1, 1), // plan_id=1, stage_id=2, node_id=1, task_id=1
+            task_context: TaskContext::new(1, 2, 1, 1, Some(1)), // plan_id=1, stage_id=2, node_id=1, task_id=1
         });
         heap.push(SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 2, 3), // plan_id=1, stage_id=1, node_id=2, task_id=3
+            task_context: TaskContext::new(1, 1, 2, 3, Some(2)), // plan_id=1, stage_id=1, node_id=2, task_id=3
         });
         heap.push(SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 2), // plan_id=1, stage_id=1, node_id=1, task_id=2
+            task_context: TaskContext::new(1, 1, 1, 2, Some(1)), // plan_id=1, stage_id=1, node_id=1, task_id=2
         });
         heap.push(SwordfishTaskPriority {
-            task_context: TaskContext::new(1, 1, 1, 1), // plan_id=1, stage_id=1, node_id=1, task_id=1
+            task_context: TaskContext::new(1, 1, 1, 1, Some(1)), // plan_id=1, stage_id=1, node_id=1, task_id=1
         });
 
         // Pop tasks in order (BinaryHeap is a max heap, so highest priority comes out first)
@@ -659,23 +668,23 @@ pub(super) mod tests {
 
         assert_eq!(
             heap.pop().unwrap().task_context,
-            TaskContext::new(1, 2, 1, 1)
+            TaskContext::new(1, 2, 1, 1, Some(1))
         );
         assert_eq!(
             heap.pop().unwrap().task_context,
-            TaskContext::new(1, 1, 2, 3)
+            TaskContext::new(1, 1, 2, 3, Some(2))
         );
         assert_eq!(
             heap.pop().unwrap().task_context,
-            TaskContext::new(1, 1, 1, 1)
+            TaskContext::new(1, 1, 1, 1, Some(1))
         );
         assert_eq!(
             heap.pop().unwrap().task_context,
-            TaskContext::new(1, 1, 1, 2)
+            TaskContext::new(1, 1, 1, 2, Some(1))
         );
         assert_eq!(
             heap.pop().unwrap().task_context,
-            TaskContext::new(2, 1, 1, 1)
+            TaskContext::new(2, 1, 1, 1, Some(1))
         );
         assert!(heap.pop().is_none()); // Heap should be empty
     }

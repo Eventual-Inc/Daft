@@ -64,6 +64,7 @@ mod test {
         LogicalPlanBuilder::from(
             LogicalPlan::Source(Source {
                 plan_id: None,
+                node_id: None,
                 output_schema: schema.clone(),
                 source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                     source_schema: schema,

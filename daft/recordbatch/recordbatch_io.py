@@ -358,7 +358,7 @@ def write_iceberg(
 ) -> MicroPartition:
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-    from daft.iceberg.iceberg_write import (
+    from daft.io.iceberg.iceberg_write import (
         IcebergWriteVisitors,
         partitioned_table_to_iceberg_iter,
     )
@@ -427,7 +427,7 @@ def write_deltalake(
     partition_cols: ExpressionsProjection | None = None,
     io_config: IOConfig | None = None,
 ) -> MicroPartition:
-    from daft.delta_lake.delta_lake_write import (
+    from daft.io.delta_lake.delta_lake_write import (
         DeltaLakeWriteVisitors,
         make_deltalake_fs,
         partitioned_table_to_deltalake_iter,

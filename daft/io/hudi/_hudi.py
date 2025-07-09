@@ -29,7 +29,7 @@ def read_hudi(
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
     """
-    from daft.hudi.hudi_scan import HudiScanOperator
+    from daft.io.hudi.hudi_scan import HudiScanOperator
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

@@ -2,7 +2,6 @@ use std::{collections::VecDeque, future::Future, path::PathBuf, pin::Pin, sync::
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
 use daft_io::{parse_url, IOConfig, SourceType};
@@ -31,14 +30,9 @@ type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Se
 
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_parquet_writer_supported(
-    file_format: FileFormat,
     root_dir: &str,
     file_schema: &SchemaRef,
 ) -> DaftResult<bool> {
-    // TODO(desmond): Currently we only support native parquet writes.
-    if !matches!(file_format, FileFormat::Parquet) {
-        return Ok(false);
-    }
     let (source_type, _) = parse_url(root_dir)?;
     match source_type {
         SourceType::File => {}

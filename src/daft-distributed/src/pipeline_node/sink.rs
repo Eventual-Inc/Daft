@@ -41,6 +41,7 @@ impl SinkNode {
         file_schema: SchemaRef,
         data_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
@@ -48,8 +49,13 @@ impl SinkNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
-        let config = PipelineNodeConfig::new(file_schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            file_schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Self {
             config,
             context,

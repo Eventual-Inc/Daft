@@ -46,6 +46,7 @@ use crate::{
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
         pivot::PivotSink,
+        repartition::RepartitionSink,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -936,6 +937,8 @@ pub fn physical_plan_to_pipeline(
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
                 (FileFormat::Csv, true) => WriteFormat::PartitionedCsv,
                 (FileFormat::Csv, false) => WriteFormat::Csv,
+                (FileFormat::Json, true) => WriteFormat::PartitionedJson,
+                (FileFormat::Json, false) => WriteFormat::Json,
                 (_, _) => panic!("Unsupported file format"),
             };
             let write_sink = WriteSink::new(
@@ -1043,6 +1046,24 @@ pub fn physical_plan_to_pipeline(
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
+        }
+        LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
+            input,
+            columns,
+            num_partitions,
+            stats_state,
+            schema,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let repartition_op =
+                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
+            BlockingSinkNode::new(
+                Arc::new(repartition_op),
+                child_node,
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
         }
     };
 

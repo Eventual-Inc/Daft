@@ -83,7 +83,7 @@ impl LocalPartitionStream {
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "daft.daft", name = "NativeExecutor")
+    pyclass(module = "daft.daft", name = "NativeExecutor", frozen)
 )]
 pub struct PyNativeExecutor {
     executor: NativeExecutor,
@@ -108,7 +108,7 @@ impl PyNativeExecutor {
 
     #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
     pub fn run<'a>(
-        &mut self,
+        &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
@@ -156,7 +156,7 @@ impl PyNativeExecutor {
 
     #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, context=None))]
     pub fn run_async<'a>(
-        &mut self,
+        &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
@@ -276,7 +276,7 @@ impl NativeExecutor {
     }
 
     pub fn run(
-        &mut self,
+        &self,
         local_physical_plan: &LocalPhysicalPlanRef,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
