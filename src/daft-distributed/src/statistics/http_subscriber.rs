@@ -319,7 +319,9 @@ impl HttpSubscriber {
         let mut nodes_map: HashMap<NodeID, QueryGraphNode> = HashMap::new();
 
         for (context, task_state) in &plan_data.tasks {
-            let node_id = context.logical_node_id;
+            let node_id = context
+                .logical_node_id
+                .expect("Logical node ID must be set for optimized logical plan");
 
             if let Some(existing_node) = nodes_map.get_mut(&node_id) {
                 // Collect task progress per node
