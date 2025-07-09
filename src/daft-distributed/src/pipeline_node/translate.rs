@@ -1,26 +1,26 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftResult};
 use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    },
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
     join::normalize_join_keys,
     resolved_col,
 };
-use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{
+    partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo,
+};
 use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        groupby_agg::gen_agg_nodes, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode,
-        limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
-        DistributedPipelineNode, NodeID,
+        aggregate::gen_agg_nodes, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode, gather::GatherNode, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode, limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID
     },
     stage::StageConfig,
 };
@@ -55,6 +55,36 @@ impl LogicalPlanToPipelineNodeTranslator {
     fn get_next_pipeline_node_id(&mut self) -> NodeID {
         self.pipeline_node_id_counter += 1;
         self.pipeline_node_id_counter
+    }
+
+    fn gen_shuffle_node(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        input_node: Arc<dyn DistributedPipelineNode>,
+        partition_cols: Vec<BoundExpr>,
+    ) -> Arc<dyn DistributedPipelineNode> {
+        let node_id = self.get_next_pipeline_node_id();
+        let schema = input_node.config().schema.clone();
+        if partition_cols.is_empty() {
+            GatherNode::new(
+                &self.stage_config,
+                node_id,
+                logical_node_id,
+                schema,
+                input_node,
+            ).arced()
+        } else {
+            RepartitionNode::new(
+                &self.stage_config,
+                node_id,
+                logical_node_id,
+                partition_cols,
+                None,
+                schema,
+                input_node,
+            )
+            .arced()
+        }
     }
 }
 
@@ -219,6 +249,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 };
 
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
+
+                assert!(!columns.is_empty());
                 RepartitionNode::new(
                     &self.stage_config,
                     node_id,
@@ -231,11 +263,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Aggregate(aggregate) => {
-                if aggregate.groupby.is_empty() {
-                    todo!("FLOTILLA_MS2: Implement Aggregate without groupby")
-                }
-
-                let groupby = BoundExpr::bind_all(&aggregate.groupby, &aggregate.input.schema())?;
+                let input_schema = aggregate.input.schema();
+                let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;
                 let aggregations = aggregate
                     .aggregations
                     .iter()
@@ -250,7 +279,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.stage_config,
                     node_id,
                     logical_node_id,
-                    groupby,
+                    group_by,
                     aggregations,
                     aggregate.output_schema.clone(),
                 )?
@@ -301,11 +330,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Window(window) => {
-                // Not sure if this is possible right now, just in case
-                if window.window_spec.partition_by.is_empty() {
-                    todo!("FLOTILLA_MS2: Implement Window without partition by")
-                }
-
                 let partition_by =
                     BoundExpr::bind_all(&window.window_spec.partition_by, &window.input.schema())?;
                 let order_by =
@@ -313,17 +337,13 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let window_functions =
                     BoundWindowExpr::bind_all(&window.window_functions, &window.input.schema())?;
 
-                // First stage: Repartition by the partition_by columns to colocate rows
-                let repartition = RepartitionNode::new(
-                    &self.stage_config,
-                    node_id,
+                // First stage: Shuffle by the partition_by columns to colocate rows
+                let input_node = self.curr_node.pop().unwrap();
+                let repartition = self.gen_shuffle_node(
                     logical_node_id,
+                    input_node,
                     partition_by.clone(),
-                    None,
-                    window.input.schema(),
-                    self.curr_node.pop().unwrap(),
-                )
-                .arced();
+                );
 
                 // Final stage: The actual window op
                 WindowNode::new(
@@ -376,10 +396,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Sort(_) => {
-                todo!("FLOTILLA_MS2: Implement Sort")
+                todo!("FLOTILLA_MS3: Implement Sort")
             }
             LogicalPlan::TopN(_) => {
-                todo!("FLOTILLA_MS2: Implement TopN")
+                todo!("FLOTILLA_MS3: Implement TopN")
             }
             LogicalPlan::Pivot(_) => {
                 todo!("FLOTILLA_MS3: Implement Pivot")

@@ -42,6 +42,8 @@ impl StagePlanBuilder {
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::Distinct(_)
+            | LogicalPlan::Aggregate(_)
+            | LogicalPlan::Window(_)
             | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
@@ -51,25 +53,8 @@ impl StagePlanBuilder {
                     Ok(TreeNodeRecursion::Stop)
                 }
             },
-            LogicalPlan::Aggregate(aggregate) => {
-                if aggregate.groupby.is_empty() {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
-                }
-            },
-            LogicalPlan::Window(window) => {
-                if window.window_spec.partition_by.is_empty() {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
-                }
-            },
             LogicalPlan::Join(join) => {
-                // TODO: Support broadcast join
-                if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
+                if join.join_strategy.is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast)) {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 } else {
@@ -83,8 +68,8 @@ impl StagePlanBuilder {
                 }
             }
             LogicalPlan::Sort(_)
-            | LogicalPlan::Concat(_)
             | LogicalPlan::TopN(_)
+            | LogicalPlan::Concat(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Pivot(_) => {
                 can_translate = false;
