@@ -1,26 +1,26 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::{DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::{
-        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    },
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
     join::normalize_join_keys,
     resolved_col,
 };
-use daft_logical_plan::{
-    partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo,
-};
+use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        aggregate::gen_agg_nodes, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode, gather::GatherNode, hash_join::HashJoinNode, in_memory_source::InMemorySourceNode, limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID
+        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode, gather::GatherNode,
+        hash_join::HashJoinNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
+        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
+        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
+        DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -35,8 +35,8 @@ pub(crate) fn logical_plan_to_pipeline_node(
     Ok(translator.curr_node.pop().unwrap())
 }
 
-struct LogicalPlanToPipelineNodeTranslator {
-    stage_config: StageConfig,
+pub(crate) struct LogicalPlanToPipelineNodeTranslator {
+    pub stage_config: StageConfig,
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<Arc<dyn DistributedPipelineNode>>,
@@ -52,12 +52,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         }
     }
 
-    fn get_next_pipeline_node_id(&mut self) -> NodeID {
+    pub fn get_next_pipeline_node_id(&mut self) -> NodeID {
         self.pipeline_node_id_counter += 1;
         self.pipeline_node_id_counter
     }
 
-    fn gen_shuffle_node(
+    pub fn gen_shuffle_node(
         &mut self,
         logical_node_id: Option<NodeID>,
         input_node: Arc<dyn DistributedPipelineNode>,
@@ -72,7 +72,8 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 schema,
                 input_node,
-            ).arced()
+            )
+            .arced()
         } else {
             RepartitionNode::new(
                 &self.stage_config,
@@ -274,10 +275,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                gen_agg_nodes(
-                    self.curr_node.pop().unwrap(),
-                    &self.stage_config,
-                    node_id,
+                let input_node = self.curr_node.pop().unwrap();
+                self.gen_agg_nodes(
+                    input_node,
                     logical_node_id,
                     group_by,
                     aggregations,
@@ -339,11 +339,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
-                let repartition = self.gen_shuffle_node(
-                    logical_node_id,
-                    input_node,
-                    partition_by.clone(),
-                );
+                let repartition =
+                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone());
 
                 // Final stage: The actual window op
                 WindowNode::new(

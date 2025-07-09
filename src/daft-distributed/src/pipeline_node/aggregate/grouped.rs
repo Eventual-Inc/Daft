@@ -3,14 +3,13 @@ use std::sync::Arc;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode};
-use crate::pipeline_node::RunningPipelineNode;
+use super::DistributedPipelineNode;
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, RunningPipelineNode,
     },
     stage::{StageConfig, StageExecutionContext},
 };

@@ -45,7 +45,11 @@ impl GatherNode {
             vec![child.name()],
             logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone(), Arc::new(UnknownClusteringConfig::new(1).into()));
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            Arc::new(UnknownClusteringConfig::new(1).into()),
+        );
         Self {
             config,
             context,
