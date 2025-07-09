@@ -1,7 +1,10 @@
 use std::collections::{BinaryHeap, HashMap};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
-use crate::scheduling::{task::Task, worker::WorkerId};
+use crate::scheduling::{
+    task::{Task, TaskResourceRequest},
+    worker::WorkerId,
+};
 
 #[allow(dead_code)]
 pub(super) struct LinearScheduler<T: Task> {
@@ -51,7 +54,7 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         self.pending_tasks.len()
     }
 
-    fn get_autoscaling_request(&mut self) -> Option<usize> {
+    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
         todo!("FLOTILLA_MS1: Implement get_autoscaling_request for linear scheduler")
     }
 }

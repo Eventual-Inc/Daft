@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -45,6 +46,8 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_worker_threads: int) -> None:
+        # Unset CUDA_VISIBLE_DEVICES so that GPU UDFs can use them
+        del os.environ["CUDA_VISIBLE_DEVICES"]
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_worker_threads)
         self.native_executor = NativeExecutor()
@@ -171,11 +174,11 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
     return handles
 
 
-def try_autoscale(num_cpus: int) -> None:
+def try_autoscale(bundles: list[dict[str, float]]) -> None:
     from ray.autoscaler.sdk import request_resources
 
     request_resources(
-        num_cpus=num_cpus,
+        bundles=bundles,
     )
 
 
