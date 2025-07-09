@@ -151,7 +151,8 @@ class Series:
         except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError, pa.lib.ArrowNotImplementedError):
             if pyobj == "disallow":
                 raise
-            dtype = DataType._infer_dtype_from_pylist(data) or DataType.python()
+            print(dtype, DataType._infer_dtype_from_pylist(data))
+            dtype = dtype or DataType._infer_dtype_from_pylist(data) or DataType.python()
             pys = PySeries.from_pylist(name, data, dtype._dtype)
             return Series._from_pyseries(pys)
 
