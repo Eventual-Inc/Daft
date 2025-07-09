@@ -44,7 +44,7 @@ pub(crate) struct WindowNode {
     nulls_first: Vec<bool>,
     frame: Option<WindowFrame>,
     min_periods: usize,
-    aggregations: Vec<BoundWindowExpr>,
+    window_exprs: Vec<BoundWindowExpr>,
     aliases: Vec<String>,
 
     child: Arc<dyn DistributedPipelineNode>,
@@ -64,7 +64,7 @@ impl WindowNode {
         nulls_first: Vec<bool>,
         frame: Option<WindowFrame>,
         min_periods: usize,
-        aggregations: Vec<BoundWindowExpr>,
+        window_exprs: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -97,7 +97,7 @@ impl WindowNode {
             nulls_first,
             frame,
             min_periods,
-            aggregations,
+            window_exprs,
             aliases,
             child,
         }
@@ -181,7 +181,7 @@ impl DistributedPipelineNode for WindowNode {
                     self_clone.partition_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    window_to_agg_exprs(self_clone.aggregations.clone())?,
+                    window_to_agg_exprs(self_clone.window_exprs.clone())?,
                     self_clone.aliases.clone(),
                 )),
                 (true, false) => Ok(LocalPhysicalPlan::window_partition_and_order_by(
@@ -192,7 +192,7 @@ impl DistributedPipelineNode for WindowNode {
                     self_clone.nulls_first.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    self_clone.aggregations.clone(),
+                    self_clone.window_exprs.clone(),
                     self_clone.aliases.clone(),
                 )),
                 (true, true) => Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
@@ -205,7 +205,7 @@ impl DistributedPipelineNode for WindowNode {
                     self_clone.min_periods,
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    window_to_agg_exprs(self_clone.aggregations.clone())?,
+                    window_to_agg_exprs(self_clone.window_exprs.clone())?,
                     self_clone.aliases.clone(),
                 )),
                 (false, true) => Err(DaftError::InternalError(

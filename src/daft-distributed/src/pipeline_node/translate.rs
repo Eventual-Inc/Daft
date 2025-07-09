@@ -337,7 +337,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     window.window_spec.min_periods,
                     window_functions,
                     window.aliases.clone(),
-                    window.input.schema(),
+                    window.schema.clone(),
                     repartition,
                 )
                 .arced()
