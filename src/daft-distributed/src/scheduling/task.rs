@@ -680,7 +680,7 @@ pub(super) mod tests {
         );
         assert_eq!(
             heap.pop().unwrap().task_context,
-            TaskContext::new(1, 1, 1, 2, Some(2))
+            TaskContext::new(1, 1, 1, 2, Some(1))
         );
         assert_eq!(
             heap.pop().unwrap().task_context,
