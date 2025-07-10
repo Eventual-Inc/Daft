@@ -1432,7 +1432,7 @@ class DataFrame:
         """Generates a column of monotonically increasing unique ids for the DataFrame.
 
         The implementation of this method puts the partition number in the upper 28 bits, and the row number in each partition
-        in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
+        in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^36 ≈ 68 billion rows per partition.
 
         Args:
             column_name (Optional[str], optional): name of the new column. Defaults to "id".
