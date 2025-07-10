@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use daft_local_plan::LocalPhysicalPlan;
@@ -29,6 +29,7 @@ impl MonotonicallyIncreasingIdNode {
         column_name: String,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
@@ -36,8 +37,13 @@ impl MonotonicallyIncreasingIdNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Self {
             config,
             context,
@@ -80,6 +86,14 @@ impl TreeDisplay for MonotonicallyIncreasingIdNode {
     }
 }
 
+/// The maximum number of rows per partition for the monotonically increasing ID node.
+/// https://docs.getdaft.io/en/stable/api/functions/#daft.functions.monotonically_increasing_id
+///
+/// The implementation puts the partition number in the upper 28 bits, and the row number in each
+/// partition in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and
+/// 2^36 ≈ 68 billion rows per partition."
+const MAX_ROWS_PER_PARTITION: u64 = 1u64 << 36;
+
 impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
@@ -97,10 +111,17 @@ impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
         let input_node = self.child.clone().start(stage_context);
         let column_name = self.column_name.clone();
         let schema = self.config.schema.clone();
+
+        let next_starting_offset = AtomicU64::new(0);
+
         input_node.pipeline_instruction(stage_context, self, move |input| {
             Ok(LocalPhysicalPlan::monotonically_increasing_id(
                 input,
                 column_name.clone(),
+                Some(
+                    next_starting_offset
+                        .fetch_add(MAX_ROWS_PER_PARTITION, std::sync::atomic::Ordering::SeqCst),
+                ),
                 schema.clone(),
                 StatsState::NotMaterialized,
             ))
