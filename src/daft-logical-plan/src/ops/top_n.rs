@@ -15,8 +15,8 @@ use crate::{
 /// TopN operator for computing the largest / smallest N rows based on a set of
 /// sort keys and orderings.
 ///
-/// The TopN operator is essentially a Sort followed by a Limit. But it can be
-/// computed more efficiently as a single operator via an O(n) algorithm instead
+/// The TopN operator is essentially a Sort followed by a Limit or Offset. But it
+/// can be computed more efficiently as a single operator via an O(n) algorithm instead
 /// of a O(n log n) algorithm for sorting.
 ///
 /// It is currently unavailable in the Python API and only constructed by the
@@ -32,8 +32,10 @@ pub struct TopN {
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
+    /// Offset on number of rows.
+    pub offset: Option<u64>,
     /// Limit on number of rows.
-    pub limit: u64,
+    pub limit: Option<u64>,
     /// The plan statistics.
     pub stats_state: StatsState,
 }
@@ -44,13 +46,31 @@ impl TopN {
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: u64,
+        offset: Option<u64>,
+        limit: Option<u64>,
     ) -> Result<Self> {
         if sort_by.is_empty() {
             return Err(DaftError::InternalError(
                 "TopN must be given at least one column/expression to sort by".to_string(),
             ))
             .context(CreationSnafu);
+        }
+
+        if offset.is_none() && limit.is_none() {
+            return Err(DaftError::InternalError(
+                "TopN node must have offset or limit".to_string(),
+            ))
+            .context(CreationSnafu);
+        }
+
+        if let (Some(o), Some(l)) = (offset, limit) {
+            if o >= l {
+                return Err(DaftError::InternalError(format!(
+                    "TopN offset {} must be less than limit {}",
+                    o, l
+                )))
+                .context(CreationSnafu);
+            }
         }
 
         // TODO(Kevin): make sort by expression names unique so that we can do things like sort(col("a"), col("a") + col("b"))
@@ -74,6 +94,7 @@ impl TopN {
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             stats_state: StatsState::NotMaterialized,
         })
@@ -91,27 +112,31 @@ impl TopN {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let limit = self.limit as usize;
-        let limit_selectivity = if input_stats.approx_stats.num_rows > limit {
-            if input_stats.approx_stats.num_rows == 0 {
-                0.0
-            } else {
-                limit as f64 / input_stats.approx_stats.num_rows as f64
-            }
+        let approx_num_rows = input_stats.approx_stats.num_rows;
+
+        let topn_num_rows = match (self.offset, self.limit) {
+            (Some(o), Some(l)) => (l - o) as usize,
+            (Some(o), None) => approx_num_rows.saturating_sub(o as usize),
+            (None, Some(l)) => l as usize,
+            (None, None) => unreachable!(),
+        };
+
+        let topn_selectivity = if approx_num_rows > 0 {
+            (topn_num_rows as f64 / approx_num_rows as f64).clamp(0.0, 1.0)
         } else {
-            1.0
+            0.0
         };
 
         let approx_stats = ApproxStats {
-            num_rows: limit.min(input_stats.approx_stats.num_rows),
-            size_bytes: if input_stats.approx_stats.num_rows > limit {
+            num_rows: topn_num_rows.min(approx_num_rows),
+            size_bytes: if approx_num_rows > topn_num_rows {
                 let est_bytes_per_row =
-                    input_stats.approx_stats.size_bytes / input_stats.approx_stats.num_rows.max(1);
-                limit * est_bytes_per_row
+                    input_stats.approx_stats.size_bytes / approx_num_rows.max(1);
+                topn_num_rows * est_bytes_per_row
             } else {
                 input_stats.approx_stats.size_bytes
             },
-            acc_selectivity: input_stats.approx_stats.acc_selectivity * limit_selectivity,
+            acc_selectivity: input_stats.approx_stats.acc_selectivity * topn_selectivity,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
@@ -135,10 +160,21 @@ impl TopN {
                 )
             })
             .join(", ");
-        res.push(format!(
-            "TopN: Sort by = {}, Num Rows = {}",
-            pairs, self.limit
-        ));
+
+        res.push(match (self.offset, self.limit) {
+            (Some(o), Some(l)) => {
+                format!(
+                    "TopN: Sort by = {}, Num Rows = {}, Offset = {}",
+                    pairs,
+                    l.saturating_sub(o),
+                    o
+                )
+            }
+            (Some(o), None) => format!("TopN: Sort by = {}, Num Rows = N/A, Offset = {}", pairs, o),
+            (None, Some(l)) => format!("TopN: Sort by = {}, Num Rows = {}", pairs, l),
+            (None, None) => unreachable!(),
+        });
+
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }

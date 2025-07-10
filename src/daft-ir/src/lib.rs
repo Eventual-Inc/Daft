@@ -129,8 +129,14 @@ pub mod rel {
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        Ok(Limit { plan_id: None,
-            node_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Limit {
+            plan_id: None,
+            node_id: None,
+            input, offset: None,
+            limit: Some(limit),
+            eager: false,
+            stats_state: stats::StatsState::NotMaterialized
+        })
     }
 
     /// Creates a new distinct relational operator.

@@ -9,14 +9,16 @@ use super::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
         EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
-        PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
-        RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitActorPoolProjects, SplitGranularProjection, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        PushDownJoinPredicate, PushDownProjection, ReorderJoins, RewriteCountDistinct,
+        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
+        SplitGranularProjection, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::{
-    optimization::rules::{PushDownShard, ShardScans, SplitExplodeFromProject},
+    optimization::rules::{
+        EliminateLimits, EliminateOffsets, PushDownLimit, PushDownShard, RewriteOffset, ShardScans,
+        SplitExplodeFromProject,
+    },
     LogicalPlan,
 };
 
@@ -145,13 +147,26 @@ impl Default for OptimizerBuilder {
                     // TODO(Clark): Refine this fixed-point policy.
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
-                // --- Limit pushdowns ---
+                // --- Eliminate Offsets and Limits ---
                 // This needs to be separate from PushDownProjection because otherwise the limit and
                 // projection just keep swapping places, preventing optimization
                 // (see https://github.com/Eventual-Inc/Daft/issues/2616)
                 RuleBatch::new(
+                    vec![
+                        Box::new(EliminateLimits::new()),
+                        Box::new(EliminateOffsets::new()),
+                    ],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
+                // --- Rewrite offsets ---
+                RuleBatch::new(
+                    vec![Box::new(RewriteOffset::new())],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
+                // --- Limit pushdowns ---
+                RuleBatch::new(
                     vec![Box::new(PushDownLimit::new())],
-                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                    RuleExecutionStrategy::Once,
                 ),
                 // --- Rewrite projections ---
                 // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.

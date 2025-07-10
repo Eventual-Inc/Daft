@@ -130,14 +130,15 @@ impl DistributedPipelineNode for TopNNode {
         // Pipeline the top-n
         let self_clone = self.clone();
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            Ok(LocalPhysicalPlan::top_n(
+            LocalPhysicalPlan::top_n(
                 input,
                 self_clone.sort_by.clone(),
                 self_clone.descending.clone(),
                 self_clone.nulls_first.clone(),
-                self_clone.limit,
+                None, // TODO(zhenchao) support offset
+                Some(self_clone.limit),
                 StatsState::NotMaterialized,
-            ))
+            )
         })
     }
 
