@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_logical_plan::{partitioning::ClusteringSpecRef, ClusteringSpec};
+use daft_logical_plan::{
+    partitioning::{ClusteringSpecRef, UnknownClusteringConfig},
+    ClusteringSpec,
+};
 use daft_schema::prelude::SchemaRef;
 use futures::StreamExt;
 
@@ -44,7 +47,10 @@ impl ConcatNode {
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            ClusteringSpecRef::new(ClusteringSpec::unknown()), // TODO: What is this?
+            ClusteringSpecRef::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(
+                child.config().clustering_spec.num_partitions()
+                    + other.config().clustering_spec.num_partitions(),
+            ))),
         );
 
         Self {
