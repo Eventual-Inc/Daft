@@ -224,10 +224,19 @@ impl HttpSubscriber {
                     }
                 }
                 // Handle flush requests
-                flush_tx = flush_receiver.recv() => {
-                    if let Some(flush_tx) = flush_tx {
-                        tracing::debug!(target: HTTP_LOG_TARGET, "Flush request received - will signal after next HTTP completion");
-                        pending_flush_signals.push(flush_tx);
+                flush_req = flush_receiver.recv() => {
+                    if let Some(flush_tx) = flush_req {
+                        tracing::debug!(target: HTTP_LOG_TARGET, "Flush request received");
+                        // If there are no pending HTTP requests and the query payload is empty,
+                        // signal immediately since there's nothing to flush
+                        let current_payload = receiver.borrow();
+                        if current_payload.id.is_empty() {
+                            tracing::debug!(target: HTTP_LOG_TARGET, "No pending HTTP requests, signaling flush immediately");
+                            let _ = flush_tx.send(());
+                        } else {
+                            tracing::debug!(target: HTTP_LOG_TARGET, "Will signal flush after next HTTP completion");
+                            pending_flush_signals.push(flush_tx);
+                        }
                     } else {
                         // Channel closed, exit
                         break;
