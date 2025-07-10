@@ -16,7 +16,8 @@ use daft_physical_plan::extract_agg_expr;
 use crate::{
     pipeline_node::{
         distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        in_memory_source::InMemorySourceNode, limit::LimitNode, project::ProjectNode,
+        in_memory_source::InMemorySourceNode, limit::LimitNode,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
         sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
     },
@@ -204,8 +205,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 self.curr_node.pop().unwrap(),
             )
             .arced(),
-            LogicalPlan::MonotonicallyIncreasingId(_) => {
-                todo!("FLOTILLA_MS1: Implement MonotonicallyIncreasingId")
+            LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                MonotonicallyIncreasingIdNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    monotonically_increasing_id.column_name.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
             }
             LogicalPlan::Concat(_) => {
                 todo!("FLOTILLA_MS1: Implement Concat")

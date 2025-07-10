@@ -642,9 +642,17 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            ops::MonotonicallyIncreasingId::try_new(self.plan.clone(), column_name)?.into();
+    pub fn add_monotonically_increasing_id(
+        &self,
+        column_name: Option<&str>,
+        starting_offset: Option<u64>,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::MonotonicallyIncreasingId::try_new(
+            self.plan.clone(),
+            column_name,
+            starting_offset,
+        )?
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1251,7 +1259,7 @@ impl PyLogicalPlanBuilder {
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> PyResult<Self> {
         Ok(self
             .builder
-            .add_monotonically_increasing_id(column_name)?
+            .add_monotonically_increasing_id(column_name, None)?
             .into())
     }
 
