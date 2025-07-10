@@ -17,9 +17,9 @@ use crate::{
     pipeline_node::{
         distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
         groupby_agg::gen_agg_nodes, in_memory_source::InMemorySourceNode, limit::LimitNode,
-        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
-        DistributedPipelineNode, NodeID,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
+        repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
+        sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -206,8 +206,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
             )
             .arced(),
-            LogicalPlan::MonotonicallyIncreasingId(_) => {
-                todo!("FLOTILLA_MS1: Implement MonotonicallyIncreasingId")
+            LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                MonotonicallyIncreasingIdNode::new(
+                    &self.stage_config,
+                    node_id,
+                    monotonically_increasing_id.column_name.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                    logical_node_id,
+                )
+                .arced()
             }
             LogicalPlan::Concat(_) => {
                 todo!("FLOTILLA_MS1: Implement Concat")

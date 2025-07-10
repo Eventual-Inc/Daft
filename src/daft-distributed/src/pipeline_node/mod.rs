@@ -36,6 +36,7 @@ mod groupby_agg;
 mod in_memory_source;
 mod limit;
 pub(crate) mod materialize;
+mod monotonically_increasing_id;
 mod project;
 mod repartition;
 mod sample;

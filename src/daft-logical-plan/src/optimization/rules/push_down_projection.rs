@@ -1007,7 +1007,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .add_monotonically_increasing_id(Some("id"))?
+            .add_monotonically_increasing_id(Some("id"), None)?
             .select(vec![unresolved_col("id")])?
             .build();
         let expected = plan.clone();

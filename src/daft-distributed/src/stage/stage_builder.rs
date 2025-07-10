@@ -45,6 +45,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
+            | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
@@ -74,7 +75,6 @@ impl StagePlanBuilder {
             LogicalPlan::Sort(_)
             | LogicalPlan::Concat(_)
             | LogicalPlan::TopN(_)
-            | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Pivot(_)
             | LogicalPlan::Join(_) => {
                 can_translate = false;
