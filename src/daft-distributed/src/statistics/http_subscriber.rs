@@ -362,7 +362,7 @@ impl HttpSubscriber {
         let _ = self.sender.send(query_payload);
     }
 
-    fn flush(&self) -> DaftResult<()> {
+    pub fn flush(&self) -> DaftResult<()> {
         let runtime = get_io_runtime(false);
 
         // Create a oneshot channel to signal when the flush is complete
