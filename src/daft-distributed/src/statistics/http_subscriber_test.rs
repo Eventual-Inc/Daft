@@ -519,6 +519,7 @@ mod tests {
                 .to_string(),
             run_id: Some("run-456".to_string()),
             logs: "Test log message".to_string(),
+            sequence: 1,
         };
 
         // Test serialization
