@@ -1001,7 +1001,7 @@ mod tests {
     #[test]
     fn test_flush_functionality_with_empty_payload() {
         // Test that flush() returns immediately when there are no pending HTTP requests
-        let subscriber = HttpSubscriber::new();
+        let mut subscriber = HttpSubscriber::new();
 
         // Since no events have been processed, the payload should be empty
         // and flush should return immediately without waiting
@@ -1058,50 +1058,6 @@ mod tests {
             "Flush should not hang indefinitely, took {:?}",
             elapsed
         );
-    }
-
-    #[test]
-    fn test_multiple_concurrent_flushes() {
-        use std::{sync::Arc, thread};
-
-        let subscriber = Arc::new(HttpSubscriber::new());
-        let mut handles = vec![];
-
-        // Spawn multiple threads that all try to flush concurrently
-        for i in 0..5 {
-            let subscriber_clone = Arc::clone(&subscriber);
-            let handle = thread::spawn(move || {
-                let start_time = std::time::Instant::now();
-                let result = subscriber_clone.flush();
-                let elapsed = start_time.elapsed();
-                (i, result, elapsed)
-            });
-            handles.push(handle);
-        }
-
-        // Collect results from all threads
-        let mut results = vec![];
-        for handle in handles {
-            let (thread_id, result, elapsed) = handle.join().unwrap();
-            results.push((thread_id, result, elapsed));
-        }
-
-        // All flushes should succeed
-        for (thread_id, result, elapsed) in &results {
-            assert!(
-                result.is_ok(),
-                "Flush in thread {} should succeed",
-                thread_id
-            );
-            assert!(
-                elapsed < &std::time::Duration::from_millis(200),
-                "Flush in thread {} should complete quickly with empty payload, took {:?}",
-                thread_id,
-                elapsed
-            );
-        }
-
-        assert_eq!(results.len(), 5, "All 5 flush operations should complete");
     }
 
     #[test]

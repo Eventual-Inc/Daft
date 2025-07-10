@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeTask};
 use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{watch, Notify};
 
 use crate::{
     pipeline_node::NodeID,
@@ -62,6 +62,21 @@ pub struct QueryPayload {
     #[serde(skip)]
     #[allow(dead_code)]
     pub sequence: u64,
+}
+
+#[derive(Debug)]
+struct PayloadWithAck {
+    payload: Arc<QueryPayload>,
+    ack_notify: Option<Arc<Notify>>,
+}
+
+impl Default for PayloadWithAck {
+    fn default() -> Self {
+        Self {
+            payload: Arc::new(QueryPayload::default()),
+            ack_notify: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,9 +137,9 @@ impl PlanData {
 
 pub struct HttpSubscriber {
     plan_data: HashMap<PlanID, PlanData>,
-    sender: watch::Sender<Arc<QueryPayload>>,
+    sender: watch::Sender<PayloadWithAck>,
     _task_handle: RuntimeTask<()>,
-    flush_sender: mpsc::UnboundedSender<oneshot::Sender<()>>,
+    last_ack_notify: Option<Arc<Notify>>,
     sequence_counter: std::sync::atomic::AtomicU64,
 }
 
@@ -132,26 +147,22 @@ impl HttpSubscriber {
     const DEFAULT_DASHBOARD_URL: &str = "http://localhost:3238/api/queries";
 
     pub fn new() -> Self {
-        let (sender, receiver) = watch::channel(Arc::new(QueryPayload::default()));
-        let (flush_sender, flush_receiver) = mpsc::unbounded_channel();
+        let (sender, receiver) = watch::channel(PayloadWithAck::default());
 
         // Spawn long-lived task that handles HTTP requests
         let runtime = get_io_runtime(false);
-        let task_handle = runtime.spawn(Self::http_sender_task(receiver, flush_receiver));
+        let task_handle = runtime.spawn(Self::http_sender_task(receiver));
 
         Self {
             plan_data: HashMap::new(),
             sender,
-            flush_sender,
+            last_ack_notify: None,
             sequence_counter: std::sync::atomic::AtomicU64::new(0),
             _task_handle: task_handle,
         }
     }
 
-    async fn http_sender_task(
-        mut receiver: watch::Receiver<Arc<QueryPayload>>,
-        mut flush_receiver: mpsc::UnboundedReceiver<oneshot::Sender<()>>,
-    ) {
+    async fn http_sender_task(mut receiver: watch::Receiver<PayloadWithAck>) {
         // Create the HTTP client once and reuse it for all requests
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(1))
@@ -179,69 +190,51 @@ impl HttpSubscriber {
             env::var("DAFT_DASHBOARD_URL").unwrap_or_else(|_| Self::DEFAULT_DASHBOARD_URL.into())
         );
 
-        let mut pending_flush_signals: Vec<oneshot::Sender<()>> = Vec::new();
-
         loop {
-            tokio::select! {
-                // Handle regular query updates
-                result = receiver.changed() => {
-                    if result.is_err() {
-                        break;
-                    }
+            // Handle regular query updates
+            let result = receiver.changed().await;
+            if result.is_err() {
+                break;
+            }
 
-                    let query_payload = receiver.borrow_and_update().clone();
+            // Extract all needed data before doing async work
+            let (query_payload, ack_notify) = {
+                let payload_with_ack = receiver.borrow_and_update();
+                let query_payload = payload_with_ack.payload.clone();
+                let ack_notify = payload_with_ack.ack_notify.clone();
+                (query_payload, ack_notify)
+            }; // payload_with_ack is dropped here
 
-                    // Process HTTP request for non-empty payloads
-                    if !query_payload.id.is_empty() {
-                        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
+            // Process HTTP request for non-empty payloads
+            if !query_payload.id.is_empty() {
+                tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
 
-                        // Send the HTTP request using the reused client
-                        tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
-                        let response = client
-                            .post(&endpoint)
-                            .headers(headers.clone())
-                            .json(&*query_payload)
-                            .send()
-                            .await;
+                // Send the HTTP request using the reused client
+                tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
+                let response = client
+                    .post(&endpoint)
+                    .headers(headers.clone())
+                    .json(&*query_payload)
+                    .send()
+                    .await;
 
-                        match response {
-                            Ok(resp) => {
-                                if resp.status().is_success() {
-                                    tracing::debug!(target: HTTP_LOG_TARGET, "Successfully sent query information");
-                                } else {
-                                    tracing::warn!(target: HTTP_LOG_TARGET, "Failed to send query information: {}", resp.status());
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
-                            }
-                        }
-                    }
-
-                    // Always signal completion to any pending flush requests after processing
-                    for flush_tx in pending_flush_signals.drain(..) {
-                        let _ = flush_tx.send(());
-                    }
-                }
-                // Handle flush requests
-                flush_req = flush_receiver.recv() => {
-                    if let Some(flush_tx) = flush_req {
-                        tracing::debug!(target: HTTP_LOG_TARGET, "Flush request received");
-                        // If there are no pending HTTP requests and the query payload is empty,
-                        // signal immediately since there's nothing to flush
-                        let current_payload = receiver.borrow();
-                        if current_payload.id.is_empty() {
-                            tracing::debug!(target: HTTP_LOG_TARGET, "No pending HTTP requests, signaling flush immediately");
-                            let _ = flush_tx.send(());
+                match response {
+                    Ok(resp) => {
+                        if resp.status().is_success() {
+                            tracing::debug!(target: HTTP_LOG_TARGET, "Successfully sent query information");
                         } else {
-                            tracing::debug!(target: HTTP_LOG_TARGET, "Will signal flush after next HTTP completion");
-                            pending_flush_signals.push(flush_tx);
+                            tracing::warn!(target: HTTP_LOG_TARGET, "Failed to send query information: {}", resp.status());
                         }
-                    } else {
-                        // Channel closed, exit
-                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
                     }
                 }
+            }
+
+            // Notify completion if there's an ack_notify attached to this payload
+            if let Some(ack_notify) = ack_notify {
+                ack_notify.notify_waiters();
             }
         }
     }
@@ -349,6 +342,11 @@ impl HttpSubscriber {
         let sequence = self
             .sequence_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Create Notify for acknowledgment
+        let ack_notify = Arc::new(Notify::new());
+        self.last_ack_notify = Some(ack_notify.clone());
+
         let query_payload = Arc::new(QueryPayload {
             id: plan_data.plan_state.query_id.clone(),
             optimized_plan: serde_json::to_string(&query_graph)
@@ -358,31 +356,22 @@ impl HttpSubscriber {
             sequence,
         });
 
-        // Send the query payload without flush
-        let _ = self.sender.send(query_payload);
+        // Send the query payload
+        let _ = self.sender.send(PayloadWithAck {
+            payload: query_payload,
+            ack_notify: Some(ack_notify),
+        });
     }
 
-    pub fn flush(&self) -> DaftResult<()> {
-        let runtime = get_io_runtime(false);
+    pub fn flush(&mut self) -> DaftResult<()> {
+        if let Some(ack_notify) = self.last_ack_notify.take() {
+            let runtime = get_io_runtime(false);
 
-        // Create a oneshot channel to signal when the flush is complete
-        let (flush_tx, flush_rx) = oneshot::channel();
-
-        // Send the flush signal
-        if self.flush_sender.send(flush_tx).is_err() {
-            return Err(common_error::DaftError::InternalError(
-                "Failed to send flush signal to HTTP sender task".to_string(),
-            ));
+            // Wait for the ack to be sent
+            runtime.block_within_async_context(async move { ack_notify.notified().await })?;
         }
 
-        // Wait for the HTTP request to complete
-        runtime.block_within_async_context(async {
-            flush_rx.await.map_err(|_| {
-                common_error::DaftError::InternalError(
-                    "HTTP sender task closed before flush completed".to_string(),
-                )
-            })
-        })?
+        Ok(())
     }
 
     pub fn build_query_graph(plan_data: &PlanData) -> QueryGraph {
