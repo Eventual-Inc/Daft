@@ -61,6 +61,7 @@ nav:
   - I/O: api/io.md
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
+  - Test: api/expressions-2.md
   - Functions:
     - Scalar Functions: api/functions.md   # column_ are scalar functions
     - User-Defined Functions: api/udf.md
@@ -229,7 +230,7 @@ plugins:
         options:
           docstring_style: google
           docstring_section_style: table
-          heading_level: 2
+          heading_level: 3
           line_length: 60
           merge_init_into_class: true
           members_order: alphabetical # or source

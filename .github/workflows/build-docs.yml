@@ -50,6 +50,8 @@ jobs:
         command: |
           source venv/bin/activate
           uv pip install -r requirements-dev.txt
+    # - name: Generate expression table
+    #   run: python tools/generate_expression_table.py
     - name: Build Daft in development mode and generate docs
       run: |
         source activate
