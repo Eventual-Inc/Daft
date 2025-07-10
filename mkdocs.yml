@@ -61,7 +61,6 @@ nav:
   - I/O: api/io.md
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
-  - Test: api/expressions-2.md
   - Functions:
     - Scalar Functions: api/functions.md   # column_ are scalar functions
     - User-Defined Functions: api/udf.md
