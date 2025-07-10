@@ -240,15 +240,15 @@ impl<T: Task> SchedulerHandle<T> {
         submittable_task: SubmittableTask<T>,
     ) -> (PendingTask<T>, SubmittedTask) {
         let task_id = submittable_task.task.task_id();
-
+        let (result_tx, result_rx) = create_oneshot_channel();
         let schedulable_task = PendingTask::new(
             submittable_task.task,
-            submittable_task.result_tx,
+            result_tx,
             submittable_task.cancel_token.clone(),
         );
         let submitted_task = SubmittedTask::new(
             task_id,
-            submittable_task.result_rx,
+            result_rx,
             Some(submittable_task.cancel_token),
             submittable_task.notify_token,
         );
@@ -269,20 +269,15 @@ impl<T: Task> SchedulerHandle<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
-    result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
     notify_token: Option<OneshotSender<()>>,
 }
 
 impl<T: Task> SubmittableTask<T> {
     pub fn new(task: T) -> Self {
-        let (result_tx, result_rx) = create_oneshot_channel();
         let cancel_token = CancellationToken::new();
         Self {
             task,
-            result_tx,
-            result_rx,
             cancel_token,
             notify_token: None,
         }
