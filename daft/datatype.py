@@ -142,6 +142,7 @@ class DataType:
 
     @classmethod
     def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
+
         from typing import get_args, get_origin
 
         if isinstance(user_provided_type, DataType):
@@ -167,6 +168,9 @@ class DataType:
                 return DataType.float64()
             elif user_provided_type is bytes:
                 return DataType.binary()
+            elif pil_image.module_available() and user_provided_type is pil_image.Image:
+                print("matches!!")
+                return DataType.image()
             elif user_provided_type is object:
                 return DataType.python()
             else:
