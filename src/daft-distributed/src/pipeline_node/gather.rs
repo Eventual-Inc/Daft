@@ -9,7 +9,7 @@ use futures::TryStreamExt;
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
     pipeline_node::{
-        make_new_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
+        make_in_memory_scan_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext, PipelineOutput,
     },
     scheduling::{
@@ -85,11 +85,10 @@ impl GatherNode {
             .collect::<Vec<_>>();
 
         let self_clone = self.clone();
-        let task = make_new_task_from_materialized_outputs(
+        let task = make_in_memory_scan_from_materialized_outputs(
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
             &(self_clone as Arc<dyn DistributedPipelineNode>),
-            &move |input| Ok(input), // Just the scan
         )?;
 
         let _ = result_tx.send(PipelineOutput::Task(task)).await;
