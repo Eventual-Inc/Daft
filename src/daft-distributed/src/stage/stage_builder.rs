@@ -41,6 +41,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
+            | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
             | LogicalPlan::Window(_)
@@ -54,7 +55,8 @@ impl StagePlanBuilder {
                 }
             },
             LogicalPlan::Join(join) => {
-                if join.join_strategy.is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast)) {
+                // TODO: Support broadcast join
+                if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 } else {
@@ -70,7 +72,6 @@ impl StagePlanBuilder {
             LogicalPlan::Sort(_)
             | LogicalPlan::TopN(_)
             | LogicalPlan::Concat(_)
-            | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Pivot(_) => {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)

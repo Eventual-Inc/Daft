@@ -516,15 +516,17 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn monotonically_increasing_id(
+    pub fn monotonically_increasing_id(
         input: LocalPhysicalPlanRef,
         column_name: String,
+        starting_offset: Option<u64>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
+            starting_offset,
             schema,
             stats_state,
         })
@@ -826,7 +828,7 @@ impl LocalPhysicalPlan {
                 Self::Explode(Explode {  to_explode, schema, .. }) => Self::explode(new_child.clone(), to_explode.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Unpivot(Unpivot {  ids, values, variable_name, value_name, schema, .. }) => Self::unpivot(new_child.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Concat(Concat {  other, schema, .. }) => Self::concat(new_child.clone(), other.clone(), StatsState::NotMaterialized),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {  column_name, schema, .. }) => Self::monotonically_increasing_id(new_child.clone(), column_name.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {  column_name, starting_offset, schema, .. }) => Self::monotonically_increasing_id(new_child.clone(), column_name.clone(), *starting_offset, schema.clone(), StatsState::NotMaterialized),
                 Self::WindowPartitionOnly(WindowPartitionOnly {  partition_by, schema, aggregations, aliases, .. }) => Self::window_partition_only(new_child.clone(), partition_by.clone(), schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
                 Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {  partition_by, order_by, descending, nulls_first, schema, functions, aliases, .. }) => Self::window_partition_and_order_by(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
                 Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {  partition_by, order_by, descending, nulls_first, frame, min_periods, schema, aggregations, aliases, .. }) => Self::window_partition_and_dynamic_frame(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), frame.clone(), *min_periods, schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
@@ -1013,6 +1015,7 @@ pub struct Sample {
 pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
     pub column_name: String,
+    pub starting_offset: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

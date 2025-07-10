@@ -23,12 +23,12 @@ impl FilterNode {
     const NODE_NAME: NodeName = "Filter";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         predicate: BoundExpr,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,

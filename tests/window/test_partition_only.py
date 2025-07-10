@@ -9,14 +9,13 @@ from daft import Window, col
 from daft.context import get_context
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
-# from daft.expressions import count, max, mean, min, sum
-
-
-@pytest.mark.skipif(
+pytestmark = pytest.mark.skipif(
     get_tests_daft_runner_name() == "ray"
     and get_context().daft_execution_config.use_experimental_distributed_engine is False,
     reason="requires Native Runner or Flotilla to be in use",
 )
+
+
 def test_single_partition_sum(make_df):
     """Stage: PARTITION BY-Only Window Aggregations.
 

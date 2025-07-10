@@ -64,7 +64,7 @@ def q21(get_df) -> daft.DataFrame:
 
 
 def get_answer(q: int, get_df) -> daft.DataFrame:
-    assert 0 <= q <= 22, f"TPC-H has 22 questions, received q={q}"
+    assert 1 <= q <= 22, f"TPC-H has 22 questions, received q={q}"
 
     if q == 21:
         # TODO: remove this once we support q21

@@ -4,6 +4,7 @@ import pytest
 
 import daft
 from daft.sql import SQLCatalog
+from tests.utils import sort_pydict
 
 
 def test_joins_using():
@@ -15,7 +16,7 @@ def test_joins_using():
 
     expected = df1.join(df2, on="idx").collect().to_pydict()
 
-    assert actual == expected
+    assert sort_pydict(actual, "idx") == sort_pydict(expected, "idx")
 
 
 def test_joins_with_alias():
@@ -44,7 +45,7 @@ def test_joins_with_spaceship():
 
     expected = {"idx": [1, 2, None], "val": [10, 20, 30], "score": [0.1, 0.2, None]}
 
-    assert actual == expected
+    assert sort_pydict(actual, "idx", ascending=True) == expected
 
 
 def test_joins_with_wildcard_expansion():
@@ -70,7 +71,7 @@ def test_joins_with_wildcard_expansion():
 
     expected = {"idx": [1, None], "score": [0.1, None], "a": [1, None], "b": [2, None], "c": [3, None]}
 
-    assert df_sql == expected
+    assert sort_pydict(df_sql, "idx") == expected
     # make sure it works with exclusion patterns too
 
     df_sql = (
@@ -86,7 +87,7 @@ def test_joins_with_wildcard_expansion():
 
     expected = {"idx": [1, None], "score": [0.1, None]}
 
-    assert df_sql == expected
+    assert sort_pydict(df_sql, "idx") == expected
 
 
 def test_joins_with_duplicate_columns():
@@ -113,7 +114,7 @@ def test_joins_with_duplicate_columns():
         "t2.value": [None, "b", "c", "d"],
     }
 
-    assert actual.to_pydict() == expected
+    assert sort_pydict(actual.to_pydict(), "id", ascending=True) == expected
 
 
 @pytest.mark.parametrize(
