@@ -528,6 +528,7 @@ fn pull_up_correlated_cols(
         // ops that cannot pull up correlated columns
         LogicalPlan::ActorPoolProject(..)
         | LogicalPlan::Limit(..)
+        | LogicalPlan::Offset(..)
         | LogicalPlan::Shard(..)
         | LogicalPlan::TopN(..)
         | LogicalPlan::Sample(..)
@@ -538,7 +539,8 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Concat(..)
         | LogicalPlan::Join(..)
         | LogicalPlan::Sink(..)
-        | LogicalPlan::Window(..) => {
+        | LogicalPlan::Window(..)
+        | LogicalPlan::Slice(..) => {
             if subquery_on.is_empty() {
                 Ok((plan.clone(), vec![], vec![]))
             } else {

@@ -255,7 +255,7 @@ impl PhysicalPlan {
                     acc_selectivity: input_stats.acc_selectivity * estimated_selectivity,
                 }
             }
-            Self::Limit(Limit { input, limit, .. }) | Self::TopN(TopN { input, limit, .. }) => {
+            Self::TopN(TopN { input, limit, .. }) => {
                 let input_stats = input.approximate_stats();
                 let limit = *limit as usize;
                 let limit_selectivity = if input_stats.num_rows > limit {
@@ -277,6 +277,46 @@ impl PhysicalPlan {
                         input_stats.size_bytes
                     },
                     acc_selectivity: input_stats.acc_selectivity * limit_selectivity,
+                }
+            }
+            Self::Limit(Limit {
+                input,
+                offset,
+                limit,
+                ..
+            }) => {
+                // FIXME optimize by zhenchao 2025-07-10 20:02:11
+                let input_stats = input.approximate_stats();
+                let approx_row_nums = input_stats.num_rows as u64;
+
+                let (offset, limit) = (*offset, *limit);
+
+                let num_rows = match (offset, limit) {
+                    (Some(o), Some(l)) => approx_row_nums.min(l - o),
+                    (Some(o), None) => approx_row_nums.saturating_sub(o),
+                    (None, Some(l)) => approx_row_nums.min(l),
+                    (None, None) => unreachable!("Invalid Slice, offset and limit are both None."),
+                } as usize;
+
+                let slice_selectivity = if input_stats.num_rows > num_rows {
+                    if input_stats.num_rows == 0 {
+                        0.0
+                    } else {
+                        num_rows as f64 / input_stats.num_rows as f64
+                    }
+                } else {
+                    1.0
+                };
+                ApproxStats {
+                    num_rows: num_rows.min(input_stats.num_rows),
+                    size_bytes: if input_stats.num_rows > num_rows {
+                        let est_bytes_per_row =
+                            input_stats.size_bytes / input_stats.num_rows.max(1);
+                        num_rows * est_bytes_per_row
+                    } else {
+                        input_stats.size_bytes
+                    },
+                    acc_selectivity: input_stats.acc_selectivity * slice_selectivity,
                 }
             }
             Self::Project(Project { input, .. })
@@ -461,7 +501,7 @@ impl PhysicalPlan {
 
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
-                Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
+                Self::Limit(Limit { offset, limit, eager, num_partitions, .. }) => Self::Limit(Limit::try_new(input.clone(), *offset, *limit, *eager, *num_partitions).unwrap()),
                 Self::TopN(TopN { sort_by, descending, nulls_first, limit, num_partitions, .. }) => Self::TopN(TopN::new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),

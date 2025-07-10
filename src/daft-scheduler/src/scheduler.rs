@@ -406,16 +406,19 @@ fn physical_plan_to_partition_tasks(
         }
         PhysicalPlan::Limit(Limit {
             input,
+            offset,
             limit,
             eager,
             num_partitions,
         }) => {
+            // TODO what path will be executed here? by zhenchao 2025-07-10 20:11:11
+            let (_, limit) = (*offset, *limit);
             let upstream_iter =
                 physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let py_physical_plan = py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
             let global_limit_iter = py_physical_plan
                 .getattr(pyo3::intern!(py, "global_limit"))?
-                .call1((upstream_iter, *limit, *eager, *num_partitions))?;
+                .call1((upstream_iter, limit.unwrap(), *eager, *num_partitions))?;
             Ok(global_limit_iter.into())
         }
         PhysicalPlan::Explode(Explode {

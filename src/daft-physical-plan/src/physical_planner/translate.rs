@@ -27,11 +27,10 @@ use daft_logical_plan::{
     ops::{
         ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
         Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-        Join as LogicalJoin, Limit as LogicalLimit,
-        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
-        Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-        Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        Unpivot as LogicalUnpivot,
+        Join as LogicalJoin, MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId,
+        Pivot as LogicalPivot, Project as LogicalProject, Repartition as LogicalRepartition,
+        Sample as LogicalSample, Sink as LogicalSink, Slice as LogicalSlice, Sort as LogicalSort,
+        Source, TopN as LogicalTopN, Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -143,13 +142,22 @@ pub(super) fn translate_single_logical_node(
             ))
             .arced())
         }
-        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
+        LogicalPlan::Slice(LogicalSlice {
+            offset,
+            limit,
+            eager,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            Ok(
-                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
-                    .arced(),
-            )
+            Ok(PhysicalPlan::Limit(Limit::try_new(
+                input_physical,
+                *offset,
+                *limit,
+                *eager,
+                num_partitions,
+            )?)
+            .arced())
         }
         LogicalPlan::TopN(LogicalTopN {
             sort_by,
@@ -541,15 +549,14 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Limit(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            logical_plan.name()
+        ))),
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),

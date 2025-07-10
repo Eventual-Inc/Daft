@@ -88,9 +88,11 @@ impl LimitNode {
                             vec![next_input],
                             &(self.clone() as Arc<dyn DistributedPipelineNode>),
                             &move |input| {
+                                // FIXME by zhenchao 2025-07-10 20:40:28
                                 Ok(LocalPhysicalPlan::limit(
                                     input,
-                                    remaining_limit as u64,
+                                    None,
+                                    Some(remaining_limit as u64),
                                     StatsState::NotMaterialized,
                                 ))
                             },
@@ -159,9 +161,11 @@ impl DistributedPipelineNode for LimitNode {
         let limit = self.limit as u64;
         let local_limit_node =
             input_node.pipeline_instruction(stage_context, self.clone(), move |input_plan| {
+                // FIXME by zhenchao 2025-07-10 20:41:14
                 Ok(LocalPhysicalPlan::limit(
                     input_plan,
-                    limit,
+                    None,
+                    Some(limit),
                     StatsState::NotMaterialized,
                 ))
             });

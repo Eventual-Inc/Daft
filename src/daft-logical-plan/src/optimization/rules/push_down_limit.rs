@@ -5,8 +5,9 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
-    source_info::SourceInfo,
+    ops::{
+        Limit as LogicalLimit, Offset as LogicalOffset, Sort as LogicalSort, TopN as LogicalTopN,
+    },
     LogicalPlan,
 };
 
@@ -52,46 +53,6 @@ impl PushDownLimit {
                             input.with_new_children(&[new_limit]).into(),
                         ))
                     }
-                    // Push limit into source as a "local" limit.
-                    //
-                    // Limit-Source -> Limit-Source[with_limit]
-                    LogicalPlan::Source(source) => {
-                        match source.source_info.as_ref() {
-                            // Limit pushdown is not supported for in-memory sources.
-                            SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
-                            // Do not pushdown if Source node is already more limited than `limit`
-                            SourceInfo::Physical(external_info)
-                                if let Some(existing_limit) = external_info.pushdowns.limit
-                                    && existing_limit <= limit =>
-                            {
-                                Ok(Transformed::no(plan))
-                            }
-                            // Pushdown limit into the Source node as a "local" limit
-                            SourceInfo::Physical(external_info) => {
-                                let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));
-                                let new_external_info = external_info.with_pushdowns(new_pushdowns);
-                                let new_source = LogicalPlan::Source(Source::new(
-                                    source.output_schema.clone(),
-                                    SourceInfo::Physical(new_external_info).into(),
-                                ))
-                                .into();
-                                let out_plan = if external_info
-                                    .scan_state
-                                    .get_scan_op()
-                                    .0
-                                    .can_absorb_limit()
-                                {
-                                    new_source
-                                } else {
-                                    plan.with_new_children(&[new_source]).into()
-                                };
-                                Ok(Transformed::yes(out_plan))
-                            }
-                            SourceInfo::PlaceHolder(..) => {
-                                panic!("PlaceHolderInfo should not exist for optimization!");
-                            }
-                        }
-                    }
                     // Fold Limit together.
                     //
                     // Limit-Limit -> Limit
@@ -135,6 +96,23 @@ impl PushDownLimit {
                         )?));
 
                         Ok(Transformed::yes(new_plan))
+                    }
+                    // Merge offset value and limit value into Limit, and pushes down Limit through
+                    // Offset.
+                    //
+                    // Limit(x)-Offset(y) -> Offset(y)-Limit(x + y)
+                    LogicalPlan::Offset(LogicalOffset { input, offset, .. }) => {
+                        let limit = limit as u64 + *offset;
+                        let new_limit = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                            input.clone(),
+                            limit,
+                            *eager,
+                        )));
+
+                        let new_offset =
+                            Arc::new(LogicalPlan::Offset(LogicalOffset::new(new_limit, *offset)));
+
+                        Ok(Transformed::yes(new_offset))
                     }
                     _ => Ok(Transformed::no(plan)),
                 }

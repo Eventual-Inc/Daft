@@ -136,11 +136,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
+            // FIXME by zhenchao 2025-07-10 20:44:37
+            LogicalPlan::Slice(slice) => Arc::new(LimitNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
-                limit.limit as usize,
+                (*slice).limit.map(|x| x as usize).unwrap(),
                 node.schema(),
                 self.curr_node.pop().unwrap(),
             )),
@@ -380,8 +381,13 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
-            | LogicalPlan::Shard(_) => {
-                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_)
+            | LogicalPlan::Limit(_) => {
+                panic!(
+                    "Logical plan operator {} should be handled by the optimizer",
+                    node.name()
+                )
             }
         };
         self.curr_node.push(output);

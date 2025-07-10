@@ -53,6 +53,9 @@ where
             LogicalPlan::Limit(limit) => json!({
                 "limit": vec![&limit.limit.lit().to_string()],
             }),
+            LogicalPlan::Offset(offset) => json!({
+                "offset": vec![&offset.offset.lit().to_string()],
+            }),
             LogicalPlan::Explode(explode) => json!({
                 "to_explode": explode.to_explode.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
@@ -120,6 +123,10 @@ where
                 "nulls_first": top_n.nulls_first,
                 "descending": top_n.descending,
                 "limit": top_n.limit,
+            }),
+            LogicalPlan::Slice(slice) => json!({
+                "offset": vec![&slice.offset.map(|o|o.lit().to_string())],
+                "limit": vec![&slice.limit.map(|l|l.lit().to_string())],
             }),
         }
     }

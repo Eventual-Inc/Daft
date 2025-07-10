@@ -43,7 +43,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Distinct(_)
-            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Slice(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
                     Ok(TreeNodeRecursion::Continue)
@@ -51,7 +51,7 @@ impl StagePlanBuilder {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 }
-            },
+            }
             LogicalPlan::Aggregate(aggregate) => {
                 if aggregate.groupby.is_empty() {
                     can_translate = false;
@@ -59,7 +59,7 @@ impl StagePlanBuilder {
                 } else {
                     Ok(TreeNodeRecursion::Continue)
                 }
-            },
+            }
             LogicalPlan::Window(window) => {
                 if window.window_spec.partition_by.is_empty() {
                     can_translate = false;
@@ -67,7 +67,7 @@ impl StagePlanBuilder {
                 } else {
                     Ok(TreeNodeRecursion::Continue)
                 }
-            },
+            }
             LogicalPlan::Join(join) => {
                 // TODO: Support broadcast join
                 if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
@@ -93,7 +93,12 @@ impl StagePlanBuilder {
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::SubqueryAlias(_)
-            | LogicalPlan::Shard(_) => panic!("Intersect, Union, SubqueryAlias, and Shard should be optimized away before planning stages")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_)
+            | LogicalPlan::Limit(_) => panic!(
+                "Logical plan operator {} should be optimized away before planning stages",
+                node.name()
+            ),
         });
         can_translate
     }

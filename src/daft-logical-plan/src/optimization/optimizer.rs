@@ -16,7 +16,9 @@ use super::{
     },
 };
 use crate::{
-    optimization::rules::{PushDownShard, ShardScans},
+    optimization::rules::{
+        EliminateOffsets, PushDownShard, PushDownSlice, RewriteOffset, ShardScans,
+    },
     LogicalPlan,
 };
 
@@ -149,7 +151,11 @@ impl Default for OptimizerBuilder {
                 // projection just keep swapping places, preventing optimization
                 // (see https://github.com/Eventual-Inc/Daft/issues/2616)
                 RuleBatch::new(
-                    vec![Box::new(PushDownLimit::new())],
+                    vec![
+                        Box::new(EliminateOffsets::new()),
+                        // Box::new(EliminateLimits::new()),
+                        Box::new(PushDownLimit::new()),
+                    ],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
                 // --- Rewrite projections ---
@@ -163,10 +169,25 @@ impl Default for OptimizerBuilder {
                     ],
                     RuleExecutionStrategy::Once,
                 ),
+                // TODO Impact on existing rules by zhenchao 2025-07-11 16:04:06
+                // --- Rewrite offsets ---
+                RuleBatch::new(
+                    vec![
+                        // FIXME need invoke twice? by zhenchao 2025-07-11 15:08:28
+                        Box::new(EliminateOffsets::new()),
+                        Box::new(RewriteOffset::new()),
+                    ],
+                    RuleExecutionStrategy::Once,
+                ),
                 // Push down projections after rewriting projections.
                 RuleBatch::new(
                     vec![Box::new(PushDownProjection::new())],
                     RuleExecutionStrategy::FixedPoint(None),
+                ),
+                // --- Slice pushdowns ---
+                RuleBatch::new(
+                    vec![Box::new(PushDownSlice::new())],
+                    RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
                 // --- Shard pushdowns ---
                 RuleBatch::new(

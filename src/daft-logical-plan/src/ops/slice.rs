@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{ensure, DaftResult};
-use serde::{Deserialize, Serialize};
+use daft_dsl::functions::prelude::{Deserialize, Serialize};
 
 use crate::{
     stats::{ApproxStats, PlanStats, StatsState},
@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Limit {
+pub struct Slice {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     // Upstream node.
@@ -24,17 +24,15 @@ pub struct Limit {
     pub stats_state: StatsState,
 }
 
-impl Limit {
+impl Slice {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         offset: Option<u64>,
         limit: Option<u64>,
         eager: bool,
     ) -> DaftResult<Self> {
-        ensure!(
-            offset.is_some() || limit.is_some(),
-            ValueError:"Invalid Slice, offset and limit are both None."
-        );
+        // TODO add param check and try_new for other slices, by zhenchao 2025-07-11 12:17:24
+        ensure!(offset.is_some() || limit.is_some(), ValueError:"Invalid Slice, offset and limit are both None.");
 
         if let (Some(o), Some(l)) = (offset, limit) {
             ensure!(o < l, ValueError:"Invalid Slice, offset[{}] must be less than limit[{}]", o, l);
@@ -61,41 +59,47 @@ impl Limit {
         self
     }
 
-    // TODO correct? by zhenchao 2025-07-11 18:12:45
+    // FIXME check correct? by zhenchao 2025-07-10 19:41:25
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let approx_num_rows = input_stats.approx_stats.num_rows as u64;
+
+        let approx_row_nums = input_stats.approx_stats.num_rows as u64;
         let (offset, limit) = (self.offset, self.limit);
 
         let num_rows = match (offset, limit) {
-            (Some(o), Some(l)) => approx_num_rows.min(l - o),
-            (Some(o), None) => approx_num_rows.saturating_sub(o),
-            (None, Some(l)) => approx_num_rows.min(l),
-            (None, None) => unreachable!("Invalid Limit, offset and limit are both None."),
+            (Some(o), Some(l)) => approx_row_nums.min(l - o),
+            (Some(o), None) => approx_row_nums.saturating_sub(o),
+            (None, Some(l)) => approx_row_nums.min(l),
+            (None, None) => unreachable!("Invalid Slice, offset and limit are both None."),
+        } as usize;
+
+        let slice_selectivity = if approx_row_nums > 0 {
+            (num_rows as f64 / approx_row_nums as f64).clamp(0.0, 1.0)
+        } else {
+            1.0
         };
 
-        let selectivity = (num_rows as f64 / approx_num_rows as f64).max(1.0);
+        let est_bytes_per_row = input_stats
+            .approx_stats
+            .size_bytes
+            .saturating_div(input_stats.approx_stats.num_rows.max(1));
+
         let approx_stats = ApproxStats {
-            num_rows: num_rows.min(approx_num_rows) as usize,
-            size_bytes: if approx_num_rows > num_rows {
-                let est_bytes_per_row =
-                    input_stats.approx_stats.size_bytes / input_stats.approx_stats.num_rows.max(1);
-                num_rows as usize * est_bytes_per_row
-            } else {
-                input_stats.approx_stats.size_bytes
-            },
-            acc_selectivity: input_stats.approx_stats.acc_selectivity * selectivity,
+            num_rows: num_rows.min(input_stats.approx_stats.num_rows),
+            size_bytes: est_bytes_per_row.saturating_mul(num_rows),
+            acc_selectivity: input_stats.approx_stats.acc_selectivity * slice_selectivity,
         };
+
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![match (self.offset, self.limit) {
-            (Some(o), Some(l)) => format!("Limit: {}..{}", o, l),
-            (Some(o), None) => format!("Limit: {}..", o),
-            (None, Some(l)) => format!("Limit: {}", l),
-            (None, None) => unreachable!("Invalid Limit, offset and limit are both None."),
+            (Some(o), Some(l)) => format!("Slice: {}..{}", o, l),
+            (Some(o), None) => format!("Slice: {}..", o),
+            (None, Some(l)) => format!("Slice: ..{}", l),
+            (None, None) => unreachable!("Invalid Slice, offset and limit are both None."),
         }];
 
         if let StatsState::Materialized(stats) = &self.stats_state {

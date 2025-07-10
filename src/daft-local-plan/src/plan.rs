@@ -189,13 +189,15 @@ impl LocalPhysicalPlan {
 
     pub fn limit(
         input: LocalPhysicalPlanRef,
-        num_rows: u64,
+        offset: Option<u64>,
+        limit: Option<u64>,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Limit(Limit {
             input,
-            num_rows,
+            offset,
+            limit,
             schema,
             stats_state,
         })
@@ -816,7 +818,7 @@ impl LocalPhysicalPlan {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
                 | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
                 Self::Filter(Filter {  predicate, schema,..  }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
-                Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
+                Self::Limit(Limit {  offset, limit, .. }) => Self::limit(new_child.clone(), *offset, *limit, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -967,7 +969,8 @@ pub struct Filter {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
-    pub num_rows: u64,
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
