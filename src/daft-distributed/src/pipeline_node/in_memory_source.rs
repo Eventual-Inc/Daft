@@ -28,8 +28,8 @@ impl InMemorySourceNode {
     const NODE_NAME: NodeName = "InMemorySource";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        stage_config: &StageConfig,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         logical_node_id: Option<NodeID>,

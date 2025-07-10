@@ -13,7 +13,8 @@ use daft_schema::schema::SchemaRef;
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
     pipeline_node::{
-        project::ProjectNode, repartition::RepartitionNode, NodeID, NodeName, PipelineNodeConfig,
+        project::ProjectNode, repartition::RepartitionNode,
+        translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext,
     },
     stage::{StageConfig, StageExecutionContext},
@@ -32,9 +33,9 @@ impl GroupbyAggNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         groupby: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
@@ -203,122 +204,118 @@ fn split_groupby_aggs(
     })
 }
 
-pub(crate) fn gen_repartition_only_nodes(
-    input_node: Arc<dyn DistributedPipelineNode>,
-    stage_config: &StageConfig,
-    node_id: NodeID,
-    logical_node_id: Option<NodeID>,
-    groupby: Vec<BoundExpr>,
-    aggregations: Vec<BoundAggExpr>,
-    output_schema: SchemaRef,
-) -> Arc<dyn DistributedPipelineNode> {
-    let repartition = RepartitionNode::new(
-        stage_config,
-        node_id,
-        logical_node_id,
-        groupby.clone(),
-        None,
-        input_node.config().schema.clone(),
-        input_node,
-    )
-    .arced();
-
-    GroupbyAggNode::new(
-        stage_config,
-        node_id,
-        logical_node_id,
-        groupby,
-        aggregations,
-        output_schema,
-        repartition,
-    )
-    .arced()
-}
-
-pub(crate) fn gen_pre_agg_repartition_nodes(
-    input_node: Arc<dyn DistributedPipelineNode>,
-    stage_config: &StageConfig,
-    node_id: NodeID,
-    logical_node_id: Option<NodeID>,
-    split_details: GroupbyAggSplit,
-    output_schema: SchemaRef,
-) -> Arc<dyn DistributedPipelineNode> {
-    let initial_groupby = GroupbyAggNode::new(
-        stage_config,
-        node_id,
-        logical_node_id,
-        split_details.first_stage_group_by,
-        split_details.first_stage_aggs,
-        split_details.first_stage_schema.clone(),
-        input_node,
-    )
-    .arced();
-
-    // Second stage repartition to distribute the dataset
-    let repartition = RepartitionNode::new(
-        stage_config,
-        node_id,
-        logical_node_id,
-        split_details.second_stage_group_by.clone(),
-        None,
-        split_details.first_stage_schema.clone(),
-        initial_groupby,
-    )
-    .arced();
-
-    // Third stage re-groupby-agg to compute the final result
-    let final_groupby = GroupbyAggNode::new(
-        stage_config,
-        node_id,
-        logical_node_id,
-        split_details.second_stage_group_by,
-        split_details.second_stage_aggs,
-        split_details.second_stage_schema.clone(),
-        repartition,
-    )
-    .arced();
-
-    // Last stage project to get the final result
-    ProjectNode::new(
-        stage_config,
-        node_id,
-        logical_node_id,
-        split_details.final_exprs,
-        output_schema,
-        final_groupby,
-    )
-    .arced()
-}
-
-pub(crate) fn gen_agg_nodes(
-    input_node: Arc<dyn DistributedPipelineNode>,
-    stage_config: &StageConfig,
-    node_id: NodeID,
-    logical_node_id: Option<NodeID>,
-    groupby: Vec<BoundExpr>,
-    aggregations: Vec<BoundAggExpr>,
-    output_schema: SchemaRef,
-) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-    let split_details = split_groupby_aggs(&groupby, &aggregations, &input_node.config().schema)?;
-
-    if split_details.first_stage_aggs.is_empty() {
-        Ok(gen_repartition_only_nodes(
-            input_node,
-            stage_config,
-            node_id,
+impl LogicalPlanToPipelineNodeTranslator {
+    pub(crate) fn gen_repartition_only_nodes(
+        &mut self,
+        input_node: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: Option<NodeID>,
+        groupby: Vec<BoundExpr>,
+        aggregations: Vec<BoundAggExpr>,
+        output_schema: SchemaRef,
+    ) -> Arc<dyn DistributedPipelineNode> {
+        let repartition = RepartitionNode::new(
+            self.get_next_pipeline_node_id(),
             logical_node_id,
+            &self.stage_config,
+            groupby.clone(),
+            None,
+            input_node.config().schema.clone(),
+            input_node,
+        )
+        .arced();
+
+        GroupbyAggNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
             groupby,
             aggregations,
             output_schema,
-        ))
-    } else {
-        Ok(gen_pre_agg_repartition_nodes(
-            input_node,
-            stage_config,
-            node_id,
+            repartition,
+        )
+        .arced()
+    }
+
+    pub(crate) fn gen_pre_agg_repartition_nodes(
+        &mut self,
+        input_node: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: Option<NodeID>,
+        split_details: GroupbyAggSplit,
+        output_schema: SchemaRef,
+    ) -> Arc<dyn DistributedPipelineNode> {
+        let initial_groupby = GroupbyAggNode::new(
+            self.get_next_pipeline_node_id(),
             logical_node_id,
-            split_details,
+            &self.stage_config,
+            split_details.first_stage_group_by,
+            split_details.first_stage_aggs,
+            split_details.first_stage_schema.clone(),
+            input_node,
+        )
+        .arced();
+
+        // Second stage repartition to distribute the dataset
+        let repartition = RepartitionNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            split_details.second_stage_group_by.clone(),
+            None,
+            split_details.first_stage_schema.clone(),
+            initial_groupby,
+        )
+        .arced();
+
+        // Third stage re-groupby-agg to compute the final result
+        let final_groupby = GroupbyAggNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            split_details.second_stage_group_by,
+            split_details.second_stage_aggs,
+            split_details.second_stage_schema.clone(),
+            repartition,
+        )
+        .arced();
+
+        // Last stage project to get the final result
+        ProjectNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            split_details.final_exprs,
             output_schema,
-        ))
+            final_groupby,
+        )
+        .arced()
+    }
+
+    pub(crate) fn gen_agg_nodes(
+        &mut self,
+        input_node: Arc<dyn DistributedPipelineNode>,
+        logical_node_id: Option<NodeID>,
+        groupby: Vec<BoundExpr>,
+        aggregations: Vec<BoundAggExpr>,
+        output_schema: SchemaRef,
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let split_details =
+            split_groupby_aggs(&groupby, &aggregations, &input_node.config().schema)?;
+
+        if split_details.first_stage_aggs.is_empty() {
+            Ok(self.gen_repartition_only_nodes(
+                input_node,
+                logical_node_id,
+                groupby,
+                aggregations,
+                output_schema,
+            ))
+        } else {
+            Ok(self.gen_pre_agg_repartition_nodes(
+                input_node,
+                logical_node_id,
+                split_details,
+                output_schema,
+            ))
+        }
     }
 }

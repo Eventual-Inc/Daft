@@ -24,12 +24,12 @@ impl MonotonicallyIncreasingIdNode {
     const NODE_NAME: NodeName = "MonotonicallyIncreasingId";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         column_name: String,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
