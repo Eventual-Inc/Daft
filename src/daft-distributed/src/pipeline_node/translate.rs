@@ -16,11 +16,10 @@ use daft_physical_plan::extract_agg_expr;
 use crate::{
     pipeline_node::{
         distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        groupby_agg::gen_agg_nodes, in_memory_source::InMemorySourceNode,
-        limit::LimitNode, monotonically_increasing_id::MonotonicallyIncreasingIdNode,
-        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, window::WindowNode,
-        DistributedPipelineNode, NodeID,
+        groupby_agg::gen_agg_nodes, in_memory_source::InMemorySourceNode, limit::LimitNode,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
+        repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
+        sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -214,7 +213,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     monotonically_increasing_id.column_name.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
-                    logical_node_id
+                    logical_node_id,
                 )
                 .arced()
             }
