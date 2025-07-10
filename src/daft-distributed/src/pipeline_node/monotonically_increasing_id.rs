@@ -91,7 +91,7 @@ impl TreeDisplay for MonotonicallyIncreasingIdNode {
 ///
 /// The implementation puts the partition number in the upper 28 bits, and the row number in each
 /// partition in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and
-/// 2^36 ≈ 68 billion rows per partition."
+/// 2^36 ≈ 68 billion rows per partition.
 const MAX_ROWS_PER_PARTITION: u64 = 1u64 << 36;
 
 impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
