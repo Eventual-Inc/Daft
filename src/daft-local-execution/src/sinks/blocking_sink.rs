@@ -33,9 +33,9 @@ pub enum BlockingSinkStatus {
 pub enum BlockingSinkFinalizeOutput {
     HasMoreOutput {
         states: Vec<Box<dyn BlockingSinkState>>,
-        output: Option<Arc<MicroPartition>>,
+        output: Vec<Arc<MicroPartition>>,
     },
-    Finished(Option<Arc<MicroPartition>>),
+    Finished(Vec<Arc<MicroPartition>>),
 }
 
 pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<BlockingSinkStatus>>;
@@ -275,13 +275,13 @@ impl PipelineNode for BlockingSinkNode {
                     let finalized_result = op.finalize(finished_states, &spawner).await??;
                     match finalized_result {
                         BlockingSinkFinalizeOutput::HasMoreOutput { states, output } => {
-                            if let Some(output) = output {
+                            for output in output {
                                 let _ = counting_sender.send(output).await;
                             }
                             finished_states = states;
                         }
                         BlockingSinkFinalizeOutput::Finished(output) => {
-                            if let Some(output) = output {
+                            for output in output {
                                 let _ = counting_sender.send(output).await;
                             }
                             break;
