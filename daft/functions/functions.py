@@ -8,7 +8,7 @@ def monotonically_increasing_id() -> Expression:
     """Generates a column of monotonically increasing unique ids.
 
     The implementation puts the partition number in the upper 28 bits, and the row number in each partition
-    in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
+    in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^36 ≈ 68 billion rows per partition.
 
     Returns:
         Expression: An expression that generates monotonically increasing IDs
