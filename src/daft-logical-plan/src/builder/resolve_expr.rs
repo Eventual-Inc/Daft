@@ -271,6 +271,8 @@ pub struct ExprResolver<'a> {
     allow_actor_pool_udf: bool,
     #[builder(default)]
     allow_monotonic_id: bool,
+    #[builder(default)]
+    allow_explode: bool,
     #[builder(via_mutators, mutators(
         pub fn in_agg_context(&mut self, in_agg_context: bool) {
             // workaround since typed_builder can't have defaults for mutator requirements
@@ -303,6 +305,12 @@ impl ExprResolver<'_> {
         {
             return Err(DaftError::ValueError(
                 "monotonically_increasing_id() is only allowed in projections".to_string(),
+            ));
+        }
+
+        if !self.allow_explode && expr.exists(|e| matches!(e.as_ref(), Expr::ScalarFunction(sf) if sf.is_function_type::<daft_functions_list::Explode>())) {
+            return Err(DaftError::ValueError(
+                "explode() is only allowed in projections".to_string(),
             ));
         }
 

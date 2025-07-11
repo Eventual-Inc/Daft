@@ -34,8 +34,8 @@ impl ScalarFunction {
         self.udf.get_return_field(self.inputs.clone(), schema)
     }
 
-    /// Returns if `self.udf` is of type `F`
-    pub fn is_function<F: ScalarUDF>(&self) -> bool {
+    /// Returns true if `self.udf` is of type `F`
+    pub fn is_function_type<F: ScalarUDF>(&self) -> bool {
         self.udf.as_ref().type_id() == TypeId::of::<F>()
     }
 }

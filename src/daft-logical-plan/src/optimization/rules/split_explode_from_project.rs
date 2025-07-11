@@ -31,14 +31,29 @@ impl OptimizerRule for SplitExplodeFromProject {
                 .projection
                 .iter()
                 .map(|expr| {
-                    if let Expr::ScalarFunction(sf) = expr.as_ref()
-                        && sf.is_function::<daft_functions_list::Explode>()
+                    let name = expr.get_name(&input_schema)?;
+                    let mut unaliased_expr = expr;
+                    while let Expr::Alias(inner, _) = unaliased_expr.as_ref() {
+                        unaliased_expr = inner;
+                    }
+
+                    if let Expr::ScalarFunction(sf) = unaliased_expr.as_ref()
+                        && sf.is_function_type::<daft_functions_list::Explode>()
                     {
-                        let name = expr.get_name(&input_schema)?;
+                        let inner = sf
+                            .inputs
+                            .first()
+                            .expect("explode should have exactly one input argument");
+
+                        let inner = if inner.get_name(&input_schema)? != name {
+                            inner.alias(name.clone())
+                        } else {
+                            inner.clone()
+                        };
+
                         to_explode.push(resolved_col(name));
 
-                        let input = sf.inputs.first().expect("explode should have one input");
-                        Ok(input.clone())
+                        Ok(inner)
                     } else {
                         Ok(expr.clone())
                     }
