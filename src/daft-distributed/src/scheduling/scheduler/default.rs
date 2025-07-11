@@ -81,6 +81,9 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         let mut scheduled = Vec::new();
         let mut unscheduled = Vec::new();
         while let Some(task) = self.pending_tasks.pop() {
+            if task.cancel_token.is_cancelled() {
+                continue;
+            }
             if let Some(worker_id) = self.try_schedule_task(&task) {
                 self.worker_snapshots
                     .get_mut(&worker_id)
