@@ -15,8 +15,8 @@ use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode, gather::GatherNode,
-        in_memory_source::InMemorySourceNode, limit::LimitNode,
+        concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
+        gather::GatherNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
         sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
@@ -251,9 +251,15 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Concat(_) => {
-                todo!("FLOTILLA_MS1: Implement Concat")
-            }
+            LogicalPlan::Concat(_) => ConcatNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                node.schema(),
+                self.curr_node.pop().unwrap(), // Other
+                self.curr_node.pop().unwrap(), // Child
+            )
+            .arced(),
             LogicalPlan::Repartition(repartition) => {
                 let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
                     todo!("FLOTILLA_MS3: Support other types of repartition");

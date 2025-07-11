@@ -31,6 +31,12 @@ Compare traditional join operations with more efficient window functions for ran
 
 [Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions/window_functions.ipynb)
 
+## Document Processing
+
+Load a collection of PDFs from S3, OCR or extract text from them, run layout analysis to group text boxes into paragraphs, then compute text embeddings using a locally running LLM. Also showcases how to use custom Pydantic classes as Daft DataTypes for UDFs.
+
+[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/document_processing/document_processing_tutorial.ipynb)
+
 
 <!-- .. These can't be run because DeltaLake can't be accessed in anonymous mode from Google Colab
 .. ML model batch inference/training on a Data Catalog
