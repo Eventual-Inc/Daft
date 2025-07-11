@@ -8,6 +8,7 @@ from daft.functions import monotonically_increasing_id
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
+from tests.utils import sort_pydict
 
 
 def test_monotonically_increasing_id_single_partition(make_df) -> None:
@@ -519,7 +520,7 @@ def test_monotonic_id_in_join_condition(make_df) -> None:
         .collect()
     )
 
-    assert df1.to_pydict() == df2.to_pydict()
+    assert sort_pydict(df1.to_pydict(), "id") == sort_pydict(df2.to_pydict(), "id")
 
 
 def test_monotonically_increasing_id_with_cast(make_df) -> None:

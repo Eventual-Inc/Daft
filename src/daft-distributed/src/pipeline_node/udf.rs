@@ -2,10 +2,14 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_dsl::{
+    expr::bound_expr::BoundExpr,
+    functions::python::{get_resource_request, get_udf_names},
+};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
+use itertools::Itertools;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
@@ -16,7 +20,8 @@ use crate::{
 pub(crate) struct UDFNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    projection: Vec<BoundExpr>,
+    project: BoundExpr,
+    passthrough_columns: Vec<BoundExpr>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -24,10 +29,11 @@ impl UDFNode {
     const NODE_NAME: NodeName = "UDF";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        projection: Vec<BoundExpr>,
+        stage_config: &StageConfig,
+        project: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -44,7 +50,7 @@ impl UDFNode {
             stage_config.config.clone(),
             translate_clustering_spec(
                 child.config().clustering_spec.clone(),
-                &projection
+                &passthrough_columns
                     .iter()
                     .map(|e| e.inner().clone())
                     .collect::<Vec<_>>(),
@@ -53,7 +59,8 @@ impl UDFNode {
         Self {
             config,
             context,
-            projection,
+            project,
+            passthrough_columns,
             child,
         }
     }
@@ -63,14 +70,18 @@ impl UDFNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use daft_dsl::functions::python::get_resource_request;
-        use itertools::Itertools;
         let mut res = vec![];
+        res.push("UDF Executor:".to_string());
         res.push(format!(
-            "Project: {}",
-            self.projection.iter().map(|e| e.to_string()).join(", ")
+            "UDF {} = {}",
+            get_udf_names(self.project.inner()).first().unwrap(),
+            self.project
         ));
-        if let Some(resource_request) = get_resource_request(&self.projection) {
+        res.push(format!(
+            "Passthrough Columns = [{}]",
+            self.passthrough_columns.iter().join(", ")
+        ));
+        if let Some(resource_request) = get_resource_request(&[self.project.clone()]) {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
@@ -85,18 +96,10 @@ impl UDFNode {
 
 impl TreeDisplay for UDFNode {
     fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
         match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
+            DisplayLevel::Compact => self.name().to_string(),
+            _ => self.multiline_display().join("\n"),
         }
-        display
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -124,12 +127,14 @@ impl DistributedPipelineNode for UDFNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        let projection = self.projection.clone();
+        let project = self.project.clone();
+        let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::project(
+            Ok(LocalPhysicalPlan::udf_project(
                 input,
-                projection.clone(),
+                project.clone(),
+                passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
             ))

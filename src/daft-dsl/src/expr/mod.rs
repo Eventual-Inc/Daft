@@ -1847,7 +1847,7 @@ impl Expr {
             _ => (self.clone(), None),
         }
     }
-    
+
     pub fn explode(self: Arc<Self>) -> DaftResult<ExprRef> {
         let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
         let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;

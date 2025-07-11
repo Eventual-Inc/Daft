@@ -639,13 +639,17 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
+            starting_offset,
             schema,
             stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let monotonically_increasing_id_sink =
-                MonotonicallyIncreasingIdSink::new(column_name.clone(), schema.clone());
+            let monotonically_increasing_id_sink = MonotonicallyIncreasingIdSink::new(
+                column_name.clone(),
+                *starting_offset,
+                schema.clone(),
+            );
             StreamingSinkNode::new(
                 Arc::new(monotonically_increasing_id_sink),
                 vec![child_node],

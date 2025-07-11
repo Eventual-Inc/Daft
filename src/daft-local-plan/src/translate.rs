@@ -368,6 +368,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::monotonically_increasing_id(
                 input,
                 monotonically_increasing_id.column_name.clone(),
+                monotonically_increasing_id.starting_offset,
                 monotonically_increasing_id.schema.clone(),
                 monotonically_increasing_id.stats_state.clone(),
             ))

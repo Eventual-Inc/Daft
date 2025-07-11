@@ -519,6 +519,7 @@ mod tests {
                 .to_string(),
             run_id: Some("run-456".to_string()),
             logs: "Test log message".to_string(),
+            sequence: 1,
         };
 
         // Test serialization
@@ -994,6 +995,116 @@ mod tests {
         assert_eq!(
             deserialized_graph.adjacency_list.get(&source_node_id),
             Some(&vec![])
+        );
+    }
+
+    #[test]
+    fn test_flush_functionality_with_empty_payload() {
+        // Test that flush() returns immediately when there are no pending HTTP requests
+        let mut subscriber = HttpSubscriber::new();
+
+        // Since no events have been processed, the payload should be empty
+        // and flush should return immediately without waiting
+        let start_time = std::time::Instant::now();
+        let result = subscriber.flush();
+        let elapsed = start_time.elapsed();
+
+        // The flush should succeed
+        assert!(result.is_ok(), "Flush should succeed with empty payload");
+
+        // The flush should complete quickly (within 100ms) since there's nothing to flush
+        assert!(
+            elapsed < std::time::Duration::from_millis(100),
+            "Flush with empty payload should complete quickly, took {:?}",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_flush_functionality_with_payload() {
+        use crate::statistics::{StatisticsEvent, StatisticsSubscriber};
+
+        let mut subscriber = HttpSubscriber::new();
+        let logical_plan = create_test_logical_plan();
+
+        // Submit a plan to create a non-empty payload
+        let plan_event = StatisticsEvent::PlanSubmitted {
+            plan_id: 1,
+            query_id: "test-query".to_string(),
+            logical_plan,
+        };
+
+        // Process the plan event to create a payload
+        let result = subscriber.handle_event(&plan_event);
+        assert!(result.is_ok(), "Plan submission should succeed");
+
+        // Now test flush - this should wait for the HTTP request to be processed
+        // Since we don't have a real HTTP server running, the request will fail
+        // but the flush mechanism should still work correctly
+        let start_time = std::time::Instant::now();
+        let result = subscriber.flush();
+        let elapsed = start_time.elapsed();
+
+        // The flush should succeed even if HTTP request fails
+        assert!(
+            result.is_ok(),
+            "Flush should succeed even with failed HTTP request"
+        );
+
+        // The flush should take some time since it waits for HTTP processing
+        // But it shouldn't hang indefinitely
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "Flush should not hang indefinitely, took {:?}",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_flush_with_plan_finished_event() {
+        use crate::statistics::{StatisticsEvent, StatisticsSubscriber};
+
+        let mut subscriber = HttpSubscriber::new();
+        let logical_plan = create_test_logical_plan();
+
+        // Submit a plan
+        let plan_event = StatisticsEvent::PlanSubmitted {
+            plan_id: 1,
+            query_id: "test-query".to_string(),
+            logical_plan,
+        };
+
+        let result = subscriber.handle_event(&plan_event);
+        assert!(result.is_ok(), "Plan submission should succeed");
+
+        // Submit a task to create some activity
+        let task_context = create_test_task_context(1, 1, 1, 1, Some(1));
+        let task_event = StatisticsEvent::TaskSubmitted {
+            context: task_context,
+            name: "TestTask".to_string(),
+        };
+
+        let result = subscriber.handle_event(&task_event);
+        assert!(result.is_ok(), "Task submission should succeed");
+
+        // Now send a PlanFinished event - this should trigger a flush internally
+        let plan_finished_event = StatisticsEvent::PlanFinished { plan_id: 1 };
+
+        let start_time = std::time::Instant::now();
+        let result = subscriber.handle_event(&plan_finished_event);
+        let elapsed = start_time.elapsed();
+
+        // The event handling should succeed (even if HTTP fails)
+        assert!(
+            result.is_ok(),
+            "Plan finished event should be handled successfully"
+        );
+
+        // The flush should complete within a reasonable time
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "Plan finished event handling should not hang, took {:?}",
+            elapsed
         );
     }
 }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.utils import sort_pydict
+
 
 def test_pipe(make_df):
     df = make_df({"x": [1, 2, 3]})
@@ -20,4 +22,4 @@ def test_pipe_with_join(make_df):
     joined_by_join = df1.join(df2, on="A")
     joined_by_pipe = df1.pipe(left_join, df2, on="A")
 
-    assert joined_by_join.to_pydict() == joined_by_pipe.to_pydict()
+    assert sort_pydict(joined_by_join.to_pydict(), "A") == sort_pydict(joined_by_pipe.to_pydict(), "A")

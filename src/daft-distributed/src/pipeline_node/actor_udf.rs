@@ -164,14 +164,14 @@ impl ActorUDF {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         projection: Vec<BoundExpr>,
         batch_size: Option<usize>,
         memory_request: u64,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             stage_config,
