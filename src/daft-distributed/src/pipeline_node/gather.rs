@@ -78,8 +78,6 @@ impl GatherNode {
             .materialize(scheduler_handle.clone())
             .try_collect::<Vec<_>>()
             .await?;
-        // Remove any known empty partitions
-        let materialized = materialized.into_iter().collect::<Vec<_>>();
 
         let self_clone = self.clone();
         let task = make_in_memory_scan_from_materialized_outputs(
