@@ -103,7 +103,7 @@ impl BlockingSink for SortSink {
                         &params.descending,
                         &params.nulls_first,
                     )?);
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(sorted)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))
                 },
                 Span::current(),
             )
