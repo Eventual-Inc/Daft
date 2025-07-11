@@ -29,6 +29,7 @@ use crate::{
 
 #[cfg(feature = "python")]
 mod actor_udf;
+mod concat;
 mod distinct;
 mod explode;
 mod filter;
