@@ -19,13 +19,16 @@ impl ScalarUDF for CosineDistanceFunction {
             query,
         } = inputs.try_into()?;
         let source_name = source.name();
-        let source = source.fixed_size_list()?;
+        let source_physical = source.as_physical()?;
+        let source_fixed_size_list = source_physical.fixed_size_list()?;
 
         let res = match query.data_type() {
-            DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
-                DataType::Int8 => compute_cosine_distance::<i8>(source, &query),
-                DataType::Float32 => compute_cosine_distance::<f32>(source, &query),
-                DataType::Float64 => compute_cosine_distance::<f64>(source, &query),
+            DataType::FixedSizeList(dtype, _) | DataType::Embedding(dtype, _) => match dtype
+                .as_ref()
+            {
+                DataType::Int8 => compute_cosine_distance::<i8>(source_fixed_size_list, &query),
+                DataType::Float32 => compute_cosine_distance::<f32>(source_fixed_size_list, &query),
+                DataType::Float64 => compute_cosine_distance::<f64>(source_fixed_size_list, &query),
                 _ => {
                     return Err(DaftError::ValueError(
                         "'cosine_distance' only supports Int8|Float32|Float32 datatypes"
@@ -57,33 +60,31 @@ impl ScalarUDF for CosineDistanceFunction {
         } = inputs.try_into()?;
         let source = source.to_field(schema)?;
         let query = query.to_field(schema)?;
-        let source_is_numeric = source.dtype.is_fixed_size_numeric();
-        let query_is_numeric = query.dtype.is_fixed_size_numeric();
 
-        if let Ok((source_size, query_size)) = source
-            .dtype
-            .fixed_size()
-            .and_then(|source| query.dtype.fixed_size().map(|q| (source, q)))
-        {
-            if source_size != query_size {
-                return Err(DaftError::ValueError(format!(
-                    "Expected source and query to have the same size, instead got {source_size} and {query_size}"
-                )));
+        match (&source.dtype.to_physical(), &query.dtype.to_physical()) {
+            (
+                DataType::FixedSizeList(source_inner_dtype, source_size),
+                DataType::FixedSizeList(query_inner_dtype, query_size),
+            ) => {
+                if source_inner_dtype != query_inner_dtype {
+                    return Err(DaftError::ValueError(format!(
+                        "Expected source and query to have the same inner dtype, instead got {} and {}",
+                        source_inner_dtype, query_inner_dtype
+                    )));
+                }
+                if source_size != query_size {
+                    return Err(DaftError::ValueError(format!(
+                        "Expected source and query to have the same size, instead got {source_size} and {query_size}"
+                    )));
+                }
+                Ok(Field::new(source.name, DataType::Float64))
             }
-        } else {
-            return Err(DaftError::ValueError(format!(
-                "Expected source and query to be fixed size, instead got {} and {}",
-                source.dtype, query.dtype
-            )));
-        }
-
-        if source_is_numeric && query_is_numeric {
-            Ok(Field::new(source.name, DataType::Float64))
-        } else {
-            Err(DaftError::ValueError(format!(
-                "Expected nested list for source and numeric list for query, instead got {} and {}",
-                source.dtype, query.dtype
-            )))
+            _ => {
+                Err(DaftError::ValueError(format!(
+                    "Expected source and query to be fixed size list or embedding, instead got {} and {}",
+                    source.dtype, query.dtype
+                )))
+            }
         }
     }
 }
@@ -147,7 +148,9 @@ where
 {
     // Check if query is a single literal or a series.
     if query.len() == 1 {
-        let query = &query.fixed_size_list()?.flat_child;
+        let query_physical = query.as_physical()?;
+        let query_fixed_size_list = query_physical.fixed_size_list()?;
+        let query = &query_fixed_size_list.flat_child;
         let query = query.try_as_slice::<T>()?;
 
         Ok(source
@@ -166,11 +169,12 @@ where
                 source.len()
             )));
         }
-        let query = query.fixed_size_list()?;
+        let query_physical = query.as_physical()?;
+        let query_fixed_size_list = query_physical.fixed_size_list()?;
 
         Ok(source
             .into_iter()
-            .zip(query.into_iter())
+            .zip(query_fixed_size_list.into_iter())
             .map(|(list_opt, query_opt)| {
                 // Safe to unwrap after try_as_slice because types should be checked at this point.
                 let list_slice = list_opt.as_ref()?.try_as_slice::<T>().ok()?;
