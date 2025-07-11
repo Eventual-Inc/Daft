@@ -139,17 +139,17 @@ impl DistributedPipelineNode for AggregateNode {
 
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
             if self_clone.group_by.is_empty() {
-                Ok(LocalPhysicalPlan::hash_aggregate(
+                Ok(LocalPhysicalPlan::ungrouped_aggregate(
                     input,
                     self_clone.aggs.clone(),
-                    self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
                 ))
             } else {
-                Ok(LocalPhysicalPlan::ungrouped_aggregate(
+                Ok(LocalPhysicalPlan::hash_aggregate(
                     input,
                     self_clone.aggs.clone(),
+                    self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
                 ))
