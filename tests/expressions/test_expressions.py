@@ -801,3 +801,119 @@ def test_drop_nan_no_nans():
     dd = {"n": [1, 1, 2]}
     df = daft.from_pydict(dd)
     assert df.drop_nan().to_pydict() == dd
+
+
+# Strategy-based fill_null expression tests
+
+
+@pytest.mark.parametrize(
+    "input_data,strategy,expected",
+    [
+        # Basic functionality
+        ([1, None, 3, None, 5], "forward", [1, 1, 3, 3, 5]),
+        ([1, None, 3, None, 5], "backward", [1, 3, 3, 5, 5]),
+        # Leading/trailing nulls
+        ([None, None, 3, None, 5], "forward", [None, None, 3, 3, 5]),
+        ([1, None, 3, None, None], "backward", [1, 3, 3, None, None]),
+        # All nulls
+        ([None, None, None], "forward", [None, None, None]),
+        ([None, None, None], "backward", [None, None, None]),
+        # No nulls
+        ([1, 2, 3], "forward", [1, 2, 3]),
+        ([1, 2, 3], "backward", [1, 2, 3]),
+        # Float data
+        ([1.5, None, 3.7, None, 5.2], "forward", [1.5, 1.5, 3.7, 3.7, 5.2]),
+        ([1.5, None, 3.7, None, 5.2], "backward", [1.5, 3.7, 3.7, 5.2, 5.2]),
+        # String data
+        (["a", None, "c", None, "e"], "forward", ["a", "a", "c", "c", "e"]),
+        (["a", None, "c", None, "e"], "backward", ["a", "c", "c", "e", "e"]),
+        # Empty data
+        ([], "forward", []),
+        ([], "backward", []),
+        # Mixed patterns
+        ([None, 1, None, 3, None], "forward", [None, 1, 1, 3, 3]),
+        ([None, 1, None, 3, None], "backward", [1, 1, 3, 3, None]),
+        # Single values
+        ([None], "forward", [None]),
+        ([None], "backward", [None]),
+        ([42], "forward", [42]),
+        ([42], "backward", [42]),
+    ],
+)
+def test_expression_fill_null_strategies(input_data, strategy, expected):
+    """Test fill_null with various strategies and data patterns."""
+    df = daft.from_pydict({"a": input_data})
+    result = df.select(col("a").fill_null(strategy=strategy))
+    assert result.collect().to_pydict() == {"a": expected}
+
+
+@pytest.mark.parametrize(
+    "input_data,fill_value,strategy,expected",
+    [
+        # Value strategy with old API
+        ([1, None, 3], 2, None, [1, 2, 3]),
+        # Value strategy with new API
+        ([1, None, 3], 2, "value", [1, 2, 3]),
+    ],
+)
+def test_expression_fill_null_value_strategy_backward_compatibility(input_data, fill_value, strategy, expected):
+    """Test that value strategy works with backward compatibility."""
+    df = daft.from_pydict({"a": input_data})
+
+    if strategy is None:
+        # Test old API
+        result = df.select(col("a").fill_null(fill_value))
+    else:
+        # Test new API with explicit value strategy
+        result = df.select(col("a").fill_null(fill_value, strategy=strategy))
+
+    assert result.collect().to_pydict() == {"a": expected}
+
+
+@pytest.mark.parametrize(
+    "strategy,fill_value,error_match",
+    [
+        ("invalid", None, "strategy must be one of"),
+        ("value", None, "fill_value must be provided"),
+        ("forward", 2, "fill_value should not be provided"),
+        ("backward", 2, "fill_value should not be provided"),
+    ],
+)
+def test_expression_fill_null_strategy_validation(strategy, fill_value, error_match):
+    """Test strategy parameter validation."""
+    df = daft.from_pydict({"a": [1, None, 3]})
+
+    with pytest.raises(ValueError, match=error_match):
+        if fill_value is None:
+            df.select(col("a").fill_null(strategy=strategy)).collect()
+        else:
+            df.select(col("a").fill_null(fill_value, strategy=strategy)).collect()
+
+
+def test_expression_fill_null_multiple_columns():
+    """Test fill_null with multiple columns."""
+    df = daft.from_pydict({"a": [1, None, 3, None, 5], "b": [None, 2, None, 4, None], "c": ["x", None, "z", None, "w"]})
+
+    result = df.select(
+        col("a").fill_null(strategy="forward").alias("a_forward"),
+        col("b").fill_null(strategy="backward").alias("b_backward"),
+        col("c").fill_null(strategy="forward").alias("c_forward"),
+    )
+
+    expected = {
+        "a_forward": [1, 1, 3, 3, 5],
+        "b_backward": [2, 2, 4, 4, None],
+        "c_forward": ["x", "x", "z", "z", "w"],
+    }
+
+    assert result.collect().to_pydict() == expected
+
+
+def test_expression_fill_null_chained_operations():
+    """Test fill_null in chained operations."""
+    df = daft.from_pydict({"a": [1, None, 3, None, 5]})
+
+    result = df.select(col("a").fill_null(strategy="forward").alias("filled")).where(col("filled") > 1)
+
+    expected = {"filled": [3, 3, 5]}
+    assert result.collect().to_pydict() == expected
