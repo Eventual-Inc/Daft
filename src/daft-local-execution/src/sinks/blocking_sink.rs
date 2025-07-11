@@ -31,6 +31,7 @@ pub enum BlockingSinkStatus {
 }
 
 pub enum BlockingSinkFinalizeOutput {
+    #[allow(dead_code)]
     HasMoreOutput {
         states: Vec<Box<dyn BlockingSinkState>>,
         output: Vec<Arc<MicroPartition>>,

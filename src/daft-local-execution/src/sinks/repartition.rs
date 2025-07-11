@@ -123,7 +123,6 @@ impl BlockingSink for RepartitionSink {
                         .await
                         .unwrap()
                         .into_iter()
-                        .map(|mp| mp)
                         .collect::<DaftResult<Vec<_>>>()?;
                     Ok(BlockingSinkFinalizeOutput::Finished(outputs))
                 },
