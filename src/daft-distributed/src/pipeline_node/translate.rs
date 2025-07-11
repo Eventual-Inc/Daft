@@ -216,13 +216,13 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Concat(_concat) => ConcatNode::new(
+            LogicalPlan::Concat(_) => ConcatNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
                 &self.stage_config,
-                node_id,
                 node.schema(),
                 self.curr_node.pop().unwrap(), // Other
                 self.curr_node.pop().unwrap(), // Child
-                logical_node_id,
             )
             .arced(),
             LogicalPlan::Repartition(repartition) => {

@@ -28,12 +28,12 @@ impl ConcatNode {
     const NODE_NAME: NodeName = "Concat";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         schema: SchemaRef,
         other: Arc<dyn DistributedPipelineNode>,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
