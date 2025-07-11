@@ -1,57 +1,33 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner};
 
-enum RepartitionState {
-    Accumulating(Vec<Arc<MicroPartition>>),
-    Done(Vec<MicroPartition>),
+struct RepartitionState {
+    states: VecDeque<Vec<MicroPartition>>,
 }
 
 impl RepartitionState {
-    fn push(&mut self, part: Arc<MicroPartition>) {
-        if let Self::Accumulating(ref mut parts) = self {
-            parts.push(part);
-        } else {
-            panic!("RepartitionSink should be in Accumulating state");
+    fn push(&mut self, parts: Vec<MicroPartition>) {
+        for (vec, part) in self.states.iter_mut().zip(parts) {
+            vec.push(part);
         }
     }
 
-    fn finalize(
-        &mut self,
-        columns: &[BoundExpr],
-        num_partitions: usize,
-        schema: SchemaRef,
-    ) -> DaftResult<()> {
-        let Self::Accumulating(ref mut parts) = self else {
-            // If we're already in the Done state, don't do anything
-            return Ok(());
-        };
-
-        let concated = MicroPartition::concat_or_empty(parts, schema)?;
-        let reparted = concated.partition_by_hash(columns, num_partitions)?;
-
-        *self = Self::Done(reparted);
-        Ok(())
-    }
-
-    fn emit(&mut self) -> Option<MicroPartition> {
-        let Self::Done(ref mut reparted) = self else {
-            panic!("RepartitionSink should be in Done state");
-        };
-
-        reparted.pop()
+    fn emit(&mut self) -> Option<Vec<MicroPartition>> {
+        self.states.pop_front()
     }
 }
 
@@ -83,14 +59,24 @@ impl BlockingSink for RepartitionSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        _spawner: &ExecutionTaskSpawner,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        state
-            .as_any_mut()
-            .downcast_mut::<RepartitionState>()
-            .expect("RepartitionSink should have RepartitionState")
-            .push(input);
-        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
+        let columns = self.columns.clone();
+        let num_partitions = self.num_partitions;
+        spawner
+            .spawn(
+                async move {
+                    let repartition_state = state
+                        .as_any_mut()
+                        .downcast_mut::<RepartitionState>()
+                        .expect("RepartitionSink should have RepartitionState");
+                    let partitioned = input.partition_by_hash(&columns, num_partitions)?;
+                    repartition_state.push(partitioned);
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
+            .into()
     }
 
     #[instrument(skip_all, name = "RepartitionSink::finalize")]
@@ -99,7 +85,6 @@ impl BlockingSink for RepartitionSink {
         mut states: Vec<Box<dyn BlockingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
-        let columns = self.columns.clone();
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
@@ -118,24 +103,28 @@ impl BlockingSink for RepartitionSink {
                         })
                         .collect::<Vec<_>>();
 
-                    for repart_state in &mut repart_states {
-                        repart_state.finalize(&columns, num_partitions, schema.clone())?;
+                    let mut outputs = Vec::new();
+                    for _ in 0..num_partitions {
+                        let data = repart_states
+                            .iter_mut()
+                            .flat_map(|state| state.emit().unwrap())
+                            .collect::<Vec<_>>();
+                        let schema = schema.clone();
+                        let fut = tokio::spawn(async move {
+                            let together = MicroPartition::concat(&data)?;
+                            let concated =
+                                together.concat_or_get(IOStatsContext::new("get tables"))?;
+                            let mp = MicroPartition::new_loaded(schema, concated, None);
+                            Ok(Arc::new(mp))
+                        });
+                        outputs.push(fut);
                     }
-
-                    let all_parts = repart_states
-                        .iter_mut()
-                        .map(|repart_state| repart_state.emit())
-                        .collect::<Option<Vec<_>>>();
-
-                    if let Some(all_parts) = all_parts {
-                        let together = MicroPartition::concat(&all_parts)?;
-                        Ok(BlockingSinkFinalizeOutput::HasMoreOutput {
-                            states,
-                            output: Some(Arc::new(together)),
-                        })
-                    } else {
-                        Ok(BlockingSinkFinalizeOutput::Finished(None))
-                    }
+                    let outputs = futures::future::try_join_all(outputs)
+                        .await
+                        .unwrap()
+                        .into_iter()
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    Ok(BlockingSinkFinalizeOutput::Finished(outputs))
                 },
                 Span::current(),
             )
@@ -159,6 +148,8 @@ impl BlockingSink for RepartitionSink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(RepartitionState::Accumulating(vec![])))
+        Ok(Box::new(RepartitionState {
+            states: (0..self.num_partitions).map(|_| vec![]).collect(),
+        }))
     }
 }
