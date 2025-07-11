@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+
 import pytest
 
 import daft
@@ -15,29 +17,34 @@ def test_repr_cosine():
     assert repr_out == "cosine_distance(col(a), col(b))"
 
 
-valid_cosine_distance_dtypes = [
-    # float64
-    DataType.fixed_size_list(DataType.float64(), 3),
-    DataType.embedding(DataType.float64(), 3),
-    # float32
-    DataType.fixed_size_list(DataType.float32(), 3),
-    DataType.embedding(DataType.float32(), 3),
-    # int8
-    DataType.fixed_size_list(DataType.int8(), 3),
-    DataType.embedding(DataType.int8(), 3),
-]
+def _generate_valid_dtype_pairs_for_cosine_distance():
+    valid_inner_dtypes = [DataType.float64(), DataType.float32(), DataType.int8()]
+    pairs = []
+
+    for inner_dtype in valid_inner_dtypes:
+        outer_dtypes = [
+            DataType.fixed_size_list(inner_dtype, 3),
+            DataType.embedding(inner_dtype, 3),
+        ]
+        pairs.extend(itertools.product(outer_dtypes, outer_dtypes))
+
+    return pairs
 
 
-@pytest.mark.parametrize("dtype", valid_cosine_distance_dtypes)
-def test_cosine_floats(dtype):
+valid_cosine_distance_dtype_pairs = _generate_valid_dtype_pairs_for_cosine_distance()
+
+
+@pytest.mark.parametrize("dtype_pair", valid_cosine_distance_dtype_pairs)
+def test_cosine_floats(dtype_pair):
+    dtype1, dtype2 = dtype_pair
     data = {
         "source": [[1.0, 1.11, 1.01], [2, 2, 2], [3, 3, 3]],
     }
     query = [1.0, 1.11, 1.01]
 
     df = daft.from_pydict(data)
-    df = df.with_column("source", col("source").cast(dtype))
-    df = df.with_column("query", lit(query).cast(dtype))
+    df = df.with_column("source", col("source").cast(dtype1))
+    df = df.with_column("query", lit(query).cast(dtype2))
 
     res = df.select(col("source").embedding.cosine_distance(col("query"))).to_pydict()
 
@@ -50,7 +57,7 @@ def test_cosine_floats(dtype):
         return 1.0 - xy / (x_sq * y_sq)
 
     # If dtype is int8, cast data and query to int
-    if dtype.dtype.is_int8():
+    if dtype1.dtype.is_int8():
         expected = [cosine_dist_brute_force(list(map(int, query)), list(map(int, x))) for x in data["source"]]
     else:
         expected = [cosine_dist_brute_force(query, x) for x in data["source"]]
@@ -60,8 +67,9 @@ def test_cosine_floats(dtype):
         assert pytest.approx(b) == pytest.approx(a, abs=1e-5)
 
 
-@pytest.mark.parametrize("dtype", valid_cosine_distance_dtypes)
-def test_pairwise_cosine_distance(dtype):
+@pytest.mark.parametrize("dtype_pair", valid_cosine_distance_dtype_pairs)
+def test_pairwise_cosine_distance(dtype_pair):
+    dtype1, dtype2 = dtype_pair
     data = {
         "e1": [[1, 2, 3], [1, 2, 3]],
         "e2": [[1, 2, 3], [-1, -2, -3]],
@@ -69,7 +77,7 @@ def test_pairwise_cosine_distance(dtype):
     df = daft.from_pydict(data)
     res = df.with_column(
         "distance",
-        df["e1"].cast(dtype).embedding.cosine_distance(df["e2"].cast(dtype)),
+        df["e1"].cast(dtype1).embedding.cosine_distance(df["e2"].cast(dtype2)),
     ).to_pydict()
 
     assert res["distance"] == [0.0, 2.0]
@@ -93,7 +101,10 @@ def test_cosine_distance_dtype_not_fixed_size(data):
         "source": data,
     }
     df = daft.from_pydict(data)
-    with pytest.raises(ValueError, match="Expected source and query to be fixed size"):
+    with pytest.raises(
+        ValueError,
+        match="Expected inputs to 'cosine_distance' to be fixed size list or embedding",
+    ):
         df.with_column("distance", df["source"].embedding.cosine_distance(df["source"]))
 
 
@@ -107,7 +118,7 @@ def test_cosine_distance_dtype_size_mismatch():
     df = df.with_column("source", df["source"].cast(DataType.embedding(DataType.float32(), 3)))
     df = df.with_column("query", df["query"].cast(DataType.embedding(DataType.float32(), 4)))
 
-    with pytest.raises(ValueError, match="Expected source and query to have the same size"):
+    with pytest.raises(ValueError, match="Expected inputs to 'cosine_distance' to have the same size"):
         df.with_column("distance", df["source"].embedding.cosine_distance(df["query"]))
 
 
@@ -123,6 +134,6 @@ def test_cosine_distance_dtype_precision_mismatch():
 
     with pytest.raises(
         ValueError,
-        match="Expected source and query to have the same inner dtype",
+        match="Expected inputs to 'cosine_distance' to have the same inner dtype",
     ):
         df.with_column("distance", df["source"].embedding.cosine_distance(df["query"]))
