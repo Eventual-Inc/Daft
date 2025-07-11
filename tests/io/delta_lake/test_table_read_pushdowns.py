@@ -29,7 +29,7 @@ def test_read_predicate_pushdown_on_data(deltalake_table):
     df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     df = df.where(df["a"] == 2)
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
-    expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(
         df.to_arrow().sort_by("part_idx"),
@@ -48,7 +48,7 @@ def test_read_predicate_pushdown_on_part(deltalake_table, partition_generator):
         part_value = part_idx
     df = df.where(df["part_idx"] == part_value)
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
-    expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(
         df.to_arrow().sort_by("part_idx"),
@@ -67,7 +67,7 @@ def test_read_predicate_pushdown_on_part_non_eq(deltalake_table, partition_gener
         part_value = part_idx
     df = df.where(df["part_idx"] < part_value)
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
-    expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(
         df.to_arrow().sort_by("part_idx"),
@@ -86,7 +86,7 @@ def test_read_predicate_pushdown_on_part_and_data(deltalake_table, partition_gen
         part_value = part_idx
     df = df.where((df["part_idx"] == part_value) & (df["f"] == datetime.datetime(2024, 2, 11)))
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
-    expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(
         df.to_arrow().sort_by("part_idx"),
@@ -106,7 +106,7 @@ def test_read_predicate_pushdown_on_part_and_data_same_clause(deltalake_table, p
     partition_generator, col = partition_generator
     df = df.where(df["part_idx"] < df[col])
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
-    expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(
         df.to_arrow().sort_by("part_idx"),
@@ -125,7 +125,7 @@ def test_read_predicate_pushdown_on_part_empty(deltalake_table, partition_genera
         part_value = num_partitions
     df = df.where(df["part_idx"] == part_value)
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
-    expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(
         df.to_arrow().sort_by("part_idx"),

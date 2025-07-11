@@ -121,7 +121,10 @@ class DeltaLakeScanOperator(ScanOperator):
             self._table.load_as_version(version)
 
         self._storage_config = storage_config
-        self._schema = Schema.from_pyarrow_schema(self._table.schema().to_pyarrow())
+
+        from ._deltalake import delta_schema_to_pyarrow
+
+        self._schema = Schema.from_pyarrow_schema(delta_schema_to_pyarrow(self._table.schema()))
         partition_columns = set(self._table.metadata().partition_columns)
         self._partition_keys = [
             PyPartitionField(field._field) for field in self._schema if field.name in partition_columns
@@ -153,7 +156,7 @@ class DeltaLakeScanOperator(ScanOperator):
 
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
         # Issue: https://github.com/Eventual-Inc/Daft/issues/1953
-        add_actions: pa.RecordBatch = self._table.get_add_actions()
+        add_actions = pa.record_batch(self._table.get_add_actions())
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
             logger.warning(

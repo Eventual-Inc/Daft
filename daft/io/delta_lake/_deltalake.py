@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -13,6 +13,9 @@ from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+    import deltalake
+    import pyarrow as pa
 
     from daft.unity_catalog import UnityCatalogTable
 
@@ -84,14 +87,13 @@ def read_deltalake(
     return DataFrame(builder)
 
 
-def large_dtypes_kwargs(large_dtypes: bool) -> dict[str, Any]:
+def delta_schema_to_pyarrow(schema: "deltalake.Schema") -> "pa.Schema":
     import deltalake
     from packaging.version import parse
 
-    if parse(deltalake.__version__) < parse("0.19.0"):
-        return {"large_dtypes": large_dtypes}
+    if parse(deltalake.__version__) < parse("1.0.0"):
+        return schema.to_pyarrow()
     else:
-        from deltalake.schema import ArrowSchemaConversionMode
+        import pyarrow as pa
 
-        schema_conversion_mode = ArrowSchemaConversionMode.LARGE if large_dtypes else ArrowSchemaConversionMode.NORMAL
-        return {"schema_conversion_mode": schema_conversion_mode}
+        return pa.schema(schema.to_arrow())
