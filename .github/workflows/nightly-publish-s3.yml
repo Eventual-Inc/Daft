@@ -145,7 +145,7 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          uv pip install -e .[dev] daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -223,7 +223,7 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          uv pip install -e .[dev] daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |

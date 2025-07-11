@@ -65,7 +65,6 @@ jobs:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
         cache-dependency-glob: |
-          **/requirements-dev.txt
           **/pyproject.toml
 
     - name: Install dependencies
@@ -74,7 +73,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv pip install -e .[dev]
 
     - name: Override pyarrow
       run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
@@ -789,7 +788,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv pip install -e .[dev]
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
@@ -938,7 +937,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv pip install -e .[dev]
     - name: Run doctests
       run: |
         source activate

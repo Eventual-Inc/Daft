@@ -42,7 +42,7 @@ Getting Started
 Installation
 ^^^^^^^^^^^^
 
-Install Daft with ``pip install daft``.
+Install Daft with ``pip install daft`` or ``uv pip install daft`` for faster installation.
 
 For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://docs.getdaft.io/en/stable/install/>`_
 
