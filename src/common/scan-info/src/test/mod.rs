@@ -123,7 +123,7 @@ impl ScanOperator for DummyScanOperator {
     }
 
     fn can_absorb_filter(&self) -> bool {
-        false
+        true
     }
 
     fn can_absorb_select(&self) -> bool {
