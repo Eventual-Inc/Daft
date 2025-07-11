@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{value_err, DaftError, DaftResult};
 use daft_core::{datatypes::NumericNative, prelude::*};
 use daft_dsl::functions::{prelude::*, ScalarFunction};
 use serde::{Deserialize, Serialize};
@@ -30,16 +30,11 @@ impl ScalarUDF for CosineDistanceFunction {
                 DataType::Float32 => compute_cosine_distance::<f32>(source_fixed_size_list, &query),
                 DataType::Float64 => compute_cosine_distance::<f64>(source_fixed_size_list, &query),
                 _ => {
-                    return Err(DaftError::ValueError(
-                        "'cosine_distance' only supports Int8|Float32|Float32 datatypes"
-                            .to_string(),
-                    ));
+                    value_err!("'cosine_distance' only supports Int8|Float32|Float32 datatypes")
                 }
             },
             _ => {
-                return Err(DaftError::ValueError(
-                    "Expected query to be a nested list".to_string(),
-                ));
+                value_err!("Expected query to be a nested list")
             }
         }?;
 
@@ -67,23 +62,15 @@ impl ScalarUDF for CosineDistanceFunction {
                 DataType::FixedSizeList(query_inner_dtype, query_size),
             ) => {
                 if source_inner_dtype != query_inner_dtype {
-                    return Err(DaftError::ValueError(format!(
-                        "Expected source and query to have the same inner dtype, instead got {} and {}",
-                        source_inner_dtype, query_inner_dtype
-                    )));
+                    value_err!("Expected source and query to have the same inner dtype, instead got {source_inner_dtype} and {query_inner_dtype}")
                 }
                 if source_size != query_size {
-                    return Err(DaftError::ValueError(format!(
-                        "Expected source and query to have the same size, instead got {source_size} and {query_size}"
-                    )));
+                    value_err!("Expected source and query to have the same size, instead got {source_size} and {query_size}")
                 }
                 Ok(Field::new(source.name, DataType::Float64))
             }
             _ => {
-                Err(DaftError::ValueError(format!(
-                    "Expected source and query to be fixed size list or embedding, instead got {} and {}",
-                    source.dtype, query.dtype
-                )))
+                value_err!("Expected source and query to be fixed size list or embedding, instead got {} and {}", source.dtype, query.dtype)
             }
         }
     }
