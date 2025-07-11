@@ -33,8 +33,8 @@ impl ScanSourceNode {
     const NODE_NAME: NodeName = "ScanSource";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        stage_config: &StageConfig,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,

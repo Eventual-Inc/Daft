@@ -534,7 +534,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn hash_join(
+    pub fn hash_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         left_on: Vec<BoundExpr>,

@@ -33,6 +33,7 @@ mod distinct;
 mod explode;
 mod filter;
 mod groupby_agg;
+mod hash_join;
 mod in_memory_source;
 mod limit;
 pub(crate) mod materialize;
@@ -376,26 +377,14 @@ where
     Ok(SubmittableTask::new(task))
 }
 
-fn try_make_in_memory_scan_from_materialized_outputs(
+fn make_in_memory_scan_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
-) -> DaftResult<Option<SubmittableTask<SwordfishTask>>> {
-    if materialized_outputs
-        .iter()
-        .map(|m| m.num_rows())
-        .sum::<DaftResult<usize>>()?
-        == 0
-    {
-        Ok(None)
-    } else {
-        Ok(Some(make_new_task_from_materialized_outputs(
-            task_context,
-            materialized_outputs,
-            node,
-            &|input| Ok(input),
-        )?))
-    }
+) -> DaftResult<SubmittableTask<SwordfishTask>> {
+    make_new_task_from_materialized_outputs(task_context, materialized_outputs, node, &|input| {
+        Ok(input)
+    })
 }
 
 fn append_plan_to_existing_task<F>(
