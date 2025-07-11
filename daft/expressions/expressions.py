@@ -1930,6 +1930,19 @@ class Expression:
         f = native.get_function_from_registry("url_parse")
         return Expression._from_pyexpr(f(self._expr))
 
+    def explode(self) -> Expression:
+        """Explode a list expression.
+
+        A row is created for each item in the lists, and other columns are broadcasted to match.
+
+        If exploding multiple columns at once, all list lengths must match.
+
+        Tip: See also
+            [DataFrame.explode](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.explain)
+        """
+        f = native.get_function_from_registry("explode")
+        return Expression._from_pyexpr(f(self._expr))
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
