@@ -1416,11 +1416,15 @@ class Expression:
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
 
-    def fill_null(self, fill_value: Expression) -> Expression:
-        """Fills null values in the Expression with the provided fill_value.
+    def fill_null(self, fill_value: Expression | None = None, *, strategy: builtins.str = "value") -> Expression:
+        """Fills null values in the Expression with the provided fill_value or using the specified strategy.
+
+        Args:
+            fill_value: Expression to use for filling null values (required when strategy is "value")
+            strategy: Strategy to use for filling null values. One of "value", "forward", "backward"
 
         Returns:
-            Expression: Expression with null values filled with the provided fill_value
+            Expression: Expression with null values filled
 
         Examples:
             >>> import daft
@@ -1442,8 +1446,33 @@ class Expression:
             (Showing first 3 of 3 rows)
 
         """
-        fill_value = Expression._to_expression(fill_value)
-        expr = self._expr.fill_null(fill_value._expr)
+        # Handle backward compatibility
+        if fill_value is not None and strategy == "value":
+            fill_value = Expression._to_expression(fill_value)
+            expr = self._expr.fill_null(fill_value._expr)
+            return Expression._from_pyexpr(expr)
+
+        # Handle new strategy-based API
+        if strategy not in ("value", "forward", "backward"):
+            raise ValueError(f"strategy must be one of 'value', 'forward', 'backward', got {strategy}")
+
+        if strategy == "value" and fill_value is None:
+            raise ValueError("fill_value must be provided when strategy is 'value'")
+
+        if strategy in ("forward", "backward") and fill_value is not None:
+            raise ValueError(f"fill_value should not be provided when strategy is '{strategy}'")
+
+        # Convert strategy string to enum internally
+        from daft.daft import FillNullStrategy  # type: ignore
+
+        strategy_enum = FillNullStrategy.from_fill_null_strategy_str(strategy)
+
+        # Convert fill_value to expression if needed
+        fill_value_expr = None
+        if fill_value is not None:
+            fill_value_expr = Expression._to_expression(fill_value)._expr
+
+        expr = self._expr.fill_null_with_strategy(fill_value_expr, strategy_enum)  # type: ignore
         return Expression._from_pyexpr(expr)
 
     def is_in(self, other: Any) -> Expression:

@@ -29,7 +29,10 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
         Expr::Not(expr) => visitor.visit_not(expr),
         Expr::IsNull(expr) => visitor.visit_is_null(expr),
         Expr::NotNull(expr) => visitor.visit_not_null(expr),
-        Expr::FillNull(expr, expr1) => visitor.visit_fill_null(expr, expr1),
+        Expr::FillNull(expr, expr1, _) => match expr1 {
+            Some(e1) => visitor.visit_fill_null(expr, e1),
+            None => visitor.visit_not_null(expr), // fallback for forward/backward fill
+        },
         Expr::IsIn(expr, exprs) => visitor.visit_is_in(expr, exprs),
         Expr::Between(expr, expr1, expr2) => visitor.visit_between(expr, expr1, expr2),
         Expr::List(exprs) => visitor.visit_list(exprs),

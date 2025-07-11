@@ -162,4 +162,65 @@ impl Not for JoinSide {
     }
 }
 
+/// Strategy for filling null values.
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+pub enum FillNullStrategy {
+    /// Fill null values with a static value.
+    #[display("value")]
+    Value,
+    /// Fill null values with the previous non-null value (forward fill).
+    #[display("forward")]
+    Forward,
+    /// Fill null values with the next non-null value (backward fill).
+    #[display("backward")]
+    Backward,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl FillNullStrategy {
+    /// Create a FillNullStrategy from its string representation.
+    ///
+    /// Args:
+    ///     strategy: String representation of the fill strategy, e.g. "value", "forward", or "backward".
+    #[staticmethod]
+    pub fn from_fill_null_strategy_str(strategy: &str) -> PyResult<Self> {
+        Self::from_str(strategy).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(self.to_string())
+    }
+}
+impl_bincode_py_state_serialization!(FillNullStrategy);
+
+impl FillNullStrategy {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
+        static FILL_NULL_STRATEGIES: [FillNullStrategy; 3] = [
+            FillNullStrategy::Value,
+            FillNullStrategy::Forward,
+            FillNullStrategy::Backward,
+        ];
+        FILL_NULL_STRATEGIES.iter()
+    }
+}
+
+impl FromStr for FillNullStrategy {
+    type Err = DaftError;
+
+    fn from_str(strategy: &str) -> DaftResult<Self> {
+        match strategy {
+            "value" => Ok(Self::Value),
+            "forward" => Ok(Self::Forward),
+            "backward" => Ok(Self::Backward),
+            _ => Err(DaftError::TypeError(format!(
+                "Fill null strategy {} is not supported; only the following strategies are supported: {:?}",
+                strategy,
+                Self::iterator().as_slice()
+            ))),
+        }
+    }
+}
+
 impl_bincode_py_state_serialization!(JoinSide);

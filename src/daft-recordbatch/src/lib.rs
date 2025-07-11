@@ -621,9 +621,18 @@ impl RecordBatch {
             Expr::Not(child) => !(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?),
             Expr::IsNull(child) => self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.is_null(),
             Expr::NotNull(child) => self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.not_null(),
-            Expr::FillNull(child, fill_value) => {
-                let fill_value = self.eval_expression(&BoundExpr::new_unchecked(fill_value.clone()))?;
-                self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.fill_null(&fill_value)
+            Expr::FillNull(child, fill_value, strategy) => {
+                let child_series = self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?;
+                match (fill_value, strategy) {
+                    (Some(fv), daft_core::join::FillNullStrategy::Value) => {
+                        let fill_value = self.eval_expression(&BoundExpr::new_unchecked(fv.clone()))?;
+                        child_series.fill_null(&fill_value)
+                    }
+                    (None, strategy) => {
+                        child_series.fill_null_with_strategy(None, *strategy)
+                    }
+                    _ => Err(DaftError::ValueError("Invalid fill_null strategy".to_string())),
+                }
             }
             Expr::IsIn(child, items) => {
                 if items.is_empty() {

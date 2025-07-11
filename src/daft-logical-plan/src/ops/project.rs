@@ -320,18 +320,19 @@ fn replace_column_with_semantic_id(
                         |_| e,
                     )
             }
-            Expr::FillNull(child, fill_value) => {
+            Expr::FillNull(child, fill_value, strategy) => {
                 let child =
                     replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema);
-                let fill_value = replace_column_with_semantic_id(
-                    fill_value.clone(),
-                    subexprs_to_replace,
-                    schema,
-                );
-                if !child.transformed && !fill_value.transformed {
+                let fill_value = fill_value.as_ref().map(|fv| {
+                    replace_column_with_semantic_id(fv.clone(), subexprs_to_replace, schema)
+                });
+                let transformed =
+                    child.transformed || fill_value.as_ref().is_some_and(|fv| fv.transformed);
+                if !transformed {
                     Transformed::no(e)
                 } else {
-                    Transformed::yes(Expr::FillNull(child.data, fill_value.data).into())
+                    let new_fill_value = fill_value.map(|fv| fv.data);
+                    Transformed::yes(Expr::FillNull(child.data, new_fill_value, *strategy).into())
                 }
             }
             Expr::IsIn(child, items) => {

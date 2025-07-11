@@ -24,6 +24,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<join::JoinType>()?;
     parent.add_class::<join::JoinStrategy>()?;
     parent.add_class::<join::JoinSide>()?;
+    parent.add_class::<join::FillNullStrategy>()?;
 
     Ok(())
 }

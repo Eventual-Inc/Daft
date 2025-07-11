@@ -487,6 +487,19 @@ impl PyExpr {
         Ok(self.expr.clone().fill_null(fill_value.expr.clone()).into())
     }
 
+    pub fn fill_null_with_strategy(
+        &self,
+        fill_value: Option<&Self>,
+        strategy: &daft_core::join::FillNullStrategy,
+    ) -> PyResult<Self> {
+        let fill_value_expr = fill_value.map(|fv| fv.expr.clone());
+        Ok(self
+            .expr
+            .clone()
+            .fill_null_with_strategy(fill_value_expr, *strategy)
+            .into())
+    }
+
     pub fn eq_null_safe(&self, other: &Self) -> PyResult<Self> {
         Ok(crate::binary_op(Operator::EqNullSafe, self.into(), other.into()).into())
     }
