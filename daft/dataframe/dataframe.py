@@ -1235,8 +1235,6 @@ class DataFrame:
             sizes.append(add_action.size)
 
         if table is None:
-            print("add action")
-            print(f"{delta_schema=}")
             create_table_with_add_actions(
                 table_uri,
                 delta_schema,
