@@ -65,6 +65,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         let node_id = self.get_next_pipeline_node_id();
         let schema = input_node.config().schema.clone();
         if partition_cols.is_empty() {
+            // if input_node.config().clustering_spec.num_partitions() == 1 {
+            //     return input_node;
+            // }
+
             GatherNode::new(
                 node_id,
                 logical_node_id,

@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use daft_dsl::expr::{
-    bound_col,
-    bound_expr::{BoundAggExpr, BoundExpr},
+use daft_dsl::{
+    expr::{
+        bound_col,
+        bound_expr::{BoundAggExpr, BoundExpr},
+    },
+    AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
@@ -80,7 +83,10 @@ impl AggregateNode {
         use itertools::Itertools;
         let agg_str = self.aggs.iter().map(|e| e.to_string()).join(", ");
         if self.group_by.is_empty() {
-            vec![format!("Ungrouped Aggregate: {}", agg_str)]
+            vec![
+                format!("Ungrouped Aggregate: {}", agg_str),
+                format!("Output Schema = {}", self.config.schema.short_string()),
+            ]
         } else {
             vec![
                 format!(
@@ -272,7 +278,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         );
 
         // Third stage re-agg to compute the final result
-        let final_group_by = AggregateNode::new(
+        let final_aggregation = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
@@ -290,7 +296,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             &self.stage_config,
             split_details.final_exprs,
             output_schema,
-            final_group_by,
+            final_aggregation,
         )
         .arced()
     }
@@ -307,7 +313,14 @@ impl LogicalPlanToPipelineNodeTranslator {
         let split_details =
             split_groupby_aggs(&group_by, &aggregations, &input_node.config().schema)?;
 
-        if split_details.first_stage_aggs.is_empty() {
+        // Special case for ApproxCountDistinct
+        // Right now, we can't do a pre-aggregation because we can't recursively merge HLL sketches
+        // TODO: Look for alternative approaches for this
+        if split_details.first_stage_aggs.is_empty()
+            || aggregations
+                .iter()
+                .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
+        {
             Ok(self.gen_without_pre_agg(
                 input_node,
                 logical_node_id,
