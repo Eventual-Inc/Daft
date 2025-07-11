@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use capitalize::Capitalize;
 use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -8,20 +9,42 @@ use daft_io::{IOStatsContext, IOStatsRef};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
+use indexmap::IndexMap;
+use indicatif::HumanCount;
 
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
-    runtime_stats::{CountingSender, RuntimeStatsContext},
+    runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
+pub(crate) struct SourceStatsBuilder {}
+
+impl RuntimeStatsBuilder for SourceStatsBuilder {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn build(
+        &self,
+        stats: &mut IndexMap<&'static str, String>,
+        _rows_received: u64,
+        rows_emitted: u64,
+    ) {
+        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
+    }
+}
+
 #[async_trait]
 pub trait Source: Send + Sync {
     fn name(&self) -> &'static str;
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(SourceStatsBuilder {})
+    }
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
         &self,
@@ -42,7 +65,10 @@ pub(crate) struct SourceNode {
 impl SourceNode {
     pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
         let info = ctx.next_node_info(source.name());
-        let runtime_stats = RuntimeStatsContext::new(info.clone());
+        let runtime_stats = RuntimeStatsContext::new_with_builder(
+            info.clone(),
+            source.make_runtime_stats_builder(),
+        );
         let io_stats = IOStatsContext::new(source.name());
         Self {
             source,
@@ -76,10 +102,12 @@ impl TreeDisplay for SourceNode {
                 }
 
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.result();
+                    let rt_result = self.runtime_stats.render();
 
                     writeln!(display).unwrap();
-                    rt_result.display(&mut display, false, true, false).unwrap();
+                    for (name, value) in rt_result {
+                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                    }
                     let bytes_read = self.io_stats.load_bytes_read();
                     writeln!(
                         display,
@@ -115,7 +143,7 @@ impl PipelineNode for SourceNode {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Blue,
-            false,
+            self.node_id(),
             self.runtime_stats.clone(),
         );
         let source = self.source.clone();

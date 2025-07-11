@@ -250,7 +250,7 @@ impl UdfOperator {
         assert_eq!(num_udfs, 1, "Expected only one udf in an udf project");
 
         // Determine if its an ActorPoolUDF or not
-        let exp_concurrency = try_get_concurrency(&[project_unbound.clone()]);
+        let exp_concurrency = try_get_concurrency(&project_unbound);
         let is_actor_pool_udf = exp_concurrency.is_some();
 
         let resource_request = get_resource_request(&[project_unbound.clone()]);

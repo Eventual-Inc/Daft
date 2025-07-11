@@ -1,5 +1,6 @@
 [dependencies]
 async-trait = {workspace = true}
+capitalize = "*"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -31,7 +32,6 @@ indicatif = "0.17.9"
 itertools = {workspace = true}
 kanal = "0.1"
 log = {workspace = true}
-num-format = {workspace = true}
 opentelemetry = {workspace = true}
 parking_lot = {workspace = true}
 pin-project = "1"

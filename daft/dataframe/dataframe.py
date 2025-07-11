@@ -556,7 +556,7 @@ class DataFrame:
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
-            preview_partition = preview_results._get_merged_micropartition()
+            preview_partition = preview_results._get_merged_micropartition(self.schema())
             self._preview = Preview(
                 partition=preview_partition,
                 total_rows=len(self),
@@ -908,7 +908,7 @@ class DataFrame:
         import pyiceberg
         from packaging.version import parse
 
-        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
+        from daft.io.iceberg._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -1085,7 +1085,7 @@ class DataFrame:
         from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
-        from daft.io._deltalake import large_dtypes_kwargs
+        from daft.io.delta_lake._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         def _create_metadata_param(metadata: Optional[dict[str, str]]) -> Any:
@@ -3469,7 +3469,7 @@ class DataFrame:
         self.collect()
         result = self._result
         assert result is not None
-        return result.to_pydict()
+        return result.to_pydict(schema=self.schema())
 
     @DataframePublicAPI
     def to_pylist(self) -> list[Any]:
@@ -3641,7 +3641,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,
@@ -3734,7 +3734,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,

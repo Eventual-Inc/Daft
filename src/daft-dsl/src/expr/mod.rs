@@ -32,13 +32,14 @@ use serde::{Deserialize, Serialize};
 
 use super::functions::FunctionExpr;
 use crate::{
+    expr::bound_expr::BoundExpr,
     functions::{
         function_display_without_formatter, function_semantic_id,
         python::PythonUDF,
         scalar::scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction, FUNCTION_REGISTRY,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -203,7 +204,11 @@ impl Column {
 
 impl std::fmt::Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "col({})", self.name())
+        if let Self::Bound(BoundColumn { index, field, .. }) = self {
+            write!(f, "col({}: {})", index, field.name)
+        } else {
+            write!(f, "col({})", self.name())
+        }
     }
 }
 
@@ -1842,6 +1847,17 @@ impl Expr {
             _ => (self.clone(), None),
         }
     }
+    
+    pub fn explode(self: Arc<Self>) -> DaftResult<ExprRef> {
+        let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
+        let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
+
+        Ok(Self::ScalarFunction(ScalarFunction {
+            udf: f,
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
+        })
+        .arced())
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -2106,6 +2122,17 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     let fields = exprs
         .iter()
         .map(|e| e.to_field(&input_schema))
+        .collect::<DaftResult<Vec<_>>>()?;
+    Ok(Arc::new(Schema::new(fields)))
+}
+
+pub fn bound_exprs_to_schema(
+    exprs: &[BoundExpr],
+    input_schema: SchemaRef,
+) -> DaftResult<SchemaRef> {
+    let fields = exprs
+        .iter()
+        .map(|e| e.inner().to_field(&input_schema))
         .collect::<DaftResult<Vec<_>>>()?;
     Ok(Arc::new(Schema::new(fields)))
 }

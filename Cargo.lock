@@ -1516,6 +1516,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "capitalize"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b5271031022835ee8c7582fe67403bd6cb3d962095787af7921027234bab5bf"
+
+[[package]]
 name = "casey"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2530,17 +2536,21 @@ dependencies = [
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-physical-plan",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
+ "reqwest",
  "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "uuid 1.17.0",
 ]
 
 [[package]]
@@ -2831,6 +2841,7 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
+ "capitalize",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2862,7 +2873,6 @@ dependencies = [
  "itertools 0.14.0",
  "kanal",
  "log",
- "num-format",
  "opentelemetry",
  "parking_lot 0.12.4",
  "pin-project",

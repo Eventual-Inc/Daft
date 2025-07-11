@@ -1,4 +1,5 @@
 use common_error::DaftResult;
+use pyo3::types::PyNone;
 
 use crate::series::Series;
 
@@ -52,7 +53,12 @@ fn python_binary_op_with_utilfn(
         PyModule::import(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
-            .call1((result_pylist, lhs.name(), pyo3::intern!(py, "disallow")))?
+            .call1((
+                result_pylist,
+                lhs.name(),
+                PyNone::get(py),
+                pyo3::intern!(py, "disallow"),
+            ))?
             .getattr(pyo3::intern!(py, "_series"))?
             .extract()
     })?
@@ -82,6 +88,7 @@ pub fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series>
             .call1((
                 result_pylist,
                 lhs_casted.name(),
+                PyNone::get(py),
                 pyo3::intern!(py, "disallow"),
             ))?
             .getattr(pyo3::intern!(py, "_series"))?
@@ -142,6 +149,7 @@ pub fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> D
             .call1((
                 result_pylist,
                 value_casted.name(),
+                PyNone::get(py),
                 pyo3::intern!(py, "disallow"),
             ))?
             .getattr(pyo3::intern!(py, "_series"))?

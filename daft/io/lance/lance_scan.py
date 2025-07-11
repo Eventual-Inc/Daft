@@ -75,7 +75,7 @@ class LanceDBScanOperator(ScanOperator):
         # TODO: figure out how to translate Pushdowns into LanceDB filters
         filters = None
         fragments = self._ds.get_fragments()
-        for i, fragment in enumerate(fragments):
+        for fragment in fragments:
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
             size_bytes = None
             stats = None

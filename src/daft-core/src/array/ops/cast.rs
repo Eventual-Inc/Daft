@@ -583,6 +583,8 @@ impl DurationArray {
 macro_rules! pycast_then_arrowcast {
     ($self:expr, $daft_type:expr, $pytype_str:expr) => {
         {
+            use daft_schema::python::PyDataType;
+
             let old_pyseries = PySeries::from($self.clone().into_series());
 
             let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
@@ -598,10 +600,12 @@ macro_rules! pycast_then_arrowcast {
                         .getattr(pyo3::intern!(py, $pytype_str))?
                 };
 
+                let py_dtype = PyDataType { dtype: $daft_type.clone() };
+
                 old_daft_series
                     .call_method1(
                         (pyo3::intern!(py, "_pycast_to_pynative")),
-                        (py_type_fn,),
+                        (py_type_fn, py_dtype),
                     )?
                     .getattr(pyo3::intern!(py, "_series"))?
                     .extract()
@@ -1133,7 +1137,7 @@ impl PythonArray {
             DataType::Python => Ok(self.clone().into_series()),
 
             DataType::Null => {
-                // (Follow Arrow cast behaviour: turn all elements into Null.)
+                // (Follow Arrow cast behavior: turn all elements into Null.)
                 let null_array = crate::datatypes::NullArray::full_null(
                     self.name(),
                     &DataType::Null,
@@ -1147,16 +1151,18 @@ impl PythonArray {
                 pycast_then_arrowcast!(self, DataType::FixedSizeBinary(*size), "fixed_size_bytes")
             }
             DataType::Utf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
-            dt @ DataType::UInt8
-            | dt @ DataType::UInt16
-            | dt @ DataType::UInt32
-            | dt @ DataType::UInt64
-            | dt @ DataType::Int8
-            | dt @ DataType::Int16
-            | dt @ DataType::Int32
-            | dt @ DataType::Int64 => pycast_then_arrowcast!(self, dt, "int"),
+            dt @ (DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64) => {
+                pycast_then_arrowcast!(self, dt, "int")
+            }
             // DataType::Float16 => todo!(),
-            dt @ DataType::Float32 | dt @ DataType::Float64 => {
+            dt @ (DataType::Float32 | DataType::Float64) => {
                 pycast_then_arrowcast!(self, dt, "float")
             }
             DataType::List(child_dtype) => {

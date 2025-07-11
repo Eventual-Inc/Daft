@@ -195,26 +195,20 @@ pub fn get_concurrency<'a, E: Into<&'a ExprRef>>(exprs: impl IntoIterator<Item =
     projection_concurrency.expect("get_concurrency expects one UDF with concurrency set")
 }
 
-pub fn try_get_concurrency(exprs: &[ExprRef]) -> Option<usize> {
+pub fn try_get_concurrency(expr: &ExprRef) -> Option<usize> {
     let mut projection_concurrency = None;
-    for expr in exprs {
-        let mut found_actor_pool_udf = false;
-        expr.apply(|e| match e.as_ref() {
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
-                ..
-            } => {
-                found_actor_pool_udf = true;
-                projection_concurrency = *concurrency;
-                Ok(common_treenode::TreeNodeRecursion::Stop)
-            }
-            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-        })
-        .unwrap();
-        if found_actor_pool_udf {
-            break;
+    expr.apply(|e| match e.as_ref() {
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
+            ..
+        } => {
+            projection_concurrency = *concurrency;
+            Ok(common_treenode::TreeNodeRecursion::Stop)
         }
-    }
+        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+    })
+    .unwrap();
+
     projection_concurrency
 }
 

@@ -16,7 +16,7 @@ pub use plan::{
     InMemoryScan, Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
     PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort, TopN, UDFProject,
     UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    Repartition, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use python::{register_modules, PyLocalPhysicalPlan};

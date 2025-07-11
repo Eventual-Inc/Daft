@@ -16,7 +16,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
-use super::streaming_sink::{
+use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };

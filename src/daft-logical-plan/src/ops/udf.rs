@@ -21,6 +21,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UDFProject {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     // Projected column info
@@ -62,6 +63,7 @@ impl UDFProject {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             project,
             passthrough_columns,
@@ -72,6 +74,11 @@ impl UDFProject {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -87,7 +94,7 @@ impl UDFProject {
     }
 
     pub fn concurrency(&self) -> Option<usize> {
-        try_get_concurrency(&[self.project.clone()])
+        try_get_concurrency(&self.project)
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
