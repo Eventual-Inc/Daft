@@ -7,7 +7,7 @@ use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    functions::python::{get_resource_request, try_get_batch_size_from_udf},
+    functions::python::{get_resource_request, try_get_batch_size_from_udf, try_get_concurrency},
     resolved_col,
 };
 use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
@@ -19,7 +19,8 @@ use crate::{
         in_memory_source::InMemorySourceNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
-        sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
+        sink::SinkNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
+        DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -94,18 +95,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),
                 }
             }
-            LogicalPlan::ActorPoolProject(actor_pool_project) => {
+            LogicalPlan::UDFProject(udf) if try_get_concurrency(&udf.project).is_some() => {
                 #[cfg(feature = "python")]
                 {
-                    let batch_size = try_get_batch_size_from_udf(&actor_pool_project.projection)?;
-                    let memory_request = get_resource_request(&actor_pool_project.projection)
+                    let batch_size = try_get_batch_size_from_udf(&udf.project)?;
+                    let memory_request = get_resource_request(&[udf.project.clone()])
                         .and_then(|req| req.memory_bytes())
                         .map(|m| m as u64)
                         .unwrap_or(0);
-                    let projection = BoundExpr::bind_all(
-                        &actor_pool_project.projection,
-                        &actor_pool_project.input.schema(),
-                    )?;
+                    let projection =
+                        BoundExpr::bind_all(&[udf.project.clone()], &udf.input.schema())?;
                     crate::pipeline_node::actor_udf::ActorUDF::new(
                         self.get_next_pipeline_node_id(),
                         logical_node_id,
@@ -113,7 +112,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         projection,
                         batch_size,
                         memory_request,
-                        actor_pool_project.projected_schema.clone(),
+                        udf.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
                     )?
                     .arced()
@@ -122,6 +121,22 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 {
                     panic!("ActorUDF is not supported without Python feature")
                 }
+            }
+            LogicalPlan::UDFProject(udf) => {
+                let project = BoundExpr::try_new(udf.project.clone(), &udf.input.schema())?;
+                let passthrough_columns =
+                    BoundExpr::bind_all(&udf.passthrough_columns, &udf.input.schema())?;
+
+                UDFNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    project,
+                    passthrough_columns,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
             }
             LogicalPlan::Filter(filter) => {
                 let predicate =

@@ -45,6 +45,7 @@ mod sample;
 mod scan_source;
 mod sink;
 mod translate;
+mod udf;
 mod unpivot;
 mod window;
 
