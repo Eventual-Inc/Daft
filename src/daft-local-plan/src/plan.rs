@@ -389,7 +389,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_order_by_only(
+    pub fn window_order_by_only(
         input: LocalPhysicalPlanRef,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
