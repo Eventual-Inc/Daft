@@ -112,6 +112,17 @@ class Schema:
         _ensure_registered_super_ext_type()
         return self._schema.to_pyarrow_schema()
 
+    def to_struct_type(self) -> DataType:
+        """Converts the Daft Schema to a Daft DataType of a struct type.
+
+        Returns:
+            DataType: Daft DataType of a struct type that corresponds to the provided Daft schema
+        """
+        struct_fields = {}
+        for field in self:
+            struct_fields[field.name] = field.dtype
+        return DataType.struct(struct_fields)
+
     @classmethod
     def _from_field_name_and_types(self, fields: list[tuple[str, DataType]]) -> Schema:
         assert isinstance(fields, list), f"Expected a list of field tuples, received: {fields}"
