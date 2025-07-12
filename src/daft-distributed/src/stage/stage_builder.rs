@@ -43,30 +43,16 @@ impl StagePlanBuilder {
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Distinct(_)
+            | LogicalPlan::Aggregate(_)
+            | LogicalPlan::Window(_)
             | LogicalPlan::Limit(_)
-            | LogicalPlan::Concat(_)=> Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Concat(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
                     Ok(TreeNodeRecursion::Continue)
                 } else {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
-                }
-            },
-            LogicalPlan::Aggregate(aggregate) => {
-                if aggregate.groupby.is_empty() {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
-                }
-            },
-            LogicalPlan::Window(window) => {
-                if window.window_spec.partition_by.is_empty() {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
                 }
             },
             LogicalPlan::Join(join) => {

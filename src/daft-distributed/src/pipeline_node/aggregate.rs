@@ -2,41 +2,51 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use daft_dsl::expr::{
-    bound_col,
-    bound_expr::{BoundAggExpr, BoundExpr},
+use daft_dsl::{
+    expr::{
+        bound_col,
+        bound_expr::{BoundAggExpr, BoundExpr},
+    },
+    AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
-use daft_schema::schema::SchemaRef;
+use daft_logical_plan::stats::StatsState;
+use daft_schema::schema::{Schema, SchemaRef};
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::DistributedPipelineNode;
 use crate::{
     pipeline_node::{
-        project::ProjectNode, repartition::RepartitionNode,
-        translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName,
+        PipelineNodeConfig, PipelineNodeContext, RunningPipelineNode,
     },
     stage::{StageConfig, StageExecutionContext},
 };
 
-pub(crate) struct GroupbyAggNode {
+pub(crate) struct AggregateNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    groupby: Vec<BoundExpr>,
+    group_by: Vec<BoundExpr>,
     aggs: Vec<BoundAggExpr>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl GroupbyAggNode {
-    const NODE_NAME: NodeName = "GroupbyAgg";
+impl AggregateNode {
+    const GROUPED_NAME: NodeName = "GroupBy Aggregate";
+    const UNGROUPED_NAME: NodeName = "Aggregate";
+    fn node_name(group_by: &[BoundExpr]) -> NodeName {
+        if group_by.is_empty() {
+            Self::UNGROUPED_NAME
+        } else {
+            Self::GROUPED_NAME
+        }
+    }
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        groupby: Vec<BoundExpr>,
+        group_by: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -44,7 +54,7 @@ impl GroupbyAggNode {
         let context = PipelineNodeContext::new(
             stage_config,
             node_id,
-            Self::NODE_NAME,
+            Self::node_name(&group_by),
             vec![child.node_id()],
             vec![child.name()],
             logical_node_id,
@@ -52,18 +62,14 @@ impl GroupbyAggNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             stage_config.config.clone(),
-            Arc::new(
-                HashClusteringConfig::new(
-                    child.config().clustering_spec.num_partitions(),
-                    groupby.clone().into_iter().map(|e| e.into()).collect(),
-                )
-                .into(),
-            ),
+            // Often child is a repartition node
+            // TODO: Be more specific if group_by columns overlap with partitioning columns
+            child.config().clustering_spec.clone(),
         );
         Self {
             config,
             context,
-            groupby,
+            group_by,
             aggs,
             child,
         }
@@ -75,20 +81,25 @@ impl GroupbyAggNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec![];
-        res.push(format!(
-            "Groupby Agg: {}",
-            self.groupby.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!(
-            "Aggregations = {}",
-            self.aggs.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res
+        let agg_str = self.aggs.iter().map(|e| e.to_string()).join(", ");
+        if self.group_by.is_empty() {
+            vec![
+                format!("Ungrouped Aggregate: {}", agg_str),
+                format!("Output Schema = {}", self.config.schema.short_string()),
+            ]
+        } else {
+            vec![
+                format!(
+                    "Group-By Aggregate: {}",
+                    self.group_by.iter().map(|e| e.to_string()).join(", ")
+                ),
+                format!("Aggregations = {}", agg_str),
+            ]
+        }
     }
 }
 
-impl TreeDisplay for GroupbyAggNode {
+impl TreeDisplay for AggregateNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -113,7 +124,7 @@ impl TreeDisplay for GroupbyAggNode {
     }
 }
 
-impl DistributedPipelineNode for GroupbyAggNode {
+impl DistributedPipelineNode for AggregateNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -129,17 +140,26 @@ impl DistributedPipelineNode for GroupbyAggNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        // Pipeline the groupby
+        // Pipeline the aggregation
         let self_clone = self.clone();
 
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            Ok(LocalPhysicalPlan::hash_aggregate(
-                input,
-                self_clone.aggs.clone(),
-                self_clone.groupby.clone(),
-                self_clone.config.schema.clone(),
-                StatsState::NotMaterialized,
-            ))
+            if self_clone.group_by.is_empty() {
+                Ok(LocalPhysicalPlan::ungrouped_aggregate(
+                    input,
+                    self_clone.aggs.clone(),
+                    self_clone.config.schema.clone(),
+                    StatsState::NotMaterialized,
+                ))
+            } else {
+                Ok(LocalPhysicalPlan::hash_aggregate(
+                    input,
+                    self_clone.aggs.clone(),
+                    self_clone.group_by.clone(),
+                    self_clone.config.schema.clone(),
+                    StatsState::NotMaterialized,
+                ))
+            }
         })
     }
 
@@ -148,7 +168,7 @@ impl DistributedPipelineNode for GroupbyAggNode {
     }
 }
 
-pub struct GroupbyAggSplit {
+struct GroupByAggSplit {
     pub first_stage_aggs: Vec<BoundAggExpr>,
     pub first_stage_schema: SchemaRef,
     pub first_stage_group_by: Vec<BoundExpr>,
@@ -163,8 +183,8 @@ pub struct GroupbyAggSplit {
 fn split_groupby_aggs(
     group_by: &[BoundExpr],
     aggs: &[BoundAggExpr],
-    input_schema: &SchemaRef,
-) -> DaftResult<GroupbyAggSplit> {
+    input_schema: &Schema,
+) -> DaftResult<GroupByAggSplit> {
     // Split the aggs into two stages and final projection
     let (
         (first_stage_aggs, first_stage_schema),
@@ -191,7 +211,7 @@ fn split_groupby_aggs(
         group_by.to_vec()
     };
 
-    Ok(GroupbyAggSplit {
+    Ok(GroupByAggSplit {
         first_stage_aggs,
         first_stage_schema: Arc::new(first_stage_schema),
         first_stage_group_by: group_by.to_vec(),
@@ -205,45 +225,41 @@ fn split_groupby_aggs(
 }
 
 impl LogicalPlanToPipelineNodeTranslator {
-    pub(crate) fn gen_repartition_only_nodes(
+    /// Generate PipelineNodes for aggregates with no pre-aggregation.
+    /// This is only necessary if the pre-aggregation (first stage aggregation) is empty.
+    /// That is currently only applicable for MapGroup aggregations
+    fn gen_without_pre_agg(
         &mut self,
         input_node: Arc<dyn DistributedPipelineNode>,
         logical_node_id: Option<NodeID>,
-        groupby: Vec<BoundExpr>,
+        group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
     ) -> Arc<dyn DistributedPipelineNode> {
-        let repartition = RepartitionNode::new(
-            self.get_next_pipeline_node_id(),
-            logical_node_id,
-            &self.stage_config,
-            groupby.clone(),
-            None,
-            input_node.config().schema.clone(),
-            input_node,
-        )
-        .arced();
+        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone());
 
-        GroupbyAggNode::new(
+        AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
-            groupby,
+            group_by,
             aggregations,
             output_schema,
-            repartition,
+            shuffle,
         )
         .arced()
     }
 
-    pub(crate) fn gen_pre_agg_repartition_nodes(
+    /// Generate PipelineNodes for aggregates with some pre-aggregation.
+    /// This is used by most other aggregations
+    fn gen_with_pre_agg(
         &mut self,
         input_node: Arc<dyn DistributedPipelineNode>,
         logical_node_id: Option<NodeID>,
-        split_details: GroupbyAggSplit,
+        split_details: GroupByAggSplit,
         output_schema: SchemaRef,
     ) -> Arc<dyn DistributedPipelineNode> {
-        let initial_groupby = GroupbyAggNode::new(
+        let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
@@ -254,27 +270,22 @@ impl LogicalPlanToPipelineNodeTranslator {
         )
         .arced();
 
-        // Second stage repartition to distribute the dataset
-        let repartition = RepartitionNode::new(
-            self.get_next_pipeline_node_id(),
+        // Second stage: Shuffle to distribute the dataset
+        let shuffle = self.gen_shuffle_node(
             logical_node_id,
-            &self.stage_config,
+            initial_agg,
             split_details.second_stage_group_by.clone(),
-            None,
-            split_details.first_stage_schema.clone(),
-            initial_groupby,
-        )
-        .arced();
+        );
 
-        // Third stage re-groupby-agg to compute the final result
-        let final_groupby = GroupbyAggNode::new(
+        // Third stage re-agg to compute the final result
+        let final_aggregation = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
             split_details.second_stage_group_by,
             split_details.second_stage_aggs,
             split_details.second_stage_schema.clone(),
-            repartition,
+            shuffle,
         )
         .arced();
 
@@ -285,37 +296,40 @@ impl LogicalPlanToPipelineNodeTranslator {
             &self.stage_config,
             split_details.final_exprs,
             output_schema,
-            final_groupby,
+            final_aggregation,
         )
         .arced()
     }
 
-    pub(crate) fn gen_agg_nodes(
+    /// Generate PipelineNodes for aggregates
+    pub fn gen_agg_nodes(
         &mut self,
         input_node: Arc<dyn DistributedPipelineNode>,
         logical_node_id: Option<NodeID>,
-        groupby: Vec<BoundExpr>,
+        group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         let split_details =
-            split_groupby_aggs(&groupby, &aggregations, &input_node.config().schema)?;
+            split_groupby_aggs(&group_by, &aggregations, &input_node.config().schema)?;
 
-        if split_details.first_stage_aggs.is_empty() {
-            Ok(self.gen_repartition_only_nodes(
+        // Special case for ApproxCountDistinct
+        // Right now, we can't do a pre-aggregation because we can't recursively merge HLL sketches
+        // TODO: Look for alternative approaches for this
+        if split_details.first_stage_aggs.is_empty()
+            || aggregations
+                .iter()
+                .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
+        {
+            Ok(self.gen_without_pre_agg(
                 input_node,
                 logical_node_id,
-                groupby,
+                group_by,
                 aggregations,
                 output_schema,
             ))
         } else {
-            Ok(self.gen_pre_agg_repartition_nodes(
-                input_node,
-                logical_node_id,
-                split_details,
-                output_schema,
-            ))
+            Ok(self.gen_with_pre_agg(input_node, logical_node_id, split_details, output_schema))
         }
     }
 }

@@ -2001,7 +2001,7 @@ class Expression:
             ... #             .str.split("a")
             ... #             .explode()
             ... #             .alias("split_on_a")
-            ... # ).show()
+            ... # ).show()  # doctest: +SKIP
         """
         f = native.get_function_from_registry("explode")
         return Expression._from_pyexpr(f(self._expr))
