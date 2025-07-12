@@ -888,16 +888,16 @@ class Scheduler(ActorPoolManager):
         )
 
         with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
-            raw_tasks = plan_scheduler.to_partition_tasks(
-                psets,
-                self,
-                # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
-                # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
-                # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
-                None if results_buffer_size is None else max(results_buffer_size - 1, 1),
-            )
-            tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
             try:
+                raw_tasks = plan_scheduler.to_partition_tasks(
+                    psets,
+                    self,
+                    # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
+                    # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
+                    # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
+                    None if results_buffer_size is None else max(results_buffer_size - 1, 1),
+                )
+                tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
                 ###
                 # Scheduling Loop:
                 #
