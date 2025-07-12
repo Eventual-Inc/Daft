@@ -250,7 +250,7 @@ impl<T: Task> SchedulerHandle<T> {
             task_id,
             result_rx,
             Some(submittable_task.cancel_token),
-            submittable_task.notify_token,
+            submittable_task.notify_tokens,
         );
 
         (schedulable_task, submitted_task)
@@ -270,7 +270,7 @@ impl<T: Task> SchedulerHandle<T> {
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
     cancel_token: CancellationToken,
-    notify_token: Option<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<()>>,
 }
 
 impl<T: Task> SubmittableTask<T> {
@@ -279,7 +279,7 @@ impl<T: Task> SubmittableTask<T> {
         Self {
             task,
             cancel_token,
-            notify_token: None,
+            notify_tokens: vec![],
         }
     }
 
@@ -287,9 +287,9 @@ impl<T: Task> SubmittableTask<T> {
         &self.task
     }
 
-    pub fn with_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
+    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
         let (notify_token, notify_rx) = create_oneshot_channel();
-        self.notify_token = Some(notify_token);
+        self.notify_tokens.push(notify_token);
         (self, notify_rx)
     }
 
@@ -308,7 +308,7 @@ pub(crate) struct SubmittedTask {
     _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
-    notify_token: Option<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<()>>,
     finished: bool,
 }
 
@@ -317,13 +317,13 @@ impl SubmittedTask {
         task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
-        notify_token: Option<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<()>>,
     ) -> Self {
         Self {
             _task_id: task_id,
             result_rx,
             cancel_token,
-            notify_token,
+            notify_tokens,
             finished: false,
         }
     }
@@ -341,7 +341,7 @@ impl Future for SubmittedTask {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
-                if let Some(notify_token) = self.notify_token.take() {
+                for notify_token in self.notify_tokens.drain(..) {
                     let _ = notify_token.send(());
                 }
                 Poll::Ready(result)
@@ -349,7 +349,7 @@ impl Future for SubmittedTask {
             // If the sender is dropped (i.e. the task is cancelled), return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
-                if let Some(notify_token) = self.notify_token.take() {
+                for notify_token in self.notify_tokens.drain(..) {
                     let _ = notify_token.send(());
                 }
                 Poll::Ready(Ok(None))
