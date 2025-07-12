@@ -716,12 +716,10 @@ impl S3LikeSource {
 
             let request = match &range {
                 None => request,
-                Some(range) => request.range(
-                    range
-                        .as_valid_range()
-                        .context(InvalidRangeRequestSnafu)?
-                        .to_string(),
-                ),
+                Some(range) => {
+                    range.validate().context(InvalidRangeRequestSnafu)?;
+                    request.range(range.to_string())
+                }
             };
 
             let response = request.send().await;

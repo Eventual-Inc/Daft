@@ -28,11 +28,8 @@ pub enum InvalidGetRange {
     #[error("Wanted range starting at {requested}, but object was only {length} bytes long")]
     StartTooLarge { requested: usize, length: usize },
 
-    #[error("Range started at {start} and ended at {end}")]
+    #[error("End '{end}' is always expected to be greater than start '{start}'")]
     Inconsistent { start: usize, end: usize },
-
-    #[error("Range {requested} is larger than system memory limit {max}")]
-    TooLarge { requested: usize, max: usize },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -46,7 +43,7 @@ pub enum GetRange {
 }
 
 impl GetRange {
-    pub fn as_valid_range(&self) -> Result<&Self, InvalidGetRange> {
+    pub fn validate(&self) -> Result<(), InvalidGetRange> {
         if let Self::Bounded(r) = self {
             if r.end <= r.start {
                 return Err(InvalidGetRange::Inconsistent {
@@ -55,11 +52,12 @@ impl GetRange {
                 });
             }
         }
-        Ok(self)
+        Ok(())
     }
 
     pub fn as_range(&self, len: usize) -> Result<Range<usize>, InvalidGetRange> {
-        match self.as_valid_range()? {
+        self.validate()?;
+        match self {
             Self::Bounded(r) => {
                 if r.start >= len {
                     Err(InvalidGetRange::StartTooLarge {

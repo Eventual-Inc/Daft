@@ -235,8 +235,8 @@ impl ObjectSource for HttpSource {
         let request = match range {
             None => request,
             Some(range) => {
-                let valid_range = range.as_valid_range().context(InvalidRangeRequestSnafu)?;
-                request.header(RANGE, valid_range.to_string())
+                range.validate().context(InvalidRangeRequestSnafu)?;
+                request.header(RANGE, range.to_string())
             }
         };
 
