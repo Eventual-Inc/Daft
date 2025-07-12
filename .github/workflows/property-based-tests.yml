@@ -37,10 +37,16 @@ jobs:
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
+    - name: Setup uv
+      run: pip install uv
+
     - name: Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: uv pip install -e .[dev]
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest

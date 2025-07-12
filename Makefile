@@ -34,9 +34,9 @@ ifeq ($(IS_M1), 1)
 	GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1	\
 	CFLAGS="${CFLAGS} -I /opt/homebrew/opt/openssl/include"	\
 	LDFLAGS="${LDFLAGS} -L /opt/homebrew/opt/openssl/lib" \
-	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
+	. $(VENV_BIN)/activate; uv pip install -e .[dev]
 else
-	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
+	. $(VENV_BIN)/activate; uv pip install -e .[dev]
 endif
 
 .PHONY: check-toolchain

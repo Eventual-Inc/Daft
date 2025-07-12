@@ -6,6 +6,15 @@ To install Daft, run this from your terminal:
 pip install -U daft
 ```
 
+Alternatively, you can use [uv](https://github.com/astral-sh/uv), a faster Python package installer and resolver:
+
+```bash
+uv pip install daft
+```
+
+!!! tip "Why use uv?"
+    uv is significantly faster than pip and provides better dependency resolution. It's especially helpful when working with complex dependency sets or in CI/CD environments.
+
 ## Extra Dependencies
 
 Some Daft functionality may also require other dependencies, which are specified as "extras":
@@ -16,10 +25,22 @@ To install Daft with the extra dependencies required for interacting with AWS se
 pip install -U daft[aws]
 ```
 
+Or with uv:
+
+```bash
+uv pip install daft[aws]
+```
+
 To install Daft with the extra dependencies required for running distributed Daft on top of a [Ray cluster](https://docs.ray.io/en/latest/index.html), run:
 
 ```bash
 pip install -U daft[ray]
+```
+
+Or with uv:
+
+```bash
+uv pip install daft[ray]
 ```
 
 To install Daft with all extras, run:
@@ -28,12 +49,24 @@ To install Daft with all extras, run:
 pip install -U daft[all]
 ```
 
+Or with uv:
+
+```bash
+uv pip install daft[all]
+```
+
 ## Legacy CPUs
 
 If you see the text `Illegal instruction` when trying to run Daft, it may be because your CPU lacks support for certain instruction sets such as [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions). For those CPUs, use the `daft-lts` package instead:
 
 ```bash
 pip install -U daft-lts
+```
+
+Or with uv:
+
+```bash
+uv pip install daft-lts
 ```
 
 !!! tip "Note"
@@ -49,10 +82,22 @@ If you wish to use Daft at the bleeding edge of development, you may also instal
 pip install -U daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly
 ```
 
+Or with uv:
+
+```bash
+uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly
+```
+
 ### Installing Daft from source
 
 ```bash
 pip install -U https://github.com/Eventual-Inc/Daft/archive/refs/heads/main.zip
+```
+
+Or with uv:
+
+```bash
+uv pip install https://github.com/Eventual-Inc/Daft/archive/refs/heads/main.zip
 ```
 
 Please note that Daft requires the Rust toolchain in order to build from source.

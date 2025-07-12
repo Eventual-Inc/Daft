@@ -8,9 +8,17 @@ For the full PySpark SQL API documentation, see the [official PySpark documentat
 
 Daft supports Spark Connect through the optional `spark` dependency.
 
-```bash
-pip install -U "daft[spark]"
-```
+=== "🐍 Python (pip)"
+
+    ```bash
+    pip install -U "daft[spark]"
+    ```
+
+=== "🚀 Python (uv)"
+
+    ```bash
+    uv pip install "daft[spark]"
+    ```
 
 ## Example
 
