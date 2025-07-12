@@ -36,6 +36,7 @@ class UninitializedUdf:
         if init_args is None:
             return self.inner()
         else:
+            print("init args", init_args)
             args, kwargs = init_args
             return self.inner(*args, **kwargs)
 
@@ -121,6 +122,7 @@ def run_udf(
 
         # Extract an argument by name
         def extract_argument(name: str) -> Series | Any:
+            print("name = ", name)
             assert name in py_args or name in function_parameter_name_to_arg_order
 
             # If the param is not an expression, we can just pass it directly
@@ -335,7 +337,9 @@ class UDF:
             sig = inspect.signature(self.inner)
             bound_args = sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
-        return BoundUDFArgs(bound_args)
+        bound_args = BoundUDFArgs(bound_args)
+        print('bound', bound_args)
+        return bound_args
 
     def with_concurrency(self, concurrency: int) -> UDF:
         """Override the concurrency of this UDF, which tells Daft how many instances of your UDF to run concurrently.
@@ -569,12 +573,12 @@ def udf(
 class _DaftFunc:
     """`@daft.func` Decorator to convert a Python function into a `UDF`.
 
-    Unlike `@daft.udf(...)`, `@daft.func` operates on single values instead of batches.
+    Unlike `@daft.udf(...)`, `@daft.func()` operates on single values instead of batches.
 
     Examples:
     >>> import daft
     >>> from daft import col
-    >>> @daft.func  # or @daft.func()
+    >>> @daft.func()
     ... # or you can specify the return type like our existing @daft.udf
     ... # @daft.func(return_dtype=daft.DataType.int64())
     ... def my_sum(a: int, b: int) -> int:
@@ -597,76 +601,81 @@ class _DaftFunc:
     (Showing first 3 of 3 rows)
     """
 
+    def __init__(self, return_dtype: DataType | None = None) -> None:
+        self.return_dtype = return_dtype
+
     batch = udf
-
-    def __init__(self, func: UserDefinedPyFuncLike | None = None, *args: Any, **kwargs: Any) -> None:
-        self._func = func
-        self._args = args
-        self._kwargs = kwargs
-
-    def get_return_type_for_func(self, f: UserDefinedPyFuncLike) -> DataType:
+    def get_return_type_for_func(self, f: UserDefinedPyFuncLike, _args, kwargs) -> DataType:
+        if self.return_dtype is not None:
+            return self.return_dtype
         try:
             from typing import get_type_hints
         except ImportError:
-            if self._kwargs.get("return_dtype") is None:
+            if kwargs.get("return_dtype") is None:
                 raise ImportError("return_dtype is required when function has no return annotation")
 
-        if self._kwargs.get("return_dtype") is None:
+        if kwargs.get("return_dtype") is None:
             type_hints = get_type_hints(f)
             return_annotation = type_hints.get("return")
             if return_annotation is None:
                 raise ValueError("return_dtype is required when function has no return annotation")
             inferred_return_dtype = DataType._infer_type(return_annotation)
         else:
-            inferred_return_dtype = DataType._infer_type(self._kwargs.get("return_dtype"))  # type: ignore
+            inferred_return_dtype = DataType._infer_type(kwargs.get("return_dtype"))  # type: ignore
         return inferred_return_dtype
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression | UDF:
-        self._args = self._args if self._args else args
-        self._kwargs = self._kwargs if self._kwargs else kwargs
-        args = self._args
-        kwargs = self._kwargs
-
-        # if None, decorator was called with `@daft.func()` syntax
-        # otherwise it was called with `@daft.func` syntax
-        if self._func is None:
-
-            def _udf(f: UserDefinedPyFuncLike) -> UDF:
-                inferred_return_dtype = self.get_return_type_for_func(f)
-                # Grab a name for the UDF. It **should** be unique.
-                module_name = getattr(f, "__module__", "")
-                qual_name = getattr(f, "__qualname__")
-
-                if module_name:
-                    name = f"{module_name}.{qual_name}"
-                else:
-                    name = qual_name
-
-                def batch_func(*series: Series) -> list[Any]:
-                    return [f(*args) for args in zip(*series)]
-
-                udf = UDF(
-                    inner=batch_func,
-                    name=name,
-                    return_dtype=inferred_return_dtype,
-                )
-
-                return udf
-
-            return _udf(args[0])
+    def _bind_args(self, f, *args: Any, **kwargs: Any) -> BoundUDFArgs:
+        if isinstance(f, type):
+            sig = inspect.signature(f.__call__)
+            bound_args = sig.bind(
+                # Placeholder for `self`
+                None,
+                *args,
+                **kwargs,
+            )
         else:
+            sig = inspect.signature(f)
+            bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        return BoundUDFArgs(bound_args)
 
-            def batch_func(*series: Series) -> list[Any]:
-                return [self._func(*args) for args in zip(*series)]  # type: ignore
+    def __call__(self, f: UserDefinedPyFuncLike) -> Callable[[UserDefinedPyFuncLike], Expression]:
+        def wrapper(*args, **kwargs):
+            print("args:", args)  # (col("image"),)
+            print("kwargs:", kwargs)  # {'degrees': 90}
+            bound_args = self._bind_args(f, *args, **kwargs)
+            def batch_func(*series_args: Series) -> list[Any]:
+                print('\n batch func args', series_args)
+                print('\n batch func kwargs', kwargs)
+                output = []
+                for values in series_args:
+                    output.append(f(*values, **kwargs))
+                return output
+            expressions = list(bound_args.expressions().values())
+            inferred_return_dtype = self.get_return_type_for_func(f, args, kwargs)
 
-            inferred_return_dtype = self.get_return_type_for_func(self._func)
-            name = getattr(self._func, "__module__", "")
-            if name:
-                name = name + "."
-            name = name + getattr(self._func, "__qualname__")
+            # Grab a name for the UDF. It **should** be unique.
+            module_name = getattr(f, "__module__", "")
+            qual_name = getattr(f, "__qualname__")
 
-            return UDF(
-                inner=batch_func,
+            if module_name:
+                name = f"{module_name}.{qual_name}"
+            else:
+                name = qual_name
+
+            return Expression.udf(
                 name=name,
+                inner=UninitializedUdf(batch_func),
+                bound_args=bound_args,
+                expressions=expressions,
                 return_dtype=inferred_return_dtype,
-            )(*args)
+                init_args=None,
+                resource_request=None,
+                batch_size=None,
+                concurrency=None,
+            )
+        return wrapper
+
+
+
+
+
