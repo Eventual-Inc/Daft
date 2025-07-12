@@ -28,7 +28,7 @@ pub enum InvalidGetRange {
     #[error("Wanted range starting at {requested}, but object was only {length} bytes long")]
     StartTooLarge { requested: usize, length: usize },
 
-    #[error("End '{end}' is always expected to be greater than start '{start}'")]
+    #[error("Range end '{end}' is always expected to be greater than start '{start}'")]
     Inconsistent { start: usize, end: usize },
 }
 
@@ -157,7 +157,10 @@ mod tests {
 
         let range = GetRange::Bounded(3..3);
         let err = range.as_range(2).unwrap_err().to_string();
-        assert_eq!(err, "Range started at 3 and ended at 3");
+        assert_eq!(
+            err,
+            "Range end '3' is always expected to be greater than start '3'"
+        );
 
         let range = GetRange::Suffix(3);
         assert_eq!(range.as_range(3).unwrap(), 0..3);
