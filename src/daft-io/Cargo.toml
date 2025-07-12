@@ -32,6 +32,7 @@ reqwest-retry = "0.7.0"
 retry-policies = "0.4.0"
 serde = {workspace = true}
 snafu = {workspace = true}
+thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tracing = {workspace = true}

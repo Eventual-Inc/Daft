@@ -15,10 +15,11 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::{
     object_io::{GetResult, ObjectSource},
-    Result,
+    InvalidRangeRequestSnafu, Result,
 };
 use crate::{
     object_io::{self, FileMetadata, LSResult},
+    range::GetRange,
     stats::IOStatsRef,
     FileFormat,
 };
@@ -142,25 +143,16 @@ impl ObjectSource for LocalSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(file) = uri.strip_prefix(LOCAL_PROTOCOL) {
-            if let Some(range) = range.clone() {
-                let size = self.get_size(uri, io_stats).await?;
-                if range.start >= size {
-                    return Err(Error::UnableToReadBytes {
-                        path: file.into(),
-                        source: std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            "Range start is larger than file size",
-                        ),
-                    }
-                    .into());
-                }
-            }
-
+            let size = self.get_size(uri, io_stats).await?;
+            let range = range
+                .map(|r| r.as_range(size))
+                .transpose()
+                .context(InvalidRangeRequestSnafu)?;
             Ok(GetResult::File(LocalFile {
                 path: file.into(),
                 range,

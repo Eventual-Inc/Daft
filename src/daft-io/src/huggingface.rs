@@ -1,6 +1,6 @@
 use std::{
-    any::Any, collections::HashMap, num::ParseIntError, ops::Range, str::FromStr,
-    string::FromUtf8Error, sync::Arc,
+    any::Any, collections::HashMap, num::ParseIntError, str::FromStr, string::FromUtf8Error,
+    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -20,9 +20,10 @@ use super::object_io::{GetResult, ObjectSource};
 use crate::{
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat,
+    FileFormat, InvalidRangeRequestSnafu,
 };
 
 #[derive(Debug, Snafu)]
@@ -250,7 +251,7 @@ impl ObjectSource for HFSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let path_parts = uri.parse::<HFPathParts>()?;
@@ -258,10 +259,10 @@ impl ObjectSource for HFSource {
         let request = self.http_source.client.get(uri);
         let request = match range {
             None => request,
-            Some(range) => request.header(
-                RANGE,
-                format!("bytes={}-{}", range.start, range.end.saturating_sub(1)),
-            ),
+            Some(range) => {
+                range.validate().context(InvalidRangeRequestSnafu)?;
+                request.header(RANGE, range.to_string())
+            }
         };
 
         let response = request
@@ -543,8 +544,28 @@ async fn try_parquet_api(
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
+    use common_io_config::HTTPConfig;
 
-    use crate::huggingface::HFPathParts;
+    use crate::{
+        huggingface::{HFPathParts, HFSource},
+        integrations::test_full_get,
+        object_io::ObjectSource,
+    };
+
+    #[tokio::test]
+    async fn test_full_get_from_hf() -> crate::Result<()> {
+        let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
+        let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
+
+        let client = HFSource::get_client(&HTTPConfig::default()).await?;
+        let parquet_file = client.get(test_file_path, None, None).await?;
+        let bytes = parquet_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, expected_md5);
+
+        test_full_get(client, &test_file_path, &bytes).await
+    }
 
     #[test]
     fn test_parse_hf_parts() -> DaftResult<()> {

@@ -1,7 +1,6 @@
 use std::{
     any::Any,
     num::ParseIntError,
-    ops::Range,
     string::FromUtf8Error,
     sync::{Arc, LazyLock},
     time::Duration,
@@ -22,9 +21,10 @@ use url::Position;
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat,
+    FileFormat, InvalidRangeRequestSnafu,
 };
 
 const HTTP_DELIMITER: &str = "/";
@@ -228,16 +228,16 @@ impl ObjectSource for HttpSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let request = self.client.get(uri);
         let request = match range {
             None => request,
-            Some(range) => request.header(
-                RANGE,
-                format!("bytes={}-{}", range.start, range.end.saturating_sub(1)),
-            ),
+            Some(range) => {
+                range.validate().context(InvalidRangeRequestSnafu)?;
+                request.header(RANGE, range.to_string())
+            }
         };
 
         let response = request
@@ -390,7 +390,6 @@ impl ObjectSource for HttpSource {
 
 #[cfg(test)]
 mod tests {
-
     use std::default;
 
     use crate::{integrations::test_full_get, object_io::ObjectSource, HttpSource, Result};
