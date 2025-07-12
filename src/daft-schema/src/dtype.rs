@@ -888,6 +888,54 @@ impl DataType {
             ))),
         }
     }
+
+    #[inline]
+    pub fn is_fixed_size(&self) -> bool {
+        match *self {
+            Self::Int8 | Self::Int16 | Self::Int32 | Self::Int64 => true,
+            Self::UInt8 | Self::UInt16 | Self::UInt32 | Self::UInt64 => true,
+            Self::Float32 | Self::Float64 => true,
+            Self::Boolean => true,
+            Self::Date | Self::Timestamp(_, _) | Self::Time(_) | Self::Duration(_) => true,
+            Self::Decimal128(_, _) => true,
+            Self::Binary | Self::Utf8 | Self::List(_) | Self::Struct(_) => false,
+            Self::Map { .. }
+            | Self::Embedding(..)
+            | Self::Image(_)
+            | Self::FixedShapeImage(..)
+            | Self::Tensor(_)
+            | Self::FixedShapeTensor(..)
+            | Self::SparseTensor(..)
+            | Self::FixedShapeSparseTensor(..) => false,
+            Self::Null => false,
+            Self::Extension(_, _, _) => false,
+            Self::Interval => true,
+            _ => false,
+        }
+    }
+
+    pub fn fixed_byte_size(&self) -> Option<usize> {
+        match *self {
+            Self::Int8 => Some(1),
+            Self::Int16 => Some(2),
+            Self::Int32 => Some(4),
+            Self::Int64 => Some(8),
+            Self::UInt8 => Some(1),
+            Self::UInt16 => Some(2),
+            Self::UInt32 => Some(4),
+            Self::UInt64 => Some(8),
+            Self::Float32 => Some(4),
+            Self::Float64 => Some(8),
+            Self::Boolean => Some(1),
+            Self::Date => Some(4),
+            Self::Timestamp(_, _) => Some(8),
+            Self::Time(_) => Some(8),
+            Self::Duration(_) => Some(8),
+            Self::Decimal128(_, _) => Some(16),
+            Self::Interval => Some(12),
+            _ => None,
+        }
+    }
 }
 
 #[expect(

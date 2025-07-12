@@ -143,6 +143,14 @@ impl Field {
             ))),
         }
     }
+
+    pub fn is_fixed_size(&self) -> bool {
+        self.dtype.is_fixed_size()
+    }
+
+    pub fn fixed_byte_size(&self) -> Option<usize> {
+        self.dtype.fixed_byte_size()
+    }
 }
 
 impl From<&ArrowField> for Field {

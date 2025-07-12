@@ -81,7 +81,11 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
             Some(plan) => {
                 let schema = plan.schema();
-                unresolved_col(schema[0].name.clone())
+                let pushdown_col = schema
+                    .min_fixed_byte_column()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| schema[0].name.clone());
+                unresolved_col(pushdown_col)
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
@@ -95,7 +99,11 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                     if let Some(schema) =
                         plan.plan.clone().get_schema_for_alias(&ident.to_string())?
                     {
-                        unresolved_col(schema[0].name.clone())
+                        let pushdown_col = schema
+                            .min_fixed_byte_column()
+                            .map(|name| name.to_string())
+                            .unwrap_or_else(|| schema[0].name.clone());
+                        unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     } else {
@@ -115,7 +123,11 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                 Some(_) => match &planner.current_plan {
                     Some(plan) => {
                         let schema = plan.schema();
-                        unresolved_col(schema[0].name.clone())
+                        let pushdown_col = schema
+                            .min_fixed_byte_column()
+                            .map(|name| name.to_string())
+                            .unwrap_or_else(|| schema[0].name.clone());
+                        unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     }
