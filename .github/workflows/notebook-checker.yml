@@ -26,6 +26,10 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -U jupyter papermill matplotlib
+    - name: Install Tesseract
+      run: |
+        sudo apt install tesseract-ocr
+        sudo apt install libtesseract-dev
     - name: Run notebooks in docs
       run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
     - name: Run notebooks in tutorials
