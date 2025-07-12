@@ -5,37 +5,47 @@ use serde::{Deserialize, Serialize};
 use crate::{unity::UnityConfig, AzureConfig, GCSConfig, HTTPConfig, S3Config};
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IOConfig {
-    pub s3: S3Config,
-    pub azure: AzureConfig,
-    pub gcs: GCSConfig,
-    pub http: HTTPConfig,
-    pub unity: UnityConfig,
+    pub s3: Option<S3Config>,
+    pub azure: Option<AzureConfig>,
+    pub gcs: Option<GCSConfig>,
+    pub http: Option<HTTPConfig>,
+    pub unity: Option<UnityConfig>,
 }
 
 impl IOConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!(
-            "S3 config = {{ {} }}",
-            self.s3.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "Azure config = {{ {} }}",
-            self.azure.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "GCS config = {{ {} }}",
-            self.gcs.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "HTTP config = {{ {} }}",
-            self.http.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "Unity config = {{ {} }}",
-            self.unity.multiline_display().join(", ")
-        ));
+        if let Some(s3) = &self.s3 {
+            res.push(format!(
+                "S3 config = {{ {} }}",
+                s3.multiline_display().join(", ")
+            ));
+        }
+        if let Some(azure) = &self.azure {
+            res.push(format!(
+                "Azure config = {{ {} }}",
+                azure.multiline_display().join(", ")
+            ));
+        }
+        if let Some(gcs) = &self.gcs {
+            res.push(format!(
+                "GCS config = {{ {} }}",
+                gcs.multiline_display().join(", ")
+            ));
+        }
+        if let Some(http) = &self.http {
+            res.push(format!(
+                "HTTP config = {{ {} }}",
+                http.multiline_display().join(", ")
+            ));
+        }
+        if let Some(unity) = &self.unity {
+            res.push(format!(
+                "Unity config = {{ {} }}",
+                unity.multiline_display().join(", ")
+            ));
+        }
         res
     }
 }
@@ -48,8 +58,13 @@ impl Display for IOConfig {
 {}
 {}
 {}
+{}
 {}",
-            self.s3, self.azure, self.gcs, self.http,
+            self.s3.clone().unwrap_or_default(),
+            self.azure.clone().unwrap_or_default(),
+            self.gcs.clone().unwrap_or_default(),
+            self.http.clone().unwrap_or_default(),
+            self.unity.clone().unwrap_or_default(),
         )
     }
 }
