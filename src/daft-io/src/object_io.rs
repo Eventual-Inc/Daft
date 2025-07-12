@@ -210,13 +210,13 @@ pub trait ObjectSource: Sync + Send {
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult>;
 
-    async fn iter_dir(
-        &self,
+    async fn iter_dir<'a>(
+        &'a self,
         uri: &str,
         posix: bool,
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    ) -> super::Result<BoxStream<'a, super::Result<FileMetadata>>> {
         let uri = uri.to_string();
         let s = stream! {
             let lsr = self.ls(&uri, posix, None, page_size, io_stats.clone()).await?;
