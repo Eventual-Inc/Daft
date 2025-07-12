@@ -20,7 +20,7 @@ use super::{
 use crate::{
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
+        task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
@@ -250,12 +250,12 @@ impl ActorUDF {
                     // Pick actors using round robin
                     let (worker_id, actors) = udf_actors.get_round_robin_actors()?;
 
-                    let modified_task = self.append_actor_udf_to_task(
-                        worker_id,
-                        task,
-                        actors,
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                    )?;
+                    let mut task_context = task.task().task_context();
+                    if let Some(logical_node_id) = self.context.logical_node_id {
+                        task_context.add_logical_node_id(logical_node_id);
+                    }
+                    let modified_task =
+                        self.append_actor_udf_to_task(worker_id, task, actors, task_context)?;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
