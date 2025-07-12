@@ -23,8 +23,9 @@ impl FilterNode {
     const NODE_NAME: NodeName = "Filter";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         predicate: BoundExpr,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -35,8 +36,13 @@ impl FilterNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Self {
             config,
             context,

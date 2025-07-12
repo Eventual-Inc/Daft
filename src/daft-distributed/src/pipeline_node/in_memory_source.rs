@@ -4,7 +4,7 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{stats::StatsState, ClusteringSpec, InMemoryInfo};
 
 use super::{DistributedPipelineNode, PipelineNodeContext, PipelineOutput, RunningPipelineNode};
 use crate::{
@@ -28,15 +28,28 @@ impl InMemorySourceNode {
     const NODE_NAME: NodeName = "InMemorySource";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        stage_config: &StageConfig,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
-        let context =
-            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
-        let config =
-            PipelineNodeConfig::new(info.source_schema.clone(), stage_config.config.clone());
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![],
+            vec![],
+            logical_node_id,
+        );
+
+        let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
+
+        let config = PipelineNodeConfig::new(
+            info.source_schema.clone(),
+            stage_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_partitions)),
+        );
         Self {
             config,
             context,

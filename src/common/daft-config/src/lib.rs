@@ -138,10 +138,9 @@ impl DaftExecutionConfig {
             cfg.native_parquet_writer = false;
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
-        if let Ok(val) = std::env::var(flotilla_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.use_experimental_distributed_engine = true;
+        if let Ok(val) = std::env::var(flotilla_env_var_name) {
+            cfg.use_experimental_distributed_engine =
+                !matches!(val.trim().to_lowercase().as_str(), "0" | "false");
         }
         let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
         if let Ok(val) = std::env::var(min_cpu_var) {

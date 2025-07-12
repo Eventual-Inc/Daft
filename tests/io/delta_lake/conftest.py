@@ -31,7 +31,8 @@ def num_partitions(request) -> int:
         pytest.param((lambda i: i, "a"), id="int_partitioned"),
         pytest.param((lambda i: i * 1.5, "b"), id="float_partitioned"),
         pytest.param((lambda i: f"foo_{i}", "c"), id="string_partitioned"),
-        pytest.param((lambda i: f"foo_{i}".encode(), "d"), id="binary_partitioned"),
+        # Delta-rs Rust writer doesn't support binary partitioning
+        # pytest.param((lambda i: f"foo_{i}".encode(), "d"), id="binary_partitioned"),
         pytest.param(
             (lambda i: datetime.datetime(2024, 2, i + 1), "f"),
             id="timestamp_partitioned",
@@ -400,6 +401,5 @@ def deltalake_table(
         table,
         partition_by="part_idx" if partition_generator(0) is not None else None,
         storage_options=storage_options,
-        engine="pyarrow",
     )
     return path, catalog_table, io_config, parts

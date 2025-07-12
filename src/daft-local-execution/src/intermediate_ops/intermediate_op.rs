@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -18,7 +19,8 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
-        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
+        RuntimeStatsContext, RuntimeStatsEventHandler,
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
@@ -52,6 +54,9 @@ pub trait IntermediateOperator: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
+    }
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(BaseStatsBuilder {})
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -96,7 +101,10 @@ impl IntermediateNode {
     ) -> Self {
         let info = ctx.next_node_info(intermediate_op.name());
 
-        let rts = RuntimeStatsContext::new(info.clone());
+        let rts = RuntimeStatsContext::new_with_builder(
+            info.clone(),
+            intermediate_op.make_runtime_stats_builder(),
+        );
         Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats, info)
     }
 
@@ -208,8 +216,10 @@ impl TreeDisplay for IntermediateNode {
                 }
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
-                    let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display, true, true, true).unwrap();
+                    let rt_result = self.runtime_stats.render();
+                    for (name, value) in rt_result {
+                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                    }
                 }
             }
         }
@@ -242,7 +252,7 @@ impl PipelineNode for IntermediateNode {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Magenta,
-            true,
+            self.node_id(),
             self.runtime_stats.clone(),
         );
 

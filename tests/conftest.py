@@ -58,7 +58,7 @@ class UuidType(pa.ExtensionType):
 
 
 @pytest.fixture
-def uuid_ext_type() -> UuidType:
+def uuid_ext_type() -> Generator[UuidType, None, None]:
     ext_type = UuidType()
     pa.register_extension_type(ext_type)
     yield ext_type

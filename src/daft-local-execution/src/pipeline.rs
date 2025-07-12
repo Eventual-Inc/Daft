@@ -39,20 +39,15 @@ use crate::{
     },
     sinks::{
         aggregate::AggregateSink,
-        anti_semi_hash_join_probe::AntiSemiProbeSink,
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
-        concat::ConcatSink,
         cross_join_collect::CrossJoinCollectSink,
         dedup::DedupSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
-        limit::LimitSink,
-        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink,
         pivot::PivotSink,
+        repartition::RepartitionSink,
         sort::SortSink,
-        streaming_sink::StreamingSinkNode,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
@@ -62,6 +57,11 @@ use crate::{
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
     state_bridge::BroadcastStateBridge,
+    streaming_sink::{
+        anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
+        limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink,
+    },
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
@@ -640,13 +640,17 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
+            starting_offset,
             schema,
             stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let monotonically_increasing_id_sink =
-                MonotonicallyIncreasingIdSink::new(column_name.clone(), schema.clone());
+            let monotonically_increasing_id_sink = MonotonicallyIncreasingIdSink::new(
+                column_name.clone(),
+                *starting_offset,
+                schema.clone(),
+            );
             StreamingSinkNode::new(
                 Arc::new(monotonically_increasing_id_sink),
                 vec![child_node],
@@ -1046,6 +1050,24 @@ pub fn physical_plan_to_pipeline(
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
+        }
+        LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
+            input,
+            columns,
+            num_partitions,
+            stats_state,
+            schema,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let repartition_op =
+                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
+            BlockingSinkNode::new(
+                Arc::new(repartition_op),
+                child_node,
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
         }
     };
 

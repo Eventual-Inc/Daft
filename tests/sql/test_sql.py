@@ -316,7 +316,7 @@ def test_cast_image():
         None,
     ]
 
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
     df = daft.from_pydict({"img": s})
     actual = daft.sql("select cast(img as image(RGB)) from df", **{"df": df}).collect()
     assert actual.schema()["img"].dtype == DataType.image("RGB")

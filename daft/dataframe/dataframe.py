@@ -556,7 +556,7 @@ class DataFrame:
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
-            preview_partition = preview_results._get_merged_micropartition()
+            preview_partition = preview_results._get_merged_micropartition(self.schema())
             self._preview = Preview(
                 partition=preview_partition,
                 total_rows=len(self),
@@ -1077,15 +1077,19 @@ class DataFrame:
 
         import deltalake
         import pyarrow as pa
-        from deltalake.schema import _convert_pa_schema_to_delta
-        from deltalake.writer import AddAction, try_get_deltatable, write_deltalake_pyarrow
+        from deltalake.exceptions import TableNotFoundError
         from packaging.version import parse
 
         from daft import from_pydict
         from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
-        from daft.io.delta_lake._deltalake import large_dtypes_kwargs
+        from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
+        from daft.io.delta_lake.delta_lake_write import (
+            AddAction,
+            convert_pa_schema_to_delta,
+            create_table_with_add_actions,
+        )
         from daft.io.object_store_options import io_config_to_storage_options
 
         def _create_metadata_param(metadata: Optional[dict[str, str]]) -> Any:
@@ -1140,7 +1144,10 @@ class DataFrame:
                 )
 
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
-            table = try_get_deltatable(table_uri, storage_options=storage_options)
+            try:
+                table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
+            except TableNotFoundError:
+                table = None
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
         scheme = get_protocol_from_path(table_uri)
@@ -1160,7 +1167,7 @@ class DataFrame:
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
         large_dtypes = True
-        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
+        delta_schema = convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=large_dtypes)
 
         if table:
             if partition_cols and partition_cols != table.metadata().partition_columns:
@@ -1172,8 +1179,10 @@ class DataFrame:
 
             table.update_incremental()
 
-            table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
-            if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
+            table_schema = delta_schema_to_pyarrow(table.schema())
+            if Schema.from_pyarrow_schema(delta_schema) != Schema.from_pyarrow_schema(table_schema) and not (
+                mode == "overwrite" and schema_mode == "overwrite"
+            ):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
                     f"Data schema:\n{delta_schema}\nTable Schema:\n{table_schema}"
@@ -1226,7 +1235,7 @@ class DataFrame:
             sizes.append(add_action.size)
 
         if table is None:
-            write_deltalake_pyarrow(
+            create_table_with_add_actions(
                 table_uri,
                 delta_schema,
                 add_actions,
@@ -1240,7 +1249,7 @@ class DataFrame:
             )
         else:
             if mode == "overwrite":
-                old_actions = table.get_add_actions()
+                old_actions = pa.record_batch(table.get_add_actions())
                 old_actions_dict = old_actions.to_pydict()
                 for i in range(old_actions.num_rows):
                     operations.append("DELETE")
@@ -1249,9 +1258,19 @@ class DataFrame:
                     sizes.append(old_actions_dict["size_bytes"][i])
 
             metadata_param = _create_metadata_param(custom_metadata)
-            table._table.create_write_transaction(
-                add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
-            )
+            if parse(deltalake.__version__) < parse("1.0.0"):
+                table._table.create_write_transaction(
+                    add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
+                )
+            else:
+                table._table.create_write_transaction(
+                    add_actions,
+                    mode,
+                    partition_cols or [],
+                    deltalake.Schema.from_arrow(delta_schema),
+                    None,
+                    metadata_param,
+                )
             table.update_incremental()
 
         with_operations = from_pydict(
@@ -1432,7 +1451,7 @@ class DataFrame:
         """Generates a column of monotonically increasing unique ids for the DataFrame.
 
         The implementation of this method puts the partition number in the upper 28 bits, and the row number in each partition
-        in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
+        in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^36 ≈ 68 billion rows per partition.
 
         Args:
             column_name (Optional[str], optional): name of the new column. Defaults to "id".
@@ -3469,7 +3488,7 @@ class DataFrame:
         self.collect()
         result = self._result
         assert result is not None
-        return result.to_pydict()
+        return result.to_pydict(schema=self.schema())
 
     @DataframePublicAPI
     def to_pylist(self) -> list[Any]:
@@ -3641,7 +3660,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,
@@ -3734,7 +3753,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,

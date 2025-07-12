@@ -644,6 +644,25 @@ pub fn populate_aggregation_stages_bound(
     schema: &Schema,
     group_by: &[BoundExpr],
 ) -> DaftResult<(Vec<BoundAggExpr>, Vec<BoundAggExpr>, Vec<BoundExpr>)> {
+    let (
+        (first_stage_aggs, _first_stage_schema),
+        (second_stage_aggs, _second_stage_schema),
+        final_exprs,
+    ) = populate_aggregation_stages_bound_with_schema(aggregations, schema, group_by)?;
+
+    Ok((first_stage_aggs, second_stage_aggs, final_exprs))
+}
+
+#[allow(clippy::type_complexity)]
+pub fn populate_aggregation_stages_bound_with_schema(
+    aggregations: &[BoundAggExpr],
+    schema: &Schema,
+    group_by: &[BoundExpr],
+) -> DaftResult<(
+    (Vec<BoundAggExpr>, Schema),
+    (Vec<BoundAggExpr>, Schema),
+    Vec<BoundExpr>,
+)> {
     let mut first_stage_aggs = IndexSet::new();
     let mut second_stage_aggs = IndexSet::new();
 
@@ -895,18 +914,30 @@ pub fn populate_aggregation_stages_bound(
                 });
                 final_stage(map_groups_col);
             }
-            AggExpr::ApproxSketch(..) => {
-                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            // Only necessary for Flotilla
+            AggExpr::ApproxSketch(expr, sketch_type) => {
+                let approx_sketch_col =
+                    first_stage!(AggExpr::ApproxSketch(expr.clone(), *sketch_type));
+                let merged_sketch_col = second_stage!(AggExpr::MergeSketch(
+                    approx_sketch_col.clone(),
+                    *sketch_type
+                ));
+                final_stage(merged_sketch_col);
             }
-            AggExpr::MergeSketch(..) => {
-                unimplemented!("User-facing merge_sketch aggregation is not implemented")
+            AggExpr::MergeSketch(expr, sketch_type) => {
+                // Merging is commutative and associative, so just keep doing it
+                let merge_sketch_col =
+                    first_stage!(AggExpr::MergeSketch(expr.clone(), *sketch_type));
+                let merged_sketch_col =
+                    second_stage!(AggExpr::MergeSketch(merge_sketch_col.clone(), *sketch_type));
+                final_stage(merged_sketch_col);
             }
         }
     }
 
     Ok((
-        first_stage_aggs.into_iter().collect(),
-        second_stage_aggs.into_iter().collect(),
+        (first_stage_aggs.into_iter().collect(), first_stage_schema),
+        (second_stage_aggs.into_iter().collect(), second_stage_schema),
         final_exprs,
     ))
 }

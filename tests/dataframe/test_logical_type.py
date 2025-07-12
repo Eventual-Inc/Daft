@@ -17,7 +17,9 @@ DaftExtension = get_super_ext_type()
 
 def test_embedding_type_df() -> None:
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
-    df = daft.from_pydict({"index": np.arange(len(data)), "embeddings": Series.from_pylist(data, pyobj="force")})
+    df = daft.from_pydict(
+        {"index": np.arange(len(data)), "embeddings": Series.from_pylist(data, dtype=DataType.python())}
+    )
 
     target = DataType.embedding(DataType.float32(), 3)
     df = df.select(col("index"), col("embeddings").cast(target))
@@ -56,7 +58,7 @@ def test_fixed_shape_image_type_df() -> None:
     width = 2
     shape = (height, width, 3)
     data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
-    df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="force")})
+    df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, dtype=DataType.python())})
 
     target = DataType.image("RGB", height, width)
     df = df.select(col("index"), col("image").cast(target))

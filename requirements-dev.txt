@@ -61,7 +61,7 @@ tenacity==8.2.3
 
 # Delta Lake
 deltalake==0.5.8; platform_system == "Windows"
-deltalake==0.19.2; platform_system != "Windows"
+deltalake==1.0.2; platform_system != "Windows"
 
 # Databricks
 databricks-sdk==0.12.0
@@ -101,7 +101,7 @@ mkdocs-simple-hooks
 pymdown-extensions
 mkdocs-material[imaging]
 mkdocstrings-python
-ruff
+ruff==0.8.2
 mkdocs-minify-plugin
 mkdocs-redirects
 

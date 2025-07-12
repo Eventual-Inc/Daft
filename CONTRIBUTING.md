@@ -8,7 +8,6 @@ Daft is an open-source project and we welcome contributions from the community. 
 - **Have a feature idea?** 💡 [Start a discussion](#proposing-features)
 - **Want to make your first PR?** 🚀 [Contribute new code](#contributing-code)
 
-
 ## Reporting Issues
 
 To report bugs and issues with Daft, please file an issue on our [issues](https://github.com/Eventual-Inc/Daft/issues) page.
@@ -61,6 +60,8 @@ To set up your development environment:
 8. `make check-format`: check that all Python and Rust code is formatted, alias `make format-check`
 9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
 10. `make build-release`: perform a full release build of Daft
+11. `make build-whl`: recompile your code after modifying any Rust code in `src/` for development, only generate `whl` file without installation
+12. `make daft-proto`: build Daft proto sources in `src/daft-proto`
 
 #### Note about Developing `daft-dashboard`
 
@@ -156,6 +157,7 @@ At this point, your debugger should stop on breakpoints in any .rs file located 
 We run test suites across Python and Rust. Python tests focus on high-level DataFrame and Expression functionality, while Rust tests validate individual kernel implementations at a lower level.
 
 #### Python tests
+
 Our python tests are located in the `tests` directory, you can run all the tests at once with `make tests`.
 
 To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest]("https://doc.rust-lang.org/cargo/commands/cargo-test.html").
@@ -165,6 +167,7 @@ DAFT_RUNNER=native pytest tests/dataframe
 ```
 
 #### Rust tests
+
 Our rust tests are distributed across crates, you can run all tests with `cargo test --no-default-features --workspace`.
 
 To run rust tests that call into Python, the `--features python` flag and libpython3.*.so dynamic libraries are required. Please ensure that these are installed, here's a table of common locations on different os:
@@ -180,12 +183,12 @@ To run rust tests that call into Python, the `--features python` flag and libpyt
 
 Set environment variables to locate the Python library:
 
-
 ```sh
 export PYO3_PYTHON=".venv/bin/python"
 export PYO3_PYTHON_PYLIB="/usr/lib/x86_64-linux-gnu/libpython3.11.so.1"
 export RUSTFLAGS="-C link-arg=-Wl,-rpath,${PYO3_PYTHON_PYLIB%/*} -C link-arg=-L${PYO3_PYTHON_PYLIB%/*} -C link-arg=-lpython3.11"
 ```
+
 Execute the test after configuration:
 
 ```sh
@@ -228,20 +231,20 @@ impl ScalarUDF for MyToUpperCase {
     }
 
     // Then we add an implementation for it.
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let s = inputs.required(0)?;
         // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
         let arr = s
             .utf8()
-            .expect("type should have been validated already during `function_args_to_field`")
+            .expect("type should have been validated already during `get_return_field`")
             .into_iter()
             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
             .collect::<Utf8Array>();
         Ok(arr.into_series())
     }
 
-    // We also need a `function_args_to_field` which is used during planning to ensure that the args and datatypes are compatible.
-    fn function_args_to_field(
+    // We also need a `get_return_field` which is used during planning to ensure that the args and datatypes are compatible.
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -354,7 +357,7 @@ here's an example of testing the `extract` function using the `test_expression` 
 
 ```py
 def test_extract(test_expression):
-    test_data =["123-456", "789-012", "345-678"]
+    test_data = ["123-456", "789-012", "345-678"]
     regex = r"(\d)(\d*)"
     expected = ["123", "789", "345"]
     test_expression(
