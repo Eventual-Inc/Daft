@@ -1,40 +1,33 @@
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
-use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        RunningPipelineNode,
+    },
     stage::{StageConfig, StageExecutionContext},
 };
 
-pub(crate) struct UnpivotNode {
+pub(crate) struct MonotonicallyIncreasingIdNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    ids: Vec<BoundExpr>,
-    values: Vec<BoundExpr>,
-    variable_name: String,
-    value_name: String,
+    column_name: String,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl UnpivotNode {
-    const NODE_NAME: NodeName = "Unpivot";
+impl MonotonicallyIncreasingIdNode {
+    const NODE_NAME: NodeName = "MonotonicallyIncreasingId";
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        ids: Vec<BoundExpr>,
-        values: Vec<BoundExpr>,
-        variable_name: String,
-        value_name: String,
+        column_name: String,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -54,10 +47,7 @@ impl UnpivotNode {
         Self {
             config,
             context,
-            ids,
-            values,
-            variable_name,
-            value_name,
+            column_name,
             child,
         }
     }
@@ -67,23 +57,11 @@ impl UnpivotNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
-        let mut res = vec![];
-        res.push(format!(
-            "Unpivot: {}",
-            self.values.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!(
-            "Ids = {}",
-            self.ids.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!("Variable name = {}", self.variable_name));
-        res.push(format!("Value name = {}", self.value_name));
-        res
+        vec![format!("MonotonicallyIncreasingId: {}", self.column_name)]
     }
 }
 
-impl TreeDisplay for UnpivotNode {
+impl TreeDisplay for MonotonicallyIncreasingIdNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -99,16 +77,24 @@ impl TreeDisplay for UnpivotNode {
         display
     }
 
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
     fn get_name(&self) -> String {
         self.context.node_name.to_string()
     }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.child.as_tree_display()]
+    }
 }
 
-impl DistributedPipelineNode for UnpivotNode {
+/// The maximum number of rows per partition for the monotonically increasing ID node.
+/// https://docs.getdaft.io/en/stable/api/functions/#daft.functions.monotonically_increasing_id
+///
+/// The implementation puts the partition number in the upper 28 bits, and the row number in each
+/// partition in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and
+/// 2^36 ≈ 68 billion rows per partition.
+const MAX_ROWS_PER_PARTITION: u64 = 1u64 << 36;
+
+impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -123,21 +109,23 @@ impl DistributedPipelineNode for UnpivotNode {
 
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
+        let column_name = self.column_name.clone();
+        let schema = self.config.schema.clone();
 
-        let self_clone = self.clone();
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::unpivot(
+        let next_starting_offset = AtomicU64::new(0);
+
+        input_node.pipeline_instruction(stage_context, self, move |input| {
+            Ok(LocalPhysicalPlan::monotonically_increasing_id(
                 input,
-                self_clone.ids.clone(),
-                self_clone.values.clone(),
-                self_clone.variable_name.clone(),
-                self_clone.value_name.clone(),
-                self_clone.config.schema.clone(),
+                column_name.clone(),
+                Some(
+                    next_starting_offset
+                        .fetch_add(MAX_ROWS_PER_PARTITION, std::sync::atomic::Ordering::SeqCst),
+                ),
+                schema.clone(),
                 StatsState::NotMaterialized,
             ))
-        };
-
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        })
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

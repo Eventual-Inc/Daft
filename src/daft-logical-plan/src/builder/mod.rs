@@ -221,6 +221,7 @@ impl LogicalPlanBuilder {
         let expr_resolver = ExprResolver::builder()
             .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
+            .allow_explode(true)
             .build();
 
         let to_select = expr_resolver.resolve(to_select, self.plan.clone())?;
@@ -233,6 +234,7 @@ impl LogicalPlanBuilder {
         let expr_resolver = ExprResolver::builder()
             .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
+            .allow_explode(true)
             .build();
 
         let columns = expr_resolver.resolve(columns, self.plan.clone())?;
@@ -642,9 +644,17 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            ops::MonotonicallyIncreasingId::try_new(self.plan.clone(), column_name)?.into();
+    pub fn add_monotonically_increasing_id(
+        &self,
+        column_name: Option<&str>,
+        starting_offset: Option<u64>,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::MonotonicallyIncreasingId::try_new(
+            self.plan.clone(),
+            column_name,
+            starting_offset,
+        )?
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1251,7 +1261,7 @@ impl PyLogicalPlanBuilder {
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> PyResult<Self> {
         Ok(self
             .builder
-            .add_monotonically_increasing_id(column_name)?
+            .add_monotonically_increasing_id(column_name, None)?
             .into())
     }
 

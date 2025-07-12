@@ -308,7 +308,6 @@ mod tests {
             panic!("Expected top level project");
         };
         assert_eq!(top_project.projection.len(), 4);
-        eprintln!("top_project: {:#?}", top_project);
         assert!(matches!(
             top_project.projection[0].as_ref(),
             Expr::Alias(..)

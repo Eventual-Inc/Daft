@@ -10,12 +10,13 @@ from daft.context import get_context
 from daft.functions import dense_rank, rank
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
-
-@pytest.mark.skipif(
+pytestmark = pytest.mark.skipif(
     get_tests_daft_runner_name() == "ray"
     and get_context().daft_execution_config.use_experimental_distributed_engine is False,
     reason="requires Native Runner or Flotilla to be in use",
 )
+
+
 def test_basic_lag_function(make_df):
     """Test basic lag function with default offset."""
     random.seed(42)

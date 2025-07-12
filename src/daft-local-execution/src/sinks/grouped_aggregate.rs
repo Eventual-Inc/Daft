@@ -412,9 +412,9 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
                         concated,
-                    ))))
+                    )]))
                 },
                 Span::current(),
             )

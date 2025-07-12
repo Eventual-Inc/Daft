@@ -35,13 +35,13 @@ impl SinkNode {
     const NODE_NAME: NodeName = "Sink";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         sink_info: Arc<SinkInfo>,
         file_schema: SchemaRef,
         data_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
