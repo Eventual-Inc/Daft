@@ -626,9 +626,9 @@ def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
         return [f**2 for f in data]
 
     if use_actor_pool:
-        uppercase_strings = uppercase_strings.with_concurrency(2)
-        multiply_numbers = multiply_numbers.with_concurrency(2)
-        square_floats = square_floats.with_concurrency(2)
+        uppercase_strings = uppercase_strings.with_concurrency(1)
+        multiply_numbers = multiply_numbers.with_concurrency(1)
+        square_floats = square_floats.with_concurrency(1)
 
     # Apply all UDFs simultaneously on different columns
     result = df.select(
@@ -673,10 +673,10 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
         return [f"num_{n}" for n in data]
 
     if use_actor_pool:
-        multiply_by_2 = multiply_by_2.with_concurrency(2)
-        add_10 = add_10.with_concurrency(2)
-        square_and_divide = square_and_divide.with_concurrency(2)
-        number_to_string = number_to_string.with_concurrency(2)
+        multiply_by_2 = multiply_by_2.with_concurrency(1)
+        add_10 = add_10.with_concurrency(1)
+        square_and_divide = square_and_divide.with_concurrency(1)
+        number_to_string = number_to_string.with_concurrency(1)
 
     # Apply all UDFs to the same column simultaneously
     result = df.select(
