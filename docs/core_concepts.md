@@ -843,7 +843,7 @@ If column `A` is an integer, we can run numeric computation such as addition, di
 
 Notice that the returned types of these operations are also well-typed according to their input types. For example, calling ``df["A"] > 1`` returns a column of type [`Boolean`][daft.datatype.DataType.bool].
 
-Both the [`Float`][daft.datatype.DataType.float32] and [`Int`][daft.datatype.DataType.int16] types are numeric types, and inherit many of the same arithmetic Expression operations. You may find the full list of numeric operations in the [Expressions API Reference](api/expressions.md).
+Both the [`Float`][daft.datatype.DataType.float32] and [`Int`][daft.datatype.DataType.int16] types are numeric types, and inherit many of the same arithmetic Expression operations. Find the full list of numeric operations in the [Numeric Expressions API Reference](api/expressions.md#numeric).
 
 #### String Expressions
 
@@ -936,15 +936,13 @@ For example, to check if each element in column "B" contains the substring "a", 
 (Showing first 3 of 3 rows)
 ```
 
-You may find a full list of string operations in the [Expressions API Reference](api/expressions.md).
+Find the full list of string operations in the [String Expressions API Reference](api/expressions.md#string).
 
 #### URL Expressions
 
 One special case of a String column you may find yourself working with is a column of URL strings.
 
 Daft provides the [`.url.*`](api/expressions.md#daft.expressions.expressions.ExpressionUrlNamespace) method namespace with functionality for working with URL strings. For example, to download data from URLs:
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
 === "🐍 Python"
     ``` python
@@ -990,13 +988,12 @@ Daft provides the [`.url.*`](api/expressions.md#daft.expressions.expressions.Exp
 (Showing first 2 of 2 rows)
 ```
 
-This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), local filepaths or even paths to a file in an object store such as AWS S3 as well!
+This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), local filepaths or even paths to a file in an object store such as AWS S3 as well! Find a full list of URL expressions in the [URL Expressions API Reference](api/expressions.md#url).
+
 
 #### JSON Expressions
 
 If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressions.md#daft.expressions.expressions.ExpressionJsonNamespace) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
-
-<!-- todo(docs - cc): add relative path to .json after figure out json namespace-->
 
 === "🐍 Python"
     ``` python
@@ -1042,24 +1039,24 @@ If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressi
 (Showing first 2 of 2 rows)
 ```
 
-Daft uses [jaq](https://github.com/01mf02/jaq/tree/main) as the underlying executor, so you can find the full list of supported filters in the [jaq documentation](https://github.com/01mf02/jaq/tree/main).
+Daft uses [jaq](https://github.com/01mf02/jaq/tree/main) as the underlying executor, so you can find the full list of supported filters in the [jaq documentation](https://github.com/01mf02/jaq/tree/main). Find the full list of JSON operations in the [JSON Expressions API Reference](api/expressions.md#json).
+
 
 #### Logical Expressions
 
-Logical Expressions are an expression that refers to a column of type [`Boolean`][daft.datatype.DataType.bool], and can only take on the values True or False.
+Logical Expressions are an expression that refers to a column of type [`Boolean`][daft.datatype.DataType.bool], and can only take on the values `True` or `False`.
 
 === "🐍 Python"
     ``` python
     df = daft.from_pydict({"C": [True, False, True]})
     ```
 
-Daft supports logical operations such as `&` (and) and `|` (or) between logical expressions.
+Daft supports logical operations such as `&` (and) and `|` (or) between logical expressions. Find the full list of logical expressions in the [Logical Expressions API Reference](api/expressions.md#logical).
+
 
 #### Comparisons
 
-Many of the types in Daft support comparisons between expressions that returns a Logical Expression.
-
-For example, here we can compare if each element in column "A" is equal to elements in column "B":
+Many of the types in Daft support comparisons between expressions that returns a Logical Expression. For example, here we can compare if each element in column `A` is equal to elements in column `B`:
 
 === "🐍 Python"
     ``` python
@@ -1102,11 +1099,10 @@ For example, here we can compare if each element in column "A" is equal to eleme
 (Showing first 3 of 3 rows)
 ```
 
-Other useful comparisons can be found in the [Expressions API Reference](api/expressions.md).
+Other useful comparisons can be found in the [Logical Expressions API Reference](api/expressions.md#logical).
 
-<!-- todo(docs - cc): current expressions api docs is not separated by sections, so how to reference numeric section? -->
 
-### If Else Pattern
+#### If Else Pattern
 
 The [`.if_else()`][daft.expressions.Expression.if_else] method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
 
@@ -1164,7 +1160,9 @@ This is a useful expression for cleaning your data!
 
 #### Temporal Expressions
 
-Daft provides rich support for working with temporal data types like Timestamp and Duration. Let's explore some common temporal operations:
+Daft provides rich support for working with temporal data types like [`Timestamp`][daft.datatype.DataType.timestamp] and [`Duration`][daft.datatype.DataType.duration]. Find the full list of tmeporal expressions in the [Temporal Expressions API Reference](api/expressions.md#temporal).
+
+Let's explore some common temporal operations:
 
 ##### Basic Temporal Operations
 
@@ -1235,6 +1233,8 @@ The [`.dt.*`][daft.expressions.expressions.ExpressionDatetimeNamespace] method n
 
 === "🐍 Python"
     ``` python
+    import datetime
+
     df = daft.from_pydict({
         "timestamp": [
             datetime.datetime(2021, 1, 1, 0, 1, 1),
@@ -1258,6 +1258,8 @@ The [`.dt.*`][daft.expressions.expressions.ExpressionDatetimeNamespace] method n
 
 === "⚙️ SQL"
     ```python
+    import datetime
+
     df = daft.from_pydict({
         "timestamp": [
             datetime.datetime(2021, 1, 1, 0, 1, 1),
@@ -1303,6 +1305,8 @@ You can parse strings as timestamps with time zones and convert between differen
 
 === "🐍 Python"
     ``` python
+    import datetime
+
     df = daft.from_pydict({
         "timestamp_str": [
             "2021-01-01 00:00:00.123 +0800",
@@ -1324,6 +1328,8 @@ You can parse strings as timestamps with time zones and convert between differen
 
 === "⚙️ SQL"
     ```python
+    import datetime
+
     df = daft.from_pydict({
         "timestamp_str": [
             "2021-01-01 00:00:00.123 +0800",
@@ -1397,11 +1403,9 @@ The [`.dt.truncate()`][daft.expressions.expressions.ExpressionDatetimeNamespace.
 
 <!-- todo(docs - jay): Should this section also have sql examples? -->
 
-Daft can read data from a variety of sources, and write data to many destinations.
-
 ## Query Plan
 
-As mentioned earlier, Daft is lazy. Under the hood, each DataFrame is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
+Under the hood, each DataFrame is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
 
 You can examine a logical plan using [`df.explain()`][daft.DataFrame.explain], here's an example:
 
@@ -1505,7 +1509,7 @@ To learn more about each of these constructors, as well as the options that they
 
 ### From Data Catalogs
 
-If you use catalogs such as [Apache Iceberg](io/iceberg.md) or [Apache Hudi](io/hudi.md), you can check out their dedicated integration pages.
+If you use catalogs such as [Apache Iceberg](io/iceberg.md) or [Apache Hudi](io/hudi.md), you can check out their dedicated [integration](integrations.md) pages.
 
 ### From File Paths
 
@@ -1522,8 +1526,6 @@ Daft also provides an easy utility to create a DataFrame from globbing a path. Y
     ```
 
 This is especially useful for reading things such as a folder of images or documents into Daft. A common pattern is to then download data from these files into your DataFrame as bytes, using the [`.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] method.
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
 ### From Memory
 
@@ -1555,13 +1557,11 @@ Daft can also read data from a variety of databases, including PostgreSQL, MySQL
     df = daft.read_sql("SELECT * FROM my_table", partition_col="date", uri)
     ```
 
-To learn more, consult the [`SQL Integration Page`](io/sql.md) or the API documentation on [`daft.read_sql()`][daft.read_sql].
+To learn more, consult the [SQL Integration Page](io/sql.md) or the API documentation on [`daft.read_sql()`][daft.read_sql].
 
 ### Reading a column of URLs
 
 Daft provides a convenient way to read data from a column of URLs using the [`.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] method. This is particularly useful when you have a DataFrame with a column containing URLs pointing to external resources that you want to fetch and incorporate into your DataFrame.
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
 Here's an example of how to use this feature:
 
@@ -1597,7 +1597,7 @@ Here's an example of how to use this feature:
 (Showing first 3 of 3 rows)
 ```
 
-This approach allows you to efficiently download and process data from a large number of URLs in parallel, leveraging Daft's distributed computing capabilities.
+This approach allows you to efficiently download and process data from a large number of URLs in parallel, leveraging Daft's distributed computing capabilities. Find more on URL expressions [here](#url-expressions) or in the [URL Expressions API Reference](api/expressions.md#url).
 
 ## Writing Data
 
@@ -1628,8 +1628,7 @@ All DataFrame columns in Daft have a DataType (also often abbreviated as `dtype`
 
 ### Numeric DataTypes
 
-Numeric DataTypes allows Daft to represent numbers. These numbers can differ in terms of the number of bits used to represent them (8, 16, 32 or 64 bits) and the semantic meaning of those bits
-(float vs integer vs unsigned integers).
+Numeric DataTypes allows Daft to represent numbers. These numbers can differ in terms of the number of bits used to represent them (8, 16, 32 or 64 bits) and the semantic meaning of those bits (float vs integer vs unsigned integers).
 
 Examples:
 
@@ -1638,37 +1637,31 @@ Examples:
 
 Columns/expressions with these datatypes can be operated on with many numeric expressions such as `+` and `*`.
 
-See also: [Numeric Expressions](core_concepts.md#numeric-expressions)
+See also: [Numeric Expressions](core_concepts.md#numeric-expressions) or [API reference](api/expressions.md#numeric).
 
 ### Logical DataTypes
 
-The [`Boolean`][daft.datatype.DataType.bool] DataType represents values which are boolean values: `True`, `False` or `Null`.
+The [`Boolean`][daft.datatype.DataType.bool] DataType represents values which are boolean values: `True`, `False` or `Null`.Columns/expressions with this dtype can be operated on using logical expressions such as ``&`` and [`.if_else()`][daft.expressions.Expression.if_else].
 
-Columns/expressions with this dtype can be operated on using logical expressions such as ``&`` and [`.if_else()`][daft.expressions.Expression.if_else].
-
-See also: [Logical Expressions](core_concepts.md#logical-expressions)
+See also: [Logical Expressions](core_concepts.md#logical-expressions) or [API reference](api/expressions.md#logical).
 
 ### String Types
 
-Daft has string types, which represent a variable-length string of characters.
-
-As a convenience method, string types also support the `+` Expression, which has been overloaded to support concatenation of elements between two [`DataType.string()`][daft.datatype.DataType.string] columns.
+Daft has string types, which represent a variable-length string of characters. As a convenience method, string types also support the `+` Expression, which has been overloaded to support concatenation of elements between two [`DataType.string()`][daft.datatype.DataType.string] columns.
 
 1. [`DataType.string()`][daft.datatype.DataType.string]: represents a string of UTF-8 characters
 2. [`DataType.binary()`][daft.datatype.DataType.binary]: represents a string of bytes
 
-See also: [String Expressions](core_concepts.md#string-expressions)
+See also: [String Expressions](core_concepts.md#string-expressions) or [API reference](api/expressions.md#string).
 
 ### Temporal DataTypes
 
-Temporal DataTypes represent data that have to do with time.
-
-Examples:
+Temporal DataTypes represent data related to time. Examples:
 
 1. [`DataType.date()`][daft.datatype.DataType.date]: represents a Date (year, month and day)
 2. [`DataType.timestamp()`][daft.datatype.DataType.timestamp]: represents a Timestamp (particular instance in time)
 
-See also: [Temporal Expressions](core_concepts.md#temporal-expressions)
+See also: [Temporal Expressions](core_concepts.md#temporal-expressions) or [API reference](api/expressions.md#temporal).
 
 ### Nested DataTypes
 
@@ -1689,7 +1682,7 @@ The [`DataType.python()`][daft.datatype.DataType.python] DataType represent item
 
 Python is AWESOME because it's so flexible, but it's also slow and memory inefficient! Thus we recommend:
 
-1. **Cast early!**: Casting your Python data into native Daft DataTypes if possible - this results in much more efficient downstream data serialization and computation.
+1. **Cast early**: Casting your Python data into native Daft DataTypes if possible - this results in much more efficient downstream data serialization and computation.
 2. **Use Python UDFs**: If there is no suitable Daft representation for your Python objects, use Python UDFs to process your Python data and extract the relevant data to be returned as native Daft DataTypes!
 
 !!! note "Note"
@@ -1706,15 +1699,11 @@ Daft supports many more interesting complex DataTypes, for example:
 
 Daft abstracts away the in-memory representation of your data and provides kernels for many common operations on top of these data types. For supported image operations see the [image expressions API reference](api/expressions.md#daft.expressions.expressions.ExpressionImageNamespace). For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
-<!-- todo(docs - cc): add relative path to expressions image page after figure out image namespace-->
-
-Please add suggestions for new DataTypes to our Github Discussions page!
+Please add suggestions for new DataTypes to our [Github Discussions](https://github.com/Eventual-Inc/Daft/discussions) page!
 
 ## SQL
 
-Daft supports Structured Query Language (SQL) as a way of constructing query plans (represented in Python as a [`daft.DataFrame`][daft.DataFrame]) and expressions ([`daft.Expression`][daft.DataFrame]).
-
-SQL is a human-readable way of constructing these query plans, and can often be more ergonomic than using DataFrames for writing queries.
+Daft supports Structured Query Language (SQL) as a way of constructing query plans (represented in Python as a [`daft.DataFrame`][daft.DataFrame]) and expressions ([`daft.Expression`][daft.DataFrame]). SQL is a human-readable way of constructing these query plans, and can often be more ergonomic than using DataFrames for writing queries.
 
 !!! tip "Daft's SQL support is new and is constantly being improved on!"
 
@@ -1725,6 +1714,8 @@ Head to our [SQL Overview](sql_overview.md) page for examples on using SQL with 
 ## Aggregations and Grouping
 
 Some operations such as the sum or the average of a column are called **aggregations**. Aggregations are operations that reduce the number of rows in a column.
+
+<!-- Find a full list of available DataFrame aggregations in [DataFrame Aggregation API reference](api/dataframe.md#aggregation) -->
 
 ### Global Aggregations
 
@@ -1781,9 +1772,9 @@ Aggregations can also be mixed and matched across columns, via the [`.agg()`][da
 
 ### Grouped Aggregations
 
-Aggregations can also be called on a "Grouped DataFrame". For the above example, perhaps we want to get the mean "score" not for the entire DataFrame, but for each "class".
+Aggregations can also be called on a "Grouped DataFrame". For the above example, perhaps we want to get the mean `score` not for the entire DataFrame, but for each `class`.
 
-Let's run the mean of column "score" again, but this time grouped by "class":
+Let's run the mean of column `score` again, but this time grouped by `class`:
 
 === "🐍 Python"
     ``` python
@@ -1805,7 +1796,7 @@ Let's run the mean of column "score" again, but this time grouped by "class":
 (Showing first 2 of 2 rows)
 ```
 
-To run multiple aggregations on a Grouped DataFrame, you can use the `agg` method:
+To run multiple aggregations on a Grouped DataFrame, you can use the [`.agg()`][daft.DataFrame.agg] method:
 
 === "🐍 Python"
     ``` python
@@ -2512,8 +2503,6 @@ To setup this example, let's read a Parquet file from a public S3 bucket contain
 ```
 
 You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 
 === "🐍 Python"
 
