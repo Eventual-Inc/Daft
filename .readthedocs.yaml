@@ -9,8 +9,7 @@ build:
   - |
     python -m venv venv
     . venv/bin/activate
-    pip install uv maturin
-    maturin develop
+    pip install daft
     python tools/generate_api.py
 
 python:
