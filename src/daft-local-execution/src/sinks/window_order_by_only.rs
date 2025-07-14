@@ -139,9 +139,9 @@ impl BlockingSink for WindowOrderByOnlySink {
                     if sorted.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
                             empty_result,
-                        ))));
+                        )]));
                     }
 
                     // Convert to RecordBatch for window operations
@@ -197,7 +197,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         )
                     };
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(output))))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(output)]))
                 },
                 Span::current(),
             )

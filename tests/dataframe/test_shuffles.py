@@ -11,9 +11,16 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.context import get_context
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray"
+    or get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    reason="shuffle tests are not yet supported for flotilla",
+)
 
 
 def generate(num_rows: int, bytes_per_row: int):

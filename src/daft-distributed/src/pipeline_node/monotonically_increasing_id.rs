@@ -1,36 +1,34 @@
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_dsl::expr::bound_expr::BoundAggExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::DistributedPipelineNode;
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, RunningPipelineNode,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        RunningPipelineNode,
     },
     stage::{StageConfig, StageExecutionContext},
 };
 
-pub(crate) struct AggregateNode {
+pub(crate) struct MonotonicallyIncreasingIdNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    aggs: Vec<BoundAggExpr>,
+    column_name: String,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl AggregateNode {
-    const NODE_NAME: NodeName = "Aggregate";
+impl MonotonicallyIncreasingIdNode {
+    const NODE_NAME: NodeName = "MonotonicallyIncreasingId";
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        aggs: Vec<BoundAggExpr>,
-        output_schema: SchemaRef,
+        stage_config: &StageConfig,
+        column_name: String,
+        schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -42,16 +40,14 @@ impl AggregateNode {
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(
-            output_schema,
+            schema,
             stage_config.config.clone(),
-            // Generally child is a gather node
-            // TODO: Be more specific if partitioning columns are not in output schema
             child.config().clustering_spec.clone(),
         );
         Self {
             config,
             context,
-            aggs,
+            column_name,
             child,
         }
     }
@@ -61,15 +57,11 @@ impl AggregateNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
-        vec![format!(
-            "Ungrouped Aggregate: {}",
-            self.aggs.iter().map(|e| e.to_string()).join(", ")
-        )]
+        vec![format!("MonotonicallyIncreasingId: {}", self.column_name)]
     }
 }
 
-impl TreeDisplay for AggregateNode {
+impl TreeDisplay for MonotonicallyIncreasingIdNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -85,16 +77,24 @@ impl TreeDisplay for AggregateNode {
         display
     }
 
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
     fn get_name(&self) -> String {
         self.context.node_name.to_string()
     }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.child.as_tree_display()]
+    }
 }
 
-impl DistributedPipelineNode for AggregateNode {
+/// The maximum number of rows per partition for the monotonically increasing ID node.
+/// https://docs.getdaft.io/en/stable/api/functions/#daft.functions.monotonically_increasing_id
+///
+/// The implementation puts the partition number in the upper 28 bits, and the row number in each
+/// partition in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and
+/// 2^36 ≈ 68 billion rows per partition.
+const MAX_ROWS_PER_PARTITION: u64 = 1u64 << 36;
+
+impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -109,15 +109,20 @@ impl DistributedPipelineNode for AggregateNode {
 
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
+        let column_name = self.column_name.clone();
+        let schema = self.config.schema.clone();
 
-        // Pipeline the aggregate
-        let self_clone = self.clone();
+        let next_starting_offset = AtomicU64::new(0);
 
-        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            Ok(LocalPhysicalPlan::ungrouped_aggregate(
+        input_node.pipeline_instruction(stage_context, self, move |input| {
+            Ok(LocalPhysicalPlan::monotonically_increasing_id(
                 input,
-                self_clone.aggs.clone(),
-                self_clone.config.schema.clone(),
+                column_name.clone(),
+                Some(
+                    next_starting_offset
+                        .fetch_add(MAX_ROWS_PER_PARTITION, std::sync::atomic::Ordering::SeqCst),
+                ),
+                schema.clone(),
                 StatsState::NotMaterialized,
             ))
         })

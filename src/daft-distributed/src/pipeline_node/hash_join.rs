@@ -1,23 +1,26 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{cmp::max, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
-use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_dsl::{expr::bound_expr::BoundExpr, join::normalize_join_keys};
+use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{
-    partitioning::HashClusteringConfig, stats::StatsState, InMemoryInfo, JoinType,
+    ops::join::JoinPredicate, partitioning::HashClusteringConfig, stats::StatsState,
+    ClusteringSpec, JoinType,
 };
 use daft_schema::schema::SchemaRef;
+use futures::StreamExt;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
     pipeline_node::{
-        repartition::RepartitionNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        make_in_memory_scan_from_materialized_outputs, repartition::RepartitionNode,
+        translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext, PipelineOutput,
     },
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
+        scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
@@ -28,8 +31,6 @@ pub(crate) struct HashJoinNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
 
-    // Shuffle properties
-    num_partitions: usize,
     // Join properties
     left_on: Vec<BoundExpr>,
     right_on: Vec<BoundExpr>,
@@ -45,13 +46,14 @@ impl HashJoinNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
+        num_partitions: usize,
         left: Arc<dyn DistributedPipelineNode>,
         right: Arc<dyn DistributedPipelineNode>,
         output_schema: SchemaRef,
@@ -64,7 +66,6 @@ impl HashJoinNode {
             vec![left.name(), right.name()],
             logical_node_id,
         );
-        let num_partitions = left.config().clustering_spec.num_partitions();
         let partition_cols = left_on
             .iter()
             .chain(right_on.iter())
@@ -79,7 +80,6 @@ impl HashJoinNode {
         Self {
             config,
             context,
-            num_partitions,
             left_on,
             right_on,
             null_equals_nulls,
@@ -107,100 +107,82 @@ impl HashJoinNode {
         res
     }
 
-    fn make_in_memory_scan_from_materialized_outputs(
-        materialized_outputs: Vec<MaterializedOutput>,
-        node: &Arc<dyn DistributedPipelineNode>,
-    ) -> DaftResult<(LocalPhysicalPlanRef, Vec<PartitionRef>)> {
-        let mut total_size_bytes = 0;
-        let mut total_num_rows = 0;
-        let mut partition_refs = vec![];
-
-        let num_partitions = materialized_outputs.len();
-        for materialized_output in materialized_outputs {
-            total_size_bytes += materialized_output.size_bytes()?;
-            total_num_rows += materialized_output.num_rows()?;
-            let partition_ref = materialized_output.partitions();
-            partition_refs.extend_from_slice(partition_ref);
+    fn make_in_memory_task(
+        self: Arc<Self>,
+        input: PipelineOutput<SwordfishTask>,
+        task_id_counter: &TaskIDCounter,
+    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+        match input {
+            PipelineOutput::Running(_) => {
+                unreachable!("All running tasks should be materialized before this point")
+            }
+            PipelineOutput::Materialized(materialized_output) => {
+                make_in_memory_scan_from_materialized_outputs(
+                    TaskContext::from((self.context(), task_id_counter.next())),
+                    vec![materialized_output],
+                    &(self as Arc<dyn DistributedPipelineNode>),
+                )
+            }
+            PipelineOutput::Task(task) => Ok(task),
         }
+    }
 
-        let info = InMemoryInfo::new(
-            node.config().schema.clone(),
-            node.context().node_id.to_string(),
-            None,
-            num_partitions,
-            total_size_bytes,
-            total_num_rows,
-            None,
-            None,
+    fn build_hash_join_task(
+        &self,
+        left_task: SubmittableTask<SwordfishTask>,
+        right_task: SubmittableTask<SwordfishTask>,
+        task_id_counter: &TaskIDCounter,
+    ) -> SubmittableTask<SwordfishTask> {
+        let left_plan = left_task.task().plan();
+        let right_plan = right_task.task().plan();
+        let plan = LocalPhysicalPlan::hash_join(
+            left_plan,
+            right_plan,
+            self.left_on.clone(),
+            self.right_on.clone(),
+            self.null_equals_nulls.clone(),
+            self.join_type,
+            self.config.schema.clone(),
+            StatsState::NotMaterialized,
         );
 
-        Ok((
-            LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized),
-            partition_refs,
+        let mut psets = left_task.task().psets().clone();
+        psets.extend(right_task.task().psets().clone());
+
+        let config = left_task.task().config().clone();
+
+        left_task.with_new_task(SwordfishTask::new(
+            TaskContext::from((self.context(), task_id_counter.next())),
+            plan,
+            config,
+            psets,
+            SchedulingStrategy::Spread,
+            self.context().to_hashmap(),
         ))
     }
 
     async fn execution_loop(
         self: Arc<Self>,
-        left_repartition: RunningPipelineNode,
-        right_repartition: RunningPipelineNode,
+        left_input: RunningPipelineNode,
+        right_input: RunningPipelineNode,
         task_id_counter: TaskIDCounter,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        // Trigger materialization of the partitions
-        let left_transposed = RepartitionNode::transpose_materialized_outputs(
-            left_repartition.materialize(scheduler_handle.clone()),
-            self.num_partitions,
-        )
-        .await?;
-
-        // Same for the the right
-        let right_transposed = RepartitionNode::transpose_materialized_outputs(
-            right_repartition.materialize(scheduler_handle.clone()),
-            self.num_partitions,
-        )
-        .await?;
+        // Materialize both sides of the join in parallel
+        let left_transposed = left_input.materialize_running();
+        let right_transposed = right_input.materialize_running();
+        let mut outputs = left_transposed.zip(right_transposed);
 
         // Make each pair of partition groups input into in-memory scans -> hash join
-        for (left_group, right_group) in left_transposed
-            .into_iter()
-            .zip(right_transposed.into_iter())
-        {
-            let (left_plan, left_partition_refs) =
-                Self::make_in_memory_scan_from_materialized_outputs(left_group, &self.left)?;
-            let (right_plan, right_partition_refs) =
-                Self::make_in_memory_scan_from_materialized_outputs(right_group, &self.right)?;
+        while let Some((left_group, right_group)) = outputs.next().await {
+            let left_task = self
+                .clone()
+                .make_in_memory_task(left_group?, &task_id_counter)?;
+            let right_task = self
+                .clone()
+                .make_in_memory_task(right_group?, &task_id_counter)?;
 
-            let plan = LocalPhysicalPlan::hash_join(
-                left_plan,
-                right_plan,
-                self.left_on.clone(),
-                self.right_on.clone(),
-                self.null_equals_nulls.clone(),
-                self.join_type,
-                self.config.schema.clone(),
-                StatsState::NotMaterialized,
-            );
-
-            let psets = HashMap::from([
-                (self.left.context().node_id.to_string(), left_partition_refs),
-                (
-                    self.right.context().node_id.to_string(),
-                    right_partition_refs,
-                ),
-            ]);
-
-            let task = SwordfishTask::new(
-                TaskContext::from((&self.context, task_id_counter.next())),
-                plan,
-                self.config().execution_config.clone(),
-                psets,
-                SchedulingStrategy::Spread,
-                self.context().to_hashmap(),
-            );
-
-            let task = SubmittableTask::new(task);
+            let task = self.build_hash_join_task(left_task, right_task, &task_id_counter);
             let _ = result_tx.send(PipelineOutput::Task(task)).await;
         }
 
@@ -250,37 +232,12 @@ impl DistributedPipelineNode for HashJoinNode {
         let left_input = self.left.clone().start(stage_context);
         let right_input = self.right.clone().start(stage_context);
 
-        // First pipeline a repartition to both
-        let self_clone = self.clone();
-        let left_repartition =
-            left_input.pipeline_instruction(stage_context, self.clone(), move |input| {
-                Ok(LocalPhysicalPlan::repartition(
-                    input,
-                    self_clone.left_on.clone(),
-                    self_clone.num_partitions,
-                    self_clone.left.config().schema.clone(),
-                    StatsState::NotMaterialized,
-                ))
-            });
-        let self_clone = self.clone();
-        let right_repartition =
-            right_input.pipeline_instruction(stage_context, self.clone(), move |input| {
-                Ok(LocalPhysicalPlan::repartition(
-                    input,
-                    self_clone.right_on.clone(),
-                    self_clone.num_partitions,
-                    self_clone.right.config().schema.clone(),
-                    StatsState::NotMaterialized,
-                ))
-            });
-
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(
-            left_repartition,
-            right_repartition,
+            left_input,
+            right_input,
             stage_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
         );
         stage_context.spawn(execution_loop);
 
@@ -289,5 +246,101 @@ impl DistributedPipelineNode for HashJoinNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+}
+
+fn gen_num_partitions(
+    left_spec: &ClusteringSpec,
+    right_spec: &ClusteringSpec,
+    cfg: &DaftExecutionConfig,
+) -> usize {
+    let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(_));
+    let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(_));
+    let num_left_partitions = left_spec.num_partitions();
+    let num_right_partitions = right_spec.num_partitions();
+
+    match (
+        is_left_hash_partitioned,
+        is_right_hash_partitioned,
+        num_left_partitions,
+        num_right_partitions,
+    ) {
+        (true, true, a, b) | (false, false, a, b) => max(a, b),
+        (_, _, 1, x) | (_, _, x, 1) => x,
+        (true, false, a, b) if (a as f64) >= (b as f64) * cfg.hash_join_partition_size_leniency => {
+            a
+        }
+        (false, true, a, b) if (b as f64) >= (a as f64) * cfg.hash_join_partition_size_leniency => {
+            b
+        }
+        (_, _, a, b) => max(a, b),
+    }
+}
+
+impl LogicalPlanToPipelineNodeTranslator {
+    pub(crate) fn gen_hash_join_nodes(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        join_on: JoinPredicate,
+
+        left: Arc<dyn DistributedPipelineNode>,
+        right: Arc<dyn DistributedPipelineNode>,
+
+        join_type: JoinType,
+        output_schema: SchemaRef,
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let (_, left_on, right_on, null_equals_nulls) = join_on.split_eq_preds();
+
+        let (left_on, right_on) = normalize_join_keys(
+            left_on,
+            right_on,
+            left.config().schema.clone(),
+            right.config().schema.clone(),
+        )?;
+        let left_on = BoundExpr::bind_all(&left_on, &left.config().schema)?;
+        let right_on = BoundExpr::bind_all(&right_on, &right.config().schema)?;
+
+        let num_partitions = gen_num_partitions(
+            left.config().clustering_spec.as_ref(),
+            right.config().clustering_spec.as_ref(),
+            self.stage_config.config.as_ref(),
+        );
+
+        let left = RepartitionNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            left_on.clone(),
+            Some(num_partitions),
+            left.config().schema.clone(),
+            left,
+        )
+        .arced();
+
+        let right = RepartitionNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            right_on.clone(),
+            Some(num_partitions),
+            right.config().schema.clone(),
+            right,
+        )
+        .arced();
+
+        Ok(HashJoinNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            left_on,
+            right_on,
+            Some(null_equals_nulls),
+            join_type,
+            num_partitions,
+            left,
+            right,
+            output_schema,
+        )
+        .arced())
     }
 }

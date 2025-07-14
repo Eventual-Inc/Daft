@@ -164,14 +164,14 @@ impl ActorUDF {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         projection: Vec<BoundExpr>,
         batch_size: Option<usize>,
         memory_request: u64,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             stage_config,
@@ -230,7 +230,7 @@ impl ActorUDF {
                         actors,
                         TaskContext::from((&self.context, task_id_counter.next())),
                     )?;
-                    let (submittable_task, notify_token) = task.with_notify_token();
+                    let (submittable_task, notify_token) = task.add_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
                         .send(PipelineOutput::Task(submittable_task))
@@ -256,7 +256,7 @@ impl ActorUDF {
                         actors,
                         TaskContext::from((&self.context, task_id_counter.next())),
                     )?;
-                    let (submittable_task, notify_token) = modified_task.with_notify_token();
+                    let (submittable_task, notify_token) = modified_task.add_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
                         .send(PipelineOutput::Task(submittable_task))

@@ -28,9 +28,9 @@ impl TopNNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,

@@ -41,12 +41,13 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
+            | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
             | LogicalPlan::Window(_)
-            | LogicalPlan::Sort(_)
             | LogicalPlan::TopN(_)
-            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Limit(_)
+            | LogicalPlan::Concat(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
                     Ok(TreeNodeRecursion::Continue)
@@ -56,7 +57,8 @@ impl StagePlanBuilder {
                 }
             },
             LogicalPlan::Join(join) => {
-                if join.join_strategy.is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast)) {
+                // TODO: Support broadcast join
+                if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 } else {
@@ -69,9 +71,18 @@ impl StagePlanBuilder {
                     }
                 }
             }
-            LogicalPlan::Concat(_)
-            | LogicalPlan::MonotonicallyIncreasingId(_)
-            | LogicalPlan::Pivot(_) => {
+            LogicalPlan::Sort(_) => {
+                if plan.materialized_stats().approx_stats.num_rows <= 1_000 {
+                    // Max 1GB with 1KB per row and off by 3 orders of magnitude
+                    Ok(TreeNodeRecursion::Continue)
+                } else {
+                    // TODO: Implement a distributed sort algorithm that can handle
+                    // a large number of rows without OOMing.
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                }
+            }
+            LogicalPlan::Pivot(_) => {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)
             }

@@ -55,9 +55,9 @@ impl WindowNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -175,8 +175,12 @@ impl DistributedPipelineNode for WindowNode {
         // Pipeline the window op
         let self_clone = self.clone();
         input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            match (!self_clone.order_by.is_empty(), self_clone.frame.is_some()) {
-                (false, false) => Ok(LocalPhysicalPlan::window_partition_only(
+            match (
+                !self_clone.partition_by.is_empty(),
+                !self_clone.order_by.is_empty(),
+                self_clone.frame.is_some(),
+            ) {
+                (true, false, false) => Ok(LocalPhysicalPlan::window_partition_only(
                     input,
                     self_clone.partition_by.clone(),
                     self_clone.config.schema.clone(),
@@ -184,7 +188,7 @@ impl DistributedPipelineNode for WindowNode {
                     window_to_agg_exprs(self_clone.window_exprs.clone())?,
                     self_clone.aliases.clone(),
                 )),
-                (true, false) => Ok(LocalPhysicalPlan::window_partition_and_order_by(
+                (true, true, false) => Ok(LocalPhysicalPlan::window_partition_and_order_by(
                     input,
                     self_clone.partition_by.clone(),
                     self_clone.order_by.clone(),
@@ -195,7 +199,7 @@ impl DistributedPipelineNode for WindowNode {
                     self_clone.window_exprs.clone(),
                     self_clone.aliases.clone(),
                 )),
-                (true, true) => Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
+                (true, true, true) => Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
                     input,
                     self_clone.partition_by.clone(),
                     self_clone.order_by.clone(),
@@ -208,8 +212,21 @@ impl DistributedPipelineNode for WindowNode {
                     window_to_agg_exprs(self_clone.window_exprs.clone())?,
                     self_clone.aliases.clone(),
                 )),
-                (false, true) => Err(DaftError::InternalError(
-                    "Window without order by but with frame is invalid".to_string(),
+                (false, true, false) => Ok(LocalPhysicalPlan::window_order_by_only(
+                    input,
+                    self_clone.order_by.clone(),
+                    self_clone.descending.clone(),
+                    self_clone.nulls_first.clone(),
+                    self_clone.config.schema.clone(),
+                    StatsState::NotMaterialized,
+                    self_clone.window_exprs.clone(),
+                    self_clone.aliases.clone(),
+                )),
+                (false, true, true) => Err(DaftError::not_implemented(
+                    "Window with order by and frame not yet implemented",
+                )),
+                _ => Err(DaftError::ValueError(
+                    "Window requires either partition by or order by".to_string(),
                 )),
             }
         })

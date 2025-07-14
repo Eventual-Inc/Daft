@@ -20,7 +20,7 @@ def test_deltalake_read_basic(tmp_path, base_table):
     path = tmp_path / "some_table"
     deltalake.write_deltalake(path, base_table)
     df = daft.read_deltalake(str(path))
-    expected_schema = Schema.from_pyarrow_schema(deltalake.DeltaTable(path).schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(deltalake.DeltaTable(path).schema().to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(df.to_arrow(), base_table)
 
@@ -30,7 +30,7 @@ def test_deltalake_read_full(deltalake_table):
     path, catalog_table, io_config, parts = deltalake_table
     df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
-    expected_schema = Schema.from_pyarrow_schema(delta_schema.to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(df.to_arrow().sort_by("part_idx"), pa.concat_tables(parts).sort_by("part_idx"))
 
@@ -46,7 +46,8 @@ def test_deltalake_read_row_group_splits(tmp_path, base_table):
     path = tmp_path / "some_table"
 
     # Force 2 rowgroups
-    deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
+    writer_properties = deltalake.WriterProperties(max_row_group_size=2)
+    deltalake.write_deltalake(path, base_table, writer_properties=writer_properties)
 
     # Force file splitting
     with daft.execution_config_ctx(
@@ -63,7 +64,8 @@ def test_deltalake_read_row_group_splits_with_filter(tmp_path, base_table):
     path = tmp_path / "some_table"
 
     # Force 2 rowgroups
-    deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
+    writer_properties = deltalake.WriterProperties(max_row_group_size=2)
+    deltalake.write_deltalake(path, base_table, writer_properties=writer_properties)
 
     # Force file splitting
     with daft.execution_config_ctx(
@@ -81,7 +83,8 @@ def test_deltalake_read_row_group_splits_with_limit(tmp_path, base_table):
     path = tmp_path / "some_table"
 
     # Force 2 rowgroups
-    deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
+    writer_properties = deltalake.WriterProperties(max_row_group_size=2)
+    deltalake.write_deltalake(path, base_table, writer_properties=writer_properties)
 
     # Force file splitting
     with daft.execution_config_ctx(
@@ -106,11 +109,11 @@ def test_deltalake_read_versioned(tmp_path, base_table):
 
     for version in [None, 1]:
         df = daft.read_deltalake(str(path), version=version)
-        expected_schema = Schema.from_pyarrow_schema(deltalake.DeltaTable(path).schema().to_pyarrow())
+        expected_schema = Schema.from_pyarrow_schema(pa.schema(deltalake.DeltaTable(path).schema().to_arrow()))
         assert df.schema() == expected_schema
         assert_pyarrow_tables_equal(df.to_arrow(), updated_table)
 
     df = daft.read_deltalake(str(path), version=0)
-    expected_schema = Schema.from_pyarrow_schema(deltalake.DeltaTable(path, version=0).schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(deltalake.DeltaTable(path, version=0).schema().to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(df.to_arrow(), base_table)

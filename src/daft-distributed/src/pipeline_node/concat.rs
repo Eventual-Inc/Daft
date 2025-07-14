@@ -1,53 +1,63 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
-use daft_schema::schema::SchemaRef;
+use daft_logical_plan::{
+    partitioning::{ClusteringSpecRef, UnknownClusteringConfig},
+    ClusteringSpec,
+};
+use daft_schema::prelude::SchemaRef;
+use futures::StreamExt;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        RunningPipelineNode,
+    },
     stage::{StageConfig, StageExecutionContext},
+    utils::channel::create_channel,
 };
 
-pub(crate) struct ExplodeNode {
+pub(crate) struct ConcatNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    to_explode: Vec<BoundExpr>,
     child: Arc<dyn DistributedPipelineNode>,
+    other: Arc<dyn DistributedPipelineNode>,
 }
 
-impl ExplodeNode {
-    const NODE_NAME: NodeName = "Explode";
+impl ConcatNode {
+    const NODE_NAME: NodeName = "Concat";
 
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        to_explode: Vec<BoundExpr>,
         schema: SchemaRef,
+        other: Arc<dyn DistributedPipelineNode>,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
+            vec![child.node_id(), other.node_id()],
+            vec![child.name(), other.name()],
             logical_node_id,
         );
+
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringSpecRef::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(
+                child.config().clustering_spec.num_partitions()
+                    + other.config().clustering_spec.num_partitions(),
+            ))),
         );
+
         Self {
             config,
             context,
-            to_explode,
             child,
+            other,
         }
     }
 
@@ -55,22 +65,18 @@ impl ExplodeNode {
         Arc::new(self)
     }
 
-    fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
-        vec![format!(
-            "Explode: {}",
-            self.to_explode.iter().map(|e| e.to_string()).join(", ")
-        )]
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec!["Concat".to_string()]
     }
 }
 
-impl TreeDisplay for ExplodeNode {
+impl TreeDisplay for ConcatNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
         match level {
             DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
+                writeln!(display, "{}", self.context.node_name).unwrap();
             }
             _ => {
                 let multiline_display = self.multiline_display().join("\n");
@@ -81,15 +87,11 @@ impl TreeDisplay for ExplodeNode {
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
+        vec![self.child.as_tree_display(), self.other.as_tree_display()]
     }
 }
 
-impl DistributedPipelineNode for ExplodeNode {
+impl DistributedPipelineNode for ConcatNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -99,21 +101,25 @@ impl DistributedPipelineNode for ExplodeNode {
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
+        vec![self.child.clone(), self.other.clone()]
     }
 
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
-        let to_explode = self.to_explode.clone();
-        let schema = self.config.schema.clone();
-        input_node.pipeline_instruction(stage_context, self, move |input| {
-            Ok(LocalPhysicalPlan::explode(
-                input,
-                to_explode.clone(),
-                schema.clone(),
-                StatsState::NotMaterialized,
-            ))
-        })
+        let other_node = self.other.clone().start(stage_context);
+
+        let (result_tx, result_rx) = create_channel(1);
+
+        let execution_loop = async move {
+            let mut chained = input_node.into_stream().chain(other_node.into_stream());
+            while let Some(output) = chained.next().await {
+                result_tx.send(output).await.unwrap();
+            }
+            Ok(())
+        };
+
+        stage_context.spawn(execution_loop);
+        RunningPipelineNode::new(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

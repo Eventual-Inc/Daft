@@ -7,11 +7,12 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, TryStreamExt};
+use itertools::Itertools;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
     pipeline_node::{
-        try_make_in_memory_scan_from_materialized_outputs, MaterializedOutput, NodeID, NodeName,
+        make_in_memory_scan_from_materialized_outputs, MaterializedOutput, NodeID, NodeName,
         PipelineNodeConfig, PipelineNodeContext, PipelineOutput,
     },
     scheduling::{
@@ -35,9 +36,9 @@ impl RepartitionNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         columns: Vec<BoundExpr>,
         num_partitions: Option<usize>,
         schema: SchemaRef,
@@ -98,8 +99,20 @@ impl RepartitionNode {
             .map(|mat| mat.map(|mat| mat.split_into_materialized_outputs()))
             .try_collect::<Vec<_>>()
             .await?;
-        let mut transposed_outputs = vec![];
 
+        debug_assert!(
+            materialized_partitions
+                .iter()
+                .all(|mat| mat.len() == num_partitions),
+            "Expected all outputs to have {} partitions, got {}",
+            num_partitions,
+            materialized_partitions
+                .iter()
+                .map(|mat| mat.len())
+                .join(", ")
+        );
+
+        let mut transposed_outputs = vec![];
         for idx in 0..num_partitions {
             let mut partition_group = vec![];
             for materialized_partition in &materialized_partitions {
@@ -129,14 +142,11 @@ impl RepartitionNode {
         // Make each partition group (partitions equal by (hash % num_partitions)) input to a in-memory scan
         for partition_group in transposed_outputs {
             let self_clone = self.clone();
-            let Some(task) = try_make_in_memory_scan_from_materialized_outputs(
+            let task = make_in_memory_scan_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
                 &(self_clone as Arc<dyn DistributedPipelineNode>),
-            )?
-            else {
-                continue;
-            };
+            )?;
 
             let _ = result_tx.send(PipelineOutput::Task(task)).await;
         }
