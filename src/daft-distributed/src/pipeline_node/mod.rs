@@ -371,7 +371,7 @@ where
         psets,
         SchedulingStrategy::WorkerAffinity {
             worker_id,
-            soft: false,
+            soft: true,
         },
         node.context().to_hashmap(),
     );
