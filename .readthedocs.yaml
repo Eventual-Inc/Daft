@@ -5,6 +5,8 @@ build:
   tools:
     python: '3.10'
   commands:
+  - pip install maturin
+  - maturin develop
   - python tools/generate_api.py
 
 python:

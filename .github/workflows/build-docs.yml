@@ -50,12 +50,11 @@ jobs:
         command: |
           source venv/bin/activate
           uv pip install -r requirements-dev.txt
-    - name: Generate API doc tables
-      run: python tools/generate_api.py
     - name: Build Daft in development mode and generate docs
       run: |
-        source activate
+        source venv/bin/activate
         maturin develop
+        python tools/generate_api.py
         mkdocs build
     - name: Upload built docs
       uses: actions/upload-artifact@v4
