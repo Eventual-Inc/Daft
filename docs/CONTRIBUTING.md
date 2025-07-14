@@ -23,6 +23,10 @@
 1. Create a `.md` file in `docs/api` or add to relevant folder in `docs/api/...`
 2. Add file to `mkdocs.yml` navigation under `API Docs`
 
+### Add a new expression to API Docs:
+
+1. Find the appropriate API doc, ie. [I/O](api/io.md), [DataFrame](api/dataframe.md), or [Expressions](api/expressions.md) and add the module path of the expression `::: daft.[classname].[functionname]` to the appropriate section
+
 ## Add a new page to SQL Reference:
 
 1. Create a `.md` file in `docs/sql` or add to relevant folder in `docs/sql/...`

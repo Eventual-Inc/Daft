@@ -5,8 +5,8 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ## Constructors
 
 <!-- BEGIN GENERATED TABLE -->
-| Expression | Description |
-|------------|-------------|
+| Method | Description |
+|--------|-------------|
 | [`coalesce`][daft.expressions.coalesce] | Returns the first non-null value in a list of expressions. If all inputs are null, returns null. |
 | [`col`][daft.expressions.col] | Creates an Expression referring to the column with the provided name. |
 | [`interval`][daft.expressions.interval] | Creates an Expression representing an interval. |
@@ -27,8 +27,8 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ## Generic
 
 <!-- BEGIN GENERATED TABLE -->
-| Expression | Description |
-|------------|-------------|
+| Method | Description |
+|--------|-------------|
 | [`__getitem__`][daft.expressions.expressions.Expression.__getitem__] | Syntactic sugar for `Expression.list.get` and `Expression.struct.get`. |
 | [`alias`][daft.expressions.expressions.Expression.alias] | Gives the expression a new name. |
 | [`apply`][daft.expressions.expressions.Expression.apply] | Apply a function on each value in a given expression. |
@@ -53,8 +53,8 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ## Numeric
 
 <!-- BEGIN GENERATED TABLE -->
-| Expression | Description |
-|------------|-------------|
+| Method | Description |
+|--------|-------------|
 | [`__abs__`][daft.expressions.expressions.Expression.__abs__] | Absolute of a numeric expression. |
 | [`__add__`][daft.expressions.expressions.Expression.__add__] | Adds two numeric expressions or concatenates two string expressions (``e1 + e2``). |
 | [`__floordiv__`][daft.expressions.expressions.Expression.__floordiv__] | Floor divides two numeric expressions (``e1 / e2``). |
@@ -161,8 +161,8 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ## Logical
 
 <!-- BEGIN GENERATED TABLE -->
-| Expression | Description |
-|------------|-------------|
+| Method | Description |
+|--------|-------------|
 | [`__and__`][daft.expressions.expressions.Expression.__and__] | Takes the logical AND of two boolean expressions, or bitwise AND of two integer expressions (``e1 & e2``). |
 | [`__eq__`][daft.expressions.expressions.Expression.__eq__] | Compares if an expression is equal to another (``e1 == e2``). |
 | [`__ge__`][daft.expressions.expressions.Expression.__ge__] | Compares if an expression is greater than or equal to another (``e1 >= e2``). |
@@ -197,8 +197,8 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ## Aggregation
 
 <!-- BEGIN GENERATED TABLE -->
-| Expression | Description |
-|------------|-------------|
+| Method | Description |
+|--------|-------------|
 | [`agg_list`][daft.expressions.expressions.Expression.agg_list] | Aggregates the values in the expression into a list. |
 | [`agg_set`][daft.expressions.expressions.Expression.agg_set] | Aggregates the values in the expression into a set (ignoring nulls). |
 | [`any_value`][daft.expressions.expressions.Expression.any_value] | Returns any value in the expression. |

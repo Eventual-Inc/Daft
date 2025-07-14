@@ -4,7 +4,7 @@ Learn about the core concepts that Daft is built on!
 
 ## DataFrame
 
-The [`DataFrame`][daft.DataFrame] is one of the core concepts in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
+The [`DataFrame`](api/dataframe.md) is one of the core concepts in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
 
 If you are coming from other data tools such as Pandas or Polars, here are some key differences about Daft's core engine:
 
@@ -1703,7 +1703,7 @@ Please add suggestions for new DataTypes to our [Github Discussions](https://git
 
 ## SQL
 
-Daft supports Structured Query Language (SQL) as a way of constructing query plans (represented in Python as a [`daft.DataFrame`][daft.DataFrame]) and expressions ([`daft.Expression`][daft.DataFrame]). SQL is a human-readable way of constructing these query plans, and can often be more ergonomic than using DataFrames for writing queries.
+Daft supports Structured Query Language (SQL) as a way of constructing query plans (represented in Python as a `daft.DataFrame` and expressions `daft.Expression`). SQL is a human-readable way of constructing these query plans, and can often be more ergonomic than using DataFrames for writing queries.
 
 !!! tip "Daft's SQL support is new and is constantly being improved on!"
 

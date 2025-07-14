@@ -41,7 +41,7 @@ sess.sql("SELECT * FROM T, S").show()
 
 ### SQL with DataFrames
 
-Daft's [`daft.sql`][daft.sql.sql.sql] function automatically detects any [`daft.DataFrame`][daft.DataFrame] objects in your current Python environment to let you query them easily by name.
+Daft's [`daft.sql`][daft.sql.sql.sql] function automatically detects any `daft.DataFrame` objects in your current Python environment to let you query them easily by name.
 
 === "⚙️ SQL"
     ```python

@@ -1,37 +1,18 @@
 # DataFrame
 
-Most DataFrame methods are **lazy**, meaning that they do not execute computation immediately when invoked. Instead, these operations are enqueued in the DataFrame's internal query plan, and are only executed when Execution DataFrame methods are called. Learn more about [DataFrames](../core_concepts.md#dataframe) in Daft User Guide.
+Most DataFrame methods are **lazy**, meaning that they do not execute computation immediately when invoked. Instead, these operations are enqueued in the DataFrame's internal query plan, and are only executed when Execution DataFrame methods are called.
+
+Learn more about [DataFrames](../core_concepts.md#dataframe) in Daft User Guide and see also [Aggregations API Reference](aggregations.md).
 
 <!-- ::: daft.DataFrame
     options:
         filters: ["!^_[^_]", "!__repr__", "!__column_input_to_expression", "!__builder"] -->
 
-## Data Manipulation
-
-### Selecting Columns
-
-<!-- BEGIN GENERATED TABLE -->
-| Method | Description |
-|--------|-------------|
-| [`__getitem__`][daft.DataFrame.__getitem__] | Gets a column from the DataFrame as an Expression (``df["mycol"]``). |
-<!-- END GENERATED TABLE -->
+## Selecting Columns
 
 ::: daft.DataFrame.__getitem__
 
-### Manipulating Columns
-
-<!-- BEGIN GENERATED TABLE -->
-| Method | Description |
-|--------|-------------|
-| [`exclude`][daft.DataFrame.exclude] | Drops columns from the current DataFrame by name. |
-| [`explode`][daft.DataFrame.explode] | Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows. |
-| [`melt`][daft.DataFrame.melt] | Alias for unpivot. |
-| [`pivot`][daft.DataFrame.pivot] | Pivots a column of the DataFrame and performs an aggregation on the values. |
-| [`select`][daft.DataFrame.select] | Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``. |
-| [`unpivot`][daft.DataFrame.unpivot] | Unpivots a DataFrame from wide to long format. |
-| [`with_column`][daft.DataFrame.with_column] | Adds a column to the current DataFrame with an Expression, equivalent to a ``select`` with all current columns and the new one. |
-| [`with_columns`][daft.DataFrame.with_columns] | Adds columns to the current DataFrame with Expressions, equivalent to a ``select`` with all current columns and the new ones. |
-<!-- END GENERATED TABLE -->
+## Manipulating Columns
 
 ::: daft.DataFrame.exclude
 ::: daft.DataFrame.explode
@@ -40,57 +21,56 @@ Most DataFrame methods are **lazy**, meaning that they do not execute computatio
 ::: daft.DataFrame.select
 ::: daft.DataFrame.unpivot
 ::: daft.DataFrame.with_column
+::: daft.DataFrame.with_column_renamed
 ::: daft.DataFrame.with_columns
+::: daft.DataFrame.with_columns_renamed
 
-### Filtering Rows
+## Filtering Rows
 
 ::: daft.DataFrame.distinct
 ::: daft.DataFrame.filter
-::: daft.DataFrame.where
 ::: daft.DataFrame.limit
 ::: daft.DataFrame.sample
+::: daft.DataFrame.where
 
-### Reordering
+## Reordering
 
-::: daft.DataFrame.sort
-::: daft.DataFrame.repartition
 ::: daft.DataFrame.into_partitions
+::: daft.DataFrame.repartition
+::: daft.DataFrame.sort
 
-### Combining
+## Combining
 
-::: daft.DataFrame.join
 ::: daft.DataFrame.concat
-
-### Aggregations
-
-::: daft.DataFrame.groupby
-::: daft.DataFrame.sum
-::: daft.DataFrame.mean
-::: daft.DataFrame.stddev
-::: daft.DataFrame.count
-::: daft.DataFrame.min
-::: daft.DataFrame.max
-::: daft.DataFrame.agg
+::: daft.DataFrame.join
 
 ## Execution
 
-!!! note "Note"
-
-    These methods will execute the operations in your DataFrame and are **blocking**.
-
-### Data Retrieval
-
-These methods will run the DataFrame and retrieve them to where the code is being run.
-
-::: daft.DataFrame.to_pydict
-::: daft.DataFrame.to_pylist
-::: daft.DataFrame.iter_partitions
-::: daft.DataFrame.iter_rows
-
-### Materialization
+These methods will execute the operations in your DataFrame and are **blocking**.
 
 ::: daft.DataFrame.collect
-
-### Visualization
-
 ::: daft.DataFrame.show
+
+## Converting
+
+::: daft.DataFrame.to_arrow
+::: daft.DataFrame.to_arrow_iter
+::: daft.DataFrame.to_dask_dataframe
+::: daft.DataFrame.to_pandas
+::: daft.DataFrame.to_pydict
+::: daft.DataFrame.to_pylist
+::: daft.DataFrame.to_ray_dataset
+::: daft.DataFrame.to_torch_iter_dataset
+::: daft.DataFrame.to_torch_map_dataset
+
+## Data Retrieval
+
+::: daft.DataFrame.__iter__
+::: daft.DataFrame.iter_partitions
+::: daft.DataFrame.iter_rows
+::: daft.DataFrame.to_pydict
+::: daft.DataFrame.to_pylist
+
+## Visualization
+
+::: daft.DataFrame.explain
