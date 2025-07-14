@@ -7,17 +7,17 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::{buffer::Buffer, offset::OffsetsBuffer};
 use common_error::{ensure, DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
     datatypes::IntervalValue,
     prelude::*,
     utils::display::{
-        display_date32, display_decimal128, display_duration, display_list_literal, display_time64,
-        display_timestamp,
+        display_date32, display_decimal128, display_duration, display_series_literal,
+        display_time64, display_timestamp,
     },
 };
+use daft_hash::HashFunctionKind;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -82,8 +82,8 @@ pub enum LiteralValue {
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
     Decimal(i128, u8, i8),
-    /// A list literal.
-    List(Series),
+    /// A series literal.
+    Series(Series),
     /// Python object.
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
@@ -137,8 +137,8 @@ impl Hash for LiteralValue {
                 precision.hash(state);
                 scale.hash(state);
             }
-            Self::List(series) => {
-                let hash_result = series.hash(None);
+            Self::Series(series) => {
+                let hash_result = series.hash(None, HashFunctionKind::XxHash);
                 match hash_result {
                     Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
                     Err(..) => panic!("Cannot hash series"),
@@ -184,7 +184,7 @@ impl Display for LiteralValue {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
             }
             Self::Interval(value) => write!(f, "{value}"),
-            Self::List(series) => write!(f, "{}", display_list_literal(series)),
+            Self::Series(series) => write!(f, "{}", display_series_literal(series)),
             #[cfg(feature = "python")]
             Self::Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
@@ -230,7 +230,7 @@ impl LiteralValue {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
             Self::Interval(_) => DataType::Interval,
-            Self::List(series) => DataType::List(Box::new(series.data_type().clone())),
+            Self::Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
             Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
@@ -329,13 +329,7 @@ impl LiteralValue {
                 let field = Field::new("literal", dtype);
                 Decimal128Array::from_values_iter(field, std::iter::once(*val)).into_series()
             }
-            Self::List(series) => {
-                let field = Field::new("literal", self.get_type());
-                let offsets =
-                    OffsetsBuffer::try_from(Buffer::from(vec![0, series.len() as i64])).unwrap();
-
-                ListArray::new(field, series.clone(), offsets, None).into_series()
-            }
+            Self::Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
             Self::Python(val) => PythonArray::from(("literal", vec![val.0.clone()])).into_series(),
             Self::Struct(entries) => {
@@ -378,7 +372,7 @@ impl LiteralValue {
             ),
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Self::Decimal(..)
-            | Self::List(..)
+            | Self::Series(..)
             | Self::Time(..)
             | Self::Binary(..)
             | Self::FixedSizeBinary(..)
@@ -498,6 +492,14 @@ impl LiteralValue {
         }
     }
 
+    /// If the literal is a series, return it. Otherwise, return None.
+    pub fn as_series(&self) -> Option<&Series> {
+        match self {
+            Self::Series(series) => Some(series),
+            _ => None,
+        }
+    }
+
     /// If the literal is a struct, return the reference to its map. Otherwise, return None.
     pub fn as_struct(&self) -> Option<&IndexMap<Field, Self>> {
         match self {
@@ -516,82 +518,80 @@ impl LiteralValue {
     /// this allows you to get any value as a `LiteralValue` from a series
     /// LiteralValue::get_from_series(s, 0) -> LiteralValue
     pub fn get_from_series(s: &Series, idx: usize) -> DaftResult<Self> {
-        if s.len() <= idx {
-            return Err(DaftError::ValueError(format!(
-                "index {} out of bounds for series of length {}: {}",
+        let err = || {
+            DaftError::ValueError(format!(
+                "index {} out of bounds for series of length {}",
                 idx,
-                s.len(),
-                s
-            )));
-        }
-
-        fn map_or_null<T, U, F>(o: Option<T>, f: F) -> LiteralValue
-        where
-            F: FnOnce(U) -> LiteralValue,
-            U: From<T>,
-        {
-            match o {
-                Some(v) => f(v.into()),
-                None => LiteralValue::Null,
-            }
-        }
-
-        Ok(match s.data_type() {
-            DataType::Null => Self::Null,
-            DataType::Boolean => s.bool()?.get(idx).literal_value(),
-            DataType::Int8 => s.i8()?.get(idx).literal_value(),
-            DataType::UInt8 => s.u8()?.get(idx).literal_value(),
-            DataType::Int16 => s.i16()?.get(idx).literal_value(),
-            DataType::UInt16 => s.u16()?.get(idx).literal_value(),
-            DataType::Int32 => s.i32()?.get(idx).literal_value(),
-            DataType::UInt32 => s.u32()?.get(idx).literal_value(),
-            DataType::Int64 => s.i64()?.get(idx).literal_value(),
-            DataType::UInt64 => s.u64()?.get(idx).literal_value(),
-            DataType::Float64 => s.f64()?.get(idx).literal_value(),
+                s.len()
+            ))
+        };
+        match s.data_type() {
+            DataType::Null => Ok(Self::Null),
+            DataType::Boolean => Ok(s.bool()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int8 => Ok(s.i8()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt8 => Ok(s.u8()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int16 => Ok(s.i16()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt16 => Ok(s.u16()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int32 => Ok(s.i32()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt32 => Ok(s.u32()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int64 => Ok(s.i64()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt64 => Ok(s.u64()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Float64 => Ok(s.f64()?.get(idx).ok_or_else(err)?.literal_value()),
             DataType::Float32 => todo!(),
-            DataType::Decimal128(precision, scale) => map_or_null(s.decimal128()?.get(idx), |v| {
-                Self::Decimal(v, *precision as _, *scale as _)
-            }),
-            DataType::Timestamp(tu, tz) => map_or_null(s.timestamp()?.get(idx), |v| {
-                Self::Timestamp(v, *tu, tz.clone())
-            }),
-            DataType::Date => map_or_null(s.date()?.get(idx), Self::Date),
+            DataType::Decimal128(precision, scale) => Ok(Self::Decimal(
+                s.decimal128()?.get(idx).ok_or_else(err)?,
+                *precision as _,
+                *scale as _,
+            )),
+            DataType::Timestamp(tu, tz) => Ok(Self::Timestamp(
+                s.timestamp()?.get(idx).ok_or_else(err)?,
+                *tu,
+                tz.clone(),
+            )),
             DataType::Time(time_unit) => {
-                map_or_null(s.time()?.get(idx), |v| Self::Time(v, *time_unit))
+                Ok(Self::Time(s.time()?.get(idx).ok_or_else(err)?, *time_unit))
             }
-            DataType::Duration(time_unit) => {
-                map_or_null(s.duration()?.get(idx), |v| Self::Duration(v, *time_unit))
+            DataType::Duration(time_unit) => Ok(Self::Duration(
+                s.duration()?.get(idx).ok_or_else(err)?,
+                *time_unit,
+            )),
+            DataType::Interval => Ok(Self::Interval(
+                s.interval()?.get(idx).ok_or_else(err)?.into(),
+            )),
+            DataType::Binary => Ok(Self::Binary(s.binary()?.get(idx).ok_or_else(err)?.into())),
+            DataType::FixedSizeBinary(n) => Ok(Self::FixedSizeBinary(
+                s.fixed_size_binary()?.get(idx).ok_or_else(err)?.into(),
+                *n,
+            )),
+            DataType::Utf8 => Ok(Self::Utf8(s.utf8()?.get(idx).ok_or_else(err)?.into())),
+            DataType::FixedSizeList(_, _) => {
+                let lst = s.fixed_size_list()?.get(idx).ok_or_else(err)?;
+                Ok(lst.literal_value())
             }
-            DataType::Interval => map_or_null(s.interval()?.get(idx), Self::Interval),
-            DataType::Binary => map_or_null(s.binary()?.get(idx), Self::Binary),
-            DataType::FixedSizeBinary(n) => map_or_null(s.fixed_size_binary()?.get(idx), |v| {
-                Self::FixedSizeBinary(v, *n)
-            }),
-            DataType::Utf8 => map_or_null(s.utf8()?.get(idx), Self::Utf8),
-            DataType::FixedSizeList(_, _) => s.fixed_size_list()?.get(idx).literal_value(),
-            DataType::List(_) => s.list()?.get(idx).literal_value(),
+            DataType::List(_) => {
+                let lst = s.list()?.get(idx).ok_or_else(err)?;
+                Ok(lst.literal_value())
+            }
             DataType::Struct(fields) => {
                 let children = &s.struct_()?.children;
                 let mut map = IndexMap::new();
                 for (field, child) in fields.iter().zip(children) {
                     map.insert(field.clone(), Self::try_from_single_value_series(child)?);
                 }
-                Self::Struct(map)
+                Ok(Self::Struct(map))
             }
 
             #[cfg(feature = "python")]
             DataType::Python => {
                 let v = s.python()?.get(idx);
 
-                Self::Python(PyObjectWrapper(v))
+                Ok(Self::Python(PyObjectWrapper(v)))
             }
-            ty => {
-                return Err(DaftError::ValueError(format!(
-                    "Unsupported data type: {}",
-                    ty
-                )));
-            }
-        })
+            ty => Err(DaftError::ValueError(format!(
+                "Unsupported data type: {}",
+                ty
+            ))),
+        }
     }
 
     // =================
