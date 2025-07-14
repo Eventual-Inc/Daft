@@ -6,8 +6,6 @@ Most DataFrame methods are **lazy**, meaning that they do not execute computatio
     options:
         filters: ["!^_[^_]", "!__repr__", "!__column_input_to_expression", "!__builder"] -->
 
-## DataFrame Creation
-
 ## Data Manipulation
 
 ### Selecting Columns
@@ -43,3 +41,56 @@ Most DataFrame methods are **lazy**, meaning that they do not execute computatio
 ::: daft.DataFrame.unpivot
 ::: daft.DataFrame.with_column
 ::: daft.DataFrame.with_columns
+
+### Filtering Rows
+
+::: daft.DataFrame.distinct
+::: daft.DataFrame.filter
+::: daft.DataFrame.where
+::: daft.DataFrame.limit
+::: daft.DataFrame.sample
+
+### Reordering
+
+::: daft.DataFrame.sort
+::: daft.DataFrame.repartition
+::: daft.DataFrame.into_partitions
+
+### Combining
+
+::: daft.DataFrame.join
+::: daft.DataFrame.concat
+
+### Aggregations
+
+::: daft.DataFrame.groupby
+::: daft.DataFrame.sum
+::: daft.DataFrame.mean
+::: daft.DataFrame.stddev
+::: daft.DataFrame.count
+::: daft.DataFrame.min
+::: daft.DataFrame.max
+::: daft.DataFrame.agg
+
+## Execution
+
+!!! note "Note"
+
+    These methods will execute the operations in your DataFrame and are **blocking**.
+
+### Data Retrieval
+
+These methods will run the DataFrame and retrieve them to where the code is being run.
+
+::: daft.DataFrame.to_pydict
+::: daft.DataFrame.to_pylist
+::: daft.DataFrame.iter_partitions
+::: daft.DataFrame.iter_rows
+
+### Materialization
+
+::: daft.DataFrame.collect
+
+### Visualization
+
+::: daft.DataFrame.show
