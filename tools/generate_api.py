@@ -1,6 +1,9 @@
 import importlib
 import inspect
 import re
+from functools import lru_cache
+from pathlib import Path
+from typing import Optional
 
 EXPRESSIONS_SECTIONS = {"constructors", "generic", "numeric", "logical", "aggregation"}
 IO_SECTIONS = {"input", "output"}
@@ -14,123 +17,178 @@ SECTION_MAP = {
     "config": CONFIG_SECTIONS,
 }
 
+# File configurations
+FILE_CONFIGS = [
+    ("docs/api/io.md", IO_SECTIONS),
+    ("docs/api/dataframe.md", None),
+    ("docs/api/expressions.md", EXPRESSIONS_SECTIONS),
+    ("docs/api/aggregations.md", AGG_SECTIONS),
+    ("docs/api/config.md", CONFIG_SECTIONS),
+]
 
-def get_first_line_docstring(obj):
-    doc = inspect.getdoc(obj)
-    if doc:
-        return doc.strip().split("\n")[0]
-    return ""
+
+@lru_cache(maxsize=256)
+def get_function_info(expr: str) -> tuple[str, str]:
+    """Get function name and docstring first line. Cached to avoid repeated imports."""
+    # All expressions start with 'daft' based on your clarification
+    if not expr.startswith("daft."):
+        func_name = expr.split(".")[-1]
+        return func_name, "[Invalid expression: must start with 'daft.']"
+
+    try:
+        parts = expr.split(".")
+
+        if len(parts) >= 3 and parts[-2][0].isupper():
+            # Class method (e.g., daft.DataFrame.method_name)
+            module_path = ".".join(parts[:-2])
+            class_name = parts[-2]
+            method_name = parts[-1]
+            mod = importlib.import_module(module_path)
+            cls = getattr(mod, class_name)
+            method = getattr(cls, method_name)
+            doc = inspect.getdoc(method)
+            return method_name, doc.strip().split("\n")[0] if doc else ""
+        else:
+            # Function (e.g., daft.io.read_csv)
+            module_path, func_name = expr.rsplit(".", 1)
+            mod = importlib.import_module(module_path)
+            func = getattr(mod, func_name)
+            doc = inspect.getdoc(func)
+            return func_name, doc.strip().split("\n")[0] if doc else ""
+    except (ImportError, AttributeError) as e:
+        # Let it fail naturally as you mentioned - this preserves your current behavior
+        func_name = expr.split(".")[-1]
+        raise ImportError(f"Could not import {expr}: {e}") from e
 
 
-def make_table(rows):
-    if not rows:
+def make_table(expressions: list[str]) -> list[str]:
+    """Generate markdown table from sorted expressions."""
+    if not expressions:
         return []
+
     table = [
         "<!-- BEGIN GENERATED TABLE -->",
         "| Method | Description |",
         "|--------|-------------|",
     ]
-    table += sorted(
-        rows, key=lambda row: re.search(r"\[`([^`]+)`", row).group(1) if re.search(r"\[`([^`]+)`", row) else ""
-    )
+
+    # Sort by function name and generate table rows
+    sorted_exprs = sorted(expressions, key=lambda x: x.split(".")[-1])
+
+    for expr in sorted_exprs:
+        func_name, description = get_function_info(expr)
+        table.append(f"| [`{func_name}`][{expr}] | {description} |")
+
     table.append("<!-- END GENERATED TABLE -->")
     return [line + "\n" for line in table]
 
 
-def process_markdown(md_path, process_sections=None):
-    # If process_sections is None, process all sections; otherwise, filter by the given set
-    section_filter = None if process_sections is None else set(s.lower() for s in process_sections)
-    with open(md_path) as f:
+def process_section(lines: list[str], start_idx: int, section_filter: Optional[set[str]]) -> tuple[list[str], int]:
+    """Process a single section starting at start_idx. Returns (processed_lines, next_idx)."""
+    i = start_idx
+    heading_line = lines[i]
+    heading = heading_line.lstrip("#").strip()
+
+    # Skip section if not in filter
+    if section_filter and heading.lower() not in section_filter:
+        section_lines = [heading_line]
+        i += 1
+        while i < len(lines) and not lines[i].startswith("#"):
+            section_lines.append(lines[i])
+            i += 1
+        return section_lines, i
+
+    # Process section
+    result_lines = [heading_line]
+    i += 1
+
+    # Collect intro lines (before table or :::)
+    intro_lines = []
+    while i < len(lines) and not lines[i].startswith("#"):
+        line = lines[i]
+        if line.strip().startswith("<!-- BEGIN GENERATED TABLE") or line.strip().startswith(":::"):
+            break
+        intro_lines.append(line)
+        i += 1
+
+    # Skip existing generated table - always regenerate completely
+    if i < len(lines) and lines[i].strip().startswith("<!-- BEGIN GENERATED TABLE"):
+        while i < len(lines) and not lines[i].strip().startswith("<!-- END GENERATED TABLE"):
+            i += 1
+        if i < len(lines):
+            i += 1
+
+    # Collect ALL expressions from remaining content (this handles incremental additions)
+    expressions = []
+
+    while i < len(lines) and not lines[i].startswith("#"):
+        line = lines[i]
+        if line.strip().startswith(":::"):
+            match = re.match(r"^::: (daft\.[\w\.]+)", line)  # Ensure it starts with 'daft.'
+            if match:
+                expressions.append(match.group(1))
+        i += 1
+
+    # Build result with regenerated table and sorted content
+    result_lines.extend(intro_lines)
+
+    if expressions:
+        # Add spacing before table if needed
+        if result_lines and result_lines[-1].strip():
+            result_lines.append("\n")
+
+        # Generate table with ALL expressions (old + new), sorted alphabetically
+        result_lines.extend(make_table(expressions))
+        result_lines.append("\n")
+
+        # Add sorted ::: blocks - this ensures the entire list is alphabetized
+        sorted_exprs = sorted(expressions, key=lambda x: x.split(".")[-1])
+        result_lines.extend(f"::: {expr}\n" for expr in sorted_exprs)
+        result_lines.append("\n")
+
+    return result_lines, i
+
+
+def process_markdown(md_path: str, process_sections: Optional[set[str]] = None) -> None:
+    """Process a single markdown file."""
+    path = Path(md_path)
+    if not path.exists():
+        print(f"Warning: File {md_path} not found")
+        return
+
+    # Read file
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()
 
-    out_lines = []
+    # Set up section filter
+    section_filter = None if process_sections is None else {s.lower() for s in process_sections}
+
+    # Process file
+    result_lines = []
     i = 0
+
     while i < len(lines):
-        line = lines[i]
-        # Detect heading
-        if line.startswith("#"):
-            heading = line.lstrip("#").strip()
-            if section_filter and heading.lower() not in section_filter:
-                out_lines.append(line)
-                i += 1
-                # Copy section content without processing
-                while i < len(lines) and not lines[i].startswith("#"):
-                    out_lines.append(lines[i])
-                    i += 1
-                continue
-            out_lines.append(line)
-            i += 1
-
-            # Preserve all lines after heading up to next heading, table, or :::
-            section_intro = []
-            exprs = []
-            while i < len(lines) and not lines[i].startswith("#"):
-                current_line = lines[i]
-                # Stop intro at start of table or :::
-                if current_line.strip().startswith("<!-- BEGIN GENERATED TABLE") or current_line.strip().startswith(
-                    ":::"
-                ):
-                    break
-                section_intro.append(current_line)
-                i += 1
-            # Skip old generated table if present
-            if i < len(lines) and lines[i].strip().startswith("<!-- BEGIN GENERATED TABLE"):
-                while i < len(lines) and not lines[i].strip().startswith("<!-- END GENERATED TABLE"):
-                    i += 1
-                if i < len(lines):
-                    i += 1
-            # Collect section content after intro and old table
-            section_lines = []
-            while i < len(lines) and not lines[i].startswith("#"):
-                current_line = lines[i]
-                if current_line.strip().startswith(":::"):
-                    match = re.match(r"^::: ([\w\.]+)", current_line)
-                    if match:
-                        exprs.append(match.group(1))
-                section_lines.append(current_line)
-                i += 1
-            # Output: heading, intro, table, sorted ::: blocks
-            out_lines.extend(section_intro)
-            if exprs:
-                if out_lines and out_lines[-1].strip() != "":
-                    out_lines.append("\n")
-                table_rows = []
-                sorted_exprs = sorted(exprs, key=lambda x: x.split(".")[-1])
-                for expr in sorted_exprs:
-                    parts = expr.split(".")
-                    if len(parts) >= 3 and parts[-2][0].isupper():
-                        module_path = ".".join(parts[:-2])
-                        class_name = parts[-2]
-                        method_name = parts[-1]
-                        mod = importlib.import_module(module_path)
-                        cls = getattr(mod, class_name)
-                        method = getattr(cls, method_name)
-                        first_line = get_first_line_docstring(method)
-                        table_rows.append(f"| [`{method_name}`][{expr}] | {first_line} |")
-                    else:
-                        module_path, func_name = expr.rsplit(".", 1)
-                        mod = importlib.import_module(module_path)
-                        func = getattr(mod, func_name)
-                        first_line = get_first_line_docstring(func)
-                        table_rows.append(f"| [`{func_name}`][{expr}] | {first_line} |")
-                out_lines.extend(make_table(table_rows))
-                if exprs:
-                    out_lines.append("\n")
-                # Output sorted ::: blocks
-                out_lines.extend(f"::: {expr}\n" for expr in sorted_exprs)
-                out_lines.append("\n")
+        if lines[i].startswith("#"):
+            # Process section
+            section_lines, next_i = process_section(lines, i, section_filter)
+            result_lines.extend(section_lines)
+            i = next_i
         else:
-            out_lines.append(line)
+            # Copy non-heading lines as-is
+            result_lines.append(lines[i])
             i += 1
 
-    with open(md_path, "w") as f:
-        f.writelines(out_lines)
+    # Write result
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(result_lines)
+
+
+def process_all_files() -> None:
+    """Process all configured markdown files."""
+    for file_path, sections in FILE_CONFIGS:
+        print(f"Processing {file_path}...")
+        process_markdown(file_path, sections)
 
 
 if __name__ == "__main__":
-    # Add optional parameter for specifying sections to process
-    process_markdown("docs/api/io.md", IO_SECTIONS)
-    process_markdown("docs/api/dataframe.md")
-    process_markdown("docs/api/expressions.md", EXPRESSIONS_SECTIONS)
-    process_markdown("docs/api/aggregations.md", AGG_SECTIONS)
-    process_markdown("docs/api/config.md", CONFIG_SECTIONS)
+    process_all_files()
