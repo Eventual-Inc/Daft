@@ -142,7 +142,7 @@ impl PyDistributedPhysicalPlanRunner {
                 subscribers.push(Box::new(HttpSubscriber::new()));
             }
             Err(_) => {
-                tracing::warn!("DAFT_DASHBOARD_URL not set, skipping HttpSubscriber");
+                tracing::info!("DAFT_DASHBOARD_URL not set, skipping HttpSubscriber");
             }
         }
 

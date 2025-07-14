@@ -450,7 +450,7 @@ impl LogicalPlan {
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name)).unwrap()),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, starting_offset, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name), *starting_offset).unwrap()),
                 Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) =>
                     Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),

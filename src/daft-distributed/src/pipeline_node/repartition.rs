@@ -6,13 +6,14 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
-use futures::{StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
+use itertools::Itertools;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
     pipeline_node::{
-        try_make_in_memory_scan_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, PipelineOutput,
+        make_in_memory_scan_from_materialized_outputs, MaterializedOutput, NodeID, NodeName,
+        PipelineNodeConfig, PipelineNodeContext, PipelineOutput,
     },
     scheduling::{
         scheduler::SchedulerHandle,
@@ -35,9 +36,9 @@ impl RepartitionNode {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         columns: Vec<BoundExpr>,
         num_partitions: Option<usize>,
         schema: SchemaRef,
@@ -90,6 +91,43 @@ impl RepartitionNode {
         res
     }
 
+    pub(crate) async fn transpose_materialized_outputs(
+        materialized_stream: impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin,
+        num_partitions: usize,
+    ) -> DaftResult<Vec<Vec<MaterializedOutput>>> {
+        let materialized_partitions = materialized_stream
+            .map(|mat| mat.map(|mat| mat.split_into_materialized_outputs()))
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        debug_assert!(
+            materialized_partitions
+                .iter()
+                .all(|mat| mat.len() == num_partitions),
+            "Expected all outputs to have {} partitions, got {}",
+            num_partitions,
+            materialized_partitions
+                .iter()
+                .map(|mat| mat.len())
+                .join(", ")
+        );
+
+        let mut transposed_outputs = vec![];
+        for idx in 0..num_partitions {
+            let mut partition_group = vec![];
+            for materialized_partition in &materialized_partitions {
+                let part = &materialized_partition[idx];
+                if part.num_rows()? > 0 {
+                    partition_group.push(part.clone());
+                }
+            }
+            transposed_outputs.push(partition_group);
+        }
+
+        assert_eq!(transposed_outputs.len(), num_partitions);
+        Ok(transposed_outputs)
+    }
+
     // Async execution to get all partitions out
     async fn execution_loop(
         self: Arc<Self>,
@@ -101,29 +139,17 @@ impl RepartitionNode {
         // Trigger materialization of the partitions
         // This will produce a stream of materialized outputs, each containing a vector of num_partitions partitions
         let materialized_stream = local_repartition_node.materialize(scheduler_handle.clone());
-        let materialized_partitions = materialized_stream
-            .map(|mat| mat.map(|mat| mat.split_into_materialized_outputs()))
-            .try_collect::<Vec<_>>()
-            .await?;
+        let transposed_outputs =
+            Self::transpose_materialized_outputs(materialized_stream, self.num_partitions).await?;
 
         // Make each partition group (partitions equal by (hash % num_partitions)) input to a in-memory scan
-        for partition_idx in 0..self.num_partitions {
-            // This is effectively a transpose of the materialized outputs
-            let same_partition_group = materialized_partitions
-                .iter()
-                .map(|mat| mat.get(partition_idx).unwrap())
-                .cloned()
-                .collect::<Vec<_>>();
-
+        for partition_group in transposed_outputs {
             let self_clone = self.clone();
-            let Some(task) = try_make_in_memory_scan_from_materialized_outputs(
+            let task = make_in_memory_scan_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
-                same_partition_group,
+                partition_group,
                 &(self_clone as Arc<dyn DistributedPipelineNode>),
-            )?
-            else {
-                continue;
-            };
+            )?;
 
             let _ = result_tx.send(PipelineOutput::Task(task)).await;
         }

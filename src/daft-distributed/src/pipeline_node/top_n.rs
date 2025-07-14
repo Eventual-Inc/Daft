@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -13,29 +12,30 @@ use crate::{
     stage::{StageConfig, StageExecutionContext},
 };
 
-pub(crate) struct UnpivotNode {
+pub(crate) struct TopNNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    ids: Vec<BoundExpr>,
-    values: Vec<BoundExpr>,
-    variable_name: String,
-    value_name: String,
+    // Sort properties
+    sort_by: Vec<BoundExpr>,
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
+    limit: u64,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl UnpivotNode {
-    const NODE_NAME: NodeName = "Unpivot";
+impl TopNNode {
+    const NODE_NAME: NodeName = "TopN";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        ids: Vec<BoundExpr>,
-        values: Vec<BoundExpr>,
-        variable_name: String,
-        value_name: String,
-        schema: SchemaRef,
+        sort_by: Vec<BoundExpr>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+        limit: u64,
+        output_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -47,17 +47,17 @@ impl UnpivotNode {
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(
-            schema,
+            output_schema,
             stage_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
             config,
             context,
-            ids,
-            values,
-            variable_name,
-            value_name,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
             child,
         }
     }
@@ -68,22 +68,25 @@ impl UnpivotNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec![];
+        let mut res = vec!["TopN".to_string()];
         res.push(format!(
-            "Unpivot: {}",
-            self.values.iter().map(|e| e.to_string()).join(", ")
+            "Sort by: {}",
+            self.sort_by.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!(
-            "Ids = {}",
-            self.ids.iter().map(|e| e.to_string()).join(", ")
+            "Descending = {}",
+            self.descending.iter().map(|e| e.to_string()).join(", ")
         ));
-        res.push(format!("Variable name = {}", self.variable_name));
-        res.push(format!("Value name = {}", self.value_name));
+        res.push(format!(
+            "Nulls first = {}",
+            self.nulls_first.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!("Limit = {}", self.limit));
         res
     }
 }
 
-impl TreeDisplay for UnpivotNode {
+impl TreeDisplay for TopNNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -108,7 +111,7 @@ impl TreeDisplay for UnpivotNode {
     }
 }
 
-impl DistributedPipelineNode for UnpivotNode {
+impl DistributedPipelineNode for TopNNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -124,20 +127,18 @@ impl DistributedPipelineNode for UnpivotNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
+        // Pipeline the top-n
         let self_clone = self.clone();
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::unpivot(
+        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
+            Ok(LocalPhysicalPlan::top_n(
                 input,
-                self_clone.ids.clone(),
-                self_clone.values.clone(),
-                self_clone.variable_name.clone(),
-                self_clone.value_name.clone(),
-                self_clone.config.schema.clone(),
+                self_clone.sort_by.clone(),
+                self_clone.descending.clone(),
+                self_clone.nulls_first.clone(),
+                self_clone.limit,
                 StatsState::NotMaterialized,
             ))
-        };
-
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        })
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

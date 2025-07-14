@@ -83,7 +83,7 @@ impl BlockingSink for CrossJoinCollectSink {
             .expect("Cross join collect state should have tables before finalize is called");
 
         self.state_bridge.set_state(Arc::new(tables));
-        Ok(BlockingSinkFinalizeOutput::Finished(None)).into()
+        Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

@@ -2,39 +2,38 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::partitioning::UnknownClusteringConfig;
 use daft_schema::schema::SchemaRef;
+use futures::TryStreamExt;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    stage::{StageConfig, StageExecutionContext},
+    pipeline_node::{
+        make_in_memory_scan_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext, PipelineOutput,
+    },
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, TaskContext},
+    },
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
+    utils::channel::{create_channel, Sender},
 };
 
-pub(crate) struct UnpivotNode {
+pub(crate) struct GatherNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    ids: Vec<BoundExpr>,
-    values: Vec<BoundExpr>,
-    variable_name: String,
-    value_name: String,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl UnpivotNode {
-    const NODE_NAME: NodeName = "Unpivot";
+impl GatherNode {
+    const NODE_NAME: NodeName = "Gather";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        ids: Vec<BoundExpr>,
-        values: Vec<BoundExpr>,
-        variable_name: String,
-        value_name: String,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -49,15 +48,11 @@ impl UnpivotNode {
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            Arc::new(UnknownClusteringConfig::new(1).into()),
         );
         Self {
             config,
             context,
-            ids,
-            values,
-            variable_name,
-            value_name,
             child,
         }
     }
@@ -67,23 +62,36 @@ impl UnpivotNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
-        let mut res = vec![];
-        res.push(format!(
-            "Unpivot: {}",
-            self.values.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!(
-            "Ids = {}",
-            self.ids.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!("Variable name = {}", self.variable_name));
-        res.push(format!("Value name = {}", self.value_name));
-        res
+        vec!["Gather".to_string()]
+    }
+
+    // Async execution to get all partitions out
+    async fn execution_loop(
+        self: Arc<Self>,
+        input_node: RunningPipelineNode,
+        task_id_counter: TaskIDCounter,
+        result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<()> {
+        // Trigger materialization of all inputs
+        let materialized = input_node
+            .materialize(scheduler_handle.clone())
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let self_clone = self.clone();
+        let task = make_in_memory_scan_from_materialized_outputs(
+            TaskContext::from((&self_clone.context, task_id_counter.next())),
+            materialized,
+            &(self_clone as Arc<dyn DistributedPipelineNode>),
+        )?;
+
+        let _ = result_tx.send(PipelineOutput::Task(task)).await;
+        Ok(())
     }
 }
 
-impl TreeDisplay for UnpivotNode {
+impl TreeDisplay for GatherNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -108,7 +116,7 @@ impl TreeDisplay for UnpivotNode {
     }
 }
 
-impl DistributedPipelineNode for UnpivotNode {
+impl DistributedPipelineNode for GatherNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -124,20 +132,17 @@ impl DistributedPipelineNode for UnpivotNode {
     fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        let self_clone = self.clone();
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::unpivot(
-                input,
-                self_clone.ids.clone(),
-                self_clone.values.clone(),
-                self_clone.variable_name.clone(),
-                self_clone.value_name.clone(),
-                self_clone.config.schema.clone(),
-                StatsState::NotMaterialized,
-            ))
-        };
+        // Materialize and gather all partitions to a single node
+        let (result_tx, result_rx) = create_channel(1);
+        let execution_loop = self.execution_loop(
+            input_node,
+            stage_context.task_id_counter(),
+            result_tx,
+            stage_context.scheduler_handle(),
+        );
+        stage_context.spawn(execution_loop);
 
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        RunningPipelineNode::new(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
