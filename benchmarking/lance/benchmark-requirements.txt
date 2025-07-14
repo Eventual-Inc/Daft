@@ -1,0 +1,5 @@
+pytest==7.4.0
+pytest-benchmark==4.0.0
+pytest-memray==1.4.1
+duckdb==0.8.1
+datafusion==10.0.0
