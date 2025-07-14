@@ -2,7 +2,13 @@ import importlib
 import inspect
 import re
 
-EXPRESSIONS_SECTIONS = {"Constructors", "Generic", "Numeric", "Logical", "Aggregation"}
+EXPRESSIONS_SECTIONS = {"constructors", "generic", "numeric", "logical", "aggregation"}
+IO_SECTIONS = {"input", "output"}
+
+SECTION_MAP = {
+    "expressions": EXPRESSIONS_SECTIONS,
+    "io": IO_SECTIONS,
+}
 
 
 def get_first_line_docstring(obj):
@@ -12,15 +18,13 @@ def get_first_line_docstring(obj):
     return ""
 
 
-def make_table(rows, table_type):
+def make_table(rows):
     if not rows:
         return []
-    header = "| Method | Description |" if table_type == "dataframe" else "| Expression | Description |"
     table = [
-        "",
         "<!-- BEGIN GENERATED TABLE -->",
-        header,
-        "|--------|-------------|" if table_type == "dataframe" else "|------------|-------------|",
+        "| Method | Description |",
+        "|--------|-------------|",
     ]
     table += sorted(
         rows, key=lambda row: re.search(r"\[`([^`]+)`", row).group(1) if re.search(r"\[`([^`]+)`", row) else ""
@@ -29,7 +33,9 @@ def make_table(rows, table_type):
     return [line + "\n" for line in table]
 
 
-def process_markdown(md_path, table_type):
+def process_markdown(md_path, process_sections=None):
+    # If process_sections is None, process all sections; otherwise, filter by the given set
+    section_filter = None if process_sections is None else set(s.lower() for s in process_sections)
     with open(md_path) as f:
         lines = f.readlines()
 
@@ -40,37 +46,60 @@ def process_markdown(md_path, table_type):
         # Detect heading
         if line.startswith("#"):
             heading = line.lstrip("#").strip()
+            if section_filter and heading.lower() not in section_filter:
+                out_lines.append(line)
+                i += 1
+                # Copy section content without processing
+                while i < len(lines) and not lines[i].startswith("#"):
+                    out_lines.append(lines[i])
+                    i += 1
+                continue
             out_lines.append(line)
             i += 1
 
-            # Collect section content
+            # Preserve all lines after heading up to next heading, table, or :::
+            section_intro = []
             exprs = []
-            section_content = []
             while i < len(lines) and not lines[i].startswith("#"):
-                if lines[i].strip().startswith(":::"):
-                    match = re.match(r"^::: ([\w\.]+)", lines[i])
+                current_line = lines[i]
+                # Stop intro at start of table or :::
+                if current_line.strip().startswith("<!-- BEGIN GENERATED TABLE") or current_line.strip().startswith(
+                    ":::"
+                ):
+                    break
+                section_intro.append(current_line)
+                i += 1
+            # Skip old generated table if present
+            if i < len(lines) and lines[i].strip().startswith("<!-- BEGIN GENERATED TABLE"):
+                while i < len(lines) and not lines[i].strip().startswith("<!-- END GENERATED TABLE"):
+                    i += 1
+                if i < len(lines):
+                    i += 1
+            # Collect section content after intro and old table
+            section_lines = []
+            while i < len(lines) and not lines[i].startswith("#"):
+                current_line = lines[i]
+                if current_line.strip().startswith(":::"):
+                    match = re.match(r"^::: ([\w\.]+)", current_line)
                     if match:
                         exprs.append(match.group(1))
-                section_content.append(lines[i])
+                section_lines.append(current_line)
                 i += 1
-
-            # For expressions.md, only process the 5 named sections
-            if table_type == "expressions":
-                if heading not in EXPRESSIONS_SECTIONS:
-                    out_lines.extend(section_content)
-                    continue
-
+            # Output: heading, intro, table, rest
+            out_lines.extend(section_intro)
             if exprs:
-                # Generate table
+                if out_lines and out_lines[-1].strip() != "":
+                    out_lines.append("\n")
                 table_rows = []
                 sorted_exprs = sorted(exprs, key=lambda x: x.split(".")[-1])
                 for expr in sorted_exprs:
                     parts = expr.split(".")
-                    if len(parts) >= 3 and (parts[-2].endswith("Expression") or parts[-2].endswith("DataFrame")):
+                    if len(parts) >= 3 and parts[-2][0].isupper():
                         module_path = ".".join(parts[:-2])
+                        class_name = parts[-2]
                         method_name = parts[-1]
                         mod = importlib.import_module(module_path)
-                        cls = getattr(mod, parts[-2])
+                        cls = getattr(mod, class_name)
                         method = getattr(cls, method_name)
                         first_line = get_first_line_docstring(method)
                         table_rows.append(f"| [`{method_name}`][{expr}] | {first_line} |")
@@ -80,12 +109,10 @@ def process_markdown(md_path, table_type):
                         func = getattr(mod, func_name)
                         first_line = get_first_line_docstring(func)
                         table_rows.append(f"| [`{func_name}`][{expr}] | {first_line} |")
-                out_lines.extend(make_table(table_rows, table_type))
-                out_lines.append("\n")
-                out_lines.extend(f"::: {expr}\n" for expr in sorted_exprs)
-                out_lines.append("\n")
-            else:
-                out_lines.extend(section_content)
+                out_lines.extend(make_table(table_rows))
+                if section_lines and section_lines[0].strip() != "":
+                    out_lines.append("\n")
+            out_lines.extend(section_lines)
         else:
             out_lines.append(line)
             i += 1
@@ -95,9 +122,10 @@ def process_markdown(md_path, table_type):
 
 
 if __name__ == "__main__":
-    files_to_process = [
-        ("docs/api/dataframe.md", "dataframe"),
-        ("docs/api/expressions.md", "expressions"),
-    ]
-    for md_path, table_type in files_to_process:
-        process_markdown(md_path, table_type)
+    # Example usage:
+    # Process all sections in dataframe.md
+    process_markdown("docs/api/dataframe.md")
+    # Process only designated sections in io.md
+    process_markdown("docs/api/io.md", IO_SECTIONS)
+    # Process only designated sections in expressions.md
+    # process_markdown("docs/api/expressions.md", EXPRESSIONS_SECTIONS)
