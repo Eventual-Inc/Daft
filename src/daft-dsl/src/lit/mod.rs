@@ -548,7 +548,6 @@ impl LiteralValue {
                 *tu,
                 tz.clone(),
             )),
-            DataType::Date => Ok(Self::Date(s.date()?.get(idx).ok_or_else(|| err())? as i32)),
             DataType::Time(time_unit) => {
                 Ok(Self::Time(s.time()?.get(idx).ok_or_else(err)?, *time_unit))
             }
@@ -752,7 +751,7 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         DataType::Float64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Float64));
 
-            Float64Array::from_iter(Field::new("literal", DataType::Float64), data).into_series()
+            Float64Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         dtype @ DataType::Decimal128 { .. } => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Decimal));
