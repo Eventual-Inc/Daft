@@ -31,7 +31,6 @@ pub(crate) struct HashJoinNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
 
-    // Repartition properties
     // Join properties
     left_on: Vec<BoundExpr>,
     right_on: Vec<BoundExpr>,
