@@ -4,10 +4,12 @@ import re
 
 EXPRESSIONS_SECTIONS = {"constructors", "generic", "numeric", "logical", "aggregation"}
 IO_SECTIONS = {"input", "output"}
+AGG_SECTIONS = {"dataframe aggregations"}
 
 SECTION_MAP = {
     "expressions": EXPRESSIONS_SECTIONS,
     "io": IO_SECTIONS,
+    "agg": AGG_SECTIONS,
 }
 
 
@@ -85,7 +87,7 @@ def process_markdown(md_path, process_sections=None):
                         exprs.append(match.group(1))
                 section_lines.append(current_line)
                 i += 1
-            # Output: heading, intro, table, rest
+            # Output: heading, intro, table, sorted ::: blocks
             out_lines.extend(section_intro)
             if exprs:
                 if out_lines and out_lines[-1].strip() != "":
@@ -110,9 +112,11 @@ def process_markdown(md_path, process_sections=None):
                         first_line = get_first_line_docstring(func)
                         table_rows.append(f"| [`{func_name}`][{expr}] | {first_line} |")
                 out_lines.extend(make_table(table_rows))
-                if section_lines and section_lines[0].strip() != "":
+                if exprs:
                     out_lines.append("\n")
-            out_lines.extend(section_lines)
+                # Output sorted ::: blocks
+                out_lines.extend(f"::: {expr}\n" for expr in sorted_exprs)
+                out_lines.append("\n")
         else:
             out_lines.append(line)
             i += 1
@@ -122,10 +126,8 @@ def process_markdown(md_path, process_sections=None):
 
 
 if __name__ == "__main__":
-    # Example usage:
-    # Process all sections in dataframe.md
+    # Add optional parameter for specifying sections to process
     process_markdown("docs/api/dataframe.md")
-    # Process only designated sections in io.md
     process_markdown("docs/api/io.md", IO_SECTIONS)
-    # Process only designated sections in expressions.md
-    # process_markdown("docs/api/expressions.md", EXPRESSIONS_SECTIONS)
+    process_markdown("docs/api/expressions.md", EXPRESSIONS_SECTIONS)
+    process_markdown("docs/api/aggregations.md", AGG_SECTIONS)
