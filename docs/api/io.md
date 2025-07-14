@@ -2,6 +2,26 @@
 
 Daft offers a variety of approaches to creating a DataFrame from reading various data sources (in-memory data, files, data catalogs, and integrations) and writing to various data sources. See more about [I/O](../io/index.md) in Daft User Guide.
 
+<div class="grid cards api" markdown>
+
+* [**Input**](#input)
+
+    Create DataFrames from files, databases, and other data sources.
+
+* [**Output**](#output)
+
+    Write DataFrames to various file formats and storage systems.
+
+* [**User-Defined** (experimental)](#user-defined)
+
+    Create custom data sources and sinks for advanced I/O scenarios.
+
+* [**Pushdowns**](#pushdowns)
+
+    Optimize queries by pushing operations down to the storage layer.
+
+</div>
+
 ## Input
 
 ::: daft.from_arrow
@@ -11,7 +31,6 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 ::: daft.from_pydict
 ::: daft.from_pylist
 ::: daft.from_ray_dataset
-
 ::: daft.read_csv
 ::: daft.read_deltalake
 ::: daft.read_hudi
@@ -23,7 +42,6 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 ::: daft.read_warc
 ::: daft.sql.sql.sql
 
-
 ## Output
 
 ::: daft.DataFrame.write_csv
@@ -33,7 +51,6 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 ::: daft.DataFrame.write_lance
 ::: daft.DataFrame.write_parquet
 ::: daft.DataFrame.write_sink
-
 
 ## User-Defined
 

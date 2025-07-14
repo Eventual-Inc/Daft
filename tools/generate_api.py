@@ -5,11 +5,13 @@ import re
 EXPRESSIONS_SECTIONS = {"constructors", "generic", "numeric", "logical", "aggregation"}
 IO_SECTIONS = {"input", "output"}
 AGG_SECTIONS = {"dataframe aggregations"}
+CONFIG_SECTIONS = {"setting the runner", "setting configurations"}
 
 SECTION_MAP = {
     "expressions": EXPRESSIONS_SECTIONS,
     "io": IO_SECTIONS,
     "agg": AGG_SECTIONS,
+    "config": CONFIG_SECTIONS,
 }
 
 
@@ -127,7 +129,8 @@ def process_markdown(md_path, process_sections=None):
 
 if __name__ == "__main__":
     # Add optional parameter for specifying sections to process
-    process_markdown("docs/api/dataframe.md")
     process_markdown("docs/api/io.md", IO_SECTIONS)
+    process_markdown("docs/api/dataframe.md")
     process_markdown("docs/api/expressions.md", EXPRESSIONS_SECTIONS)
     process_markdown("docs/api/aggregations.md", AGG_SECTIONS)
+    process_markdown("docs/api/config.md", CONFIG_SECTIONS)

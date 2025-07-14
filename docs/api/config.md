@@ -1,32 +1,38 @@
 # Configuration
 
-Configure the execution backend, Daft in various ways during execution, and how Daft interacts with storage.
+Configure Daft's execution backend, runtime behavior, and storage interactions for optimal performance.
+
+<div class="grid cards api" markdown>
+
+* [**Setting the Runner**](#setting-the-runner)
+
+    Control which execution backend (native or Ray) Daft uses for distributed processing.
+
+* [**Setting Configurations**](#setting-configurations)
+
+    Configure Daft's planning and execution behavior during runtime.
+
+* [**I/O Configuration**s](#io-configurations)
+
+    Configure storage credentials, retry policies, and performance settings.
+
+</div>
 
 ## Setting the Runner
 
 Control the execution backend that Daft will run on by calling these functions once at the start of your application.
 
 ::: daft.context.set_runner_native
-
-
 ::: daft.context.set_runner_ray
-
 
 ## Setting Configurations
 
 Configure Daft in various ways during execution.
 
 ::: daft.context.set_planning_config
-
-
 ::: daft.context.planning_config_ctx
-
-
 ::: daft.context.set_execution_config
-
-
 ::: daft.context.execution_config_ctx
-
 
 ## I/O Configurations
 

@@ -177,3 +177,11 @@ code.doc-symbol-method::after {
     display: none !important;
   }
 }
+
+.grid.cards {
+  font-size: 0.7rem;
+}
+
+.grid.cards.api {
+  grid-template-columns: repeat(3, 1fr);
+}

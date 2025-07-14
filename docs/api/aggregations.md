@@ -2,6 +2,18 @@
 
 When performing aggregations such as sum, mean and count, Daft enables you to group data by certain keys and aggregate within those keys. Learn more about [Aggregations and Grouping](../core_concepts.md#aggregations-and-grouping) in Daft User Guide.
 
+<div class="grid cards" markdown>
+
+* [**DataFrame Aggregations**](#dataframe-aggregations)
+
+    Compute summary statistics and aggregations across the entire DataFrame or create grouped views for further processing.
+
+* [**Grouped Aggregations**](#grouped-aggregations)
+
+    Apply aggregation functions within each group after grouping by specified keys, returning aggregated results per group.
+
+</div>
+
 ## DataFrame Aggregations
 
 ::: daft.DataFrame.groupby
@@ -15,6 +27,10 @@ When performing aggregations such as sum, mean and count, Daft enables you to gr
 ::: daft.DataFrame.agg_concat
 ::: daft.DataFrame.agg_list
 ::: daft.DataFrame.agg_set
+::: daft.DataFrame.any_value
+::: daft.DataFrame.count
+::: daft.DataFrame.count_rows
+::: daft.DataFrame.summarize
 
 ## Grouped Aggregations
 
