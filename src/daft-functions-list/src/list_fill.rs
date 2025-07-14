@@ -16,8 +16,8 @@ pub struct ListFill;
 
 #[derive(FunctionArgs)]
 struct Args<T> {
-    input: T,
     elem: T,
+    input: T,
 }
 
 #[typetag::serde]
@@ -27,7 +27,7 @@ impl ScalarUDF for ListFill {
     }
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let Args { input: num, elem } = inputs.try_into()?;
+        let Args { elem, input: num } = inputs.try_into()?;
 
         let num = num.cast(&DataType::Int64)?;
         let num_array = num.i64()?;
@@ -39,7 +39,7 @@ impl ScalarUDF for ListFill {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let Args { input: n, elem } = inputs.try_into()?;
+        let Args { elem, input: n } = inputs.try_into()?;
 
         let num_field = n.to_field(schema)?;
         let elem_field = elem.to_field(schema)?;
@@ -55,8 +55,8 @@ impl ScalarUDF for ListFill {
 }
 
 #[must_use]
-pub fn list_fill(n: ExprRef, elem: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListFill {}, vec![n, elem]).into()
+pub fn list_fill(elem: ExprRef, n: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListFill {}, vec![elem, n]).into()
 }
 
 #[cfg(test)]
@@ -85,7 +85,7 @@ mod tests {
         ]);
 
         let fill = ListFill {};
-        let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![col1_str.clone(), col0_null.clone()]);
         let DaftError::TypeError(e) = dbg!(fill.get_return_field(args, &schema).unwrap_err())
         else {
             panic!("Expected TypeError error");
@@ -94,7 +94,7 @@ mod tests {
             e,
             "Expected num field to be of numeric type, received: Null"
         );
-        let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![col1_str.clone(), col0_null.clone()]);
         let DaftError::TypeError(e) = fill.get_return_field(args, &schema).unwrap_err() else {
             panic!("Expected TypeError error");
         };
@@ -103,12 +103,12 @@ mod tests {
             "Expected num field to be of numeric type, received: Null"
         );
 
-        let args = FunctionArgs::new_unnamed(vec![col0_num.clone(), col1_null.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![col1_null.clone(), col0_num.clone()]);
 
         let list_of_null = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Null)));
         assert_eq!(list_of_null, expected);
-        let args = FunctionArgs::new_unnamed(vec![col0_num.clone(), col1_str.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![col1_str.clone(), col0_num.clone()]);
 
         let list_of_str = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Utf8)));
@@ -129,7 +129,7 @@ mod tests {
         let error = fill.call(args).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "DaftError::ValueError Required argument `elem` not found"
+            "DaftError::ValueError Required argument `input` not found"
         );
     }
 
@@ -143,7 +143,7 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let args = FunctionArgs::new_unnamed(vec![num.clone(), str.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![str.clone(), num.clone()]);
         let error =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fill.call(args).unwrap()));
         assert!(error.is_err());
@@ -159,7 +159,7 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let args = FunctionArgs::new_unnamed(vec![num.clone(), str.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![str.clone(), num.clone()]);
         let result = fill.call(args)?;
         // the expected result should be a list of strings: [[None], [], ["world", "world", "world"]]
         let flat_child = Utf8Array::from_iter(
