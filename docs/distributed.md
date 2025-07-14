@@ -10,10 +10,19 @@ You can run Daft on Ray in multiple ways:
 
 If you want to start a single node ray cluster on your local machine, you can do the following:
 
-```bash
-pip install ray[default]
-ray start --head
-```
+=== "🐍 Python (pip)"
+
+    ```bash
+    pip install ray[default]
+    ray start --head
+    ```
+
+=== "🚀 Python (uv)"
+
+    ```bash
+    uv pip install ray[default]
+    ray start --head
+    ```
 
 This should output something like:
 
@@ -141,6 +150,7 @@ ray job submit \
     --working-dir wd \
     --address "http://<head_node_host>:8265" \
     --runtime-env-json '{"pip": ["daft"]}' \
+# Or with uv: --runtime-env-json '{"pip": {"packages": ["daft"], "pip_check": false, "pip_version": "uv"}}' \
     -- python job.py
 ```
 

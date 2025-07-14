@@ -16,10 +16,16 @@ In this quickstart, you will learn the basics of Daft's DataFrame and SQL API an
 
 You can install Daft using `pip`. Run the following command in your terminal or notebook:
 
-=== "🐍 Python"
+=== "🐍 Python (pip)"
 
     ```python
     pip install daft
+    ```
+
+=== "🚀 Python (uv)"
+
+    ```python
+    uv pip install daft
     ```
 
 For more advanced installation options, please see [Installation](install.md).
