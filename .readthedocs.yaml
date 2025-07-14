@@ -5,11 +5,12 @@ build:
   tools:
     python: '3.10'
   commands:
-  - python -m venv venv
-  - . venv/bin/activate
-  - pip install uv maturin
-  - maturin develop
-  - python tools/generate_api.py
+  - |
+    python -m venv venv
+    . venv/bin/activate
+    pip install uv maturin
+    maturin develop
+    python tools/generate_api.py
 
 python:
   install:
