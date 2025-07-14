@@ -19,7 +19,8 @@ use crate::{
         gather::GatherNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
-        sink::SinkNode, unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
+        sink::SinkNode, sort::SortNode, top_n::TopNNode, unpivot::UnpivotNode, window::WindowNode,
+        DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -56,35 +57,41 @@ impl LogicalPlanToPipelineNodeTranslator {
         self.pipeline_node_id_counter
     }
 
+    pub fn gen_gather_node(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        input_node: Arc<dyn DistributedPipelineNode>,
+    ) -> Arc<dyn DistributedPipelineNode> {
+        if input_node.config().clustering_spec.num_partitions() == 1 {
+            return input_node;
+        }
+
+        GatherNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            input_node.config().schema.clone(),
+            input_node,
+        )
+        .arced()
+    }
+
     pub fn gen_shuffle_node(
         &mut self,
         logical_node_id: Option<NodeID>,
         input_node: Arc<dyn DistributedPipelineNode>,
         partition_cols: Vec<BoundExpr>,
     ) -> Arc<dyn DistributedPipelineNode> {
-        let node_id = self.get_next_pipeline_node_id();
-        let schema = input_node.config().schema.clone();
         if partition_cols.is_empty() {
-            if input_node.config().clustering_spec.num_partitions() == 1 {
-                return input_node;
-            }
-
-            GatherNode::new(
-                node_id,
-                logical_node_id,
-                &self.stage_config,
-                schema,
-                input_node,
-            )
-            .arced()
+            self.gen_gather_node(logical_node_id, input_node)
         } else {
             RepartitionNode::new(
-                node_id,
+                self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
                 partition_cols,
                 None,
-                schema,
+                input_node.config().schema.clone(),
                 input_node,
             )
             .arced()
@@ -396,11 +403,59 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     join.output_schema.clone(),
                 )?
             }
-            LogicalPlan::Sort(_) => {
-                todo!("FLOTILLA_MS3: Implement Sort")
+            LogicalPlan::Sort(sort) => {
+                let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
+
+                // First stage: Gather all data to a single node
+                let input_node = self.curr_node.pop().unwrap();
+                let gather = self.gen_gather_node(logical_node_id, input_node);
+
+                // Second stage: Perform a local sort
+                SortNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sort_by,
+                    sort.descending.clone(),
+                    sort.nulls_first.clone(),
+                    sort.input.schema(),
+                    gather,
+                )
+                .arced()
             }
-            LogicalPlan::TopN(_) => {
-                todo!("FLOTILLA_MS3: Implement TopN")
+            LogicalPlan::TopN(top_n) => {
+                let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
+
+                // First stage: Perform a local topN
+                let local_topn = TopNNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sort_by.clone(),
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced();
+
+                // Second stage: Gather all data to a single node
+                let gather = self.gen_gather_node(logical_node_id, local_topn);
+
+                // Final stage: Do another topN to get the final result
+                TopNNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sort_by,
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    gather,
+                )
+                .arced()
             }
             LogicalPlan::Pivot(_) => {
                 todo!("FLOTILLA_MS3: Implement Pivot")
