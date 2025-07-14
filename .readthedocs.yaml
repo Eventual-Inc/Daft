@@ -4,6 +4,8 @@ build:
   os: "ubuntu-24.04"
   tools:
     python: '3.10'
+  commands:
+  - python tools/generate_api.py
 
 python:
   install:
