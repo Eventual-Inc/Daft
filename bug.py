@@ -13,8 +13,10 @@ CLEANUP = True
 
 D = 5
 
+rng = np.random.default_rng()
+
 test_df = (
-    daft.from_pydict({"e": [np.zeros(D, dtype=np.float32) for _ in range(10)]})
+    daft.from_pydict({"e": [rng.random(size=(D,), dtype=np.float32) for _ in range(10)]})
     .with_column("e", col("e").cast(daft.DataType.embedding(daft.DataType.float32(), D)))
     .collect()
 )
@@ -77,4 +79,31 @@ if len(error) > 0:
     # else:
     #    raise error[0]
 else:
-    print("OK! No bugs!")
+    print("OK! No bugs yet!")
+
+
+test_rows = list(x["e"] for x in test_df.iter_rows())
+for t in test_rows:
+    assert isinstance(t, np.ndarray)
+    assert t.dtype == np.float32
+
+
+def check(loaded):
+    l_rows = list(x["e"] for x in loaded.iter_rows())
+    for i, (t, l) in enumerate(zip(test_rows, l_rows)):
+        assert isinstance(l, np.ndarray), f"Expected a numpy array when loading, got a {type(l)}: {l}"
+        assert (t == l).all(), f"Failed on row {i}: test_df={t} vs. loaded={l}"
+        assert l.dtype == t.dtype
+
+
+check(loaded_test_parquet_df)
+print("Parquet loaded data matches 1-1")
+
+check(loaded_test_lance_df)
+print("Lance loaded data matches 1-1")
+
+print("OK Loaded data is the same!")
+
+import ipdb
+
+ipdb.set_trace()
