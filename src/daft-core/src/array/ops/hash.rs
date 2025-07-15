@@ -1,5 +1,7 @@
-use std::sync::Arc;
-use std::hash::{BuildHasher, Hasher};
+use std::{
+    hash::{BuildHasher, Hasher},
+    sync::Arc,
+};
 
 use arrow2::types::Index;
 use common_error::{DaftError, DaftResult};
@@ -25,7 +27,11 @@ impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,
 {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -41,7 +47,11 @@ where
 }
 
 impl Utf8Array {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -57,7 +67,11 @@ impl Utf8Array {
 }
 
 impl BinaryArray {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -73,7 +87,11 @@ impl BinaryArray {
 }
 
 impl FixedSizeBinaryArray {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -89,7 +107,11 @@ impl FixedSizeBinaryArray {
 }
 
 impl BooleanArray {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -105,7 +127,11 @@ impl BooleanArray {
 }
 
 impl NullArray {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -150,7 +176,7 @@ fn hash_list(
                     .values_iter()
                     .flat_map(|v| v.to_le_bytes())
                     .collect();
-                
+
                 match hash_function {
                     HashFunctionKind::XxHash => {
                         if let Some(cur_seed) = cur_seed_opt {
@@ -188,7 +214,7 @@ fn hash_list(
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {
                 let start = (offsets[i as usize] as usize) * OFFSET;
                 let end = (offsets[i as usize + 1] as usize) * OFFSET;
-                
+
                 match hash_function {
                     HashFunctionKind::XxHash => Some(xxh3_64(&child_bytes[start..end])),
                     HashFunctionKind::MurmurHash3 => {
@@ -210,7 +236,11 @@ fn hash_list(
 }
 
 impl ListArray {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -230,7 +260,11 @@ impl ListArray {
 }
 
 impl FixedSizeListArray {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         self.hash_with_specified_algorithm(seed, hash_function)
     }
     pub fn hash_with_specified_algorithm(
@@ -253,7 +287,11 @@ impl FixedSizeListArray {
 }
 
 impl StructArray {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         if self.children.is_empty() {
             return Err(DaftError::ValueError(
                 "Cannot hash struct with no children".into(),

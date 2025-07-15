@@ -1,13 +1,12 @@
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
-    sync::Arc,
 };
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
-use daft_dsl::{Expr, ExprRef, LiteralValue};
-use daft_recordbatch::RecordBatch;
+use daft_dsl::{ExprRef, Literal};
 use daft_hash::HashFunctionKind;
+use daft_recordbatch::RecordBatch;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PartitionSpec {
@@ -27,15 +26,7 @@ impl PartitionSpec {
         self.keys
             .columns()
             .iter()
-            .map(|column| {
-                (
-                    column.name(),
-                    Arc::new(Expr::Literal(
-                        LiteralValue::try_from_single_value_series(column)
-                            .expect("column should have one row"),
-                    )),
-                )
-            })
+            .map(|column| (column.name(), column.clone().lit()))
             .collect()
     }
 }
@@ -85,7 +76,9 @@ impl Hash for PartitionSpec {
         self.keys.schema.hash(state);
 
         for column in self.keys.columns() {
-            let column_hashes = column.hash(None, HashFunctionKind::XxHash).expect("Failed to hash column");
+            let column_hashes = column
+                .hash(None, HashFunctionKind::XxHash)
+                .expect("Failed to hash column");
             column_hashes.into_iter().for_each(|h| h.hash(state));
         }
     }

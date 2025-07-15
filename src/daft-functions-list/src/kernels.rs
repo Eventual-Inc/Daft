@@ -8,7 +8,7 @@ use daft_core::{
         ops::arrow2::comparison::build_is_equal,
         FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::{try_mean_aggregation_supertype},
+    datatypes::try_mean_aggregation_supertype,
     kernels::search_sorted::build_is_valid,
     prelude::{
         AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
