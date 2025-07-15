@@ -51,3 +51,10 @@ def test_dataframe_length_before_collect(daft_df):
     """Count rows for the entire table."""
     with pytest.raises(RuntimeError):
         len(daft_df)
+
+
+def test_count_rows_after_collect(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Count rows for the entire table."""
+    daft_df = daft_df.repartition(repartition_nparts).select(col("Unique Key")).where(col("Unique Key") > 1).collect()
+    expected_count = len(daft_df)
+    assert daft_df.count_rows() == expected_count
