@@ -17,7 +17,7 @@ from daft.schema import Schema
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
-    from daft.io.pushdowns import Pushdowns
+    from daft.io.pushdown.pushdowns import Pushdowns
 
 
 @overload

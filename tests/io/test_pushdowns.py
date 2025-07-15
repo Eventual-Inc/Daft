@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from daft.daft import PyPushdowns
 from daft.expressions import col, lit
-from daft.io.pushdowns import Pushdowns
+from daft.io.pushdown.pushdowns import Pushdowns
 
 if TYPE_CHECKING:
     from daft.expressions import Expression

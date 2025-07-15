@@ -7,6 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::Sharder;
 
+pub trait SupportsPushdownFilters {
+    /// Applies filters to the scan operator and returns the pushable filters and the remaining filters.
+    fn push_filters(&self, filter: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
+
+    /// Returns the filters that have already been pushed down (corresponds to pushed_filters in Python).
+    fn pushed_filters(&self) -> Vec<ExprRef>;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
@@ -19,6 +27,10 @@ pub struct Pushdowns {
     pub limit: Option<usize>,
     /// Sharding information.
     pub sharder: Option<Sharder>,
+    /// Optional filters that have been pushed down to the scan operator.
+    /// The `filters` field is kept for backward compatibility;
+    /// it represents all current filters.
+    pub pushed_filters: Option<Vec<ExprRef>>,
 }
 
 impl Default for Pushdowns {
@@ -42,6 +54,7 @@ impl Pushdowns {
             columns,
             limit,
             sharder,
+            pushed_filters: None,
         }
     }
 
@@ -61,6 +74,7 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -72,6 +86,7 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit: self.limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -83,6 +98,7 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit: self.limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -94,6 +110,7 @@ impl Pushdowns {
             columns,
             limit: self.limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -105,6 +122,19 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit: self.limit,
             sharder,
+            pushed_filters: self.pushed_filters.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_pushed_filters(&self, pushed_filters: Option<Vec<ExprRef>>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters,
         }
     }
 
@@ -135,6 +165,22 @@ impl Pushdowns {
         } else {
             1.0
         }
+    }
+
+    /// Applies the filters to the scan operator and returns the pushable filters and remaining filters.
+    pub fn apply_filters(
+        &mut self,
+        filters: &[ExprRef],
+        scan_operator: &impl SupportsPushdownFilters,
+    ) -> (Vec<ExprRef>, Vec<ExprRef>) {
+        let (pushable, remaining) = scan_operator.push_filters(filters);
+        if let Some(existing_filters) = &mut self.pushed_filters {
+            existing_filters.extend(pushable);
+        } else {
+            self.pushed_filters = Some(pushable);
+        }
+
+        (self.pushed_filters.clone().unwrap_or_default(), remaining)
     }
 }
 

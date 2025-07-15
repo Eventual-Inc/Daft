@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
-    from daft.io.pushdowns import Pushdowns
+    from daft.io.pushdown.pushdowns import Pushdowns
     from daft.recordbatch import MicroPartition
     from daft.schema import Schema
 
