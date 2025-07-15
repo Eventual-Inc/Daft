@@ -2311,12 +2311,9 @@ impl FixedSizeListArray {
                         self.fixed_element_len(),
                     )));
                 }
-
-                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                Ok(Self::new(
+                Ok(EmbeddingArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
-                    casted_child,
-                    self.validity().cloned(),
+                    self.clone(),
                 )
                 .into_series())
             }
