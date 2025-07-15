@@ -154,6 +154,11 @@ fn hash_list(
     seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
 ) -> DaftResult<UInt64Array> {
+    // first we hash the flat child
+    // turning [[stuff], [stuff, stuff], ...] into [[hash], [hash, hash], ...]
+    // then we hash each sublist as bytes, giving us [hash, hash, ...] as desired
+    // if seed is provided, the sublists are hashed with the seed broadcasted
+
     if let Some(seed_arr) = seed {
         let combined_validity = arrow_bitmap_and_helper(validity, seed.unwrap().validity());
         UInt64Array::from_iter(
@@ -163,7 +168,7 @@ fn hash_list(
                 let end = offsets[i as usize + 1] as usize;
                 let cur_seed_opt = seed_arr.get(i as usize);
                 let flat_seed = UInt64Array::from_iter(
-                    Field::new("seed", DataType::UInt64),
+                    Arc::new(Field::new("seed", DataType::UInt64)),
                     std::iter::repeat_n(cur_seed_opt, end - start),
                 );
                 let hashed_child = flat_child
