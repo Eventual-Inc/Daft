@@ -51,8 +51,9 @@ def _s3_config_to_storage_options(s3_config: S3Config, bucket: str) -> dict[str,
     if s3_config.force_virtual_addressing:
         storage_options["virtual_hosted_style_request"] = "true"
         if s3_config.endpoint_url and bucket not in s3_config.endpoint_url:
-            # Add bucket into endpoint url in case the third party service required the
-            # consistent between endpoint and virtual hosted style, e.g. lance or arrow-object-store.
+            # Note: Add bucket into endpoint url in case the third party service require the
+            # consistency between endpoint and virtual-hosted style, for example, lance or arrow-object-store.
+            # Refer to: https://github.com/apache/arrow-rs-object-store/blob/release/0.12/src/aws/builder.rs#L724
             parsed = urlparse(s3_config.endpoint_url)
             storage_options["endpoint_url"] = f"{parsed.scheme}://{bucket}.{parsed.netloc}{parsed.path}"
     return storage_options
