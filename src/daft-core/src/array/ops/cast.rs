@@ -11,7 +11,6 @@ use arrow2::{
         self,
         cast::{can_cast_types, cast, CastOptions},
     },
-    datatypes::PhysicalType::FixedSizeList,
     offset::Offsets,
 };
 use common_error::{DaftError, DaftResult};
@@ -2293,13 +2292,13 @@ impl FixedSizeListArray {
                 )
                 .into_series())
             }
-            DataType::Embedding(child_datatype, dimensionality) => {
-                if child_datatype.as_ref() != self.child_data_type() {
+            DataType::Embedding(child_dtype, dimensionality) => {
+                if **child_dtype != *self.child_data_type() {
                     return Err(DaftError::TypeError(format!(
                         "Cannot cast {} to {}: mismatched child type. Found {} but expected {}",
                         self.data_type(),
                         dtype,
-                        child_datatype.as_ref(),
+                        child_dtype.as_ref(),
                         self.child_data_type(),
                     )));
                 }
@@ -2312,6 +2311,8 @@ impl FixedSizeListArray {
                         self.fixed_element_len(),
                     )));
                 }
+
+                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
                 Ok(Self::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
