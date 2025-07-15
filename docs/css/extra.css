@@ -186,6 +186,6 @@ code.doc-symbol-method::after {
   grid-template-columns: repeat(3, 1fr);
 }
 
-.grid.cards.api li {
+.md-typeset .grid.cards.api>ol>li, .md-typeset .grid.cards.api>ul>li, .md-typeset .api>.grid>.card {
   padding: .5rem .6rem !important;
 }
