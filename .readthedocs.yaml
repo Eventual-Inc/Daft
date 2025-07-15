@@ -4,13 +4,13 @@ build:
   os: "ubuntu-24.04"
   tools:
     python: '3.10'
-    rust: '1.70'
-  commands:
-  - |
-    python -m venv venv
-    . venv/bin/activate
-    pip install daft
-    python tools/generate_api.py
+  jobs:
+    pre_build:
+    - |
+      python -m venv venv
+      . venv/bin/activate
+      pip install daft
+      python tools/generate_api.py
 
 python:
   install:

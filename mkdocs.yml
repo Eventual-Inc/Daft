@@ -3,7 +3,7 @@
 # Project Information
 site_name: Daft Documentation
 site_author: Eventual
-site_url: https://docs.getdaft.io/en/stable/
+site_url: https://docs.daft.ai/en/stable/
 site_description: |
   Welcome to Daft Documentation! Daft is a high-performance data engine providing simple and reliable data processing for any modality and scale.
 copyright: '&copy; Copyright 2025, Eventual <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=2293a436-7808-4c74-9bf3-d3e86e4eed91" />'
