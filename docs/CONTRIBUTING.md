@@ -25,7 +25,7 @@
 
 ### Add a new expression to API Docs:
 
-1. Find the appropriate API doc, ie. [I/O](api/io.md), [DataFrame](api/dataframe.md), or [Expressions](api/expressions.md) and add the module path of the expression `::: daft.[classname].[functionname]` to the appropriate section
+1. Find the appropriate API doc, ie. [I/O](api/io.md), [DataFrame](api/dataframe.md), or [Expressions](api/expressions.md), and add the module path of the expression `::: daft.[classname].[functionname]` to the appropriate section
 
 ## Add a new page to SQL Reference:
 

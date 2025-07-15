@@ -187,5 +187,5 @@ code.doc-symbol-method::after {
 }
 
 .md-typeset .grid.cards>ol>li, .md-typeset .grid.cards>ul>li, .md-typeset .grid>.card {
-  padding: 0.6rem;
+  padding: 0.6rem !important;
 }
