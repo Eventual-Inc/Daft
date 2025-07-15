@@ -11,6 +11,7 @@ use arrow2::{
         self,
         cast::{can_cast_types, cast, CastOptions},
     },
+    datatypes::PhysicalType::FixedSizeList,
     offset::Offsets,
 };
 use common_error::{DaftError, DaftResult};
@@ -2264,6 +2265,14 @@ impl FixedSizeListArray {
                         dtype
                     )));
                 }
+                // TODO [mg]: I recall in testing that this shape is wrong. It flattens everything.
+                //            It needs to preserve the shape! Otherwise it is *strictly wrong*.
+                //            Why is this occurring when it deserializes??
+                //            Need to figure out how to trace the data flow / debug so I can
+                //            see where this incorrect decision occurs. Maybe because Parquet
+                //            saves it as a big ol' fixed list? We need to recognize this
+                //            by saving the type + shape in the Arrow schema, recognizing this, and
+                //            deserializing into a real n-dimensional tensor!
                 Ok(FixedShapeTensorArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     self.clone(),
@@ -2281,6 +2290,32 @@ impl FixedSizeListArray {
                 Ok(FixedShapeImageArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     self.clone(),
+                )
+                .into_series())
+            }
+            DataType::Embedding(child_datatype, dimensionality) => {
+                if child_datatype.as_ref() != self.child_data_type() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatched child type. Found {} but expected {}",
+                        self.data_type(),
+                        dtype,
+                        child_datatype.as_ref(),
+                        self.child_data_type(),
+                    )));
+                }
+                if *dimensionality != self.fixed_element_len() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatched sizes. Found {} but expected {}",
+                        self.data_type(),
+                        dtype,
+                        dimensionality,
+                        self.fixed_element_len(),
+                    )));
+                }
+                Ok(Self::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    casted_child,
+                    self.validity().cloned(),
                 )
                 .into_series())
             }
