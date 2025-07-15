@@ -36,8 +36,13 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
         region: str = "aws-us-west-2",
         distance_metric: Literal["cosine_distance", "euclidean_squared"] | None = None,
         schema: dict[str, Any] | None = None,
+        vector_column: str | None = None,
     ) -> None:
         """Initialize the Turbopuffer data sink.
+
+        This data sink transforms each row of the dataframe into a turbopuffer document.
+        This means that an `id` column is always required, and a `vector` column (or another column with an embedding type whose name is specified by the `vector_column` parameter) is required if the namespace has a vector index.
+        All other columns become attributes.
 
         For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
 
@@ -45,9 +50,9 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
             namespace: The namespace to write to.
             api_key: Turbopuffer API key (defaults to TURBOPUFFER_API_KEY env var).
             region: Turbopuffer region (defaults to "aws-us-west-2").
-            distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_distance").
+            distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
             schema: Optional manual schema specification.
-            io_config: IO configuration
+            vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.
         """
         self._namespace_name = namespace
         self._api_key = api_key or os.getenv("TURBOPUFFER_API_KEY")
@@ -57,6 +62,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
         self._region = region
         self._distance_metric = distance_metric
         self._schema = schema or {}
+        self._vector_column = vector_column
 
         self._result_schema = Schema._from_field_name_and_types([("write_responses", DataType.python())])
 
@@ -77,6 +83,13 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
         for micropartition in micropartitions:
             arrow_table = micropartition.to_arrow()
+            if self._vector_column:
+                if self._vector_column not in arrow_table.column_names:
+                    raise ValueError(
+                        f"Vector column {self._vector_column} not found in schema, cannot use as column for vector index"
+                    )
+                arrow_table = arrow_table.rename_columns({self._vector_column: "vector"})
+
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows
 
