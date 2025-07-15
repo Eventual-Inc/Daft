@@ -85,7 +85,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace, --all-targets]
+    args: [--workspace, --all-targets, -v]
 
   - id: cargo-check-all-features
     name: cargo check (all features)

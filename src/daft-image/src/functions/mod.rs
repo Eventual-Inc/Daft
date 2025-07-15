@@ -1,5 +1,6 @@
 use daft_dsl::functions::FunctionModule;
 
+pub mod attribute;
 pub mod crop;
 pub mod decode;
 pub mod encode;
@@ -15,5 +16,6 @@ impl FunctionModule for ImageFunctions {
         parent.add_fn(encode::ImageEncode);
         parent.add_fn(resize::ImageResize);
         parent.add_fn(to_mode::ImageToMode);
+        parent.add_fn(attribute::ImageAttribute);
     }
 }

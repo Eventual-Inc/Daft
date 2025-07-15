@@ -77,6 +77,17 @@ class ImageMode(Enum):
         """
         ...
 
+class ImageProperty(Enum):
+    """Supported image properties for Daft's image type."""
+
+    Height = 1
+    Width = 2
+    Channel = 3
+    Mode = 4
+
+    @staticmethod
+    def from_property_string(attr: str) -> ImageProperty: ...
+
 class PyWindowBoundary:
     """Represents a window frame boundary in window functions."""
 
