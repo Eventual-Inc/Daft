@@ -2108,6 +2108,8 @@ class DataFrame:
         Returns:
             int: count of the number of rows in this DataFrame.
         """
+        if self._result is not None:
+            return len(self._result)
         builder = self._builder.count()
         count_df = DataFrame(builder)
         # Expects builder to produce a single-partition, single-row DataFrame containing
