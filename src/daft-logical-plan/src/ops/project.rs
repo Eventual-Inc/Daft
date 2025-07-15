@@ -116,7 +116,13 @@ impl Project {
             has_window
         });
 
-        if has_window {
+        // After the binding step, we don't want to introduce unbound columns into the plan, so skip this.
+        // Instead, we should replace `try_factor_subexpressions` with an optimizer rule that operates on bound columns.
+        let has_bound_col = projection
+            .iter()
+            .any(|expr| expr.exists(|e| matches!(e.as_ref(), Expr::Column(Column::Bound(_)))));
+
+        if has_window || has_bound_col {
             return Ok((input, projection));
         }
 

@@ -22,6 +22,7 @@ mod simplify_expressions;
 mod simplify_null_filtered_join;
 mod split_actor_pool_projects;
 mod split_explode_from_project;
+mod split_exprs;
 mod unnest_subquery;
 
 pub use detect_monotonic_id::DetectMonotonicId;
