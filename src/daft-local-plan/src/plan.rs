@@ -266,7 +266,7 @@ impl LocalPhysicalPlan {
         })
         .arced()
     }
-    pub(crate) fn ungrouped_aggregate(
+    pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
         schema: SchemaRef,
@@ -389,7 +389,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_order_by_only(
+    pub fn window_order_by_only(
         input: LocalPhysicalPlanRef,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -457,7 +457,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn sort(
+    pub fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -476,7 +476,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn top_n(
+    pub fn top_n(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -557,7 +557,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn cross_join(
+    pub fn cross_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         schema: SchemaRef,
