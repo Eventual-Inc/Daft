@@ -36,12 +36,18 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
         region: str = "aws-us-west-2",
         distance_metric: Literal["cosine_distance", "euclidean_squared"] | None = None,
         schema: dict[str, Any] | None = None,
+        id_column: str | None = None,
         vector_column: str | None = None,
     ) -> None:
         """Initialize the Turbopuffer data sink.
 
         This data sink transforms each row of the dataframe into a turbopuffer document.
-        This means that an `id` column is always required, and a `vector` column (or another column with an embedding type whose name is specified by the `vector_column` parameter) is required if the namespace has a vector index.
+        This means that an `id` column is always required. Optionally, the `id_column` parameter can be used to specify the column name to used for the id column.
+        Note that the column with the name specified by `id_column` will be renamed to "id" when written to turbopuffer.
+
+        A `vector` column is required if the namespace has a vector index. Optionally, the `vector_column` parameter can be used to specify the column name to used for the vector index.
+        Note that the column with the name specified by `vector_column` will be renamed to "vector" when written to turbopuffer.
+
         All other columns become attributes.
 
         For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
@@ -52,6 +58,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
             region: Turbopuffer region (defaults to "aws-us-west-2").
             distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
             schema: Optional manual schema specification.
+            id_column: Optional column name for the id column. The data sink will automatically rename the column to "id" for the id column.
             vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.
         """
         self._namespace_name = namespace
@@ -62,6 +69,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
         self._region = region
         self._distance_metric = distance_metric
         self._schema = schema or {}
+        self._id_column = id_column
         self._vector_column = vector_column
 
         self._result_schema = Schema._from_field_name_and_types([("write_responses", DataType.python())])
@@ -83,6 +91,10 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
         for micropartition in micropartitions:
             arrow_table = micropartition.to_arrow()
+            if self._id_column:
+                if self._id_column not in arrow_table.column_names:
+                    raise ValueError(f"ID column {self._id_column} not found in schema, cannot use as column for id")
+                arrow_table = arrow_table.rename_columns({self._id_column: "id"})
             if self._vector_column:
                 if self._vector_column not in arrow_table.column_names:
                     raise ValueError(
