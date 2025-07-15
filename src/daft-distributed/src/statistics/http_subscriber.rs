@@ -428,7 +428,7 @@ impl HttpSubscriber {
 
                 if let Some(existing_node) = nodes_map.get_mut(&node_id) {
                     // Update node with task information
-                    existing_node.label = Self::extract_operation_name(&task_state.name);
+                    existing_node.label = Self::extract_operation_name(&existing_node.label);
                     existing_node.description.clone_from(&task_state.name);
                     existing_node.metadata = HashMap::from([
                         ("plan_id".to_string(), context.plan_id.to_string()),
