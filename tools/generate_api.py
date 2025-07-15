@@ -30,7 +30,6 @@ FILE_CONFIGS = [
 @lru_cache(maxsize=256)
 def get_function_info(expr: str) -> tuple[str, str]:
     """Get function name and docstring first line. Cached to avoid repeated imports."""
-    # All expressions start with 'daft' based on your clarification
     if not expr.startswith("daft."):
         func_name = expr.split(".")[-1]
         return func_name, "[Invalid expression: must start with 'daft.']"
@@ -56,7 +55,6 @@ def get_function_info(expr: str) -> tuple[str, str]:
             doc = inspect.getdoc(func)
             return func_name, doc.strip().split("\n")[0] if doc else ""
     except (ImportError, AttributeError) as e:
-        # Let it fail naturally as you mentioned - this preserves your current behavior
         func_name = expr.split(".")[-1]
         raise ImportError(f"Could not import {expr}: {e}") from e
 
@@ -124,7 +122,7 @@ def process_section(lines: list[str], start_idx: int, section_filter: Optional[s
     while i < len(lines) and not lines[i].startswith("#"):
         line = lines[i]
         if line.strip().startswith(":::"):
-            match = re.match(r"^::: (daft\.[\w\.]+)", line)  # Ensure it starts with 'daft.'
+            match = re.match(r"^::: (daft\.[\w\.]+)", line)
             if match:
                 expressions.append(match.group(1))
         i += 1
