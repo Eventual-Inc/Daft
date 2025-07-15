@@ -2,11 +2,11 @@
 async-recursion = "1.0.4"
 async-stream = "0.3.6"
 async-trait = {workspace = true}
-aws-config = "1.6.3"
+aws-config = "1.8.1"
 aws-credential-types = {version = "1.2.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = {version = "1.90.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
-aws-smithy-http-client = "1.0.3"
-aws-smithy-runtime-api = "1.8.0"
+aws-sdk-s3 = {version = "1.96.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
+aws-smithy-http-client = "1.0.6"
+aws-smithy-runtime-api = "1.8.3"
 azure_core = {version = "0.21.0", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
 azure_identity = {version = "0.21.0", features = ["enable_reqwest_rustls"], default-features = false}
 azure_storage = {version = "0.21.0", features = ["enable_reqwest_rustls"], default-features = false}
@@ -25,11 +25,11 @@ home = "0.5.9"
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-rand = "0.8.5"
+rand = "0.9.1"
 regex = {version = "1.10.4"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
-retry-policies = "0.4.0"
+retry-policies = "0.5.1"
 serde = {workspace = true}
 snafu = {workspace = true}
 thiserror = {workspace = true}
@@ -44,7 +44,7 @@ features = ["stream", "json"]
 version = "0.12.19"
 
 [dev-dependencies]
-md5 = "0.7.0"
+md5 = "0.8.0"
 tempfile = "3.8.1"
 
 [features]
