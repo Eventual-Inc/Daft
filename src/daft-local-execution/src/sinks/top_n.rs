@@ -140,7 +140,7 @@ impl BlockingSink for TopNSink {
                         &params.nulls_first,
                         params.limit,
                     )?);
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(final_output)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
                 },
                 Span::current(),
             )

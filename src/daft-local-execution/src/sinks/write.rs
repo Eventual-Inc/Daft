@@ -166,7 +166,7 @@ impl BlockingSink for WriteSink {
                         results.into(),
                         None,
                     ));
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(mp)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![mp]))
                 },
                 Span::current(),
             )

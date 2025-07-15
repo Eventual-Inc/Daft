@@ -54,7 +54,7 @@ def test_deltalake_write_basic(tmp_path, base_table):
     assert result["rows"] == [base_table.num_rows]
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == base_table
 
@@ -71,7 +71,7 @@ def test_deltalake_multi_write_basic(tmp_path, base_table):
     assert result["rows"] == [base_table.num_rows]
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df.schema() == expected_schema
     assert read_delta.version() == 1
     assert read_delta.to_pyarrow_table() == pa.concat_tables([base_table, base_table])
@@ -87,7 +87,7 @@ def test_deltalake_write_cloud(base_table, cloud_paths):
     assert result["rows"] == [base_table.num_rows]
     storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
     read_delta = deltalake.DeltaTable(str(path), storage_options=storage_options)
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == base_table
 
@@ -105,7 +105,7 @@ def test_deltalake_write_overwrite_basic(tmp_path):
     assert result["rows"] == [2, 2]
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df2.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == df2.to_arrow()
 
@@ -124,7 +124,7 @@ def test_deltalake_write_overwrite_cloud(cloud_paths):
 
     storage_options = io_config_to_storage_options(io_config, path) if io_config is not None else None
     read_delta = deltalake.DeltaTable(str(path), storage_options=storage_options)
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df2.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == df2.to_arrow()
 
@@ -147,7 +147,7 @@ def test_deltalake_write_overwrite_multi_partition(tmp_path):
     assert result["operation"] == ["ADD", "ADD", "DELETE", "DELETE"]
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df2.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == df2.to_arrow()
 
@@ -164,7 +164,7 @@ def test_deltalake_write_overwrite_schema(tmp_path):
     assert result["operation"] == ["ADD", "DELETE"]
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df2.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == df2.to_arrow()
 
@@ -197,7 +197,7 @@ def test_deltalake_write_ignore(tmp_path):
     assert result.num_rows == 0
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df1.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == df1.to_arrow()
 
@@ -216,7 +216,7 @@ def test_deltalake_write_with_empty_partition(tmp_path, base_table):
     assert result["rows"] == [1, 1, 1]
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df.schema() == expected_schema
     assert read_delta.to_pyarrow_table() == base_table
 
@@ -231,7 +231,7 @@ def check_equal_both_daft_and_delta_rs(df: daft.DataFrame, path: Path, sort_orde
     assert read_daft.to_arrow().sort_by(sort_order) == arrow_df
 
     read_delta = deltalake.DeltaTable(str(path))
-    expected_schema = Schema.from_pyarrow_schema(read_delta.schema().to_pyarrow())
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(read_delta.schema().to_arrow()))
     assert df.schema() == expected_schema
     assert read_delta.to_pyarrow_table().cast(expected_schema.to_pyarrow_schema()).sort_by(sort_order) == arrow_df
 
@@ -365,7 +365,6 @@ def test_custom_metadata_updated_for_existing_table(tmp_path, custom_metadata):
     assert custom_metadata.items() <= history[0].items()
 
 
-@patch("deltalake.__version__", "0.20.0")
 def test_custom_metadata_updated_for_existing_table_with_commit_properties(
     tmp_path, custom_metadata, commit_properties
 ):

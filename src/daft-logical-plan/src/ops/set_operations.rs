@@ -233,7 +233,7 @@ impl Intersect {
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(resolved_col(V_MIN_COUNT), column.clone()))
+                    explode(list_fill(column.clone(), resolved_col(V_MIN_COUNT)))
                         .alias(column.name())
                 })
                 .collect::<Vec<_>>();
@@ -514,7 +514,7 @@ impl Except {
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(resolved_col(virtual_sum), column.clone()))
+                    explode(list_fill(column.clone(), resolved_col(virtual_sum)))
                         .alias(column.name())
                 })
                 .collect::<Vec<_>>();

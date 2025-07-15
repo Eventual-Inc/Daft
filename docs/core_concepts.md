@@ -2707,6 +2707,7 @@ Now you're ready to call this function on the `urls` column and store the output
 - [:material-image-search: **Querying Images with UDFs**](resources/tutorials.md#querying-images-with-udfs)
 - [:material-image-sync: **Image Generation on GPUs**](resources/tutorials.md#image-generation-on-gpus)
 - [:material-window-closed-variant: **Window Functions in Daft**](resources/tutorials.md#window-functions)
+- [:material-file-document: **Document Processing**](resources/tutorials.md#document-processing)
 
 </div>
 
