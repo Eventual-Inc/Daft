@@ -2,6 +2,7 @@ pub mod dtype;
 pub mod field;
 pub mod image_format;
 pub mod image_mode;
+pub mod image_property;
 pub mod prelude;
 
 #[cfg(feature = "python")]
