@@ -182,10 +182,10 @@ code.doc-symbol-method::after {
   font-size: 0.7rem;
 }
 
-.grid.cards.api {
-  grid-template-columns: repeat(3, 1fr);
+.grid.cards li {
+  padding: 0.6rem !important;
 }
 
-.md-typeset .grid.cards>ol>li, .md-typeset .grid.cards>ul>li, .md-typeset .grid>.card {
-  padding: 0.6rem !important;
+.grid.cards.api {
+  grid-template-columns: repeat(3, 1fr);
 }
