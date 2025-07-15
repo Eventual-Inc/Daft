@@ -6,7 +6,6 @@ use daft_core::{
     prelude::*,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
-
 use daft_hash::HashFunctionKind;
 
 use super::WindowAggStateOps;
@@ -20,7 +19,9 @@ pub struct CountDistinctWindowState {
 
 impl CountDistinctWindowState {
     pub fn new(source: &Series, total_length: usize) -> Self {
-        let hashed = source.hash_with_validity(None, HashFunctionKind::XxHash).unwrap();
+        let hashed = source
+            .hash_with_validity(None, HashFunctionKind::XxHash)
+            .unwrap();
 
         let array = source.to_arrow();
         let comparator = build_is_equal(&*array, &*array, true, false).unwrap();

@@ -5,8 +5,8 @@ use std::{
 
 use arrow2::array::Array;
 use common_error::DaftResult;
-use fnv::FnvHashMap;
 use daft_hash::HashFunctionKind;
+use fnv::FnvHashMap;
 
 use super::{as_arrow::AsArrow, IntoGroups};
 use crate::{
@@ -367,7 +367,8 @@ impl IntoGroups for ListArray {
 
 impl IntoUniqueIdxs for ListArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        self.hash(None, HashFunctionKind::XxHash)?.make_unique_idxs()
+        self.hash(None, HashFunctionKind::XxHash)?
+            .make_unique_idxs()
     }
 }
 
@@ -379,7 +380,8 @@ impl IntoGroups for FixedSizeListArray {
 
 impl IntoUniqueIdxs for FixedSizeListArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        self.hash(None, HashFunctionKind::XxHash)?.make_unique_idxs()
+        self.hash(None, HashFunctionKind::XxHash)?
+            .make_unique_idxs()
     }
 }
 
@@ -391,6 +393,7 @@ impl IntoGroups for StructArray {
 
 impl IntoUniqueIdxs for StructArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        self.hash(None, HashFunctionKind::XxHash)?.make_unique_idxs()
+        self.hash(None, HashFunctionKind::XxHash)?
+            .make_unique_idxs()
     }
 }

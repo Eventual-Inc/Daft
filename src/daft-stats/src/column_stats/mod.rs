@@ -8,10 +8,10 @@ use std::{
 };
 
 use daft_core::prelude::*;
+use daft_hash::HashFunctionKind;
 use snafu::{ResultExt, Snafu};
 
 use crate::DaftCoreComputeSnafu;
-use daft_hash::HashFunctionKind;
 #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ColumnRangeStatistics {
     Missing,

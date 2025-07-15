@@ -41,7 +41,6 @@ mod preview;
 mod probeable;
 mod repr_html;
 use daft_hash::HashFunctionKind;
-
 pub use growable::GrowableRecordBatch;
 pub use ops::{get_column_by_name, get_columns_by_name};
 pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
@@ -71,7 +70,9 @@ impl Hash for RecordBatch {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.schema.hash(state);
         for col in &*self.columns {
-            let hashes = col.hash(None, HashFunctionKind::XxHash).expect("Failed to hash column");
+            let hashes = col
+                .hash(None, HashFunctionKind::XxHash)
+                .expect("Failed to hash column");
             hashes.into_iter().for_each(|h| h.hash(state));
         }
         self.num_rows.hash(state);

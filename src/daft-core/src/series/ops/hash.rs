@@ -9,7 +9,11 @@ use crate::{
 };
 
 impl Series {
-    pub fn hash(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let s = self.as_physical()?;
         with_match_hashable_daft_types!(s.data_type(), |$T| {
             let downcasted = s.downcast::<<$T as DaftDataType>::ArrayType>()?;
@@ -17,7 +21,11 @@ impl Series {
         })
     }
 
-    pub fn hash_with_validity(&self, seed: Option<&UInt64Array>, hash_function: HashFunctionKind) -> DaftResult<UInt64Array> {
+    pub fn hash_with_validity(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let hash = self.hash(seed, hash_function)?;
         let validity = if matches!(self.data_type(), DataType::Null) {
             Some(Bitmap::new_zeroed(self.len()))
