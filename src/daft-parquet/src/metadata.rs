@@ -11,6 +11,8 @@ use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
 
+const FOOTER_SIZE: usize = 8;
+
 fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
@@ -217,6 +219,13 @@ fn apply_field_ids_to_parquet_file_metadata(
 pub(crate) fn validate_footer_magic(uri: &str, buffer: &[u8]) -> super::Result<()> {
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
 
+    if buffer.len() < FOOTER_SIZE {
+        return Err(Error::FileTooSmall {
+            path: uri.into(),
+            file_size: buffer.len(),
+        });
+    }
+
     if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
         return Err(Error::InvalidParquetFile {
             path: uri.into(),
@@ -234,8 +243,6 @@ pub(crate) async fn read_parquet_metadata(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     default_footer_read_size: Option<usize>,
 ) -> super::Result<FileMetaData> {
-    const FOOTER_SIZE: usize = 8;
-
     async fn fetch_data(
         io_client: Arc<IOClient>,
         uri: &str,
