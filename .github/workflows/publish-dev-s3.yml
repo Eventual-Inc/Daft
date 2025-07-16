@@ -5,6 +5,7 @@ on:
     inputs:
       use_lto:
         description: Whether to enable link-time optimization
+        type: boolean
         default: true
         required: false
   workflow_call:
