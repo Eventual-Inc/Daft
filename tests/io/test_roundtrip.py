@@ -203,11 +203,11 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
         #      if the length of everything isn't the exact `list_size`.
         #   => Maybe the `None` is tripping it up? It should infer this as an optional / nullable type!
         #          -> No, removing this last None still results in same failure.
-        # (
-        #     [[1, 2, 3], [4, 5, 6], None],
-        #     pa.list_(pa.int64(), list_size=3),
-        #     DataType.fixed_size_list(DataType.int64(), 3),
-        # ),
+        (
+            [[1, 2, 3], [4, 5, 6], None],
+            pa.list_(pa.int64(), list_size=3),
+            DataType.fixed_size_list(DataType.int64(), 3),
+        ),
         #
         # TODO [mg]: Lance messes up the schema on read:
         #   before: [{'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}, {'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}] {'foo': None}, {'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}]
@@ -216,6 +216,8 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
         #   => Looks like the before is wrong!
         ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
         #
+        # TODO[mg]: Lance is unable to write data in this schema!
+        # OSError: LanceError(Schema): Unsupported data type: Map(Field { name: "entries", data_type: Struct([Field { name: "key", data_type: LargeUtf8, nullable: false, dict_id: 0, dict_is_ordered: false, metadata: {} }, Field { name: "value", data_type: Int64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} }]), nullable: false, dict_id: 0, dict_is_ordered: false, metadata: {} }, false), /Users/runner/work/lance/lance/rust/lance-core/src/datatypes.rs:171:31
         (
             [[("a", 1), ("b", 2)], [], None],
             pa.map_(pa.large_string(), pa.int64()),
@@ -224,11 +226,17 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_type, expected_dtype: DataType):
+    if data == [[1, 2, 3], [4, 5, 6], None]:
+        pytest.skip(
+            f"BUG -- FIXME: Daft cannot handle this {data=} as {expected_dtype=} -> it "
+            f"coerces into a list[int64] despite the PyArrow list_size being specified as 3."
+        )
     if fmt == "lance":
-        if data == [{"bar": 1}, {"bar": None}, None] or data == [[1, 2, 3], [4, 5, 6], None]:
+        if data == [{"bar": 1}, {"bar": None}, None] or data == [[("a", 1), ("b", 2)], [], None]:
             pytest.skip(f"BUG -- FIXME: Lance cannot handle this test case: {data=} {pa_type=} {expected_dtype=}")
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before).collect()
+    print(f"{fmt=} {data=}")
     getattr(before, f"write_{fmt}")(str(tmp_path))
     after = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
     assert (
