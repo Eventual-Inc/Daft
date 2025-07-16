@@ -11,7 +11,7 @@ use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler};
+use super::{default::DefaultScheduler, linear::LinearScheduler, PendingTask, Scheduler};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
@@ -29,8 +29,8 @@ use crate::{
     },
 };
 
-pub(crate) type SchedulerSender<T> = UnboundedSender<SchedulableTask<T>>;
-pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<SchedulableTask<T>>;
+pub(crate) type SchedulerSender<T> = UnboundedSender<PendingTask<T>>;
+pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<PendingTask<T>>;
 
 const SCHEDULER_LOG_TARGET: &str = "DaftFlotillaScheduler";
 const SCHEDULER_TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -90,7 +90,7 @@ where
     }
 
     fn handle_new_tasks(
-        maybe_new_task: Option<SchedulableTask<W::Task>>,
+        maybe_new_task: Option<PendingTask<W::Task>>,
         task_rx: &mut SchedulerReceiver<W::Task>,
         statistics_manager: &StatisticsManagerRef,
         scheduler: &mut S,
@@ -148,7 +148,7 @@ where
             scheduler.update_worker_state(&worker_snapshots);
 
             // 1: Get all tasks that are ready to be scheduled
-            let scheduled_tasks = scheduler.get_schedulable_tasks();
+            let scheduled_tasks = scheduler.schedule_tasks();
             // 2: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
@@ -157,7 +157,7 @@ where
                 // Report to statistics manager
                 for task in &scheduled_tasks {
                     let task_context = task.task().task_context();
-                    statistics_manager.handle_event(StatisticsEvent::ScheduledTask {
+                    statistics_manager.handle_event(StatisticsEvent::TaskScheduled {
                         context: task_context,
                     })?;
                 }
@@ -238,19 +238,19 @@ impl<T: Task> SchedulerHandle<T> {
 
     pub fn prepare_task_for_submission(
         submittable_task: SubmittableTask<T>,
-    ) -> (SchedulableTask<T>, SubmittedTask) {
+    ) -> (PendingTask<T>, SubmittedTask) {
         let task_id = submittable_task.task.task_id();
-
-        let schedulable_task = SchedulableTask::new(
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let schedulable_task = PendingTask::new(
             submittable_task.task,
-            submittable_task.result_tx,
+            result_tx,
             submittable_task.cancel_token.clone(),
         );
         let submitted_task = SubmittedTask::new(
             task_id,
-            submittable_task.result_rx,
+            result_rx,
             Some(submittable_task.cancel_token),
-            submittable_task.notify_token,
+            submittable_task.notify_tokens,
         );
 
         (schedulable_task, submitted_task)
@@ -269,22 +269,17 @@ impl<T: Task> SchedulerHandle<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
-    result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
-    notify_token: Option<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<()>>,
 }
 
 impl<T: Task> SubmittableTask<T> {
     pub fn new(task: T) -> Self {
-        let (result_tx, result_rx) = create_oneshot_channel();
         let cancel_token = CancellationToken::new();
         Self {
             task,
-            result_tx,
-            result_rx,
             cancel_token,
-            notify_token: None,
+            notify_tokens: vec![],
         }
     }
 
@@ -292,9 +287,9 @@ impl<T: Task> SubmittableTask<T> {
         &self.task
     }
 
-    pub fn with_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
+    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
         let (notify_token, notify_rx) = create_oneshot_channel();
-        self.notify_token = Some(notify_token);
+        self.notify_tokens.push(notify_token);
         (self, notify_rx)
     }
 
@@ -313,7 +308,7 @@ pub(crate) struct SubmittedTask {
     _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
-    notify_token: Option<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<()>>,
     finished: bool,
 }
 
@@ -322,13 +317,13 @@ impl SubmittedTask {
         task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
-        notify_token: Option<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<()>>,
     ) -> Self {
         Self {
             _task_id: task_id,
             result_rx,
             cancel_token,
-            notify_token,
+            notify_tokens,
             finished: false,
         }
     }
@@ -346,7 +341,7 @@ impl Future for SubmittedTask {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
-                if let Some(notify_token) = self.notify_token.take() {
+                for notify_token in self.notify_tokens.drain(..) {
                     let _ = notify_token.send(());
                 }
                 Poll::Ready(result)
@@ -354,7 +349,7 @@ impl Future for SubmittedTask {
             // If the sender is dropped (i.e. the task is cancelled), return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
-                if let Some(notify_token) = self.notify_token.take() {
+                for notify_token in self.notify_tokens.drain(..) {
                     let _ = notify_token.send(());
                 }
                 Poll::Ready(Ok(None))

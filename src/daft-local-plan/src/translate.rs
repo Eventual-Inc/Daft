@@ -290,9 +290,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
-            if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
+            if join
+                .join_strategy
+                .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+            {
                 return Err(DaftError::not_implemented(
-                    "Only hash join is supported for now",
+                    "Only hash and broadcast join strategies are supported for now",
                 ));
             }
             let left = translate(&join.left)?;
@@ -365,6 +368,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::monotonically_increasing_id(
                 input,
                 monotonically_increasing_id.column_name.clone(),
+                monotonically_increasing_id.starting_offset,
                 monotonically_increasing_id.schema.clone(),
                 monotonically_increasing_id.stats_state.clone(),
             ))

@@ -4,7 +4,6 @@ use std::{
     collections::HashMap,
     io::Write,
     num::{NonZeroI32, NonZeroUsize},
-    ops::Range,
     pin::Pin,
     string::FromUtf8Error,
     sync::Arc,
@@ -51,11 +50,12 @@ use url::{ParseError, Position};
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     Error::InvalidArgument,
-    FileFormat, InvalidArgumentSnafu, SourceType,
+    FileFormat, InvalidArgumentSnafu, InvalidRangeRequestSnafu, SourceType,
 };
 
 const S3_DELIMITER: &str = "/";
@@ -691,7 +691,7 @@ impl S3LikeSource {
         &self,
         permit: OwnedSemaphorePermit,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         region: &Region,
     ) -> super::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
@@ -716,11 +716,10 @@ impl S3LikeSource {
 
             let request = match &range {
                 None => request,
-                Some(range) => request.range(format!(
-                    "bytes={}-{}",
-                    range.start,
-                    range.end.saturating_sub(1)
-                )),
+                Some(range) => {
+                    range.validate().context(InvalidRangeRequestSnafu)?;
+                    request.range(range.to_string())
+                }
             };
 
             let response = request.send().await;
@@ -1167,7 +1166,7 @@ impl ObjectSource for S3LikeSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let permit = self

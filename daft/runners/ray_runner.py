@@ -277,12 +277,13 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def items(self) -> list[tuple[PartID, MaterializedResult[ray.ObjectRef]]]:
         return [(pid, result) for pid, result in sorted(self._results.items())]
 
-    def _get_merged_micropartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
         ids_and_partitions = self.items()
-        assert ids_and_partitions[0][0] == 0
-        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+        if len(ids_and_partitions) > 0:
+            assert ids_and_partitions[0][0] == 0
+            assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
-        return MicroPartition.concat(all_partitions)
+        return MicroPartition.concat_or_empty(all_partitions, schema)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
@@ -887,16 +888,16 @@ class Scheduler(ActorPoolManager):
         )
 
         with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
-            raw_tasks = plan_scheduler.to_partition_tasks(
-                psets,
-                self,
-                # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
-                # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
-                # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
-                None if results_buffer_size is None else max(results_buffer_size - 1, 1),
-            )
-            tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
             try:
+                raw_tasks = plan_scheduler.to_partition_tasks(
+                    psets,
+                    self,
+                    # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
+                    # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
+                    # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
+                    None if results_buffer_size is None else max(results_buffer_size - 1, 1),
+                )
+                tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
                 ###
                 # Scheduling Loop:
                 #

@@ -86,6 +86,7 @@ impl OptimizerRule for DetectMonotonicId {
                             MonotonicallyIncreasingId::try_new(
                                 project.input.clone(),
                                 Some(column_name),
+                                None, // No starting offset specified since there isn't a way to specify one in an expression, at the moment
                             )?,
                         ));
 

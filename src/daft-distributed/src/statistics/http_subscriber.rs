@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeTask};
 use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 
 use crate::{
     pipeline_node::NodeID,
@@ -59,6 +59,24 @@ pub struct QueryPayload {
     pub optimized_plan: String,
     pub run_id: Option<String>,
     pub logs: String,
+    #[serde(skip)]
+    #[allow(dead_code)]
+    pub sequence: u64,
+}
+
+#[derive(Debug)]
+struct PayloadWithAck {
+    payload: Arc<QueryPayload>,
+    ack_notify: Option<Arc<Notify>>,
+}
+
+impl Default for PayloadWithAck {
+    fn default() -> Self {
+        Self {
+            payload: Arc::new(QueryPayload::default()),
+            ack_notify: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,15 +137,17 @@ impl PlanData {
 
 pub struct HttpSubscriber {
     plan_data: HashMap<PlanID, PlanData>,
-    sender: watch::Sender<Arc<QueryPayload>>,
+    sender: watch::Sender<PayloadWithAck>,
     _task_handle: RuntimeTask<()>,
+    last_ack_notify: Option<Arc<Notify>>,
+    sequence_counter: std::sync::atomic::AtomicU64,
 }
 
 impl HttpSubscriber {
     const DEFAULT_DASHBOARD_URL: &str = "http://localhost:3238/api/queries";
 
     pub fn new() -> Self {
-        let (sender, receiver) = watch::channel(Arc::new(QueryPayload::default()));
+        let (sender, receiver) = watch::channel(PayloadWithAck::default());
 
         // Spawn long-lived task that handles HTTP requests
         let runtime = get_io_runtime(false);
@@ -136,11 +156,13 @@ impl HttpSubscriber {
         Self {
             plan_data: HashMap::new(),
             sender,
+            last_ack_notify: None,
+            sequence_counter: std::sync::atomic::AtomicU64::new(0),
             _task_handle: task_handle,
         }
     }
 
-    async fn http_sender_task(mut receiver: watch::Receiver<Arc<QueryPayload>>) {
+    async fn http_sender_task(mut receiver: watch::Receiver<PayloadWithAck>) {
         // Create the HTTP client once and reuse it for all requests
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(1))
@@ -168,36 +190,51 @@ impl HttpSubscriber {
             env::var("DAFT_DASHBOARD_URL").unwrap_or_else(|_| Self::DEFAULT_DASHBOARD_URL.into())
         );
 
-        while receiver.changed().await.is_ok() {
-            let query_payload = receiver.borrow_and_update().clone();
-
-            // Skip if no nodes (empty initial state)
-            if query_payload.id.is_empty() {
-                continue;
+        loop {
+            // Handle regular query updates
+            let result = receiver.changed().await;
+            if result.is_err() {
+                break;
             }
 
-            tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
+            // Extract all needed data before doing async work
+            let (query_payload, ack_notify) = {
+                let payload_with_ack = receiver.borrow_and_update();
+                let query_payload = payload_with_ack.payload.clone();
+                let ack_notify = payload_with_ack.ack_notify.clone();
+                (query_payload, ack_notify)
+            }; // payload_with_ack is dropped here
 
-            // Send the HTTP request using the reused client
-            tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
-            let response = client
-                .post(&endpoint)
-                .headers(headers.clone())
-                .json(&query_payload)
-                .send()
-                .await;
+            // Process HTTP request for non-empty payloads
+            if !query_payload.id.is_empty() {
+                tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber sending request to: {}", endpoint);
 
-            match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        tracing::debug!(target: HTTP_LOG_TARGET, "Successfully sent query information");
-                    } else {
-                        tracing::warn!(target: HTTP_LOG_TARGET, "Failed to send query information: {}", resp.status());
+                // Send the HTTP request using the reused client
+                tracing::info!(target: HTTP_LOG_TARGET, "HttpSubscriber executing HTTP POST request");
+                let response = client
+                    .post(&endpoint)
+                    .headers(headers.clone())
+                    .json(&*query_payload)
+                    .send()
+                    .await;
+
+                match response {
+                    Ok(resp) => {
+                        if resp.status().is_success() {
+                            tracing::debug!(target: HTTP_LOG_TARGET, "Successfully sent query information");
+                        } else {
+                            tracing::warn!(target: HTTP_LOG_TARGET, "Failed to send query information: {}", resp.status());
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
                     }
                 }
-                Err(e) => {
-                    tracing::warn!(target: HTTP_LOG_TARGET, "Failed to broadcast metrics over {}: {}", endpoint, e);
-                }
+            }
+
+            // Notify completion if there's an ack_notify attached to this payload
+            if let Some(ack_notify) = ack_notify {
+                ack_notify.notify_waiters();
             }
         }
     }
@@ -223,7 +260,7 @@ impl HttpSubscriber {
                 }
                 // If plan doesn't exist yet, ignore the task - it will be processed when PlanSubmitted arrives
             }
-            StatisticsEvent::ScheduledTask { context } => {
+            StatisticsEvent::TaskScheduled { context } => {
                 let plan_id = context.plan_id;
                 if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
                     if let Some(task_state) = plan_data.tasks.get_mut(context) {
@@ -302,21 +339,87 @@ impl HttpSubscriber {
 
         // Build the query graph
         let query_graph = Self::build_query_graph(plan_data);
+        let sequence = self
+            .sequence_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Create Notify for acknowledgment
+        let ack_notify = Arc::new(Notify::new());
+        self.last_ack_notify = Some(ack_notify.clone());
+
         let query_payload = Arc::new(QueryPayload {
             id: plan_data.plan_state.query_id.clone(),
             optimized_plan: serde_json::to_string(&query_graph)
                 .unwrap_or_else(|_| "{}".to_string()),
             run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
             logs: String::new(),
+            sequence,
         });
 
         // Send the query payload
-        let _ = self.sender.send(query_payload);
+        let _ = self.sender.send(PayloadWithAck {
+            payload: query_payload,
+            ack_notify: Some(ack_notify),
+        });
+    }
+
+    pub fn flush(&mut self) -> DaftResult<()> {
+        if let Some(ack_notify) = self.last_ack_notify.take() {
+            let runtime = get_io_runtime(false);
+
+            // Wait for the ack to be sent
+            runtime.block_within_async_context(async move { ack_notify.notified().await })?;
+        }
+
+        Ok(())
     }
 
     pub fn build_query_graph(plan_data: &PlanData) -> QueryGraph {
         // Mapping from logical node ID to QueryGraphNode
         let mut nodes_map: HashMap<NodeID, QueryGraphNode> = HashMap::new();
+
+        // Build a mapping from node_id to logical plan node information
+        let mut node_info_map: HashMap<NodeID, (&'static str, String)> = HashMap::new();
+        let _ = plan_data.plan_state.logical_plan.apply(|node| {
+            if let Some(node_id) = node.node_id() {
+                let name = node.name();
+                let description = node.multiline_display().join(", ");
+                node_info_map.insert(*node_id as NodeID, (name, description));
+            }
+            Ok(common_treenode::TreeNodeRecursion::Continue)
+        });
+
+        // First, create nodes for all logical plan nodes in the adjacency list
+        // This ensures we have all nodes, even if they don't have tasks yet
+        for node_id in plan_data.adjacency_list.keys() {
+            let (label, description) = node_info_map
+                .get(node_id)
+                .map(|(name, desc)| ((*name).to_string(), desc.clone()))
+                .unwrap_or_else(|| {
+                    (
+                        format!("Node_{}", node_id),
+                        format!("Logical node {}", node_id),
+                    )
+                });
+
+            let node = QueryGraphNode {
+                id: *node_id,
+                label,
+                description,
+                metadata: HashMap::from([(
+                    "plan_id".to_string(),
+                    plan_data.plan_state.plan_id.to_string(),
+                )]),
+                status: NodeStatus::Created, // Default status
+                pending: 0,
+                completed: 0,
+                canceled: 0,
+                failed: 0,
+                total: 0,
+                metrics: None,
+            };
+            nodes_map.insert(*node_id, node);
+        }
 
         for (context, task_state) in &plan_data.tasks {
             let node_id = context
@@ -324,6 +427,15 @@ impl HttpSubscriber {
                 .expect("Logical node ID must be set for optimized logical plan");
 
             if let Some(existing_node) = nodes_map.get_mut(&node_id) {
+                // Update node with task information
+                existing_node.label = Self::extract_operation_name(&task_state.name);
+                existing_node.description.clone_from(&task_state.name);
+                existing_node.metadata = HashMap::from([
+                    ("plan_id".to_string(), context.plan_id.to_string()),
+                    ("stage_id".to_string(), context.stage_id.to_string()),
+                    ("node_id".to_string(), context.node_id.to_string()),
+                ]);
+
                 // Collect task progress per node
                 existing_node.pending += task_state.pending;
                 existing_node.completed += task_state.completed;
@@ -334,25 +446,6 @@ impl HttpSubscriber {
                 // Update status - prioritize Failed > Running > Completed > Canceled > Created
                 let new_status = Self::convert_task_status(&task_state.status);
                 existing_node.status = Self::merge_node_status(&existing_node.status, &new_status);
-            } else {
-                let node = QueryGraphNode {
-                    id: node_id,
-                    label: Self::extract_operation_name(&task_state.name),
-                    description: task_state.name.clone(),
-                    metadata: HashMap::from([
-                        ("plan_id".to_string(), context.plan_id.to_string()),
-                        ("stage_id".to_string(), context.stage_id.to_string()),
-                        ("node_id".to_string(), context.node_id.to_string()),
-                    ]),
-                    status: Self::convert_task_status(&task_state.status),
-                    pending: task_state.pending,
-                    completed: task_state.completed,
-                    canceled: task_state.canceled,
-                    failed: task_state.failed,
-                    total: task_state.total,
-                    metrics: None,
-                };
-                nodes_map.insert(node_id, node);
             }
         }
 
@@ -398,6 +491,14 @@ impl HttpSubscriber {
 impl StatisticsSubscriber for HttpSubscriber {
     fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()> {
         self.ingest_event(event);
+
+        // Only flush HTTP requests on plan completion
+        if let StatisticsEvent::PlanFinished { .. } = event {
+            if let Err(e) = self.flush() {
+                tracing::warn!(target: HTTP_LOG_TARGET, "Failed to flush pending HTTP work: {}", e);
+            }
+        }
+
         Ok(())
     }
 }

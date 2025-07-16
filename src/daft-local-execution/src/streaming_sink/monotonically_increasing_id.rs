@@ -4,7 +4,7 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
 
-use super::streaming_sink::{
+use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
@@ -33,6 +33,7 @@ impl StreamingSinkState for MonotonicallyIncreasingIdState {
 
 struct MonotonicallyIncreasingIdParams {
     column_name: String,
+    starting_offset: Option<u64>,
     output_schema: SchemaRef,
 }
 
@@ -40,10 +41,15 @@ pub struct MonotonicallyIncreasingIdSink {
     params: Arc<MonotonicallyIncreasingIdParams>,
 }
 impl MonotonicallyIncreasingIdSink {
-    pub fn new(column_name: String, output_schema: SchemaRef) -> Self {
+    pub fn new(
+        column_name: String,
+        starting_offset: Option<u64>,
+        output_schema: SchemaRef,
+    ) -> Self {
         Self {
             params: Arc::new(MonotonicallyIncreasingIdParams {
                 column_name,
+                starting_offset,
                 output_schema,
             }),
         }
@@ -110,7 +116,9 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(MonotonicallyIncreasingIdState { id_offset: 0 })
+        Box::new(MonotonicallyIncreasingIdState {
+            id_offset: self.params.starting_offset.unwrap_or(0),
+        })
     }
 
     // Monotonically increasing id is a memory-bound operation, so there's no performance benefit to parallelizing it.

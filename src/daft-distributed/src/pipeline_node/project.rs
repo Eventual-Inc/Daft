@@ -24,12 +24,12 @@ impl ProjectNode {
     const NODE_NAME: NodeName = "Project";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         projection: Vec<BoundExpr>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,

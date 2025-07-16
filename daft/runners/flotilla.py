@@ -50,7 +50,6 @@ class RaySwordfishActor:
         del os.environ["CUDA_VISIBLE_DEVICES"]
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_worker_threads)
-        self.native_executor = NativeExecutor()
 
     async def run_plan(
         self,
@@ -65,7 +64,8 @@ class RaySwordfishActor:
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
             metas = []
-            async for partition in self.native_executor.run_async(plan, psets_mp, config, None, context):
+            native_executor = NativeExecutor()
+            async for partition in native_executor.run_async(plan, psets_mp, config, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)

@@ -235,7 +235,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         use_experimental_distributed_engine: Whether to use the experimental distributed engine on the ray runner. Defaults to `True`.
             Note: Not all operations are currently supported, and daft will fallback to the current engine if necessary.
-        min_cpu_per_task: Minimum CPU used for each task. Defaults to 1.
+        min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 1.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()

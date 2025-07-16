@@ -146,9 +146,9 @@ impl BlockingSink for WindowPartitionOnlySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
                             empty_result,
-                        ))));
+                        )]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -157,9 +157,9 @@ impl BlockingSink for WindowPartitionOnlySink {
                         None,
                     );
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
                         final_result,
-                    ))))
+                    )]))
                 },
                 Span::current(),
             )

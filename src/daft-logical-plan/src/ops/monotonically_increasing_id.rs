@@ -16,6 +16,7 @@ pub struct MonotonicallyIncreasingId {
     pub input: Arc<LogicalPlan>,
     pub schema: Arc<Schema>,
     pub column_name: String,
+    pub starting_offset: Option<u64>,
     pub stats_state: StatsState,
 }
 
@@ -25,6 +26,7 @@ impl MonotonicallyIncreasingId {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         column_name: Option<&str>,
+        starting_offset: Option<u64>,
     ) -> logical_plan::Result<Self> {
         let column_name = column_name.unwrap_or(Self::DEFAULT_COLUMN_NAME);
 
@@ -39,6 +41,7 @@ impl MonotonicallyIncreasingId {
             input,
             schema: Arc::new(schema_with_id),
             column_name: column_name.to_string(),
+            starting_offset,
             stats_state: StatsState::NotMaterialized,
         })
     }
