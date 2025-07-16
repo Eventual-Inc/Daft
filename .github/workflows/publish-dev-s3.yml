@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       use_lto:
-        description: Whether to enable link-time optimization
+        description: nable link-time optimization
         type: boolean
         default: true
         required: false
   workflow_call:
     inputs:
       use_lto:
-        description: Whether to enable link-time optimization
+        description: Enable link-time optimization
         type: boolean
         default: true
         required: false
