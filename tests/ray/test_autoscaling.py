@@ -28,7 +28,7 @@ def test_basic_autoscaling_cluster():
         }
     }
 
-    with autoscaling_cluster_context(head_resources, worker_node_types) as cluster:
+    with autoscaling_cluster_context(head_resources, worker_node_types):
         # Test basic Daft operations on the autoscaling cluster
         df = daft.from_pydict({"x": [1, 2, 3, 4, 5], "y": [6, 7, 8, 9, 10]})
         result = df.filter(col("x") > 3).to_pydict()
@@ -50,7 +50,7 @@ def test_basic_autoscaling_gpu_cluster():
 
     start_time = time.time()
     print("Starting test_basic_autoscaling_gpu_cluster")
-    with autoscaling_cluster_context(head_resources, worker_node_types) as cluster:
+    with autoscaling_cluster_context(head_resources, worker_node_types):
         print(f"Cluster started in {time.time() - start_time} seconds")
 
         # Test basic Daft operations on the autoscaling cluster

@@ -19,7 +19,6 @@ import os
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from typing import Dict, Optional
 
 import ray
 import yaml
@@ -69,7 +68,7 @@ class AutoscalingCluster:
         custom_config.update(config_kwargs)
         return custom_config
 
-    def start(self, _system_config=None, override_env: Optional[Dict] = None):
+    def start(self, _system_config=None, override_env: dict | None = None):
         """Start the cluster.
 
         After this call returns, you can connect to the cluster with
