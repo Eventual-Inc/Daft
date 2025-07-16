@@ -188,7 +188,19 @@ class DeltaLakeScanOperator(ScanOperator):
                 break
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
-            path = os.path.join(self._table.table_uri, add_actions["path"][task_idx].as_py())
+            scheme = urlparse(self._table.table_uri).scheme
+            if scheme in (
+                "s3",
+                "s3a",
+                "gcs",
+                "gs",
+                "az",
+                "abfs",
+                "abfss",
+            ):  # object storage does not use os path.join, but instead always uses `/`
+                path = self._table.table_uri.rstrip("/") + "/" + add_actions["path"][task_idx].as_py()
+            else:
+                path = os.path.join(self._table.table_uri, add_actions["path"][task_idx].as_py())
 
             try:
                 record_count = add_actions["num_records"][task_idx].as_py()
