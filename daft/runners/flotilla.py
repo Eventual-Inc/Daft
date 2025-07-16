@@ -45,11 +45,11 @@ class RaySwordfishActor:
     It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
     """
 
-    def __init__(self, num_worker_threads: int) -> None:
-        # Unset CUDA_VISIBLE_DEVICES so that GPU UDFs can use them
-        del os.environ["CUDA_VISIBLE_DEVICES"]
+    def __init__(self, num_cpus: int, num_gpus: int) -> None:
+        if num_gpus > 0:
+            os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
-        set_compute_runtime_num_worker_threads(num_worker_threads)
+        set_compute_runtime_num_worker_threads(num_cpus)
 
     async def run_plan(
         self,
@@ -159,7 +159,10 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                     node_id=node["NodeID"],
                     soft=False,
                 ),
-            ).remote(num_worker_threads=int(node["Resources"]["CPU"]))
+            ).remote(
+                num_cpus=int(node["Resources"]["CPU"]),
+                num_gpus=int(node["Resources"].get("GPU", 0)),
+            )
             actor_handle = RaySwordfishActorHandle(actor)
             handles.append(
                 RaySwordfishWorker(
@@ -177,6 +180,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
 def try_autoscale(bundles: list[dict[str, int]]) -> None:
     from ray.autoscaler.sdk import request_resources
 
+    print(f"requesting bundles: {bundles}")
     request_resources(
         bundles=bundles,
     )
@@ -309,18 +313,22 @@ class FlotillaRunner:
                 name=FLOTILLA_RUNNER_NAME,
                 namespace=FLOTILLA_RUNER_NAMESPACE,
                 get_if_exists=True,
-                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                    node_id=head_node_id,
-                    soft=False,
-                )
-                if head_node_id is not None
-                else "DEFAULT",
+                scheduling_strategy=(
+                    ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=head_node_id,
+                        soft=False,
+                    )
+                    if head_node_id is not None
+                    else "DEFAULT"
+                ),
             ).remote()
         else:
             self.runner = LocalFlotillaRunner()
 
     def stream_plan(
-        self, plan: DistributedPhysicalPlan, partition_sets: dict[str, PartitionSet[ray.ObjectRef]]
+        self,
+        plan: DistributedPhysicalPlan,
+        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> Iterator[RayMaterializedResult]:
         plan_id = plan.id()
         if self.use_actor:
