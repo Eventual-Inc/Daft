@@ -170,7 +170,6 @@ def test_roundtrip_boolean_rle(tmp_path, has_none):
 
 
 # TODO: reading/writing:
-# 1. Embedding type
 
 
 @pytest.mark.parametrize(["dtype", "size"], [(np.float32, 10), (np.int8, 6), (np.int64, 12), (np.float64, 4)])
