@@ -153,9 +153,9 @@ impl BlockingSink for CommitWriteSink {
                         written_file_path_record_batches.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
                         written_file_paths_mp,
-                    ))))
+                    )]))
                 },
                 Span::current(),
             )

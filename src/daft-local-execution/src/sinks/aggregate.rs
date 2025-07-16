@@ -115,9 +115,9 @@ impl BlockingSink for AggregateSink {
                     let concated = MicroPartition::concat(all_parts)?;
                     let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
                     let projected = agged.eval_expression_list(&params.final_projections)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
                         projected,
-                    ))))
+                    )]))
                 },
                 Span::current(),
             )

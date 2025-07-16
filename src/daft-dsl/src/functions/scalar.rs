@@ -1,4 +1,5 @@
 use std::{
+    any::TypeId,
     fmt::{Display, Formatter},
     sync::Arc,
 };
@@ -31,6 +32,11 @@ impl ScalarFunction {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         self.udf.get_return_field(self.inputs.clone(), schema)
+    }
+
+    /// Returns true if `self.udf` is of type `F`
+    pub fn is_function_type<F: ScalarUDF>(&self) -> bool {
+        self.udf.as_ref().type_id() == TypeId::of::<F>()
     }
 }
 

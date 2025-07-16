@@ -29,11 +29,12 @@ use crate::{
 
 #[cfg(feature = "python")]
 mod actor_udf;
+mod aggregate;
 mod concat;
 mod distinct;
 mod explode;
 mod filter;
-mod groupby_agg;
+mod gather;
 mod hash_join;
 mod in_memory_source;
 mod limit;
@@ -44,6 +45,8 @@ mod repartition;
 mod sample;
 mod scan_source;
 mod sink;
+mod sort;
+mod top_n;
 mod translate;
 mod unpivot;
 mod window;
@@ -371,7 +374,7 @@ where
         psets,
         SchedulingStrategy::WorkerAffinity {
             worker_id,
-            soft: false,
+            soft: true,
         },
         node.context().to_hashmap(),
     );

@@ -230,7 +230,7 @@ impl ActorUDF {
                         actors,
                         TaskContext::from((&self.context, task_id_counter.next())),
                     )?;
-                    let (submittable_task, notify_token) = task.with_notify_token();
+                    let (submittable_task, notify_token) = task.add_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
                         .send(PipelineOutput::Task(submittable_task))
@@ -256,7 +256,7 @@ impl ActorUDF {
                     }
                     let modified_task =
                         self.append_actor_udf_to_task(worker_id, task, actors, task_context)?;
-                    let (submittable_task, notify_token) = modified_task.with_notify_token();
+                    let (submittable_task, notify_token) = modified_task.add_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
                         .send(PipelineOutput::Task(submittable_task))

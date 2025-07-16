@@ -171,7 +171,7 @@ impl BlockingSink for HashJoinBuildSink {
         let finalized_probe_state = probe_table_state.finalize();
         self.probe_state_bridge
             .set_state(finalized_probe_state.into());
-        Ok(BlockingSinkFinalizeOutput::Finished(None)).into()
+        Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
     }
 
     fn max_concurrency(&self) -> usize {

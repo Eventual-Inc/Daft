@@ -1310,8 +1310,7 @@ class DataFrame:
         # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
-        write_plan_builder = to_logical_plan_builder(micropartition)
-        return DataFrame(write_plan_builder)
+        return DataFrame._from_micropartitions(micropartition)
 
     @DataframePublicAPI
     def write_lance(
@@ -2108,6 +2107,8 @@ class DataFrame:
         Returns:
             int: count of the number of rows in this DataFrame.
         """
+        if self._result is not None:
+            return len(self._result)
         builder = self._builder.count()
         count_df = DataFrame(builder)
         # Expects builder to produce a single-partition, single-row DataFrame containing
