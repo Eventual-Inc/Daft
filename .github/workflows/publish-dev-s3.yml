@@ -3,6 +3,12 @@ name: Build dev package and publish to S3
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      use_lto:
+        description: Whether to enable link-time optimization
+        type: boolean
+        default: true
+        required: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,7 +46,7 @@ jobs:
         echo "build_exists=$OBJECT_EXISTS" >> "$GITHUB_OUTPUT"
 
   build:
-    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}-lto=${{ inputs.use_lto }}'
     needs: check-exists
     if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     uses: ./.github/workflows/build-wheel.yml
@@ -48,6 +54,7 @@ jobs:
       os: ${{ matrix.os }}
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
+      use_lto: ${{ inputs.use_lto }}
       build_type: release
     strategy:
       fail-fast: false
