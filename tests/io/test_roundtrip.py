@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import partial
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pytest
@@ -10,6 +11,7 @@ import daft
 
 
 def _make_embedding(rng, dtype, size: int) -> np.ndarray:
+    """Generate a uniformly distributed 1-D array of the specified datatype & dimensionality."""
     if dtype in (np.float32, np.float64):
         return rng.random(size=(size,), dtype=dtype)
     else:
@@ -18,30 +20,58 @@ def _make_embedding(rng, dtype, size: int) -> np.ndarray:
         return c.astype(dtype)
 
 
+def _make_check_embeddings(
+    test_df: daft.DataFrame, dtype, *, embeddings_col: str = "e"
+) -> Callable[[daft.DataFrame], None]:
+    """Verify validity of the test dataframe & produce a function that checks another dataframe for equality."""
+    test_df = test_df.collect()
+    if test_df.count_rows() == 0:
+        raise ValueError("Test DataFrame cannot be empty!")
+
+    if embeddings_col not in test_df:
+        raise ValueError(f"Test DataFrame doesn't have an embeddings column={embeddings_col}")
+
+    test_rows = list(x[embeddings_col] for x in test_df.iter_rows())
+    for i, t in enumerate(test_rows):
+        assert isinstance(t, np.ndarray), f"Row {i} is not a numpy array, it is: {type(t)}: {t}"
+        assert t.dtype == dtype, f"Row {i} array doesn't have {dtype=}, instead={t.dtype}"
+
+    def _check_embeddings(loaded_df: daft.DataFrame) -> None:
+        loaded_df = loaded_df.collect()
+        if loaded_df.count_rows() != test_df.count_rows():
+            raise ValueError(
+                f"Expecting {test_df.count_rows()} rows but got a " f"DataFrame with {loaded_df.count_rows()}"
+            )
+
+        l_rows = list(x[embeddings_col] for x in loaded_df.iter_rows())
+        for i, (t, l) in enumerate(zip(test_rows, l_rows)):  # noqa: E741
+            assert isinstance(l, np.ndarray), f"Row {i} expected a numpy array when loading, got a {type(l)}: {l}"
+            assert l.dtype == t.dtype, f"Row {i} has wrong dtype. Expected={t.dtype} vs. found={l.dtype}"
+            assert (t == l).all(), f"Row {i} failed equality check: test_df={t} vs. loaded={l}"
+
+    return _check_embeddings
+
+
 @pytest.mark.parametrize("fmt", ["parquet", "lance"])
 @pytest.mark.parametrize(["dtype", "size"], [(np.float32, 10), (np.int8, 6), (np.int64, 12), (np.float64, 4)])
 def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: int) -> None:
-    rng = np.random.default_rng()
-
-    make_array = partial(_make_embedding, rng, dtype, size)
-
+    # make some embeddings of the specified data type and dimensionality
+    # with uniformly at random distributed values
+    make_array = partial(_make_embedding, np.random.default_rng(), dtype, size)
     test_df = (
         daft.from_pydict({"e": [make_array() for _ in range(10)]})
         .with_column("e", daft.col("e").cast(daft.DataType.embedding(daft.DataType.from_numpy_dtype(dtype), size)))
         .collect()
     )
 
-    test_rows = list(x["e"] for x in test_df.iter_rows())
-    for t in test_rows:
-        assert isinstance(t, np.ndarray)
-        assert t.dtype == dtype
+    # make a checking function for the loaded dataframe & verify our original dataframe
+    check = _make_check_embeddings(test_df, dtype)
 
+    # write the embeddings-containing dataframe to disk using the specified format
     getattr(test_df, f"write_{fmt}")(str(tmp_path)).collect()
 
+    # read that same dataframe
     loaded_df = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
 
-    l_rows = list(x["e"] for x in loaded_df.iter_rows())
-    for i, (t, l) in enumerate(zip(test_rows, l_rows)):  # noqa: E741
-        assert isinstance(l, np.ndarray), f"Expected a numpy array when loading, got a {type(l)}: {l}"
-        assert (t == l).all(), f"Failed on row {i}: test_df={t} vs. loaded={l}"
-        assert l.dtype == t.dtype
+    # check that the values in the embedding column exactly equal each other
+    check(loaded_df)
