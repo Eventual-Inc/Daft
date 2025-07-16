@@ -161,7 +161,7 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     not PYARROW_GE_8_0_0,
     reason="PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0",
 )
-@pytest.mark.parametrize("fmt", ["parquet"])
+@pytest.mark.parametrize("fmt", ["parquet", "lance"])
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
     [
@@ -205,10 +205,13 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_type, expected_dtype: DataType):
+    if fmt == "lance":
+        if data == [{"bar": 1}, {"bar": None}, None]:
+            pytest.skip(f"BUG -- FIXME: Lance cannot handle this test case: {data=} {pa_type=} {expected_dtype=}")
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
-    before = before.concat(before)
+    before = before.concat(before).collect()
     getattr(before, f"write_{fmt}")(str(tmp_path))
-    after = getattr(daft, f"read_{fmt}")(str(tmp_path))
+    after = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_dtype
     assert before.to_arrow() == after.to_arrow()
