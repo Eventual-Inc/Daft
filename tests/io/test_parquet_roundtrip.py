@@ -177,8 +177,16 @@ def test_roundtrip_boolean_rle(tmp_path, has_none):
 def test_roundtrip_embedding(tmp_path: Path, dtype: np.dtype, size: int) -> None:
     rng = np.random.default_rng()
 
+    def make_array() -> np.ndarray:
+        if dtype in (np.float32, np.float64):
+            return rng.random(size=(size,), dtype=dtype)
+        else:
+            v = rng.random(size=(size,), dtype=np.float32)
+            c = np.rint(v * 100)
+            return c.astype(dtype)
+
     test_df = (
-        daft.from_pydict({"e": [rng.random(size=(size,), dtype=dtype) for _ in range(10)]})
+        daft.from_pydict({"e": [make_array() for _ in range(10)]})
         .with_column("e", daft.col("e").cast(daft.DataType.embedding(daft.DataType.from_numpy_dtype(dtype), size)))
         .collect()
     )
