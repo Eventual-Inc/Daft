@@ -4,7 +4,7 @@ import datetime
 import decimal
 from functools import partial
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 import numpy as np
 import pyarrow as pa
@@ -12,6 +12,8 @@ import pytest
 
 import daft
 from daft import DataType, TimeUnit
+
+FMT = Literal["parquet", "lance"]
 
 
 def _make_embedding(rng, dtype, size: int) -> np.ndarray:
@@ -75,7 +77,7 @@ def _make_check_embeddings(
         # (np.complex64, 32), (np.complex128, 16), - Arrow doesn't support complex numbers
     ],
 )
-def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: int) -> None:
+def test_roundtrip_embedding(tmp_path: Path, fmt: FMT, dtype: np.dtype, size: int) -> None:
     # make some embeddings of the specified data type and dimensionality
     # with uniformly at random distributed values
     make_array = partial(_make_embedding, np.random.default_rng(), dtype, size)
@@ -117,11 +119,11 @@ def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: in
         # called `Result::unwrap()` on an `Err` value: JoinError::Panic(Id(369), "called `Result::unwrap()` on an `Err` value: Schema { message: \"Unsupported timestamp type: timestamp:ms:+00:00\", location: Location { file: \"/Users/runner/work/lance/lance/rust/lance-core/src/datatypes.rs\", line: 326, column: 39 } }", ...)
         #                                                                 ----------------------------------------------------------------------------------------------------------------- Captured log call -----------------------------------------------------------------------------------------------------------------
         # ERROR    daft_local_execution:lib.rs:318 Error when running pipeline node DataSink
-        # (
-        #     [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
-        #     pa.timestamp("ms", "+00:00"),
-        #     DataType.timestamp(TimeUnit.ms(), "+00:00"),
-        # ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "+00:00"),
+            DataType.timestamp(TimeUnit.ms(), "+00:00"),
+        ),
         (
             [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
             pa.timestamp("ms", "UTC"),
@@ -129,16 +131,20 @@ def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: in
         ),
         # TODO [mg] fix this in follow-up.
         # NOTE: doesn't work with Lance:
-        # (
-        #     [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
-        #     pa.timestamp("ms", "+08:00"),
-        #     DataType.timestamp(TimeUnit.ms(), "+08:00"),
-        # ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "+08:00"),
+            DataType.timestamp(TimeUnit.ms(), "+08:00"),
+        ),
     ],
 )
 def test_roundtrip_temporal_arrow_types(
-    tmp_path: Path, fmt: str, data: list[datetime.datetime], pa_type, expected_dtype: DataType
+    tmp_path: Path, fmt: FMT, data: list[datetime.datetime], pa_type, expected_dtype: DataType
 ):
+    # TODO [mg] fix this in follow-up.
+    if fmt == "lance" and (pa_type == pa.timestamp("ms", "+08:00") or pa_type == pa.timestamp("ms", "+00:00")):
+        pytest.skip(f"BUG -- FIXME: Lance cannot handle this timestamp: {pa_type}")
+
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before)
     getattr(before, f"write_{fmt}")(str(tmp_path))
@@ -155,7 +161,7 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     not PYARROW_GE_8_0_0,
     reason="PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0",
 )
-@pytest.mark.parametrize("fmt", ["parquet"])
+@pytest.mark.parametrize("fmt", ["parquet", "lance"])
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
     [
