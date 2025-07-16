@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import decimal
 from functools import partial
 from pathlib import Path
 from typing import Callable
@@ -80,7 +81,7 @@ def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: in
     make_array = partial(_make_embedding, np.random.default_rng(), dtype, size)
     test_df = (
         daft.from_pydict({"e": [make_array() for _ in range(50)]})
-        .with_column("e", daft.col("e").cast(daft.DataType.embedding(daft.DataType.from_numpy_dtype(dtype), size)))
+        .with_column("e", daft.col("e").cast(DataType.embedding(DataType.from_numpy_dtype(dtype), size)))
         .collect()
     )
 
@@ -136,8 +137,68 @@ def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: in
     ],
 )
 def test_roundtrip_temporal_arrow_types(
-    tmp_path: Path, fmt: str, data: list[datetime.datetime], pa_type, expected_dtype: daft.DataType
+    tmp_path: Path, fmt: str, data: list[datetime.datetime], pa_type, expected_dtype: DataType
 ):
+    before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
+    before = before.concat(before)
+    getattr(before, f"write_{fmt}")(str(tmp_path))
+    after = getattr(daft, f"read_{fmt}")(str(tmp_path))
+    assert before.schema()["foo"].dtype == expected_dtype
+    assert after.schema()["foo"].dtype == expected_dtype
+    assert before.to_arrow() == after.to_arrow()
+
+
+PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_8_0_0,
+    reason="PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0",
+)
+@pytest.mark.parametrize("fmt", ["parquet"])
+@pytest.mark.parametrize(
+    ["data", "pa_type", "expected_dtype"],
+    [
+        ([1, 2, None], pa.int64(), DataType.int64()),
+        (["a", "b", None], pa.large_string(), DataType.string()),
+        ([True, False, None], pa.bool_(), DataType.bool()),
+        ([b"a", b"b", None], pa.large_binary(), DataType.binary()),
+        ([None, None, None], pa.null(), DataType.null()),
+        ([decimal.Decimal("1.23"), decimal.Decimal("1.24"), None], pa.decimal128(16, 8), DataType.decimal128(16, 8)),
+        ([datetime.date(1994, 1, 1), datetime.date(1995, 1, 1), None], pa.date32(), DataType.date()),
+        (
+            [datetime.time(12, 1, 22, 4), datetime.time(13, 8, 45, 34), None],
+            pa.time64("us"),
+            DataType.time(TimeUnit.us()),
+        ),
+        (
+            [datetime.time(12, 1, 22, 4), datetime.time(13, 8, 45, 34), None],
+            pa.time64("ns"),
+            DataType.time(TimeUnit.ns()),
+        ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms"),
+            DataType.timestamp(TimeUnit.ms()),
+        ),
+        ([datetime.date(1994, 1, 1), datetime.date(1995, 1, 1), None], pa.date64(), DataType.timestamp(TimeUnit.ms())),
+        (
+            [datetime.timedelta(days=1), datetime.timedelta(days=2), None],
+            pa.duration("ms"),
+            DataType.duration(TimeUnit.ms()),
+        ),
+        ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
+        # TODO: Crashes when parsing fixed size lists
+        # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
+        ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
+        (
+            [[("a", 1), ("b", 2)], [], None],
+            pa.map_(pa.large_string(), pa.int64()),
+            DataType.map(DataType.string(), DataType.int64()),
+        ),
+    ],
+)
+def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_type, expected_dtype: DataType):
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before)
     getattr(before, f"write_{fmt}")(str(tmp_path))
