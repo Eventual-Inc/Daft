@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import datetime
 from functools import partial
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import daft
+from daft import DataType, TimeUnit
 
 
 def _make_embedding(rng, dtype, size: int) -> np.ndarray:
@@ -92,3 +95,41 @@ def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: in
 
     # check that the values in the embedding column exactly equal each other
     check(loaded_df)
+
+
+@pytest.mark.parametrize("fmt", ["parquet"])
+@pytest.mark.parametrize(
+    ["data", "pa_type", "expected_dtype"],
+    [
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", None),
+            DataType.timestamp(TimeUnit.ms(), None),
+        ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "+00:00"),
+            DataType.timestamp(TimeUnit.ms(), "+00:00"),
+        ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "UTC"),
+            DataType.timestamp(TimeUnit.ms(), "UTC"),
+        ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "+08:00"),
+            DataType.timestamp(TimeUnit.ms(), "+08:00"),
+        ),
+    ],
+)
+def test_roundtrip_temporal_arrow_types(
+    tmp_path: Path, fmt: str, data: list[datetime.datetime], pa_type, expected_dtype: daft.DataType
+):
+    before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
+    before = before.concat(before)
+    getattr(before, f"write_{fmt}")(str(tmp_path))
+    after = getattr(daft, f"read_{fmt}")(str(tmp_path))
+    assert before.schema()["foo"].dtype == expected_dtype
+    assert after.schema()["foo"].dtype == expected_dtype
+    assert before.to_arrow() == after.to_arrow()

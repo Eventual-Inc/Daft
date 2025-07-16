@@ -71,41 +71,6 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype):
     assert before.to_arrow() == after.to_arrow()
 
 
-@pytest.mark.parametrize(
-    ["data", "pa_type", "expected_dtype"],
-    [
-        (
-            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
-            pa.timestamp("ms", None),
-            DataType.timestamp(TimeUnit.ms(), None),
-        ),
-        (
-            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
-            pa.timestamp("ms", "+00:00"),
-            DataType.timestamp(TimeUnit.ms(), "+00:00"),
-        ),
-        (
-            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
-            pa.timestamp("ms", "UTC"),
-            DataType.timestamp(TimeUnit.ms(), "UTC"),
-        ),
-        (
-            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
-            pa.timestamp("ms", "+08:00"),
-            DataType.timestamp(TimeUnit.ms(), "+08:00"),
-        ),
-    ],
-)
-def test_roundtrip_temporal_arrow_types(tmp_path, data, pa_type, expected_dtype):
-    before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
-    before = before.concat(before)
-    before.write_parquet(str(tmp_path))
-    after = daft.read_parquet(str(tmp_path))
-    assert before.schema()["foo"].dtype == expected_dtype
-    assert after.schema()["foo"].dtype == expected_dtype
-    assert before.to_arrow() == after.to_arrow()
-
-
 def test_roundtrip_tensor_types(tmp_path):
     # Define the expected data type for the tensor column
     expected_tensor_dtype = DataType.tensor(DataType.int64())
