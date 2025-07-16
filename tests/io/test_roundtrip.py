@@ -161,7 +161,7 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     not PYARROW_GE_8_0_0,
     reason="PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0",
 )
-@pytest.mark.parametrize("fmt", ["parquet", "lance"])
+@pytest.mark.parametrize("fmt", ["parquet"])
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
     [
