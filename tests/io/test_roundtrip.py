@@ -195,13 +195,19 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
         ),
         ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
         # TODO [mg]: Crashes when parsing fixed size lists
-        # Lance changes the schema (visible on read) from FixedSizeList[Int64; 3] into List[Int64]
-        #   => Looks like Lance sink is not writing the correct Arrow data type.
-        (
-            [[1, 2, 3], [4, 5, 6], None],
-            pa.list_(pa.int64(), list_size=3),
-            DataType.fixed_size_list(DataType.int64(), 3),
-        ),
+        # Parquet **and** Lance changes the schema (visible on read) from FixedSizeList[Int64; 3] into List[Int64]
+        #   => Looks like Daft is interpreting this list as variable size.
+        #      Maybe because the existing machinery doesn't look at list_size ?
+        #      If that was unspecified, then list[int64] would be right. But since
+        #      that is here, it should get the fixed length type and reject writing
+        #      if the length of everything isn't the exact `list_size`.
+        #   => Maybe the `None` is tripping it up? It should infer this as an optional / nullable type!
+        #          -> No, removing this last None still results in same failure.
+        # (
+        #     [[1, 2, 3], [4, 5, 6], None],
+        #     pa.list_(pa.int64(), list_size=3),
+        #     DataType.fixed_size_list(DataType.int64(), 3),
+        # ),
         #
         # TODO [mg]: Lance messes up the schema on read:
         #   before: [{'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}, {'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}] {'foo': None}, {'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}]
