@@ -194,9 +194,22 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
             DataType.duration(TimeUnit.ms()),
         ),
         ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
-        # TODO: Crashes when parsing fixed size lists
-        # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
+        # TODO [mg]: Crashes when parsing fixed size lists
+        # Lance changes the schema (visible on read) from FixedSizeList[Int64; 3] into List[Int64]
+        #   => Looks like Lance sink is not writing the correct Arrow data type.
+        (
+            [[1, 2, 3], [4, 5, 6], None],
+            pa.list_(pa.int64(), list_size=3),
+            DataType.fixed_size_list(DataType.int64(), 3),
+        ),
+        #
+        # TODO [mg]: Lance messes up the schema on read:
+        #   before: [{'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}, {'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}] {'foo': None}, {'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': None}]
+        #   after:  [{'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': {'bar': None}}, {'foo': {'bar': 1}}, {'foo': {'bar': None}}, {'foo': {'bar': None}}]
+        #                                                                 ^^
+        #   => Looks like the before is wrong!
         ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
+        #
         (
             [[("a", 1), ("b", 2)], [], None],
             pa.map_(pa.large_string(), pa.int64()),
@@ -206,12 +219,16 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
 )
 def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_type, expected_dtype: DataType):
     if fmt == "lance":
-        if data == [{"bar": 1}, {"bar": None}, None]:
+        if data == [{"bar": 1}, {"bar": None}, None] or data == [[1, 2, 3], [4, 5, 6], None]:
             pytest.skip(f"BUG -- FIXME: Lance cannot handle this test case: {data=} {pa_type=} {expected_dtype=}")
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before).collect()
     getattr(before, f"write_{fmt}")(str(tmp_path))
     after = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
-    assert before.schema()["foo"].dtype == expected_dtype
-    assert after.schema()["foo"].dtype == expected_dtype
-    assert before.to_arrow() == after.to_arrow()
+    assert (
+        before.schema()["foo"].dtype == expected_dtype
+    ), f'(Schema) before[foo]: {before.schema()["foo"].dtype} | expected: {expected_dtype} '
+    assert (
+        after.schema()["foo"].dtype == expected_dtype
+    ), f'(Schema) after[foo]: {after.schema()["foo"].dtype} | expected: {expected_dtype} '
+    assert before.to_arrow() == after.to_arrow(), f"(Arrow) before: {before.to_arrow()} | after: {after.to_arrow()}"
