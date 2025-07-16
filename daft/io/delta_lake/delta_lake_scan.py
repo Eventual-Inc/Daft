@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
 from urllib.parse import urlparse
@@ -20,6 +19,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.io.delta_lake.utils import construct_delta_file_path
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
@@ -188,7 +188,8 @@ class DeltaLakeScanOperator(ScanOperator):
                 break
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
-            path = os.path.join(self._table.table_uri, add_actions["path"][task_idx].as_py())
+            scheme = urlparse(self._table.table_uri).scheme
+            path = construct_delta_file_path(scheme, self._table.table_uri, add_actions["path"][task_idx].as_py())
 
             try:
                 record_count = add_actions["num_records"][task_idx].as_py()
