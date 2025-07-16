@@ -1310,8 +1310,7 @@ class DataFrame:
         # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
-        write_plan_builder = to_logical_plan_builder(micropartition)
-        return DataFrame(write_plan_builder)
+        return DataFrame._from_micropartitions(micropartition)
 
     @DataframePublicAPI
     def write_lance(

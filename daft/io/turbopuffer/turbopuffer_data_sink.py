@@ -102,6 +102,8 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
                     )
                 arrow_table = arrow_table.rename_columns({self._vector_column: "vector"})
 
+            arrow_table = arrow_table.filter(~arrow_table.field("id").is_null())
+
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows
 
