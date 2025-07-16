@@ -53,13 +53,30 @@ def _make_check_embeddings(
 
 
 @pytest.mark.parametrize("fmt", ["parquet", "lance"])
-@pytest.mark.parametrize(["dtype", "size"], [(np.float32, 10), (np.int8, 6), (np.int64, 12), (np.float64, 4)])
+@pytest.mark.parametrize(
+    ["dtype", "size"],
+    [
+        # (np.float16, 64), -- Arrow doesn't support f16
+        (np.float32, 1024),
+        (np.float64, 512),
+        (np.int8, 2048),
+        (np.int16, 512),
+        (np.int32, 256),
+        (np.int64, 128),
+        (np.uint8, 2048),
+        (np.uint16, 512),
+        (np.uint32, 256),
+        (np.uint64, 128),
+        # (np.bool_, 512), -- Arrow only accepts numeric types
+        # (np.complex64, 32), (np.complex128, 16), - Arrow doesn't support complex numbers
+    ],
+)
 def test_roundtrip_embedding(tmp_path: Path, fmt: str, dtype: np.dtype, size: int) -> None:
     # make some embeddings of the specified data type and dimensionality
     # with uniformly at random distributed values
     make_array = partial(_make_embedding, np.random.default_rng(), dtype, size)
     test_df = (
-        daft.from_pydict({"e": [make_array() for _ in range(10)]})
+        daft.from_pydict({"e": [make_array() for _ in range(50)]})
         .with_column("e", daft.col("e").cast(daft.DataType.embedding(daft.DataType.from_numpy_dtype(dtype), size)))
         .collect()
     )
