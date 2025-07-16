@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import FastAPI, Header, Request, Response
 
 from ..utils.parquet_generation import generate_parquet_file
+from ..utils.request_range import parse_range_from_header
 from ..utils.responses import get_response
 
 BUCKET_NAME = "head-retries-parquet-bucket"
@@ -48,7 +49,7 @@ async def bucket_get(
     item_id: str,
     range: Annotated[str, Header()],
 ):
-    start, end = (int(i) for i in range[len("bytes=") :].split("-"))
+    start, end = parse_range_from_header(range, os.path.getsize(MOCK_PARQUET_DATA_PATH.name))
     with open(MOCK_PARQUET_DATA_PATH.name, "rb") as f:
         f.seek(start)
         data = f.read(end - start + 1)

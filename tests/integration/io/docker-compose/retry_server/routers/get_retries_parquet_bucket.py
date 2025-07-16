@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import FastAPI, Header, Request, Response
 
 from ..utils.parquet_generation import generate_parquet_file
+from ..utils.request_range import parse_range_from_header
 from ..utils.responses import get_response
 
 BUCKET_NAME = "get-retries-parquet-bucket"
@@ -39,7 +40,8 @@ async def retryable_bucket_get(
     range: Annotated[str, Header()],
 ):
     # If we've only seen this range request <= num_errors times, we throw an error
-    start, end = (int(i) for i in range[len("bytes=") :].split("-"))
+    start, end = parse_range_from_header(range, os.path.getsize(MOCK_PARQUET_DATA_PATH.name))
+
     key = (item_id, (start, end))
     if key not in ITEM_ID_TO_NUM_RETRIES:
         ITEM_ID_TO_NUM_RETRIES[key] = 1
