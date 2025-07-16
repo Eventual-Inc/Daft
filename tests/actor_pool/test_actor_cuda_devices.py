@@ -13,7 +13,8 @@ from daft.internal.gpu import cuda_visible_devices
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "native",
+    get_tests_daft_runner_name() == "native"
+    or daft.context.get_context().daft_execution_config.use_experimental_distributed_engine,
     reason="Native runner does not support GPU tests yet",
 )
 
