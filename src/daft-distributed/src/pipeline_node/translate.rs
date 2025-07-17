@@ -238,7 +238,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             )
             .arced(),
             LogicalPlan::Sink(sink) => {
-                let sink_info = sink.sink_info.bind(&sink.schema)?;
+                let sink_info = sink.sink_info.bind(&sink.input.schema())?;
                 SinkNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
