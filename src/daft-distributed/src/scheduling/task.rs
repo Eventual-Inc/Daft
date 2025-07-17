@@ -715,6 +715,12 @@ pub(super) mod tests {
             node_id: 1,
             task_id: 2,
         });
+        heap.push(SwordfishTaskPriority {
+            plan_id: 1,
+            stage_id: 1,
+            node_id: 1,
+            task_id: 1,
+        });
 
         // Pop tasks in order (BinaryHeap is a max heap, so highest priority comes out first)
         // Expected order (highest priority to lowest priority):
