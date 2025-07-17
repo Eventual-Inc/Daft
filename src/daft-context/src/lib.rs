@@ -112,11 +112,14 @@ impl DaftContext {
     }
 
     /// Reset/clear the current runner.
-    /// This allows setting a new runner after clearing the current one.
+    /// Note: This clears all in-memory state, including the partition cache.
     pub fn reset_runner(&self) {
+        log::warn!(
+            "Resetting the runner will clear all in-memory state, including the partition cache."
+        );
         self.with_state_mut(|state| {
             state.runner = None;
-        })
+        });
     }
 
     fn with_state<F, R>(&self, f: F) -> R
@@ -181,7 +184,7 @@ impl DaftContext {
     }
 
     /// Reset/clear the current runner.
-    /// This allows setting a new runner after clearing the current one.
+    /// Note: This clears all in-memory state, including the partition cache.
     pub fn reset_runner(&self) {
         unimplemented!()
     }

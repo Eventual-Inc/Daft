@@ -43,6 +43,7 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
+    #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
 }
 
