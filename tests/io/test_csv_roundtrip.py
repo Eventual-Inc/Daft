@@ -77,3 +77,26 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, e
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_inferred_dtype
     assert before.to_arrow() == after.with_column("foo", after["foo"].cast(expected_dtype)).to_arrow()
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+@pytest.mark.parametrize(
+    ["data", "pa_type", "expected_dtype"],
+    [
+        ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
+        (
+            [[1, 2, 3], [4, 5, 6], None],
+            pa.list_(pa.int64(), list_size=3),
+            DataType.fixed_size_list(DataType.int64(), 3),
+        ),
+        ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
+    ],
+)
+def test_expect_failing_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype):
+    before = daft.from_arrow(pa.table({"id": pa.array(range(3)), "foo": pa.array(data, type=pa_type)}))
+    before = before.concat(before)
+    with pytest.raises(pa.lib.ArrowInvalid):
+        before.write_csv(str(tmp_path))
