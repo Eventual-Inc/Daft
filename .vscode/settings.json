@@ -7,6 +7,9 @@
   "python.testing.pytestArgs": [
     "tests"
   ],
+  "git.branchProtection": [
+    "main"
+  ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
   "makefile.configureOnOpen": false

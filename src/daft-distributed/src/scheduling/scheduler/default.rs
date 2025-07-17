@@ -2,7 +2,7 @@ use std::collections::{BinaryHeap, HashMap};
 
 use super::{PendingTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
-    task::{SchedulingStrategy, Task, TaskDetails},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskResourceRequest},
     worker::WorkerId,
 };
 
@@ -84,6 +84,29 @@ impl<T: Task> DefaultScheduler<T> {
             }
         }
     }
+
+    fn needs_autoscaling(&self) -> bool {
+        // If there are no pending tasks, we don't need to autoscale
+        if self.pending_tasks.is_empty() {
+            return false;
+        }
+
+        // If there are no workers, we need to autoscale
+        if self.worker_snapshots.is_empty() {
+            return true;
+        }
+
+        // If the ratio of pending tasks to total capacity is greater than the autoscaling threshold, we need to autoscale
+        let total_capacity: usize = self
+            .worker_snapshots
+            .values()
+            .map(|worker| worker.total_num_cpus() as usize)
+            .sum();
+
+        let ratio = self.pending_tasks.len() as f64 / total_capacity as f64;
+
+        ratio > self.autoscaling_threshold
+    }
 }
 
 impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
@@ -131,25 +154,14 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         self.pending_tasks.len()
     }
 
-    fn get_autoscaling_request(&mut self) -> Option<usize> {
-        // if there's no workers, we need to scale up by the number of pending tasks
-        if self.worker_snapshots.is_empty() {
-            return Some(self.pending_tasks.len());
-        }
-
-        let total_capacity: usize = self
-            .worker_snapshots
-            .values()
-            .map(|worker| worker.total_num_cpus() as usize)
-            .sum();
-
-        let ratio = self.pending_tasks.len() as f64 / total_capacity as f64;
-
-        if ratio > self.autoscaling_threshold {
-            return Some(self.pending_tasks.len());
-        }
-
-        None
+    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
+        // If we need to autoscale, return the resource requests of the pending tasks
+        self.needs_autoscaling().then(|| {
+            self.pending_tasks
+                .iter()
+                .map(|task| task.task.resource_request().clone())
+                .collect()
+        })
     }
 }
 
@@ -612,7 +624,7 @@ mod tests {
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
-        assert_eq!(scheduler.get_autoscaling_request(), Some(1));
+        assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 1);
     }
 
     #[test]
@@ -643,7 +655,7 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 4);
 
         // Should request 4 workers (ratio 5 total demand / 1 capacity = 5.0 > default threshold 1.25)
-        assert_eq!(scheduler.get_autoscaling_request(), Some(4));
+        assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 4);
     }
 
     #[test]
@@ -674,6 +686,6 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 0);
 
         // Should not request autoscaling
-        assert_eq!(scheduler.get_autoscaling_request(), None);
+        assert!(scheduler.get_autoscaling_request().is_none());
     }
 }

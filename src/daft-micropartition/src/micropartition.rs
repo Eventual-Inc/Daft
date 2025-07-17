@@ -55,7 +55,9 @@ impl Display for TableState {
             Self::Loaded(tables) => {
                 writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
                 for tab in tables.iter() {
-                    writeln!(f, "{tab}")?;
+                    if !tab.is_empty() {
+                        writeln!(f, "{tab}")?;
+                    }
                 }
                 Ok(())
             }
