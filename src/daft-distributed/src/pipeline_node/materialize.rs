@@ -37,7 +37,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     /// Materialize the output of all running or finished tasks
     async fn task_materializer(
         mut finalized_tasks_receiver: Receiver<SubmittedTask>,
-        tx: Sender<MaterializedOutput>,
+        tx: Sender<DaftResult<MaterializedOutput>>,
     ) -> DaftResult<()> {
         let mut pending_tasks: OrderedJoinSet<DaftResult<Option<MaterializedOutput>>> =
             OrderedJoinSet::new();
@@ -49,10 +49,17 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                     pending_tasks.spawn(finalized_task);
                 }
                 Some(result) = pending_tasks.join_next(), if num_pending > 0 => {
-                    let materialized_output = result??;
-                    if let Some(materialized_output) = materialized_output {
-                        if tx.send(materialized_output).await.is_err() {
-                            break;
+                    match result {
+                        Ok(Ok(Some(materialized_output))) => {
+                            if tx.send(Ok(materialized_output)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(Ok(None)) => {}
+                        Ok(Err(e)) | Err(e) => {
+                            if tx.send(Err(e)).await.is_err() {
+                                break;
+                            }
                         }
                     }
                 }
@@ -82,6 +89,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     let materialized_result_stream =
         tokio_stream::wrappers::ReceiverStream::new(materialized_results_receiver);
     JoinableForwardingStream::new(materialized_result_stream, joinset)
+        .map(|result| result.and_then(|result| result))
 }
 
 #[cfg(test)]
@@ -160,21 +168,9 @@ mod tests {
     ) -> DaftResult<()> {
         assert_eq!(results.len(), expected_specs.len());
 
-        // Sort both results and expected specs by num_rows to ensure consistent ordering
-        let mut sorted_results: Vec<_> = results.iter().collect();
-        let mut sorted_expected: Vec<_> = expected_specs.iter().collect();
-
-        sorted_results.sort_by(|a, b| {
-            let a_rows = a.as_ref().unwrap().num_rows().unwrap();
-            let b_rows = b.as_ref().unwrap().num_rows().unwrap();
-            a_rows.cmp(&b_rows)
-        });
-
-        sorted_expected.sort_by(|a, b| a.0.cmp(&b.0));
-
-        for ((result, expected), should_error) in sorted_results
+        for ((result, expected), should_error) in results
             .iter()
-            .zip(sorted_expected.iter())
+            .zip(expected_specs.iter())
             .zip(should_error.iter())
         {
             if *should_error {
