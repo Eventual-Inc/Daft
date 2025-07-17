@@ -22,11 +22,31 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     not PYARROW_GE_8_0_0,
     reason="PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0",
 )
-@pytest.mark.parametrize("fmt", ["parquet", "lance"])
+@pytest.mark.parametrize("fmt", ["parquet", "lance", "csv", "json"])
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
     [
+        # TODO [mg]: CSV export erases the 2 lists and drops the None (null)
+        # E         foo: [[1,2,null],[1,2,null]] | after: pyarrow.Table
+        # E         foo: int64
+        # E         ----
+        # E         foo: [[1,2,1,2]]
         ([1, 2, None], pa.int64(), DataType.int64()),
+        # TODO [mg]: CSV export erases the 2 lists and drops the None (null)
+        # E       AssertionError: (Arrow) before: pyarrow.Table
+        # E         foo: large_string
+        # E         ----
+        # E         foo: [["a","b",null],["a","b",null]] | after: pyarrow.Table
+        # E         foo: large_string
+        # E         ----
+        # E         foo: [["a","b","a","b"]]
+        # E       assert pyarrow.Table\nfoo: large_string\n----\nfoo: [["a","b",null],["a","b",null]] == pyarrow.Table\nfoo: large_string\n----\nfoo: [["a","b","a","b"]]
+        # E         Full diff:
+        # E           pyarrow.Table
+        # E           foo: large_string
+        # E           ----
+        # E         - foo: [["a","b","a","b"],
+        # E         + foo: [["a","b",null],["a","b",null],
         (["a", "b", None], pa.large_string(), DataType.string()),
         ([True, False, None], pa.bool_(), DataType.bool()),
         ([b"a", b"b", None], pa.large_binary(), DataType.binary()),
@@ -86,7 +106,13 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
         ),
     ],
 )
-def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_type, expected_dtype: DataType):
+def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_type, expected_dtype: DataType):
+    if fmt == "csv":
+        pytest.skip("BUG -- FIXME: csv writing is broken")
+    if fmt == "json" and (isinstance(data, (datetime.datetime, datetime.time)) or expected_dtype == DataType.binary()):
+        pytest.skip(
+            "BUG -- FIXME: daft.exceptions.DaftCoreException: Not Yet Implemented: JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types"
+        )
     if data == [[1, 2, 3], [4, 5, 6], None]:
         pytest.skip(
             f"BUG -- FIXME: Daft cannot handle this {data=} as {expected_dtype=} -> it "
@@ -97,7 +123,6 @@ def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_t
             pytest.skip(f"BUG -- FIXME: Lance cannot handle this test case: {data=} {pa_type=} {expected_dtype=}")
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before).collect()
-    print(f"{fmt=} {data=}")
     getattr(before, f"write_{fmt}")(str(tmp_path))
     after = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
     assert (
