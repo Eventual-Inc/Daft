@@ -258,6 +258,9 @@ def test_roundtrip_sparse_tensor_types(tmp_path, fmt: FMT, fixed_shape: bool):
         expected_dtype = DataType.sparse_tensor(DataType.int64())
         data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0]]), np.array([[0, 1, 0], [0, 0, 1]])]
     if fmt == "lance":
+        # Error is on the .to_arrow() assert. Before vs. after differs in their "is_valid".
+        # E         - tensor_col: [  -- is_valid: all not null
+        # E         + tensor_col: [  -- is_valid:  [true,false,false]
         pytest.skip("BUG -- FIXME: Lance cannot handle sparse tensor w/ and w/o fixed shape!")
     before = daft.from_pydict({"foo": Series.from_pylist(data)})
     before = before.with_column("foo", before["foo"].cast(expected_dtype))
@@ -267,3 +270,38 @@ def test_roundtrip_sparse_tensor_types(tmp_path, fmt: FMT, fixed_shape: bool):
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_dtype
     assert before.to_arrow() == after.to_arrow()
+
+
+@pytest.mark.parametrize("fmt", ["parquet", "lance"])
+def test_roundtrip_tensor_types(tmp_path: Path, fmt: FMT):
+    if fmt == "lance":
+        # Error is on the .to_arrow() assert. Before vs. after differs in their "is_valid".
+        # E         - tensor_col: [  -- is_valid: all not null
+        # E         + tensor_col: [  -- is_valid:  [true,false,false]
+        pytest.skip("BUG -- FIXME: Lance cannot handle tensor types!")
+
+    # Define the expected data type for the tensor column
+    expected_tensor_dtype = DataType.tensor(DataType.int64())
+
+    # Create sample tensor data with some null values
+    tensor_data = [np.array([[1, 2], [3, 4]]), None, None]
+
+    # Create a Daft DataFrame with the tensor data
+    df_original = daft.from_pydict({"tensor_col": Series.from_pylist(tensor_data)})
+
+    # Double the size of the DataFrame to ensure we test with more data
+    df_original = df_original.concat(df_original).collect()
+
+    assert df_original.schema()["tensor_col"].dtype == expected_tensor_dtype
+
+    # Write the DataFrame to a Parquet file
+    getattr(df_original, f"write_{fmt}")(str(tmp_path))
+
+    # Read the Parquet file back into a new DataFrame
+    df_roundtrip = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
+
+    # Verify that the data type is preserved after the roundtrip
+    assert df_roundtrip.schema()["tensor_col"].dtype == expected_tensor_dtype
+
+    # Ensure the data content is identical after the roundtrip
+    assert df_original.to_arrow() == df_roundtrip.to_arrow()
