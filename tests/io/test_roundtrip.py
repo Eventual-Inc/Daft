@@ -114,6 +114,11 @@ PYARROW_GE_11_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.i
             pa.map_(pa.large_string(), pa.int64()),
             DataType.map(DataType.string(), DataType.int64()),
         ),
+        (
+            [datetime.time(1, 2, 3, 4), datetime.time(5, 6, 7, 8), None],
+            pa.time64("us"),
+            DataType.time(TimeUnit.us()),
+        ),
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_type, expected_dtype: DataType):
@@ -129,7 +134,7 @@ def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_t
                 "BUG -- FIXME: daft.exceptions.DaftCoreException: Not Yet Implemented: JSON writes are not supported "
                 "with extension, timezone with timestamp, binary, or duration data types"
             )
-        if expected_dtype in [
+        if pa_type != pa.time64("us") and expected_dtype in [
             DataType.decimal128(16, 8),
             DataType.duration(TimeUnit.ms()),
             DataType.duration(TimeUnit.us()),
