@@ -9,14 +9,14 @@ use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
         make_in_memory_scan_from_materialized_outputs, MaterializedOutput, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, PipelineOutput,
+        PipelineNodeConfig, PipelineNodeContext,
     },
     scheduling::{
-        scheduler::SchedulerHandle,
+        scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
@@ -131,9 +131,9 @@ impl RepartitionNode {
     // Async execution to get all partitions out
     async fn execution_loop(
         self: Arc<Self>,
-        local_repartition_node: RunningPipelineNode,
+        local_repartition_node: SubmittableTaskStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // Trigger materialization of the partitions
@@ -151,7 +151,7 @@ impl RepartitionNode {
                 &(self_clone as Arc<dyn DistributedPipelineNode>),
             )?;
 
-            let _ = result_tx.send(PipelineOutput::Task(task)).await;
+            let _ = result_tx.send(task).await;
         }
 
         Ok(())
@@ -196,20 +196,23 @@ impl DistributedPipelineNode for RepartitionNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
         let local_repartition_node =
             input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-                Ok(LocalPhysicalPlan::repartition(
+                LocalPhysicalPlan::repartition(
                     input,
                     self_clone.columns.clone(),
                     self_clone.num_partitions,
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                ))
+                )
             });
 
         let (result_tx, result_rx) = create_channel(1);
@@ -221,7 +224,7 @@ impl DistributedPipelineNode for RepartitionNode {
         );
         stage_context.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        SubmittableTaskStream::from(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

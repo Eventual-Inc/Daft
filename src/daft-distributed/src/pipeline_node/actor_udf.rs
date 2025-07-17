@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::{
@@ -8,14 +8,14 @@ use daft_dsl::{
     python::PyExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 
 use super::{
-    DisplayLevel, DistributedPipelineNode, MaterializedOutput, NodeID, NodeName,
-    PipelineNodeConfig, PipelineNodeContext, PipelineOutput, RunningPipelineNode, TreeDisplay,
+    DisplayLevel, DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig,
+    PipelineNodeContext, SubmittableTaskStream, TreeDisplay,
 };
 use crate::{
     scheduling::{
@@ -202,42 +202,39 @@ impl ActorUDF {
 
     async fn execution_loop_fused(
         self: Arc<Self>,
-        input: RunningPipelineNode,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        input: SubmittableTaskStream,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
 
         let mut running_tasks = JoinSet::new();
         let mut input_stream = input.into_stream();
-        while let Some(pipeline_output) = input_stream.next().await {
-            match pipeline_output {
-                PipelineOutput::Task(task) => {
-                    // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
-                    // I.E. THERE WAS A PREVIOUS ACTOR UDF. IF THERE IS A CASE WHERE THE PREVIOUS ACTOR UDF HAS A SPECIFIC WORKER ID,
-                    // AND WE DON'T HAVE ACTOR FOR THIS WORKER ID, IT SHOULD STILL WORK BECAUSE IT'S A RAY ACTOR CALL.
-                    // BUT WE INCUR TRANSFER COSTS FOR THE TASK.
-                    // IN A CASE LIKE THIS WE SHOULD MATERIALIZE THE TASK.
+        while let Some(task) = input_stream.next().await {
+            // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
+            // I.E. THERE WAS A PREVIOUS ACTOR UDF. IF THERE IS A CASE WHERE THE PREVIOUS ACTOR UDF HAS A SPECIFIC WORKER ID,
+            // AND WE DON'T HAVE ACTOR FOR THIS WORKER ID, IT SHOULD STILL WORK BECAUSE IT'S A RAY ACTOR CALL.
+            // BUT WE INCUR TRANSFER COSTS FOR THE TASK.
+            // IN A CASE LIKE THIS WE SHOULD MATERIALIZE THE TASK.
 
-                    // Pick actors using round robin
-                    let (worker_id, actors) = udf_actors.get_round_robin_actors()?;
+            let (worker_id, actors) = match task.task().strategy() {
+                SchedulingStrategy::WorkerAffinity { worker_id, .. } => (
+                    worker_id.clone(),
+                    udf_actors.get_actors_for_worker(worker_id)?,
+                ),
+                _ => udf_actors.get_round_robin_actors()?,
+            };
 
-                    let modified_task = self.append_actor_udf_to_task(
-                        worker_id,
-                        task,
-                        actors,
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                    )?;
-                    let (submittable_task, notify_token) = modified_task.add_notify_token();
-                    running_tasks.spawn(notify_token);
-                    if result_tx
-                        .send(PipelineOutput::Task(submittable_task))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
+            let modified_task = self.append_actor_udf_to_task(
+                worker_id,
+                task,
+                actors,
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )?;
+            let (submittable_task, notify_token) = modified_task.add_notify_token();
+            running_tasks.spawn(notify_token);
+            if result_tx.send(submittable_task).await.is_err() {
+                break;
             }
         }
         while let Some(result) = running_tasks.join_next().await {
@@ -248,53 +245,6 @@ impl ActorUDF {
         // Only teardown actors after all tasks are finished.
         udf_actors.teardown();
         Ok(())
-    }
-
-    fn make_actor_udf_task_for_materialized_outputs(
-        &self,
-        materialized_output: MaterializedOutput,
-        worker_id: WorkerId,
-        actors: Vec<PyObjectWrapper>,
-        task_context: TaskContext,
-    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-        // Extract all partitions from materialized outputs
-        let partitions = materialized_output.partitions().to_vec();
-
-        let in_memory_info = InMemoryInfo::new(
-            self.config.schema.clone(),
-            self.context.node_id.to_string(),
-            None,
-            partitions.len(),
-            0,
-            0,
-            None,
-            None,
-        );
-
-        let in_memory_source =
-            LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
-
-        let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
-            in_memory_source,
-            actors.into_iter().map(|e| e.into()).collect(),
-            self.batch_size,
-            self.memory_request,
-            self.config.schema.clone(),
-            StatsState::NotMaterialized,
-        );
-        let task = SubmittableTask::new(SwordfishTask::new(
-            task_context,
-            actor_pool_project_plan,
-            self.config.execution_config.clone(),
-            HashMap::from([(self.context.node_id.to_string(), partitions)]),
-            SchedulingStrategy::WorkerAffinity {
-                worker_id,
-                soft: false,
-            },
-            self.context.to_hashmap(),
-        ));
-
-        Ok(task)
     }
 
     fn append_actor_udf_to_task(
@@ -390,15 +340,18 @@ impl DistributedPipelineNode for ActorUDF {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop =
             self.execution_loop_fused(input_node, result_tx, stage_context.task_id_counter());
         stage_context.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        SubmittableTaskStream::from(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

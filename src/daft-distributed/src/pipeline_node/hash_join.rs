@@ -12,12 +12,11 @@ use daft_logical_plan::{
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, repartition::RepartitionNode,
-        translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, PipelineOutput,
+        repartition::RepartitionNode, translate::LogicalPlanToPipelineNodeTranslator, NodeID,
+        NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
     scheduling::{
         scheduler::SubmittableTask,
@@ -143,25 +142,17 @@ impl HashJoinNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        left_input: RunningPipelineNode,
-        right_input: RunningPipelineNode,
+        left_input: SubmittableTaskStream,
+        right_input: SubmittableTaskStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
         let mut outputs = left_input.into_stream().zip(right_input.into_stream());
 
         // Make each pair of partition groups input into in-memory scans -> hash join
-        while let Some((left_group, right_group)) = outputs.next().await {
-            let left_task = match left_group {
-                PipelineOutput::Task(task) => task,
-                _ => unreachable!("All running tasks should be materialized before this point"),
-            };
-            let right_task = match right_group {
-                PipelineOutput::Task(task) => task,
-                _ => unreachable!("All running tasks should be materialized before this point"),
-            };
+        while let Some((left_task, right_task)) = outputs.next().await {
             let task = self.build_hash_join_task(left_task, right_task, &task_id_counter);
-            let _ = result_tx.send(PipelineOutput::Task(task)).await;
+            let _ = result_tx.send(task).await;
         }
 
         Ok(())
@@ -206,9 +197,12 @@ impl DistributedPipelineNode for HashJoinNode {
         vec![self.left.clone(), self.right.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let left_input = self.left.clone().start(stage_context);
-        let right_input = self.right.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let left_input = self.left.clone().produce_tasks(stage_context);
+        let right_input = self.right.clone().produce_tasks(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(
@@ -219,7 +213,7 @@ impl DistributedPipelineNode for HashJoinNode {
         );
         stage_context.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        SubmittableTaskStream::from(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

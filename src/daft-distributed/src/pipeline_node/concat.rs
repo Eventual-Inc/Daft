@@ -11,7 +11,7 @@ use futures::StreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        RunningPipelineNode,
+        SubmittableTaskStream,
     },
     stage::{StageConfig, StageExecutionContext},
     utils::channel::create_channel,
@@ -104,9 +104,12 @@ impl DistributedPipelineNode for ConcatNode {
         vec![self.child.clone(), self.other.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
-        let other_node = self.other.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
+        let other_node = self.other.clone().produce_tasks(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
 
@@ -119,7 +122,7 @@ impl DistributedPipelineNode for ConcatNode {
         };
 
         stage_context.spawn(execution_loop);
-        RunningPipelineNode::new(result_rx)
+        SubmittableTaskStream::from(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
