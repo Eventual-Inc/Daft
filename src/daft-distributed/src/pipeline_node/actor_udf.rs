@@ -202,27 +202,22 @@ impl ActorUDF {
 
     async fn execution_loop_fused(
         self: Arc<Self>,
-        input: SubmittableTaskStream,
+        mut input_task_stream: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
 
         let mut running_tasks = JoinSet::new();
-        let mut input_stream = input.into_stream();
-        while let Some(task) = input_stream.next().await {
-            // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
-            // I.E. THERE WAS A PREVIOUS ACTOR UDF. IF THERE IS A CASE WHERE THE PREVIOUS ACTOR UDF HAS A SPECIFIC WORKER ID,
-            // AND WE DON'T HAVE ACTOR FOR THIS WORKER ID, IT SHOULD STILL WORK BECAUSE IT'S A RAY ACTOR CALL.
-            // BUT WE INCUR TRANSFER COSTS FOR THE TASK.
-            // IN A CASE LIKE THIS WE SHOULD MATERIALIZE THE TASK.
-
+        while let Some(task) = input_task_stream.next().await {
             let (worker_id, actors) = match task.task().strategy() {
+                // If the task has a specific worker ID, get the actors for that worker.
                 SchedulingStrategy::WorkerAffinity { worker_id, .. } => (
                     worker_id.clone(),
                     udf_actors.get_actors_for_worker(worker_id)?,
                 ),
-                _ => udf_actors.get_round_robin_actors()?,
+                // If the task has a spread strategy, pick round robin actors.
+                SchedulingStrategy::Spread => udf_actors.get_round_robin_actors()?,
             };
 
             let modified_task = self.append_actor_udf_to_task(
@@ -231,12 +226,14 @@ impl ActorUDF {
                 actors,
                 TaskContext::from((&self.context, task_id_counter.next())),
             )?;
+
             let (submittable_task, notify_token) = modified_task.add_notify_token();
             running_tasks.spawn(notify_token);
             if result_tx.send(submittable_task).await.is_err() {
                 break;
             }
         }
+        // Wait for all tasks to finish.
         while let Some(result) = running_tasks.join_next().await {
             if result?.is_err() {
                 break;

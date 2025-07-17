@@ -179,9 +179,8 @@ impl RunningStage {
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-        let stream = self.task_stream.into_stream();
         let joinset = self.stage_context.joinset;
-        materialize_all_pipeline_outputs(stream, scheduler_handle, Some(joinset))
+        materialize_all_pipeline_outputs(self.task_stream, scheduler_handle, Some(joinset))
     }
 }
 

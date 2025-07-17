@@ -14,7 +14,6 @@ use crate::{
         SubmittableTaskStream,
     },
     stage::{StageConfig, StageExecutionContext},
-    utils::channel::create_channel,
 };
 
 pub(crate) struct ConcatNode {
@@ -110,19 +109,7 @@ impl DistributedPipelineNode for ConcatNode {
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(stage_context);
         let other_node = self.other.clone().produce_tasks(stage_context);
-
-        let (result_tx, result_rx) = create_channel(1);
-
-        let execution_loop = async move {
-            let mut chained = input_node.into_stream().chain(other_node.into_stream());
-            while let Some(output) = chained.next().await {
-                result_tx.send(output).await.unwrap();
-            }
-            Ok(())
-        };
-
-        stage_context.spawn(execution_loop);
-        SubmittableTaskStream::from(result_rx)
+        SubmittableTaskStream::new(input_node.chain(other_node).boxed())
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

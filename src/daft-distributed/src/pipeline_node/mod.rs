@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -243,10 +248,6 @@ impl SubmittableTaskStream {
         Self { task_stream }
     }
 
-    pub fn into_stream(self) -> BoxStream<'static, SubmittableTask<SwordfishTask>> {
-        self.task_stream
-    }
-
     pub fn materialize(
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
@@ -277,6 +278,14 @@ impl SubmittableTaskStream {
             })
             .boxed();
         Self::new(task_stream)
+    }
+}
+
+impl Stream for SubmittableTaskStream {
+    type Item = SubmittableTask<SwordfishTask>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.task_stream.poll_next_unpin(cx)
     }
 }
 

@@ -23,7 +23,6 @@ use crate::{
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct HashJoinNode {
@@ -139,24 +138,6 @@ impl HashJoinNode {
             self.context().to_hashmap(),
         ))
     }
-
-    async fn execution_loop(
-        self: Arc<Self>,
-        left_input: SubmittableTaskStream,
-        right_input: SubmittableTaskStream,
-        task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-    ) -> DaftResult<()> {
-        let mut outputs = left_input.into_stream().zip(right_input.into_stream());
-
-        // Make each pair of partition groups input into in-memory scans -> hash join
-        while let Some((left_task, right_task)) = outputs.next().await {
-            let task = self.build_hash_join_task(left_task, right_task, &task_id_counter);
-            let _ = result_tx.send(task).await;
-        }
-
-        Ok(())
-    }
 }
 
 impl TreeDisplay for HashJoinNode {
@@ -203,17 +184,16 @@ impl DistributedPipelineNode for HashJoinNode {
     ) -> SubmittableTaskStream {
         let left_input = self.left.clone().produce_tasks(stage_context);
         let right_input = self.right.clone().produce_tasks(stage_context);
+        let task_id_counter = stage_context.task_id_counter();
 
-        let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(
-            left_input,
-            right_input,
-            stage_context.task_id_counter(),
-            result_tx,
-        );
-        stage_context.spawn(execution_loop);
-
-        SubmittableTaskStream::from(result_rx)
+        SubmittableTaskStream::new(
+            left_input
+                .zip(right_input)
+                .map(move |(left_task, right_task)| {
+                    self.build_hash_join_task(left_task, right_task, &task_id_counter)
+                })
+                .boxed(),
+        )
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

@@ -6,7 +6,7 @@ use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     window_to_agg_exprs, WindowFrame,
 };
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
@@ -47,10 +47,7 @@ pub(crate) struct WindowNodePartitionOnly {
 }
 
 impl WindowNodePartitionOnly {
-    fn produce_task(
-        &self,
-        input: daft_local_plan::LocalPhysicalPlanRef,
-    ) -> daft_local_plan::LocalPhysicalPlanRef {
+    fn produce_task(&self, input: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
         LocalPhysicalPlan::window_partition_only(
             input,
             self.partition_by.clone(),
@@ -85,10 +82,7 @@ pub(crate) struct WindowNodePartitionAndOrderBy {
 }
 
 impl WindowNodePartitionAndOrderBy {
-    fn produce_task(
-        &self,
-        input: daft_local_plan::LocalPhysicalPlanRef,
-    ) -> daft_local_plan::LocalPhysicalPlanRef {
+    fn produce_task(&self, input: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
         LocalPhysicalPlan::window_partition_and_order_by(
             input,
             self.partition_by.clone(),
@@ -136,10 +130,7 @@ pub(crate) struct WindowNodePartitionAndDynamicFrame {
 }
 
 impl WindowNodePartitionAndDynamicFrame {
-    fn produce_task(
-        &self,
-        input: daft_local_plan::LocalPhysicalPlanRef,
-    ) -> daft_local_plan::LocalPhysicalPlanRef {
+    fn produce_task(&self, input: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
         LocalPhysicalPlan::window_partition_and_dynamic_frame(
             input,
             self.partition_by.clone(),
@@ -192,10 +183,7 @@ pub(crate) struct WindowNodeOrderByOnly {
 }
 
 impl WindowNodeOrderByOnly {
-    fn produce_task(
-        &self,
-        input: daft_local_plan::LocalPhysicalPlanRef,
-    ) -> daft_local_plan::LocalPhysicalPlanRef {
+    fn produce_task(&self, input: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
         LocalPhysicalPlan::window_order_by_only(
             input,
             self.order_by.clone(),
