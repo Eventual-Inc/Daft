@@ -184,11 +184,12 @@ def test_iter_exception(make_df):
         with pytest.raises(UDFException) as exc_info:
             list(it)
 
-        assert isinstance(exc_info.value.__cause__, MockException)
-
         # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
         if get_tests_daft_runner_name() == "ray":
             assert "MockException" in str(exc_info.value)
+        else:
+            assert isinstance(exc_info.value.__cause__, MockException)
+
         assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=2)")
 
 
@@ -223,9 +224,9 @@ def test_iter_partitions_exception(make_df):
             if get_tests_daft_runner_name() == "ray":
                 ray.get(res)
 
-        assert isinstance(exc_info.value.__cause__, MockException)
-
         # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
         if get_tests_daft_runner_name() == "ray":
             assert "MockException" in str(exc_info.value)
+        else:
+            assert isinstance(exc_info.value.__cause__, MockException)
         assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=2)")

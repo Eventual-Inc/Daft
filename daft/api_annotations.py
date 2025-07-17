@@ -54,6 +54,9 @@ def PublicAPI(func: Callable[P, T]) -> Callable[P, T]:
         type_check_function(func, *args, **kwargs)
         try:
             return func(*args, **kwargs)
+        except UDFException as e:
+            e = e.with_traceback(None)
+            raise
         except Exception as e:
             e = e.with_traceback(e.__traceback__.tb_next if e.__traceback__ else None)
             raise  # If we `raise e`, it will add a new frame right here
