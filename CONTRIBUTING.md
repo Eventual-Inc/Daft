@@ -347,7 +347,7 @@ def extract_all(self, pattern: Series, index: int = 0) -> Series:
   return self._eval_expressions("extract_all", pattern, index=index)
 ```
 
-##### Docstring Format
+##### Docstring Template
 
 ``` py
 def method(args) -> return:
