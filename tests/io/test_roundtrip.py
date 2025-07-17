@@ -12,8 +12,9 @@ import pytest
 
 import daft
 from daft import DataType, Series, TimeUnit
+from tests.utils import random_numerical_embedding
 
-FMT = Literal["parquet", "lance"]
+FMT = Literal["parquet", "lance", "json", "csv"]
 
 PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
 
@@ -286,16 +287,6 @@ def test_roundtrip_sparse_tensor_types(tmp_path, fmt: FMT, fixed_shape: bool):
     assert before.to_arrow() == after.to_arrow()
 
 
-def _make_embedding(rng, dtype, size: int) -> np.ndarray:
-    """Generate a uniformly distributed 1-D array of the specified datatype & dimensionality."""
-    if dtype in (np.float32, np.float64):
-        return rng.random(size=(size,), dtype=dtype)
-    else:
-        v = rng.random(size=(size,), dtype=np.float32)
-        c = np.rint(v * 100)
-        return c.astype(dtype)
-
-
 def _make_check_embeddings(
     test_df: daft.DataFrame, dtype, *, embeddings_col: str = "e"
 ) -> Callable[[daft.DataFrame], None]:
@@ -350,7 +341,7 @@ def _make_check_embeddings(
 def test_roundtrip_embedding(tmp_path: Path, fmt: FMT, dtype: np.dtype, size: int) -> None:
     # make some embeddings of the specified data type and dimensionality
     # with uniformly at random distributed values
-    make_array = partial(_make_embedding, np.random.default_rng(), dtype, size)
+    make_array = partial(random_numerical_embedding, np.random.default_rng(), dtype, size)
     test_df = (
         daft.from_pydict({"e": [make_array() for _ in range(50)]})
         .with_column("e", daft.col("e").cast(DataType.embedding(DataType.from_numpy_dtype(dtype), size)))
