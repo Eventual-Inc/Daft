@@ -248,7 +248,7 @@ def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_t
     assert before.to_arrow() == after.to_arrow(), f"(Arrow) before: {before.to_arrow()} | after: {after.to_arrow()}"
 
 
-@pytest.mark.parametrize("fmt", ["parquet"])
+@pytest.mark.parametrize("fmt", ["parquet", "lance"])
 @pytest.mark.parametrize("fixed_shape", [True, False])
 def test_roundtrip_sparse_tensor_types(tmp_path, fmt: FMT, fixed_shape: bool):
     if fixed_shape:
@@ -257,6 +257,8 @@ def test_roundtrip_sparse_tensor_types(tmp_path, fmt: FMT, fixed_shape: bool):
     else:
         expected_dtype = DataType.sparse_tensor(DataType.int64())
         data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0]]), np.array([[0, 1, 0], [0, 0, 1]])]
+    if fmt == "lance":
+        pytest.skip("BUG -- FIXME: Lance cannot handle sparse tensor w/ and w/o fixed shape!")
     before = daft.from_pydict({"foo": Series.from_pylist(data)})
     before = before.with_column("foo", before["foo"].cast(expected_dtype))
     before = before.concat(before).collect()
