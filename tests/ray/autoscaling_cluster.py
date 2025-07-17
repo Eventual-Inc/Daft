@@ -147,3 +147,5 @@ def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, a
         # Clean shutdown sequence
         ray.shutdown()
         cluster.shutdown()
+
+        reset_runner()
