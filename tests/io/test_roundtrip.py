@@ -17,11 +17,9 @@ FMT = Literal["parquet", "lance"]
 
 PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
 
+PYARROW_GE_11_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
-@pytest.mark.skipif(
-    not PYARROW_GE_8_0_0,
-    reason="PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0",
-)
+
 @pytest.mark.parametrize("fmt", ["parquet", "lance", "json", "csv"])
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
@@ -119,6 +117,10 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_type, expected_dtype: DataType):
+    if fmt == "parquet" and not PYARROW_GE_8_0_0:
+        pytest.skip("PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0")
+    if fmt == "csv" and not PYARROW_GE_11_0_0:
+        pytest.skip("PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0.")
     if fmt == "csv":
         pytest.skip("BUG -- FIXME: csv read-write doesn't work for simple arrow types without special 'id' column")
     if fmt == "json":
