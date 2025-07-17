@@ -1282,6 +1282,24 @@ impl EmbeddingArray {
                     fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
+            (DataType::FixedSizeList(inner_dtype_fsl, size_fsl), DataType::Embedding(inner_dtype_self, size_self)) => {
+                if *size_fsl != *size_self {
+                    return Err(DaftError::ValueError(format!(
+                        "Cannot cast from EmbeddingArraySeries with size {} to FixedSizeList with size: {}", size_self, size_fsl
+                    )));
+                }
+                if **inner_dtype_fsl != **inner_dtype_self {
+                    return Err(DaftError::ValueError(format!(
+                        "Cannot cast from EmbeddingArraySeries with dtype {} to FixedSizeList with dtype: {}", inner_dtype_self, inner_dtype_fsl
+                    )));
+                }
+
+                let mut casted_child = self.flat_child.cast(child_dtype.as_ref())?;
+                Ok(FixedSizeListArray::new(
+                    self.field.clone(),
+                    self.physical
+                ))
+            }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
             (_, _) => self.physical.cast(dtype),
         }
@@ -2533,7 +2551,7 @@ where
 #[cfg(test)]
 mod tests {
     use arrow2::array::PrimitiveArray;
-    use rand::{thread_rng, Rng};
+    use rand::{rng, thread_rng, Rng};
 
     use super::*;
     use crate::{
@@ -2683,4 +2701,17 @@ mod tests {
             scale,
         );
     }
+
+    #[test]
+    fn test_fsl_to_embedding() {
+        let mut rng = rng();
+        let mut values
+    }
+
+    #[test]
+    fn test_embedding_to_fsl() {
+
+    }
+
+
 }
