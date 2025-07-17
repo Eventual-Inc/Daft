@@ -9,7 +9,7 @@ import pytest
 import daft
 from daft import DataType, TimeUnit
 
-PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
+PYARROW_GE_11_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
 
 @pytest.mark.skipif(
