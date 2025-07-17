@@ -12,7 +12,10 @@ use super::{
     RunningPipelineNode,
 };
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        make_in_memory_scan_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
+    },
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, TaskContext},
@@ -79,9 +82,21 @@ impl LimitNode {
                 let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
                     Ordering::Less => {
                         remaining_limit -= num_rows;
-                        (PipelineOutput::Materialized(next_input), false)
+                        let task = make_in_memory_scan_from_materialized_outputs(
+                            TaskContext::from((&self.context, task_id_counter.next())),
+                            vec![next_input],
+                            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        )?;
+                        (PipelineOutput::Task(task), false)
                     }
-                    Ordering::Equal => (PipelineOutput::Materialized(next_input), true),
+                    Ordering::Equal => {
+                        let task = make_in_memory_scan_from_materialized_outputs(
+                            TaskContext::from((&self.context, task_id_counter.next())),
+                            vec![next_input],
+                            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        )?;
+                        (PipelineOutput::Task(task), true)
+                    }
                     Ordering::Greater => {
                         let task = make_new_task_from_materialized_outputs(
                             TaskContext::from((&self.context, task_id_counter.next())),

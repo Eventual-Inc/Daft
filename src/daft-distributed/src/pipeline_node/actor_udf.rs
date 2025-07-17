@@ -208,38 +208,10 @@ impl ActorUDF {
     ) -> DaftResult<()> {
         let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
 
-        let mut materialized_output_stream = input.materialize_running();
         let mut running_tasks = JoinSet::new();
-        while let Some(pipeline_output) = materialized_output_stream.next().await {
-            let pipeline_output = pipeline_output?;
+        let mut input_stream = input.into_stream();
+        while let Some(pipeline_output) = input_stream.next().await {
             match pipeline_output {
-                PipelineOutput::Materialized(materialized_output) => {
-                    let actors =
-                        udf_actors.get_actors_for_worker(&materialized_output.worker_id)?;
-
-                    // If no actors for this worker, pick actors using round robin
-                    let (worker_id, actors) = if actors.is_empty() {
-                        udf_actors.get_round_robin_actors()?
-                    } else {
-                        (materialized_output.worker_id.clone(), actors)
-                    };
-
-                    let task = self.make_actor_udf_task_for_materialized_outputs(
-                        materialized_output,
-                        worker_id,
-                        actors,
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                    )?;
-                    let (submittable_task, notify_token) = task.add_notify_token();
-                    running_tasks.spawn(notify_token);
-                    if result_tx
-                        .send(PipelineOutput::Task(submittable_task))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
                 PipelineOutput::Task(task) => {
                     // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
                     // I.E. THERE WAS A PREVIOUS ACTOR UDF. IF THERE IS A CASE WHERE THE PREVIOUS ACTOR UDF HAS A SPECIFIC WORKER ID,
@@ -266,7 +238,6 @@ impl ActorUDF {
                         break;
                     }
                 }
-                PipelineOutput::Running(_) => unreachable!(),
             }
         }
         while let Some(result) = running_tasks.join_next().await {

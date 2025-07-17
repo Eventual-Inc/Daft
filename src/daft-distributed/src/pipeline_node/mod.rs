@@ -14,7 +14,7 @@ use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMe
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
-use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};
+use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
     plan::PlanID,
@@ -110,10 +110,7 @@ impl MaterializedOutput {
 
 #[derive(Debug)]
 pub(crate) enum PipelineOutput<T: Task> {
-    Materialized(MaterializedOutput),
     Task(SubmittableTask<T>),
-    #[allow(dead_code)]
-    Running(SubmittedTask),
 }
 
 pub(super) struct PipelineNodeConfig {
@@ -254,13 +251,13 @@ impl RunningPipelineNode {
         materialize_all_pipeline_outputs(stream, scheduler_handle)
     }
 
-    pub fn materialize_running(
-        self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
-    {
-        let stream = self.into_stream().map(Ok);
-        materialize_running_pipeline_outputs(stream)
-    }
+    // pub fn materialize_running(
+    //     self,
+    // ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
+    // {
+    //     let stream = self.into_stream().map(Ok);
+    //     materialize_running_pipeline_outputs(stream)
+    // }
 
     pub fn into_stream(
         self,
@@ -280,26 +277,9 @@ impl RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let task_id_counter = stage_context.task_id_counter();
         let execution_loop = async move {
-            let mut task_or_partition_ref_stream = self.materialize_running();
-
-            while let Some(pipeline_result) = task_or_partition_ref_stream.next().await {
-                let pipeline_output = pipeline_result?;
+            let mut task_stream = self.into_stream();
+            while let Some(pipeline_output) = task_stream.next().await {
                 match pipeline_output {
-                    PipelineOutput::Running(_) => {
-                        unreachable!("All running tasks should be materialized before this point")
-                    }
-                    PipelineOutput::Materialized(materialized_output) => {
-                        // make new task for this partition ref
-                        let task = make_new_task_from_materialized_outputs(
-                            TaskContext::from((node.context(), task_id_counter.next())),
-                            vec![materialized_output],
-                            &node,
-                            &plan_builder,
-                        )?;
-                        if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
-                            break;
-                        }
-                    }
                     PipelineOutput::Task(task) => {
                         // append plan to this task
                         let task = append_plan_to_existing_task(

@@ -107,26 +107,6 @@ impl HashJoinNode {
         res
     }
 
-    fn make_in_memory_task(
-        self: Arc<Self>,
-        input: PipelineOutput<SwordfishTask>,
-        task_id_counter: &TaskIDCounter,
-    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-        match input {
-            PipelineOutput::Running(_) => {
-                unreachable!("All running tasks should be materialized before this point")
-            }
-            PipelineOutput::Materialized(materialized_output) => {
-                make_in_memory_scan_from_materialized_outputs(
-                    TaskContext::from((self.context(), task_id_counter.next())),
-                    vec![materialized_output],
-                    &(self as Arc<dyn DistributedPipelineNode>),
-                )
-            }
-            PipelineOutput::Task(task) => Ok(task),
-        }
-    }
-
     fn build_hash_join_task(
         &self,
         left_task: SubmittableTask<SwordfishTask>,
@@ -168,20 +148,18 @@ impl HashJoinNode {
         task_id_counter: TaskIDCounter,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
-        // Materialize both sides of the join in parallel
-        let left_transposed = left_input.materialize_running();
-        let right_transposed = right_input.materialize_running();
-        let mut outputs = left_transposed.zip(right_transposed);
+        let mut outputs = left_input.into_stream().zip(right_input.into_stream());
 
         // Make each pair of partition groups input into in-memory scans -> hash join
         while let Some((left_group, right_group)) = outputs.next().await {
-            let left_task = self
-                .clone()
-                .make_in_memory_task(left_group?, &task_id_counter)?;
-            let right_task = self
-                .clone()
-                .make_in_memory_task(right_group?, &task_id_counter)?;
-
+            let left_task = match left_group {
+                PipelineOutput::Task(task) => task,
+                _ => unreachable!("All running tasks should be materialized before this point"),
+            };
+            let right_task = match right_group {
+                PipelineOutput::Task(task) => task,
+                _ => unreachable!("All running tasks should be materialized before this point"),
+            };
             let task = self.build_hash_join_task(left_task, right_task, &task_id_counter);
             let _ = result_tx.send(PipelineOutput::Task(task)).await;
         }
