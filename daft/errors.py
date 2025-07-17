@@ -34,7 +34,7 @@ class UDFException(Exception):
         if self.tb_info:
             return (
                 "\n".join(self.tb_info.format())
-                + "\nThe above exception was the direct cause of the following exception:\n\n"
+                + "\nThe above exception was the direct cause of the following exception:\n"
                 + f"\n{self.message}"
             )
         else:
