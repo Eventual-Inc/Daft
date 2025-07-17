@@ -784,6 +784,27 @@ def test_series_cast_fixed_shape_tensor_to_tensor() -> None:
 
 ### Embedding ###
 
+# @pytest.mark.parametrize(["dtype", "size"], [
+#     (np.float32, 1024),
+#     (np.float64, 512),
+#     (np.int8, 2048),
+#     (np.int16, 512),
+#     (np.int32, 256),
+#     (np.int64, 128),
+#     (np.uint8, 2048),
+#     (np.uint16, 512),
+#     (np.uint32, 256),
+#     (np.uint64, 128),
+# ])
+# def test_series_cast_fixed_shape_list_to_embedding(dtype: np.dtype, size: int):
+#     rng = np.random.default_rng()
+#     data = [
+#         rng.random()
+#     ]
+#
+# def test_series_cast_embedding_to_fixed_shape_list():
+#     raise NotImplementedError()
+
 
 def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
     shape = (4,)
