@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as papq
@@ -10,7 +11,7 @@ import daft
 
 
 @pytest.mark.parametrize("has_none", [True, False])
-def test_roundtrip_boolean_rle(tmp_path, has_none):
+def test_roundtrip_boolean_rle(tmp_path: Path, has_none: bool):
     file_path = f"{tmp_path}/test.parquet"
     if has_none:
         # Create an array of random True/False values that are None 10% of the time.
