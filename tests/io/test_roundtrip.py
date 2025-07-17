@@ -11,7 +11,7 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import DataType, TimeUnit
+from daft import DataType, Series, TimeUnit
 
 FMT = Literal["parquet", "lance"]
 
@@ -148,7 +148,7 @@ def test_roundtrip_temporal_arrow_types(
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before)
     getattr(before, f"write_{fmt}")(str(tmp_path))
-    after = getattr(daft, f"read_{fmt}")(str(tmp_path))
+    after = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_dtype
     assert before.to_arrow() == after.to_arrow()
@@ -246,3 +246,22 @@ def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: str, data: list, pa_t
         after.schema()["foo"].dtype == expected_dtype
     ), f'(Schema) after[foo]: {after.schema()["foo"].dtype} | expected: {expected_dtype} '
     assert before.to_arrow() == after.to_arrow(), f"(Arrow) before: {before.to_arrow()} | after: {after.to_arrow()}"
+
+
+@pytest.mark.parametrize("fmt", ["parquet"])
+@pytest.mark.parametrize("fixed_shape", [True, False])
+def test_roundtrip_sparse_tensor_types(tmp_path, fmt: FMT, fixed_shape: bool):
+    if fixed_shape:
+        expected_dtype = DataType.sparse_tensor(DataType.int64(), (2, 2))
+        data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0], [0, 0]]), np.array([[0, 1], [0, 0]])]
+    else:
+        expected_dtype = DataType.sparse_tensor(DataType.int64())
+        data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0]]), np.array([[0, 1, 0], [0, 0, 1]])]
+    before = daft.from_pydict({"foo": Series.from_pylist(data)})
+    before = before.with_column("foo", before["foo"].cast(expected_dtype))
+    before = before.concat(before).collect()
+    getattr(before, f"write_{fmt}")(str(tmp_path))
+    after = getattr(daft, f"read_{fmt}")(str(tmp_path)).collect()
+    assert before.schema()["foo"].dtype == expected_dtype
+    assert after.schema()["foo"].dtype == expected_dtype
+    assert before.to_arrow() == after.to_arrow()

@@ -41,24 +41,6 @@ def test_roundtrip_tensor_types(tmp_path):
     assert df_original.to_arrow() == df_roundtrip.to_arrow()
 
 
-@pytest.mark.parametrize("fixed_shape", [True, False])
-def test_roundtrip_sparse_tensor_types(tmp_path, fixed_shape):
-    if fixed_shape:
-        expected_dtype = DataType.sparse_tensor(DataType.int64(), (2, 2))
-        data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0], [0, 0]]), np.array([[0, 1], [0, 0]])]
-    else:
-        expected_dtype = DataType.sparse_tensor(DataType.int64())
-        data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0]]), np.array([[0, 1, 0], [0, 0, 1]])]
-    before = daft.from_pydict({"foo": Series.from_pylist(data)})
-    before = before.with_column("foo", before["foo"].cast(expected_dtype))
-    before = before.concat(before)
-    before.write_parquet(str(tmp_path))
-    after = daft.read_parquet(str(tmp_path))
-    assert before.schema()["foo"].dtype == expected_dtype
-    assert after.schema()["foo"].dtype == expected_dtype
-    assert before.to_arrow() == after.to_arrow()
-
-
 @pytest.mark.parametrize("has_none", [True, False])
 def test_roundtrip_boolean_rle(tmp_path, has_none):
     file_path = f"{tmp_path}/test.parquet"
