@@ -111,6 +111,14 @@ impl DaftContext {
         })
     }
 
+    /// Reset/clear the current runner.
+    /// This allows setting a new runner after clearing the current one.
+    pub fn reset_runner(&self) {
+        self.with_state_mut(|state| {
+            state.runner = None;
+        })
+    }
+
     fn with_state<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&ContextState) -> R,
@@ -169,6 +177,12 @@ impl DaftContext {
     }
 
     pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
+        unimplemented!()
+    }
+
+    /// Reset/clear the current runner.
+    /// This allows setting a new runner after clearing the current one.
+    pub fn reset_runner(&self) {
         unimplemented!()
     }
 
@@ -338,6 +352,17 @@ fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
 }
 
 #[cfg(feature = "python")]
+pub fn reset_runner() {
+    let ctx = get_context();
+    ctx.reset_runner();
+}
+
+#[cfg(not(feature = "python"))]
+pub fn reset_runner() {
+    unimplemented!()
+}
+
+#[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(wrap_pyfunction!(
         python::get_runner_config_from_env,
@@ -346,6 +371,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::set_runner_ray, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::set_runner_native, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::reset_runner, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     Ok(())
 }

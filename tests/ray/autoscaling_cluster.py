@@ -121,8 +121,12 @@ def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, a
     The cluster is created before ray.init() as requested, and properly cleaned up afterward.
     """
     try:
-        # Shutdown any existing Ray instance
-        ray.shutdown()
+        from daft.daft import reset_runner
+
+        reset_runner()
+
+        if ray.is_initialized():
+            ray.shutdown()
 
         # Create the autoscaling cluster before ray.init()
         cluster = AutoscalingCluster(
@@ -143,6 +147,3 @@ def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, a
         # Clean shutdown sequence
         ray.shutdown()
         cluster.shutdown()
-
-        # Re-initialize Ray for subsequent tests
-        ray.init()

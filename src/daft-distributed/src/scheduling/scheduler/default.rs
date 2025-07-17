@@ -73,7 +73,8 @@ impl<T: Task> DefaultScheduler<T> {
             .worker_snapshots
             .iter()
             .all(|(_, worker)| worker.active_task_details.is_empty());
-        no_workers || all_workers_idle
+        let has_pending_tasks = !self.pending_tasks.is_empty();
+        has_pending_tasks && (no_workers || all_workers_idle)
     }
 }
 

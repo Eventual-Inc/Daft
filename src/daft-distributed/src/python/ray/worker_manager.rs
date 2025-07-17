@@ -147,9 +147,3 @@ impl WorkerManager for RayWorkerManager {
         })
     }
 }
-
-impl Drop for RayWorkerManager {
-    fn drop(&mut self) {
-        self.shutdown().expect("Cannot shutdown RayWorkerManager");
-    }
-}

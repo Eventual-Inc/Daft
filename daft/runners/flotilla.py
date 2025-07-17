@@ -180,7 +180,6 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
 def try_autoscale(bundles: list[dict[str, int]]) -> None:
     from ray.autoscaler.sdk import request_resources
 
-    print(f"requesting bundles: {bundles}")
     request_resources(
         bundles=bundles,
     )
