@@ -22,7 +22,7 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     not PYARROW_GE_8_0_0,
     reason="PyArrow writing to Parquet does not have good coverage for all types for versions <8.0.0",
 )
-@pytest.mark.parametrize("fmt", ["parquet", "lance", "csv", "json"])
+@pytest.mark.parametrize("fmt", ["parquet", "lance", "json", "csv"])
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
     [
@@ -119,9 +119,8 @@ PYARROW_GE_8_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.is
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_type, expected_dtype: DataType):
-    print(f"\n\n\n{fmt=} {data=} {pa_type=} {expected_dtype=}\n\n\n")
     if fmt == "csv":
-        pytest.skip("BUG -- FIXME: csv writing is broken")
+        pytest.skip("BUG -- FIXME: csv read-write doesn't work for simple arrow types without special 'id' column")
     if fmt == "json":
         if isinstance(data, (datetime.datetime, datetime.time)) or expected_dtype == DataType.binary():
             pytest.skip(
@@ -149,6 +148,7 @@ def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_t
     if fmt == "lance":
         if data == [{"bar": 1}, {"bar": None}, None] or data == [[("a", 1), ("b", 2)], [], None]:
             pytest.skip(f"BUG -- FIXME: Lance cannot handle this test case: {data=} {pa_type=} {expected_dtype=}")
+    #
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before).collect()
     getattr(before, f"write_{fmt}")(str(tmp_path))
@@ -162,7 +162,7 @@ def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_t
     assert before.to_arrow() == after.to_arrow(), f"(Arrow) before: {before.to_arrow()} | after: {after.to_arrow()}"
 
 
-@pytest.mark.parametrize("fmt", ["parquet", "lance"])
+@pytest.mark.parametrize("fmt", ["parquet", "lance", "csv", "json"])
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
     [
@@ -203,6 +203,10 @@ def test_roundtrip_simple_arrow_types(tmp_path: Path, fmt: FMT, data: list, pa_t
 def test_roundtrip_temporal_arrow_types(
     tmp_path: Path, fmt: FMT, data: list[datetime.datetime], pa_type, expected_dtype: DataType
 ):
+    if fmt == "csv":
+        pytest.skip("BUG -- FIXME: CSV read-write doesn't work for temporal types!")
+    if fmt == "json":
+        pytest.skip("BUG -- FIXME: JSON read-write doesn't work for temporal types!")
     # TODO [mg] fix this in follow-up.
     if fmt == "lance" and (pa_type == pa.timestamp("ms", "+08:00") or pa_type == pa.timestamp("ms", "+00:00")):
         pytest.skip(f"BUG -- FIXME: Lance cannot handle this timestamp: {pa_type}")
