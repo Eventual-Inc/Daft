@@ -8,8 +8,6 @@ import pytest
 
 import daft
 
-PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
-
 
 @pytest.mark.parametrize("has_none", [True, False])
 def test_roundtrip_boolean_rle(tmp_path, has_none):
@@ -28,6 +26,5 @@ def test_roundtrip_boolean_rle(tmp_path, has_none):
 
 
 # TODO: reading/writing:
-
 # 2. Image type
 # 3. Extension type?
