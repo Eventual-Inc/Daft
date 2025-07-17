@@ -119,6 +119,8 @@ def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, a
     """Context manager for managing AutoscalingCluster with proper setup and teardown.
 
     The cluster is created before ray.init() as requested, and properly cleaned up afterward.
+
+    Note: Starting and stopping the cluster can be time consuming. Use sparingly, and reuse the cluster if possible.
     """
     try:
         from daft.daft import reset_runner
