@@ -85,6 +85,7 @@ impl RaySwordfishWorker {
         Ok(task_handles)
     }
 
+    #[allow(dead_code)]
     pub fn shutdown(&self, py: Python<'_>) {
         self.ray_worker_handle
             .call_method0(py, pyo3::intern!(py, "shutdown"))
