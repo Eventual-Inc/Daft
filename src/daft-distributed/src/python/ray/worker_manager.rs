@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
     scheduler::WorkerSnapshot,
-    task::{SwordfishTask, TaskContext},
+    task::{SwordfishTask, TaskContext, TaskResourceRequest},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -129,17 +129,21 @@ impl WorkerManager for RayWorkerManager {
         Ok(())
     }
 
-    fn try_autoscale(&self, num_cpus: usize) -> DaftResult<()> {
+    fn try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
+        let bundles = bundles
+            .into_iter()
+            .map(|bundle| {
+                let mut dict = HashMap::new();
+                dict.insert("CPU", bundle.num_cpus().ceil() as i64);
+                dict.insert("GPU", bundle.num_gpus().ceil() as i64);
+                dict.insert("memory", bundle.memory_bytes() as i64);
+                dict
+            })
+            .collect::<Vec<_>>();
         Python::with_gil(|py| {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-            flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (num_cpus,))?;
+            flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (bundles,))?;
             Ok(())
         })
-    }
-}
-
-impl Drop for RayWorkerManager {
-    fn drop(&mut self) {
-        self.shutdown().expect("Cannot shutdown RayWorkerManager");
     }
 }
