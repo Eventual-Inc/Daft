@@ -349,6 +349,8 @@ def extract_all(self, pattern: Series, index: int = 0) -> Series:
 
 ##### Docstring Template
 
+We follow [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) python docstrings.
+
 ``` py
 def method(args) -> return:
     """Summary of method
