@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
-import traceback
+import pickle
 from multiprocessing import resource_tracker, shared_memory
+from traceback import TracebackException
 from typing import TYPE_CHECKING
 
+from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch import MicroPartition
 
@@ -59,9 +61,13 @@ def actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Conn
 
             out_name, out_size = transport.write_and_close(output_bytes)
             conn.send(("success", out_name, out_size))
+    except UDFException as e:
+        exc = e.__cause__
+        assert exc is not None
+        conn.send(("udf_error", e.message, TracebackException.from_exception(exc), pickle.dumps(exc)))
     except Exception as e:
         try:
-            conn.send(("error", type(e).__name__, traceback.format_exc()))
+            conn.send(("error", TracebackException.from_exception(e)))
         except Exception:
             # If the connection is broken, it's because the parent process has died.
             # We can just exit here.
@@ -87,10 +93,10 @@ class ActorHandle:
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
-        if response[0] == "error":
-            error_type, tb_str = response[1], response[2]
-            exception_class = getattr(__builtins__, error_type, RuntimeError)
-            raise exception_class(tb_str)
+        if response[0] == "udf_error":
+            raise UDFException(response[1], response[2]) from pickle.loads(response[3])
+        elif response[0] == "error":
+            raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
         elif response[0] == "success":
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)

@@ -8,6 +8,7 @@ import daft
 from daft import col
 from daft.context import get_context
 from daft.datatype import DataType
+from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
 from daft.recordbatch import MicroPartition
@@ -218,11 +219,12 @@ def test_udf_error():
 
     expr = throw_value_err(col("a"))
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(UDFException) as exc_info:
         table.eval_expression_list([expr])
 
-    assert str(exc_info.value).startswith("AN ERROR OCCURRED!\nUser-defined function ")
+    assert str(exc_info.value).startswith("User-defined function")
     assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
+    assert isinstance(exc_info.value.__cause__, ValueError) and str(exc_info.value.__cause__) == "AN ERROR OCCURRED!"
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -486,11 +488,10 @@ def test_udf_with_error(use_actor_pool):
     if use_actor_pool:
         fail_hard = fail_hard.with_concurrency(2)
 
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(UDFException) as exc_info:
         df.select(fail_hard(col("a"), col("b"))).collect()
 
     pattern = (
-        r"AN ERROR OCCURRED!\n"
         r"User-defined function `<function test_udf_with_error\.<locals>\.fail_hard at 0x[0-9a-f]+>` "
         r"failed when executing on inputs:\s*"
         r"- a \(Int64, length=3\)\s*"

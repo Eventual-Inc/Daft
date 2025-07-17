@@ -77,6 +77,7 @@ from daft.expressions import Expression, col, element, list_, lit, interval, str
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
+    IOConfig,
     from_glob_path,
     _range as range,
     read_csv,
