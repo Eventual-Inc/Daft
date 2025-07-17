@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import turbopuffer
 
 from daft.datatype import DataType
+from daft.dependencies import pc
 from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
@@ -102,7 +103,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
                     )
                 arrow_table = arrow_table.rename_columns({self._vector_column: "vector"})
 
-            arrow_table = arrow_table.filter(~arrow_table.field("id").is_null())
+            arrow_table = arrow_table.filter(~pc.field("id").is_null())
 
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows
