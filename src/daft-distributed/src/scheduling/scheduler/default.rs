@@ -138,16 +138,10 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
     }
 
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]) {
-        for worker_snapshot in worker_snapshots {
-            if let Some(existing_snapshot) =
-                self.worker_snapshots.get_mut(&worker_snapshot.worker_id)
-            {
-                *existing_snapshot = worker_snapshot.clone();
-            } else {
-                self.worker_snapshots
-                    .insert(worker_snapshot.worker_id.clone(), worker_snapshot.clone());
-            }
-        }
+        self.worker_snapshots = worker_snapshots
+            .iter()
+            .map(|snapshot| (snapshot.worker_id.clone(), snapshot.clone()))
+            .collect();
     }
 
     fn num_pending_tasks(&self) -> usize {

@@ -50,8 +50,8 @@ def start_udf_actors(
     projection: list[PyExpr],
     num_actors: int,
     num_gpus_per_actor: float,
-    memory_per_actor: float,
     num_cpus_per_actor: float,
+    memory_per_actor: float,
 ) -> list[tuple[str, list[UDFActorHandle]]]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
     handles: dict[str, list[UDFActorHandle]] = {}
