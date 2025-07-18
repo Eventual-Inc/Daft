@@ -87,9 +87,8 @@ class UdfHandle:
         response = self.handle_conn.recv()
         if response[0] == "udf_error":
             base_exc: Exception = pickle.loads(response[3])
-            tb_str = "\n".join(response[2].format())
             if sys.version_info >= (3, 11):
-                base_exc.add_note(tb_str)
+                base_exc.add_note("\n".join(response[2].format()))
             raise UDFException(response[1]) from base_exc
         elif response[0] == "error":
             raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
