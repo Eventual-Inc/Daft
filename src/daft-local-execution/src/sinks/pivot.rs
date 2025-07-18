@@ -123,7 +123,7 @@ impl BlockingSink for PivotSink {
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
                     )?);
-                    Ok(BlockingSinkFinalizeOutput::Finished(Some(pivoted)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![pivoted]))
                 },
                 Span::current(),
             )

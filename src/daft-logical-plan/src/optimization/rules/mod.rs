@@ -20,6 +20,7 @@ mod rule;
 mod shard_scans;
 mod simplify_expressions;
 mod simplify_null_filtered_join;
+mod split_explode_from_project;
 mod split_udfs;
 mod unnest_subquery;
 
@@ -45,5 +46,6 @@ pub use rule::OptimizerRule;
 pub use shard_scans::ShardScans;
 pub use simplify_expressions::SimplifyExpressionsRule;
 pub use simplify_null_filtered_join::SimplifyNullFilteredJoin;
+pub use split_explode_from_project::SplitExplodeFromProject;
 pub use split_udfs::SplitActorPoolProjects;
 pub use unnest_subquery::{UnnestPredicateSubquery, UnnestScalarSubquery};

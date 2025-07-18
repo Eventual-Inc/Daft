@@ -43,29 +43,17 @@ impl StagePlanBuilder {
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Distinct(_)
-            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Aggregate(_)
+            | LogicalPlan::Window(_)
+            | LogicalPlan::TopN(_)
+            | LogicalPlan::Limit(_)
+            | LogicalPlan::Concat(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
                     Ok(TreeNodeRecursion::Continue)
                 } else {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
-                }
-            },
-            LogicalPlan::Aggregate(aggregate) => {
-                if aggregate.groupby.is_empty() {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
-                }
-            },
-            LogicalPlan::Window(window) => {
-                if window.window_spec.partition_by.is_empty() {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
                 }
             },
             LogicalPlan::Join(join) => {
@@ -83,10 +71,18 @@ impl StagePlanBuilder {
                     }
                 }
             }
-            LogicalPlan::Sort(_)
-            | LogicalPlan::Concat(_)
-            | LogicalPlan::TopN(_)
-            | LogicalPlan::Pivot(_) => {
+            LogicalPlan::Sort(_) => {
+                if plan.materialized_stats().approx_stats.num_rows <= 1_000 {
+                    // Max 1GB with 1KB per row and off by 3 orders of magnitude
+                    Ok(TreeNodeRecursion::Continue)
+                } else {
+                    // TODO: Implement a distributed sort algorithm that can handle
+                    // a large number of rows without OOMing.
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                }
+            }
+            LogicalPlan::Pivot(_) => {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)
             }

@@ -352,6 +352,7 @@ impl ToFromProto for ir::functions::python::PythonUDF {
         // Convert the numeric fields back to their original types
         let concurrency = message.concurrency.map(|c| c as usize);
         let batch_size = message.batch_size.map(|b| b as usize);
+        let run_on_separate_process = message.run_on_separate_process;
 
         // Reconstruct the ResourceRequest from the flattened fields
         let resource_request = {
@@ -379,6 +380,7 @@ impl ToFromProto for ir::functions::python::PythonUDF {
             resource_request,
             batch_size,
             concurrency,
+            run_on_separate_process,
         })
     }
 
@@ -432,6 +434,7 @@ impl ToFromProto for ir::functions::python::PythonUDF {
             num_cpus,
             num_gpus,
             max_memory_bytes,
+            run_on_separate_process: self.run_on_separate_process,
         })
     }
 }

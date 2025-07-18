@@ -293,9 +293,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
-            if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
+            if join
+                .join_strategy
+                .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+            {
                 return Err(DaftError::not_implemented(
-                    "Only hash join is supported for now",
+                    "Only hash and broadcast join strategies are supported for now",
                 ));
             }
             let left = translate(&join.left)?;

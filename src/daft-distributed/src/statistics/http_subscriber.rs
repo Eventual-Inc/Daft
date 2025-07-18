@@ -244,18 +244,19 @@ impl HttpSubscriber {
             StatisticsEvent::TaskSubmitted { context, name } => {
                 let plan_id = context.plan_id;
                 if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
-                    let task_state = plan_data
-                        .tasks
-                        .entry(*context)
-                        .or_insert_with(|| TaskState {
-                            name: name.clone(),
-                            status: TaskExecutionStatus::Created,
-                            pending: 0,
-                            completed: 0,
-                            canceled: 0,
-                            failed: 0,
-                            total: 0,
-                        });
+                    let task_state =
+                        plan_data
+                            .tasks
+                            .entry(context.clone())
+                            .or_insert_with(|| TaskState {
+                                name: name.clone(),
+                                status: TaskExecutionStatus::Created,
+                                pending: 0,
+                                completed: 0,
+                                canceled: 0,
+                                failed: 0,
+                                total: 0,
+                            });
                     task_state.total += 1;
                 }
                 // If plan doesn't exist yet, ignore the task - it will be processed when PlanSubmitted arrives
@@ -378,41 +379,75 @@ impl HttpSubscriber {
         // Mapping from logical node ID to QueryGraphNode
         let mut nodes_map: HashMap<NodeID, QueryGraphNode> = HashMap::new();
 
+        // Build a mapping from node_id to logical plan node information
+        let mut node_info_map: HashMap<NodeID, (&'static str, String)> = HashMap::new();
+        let _ = plan_data.plan_state.logical_plan.apply(|node| {
+            if let Some(node_id) = node.node_id() {
+                let name = node.name();
+                let description = node.multiline_display().join(", ");
+                node_info_map.insert(*node_id as NodeID, (name, description));
+            }
+            Ok(common_treenode::TreeNodeRecursion::Continue)
+        });
+
+        // First, create nodes for all logical plan nodes in the adjacency list
+        // This ensures we have all nodes, even if they don't have tasks yet
+        for node_id in plan_data.adjacency_list.keys() {
+            let (label, description) = node_info_map
+                .get(node_id)
+                .map(|(name, desc)| ((*name).to_string(), desc.clone()))
+                .unwrap_or_else(|| {
+                    (
+                        format!("Node_{}", node_id),
+                        format!("Logical node {}", node_id),
+                    )
+                });
+
+            let node = QueryGraphNode {
+                id: *node_id,
+                label,
+                description,
+                metadata: HashMap::from([(
+                    "plan_id".to_string(),
+                    plan_data.plan_state.plan_id.to_string(),
+                )]),
+                status: NodeStatus::Created, // Default status
+                pending: 0,
+                completed: 0,
+                canceled: 0,
+                failed: 0,
+                total: 0,
+                metrics: None,
+            };
+            nodes_map.insert(*node_id, node);
+        }
+
         for (context, task_state) in &plan_data.tasks {
-            let node_id = context
-                .logical_node_id
-                .expect("Logical node ID must be set for optimized logical plan");
+            for logical_node_id in &context.logical_node_ids {
+                let node_id = *logical_node_id;
 
-            if let Some(existing_node) = nodes_map.get_mut(&node_id) {
-                // Collect task progress per node
-                existing_node.pending += task_state.pending;
-                existing_node.completed += task_state.completed;
-                existing_node.canceled += task_state.canceled;
-                existing_node.failed += task_state.failed;
-                existing_node.total += task_state.total;
-
-                // Update status - prioritize Failed > Running > Completed > Canceled > Created
-                let new_status = Self::convert_task_status(&task_state.status);
-                existing_node.status = Self::merge_node_status(&existing_node.status, &new_status);
-            } else {
-                let node = QueryGraphNode {
-                    id: node_id,
-                    label: Self::extract_operation_name(&task_state.name),
-                    description: task_state.name.clone(),
-                    metadata: HashMap::from([
+                if let Some(existing_node) = nodes_map.get_mut(&node_id) {
+                    // Update node with task information
+                    existing_node.label = Self::extract_operation_name(&existing_node.label);
+                    existing_node.description.clone_from(&task_state.name);
+                    existing_node.metadata = HashMap::from([
                         ("plan_id".to_string(), context.plan_id.to_string()),
                         ("stage_id".to_string(), context.stage_id.to_string()),
-                        ("node_id".to_string(), context.node_id.to_string()),
-                    ]),
-                    status: Self::convert_task_status(&task_state.status),
-                    pending: task_state.pending,
-                    completed: task_state.completed,
-                    canceled: task_state.canceled,
-                    failed: task_state.failed,
-                    total: task_state.total,
-                    metrics: None,
-                };
-                nodes_map.insert(node_id, node);
+                        ("node_id".to_string(), node_id.to_string()),
+                    ]);
+
+                    // Collect task progress per node
+                    existing_node.pending += task_state.pending;
+                    existing_node.completed += task_state.completed;
+                    existing_node.canceled += task_state.canceled;
+                    existing_node.failed += task_state.failed;
+                    existing_node.total += task_state.total;
+
+                    // Update status - prioritize Failed > Running > Completed > Canceled > Created
+                    let new_status = Self::convert_task_status(&task_state.status);
+                    existing_node.status =
+                        Self::merge_node_status(&existing_node.status, &new_status);
+                }
             }
         }
 

@@ -16,7 +16,7 @@ use super::{
     },
 };
 use crate::{
-    optimization::rules::{PushDownShard, ShardScans},
+    optimization::rules::{PushDownShard, ShardScans, SplitExplodeFromProject},
     LogicalPlan,
 };
 
@@ -106,6 +106,7 @@ impl Default for OptimizerBuilder {
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(ExtractWindowFunction::new()),
+                        Box::new(SplitExplodeFromProject::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),

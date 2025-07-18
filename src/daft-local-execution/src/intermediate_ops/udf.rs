@@ -9,7 +9,8 @@ use daft_dsl::{
     expr::{bound_expr::BoundExpr, count_udfs},
     functions::{
         python::{
-            get_resource_request, get_udf_names, try_get_batch_size_from_udf, try_get_concurrency,
+            get_resource_request, get_run_on_separate_process, get_udf_names,
+            try_get_batch_size_from_udf, try_get_concurrency,
         },
         FunctionExpr,
     },
@@ -239,6 +240,7 @@ pub struct UdfOperator {
     concurrency: usize,
     batch_size: Option<usize>,
     memory_request: u64,
+    run_on_separate_process: Option<bool>,
 }
 
 impl UdfOperator {
@@ -252,6 +254,8 @@ impl UdfOperator {
         // Determine if its an ActorPoolUDF or not
         let exp_concurrency = try_get_concurrency(&project_unbound);
         let is_actor_pool_udf = exp_concurrency.is_some();
+
+        let run_on_separate_process = get_run_on_separate_process(&project_unbound)?;
 
         let resource_request = get_resource_request(&[project_unbound.clone()]);
 
@@ -272,6 +276,7 @@ impl UdfOperator {
             concurrency,
             batch_size,
             memory_request,
+            run_on_separate_process,
         })
     }
 
@@ -360,7 +365,7 @@ impl IntermediateOperator for UdfOperator {
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the udf
         let mut udf_handle = UdfHandle::no_handle(&self.project, &self.passthrough_columns);
-        if self.is_actor_pool_udf {
+        if self.is_actor_pool_udf || self.run_on_separate_process.unwrap_or(false) {
             udf_handle.create_handle()?;
         }
 

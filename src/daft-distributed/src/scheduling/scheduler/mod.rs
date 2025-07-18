@@ -5,7 +5,9 @@ use super::{
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::MaterializedOutput, scheduling::task::TaskContext, utils::channel::OneshotSender,
+    pipeline_node::MaterializedOutput,
+    scheduling::task::{TaskContext, TaskResourceRequest},
+    utils::channel::OneshotSender,
 };
 
 mod default;
@@ -22,7 +24,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>);
     fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>>;
-    fn get_autoscaling_request(&mut self) -> Option<usize>;
+    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;
 }
 
@@ -211,6 +213,9 @@ impl WorkerSnapshot {
 
     // TODO: Potentially include memory as well, and also be able to overschedule tasks.
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
+        if task.resource_request().num_gpus() > 0.0 && self.available_num_gpus() == 0.0 {
+            return false;
+        }
         self.available_num_cpus() >= task.resource_request().num_cpus()
     }
 }

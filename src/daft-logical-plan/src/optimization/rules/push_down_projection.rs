@@ -799,6 +799,7 @@ mod tests {
                 resource_request: Some(ResourceRequest::default_cpu()),
                 batch_size: None,
                 concurrency: Some(8),
+                run_on_separate_process: None,
             }),
             inputs,
         }

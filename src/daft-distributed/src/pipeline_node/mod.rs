@@ -29,10 +29,12 @@ use crate::{
 
 #[cfg(feature = "python")]
 mod actor_udf;
+mod aggregate;
+mod concat;
 mod distinct;
 mod explode;
 mod filter;
-mod groupby_agg;
+mod gather;
 mod hash_join;
 mod in_memory_source;
 mod limit;
@@ -43,6 +45,8 @@ mod repartition;
 mod sample;
 mod scan_source;
 mod sink;
+mod sort;
+mod top_n;
 mod translate;
 mod udf;
 mod unpivot;
@@ -299,12 +303,12 @@ impl RunningPipelineNode {
                     }
                     PipelineOutput::Task(task) => {
                         // append plan to this task
-                        let task = append_plan_to_existing_task(
-                            TaskContext::from((node.context(), task_id_counter.next())),
-                            task,
-                            &node,
-                            &plan_builder,
-                        )?;
+                        let mut task_context = task.task().task_context();
+                        if let Some(logical_node_id) = node.context().logical_node_id {
+                            task_context.add_logical_node_id(logical_node_id);
+                        }
+                        let task =
+                            append_plan_to_existing_task(task_context, task, &node, &plan_builder)?;
                         if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                             break;
                         }
@@ -371,7 +375,7 @@ where
         psets,
         SchedulingStrategy::WorkerAffinity {
             worker_id,
-            soft: false,
+            soft: true,
         },
         node.context().to_hashmap(),
     );

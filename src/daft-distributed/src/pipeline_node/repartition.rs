@@ -116,7 +116,10 @@ impl RepartitionNode {
         for idx in 0..num_partitions {
             let mut partition_group = vec![];
             for materialized_partition in &materialized_partitions {
-                partition_group.push(materialized_partition[idx].clone());
+                let part = &materialized_partition[idx];
+                if part.num_rows()? > 0 {
+                    partition_group.push(part.clone());
+                }
             }
             transposed_outputs.push(partition_group);
         }

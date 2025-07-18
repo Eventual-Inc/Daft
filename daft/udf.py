@@ -15,6 +15,7 @@ import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
 from daft.datatype import DataType, DataTypeLike
 from daft.dependencies import np, pa
+from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
 
@@ -156,14 +157,16 @@ def run_udf(
         try:
             results.append(func(*args, **kwargs))
         except Exception as user_function_exception:
+            # Remove the call-site `results.append(...)` from the traceback
+            tb = user_function_exception.__traceback__
+            user_function_exception = user_function_exception.with_traceback(tb.tb_next if tb else None)
             series_info = [
                 f"{series.name()} ({series.datatype()}, length={input_series_length})" for series in input_series_list
             ]
             error_note = f"User-defined function `{func}` failed when executing on inputs:\n" + "\n".join(
                 f"  - {info}" for info in series_info
             )
-            user_function_exception.args = (str(user_function_exception) + "\n" + error_note,)
-            raise
+            raise UDFException(error_note) from user_function_exception
 
     # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
     # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
@@ -231,6 +234,7 @@ class UDF:
     concurrency: int | None = None
     resource_request: ResourceRequest | None = None
     batch_size: int | None = None
+    run_on_separate_process: bool | None = None
 
     def __post_init__(self) -> None:
         # Analogous to the @functools.wraps(self.inner) pattern
@@ -260,6 +264,7 @@ class UDF:
             resource_request=self.resource_request,
             batch_size=self.batch_size,
             concurrency=self.concurrency,
+            run_on_separate_process=self.run_on_separate_process,
         )
 
     def override_options(
@@ -356,6 +361,25 @@ class UDF:
         """
         return dataclasses.replace(self, concurrency=concurrency)
 
+    def with_run_on_separate_process(self, run_on_separate_process: bool) -> UDF:
+        """Override whether this UDF should run on a separate process or not.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
+            ... class MyGpuUdf:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # New UDF that will run on a separate process
+            >>> MyGpuUdf_separate_process = MyGpuUdf.with_run_on_separate_process(True)
+        """
+        return dataclasses.replace(self, run_on_separate_process=run_on_separate_process)
+
     def with_init_args(self, *args: Any, **kwargs: Any) -> UDF:
         """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
 
@@ -415,6 +439,7 @@ def udf(
     memory_bytes: int | None = None,
     batch_size: int | None = None,
     concurrency: int | None = None,
+    run_on_separate_process: bool | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
@@ -433,6 +458,11 @@ def udf(
         concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
             UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
             loading model weights for model batch inference.
+        run_on_separate_process: Run the UDF on a separate process.
+            This is useful for UDFs that run a lot of Python-only code, since it avoids GIL overhead.
+            This is not necessary for UDFs that run C-extension code, like NumPy or PyTorch.
+            Defaults to `None` where Daft will automatically choose based on runtime performance.
+            Note: Users should generally never set this flag manually.
 
     Returns:
         Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
@@ -558,6 +588,7 @@ def udf(
             resource_request=resource_request,
             batch_size=batch_size,
             concurrency=concurrency,
+            run_on_separate_process=run_on_separate_process,
         )
 
         daft.attach_function(udf)

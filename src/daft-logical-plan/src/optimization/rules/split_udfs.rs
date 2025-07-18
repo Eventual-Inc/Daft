@@ -59,7 +59,7 @@ impl SplitActorPoolProjects {
 ///
 /// ┌───────────────────────────────────────────────────────────SPLIT: split_projection()
 /// │                                                                                 │
-/// │   TruncateRootActorPoolUDF    TruncateAnyActorPoolUDFChildren       No-Op       │
+/// │       TruncateRootUDF             TruncateAnyUDFChildren            No-Op       │
 /// │   =======================     ==============================        =====       │
 /// │           ┌─────┐                       ┌─────┐                    ┌─────┐      │
 /// │           │ E1' │                       │ E2' │                    │ E3  │      │
@@ -127,13 +127,13 @@ impl OptimizerRule for SplitActorPoolProjects {
 
 // TreeNodeRewriter that assumes the Expression tree is rooted at a actor pool UDF (or alias of a actor pool UDF)
 // and its children need to be truncated + replaced with Expr::Columns
-struct TruncateRootActorPoolUDF {
+struct TruncateRootUDF {
     pub(crate) new_children: Vec<ExprRef>,
     stage_idx: usize,
     expr_idx: usize,
 }
 
-impl TruncateRootActorPoolUDF {
+impl TruncateRootUDF {
     fn new(stage_idx: usize, expr_idx: usize) -> Self {
         Self {
             new_children: Vec::new(),
@@ -145,13 +145,13 @@ impl TruncateRootActorPoolUDF {
 
 // TreeNodeRewriter that assumes the Expression tree has some children which are actor pool UDFs
 // which needs to be truncated and replaced with Expr::Columns
-struct TruncateAnyActorPoolUDFChildren {
+struct TruncateAnyUDFChildren {
     pub(crate) new_children: Vec<ExprRef>,
     stage_idx: usize,
     expr_idx: usize,
 }
 
-impl TruncateAnyActorPoolUDFChildren {
+impl TruncateAnyUDFChildren {
     fn new(stage_idx: usize, expr_idx: usize) -> Self {
         Self {
             new_children: Vec::new(),
@@ -168,7 +168,7 @@ impl TruncateAnyActorPoolUDFChildren {
 /// 1. Add an `alias(...)` to the child and push it onto `self.new_children`
 /// 2. Replace the child with a `col("...")`
 /// 3. Add any `col("...")` leaf nodes to `self.new_children` (only once per unique column name)
-impl TreeNodeRewriter for TruncateRootActorPoolUDF {
+impl TreeNodeRewriter for TruncateRootUDF {
     type Node = ExprRef;
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
@@ -193,7 +193,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
                     if requires_computation(e.as_ref()) {
                         // Give the new child a deterministic name
                         let intermediate_expr_name = format!(
-                            "__TruncateRootActorPoolUDF_{}-{}-{}__",
+                            "__TruncateRootUDF_{}-{}-{}__",
                             self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
                         );
                         monotonically_increasing_expr_identifier += 1;
@@ -222,7 +222,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
 /// 1. Add an `alias(...)` to any actor pool UDF child and push it onto `self.new_children`
 /// 2. Replace the child with a `col("...")`
 /// 3. Add any `col("...")` leaf nodes to `self.new_children` (only once per unique column name)
-impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
+impl TreeNodeRewriter for TruncateAnyUDFChildren {
     type Node = ExprRef;
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
@@ -230,7 +230,7 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
             // This rewriter should never encounter a actor pool UDF expression (they should always be truncated and replaced)
             _ if is_udf(&node) => {
                 unreachable!(
-                    "TruncateAnyActorPoolUDFChildren should never run on a actor pool UDF expression"
+                    "TruncateAnyUDFChildren should never run on a actor pool UDF expression"
                 );
             }
             // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
@@ -257,7 +257,7 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                 let new_inputs = inputs.iter().map(|e| {
                     if is_udf(e) {
                         let intermediate_expr_name = format!(
-                            "__TruncateAnyActorPoolUDFChildren_{}-{}-{}__",
+                            "__TruncateAnyUDFChildren_{}-{}-{}__",
                             self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
                         );
                         monotonically_increasing_expr_identifier += 1;
@@ -302,9 +302,9 @@ fn split_projection(
     }
 
     for (expr_idx, expr) in projection.iter().enumerate() {
-        // Run the TruncateRootActorPoolUDF TreeNodeRewriter
+        // Run the TruncateRootUDF TreeNodeRewriter
         if is_udf_and_should_truncate_children(expr) {
-            let mut rewriter = TruncateRootActorPoolUDF::new(stage_idx, expr_idx);
+            let mut rewriter = TruncateRootUDF::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
             for new_child in rewriter.new_children {
@@ -314,9 +314,9 @@ fn split_projection(
                 }
             }
 
-        // Run the TruncateAnyActorPoolUDFChildren TreeNodeRewriter
+        // Run the TruncateAnyUDFChildren TreeNodeRewriter
         } else if expr.exists(is_udf) {
-            let mut rewriter = TruncateAnyActorPoolUDFChildren::new(stage_idx, expr_idx);
+            let mut rewriter = TruncateAnyUDFChildren::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
             for new_child in rewriter.new_children {
@@ -517,7 +517,7 @@ mod tests {
         LogicalPlan,
     };
 
-    /// Helper that creates an optimizer with the SplitExprByActorPoolUDF rule registered, optimizes
+    /// Helper that creates an optimizer with the SplitExprByUDF rule registered, optimizes
     /// the provided plan with said optimizer, and compares the optimized plan with
     /// the provided expected plan.
     fn assert_optimized_plan_eq(
@@ -534,7 +534,7 @@ mod tests {
         )
     }
 
-    /// Helper that creates an optimizer with the SplitExprByActorPoolUDF rule registered, optimizes
+    /// Helper that creates an optimizer with the SplitExprByUDF rule registered, optimizes
     /// the provided plan with said optimizer, and compares the optimized plan with
     /// the provided expected plan.
     fn assert_optimized_plan_eq_with_projection_pushdown(
@@ -568,6 +568,7 @@ mod tests {
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
+                run_on_separate_process: None,
             }),
             inputs,
         }
@@ -624,8 +625,8 @@ mod tests {
             ])?
             .build();
 
-        let intermediate_column_name_0 = "__TruncateRootActorPoolUDF_0-2-0__";
-        let intermediate_column_name_1 = "__TruncateRootActorPoolUDF_0-3-0__";
+        let intermediate_column_name_0 = "__TruncateRootUDF_0-2-0__";
+        let intermediate_column_name_1 = "__TruncateRootUDF_0-3-0__";
         let expected = scan_plan
             .select(vec![resolved_col("a"), resolved_col("b")])?
             .build();
@@ -715,7 +716,7 @@ mod tests {
             .with_columns(vec![stacked_actor_pool_project_expr.alias("b")])?
             .build();
 
-        let intermediate_name = "__TruncateRootActorPoolUDF_0-1-0__";
+        let intermediate_name = "__TruncateRootUDF_0-1-0__";
         let expected = scan_plan.select(vec![resolved_col("a")])?.build();
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
@@ -776,7 +777,7 @@ mod tests {
             .select(vec![stacked_actor_pool_project_expr])?
             .build();
 
-        let intermediate_name = "__TruncateRootActorPoolUDF_0-0-0__";
+        let intermediate_name = "__TruncateRootUDF_0-0-0__";
 
         let expected = scan_plan.select(vec![resolved_col("a")])?.build();
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
@@ -840,8 +841,8 @@ mod tests {
             .select(vec![stacked_actor_pool_project_expr.alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__TruncateRootActorPoolUDF_0-0-0__";
-        let intermediate_name_1 = "__TruncateRootActorPoolUDF_0-0-1__";
+        let intermediate_name_0 = "__TruncateRootUDF_0-0-0__";
+        let intermediate_name_1 = "__TruncateRootUDF_0-0-1__";
         let expected = scan_plan
             .select(vec![resolved_col("a"), resolved_col("b")])?
             .build();
@@ -939,9 +940,9 @@ mod tests {
             .select(vec![stacked_actor_pool_project_expr.alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyActorPoolUDFChildren_1-0-0__";
-        let intermediate_name_1 = "__TruncateAnyActorPoolUDFChildren_1-0-1__";
-        let intermediate_name_2 = "__TruncateRootActorPoolUDF_0-0-0__";
+        let intermediate_name_0 = "__TruncateAnyUDFChildren_1-0-0__";
+        let intermediate_name_1 = "__TruncateAnyUDFChildren_1-0-1__";
+        let intermediate_name_2 = "__TruncateRootUDF_0-0-0__";
         let expected = scan_plan
             .select(vec![resolved_col("a"), resolved_col("b")])?
             .build();
@@ -1048,8 +1049,8 @@ mod tests {
             ])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyActorPoolUDFChildren_1-1-0__";
-        let intermediate_name_1 = "__TruncateRootActorPoolUDF_0-1-0__";
+        let intermediate_name_0 = "__TruncateAnyUDFChildren_1-1-0__";
+        let intermediate_name_1 = "__TruncateRootUDF_0-1-0__";
         let expected = scan_plan.build();
         let expected =
             LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();
@@ -1116,8 +1117,8 @@ mod tests {
             .select(vec![resolved_col("a"), actor_pool_project_expr])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyActorPoolUDFChildren_0-1-0__";
-        // let intermediate_name_1 = "__TruncateRootActorPoolUDF_0-1-0__";
+        let intermediate_name_0 = "__TruncateAnyUDFChildren_0-1-0__";
+        // let intermediate_name_1 = "__TruncateRootUDF_0-1-0__";
         let expected = scan_plan.build();
         let expected =
             LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();

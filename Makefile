@@ -79,12 +79,22 @@ doctests:
 dsdgen: .venv ## Generate TPC-DS data
 	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
 
+.PHONY: install-docs-deps
+install-docs-deps:
+	@if ! command -v bun >/dev/null 2>&1; then \
+		echo "Installing Bun..."; \
+		curl -fsSL https://bun.sh/install | bash; \
+		export PATH="$$HOME/.bun/bin:$$PATH"; \
+	fi
+	. $(VENV_BIN)/activate && uv pip install -r requirements-doc.txt
+	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
+
 .PHONY: docs
-docs: .venv ## Build Daft documentation
+docs: .venv install-docs-deps ## Build Daft documentation
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs build -f mkdocs.yml
 
 .PHONY: docs-serve
-docs-serve: .venv ## Build Daft documentation in development server
+docs-serve: .venv install-docs-deps ## Build Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
 
 .PHONY: daft-proto
@@ -115,3 +125,5 @@ precommit:  check-toolchain .venv  ## Run all pre-commit hooks
 clean:
 	rm -rf $(VENV)
 	rm -rf ./target
+	rm -rf ./site
+	rm -f daft/daft.abi3.so

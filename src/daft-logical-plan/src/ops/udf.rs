@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
+use daft_core::prelude::Schema;
 use daft_dsl::{
     expr::count_udfs,
-    exprs_to_schema,
     functions::python::{get_resource_request, get_udf_names, try_get_concurrency},
     ExprRef,
 };
@@ -57,9 +57,12 @@ impl UDFProject {
             });
         }
 
-        let projected_field = project.to_field(&input.schema())?;
-        let projected_schema =
-            exprs_to_schema(&passthrough_columns, input.schema())?.with_field(projected_field);
+        let fields = passthrough_columns
+            .iter()
+            .chain(std::iter::once(&project))
+            .map(|e| e.to_field(&input.schema()))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let projected_schema = Arc::new(Schema::new(fields));
 
         Ok(Self {
             plan_id: None,

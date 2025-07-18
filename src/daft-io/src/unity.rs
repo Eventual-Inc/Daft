@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap, ops::Range, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -12,6 +12,7 @@ use snafu::ResultExt;
 
 use crate::{
     object_io::{FileMetadata, GetResult, LSResult, ObjectSource},
+    range::GetRange,
     stats::IOStatsRef,
     IOClient, InvalidUrlSnafu, SourceType,
 };
@@ -157,7 +158,7 @@ impl ObjectSource for UnitySource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let (source, source_uri) = self.volume_path_to_source_and_url(uri).await?;

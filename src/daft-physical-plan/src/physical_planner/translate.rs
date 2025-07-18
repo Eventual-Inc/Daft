@@ -15,7 +15,7 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::agg::merge_mean,
+    functions::{agg::merge_mean, python::try_get_concurrency},
     is_partition_compatible,
     join::normalize_join_keys,
     lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
@@ -30,7 +30,7 @@ use daft_logical_plan::{
         MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
         Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        UDFProject as LogicalActorPoolProject, Unpivot as LogicalUnpivot,
+        UDFProject as LogicalUDFProject, Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -122,13 +122,26 @@ pub(super) fn translate_single_logical_node(
                     .arced(),
             )
         }
-        LogicalPlan::UDFProject(LogicalActorPoolProject { project, .. }) => {
+        LogicalPlan::UDFProject(LogicalUDFProject {
+            project,
+            passthrough_columns,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-                input_physical,
-                vec![project.clone()],
-            )?)
-            .arced())
+            let projection = passthrough_columns
+                .iter()
+                .chain(std::iter::once(&project.clone()))
+                .cloned()
+                .collect();
+            if try_get_concurrency(project).is_some() {
+                Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+                    input_physical,
+                    projection,
+                )?)
+                .arced())
+            } else {
+                Ok(PhysicalPlan::Project(Project::try_new(input_physical, projection)?).arced())
+            }
         }
         LogicalPlan::Filter(LogicalFilter {
             predicate, input, ..
@@ -917,10 +930,8 @@ pub fn populate_aggregation_stages_bound_with_schema(
             AggExpr::ApproxSketch(expr, sketch_type) => {
                 let approx_sketch_col =
                     first_stage!(AggExpr::ApproxSketch(expr.clone(), *sketch_type));
-                let merged_sketch_col = second_stage!(AggExpr::MergeSketch(
-                    approx_sketch_col.clone(),
-                    *sketch_type
-                ));
+                let merged_sketch_col =
+                    second_stage!(AggExpr::MergeSketch(approx_sketch_col, *sketch_type));
                 final_stage(merged_sketch_col);
             }
             AggExpr::MergeSketch(expr, sketch_type) => {
@@ -928,7 +939,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let merge_sketch_col =
                     first_stage!(AggExpr::MergeSketch(expr.clone(), *sketch_type));
                 let merged_sketch_col =
-                    second_stage!(AggExpr::MergeSketch(merge_sketch_col.clone(), *sketch_type));
+                    second_stage!(AggExpr::MergeSketch(merge_sketch_col, *sketch_type));
                 final_stage(merged_sketch_col);
             }
         }

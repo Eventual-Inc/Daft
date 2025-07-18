@@ -520,6 +520,8 @@ pub mod function {
         pub num_gpus: ::core::option::Option<u64>,
         #[prost(uint64, optional, tag = "11")]
         pub max_memory_bytes: ::core::option::Option<u64>,
+        #[prost(bool, optional, tag = "12")]
+        pub run_on_separate_process: ::core::option::Option<bool>,
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Descriptor {

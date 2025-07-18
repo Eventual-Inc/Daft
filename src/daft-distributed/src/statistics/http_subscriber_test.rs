@@ -103,10 +103,10 @@ fn create_test_task_context(
     stage_id: StageID,
     node_id: NodeID,
     task_id: TaskID,
-    logical_node_id: Option<NodeID>,
+    logical_node_ids: Vec<NodeID>,
 ) -> TaskContext {
     TaskContext {
-        logical_node_id,
+        logical_node_ids,
         plan_id,
         stage_id,
         node_id,
@@ -149,10 +149,10 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, logical_plan);
 
         // Create tasks for different nodes in the plan
-        let source_context = create_test_task_context(1, 1, 1, 1, Some(1));
-        let filter_context = create_test_task_context(1, 1, 2, 2, Some(2));
-        let project_context = create_test_task_context(1, 1, 3, 3, Some(3));
-        let limit_context = create_test_task_context(1, 1, 4, 4, Some(4));
+        let source_context = create_test_task_context(1, 1, 1, 1, vec![1]);
+        let filter_context = create_test_task_context(1, 1, 2, 2, vec![2]);
+        let project_context = create_test_task_context(1, 1, 3, 3, vec![3]);
+        let limit_context = create_test_task_context(1, 1, 4, 4, vec![4]);
 
         plan_data.tasks.insert(
             source_context,
@@ -181,10 +181,10 @@ mod tests {
 
         // Check that nodes have expected IDs
         let node_ids: Vec<NodeID> = query_graph.nodes.iter().map(|n| n.id).collect();
-        assert!(node_ids.contains(&source_context.logical_node_id.unwrap()));
-        assert!(node_ids.contains(&filter_context.logical_node_id.unwrap()));
-        assert!(node_ids.contains(&project_context.logical_node_id.unwrap()));
-        assert!(node_ids.contains(&limit_context.logical_node_id.unwrap()));
+        assert!(node_ids.contains(&1));
+        assert!(node_ids.contains(&2));
+        assert!(node_ids.contains(&3));
+        assert!(node_ids.contains(&4));
 
         // Check that adjacency list exists
         assert!(!query_graph.adjacency_list.is_empty());
@@ -204,10 +204,10 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, logical_plan);
 
         // Create a linear chain of tasks: 1 -> 2 -> 3 -> 4
-        let context1 = create_test_task_context(1, 1, 1, 1, Some(1));
-        let context2 = create_test_task_context(1, 1, 2, 2, Some(2));
-        let context3 = create_test_task_context(1, 1, 3, 3, Some(3));
-        let context4 = create_test_task_context(1, 1, 4, 4, Some(4));
+        let context1 = create_test_task_context(1, 1, 1, 1, vec![1]);
+        let context2 = create_test_task_context(1, 1, 2, 2, vec![2]);
+        let context3 = create_test_task_context(1, 1, 3, 3, vec![3]);
+        let context4 = create_test_task_context(1, 1, 4, 4, vec![4]);
 
         plan_data.tasks.insert(
             context1,
@@ -229,12 +229,7 @@ mod tests {
         let query_graph = HttpSubscriber::build_query_graph(&plan_data);
 
         // Generate expected node IDs
-        let expected_node_ids = vec![
-            context1.logical_node_id.unwrap(),
-            context2.logical_node_id.unwrap(),
-            context3.logical_node_id.unwrap(),
-            context4.logical_node_id.unwrap(),
-        ];
+        let expected_node_ids = vec![1, 2, 3, 4];
 
         // Check that we have the right number of nodes
         assert_eq!(query_graph.nodes.len(), 4);
@@ -259,9 +254,9 @@ mod tests {
 
         // Create multiple tasks for the same node (node_id = 1) with different task_ids
         // These should be aggregated into a single graph node
-        let context1 = create_test_task_context(1, 1, 1, 1, Some(1)); // Task 1 for node 1
-        let context2 = create_test_task_context(1, 1, 1, 2, Some(1)); // Task 2 for node 1
-        let context3 = create_test_task_context(1, 1, 1, 3, Some(1));
+        let context1 = create_test_task_context(1, 1, 1, 1, vec![1]); // Task 1 for node 1
+        let context2 = create_test_task_context(1, 1, 1, 2, vec![1]); // Task 2 for node 1
+        let context3 = create_test_task_context(1, 1, 1, 3, vec![1]);
 
         // Create task states with different progress metrics
         let mut task1 = create_test_task_state("Source", TaskExecutionStatus::Completed);
@@ -285,12 +280,12 @@ mod tests {
         task3.canceled = 0;
         task3.total = 8;
 
-        plan_data.tasks.insert(context1, task1);
-        plan_data.tasks.insert(context2, task2);
-        plan_data.tasks.insert(context3, task3);
+        plan_data.tasks.insert(context1.clone(), task1);
+        plan_data.tasks.insert(context2.clone(), task2);
+        plan_data.tasks.insert(context3.clone(), task3);
 
         // Add a task for a different node to ensure we don't aggregate across different nodes
-        let context4 = create_test_task_context(1, 1, 2, 4, Some(2)); // Task 4 for node 2
+        let context4 = create_test_task_context(1, 1, 2, 4, vec![2]); // Task 4 for node 2
         let mut task4 = create_test_task_state("Filter", TaskExecutionStatus::Running);
         task4.pending = 1;
         task4.completed = 2;
@@ -298,7 +293,7 @@ mod tests {
         task4.canceled = 0;
         task4.total = 3;
 
-        plan_data.tasks.insert(context4, task4);
+        plan_data.tasks.insert(context4.clone(), task4);
 
         let query_graph = HttpSubscriber::build_query_graph(&plan_data);
 
@@ -308,11 +303,11 @@ mod tests {
         assert_eq!(query_graph.nodes.len(), 2); // Should have 2 nodes (node 1 and node 2)
 
         // Find the aggregated node for node_id = 1
-        let source_node_id = context1.logical_node_id; // All contexts with same node_id generate same ID
+        let source_node_id = context1.logical_node_ids[0]; // All contexts with same node_id generate same ID
         let source_node = query_graph
             .nodes
             .iter()
-            .find(|node| node.id == source_node_id.unwrap())
+            .find(|node| node.id == source_node_id)
             .expect("Source node should exist");
 
         // Verify aggregated metrics for node 1 (sum of all 3 tasks)
@@ -335,11 +330,11 @@ mod tests {
         );
 
         // Find the node for node_id = 2
-        let filter_node_id = context4.logical_node_id;
+        let filter_node_id = context4.logical_node_ids[0];
         let filter_node = query_graph
             .nodes
             .iter()
-            .find(|node| node.id == filter_node_id.unwrap())
+            .find(|node| node.id == filter_node_id)
             .expect("Filter node should exist");
 
         // Verify metrics for node 2 (single task)
@@ -366,8 +361,8 @@ mod tests {
         assert!(!query_graph.adjacency_list.is_empty());
         // The filter node should point to the source node
         assert_eq!(
-            query_graph.adjacency_list.get(&filter_node_id.unwrap()),
-            Some(&vec![source_node_id.unwrap()])
+            query_graph.adjacency_list.get(&filter_node_id),
+            Some(&vec![source_node_id])
         );
     }
 
@@ -443,8 +438,8 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, logical_plan);
 
         // Create task states
-        let source_context = create_test_task_context(1, 1, 1, 1, Some(1));
-        let filter_context = create_test_task_context(1, 1, 2, 2, Some(2));
+        let source_context = create_test_task_context(1, 1, 1, 1, vec![1]);
+        let filter_context = create_test_task_context(1, 1, 2, 2, vec![2]);
 
         plan_data.tasks.insert(
             source_context,
@@ -728,19 +723,19 @@ mod tests {
         // Create multiple tasks with various states
         let contexts_and_states = vec![
             (
-                create_test_task_context(1, 1, 1, 1, Some(1)),
+                create_test_task_context(1, 1, 1, 1, vec![1]),
                 create_test_task_state("Source", TaskExecutionStatus::Completed),
             ),
             (
-                create_test_task_context(1, 1, 2, 2, Some(2)),
+                create_test_task_context(1, 1, 2, 2, vec![2]),
                 create_test_task_state("Filter", TaskExecutionStatus::Running),
             ),
             (
-                create_test_task_context(1, 1, 3, 3, Some(3)),
+                create_test_task_context(1, 1, 3, 3, vec![3]),
                 create_test_task_state("Project", TaskExecutionStatus::Created),
             ),
             (
-                create_test_task_context(1, 1, 4, 4, Some(4)),
+                create_test_task_context(1, 1, 4, 4, vec![4]),
                 create_test_task_state("Limit", TaskExecutionStatus::Failed),
             ),
         ];
@@ -839,11 +834,11 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, limit_plan.arced());
 
         // Create task states for each operation in the optimized plan
-        let source_context = create_test_task_context(1, 1, 1, 1, Some(1));
-        let filter_context = create_test_task_context(1, 1, 2, 2, Some(2));
-        let project_context = create_test_task_context(1, 1, 3, 3, Some(3));
-        let sort_context = create_test_task_context(1, 1, 4, 4, Some(4));
-        let limit_context = create_test_task_context(1, 1, 5, 5, Some(5));
+        let source_context = create_test_task_context(1, 1, 1, 1, vec![1]);
+        let filter_context = create_test_task_context(1, 1, 2, 2, vec![2]);
+        let project_context = create_test_task_context(1, 1, 3, 3, vec![3]);
+        let sort_context = create_test_task_context(1, 1, 4, 4, vec![4]);
+        let limit_context = create_test_task_context(1, 1, 5, 5, vec![5]);
 
         // Set different execution states to simulate a real query execution
         let mut source_task = create_test_task_state("Source", TaskExecutionStatus::Completed);
@@ -881,11 +876,13 @@ mod tests {
         limit_task.canceled = 0;
         limit_task.total = 10;
 
-        plan_data.tasks.insert(source_context, source_task);
-        plan_data.tasks.insert(filter_context, filter_task);
-        plan_data.tasks.insert(project_context, project_task);
-        plan_data.tasks.insert(sort_context, sort_task);
-        plan_data.tasks.insert(limit_context, limit_task);
+        plan_data.tasks.insert(source_context.clone(), source_task);
+        plan_data.tasks.insert(filter_context.clone(), filter_task);
+        plan_data
+            .tasks
+            .insert(project_context.clone(), project_task);
+        plan_data.tasks.insert(sort_context.clone(), sort_task);
+        plan_data.tasks.insert(limit_context.clone(), limit_task);
 
         // Build the query graph from the optimized plan
         let original_query_graph = HttpSubscriber::build_query_graph(&plan_data);
@@ -950,13 +947,7 @@ mod tests {
 
         // Verify that the optimized plan shows proper execution pipeline
         // Check that we have the expected node IDs
-        let expected_node_ids = vec![
-            source_context.logical_node_id.unwrap(),
-            filter_context.logical_node_id.unwrap(),
-            project_context.logical_node_id.unwrap(),
-            sort_context.logical_node_id.unwrap(),
-            limit_context.logical_node_id.unwrap(),
-        ];
+        let expected_node_ids = vec![1, 2, 3, 4, 5];
 
         let actual_node_ids: Vec<NodeID> = deserialized_graph.nodes.iter().map(|n| n.id).collect();
         for expected_id in &expected_node_ids {
@@ -969,11 +960,11 @@ mod tests {
         }
 
         // Verify execution flow: Source -> Filter -> Project -> Sort -> Limit
-        let limit_node_id = limit_context.logical_node_id.unwrap();
-        let sort_node_id = sort_context.logical_node_id.unwrap();
-        let project_node_id = project_context.logical_node_id.unwrap();
-        let filter_node_id = filter_context.logical_node_id.unwrap();
-        let source_node_id = source_context.logical_node_id.unwrap();
+        let limit_node_id = limit_context.logical_node_ids[0];
+        let sort_node_id = sort_context.logical_node_ids[0];
+        let project_node_id = project_context.logical_node_ids[0];
+        let filter_node_id = filter_context.logical_node_ids[0];
+        let source_node_id = source_context.logical_node_ids[0];
 
         // Check dependencies in adjacency list
         assert_eq!(
@@ -1078,7 +1069,7 @@ mod tests {
         assert!(result.is_ok(), "Plan submission should succeed");
 
         // Submit a task to create some activity
-        let task_context = create_test_task_context(1, 1, 1, 1, Some(1));
+        let task_context = create_test_task_context(1, 1, 1, 1, vec![1]);
         let task_event = StatisticsEvent::TaskSubmitted {
             context: task_context,
             name: "TestTask".to_string(),

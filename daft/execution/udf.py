@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import pickle
 import secrets
 import subprocess
 import sys
@@ -10,8 +11,7 @@ from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Listener
 from typing import TYPE_CHECKING
 
-import cloudpickle
-
+from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch import MicroPartition
 
@@ -51,9 +51,7 @@ class UdfHandle:
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
-        # Generate a random secret for establishing socket communication
         secret = secrets.token_bytes(32)
-        # Initialize the main process listener
         self.listener = Listener(self.socket_path, authkey=secret)
 
         # Start the worker process
@@ -75,7 +73,7 @@ class UdfHandle:
         expr_projection = ExpressionsProjection(
             [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
         )
-        expr_projection_bytes = cloudpickle.dumps(expr_projection)
+        expr_projection_bytes = pickle.dumps(expr_projection)
         self.handle_conn.send(("__ENTER__", expr_projection_bytes))
 
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
@@ -87,9 +85,10 @@ class UdfHandle:
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
-        if response[0] == "error":
-            exc_class, exc_args = response[1]
-            raise exc_class(*exc_args)
+        if response[0] == "udf_error":
+            raise UDFException(response[1], response[2]) from pickle.loads(response[3])
+        elif response[0] == "error":
+            raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
         elif response[0] == "success":
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)

@@ -356,6 +356,7 @@ message Function {
     optional uint64 num_cpus = 9;
     optional uint64 num_gpus = 10;
     optional uint64 max_memory_bytes = 11;
+    optional bool run_on_separate_process = 12;
   }
 }
 
