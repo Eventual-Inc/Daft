@@ -224,7 +224,7 @@ impl DistributedPipelineNode for SinkNode {
         };
 
         let pipelined_node_with_writes =
-            input_node.pipeline_instruction(stage_context, self.clone(), plan_builder);
+            input_node.pipeline_instruction(self.clone(), plan_builder);
         if let SinkInfo::OutputFileInfo(info) = self.sink_info.as_ref()
             && matches!(
                 info.write_mode,

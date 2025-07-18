@@ -109,7 +109,7 @@ impl DistributedPipelineNode for ExplodeNode {
         let input_node = self.child.clone().produce_tasks(stage_context);
         let to_explode = self.to_explode.clone();
         let schema = self.config.schema.clone();
-        input_node.pipeline_instruction(stage_context, self, move |input| {
+        input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),

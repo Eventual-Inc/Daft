@@ -135,7 +135,7 @@ impl DistributedPipelineNode for SortNode {
 
         // Pipeline the top-n
         let self_clone = self.clone();
-        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
+        input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::sort(
                 input,
                 self_clone.sort_by.clone(),

@@ -105,7 +105,7 @@ impl DistributedPipelineNode for FilterNode {
         let input_node = self.child.clone().produce_tasks(stage_context);
 
         let predicate = self.predicate.clone();
-        input_node.pipeline_instruction(stage_context, self, move |input| {
+        input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::filter(input, predicate.clone(), StatsState::NotMaterialized)
         })
     }

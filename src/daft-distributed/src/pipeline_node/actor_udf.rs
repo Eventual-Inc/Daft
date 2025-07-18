@@ -20,10 +20,10 @@ use super::{
 use crate::{
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
+        task::{SchedulingStrategy, SwordfishTask, Task},
         worker::WorkerId,
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
+    stage::{StageConfig, StageExecutionContext},
     utils::{
         channel::{create_channel, Sender},
         joinset::JoinSet,
@@ -204,7 +204,6 @@ impl ActorUDF {
         self: Arc<Self>,
         mut input_task_stream: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
 
@@ -220,13 +219,7 @@ impl ActorUDF {
                 SchedulingStrategy::Spread => udf_actors.get_round_robin_actors()?,
             };
 
-            let modified_task = self.append_actor_udf_to_task(
-                worker_id,
-                task,
-                actors,
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
-
+            let modified_task = self.append_actor_udf_to_task(worker_id, task, actors)?;
             let (submittable_task, notify_token) = modified_task.add_notify_token();
             running_tasks.spawn(notify_token);
             if result_tx.send(submittable_task).await.is_err() {
@@ -249,8 +242,11 @@ impl ActorUDF {
         worker_id: WorkerId,
         submittable_task: SubmittableTask<SwordfishTask>,
         actors: Vec<PyObjectWrapper>,
-        task_context: TaskContext,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+        let mut task_context = submittable_task.task().task_context();
+        if let Some(logical_node_id) = self.context.logical_node_id {
+            task_context.add_logical_node_id(logical_node_id);
+        }
         let task_plan = submittable_task.task().plan();
         let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
             task_plan,
@@ -344,8 +340,7 @@ impl DistributedPipelineNode for ActorUDF {
         let input_node = self.child.clone().produce_tasks(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop =
-            self.execution_loop_fused(input_node, result_tx, stage_context.task_id_counter());
+        let execution_loop = self.execution_loop_fused(input_node, result_tx);
         stage_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)

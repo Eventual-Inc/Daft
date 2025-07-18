@@ -409,16 +409,12 @@ impl DistributedPipelineNode for WindowNode {
 
         // Pipeline the window op
         let self_clone = self.clone();
-        input_node.pipeline_instruction(
-            stage_context,
-            self.clone(),
-            move |input| match &*self_clone {
-                Self::PartitionOnly(node) => node.produce_task(input),
-                Self::PartitionAndOrderBy(node) => node.produce_task(input),
-                Self::PartitionAndDynamicFrame(node) => node.produce_task(input),
-                Self::OrderByOnly(node) => node.produce_task(input),
-            },
-        )
+        input_node.pipeline_instruction(self.clone(), move |input| match &*self_clone {
+            Self::PartitionOnly(node) => node.produce_task(input),
+            Self::PartitionAndOrderBy(node) => node.produce_task(input),
+            Self::PartitionAndDynamicFrame(node) => node.produce_task(input),
+            Self::OrderByOnly(node) => node.produce_task(input),
+        })
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

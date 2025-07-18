@@ -1293,6 +1293,9 @@ class DataFrame:
 
         Returns:
             DataFrame: A dataframe from the micropartition returned by the DataSink's `.finalize()` method.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
         """
         sink.start()
 
@@ -1330,7 +1333,8 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Note:
-            write_lance` requires python 3.9 or higher
+            `write_lance` requires python 3.9 or higher
+            This call is **blocking** and will execute the DataFrame when called
 
         Examples:
             >>> import daft

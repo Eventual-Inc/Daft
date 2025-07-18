@@ -146,7 +146,7 @@ impl DistributedPipelineNode for AggregateNode {
         // Pipeline the aggregation
         let self_clone = self.clone();
 
-        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
+        input_node.pipeline_instruction(self.clone(), move |input| {
             if self_clone.group_by.is_empty() {
                 LocalPhysicalPlan::ungrouped_aggregate(
                     input,

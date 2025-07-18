@@ -137,7 +137,7 @@ impl DistributedPipelineNode for ProjectNode {
             )
         };
 
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        input_node.pipeline_instruction(self.clone(), plan_builder)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

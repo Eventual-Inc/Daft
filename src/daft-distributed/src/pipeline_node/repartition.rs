@@ -204,16 +204,15 @@ impl DistributedPipelineNode for RepartitionNode {
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
-        let local_repartition_node =
-            input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-                LocalPhysicalPlan::repartition(
-                    input,
-                    self_clone.columns.clone(),
-                    self_clone.num_partitions,
-                    self_clone.config.schema.clone(),
-                    StatsState::NotMaterialized,
-                )
-            });
+        let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::repartition(
+                input,
+                self_clone.columns.clone(),
+                self_clone.num_partitions,
+                self_clone.config.schema.clone(),
+                StatsState::NotMaterialized,
+            )
+        });
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(

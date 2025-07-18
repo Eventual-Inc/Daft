@@ -119,7 +119,7 @@ impl DistributedPipelineNode for DistinctNode {
 
         // Pipeline the distinct op
         let self_clone = self.clone();
-        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
+        input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::dedup(
                 input,
                 self_clone.columns.clone(),

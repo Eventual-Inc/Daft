@@ -117,7 +117,7 @@ impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
 
         let next_starting_offset = AtomicU64::new(0);
 
-        input_node.pipeline_instruction(stage_context, self, move |input| {
+        input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::monotonically_increasing_id(
                 input,
                 column_name.clone(),

@@ -25,7 +25,7 @@ use crate::{
     plan::PlanID,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
+        task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, StageID},
@@ -257,25 +257,15 @@ impl SubmittableTaskStream {
 
     pub fn pipeline_instruction<F>(
         self,
-        stage_context: &StageExecutionContext,
         node: Arc<dyn DistributedPipelineNode>,
         plan_builder: F,
     ) -> Self
     where
         F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
     {
-        let task_id_counter = stage_context.task_id_counter();
         let task_stream = self
             .task_stream
-            .map(move |task| {
-                let new_task = append_plan_to_existing_task(
-                    TaskContext::from((node.context(), task_id_counter.next())),
-                    task,
-                    &node,
-                    &plan_builder,
-                );
-                new_task
-            })
+            .map(move |task| append_plan_to_existing_task(task, &node, &plan_builder))
             .boxed();
         Self::new(task_stream)
     }
@@ -357,7 +347,6 @@ fn make_in_memory_scan_from_materialized_outputs(
 }
 
 fn append_plan_to_existing_task<F>(
-    task_context: TaskContext,
     submittable_task: SubmittableTask<SwordfishTask>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,
@@ -370,6 +359,10 @@ where
     let scheduling_strategy = submittable_task.task().strategy().clone();
     let psets = submittable_task.task().psets().clone();
     let config = submittable_task.task().config().clone();
+    let mut task_context = submittable_task.task().task_context();
+    if let Some(logical_node_id) = node.context().logical_node_id {
+        task_context.add_logical_node_id(logical_node_id);
+    }
 
     let task = submittable_task.with_new_task(SwordfishTask::new(
         task_context,

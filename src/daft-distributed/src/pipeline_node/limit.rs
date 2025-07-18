@@ -174,10 +174,9 @@ impl DistributedPipelineNode for LimitNode {
         let input_node = self.child.clone().produce_tasks(stage_context);
 
         let limit = self.limit as u64;
-        let local_limit_node =
-            input_node.pipeline_instruction(stage_context, self.clone(), move |input_plan| {
-                LocalPhysicalPlan::limit(input_plan, limit, StatsState::NotMaterialized)
-            });
+        let local_limit_node = input_node.pipeline_instruction(self.clone(), move |input_plan| {
+            LocalPhysicalPlan::limit(input_plan, limit, StatsState::NotMaterialized)
+        });
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(
