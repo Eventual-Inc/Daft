@@ -47,5 +47,5 @@ pub use shard_scans::ShardScans;
 pub use simplify_expressions::SimplifyExpressionsRule;
 pub use simplify_null_filtered_join::SimplifyNullFilteredJoin;
 pub use split_explode_from_project::SplitExplodeFromProject;
-pub use split_udfs::SplitActorPoolProjects;
+pub use split_udfs::SplitUDFs;
 pub use unnest_subquery::{UnnestPredicateSubquery, UnnestScalarSubquery};

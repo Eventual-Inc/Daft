@@ -11,8 +11,7 @@ use super::{
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
         RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitActorPoolProjects, SplitGranularProjection, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::{
@@ -154,12 +153,12 @@ impl Default for OptimizerBuilder {
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
                 // --- Rewrite projections ---
-                // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.
+                // Once optimization rules have been applied, split UDFs and detect monotonic IDs.
                 // By delaying these rewrite rules, we avoid having to special case optimization rules for
-                // actor pool projects and monotonically increasing ids.
+                // UDFs and monotonically increasing ids.
                 RuleBatch::new(
                     vec![
-                        Box::new(SplitActorPoolProjects::new()),
+                        Box::new(SplitUDFs::new()),
                         Box::new(PushDownProjection::new()),
                         Box::new(DetectMonotonicId::new()),
                     ],

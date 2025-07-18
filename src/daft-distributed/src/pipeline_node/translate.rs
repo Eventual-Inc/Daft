@@ -144,8 +144,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         .and_then(|req| req.memory_bytes())
                         .map(|m| m as u64)
                         .unwrap_or(0);
+                    let projection = udf
+                        .passthrough_columns
+                        .iter()
+                        .chain(std::iter::once(&udf.project.clone()))
+                        .cloned()
+                        .collect::<Vec<_>>();
                     let projection =
-                        BoundExpr::bind_all(&[udf.project.clone()], &udf.input.schema())?;
+                        BoundExpr::bind_all(projection.as_slice(), &udf.input.schema())?;
                     crate::pipeline_node::actor_udf::ActorUDF::new(
                         self.get_next_pipeline_node_id(),
                         logical_node_id,
