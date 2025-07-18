@@ -21,7 +21,6 @@ educe = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
-num-format = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
