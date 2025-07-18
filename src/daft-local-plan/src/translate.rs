@@ -7,7 +7,7 @@ use daft_core::join::JoinStrategy;
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     join::normalize_join_keys,
-    resolved_col, WindowExpr,
+    resolved_col, window_to_agg_exprs,
 };
 use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
@@ -152,20 +152,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 window.window_spec.frame.is_some(),
             ) {
                 (true, false, false) => {
-                    let aggregations = window_functions
-                        .iter()
-                        .map(|w| {
-                            if let WindowExpr::Agg(agg_expr) = w.as_ref() {
-                                Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
-                            } else {
-                                Err(DaftError::TypeError(format!(
-                                    "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
-                                    w
-                                )))
-                            }
-                        })
-                        .collect::<DaftResult<Vec<_>>>()?;
-
+                    let aggregations = window_to_agg_exprs(window_functions)?;
                     Ok(LocalPhysicalPlan::window_partition_only(
                         input,
                         partition_by,
@@ -187,17 +174,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     window.aliases.clone(),
                 )),
                 (true, true, true) => {
-                    let aggregations = window_functions
-                        .iter()
-                        .map(|w| {
-                            if let WindowExpr::Agg(agg_expr) = w.as_ref() {
-                                BoundAggExpr::new_unchecked(agg_expr.clone())
-                            } else {
-                                panic!("Expected AggExpr")
-                            }
-                        })
-                        .collect::<Vec<_>>();
-
+                    let aggregations = window_to_agg_exprs(window_functions)?;
                     Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
                         input,
                         partition_by,

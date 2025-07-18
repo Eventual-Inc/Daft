@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
 use daft_dsl::{
     expr::bound_expr::BoundExpr,
     functions::python::{get_resource_request, get_udf_names},
@@ -11,9 +10,11 @@ use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsSta
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::DistributedPipelineNode;
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+    },
     stage::{StageConfig, StageExecutionContext},
 };
 
@@ -124,23 +125,26 @@ impl DistributedPipelineNode for UDFNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         let project = self.project.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::udf_project(
+        let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
+            LocalPhysicalPlan::udf_project(
                 input,
                 project.clone(),
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-            ))
+            )
         };
 
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        input_node.pipeline_instruction(self, plan_builder)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -12,19 +17,19 @@ use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMemoryInfo};
 use daft_schema::schema::SchemaRef;
-use futures::{Stream, StreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt};
 use itertools::Itertools;
-use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};
+use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
     plan::PlanID,
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
+        scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, StageID},
-    utils::channel::{create_channel, Receiver, ReceiverStream},
+    utils::channel::{Receiver, ReceiverStream},
 };
 
 #[cfg(feature = "python")]
@@ -74,6 +79,7 @@ impl MaterializedOutput {
         }
     }
 
+    #[allow(dead_code)]
     pub fn partitions(&self) -> &[PartitionRef] {
         &self.partition
     }
@@ -107,14 +113,6 @@ impl MaterializedOutput {
             .map(|partition| partition.size_bytes().map(|size| size.unwrap_or(0)))
             .sum()
     }
-}
-
-#[derive(Debug)]
-pub(crate) enum PipelineOutput<T: Task> {
-    Materialized(MaterializedOutput),
-    Task(SubmittableTask<T>),
-    #[allow(dead_code)]
-    Running(SubmittedTask),
 }
 
 pub(super) struct PipelineNodeConfig {
@@ -188,7 +186,10 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     fn config(&self) -> &PipelineNodeConfig;
     #[allow(dead_code)]
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode;
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream;
     fn as_tree_display(&self) -> &dyn TreeDisplay;
     fn name(&self) -> NodeName {
         self.context().node_name
@@ -232,94 +233,50 @@ pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple
     s
 }
 
-#[derive(Debug)]
-pub(crate) struct RunningPipelineNode {
-    result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
+pub(crate) struct SubmittableTaskStream {
+    task_stream: BoxStream<'static, SubmittableTask<SwordfishTask>>,
 }
 
-impl RunningPipelineNode {
-    fn new(result_receiver: Receiver<PipelineOutput<SwordfishTask>>) -> Self {
-        Self { result_receiver }
+impl From<Receiver<SubmittableTask<SwordfishTask>>> for SubmittableTaskStream {
+    fn from(receiver: Receiver<SubmittableTask<SwordfishTask>>) -> Self {
+        let task_stream = ReceiverStream::new(receiver).boxed();
+        Self { task_stream }
     }
+}
 
-    #[allow(dead_code)]
-    pub fn into_inner(self) -> Receiver<PipelineOutput<SwordfishTask>> {
-        self.result_receiver
+impl SubmittableTaskStream {
+    fn new(task_stream: BoxStream<'static, SubmittableTask<SwordfishTask>>) -> Self {
+        Self { task_stream }
     }
 
     pub fn materialize(
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-        let stream = self.into_stream().map(Ok);
-        materialize_all_pipeline_outputs(stream, scheduler_handle)
-    }
-
-    pub fn materialize_running(
-        self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
-    {
-        let stream = self.into_stream().map(Ok);
-        materialize_running_pipeline_outputs(stream)
-    }
-
-    pub fn into_stream(
-        self,
-    ) -> impl Stream<Item = PipelineOutput<SwordfishTask>> + Send + Unpin + 'static {
-        ReceiverStream::new(self.result_receiver)
+        materialize_all_pipeline_outputs(self.task_stream, scheduler_handle, None)
     }
 
     pub fn pipeline_instruction<F>(
         self,
-        stage_context: &mut StageExecutionContext,
         node: Arc<dyn DistributedPipelineNode>,
         plan_builder: F,
     ) -> Self
     where
-        F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send + Sync + 'static,
+        F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
     {
-        let (result_tx, result_rx) = create_channel(1);
-        let task_id_counter = stage_context.task_id_counter();
-        let execution_loop = async move {
-            let mut task_or_partition_ref_stream = self.materialize_running();
+        let task_stream = self
+            .task_stream
+            .map(move |task| append_plan_to_existing_task(task, &node, &plan_builder))
+            .boxed();
+        Self::new(task_stream)
+    }
+}
 
-            while let Some(pipeline_result) = task_or_partition_ref_stream.next().await {
-                let pipeline_output = pipeline_result?;
-                match pipeline_output {
-                    PipelineOutput::Running(_) => {
-                        unreachable!("All running tasks should be materialized before this point")
-                    }
-                    PipelineOutput::Materialized(materialized_output) => {
-                        // make new task for this partition ref
-                        let task = make_new_task_from_materialized_outputs(
-                            TaskContext::from((node.context(), task_id_counter.next())),
-                            vec![materialized_output],
-                            &node,
-                            &plan_builder,
-                        )?;
-                        if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
-                            break;
-                        }
-                    }
-                    PipelineOutput::Task(task) => {
-                        // append plan to this task
-                        let mut task_context = task.task().task_context();
-                        if let Some(logical_node_id) = node.context().logical_node_id {
-                            task_context.add_logical_node_id(logical_node_id);
-                        }
-                        let task =
-                            append_plan_to_existing_task(task_context, task, &node, &plan_builder)?;
-                        if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-            Ok::<(), common_error::DaftError>(())
-        };
+impl Stream for SubmittableTaskStream {
+    type Item = SubmittableTask<SwordfishTask>;
 
-        stage_context.spawn(execution_loop);
-        Self::new(result_rx)
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.task_stream.poll_next_unpin(cx)
     }
 }
 
@@ -327,10 +284,10 @@ fn make_new_task_from_materialized_outputs<F>(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
-    plan_builder: &F,
+    plan_builder: F,
 ) -> DaftResult<SubmittableTask<SwordfishTask>>
 where
-    F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send + Sync + 'static,
+    F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
 {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
@@ -365,7 +322,7 @@ where
     );
     let in_memory_source_plan =
         LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
-    let plan = plan_builder(in_memory_source_plan)?;
+    let plan = plan_builder(in_memory_source_plan);
     let psets = HashMap::from([(node.node_id().to_string(), partition_refs)]);
 
     let task = SwordfishTask::new(
@@ -387,25 +344,26 @@ fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    make_new_task_from_materialized_outputs(task_context, materialized_outputs, node, &|input| {
-        Ok(input)
-    })
+    make_new_task_from_materialized_outputs(task_context, materialized_outputs, node, |input| input)
 }
 
 fn append_plan_to_existing_task<F>(
-    task_context: TaskContext,
     submittable_task: SubmittableTask<SwordfishTask>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,
-) -> DaftResult<SubmittableTask<SwordfishTask>>
+) -> SubmittableTask<SwordfishTask>
 where
-    F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send + Sync + 'static,
+    F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
 {
     let plan = submittable_task.task().plan();
-    let new_plan = plan_builder(plan)?;
+    let new_plan = plan_builder(plan);
     let scheduling_strategy = submittable_task.task().strategy().clone();
     let psets = submittable_task.task().psets().clone();
     let config = submittable_task.task().config().clone();
+    let mut task_context = submittable_task.task().task_context();
+    if let Some(logical_node_id) = node.context().logical_node_id {
+        task_context.add_logical_node_id(logical_node_id);
+    }
 
     let task = submittable_task.with_new_task(SwordfishTask::new(
         task_context,
@@ -415,5 +373,5 @@ where
         scheduling_strategy,
         node.context().to_hashmap(),
     ));
-    Ok(task)
+    task
 }

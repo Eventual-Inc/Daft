@@ -251,16 +251,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 self.curr_node.pop().unwrap(),
             )
             .arced(),
-            LogicalPlan::Sink(sink) => SinkNode::new(
-                self.get_next_pipeline_node_id(),
-                logical_node_id,
-                &self.stage_config,
-                sink.sink_info.clone(),
-                sink.schema.clone(),
-                sink.input.schema(),
-                self.curr_node.pop().unwrap(),
-            )
-            .arced(),
+            LogicalPlan::Sink(sink) => {
+                let sink_info = sink.sink_info.bind(&sink.input.schema())?;
+                SinkNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sink_info.into(),
+                    sink.schema.clone(),
+                    sink.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
             LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 MonotonicallyIncreasingIdNode::new(
                     self.get_next_pipeline_node_id(),
@@ -394,7 +397,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     window.aliases.clone(),
                     window.schema.clone(),
                     repartition,
-                )
+                )?
                 .arced()
             }
             LogicalPlan::Join(join) => {

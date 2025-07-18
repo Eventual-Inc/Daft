@@ -24,14 +24,14 @@ use crate::{
     pipeline_node::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
         viz_distributed_pipeline_ascii, viz_distributed_pipeline_mermaid, MaterializedOutput,
-        PipelineOutput, RunningPipelineNode,
+        SubmittableTaskStream,
     },
     plan::PlanID,
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, TaskID},
     },
-    utils::{joinset::JoinSet, stream::JoinableForwardingStream},
+    utils::joinset::JoinSet,
 };
 
 mod stage_builder;
@@ -99,7 +99,7 @@ impl Stage {
             StageType::MapPipeline { plan } => {
                 let pipeline_node =
                     logical_plan_to_pipeline_node(stage_config, plan.clone(), Arc::new(psets))?;
-                let running_node = pipeline_node.start(&mut stage_context);
+                let running_node = pipeline_node.produce_tasks(&mut stage_context);
                 Ok(RunningStage::new(running_node, stage_context))
             }
             _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
@@ -163,17 +163,14 @@ impl Stage {
 }
 
 pub(crate) struct RunningStage {
-    running_pipeline_node: RunningPipelineNode,
+    task_stream: SubmittableTaskStream,
     stage_context: StageExecutionContext,
 }
 
 impl RunningStage {
-    fn new(
-        running_pipeline_node: RunningPipelineNode,
-        stage_context: StageExecutionContext,
-    ) -> Self {
+    fn new(task_stream: SubmittableTaskStream, stage_context: StageExecutionContext) -> Self {
         Self {
-            running_pipeline_node,
+            task_stream,
             stage_context,
         }
     }
@@ -182,18 +179,8 @@ impl RunningStage {
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-        let stream = self.into_stream();
-        materialize_all_pipeline_outputs(stream, scheduler_handle)
-    }
-
-    pub fn into_stream(
-        self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
-    {
-        JoinableForwardingStream::new(
-            self.running_pipeline_node.into_stream(),
-            self.stage_context.joinset,
-        )
+        let joinset = self.stage_context.joinset;
+        materialize_all_pipeline_outputs(self.task_stream, scheduler_handle, Some(joinset))
     }
 }
 
