@@ -231,7 +231,8 @@ impl WorkerSnapshot {
             return false;
         }
         self.available_num_cpus() >= task.resource_request().num_cpus()
-            && self.available_memory_bytes() >= task.resource_request().memory_bytes()
+            && (self.available_memory_bytes() >= task.resource_request().memory_bytes()
+                || self.active_task_details.len() == 0)
     }
 }
 
@@ -257,6 +258,8 @@ impl<W: Worker> From<&W> for WorkerSnapshot {
 pub(super) mod test_utils {
 
     use std::collections::HashMap;
+
+    use common_resource_request::ResourceRequest;
 
     use super::*;
     use crate::scheduling::{
@@ -302,6 +305,9 @@ pub(super) mod test_utils {
     pub fn create_spread_task(id: Option<TaskID>) -> PendingTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::Spread)
+            .with_resource_request(
+                ResourceRequest::try_new_internal(Some(1.0), Some(0.0), Some(10)).unwrap(),
+            )
             .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)
@@ -317,6 +323,9 @@ pub(super) mod test_utils {
                 worker_id: worker_id.clone(),
                 soft,
             })
+            .with_resource_request(
+                ResourceRequest::try_new_internal(Some(1.0), Some(0.0), Some(10)).unwrap(),
+            )
             .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)

@@ -134,9 +134,8 @@ impl WorkerManager for RayWorkerManager {
             .into_iter()
             .map(|bundle| {
                 let mut dict = HashMap::new();
-                dict.insert("CPU", bundle.num_cpus().ceil() as i64);
+                dict.insert("CPU", bundle.num_cpus().ceil().max(1.0) as i64);
                 dict.insert("GPU", bundle.num_gpus().ceil() as i64);
-                dict.insert("memory", bundle.memory_bytes() as i64);
                 dict
             })
             .collect::<Vec<_>>();

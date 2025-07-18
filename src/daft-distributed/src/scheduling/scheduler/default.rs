@@ -367,7 +367,16 @@ mod tests {
 
         // Add a lot of low priority tasks
         let tasks = (0..100)
-            .map(|_| create_schedulable_task(MockTaskBuilder::default().with_priority(1).build()))
+            .map(|_| {
+                create_schedulable_task(
+                    MockTaskBuilder::default()
+                        .with_priority(1)
+                        .with_resource_request(
+                            ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(),
+                        )
+                        .build(),
+                )
+            })
             .collect();
 
         scheduler.enqueue_tasks(tasks);
@@ -378,8 +387,14 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 98);
 
         // Add a high-priority task
-        let high_priority_task =
-            create_schedulable_task(MockTaskBuilder::default().with_priority(100).build());
+        let high_priority_task = create_schedulable_task(
+            MockTaskBuilder::default()
+                .with_priority(100)
+                .with_resource_request(
+                    ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(),
+                )
+                .build(),
+        );
         scheduler.enqueue_tasks(vec![high_priority_task]);
 
         // The high-priority task should not be scheduled because worker1 is full

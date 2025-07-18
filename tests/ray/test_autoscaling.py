@@ -13,15 +13,13 @@ pytestmark = pytest.mark.skipif(
     reason="Autoscaling tests require Ray runner to be in use",
 )
 
-GB = 1024 * 1024 * 1024
-
 
 def test_basic_autoscaling_cluster():
     """Test basic AutoscalingCluster functionality."""
     head_resources = {"CPU": 0}
     worker_node_types = {
         "worker": {
-            "resources": {"CPU": 1, "memory": 1 * GB},
+            "resources": {"CPU": 1},
             "node_config": {},
             "min_workers": 0,
             "max_workers": 1,
@@ -41,7 +39,7 @@ def test_basic_autoscaling_gpu_cluster():
     head_resources = {"CPU": 0, "GPU": 0}
     worker_node_types = {
         "worker": {
-            "resources": {"CPU": 1, "GPU": 2, "memory": 1 * GB},
+            "resources": {"CPU": 1, "GPU": 2},
             "node_config": {},
             "min_workers": 0,
             "max_workers": 1,
