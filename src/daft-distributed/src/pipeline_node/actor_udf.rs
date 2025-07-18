@@ -8,8 +8,9 @@ use daft_dsl::{
     python::PyExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::InMemoryInfo;
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::StatsState;
 use futures::StreamExt;
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 

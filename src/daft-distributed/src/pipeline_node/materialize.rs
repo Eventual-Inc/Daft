@@ -204,7 +204,7 @@ mod tests {
     }
 
     impl TestContext {
-        fn new(worker_configs: &[(WorkerId, usize)]) -> DaftResult<Self> {
+        fn new(worker_configs: &[(WorkerId, usize, usize)]) -> DaftResult<Self> {
             let workers = setup_workers(worker_configs);
             let worker_manager = Arc::new(MockWorkerManager::new(workers));
             let mut joinset = JoinSet::new();
@@ -300,7 +300,7 @@ mod tests {
         let task_sleep_ms = 50;
         let task2_sleep_ms = 100;
 
-        let test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
+        let test_context = TestContext::new(&[("worker1".into(), worker_slots, 1000)])?;
         let partition_specs = vec![(100, 1024), (200, 2048), (300, 3072)];
         let partitions = create_test_partitions(&partition_specs);
 
@@ -343,7 +343,7 @@ mod tests {
 
         let mut test_context = TestContext::new(
             &(0..num_workers)
-                .map(|i| (format!("worker{}", i).into(), 1))
+                .map(|i| (format!("worker{}", i).into(), 1, 1000))
                 .collect::<Vec<_>>(),
         )?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
@@ -402,7 +402,7 @@ mod tests {
         let error_probability = 0.1;
         let task_sleep_ms = 100;
 
-        let mut test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
+        let mut test_context = TestContext::new(&[("worker1".into(), worker_slots, 1000)])?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 
@@ -485,7 +485,7 @@ mod tests {
         let task_sleep_ms = 50;
         let task2_sleep_ms = 100;
 
-        let test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
+        let test_context = TestContext::new(&[("worker1".into(), worker_slots, 1000)])?;
         let partition_specs = vec![(100, 1024), (200, 2048), (300, 3072)];
         let partitions = create_test_partitions(&partition_specs);
 
@@ -528,7 +528,7 @@ mod tests {
 
         let mut test_context = TestContext::new(
             &(0..num_workers)
-                .map(|i| (format!("worker{}", i).into(), 1))
+                .map(|i| (format!("worker{}", i).into(), 1, 1000))
                 .collect::<Vec<_>>(),
         )?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
@@ -595,7 +595,7 @@ mod tests {
         let error_probability = 0.1;
         let task_sleep_ms = 100;
 
-        let mut test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
+        let mut test_context = TestContext::new(&[("worker1".into(), worker_slots, 1000)])?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 

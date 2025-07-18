@@ -10,8 +10,8 @@ use daft_dsl::{
     AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::{Schema, SchemaRef};
+use daft_stats::plan_stats::StatsState;
 
 use super::DistributedPipelineNode;
 use crate::{

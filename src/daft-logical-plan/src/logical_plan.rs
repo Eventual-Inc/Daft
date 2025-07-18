@@ -13,12 +13,12 @@ use daft_dsl::{
     optimization::get_required_columns, Column, Expr, ResolvedColumn, Subquery, SubqueryPlan,
 };
 use daft_schema::{field::Field, schema::SchemaRef};
+use daft_stats::plan_stats::{PlanStats, StatsState};
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 pub use crate::ops::*;
-use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

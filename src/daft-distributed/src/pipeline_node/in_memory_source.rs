@@ -4,7 +4,8 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec, InMemoryInfo};
+use daft_logical_plan::{ClusteringSpec, InMemoryInfo};
+use daft_stats::plan_stats::StatsState;
 
 use super::{DistributedPipelineNode, PipelineNodeContext, PipelineOutput, RunningPipelineNode};
 use crate::{

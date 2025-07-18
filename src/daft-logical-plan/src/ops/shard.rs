@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use common_scan_info::Sharder;
+use daft_stats::plan_stats::{ApproxStats, PlanStats, StatsState};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
-};
+use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Shard {

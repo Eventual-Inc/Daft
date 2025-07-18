@@ -5,8 +5,9 @@ use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec};
+use daft_logical_plan::ClusteringSpec;
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::StatsState;
 
 use super::{
     DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineOutput,

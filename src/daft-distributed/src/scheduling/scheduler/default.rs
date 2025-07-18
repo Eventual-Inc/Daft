@@ -157,9 +157,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 3), // 3 slots available
-            (worker_2.clone(), 3), // 3 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 3, 1000), // 3 slots available
+            (worker_2.clone(), 3, 1000), // 3 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -200,9 +200,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -243,9 +243,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 1), // 1 slot available
-            (worker_3.clone(), 2), // 2 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 1, 1000), // 1 slot available
+            (worker_3.clone(), 2, 1000), // 2 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -299,9 +299,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -359,8 +359,8 @@ mod tests {
         let worker_2: WorkerId = Arc::from("worker2");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 1), // 1 slot available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 1, 1000), // 1 slot available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -389,7 +389,7 @@ mod tests {
 
         // Update scheduler state to add a new worker with 1 slot available
         let worker_3: WorkerId = Arc::from("worker3");
-        let new_worker = MockWorker::new(worker_3.clone(), 1.0, 0.0);
+        let new_worker = MockWorker::new(worker_3.clone(), 1.0, 0.0, 1000);
         let new_worker_snapshot = WorkerSnapshot::from(&new_worker);
         scheduler.update_worker_state(&[new_worker_snapshot]);
 
@@ -407,9 +407,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -476,9 +476,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -548,8 +548,8 @@ mod tests {
         let worker_2: WorkerId = Arc::from("worker2");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 1), // 1 slot available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 1, 1000), // 1 slot available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);

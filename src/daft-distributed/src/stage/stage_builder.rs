@@ -140,7 +140,6 @@ impl StagePlanBuilder {
             data_channel: DataChannel {
                 schema,
                 clustering_spec,
-                stats: None, // Stats will be computed during execution
             },
         })
     }

@@ -9,7 +9,7 @@ use daft_dsl::{
     join::normalize_join_keys,
     resolved_col, WindowExpr,
 };
-use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -41,9 +41,8 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ))
                     }
                 }
-                SourceInfo::PlaceHolder(ph) => Ok(LocalPhysicalPlan::placeholder_scan(
-                    ph.source_schema.clone(),
-                    StatsState::NotMaterialized,
+                SourceInfo::PlaceHolder(_) => Err(DaftError::InternalError(
+                    "Placeholder scan cannot be translated to a physical plan".to_string(),
                 )),
             }
         }

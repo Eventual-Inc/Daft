@@ -3,13 +3,13 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::ExprRef;
+use daft_stats::plan_stats::{calculate::calculate_unpivot_stats, StatsState};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -105,13 +105,8 @@ impl Unpivot {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let num_values = self.values.len();
-        let approx_stats = ApproxStats {
-            num_rows: input_stats.approx_stats.num_rows * num_values,
-            size_bytes: input_stats.approx_stats.size_bytes,
-            acc_selectivity: input_stats.approx_stats.acc_selectivity * num_values as f64,
-        };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_unpivot_stats(input_stats, self.values.len());
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

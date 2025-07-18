@@ -7,8 +7,9 @@ use daft_dsl::{
     WindowExpr, WindowFrame,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::partitioning::HashClusteringConfig;
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::StatsState;
 use itertools::Itertools;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};

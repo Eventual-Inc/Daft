@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
+use daft_stats::plan_stats::{calculate::calculate_monotonically_increasing_id_stats, StatsState};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
-    stats::StatsState,
     LogicalPlan,
 };
 
@@ -57,9 +57,9 @@ impl MonotonicallyIncreasingId {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
         let input_stats = self.input.materialized_stats();
-        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        let stats = calculate_monotonically_increasing_id_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

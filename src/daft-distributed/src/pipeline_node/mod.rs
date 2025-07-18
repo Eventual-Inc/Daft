@@ -10,8 +10,9 @@ use common_display::{
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{partitioning::ClusteringSpecRef, InMemoryInfo};
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::StatsState;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
 use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};

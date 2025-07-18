@@ -18,6 +18,7 @@ pub(crate) trait Worker: Send + Sync + Debug + 'static {
     fn active_task_details(&self) -> HashMap<TaskContext, TaskDetails>;
     fn total_num_cpus(&self) -> f64;
     fn total_num_gpus(&self) -> f64;
+    fn total_memory_bytes(&self) -> usize;
     #[allow(dead_code)]
     fn active_num_cpus(&self) -> f64;
     #[allow(dead_code)]
@@ -131,7 +132,7 @@ pub(super) mod tests {
                     Arc::from(format!("worker{}", num_existing_workers + i + 1));
                 workers.insert(
                     new_worker_id.clone(),
-                    MockWorker::new(new_worker_id, 1.0, 0.0),
+                    MockWorker::new(new_worker_id, 1.0, 0.0, 1000),
                 );
             }
             Ok(())
@@ -152,16 +153,23 @@ pub(super) mod tests {
         worker_id: WorkerId,
         total_num_cpus: f64,
         total_num_gpus: f64,
+        total_memory_bytes: usize,
         active_task_details: Arc<Mutex<HashMap<TaskContext, TaskDetails>>>,
         is_shutdown: Arc<AtomicBool>,
     }
 
     impl MockWorker {
-        pub fn new(worker_id: WorkerId, total_num_cpus: f64, total_num_gpus: f64) -> Self {
+        pub fn new(
+            worker_id: WorkerId,
+            total_num_cpus: f64,
+            total_num_gpus: f64,
+            total_memory_bytes: usize,
+        ) -> Self {
             Self {
                 worker_id,
                 total_num_cpus,
                 total_num_gpus,
+                total_memory_bytes,
                 active_task_details: Arc::new(Mutex::new(HashMap::new())),
                 is_shutdown: Arc::new(AtomicBool::new(false)),
             }
@@ -201,6 +209,10 @@ pub(super) mod tests {
 
         fn total_num_gpus(&self) -> f64 {
             self.total_num_gpus
+        }
+
+        fn total_memory_bytes(&self) -> usize {
+            self.total_memory_bytes
         }
 
         fn active_num_cpus(&self) -> f64 {

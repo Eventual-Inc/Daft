@@ -16,6 +16,7 @@ daft-functions = {path = "../daft-functions", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
 daft-functions-uri = {path = "../daft-functions-uri", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
+daft-stats = {path = "../daft-stats", default-features = false}
 educe = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}

@@ -195,7 +195,7 @@ mod tests {
     };
 
     fn setup_dispatcher_test_context(
-        worker_configs: &[(WorkerId, usize)],
+        worker_configs: &[(WorkerId, usize, usize)],
     ) -> (
         Dispatcher<MockWorker>,
         Arc<dyn WorkerManager<Worker = MockWorker>>,
@@ -210,7 +210,7 @@ mod tests {
     async fn test_dispatcher_basic_task() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
         let (mut dispatcher, worker_manager) =
-            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1, 1000)]);
 
         let partition_ref = create_mock_partition_ref(100, 100);
         let task = MockTaskBuilder::new(partition_ref.clone()).build();
@@ -238,7 +238,7 @@ mod tests {
     async fn test_dispatcher_multiple_tasks() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
         let (mut dispatcher, worker_manager) =
-            setup_dispatcher_test_context(&[(worker_id.clone(), 4)]);
+            setup_dispatcher_test_context(&[(worker_id.clone(), 4, 1000)]);
 
         let num_tasks = 100;
         let mut rng = StdRng::from_entropy();
@@ -283,7 +283,7 @@ mod tests {
     async fn test_dispatcher_cancelled_task() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
         let (mut dispatcher, worker_manager) =
-            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1, 1000)]);
 
         let partition_ref = create_mock_partition_ref(100, 100);
         let (cancel_notifier, cancel_receiver) = create_oneshot_channel();
@@ -307,7 +307,7 @@ mod tests {
     async fn test_task_error_basic() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
         let (mut dispatcher, worker_manager) =
-            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1, 1000)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
             .with_failure(MockTaskFailure::Error("test error".to_string()))
@@ -338,7 +338,7 @@ mod tests {
     async fn test_task_panic_basic() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
         let (mut dispatcher, worker_manager) =
-            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1, 1000)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
@@ -366,7 +366,7 @@ mod tests {
     async fn test_task_worker_died() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
         let (mut dispatcher, worker_manager) =
-            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1, 1000)]);
 
         // Verify worker is initially present
         let initial_snapshots = worker_manager.worker_snapshots()?;
@@ -406,7 +406,7 @@ mod tests {
     async fn test_task_worker_unavailable() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
         let (mut dispatcher, worker_manager) =
-            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1, 1000)]);
 
         // Verify worker is initially present
         let initial_snapshots = worker_manager.worker_snapshots()?;
@@ -451,9 +451,9 @@ mod tests {
         let worker2_id: WorkerId = Arc::from("worker2");
         let worker3_id: WorkerId = Arc::from("worker3");
         let (mut dispatcher, worker_manager) = setup_dispatcher_test_context(&[
-            (worker1_id.clone(), 1),
-            (worker2_id.clone(), 1),
-            (worker3_id.clone(), 1),
+            (worker1_id.clone(), 1, 1000),
+            (worker2_id.clone(), 1, 1000),
+            (worker3_id.clone(), 1, 1000),
         ]);
 
         let tasks = vec![

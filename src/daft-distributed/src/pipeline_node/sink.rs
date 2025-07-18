@@ -5,8 +5,9 @@ use common_error::DaftResult;
 use common_file_formats::WriteMode;
 use daft_dsl::ExprRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{stats::StatsState, OutputFileInfo, SinkInfo};
+use daft_logical_plan::{OutputFileInfo, SinkInfo};
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::StatsState;
 use futures::TryStreamExt;
 
 use super::{

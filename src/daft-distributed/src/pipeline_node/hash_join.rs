@@ -6,10 +6,10 @@ use common_error::DaftResult;
 use daft_dsl::{expr::bound_expr::BoundExpr, join::normalize_join_keys};
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{
-    ops::join::JoinPredicate, partitioning::HashClusteringConfig, stats::StatsState,
-    ClusteringSpec, JoinType,
+    ops::join::JoinPredicate, partitioning::HashClusteringConfig, ClusteringSpec, JoinType,
 };
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::StatsState;
 use futures::StreamExt;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};

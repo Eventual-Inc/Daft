@@ -12,9 +12,7 @@ use common_display::DisplayLevel;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
-use daft_logical_plan::{
-    partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
-};
+use daft_logical_plan::{partitioning::ClusteringSpecRef, JoinType, LogicalPlanRef};
 use daft_schema::schema::SchemaRef;
 use futures::Stream;
 use serde::{Deserialize, Serialize};
@@ -46,7 +44,7 @@ struct ChannelID(usize);
 struct DataChannel {
     schema: SchemaRef,
     clustering_spec: Option<ClusteringSpecRef>,
-    stats: Option<ApproxStats>,
+    // stats: Option<ApproxStats>,
     // ordering: Option<ExprRef>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,6 +11,7 @@ use daft_dsl::{
     join::infer_join_schema, resolved_col, right_col, Column, Expr, ExprRef, Operator,
     ResolvedColumn,
 };
+use daft_stats::plan_stats::{calculate::calculate_hash_join_stats, StatsState};
 use indexmap::IndexSet;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -19,7 +20,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     logical_plan::{self},
     ops::Project,
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan, LogicalPlanRef,
 };
 
@@ -330,29 +330,10 @@ impl Join {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // Assume a Primary-key + Foreign-Key join which would yield the max of the two tables.
-        // TODO(desmond): We can do better estimations here. For now, use the old logic.
         let left_stats = self.left.materialized_stats();
         let right_stats = self.right.materialized_stats();
-        // We assume that if one side of a join had its cardinality reduced by some operations
-        // (e.g. filters, limits, aggregations), then assuming a pk-fk join, the total number of
-        // rows output from the join will be reduced proportionally. Hence, apply the right side's
-        // selectivity to the number of rows/size in bytes on the left and vice versa.
-        let left_num_rows =
-            left_stats.approx_stats.num_rows as f64 * right_stats.approx_stats.acc_selectivity;
-        let right_num_rows =
-            right_stats.approx_stats.num_rows as f64 * left_stats.approx_stats.acc_selectivity;
-        let left_size =
-            left_stats.approx_stats.size_bytes as f64 * right_stats.approx_stats.acc_selectivity;
-        let right_size =
-            right_stats.approx_stats.size_bytes as f64 * left_stats.approx_stats.acc_selectivity;
-        let approx_stats = ApproxStats {
-            num_rows: left_num_rows.max(right_num_rows).ceil() as usize,
-            size_bytes: left_size.max(right_size).ceil() as usize,
-            acc_selectivity: left_stats.approx_stats.acc_selectivity
-                * right_stats.approx_stats.acc_selectivity,
-        };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_hash_join_stats(left_stats, right_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

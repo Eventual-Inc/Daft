@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use daft_dsl::ExprRef;
+use daft_stats::plan_stats::{calculate::calculate_distinct_stats, StatsState};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
-};
+use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Distinct {
@@ -40,24 +38,9 @@ impl Distinct {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // TODO(desmond): We can simply use NDVs here. For now, do a naive estimation.
         let input_stats = self.input.materialized_stats();
-        let est_bytes_per_row =
-            input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
-        // Assume high cardinality, 80% of rows are distinct.
-        let est_distinct_values = input_stats.approx_stats.num_rows * 4 / 5;
-        let acc_selectivity = if input_stats.approx_stats.num_rows == 0 {
-            0.0
-        } else {
-            input_stats.approx_stats.acc_selectivity * est_distinct_values as f64
-                / input_stats.approx_stats.num_rows as f64
-        };
-        let approx_stats = ApproxStats {
-            num_rows: est_distinct_values,
-            size_bytes: est_distinct_values * est_bytes_per_row,
-            acc_selectivity,
-        };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_distinct_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

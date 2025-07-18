@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use daft_stats::plan_stats::{calculate::calculate_repartition_stats, StatsState};
 use serde::{Deserialize, Serialize};
 
-use crate::{partitioning::RepartitionSpec, stats::StatsState, LogicalPlan};
+use crate::{partitioning::RepartitionSpec, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Repartition {
@@ -36,9 +37,9 @@ impl Repartition {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // Repartitioning does not affect cardinality.
         let input_stats = self.input.materialized_stats();
-        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        let stats = calculate_repartition_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 
