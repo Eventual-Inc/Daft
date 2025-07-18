@@ -41,10 +41,13 @@ struct SchedulerActor<W: Worker, S: Scheduler<W::Task>> {
 }
 
 impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
-    fn default_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+    fn default_scheduler(
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+        statistics_manager: StatisticsManagerRef,
+    ) -> Self {
         Self {
             worker_manager,
-            scheduler: DefaultScheduler::new(),
+            scheduler: DefaultScheduler::new().with_statistics_manager(statistics_manager),
         }
     }
 }
@@ -202,7 +205,7 @@ pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
 ) -> SchedulerHandle<W::Task> {
     tracing::info!(target: SCHEDULER_LOG_TARGET, "Spawning default scheduler actor");
 
-    let scheduler = SchedulerActor::default_scheduler(worker_manager);
+    let scheduler = SchedulerActor::default_scheduler(worker_manager, statistics_manager.clone());
     SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
 }
 
@@ -406,13 +409,12 @@ mod tests {
     ) -> SchedulerActorTestContext {
         let workers = setup_workers(worker_configs);
         let worker_manager = Arc::new(MockWorkerManager::new(workers));
-        let scheduler = SchedulerActor::default_scheduler(worker_manager);
+        let statistics_manager = StatisticsManagerRef::default();
+        let scheduler =
+            SchedulerActor::default_scheduler(worker_manager, statistics_manager.clone());
         let mut joinset = JoinSet::new();
-        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(
-            scheduler,
-            &mut joinset,
-            StatisticsManagerRef::default(),
-        );
+        let scheduler_handle =
+            SchedulerActor::spawn_scheduler_actor(scheduler, &mut joinset, statistics_manager);
         SchedulerActorTestContext {
             scheduler_handle_ref: Arc::new(scheduler_handle),
             joinset,

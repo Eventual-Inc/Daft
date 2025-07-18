@@ -39,15 +39,31 @@ impl RayWorkerManager {
             .lock()
             .expect("Failed to lock RayWorkerManager");
 
-        let ray_workers = flotilla_module
-            .call_method1(
-                pyo3::intern!(py, "start_ray_workers"),
-                (workers_guard
-                    .keys()
-                    .map(|id| id.as_ref())
-                    .collect::<Vec<_>>(),),
-            )?
-            .extract::<Vec<RaySwordfishWorker>>()?;
+        // Try to call start_ray_workers and handle any potential errors
+        let ray_workers = match flotilla_module.call_method1(
+            pyo3::intern!(py, "start_ray_workers"),
+            (workers_guard
+                .keys()
+                .map(|id| id.as_ref())
+                .collect::<Vec<_>>(),),
+        ) {
+            Ok(result) => match result.extract::<Vec<RaySwordfishWorker>>() {
+                Ok(workers) => workers,
+                Err(e) => {
+                    return Err(common_error::DaftError::InternalError(format!(
+                        "Failed to extract Ray workers: {}. Ray may have been shut down",
+                        e
+                    )));
+                }
+            },
+            Err(e) => {
+                // This is where we catch errors from ray.nodes() calls that might fail after Ray shutdown
+                return Err(common_error::DaftError::InternalError(format!(
+                    "Failed to start Ray workers: {}. Ray may have been shut down",
+                    e
+                )));
+            }
+        };
 
         for worker in ray_workers {
             workers_guard.insert(worker.id().clone(), worker);
@@ -141,8 +157,25 @@ impl WorkerManager for RayWorkerManager {
             })
             .collect::<Vec<_>>();
         Python::with_gil(|py| {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-            flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (bundles,))?;
+            let flotilla_module = match py.import(pyo3::intern!(py, "daft.runners.flotilla")) {
+                Ok(module) => module,
+                Err(e) => {
+                    return Err(common_error::DaftError::InternalError(format!(
+                        "Failed to import daft.runners.flotilla for autoscaling: {}. Ray may have been shut down",
+                        e
+                    )));
+                }
+            };
+
+            if let Err(e) =
+                flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (bundles,))
+            {
+                return Err(common_error::DaftError::InternalError(format!(
+                    "Failed to request autoscaling: {}. Ray may have been shut down",
+                    e
+                )));
+            }
+
             Ok(())
         })
     }

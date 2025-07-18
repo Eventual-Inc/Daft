@@ -144,8 +144,15 @@ class RaySwordfishActorHandle:
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
-    handles = []
-    for node in ray.nodes():
+    handles: list[RaySwordfishWorker] = []
+    try:
+        nodes = ray.nodes()
+    except Exception as e:
+        # If ray.nodes() fails (e.g., Ray has been shut down), log the error and return empty list
+        logger.warning("Failed to get Ray nodes, Ray may have been shut down: %s", e)
+        return handles
+
+    for node in nodes:
         if (
             "Resources" in node
             and "CPU" in node["Resources"]
@@ -154,35 +161,44 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             and node["Resources"]["memory"] > 0
             and node["NodeID"] not in existing_worker_ids
         ):
-            actor = RaySwordfishActor.options(  # type: ignore
-                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                    node_id=node["NodeID"],
-                    soft=False,
-                ),
-            ).remote(
-                num_cpus=int(node["Resources"]["CPU"]),
-                num_gpus=int(node["Resources"].get("GPU", 0)),
-            )
-            actor_handle = RaySwordfishActorHandle(actor)
-            handles.append(
-                RaySwordfishWorker(
-                    node["NodeID"],
-                    actor_handle,
-                    int(node["Resources"]["CPU"]),
-                    int(node["Resources"].get("GPU", 0)),
-                    int(node["Resources"]["memory"]),
+            try:
+                actor = RaySwordfishActor.options(  # type: ignore
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=node["NodeID"],
+                        soft=False,
+                    ),
+                ).remote(
+                    num_cpus=int(node["Resources"]["CPU"]),
+                    num_gpus=int(node["Resources"].get("GPU", 0)),
                 )
-            )
+                actor_handle = RaySwordfishActorHandle(actor)
+                handles.append(
+                    RaySwordfishWorker(
+                        node["NodeID"],
+                        actor_handle,
+                        int(node["Resources"]["CPU"]),
+                        int(node["Resources"].get("GPU", 0)),
+                        int(node["Resources"]["memory"]),
+                    )
+                )
+            except Exception as e:
+                # Log the error but continue processing other nodes
+                logger.warning("Failed to create worker for node %s: %s", node["NodeID"], e)
+                continue
 
     return handles
 
 
 def try_autoscale(bundles: list[dict[str, int]]) -> None:
-    from ray.autoscaler.sdk import request_resources
+    try:
+        from ray.autoscaler.sdk import request_resources
 
-    request_resources(
-        bundles=bundles,
-    )
+        request_resources(
+            bundles=bundles,
+        )
+    except Exception as e:
+        # Log the error but don't raise it, as autoscaling is not critical
+        logger.warning("Failed to request autoscaling resources, Ray may have been shut down: %s", e)
 
 
 class FlotillaRunnerCore:

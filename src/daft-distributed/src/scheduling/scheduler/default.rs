@@ -1,14 +1,18 @@
 use std::collections::{BinaryHeap, HashMap};
 
 use super::{PendingTask, ScheduledTask, Scheduler, WorkerSnapshot};
-use crate::scheduling::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskResourceRequest},
-    worker::WorkerId,
+use crate::{
+    scheduling::{
+        task::{SchedulingStrategy, Task, TaskDetails, TaskResourceRequest},
+        worker::WorkerId,
+    },
+    statistics::{StatisticsEvent, StatisticsManagerRef},
 };
 
 pub(super) struct DefaultScheduler<T: Task> {
     pending_tasks: BinaryHeap<PendingTask<T>>,
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
+    statistics_manager: Option<StatisticsManagerRef>,
 }
 
 impl<T: Task> Default for DefaultScheduler<T> {
@@ -22,9 +26,41 @@ impl<T: Task> DefaultScheduler<T> {
         Self {
             pending_tasks: BinaryHeap::new(),
             worker_snapshots: HashMap::new(),
+            statistics_manager: None,
         }
     }
 
+    pub fn with_statistics_manager(mut self, statistics_manager: StatisticsManagerRef) -> Self {
+        self.statistics_manager = Some(statistics_manager);
+        self
+    }
+}
+
+impl<T: Task> Drop for DefaultScheduler<T> {
+    fn drop(&mut self) {
+        tracing::debug!(
+            "Dropping DefaultScheduler, emitting TaskCancelled events for pending tasks"
+        );
+        // Emit TaskCancelled events for all pending tasks that haven't been scheduled
+        if let Some(statistics_manager) = &self.statistics_manager {
+            while let Some(pending_task) = self.pending_tasks.pop() {
+                let task_context = pending_task.task_context();
+                let event = StatisticsEvent::TaskCancelled {
+                    context: task_context,
+                };
+                // Log errors but don't panic in Drop
+                if let Err(e) = statistics_manager.handle_event(event) {
+                    tracing::error!(
+                        "Failed to emit TaskCancelled event during scheduler drop: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
+}
+
+impl<T: Task> DefaultScheduler<T> {
     // Spread scheduling: Schedule tasks to the worker with the most available slots, to
     // TODO: Change the approach to instead spread based on tasks of the same 'type', i.e. from the same pipeline node.
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
@@ -594,5 +630,65 @@ mod tests {
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
         assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_default_scheduler_drop_emits_task_cancelled_events() {
+        use std::sync::{Arc, Mutex};
+
+        use common_error::DaftResult;
+
+        use crate::statistics::{StatisticsEvent, StatisticsManager, StatisticsSubscriber};
+
+        // Create a mock statistics subscriber to capture events
+        struct MockStatisticsSubscriber {
+            events: Arc<Mutex<Vec<StatisticsEvent>>>,
+        }
+
+        impl StatisticsSubscriber for MockStatisticsSubscriber {
+            fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()> {
+                self.events.lock().unwrap().push(event.clone());
+                Ok(())
+            }
+        }
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = MockStatisticsSubscriber {
+            events: events.clone(),
+        };
+
+        let statistics_manager = StatisticsManager::new(vec![Box::new(subscriber)]);
+
+        // Create scheduler with pending tasks
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&HashMap::new());
+        scheduler = scheduler.with_statistics_manager(statistics_manager);
+
+        let tasks = vec![
+            create_spread_task(Some(1)),
+            create_spread_task(Some(2)),
+            create_spread_task(Some(3)),
+        ];
+
+        scheduler.enqueue_tasks(tasks);
+
+        // Verify tasks are pending
+        assert_eq!(scheduler.num_pending_tasks(), 3);
+
+        // Drop the scheduler - this should emit TaskCancelled events
+        drop(scheduler);
+
+        // Verify that TaskCancelled events were emitted for all pending tasks
+        let captured_events = events.lock().unwrap();
+        assert_eq!(captured_events.len(), 3);
+
+        for event in captured_events.iter() {
+            match event {
+                StatisticsEvent::TaskCancelled { context } => {
+                    // TaskCancelled events should be emitted for pending tasks
+                    assert!(context.task_id == 1 || context.task_id == 2 || context.task_id == 3);
+                }
+                _ => panic!("Expected TaskCancelled event, got {:?}", event),
+            }
+        }
     }
 }
