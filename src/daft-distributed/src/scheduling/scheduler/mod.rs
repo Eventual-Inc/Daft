@@ -232,7 +232,7 @@ impl WorkerSnapshot {
         }
         self.available_num_cpus() >= task.resource_request().num_cpus()
             && (self.available_memory_bytes() >= task.resource_request().memory_bytes()
-                || self.active_task_details.len() == 0)
+                || self.active_task_details.is_empty())
     }
 }
 
