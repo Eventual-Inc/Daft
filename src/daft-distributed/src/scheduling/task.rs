@@ -170,7 +170,11 @@ impl std::fmt::Debug for TaskDetails {
 pub(crate) enum SchedulingStrategy {
     Spread,
     // TODO: In the future if we run multiple workers on the same node, we can have a NodeAffinity strategy or a multi-worker affinity strategy
-    WorkerAffinity { worker_id: WorkerId, soft: bool },
+    #[allow(dead_code)]
+    WorkerAffinity {
+        worker_id: WorkerId,
+        soft: bool,
+    },
 }
 
 #[allow(clippy::struct_field_names)]
