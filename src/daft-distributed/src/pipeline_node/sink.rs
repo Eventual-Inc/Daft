@@ -3,20 +3,19 @@ use std::sync::Arc;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::WriteMode;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{stats::StatsState, OutputFileInfo, SinkInfo};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use super::{
-    make_new_task_from_materialized_outputs, DistributedPipelineNode, PipelineOutput,
-    RunningPipelineNode,
+    make_new_task_from_materialized_outputs, DistributedPipelineNode, SubmittableTaskStream,
 };
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     scheduling::{
-        scheduler::SchedulerHandle,
+        scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
@@ -26,7 +25,7 @@ use crate::{
 pub(crate) struct SinkNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    sink_info: Arc<SinkInfo>,
+    sink_info: Arc<SinkInfo<BoundExpr>>,
     data_schema: SchemaRef,
     child: Arc<dyn DistributedPipelineNode>,
 }
@@ -38,7 +37,7 @@ impl SinkNode {
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        sink_info: Arc<SinkInfo>,
+        sink_info: Arc<SinkInfo<BoundExpr>>,
         file_schema: SchemaRef,
         data_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -73,76 +72,69 @@ impl SinkNode {
         &self,
         input: LocalPhysicalPlanRef,
         data_schema: SchemaRef,
-    ) -> DaftResult<LocalPhysicalPlanRef> {
+    ) -> LocalPhysicalPlanRef {
         let file_schema = self.config.schema.clone();
         match self.sink_info.as_ref() {
-            SinkInfo::OutputFileInfo(info) => {
-                let info = info.clone().bind(&data_schema)?;
-                Ok(LocalPhysicalPlan::physical_write(
-                    input,
-                    data_schema,
-                    file_schema,
-                    info,
-                    StatsState::NotMaterialized,
-                ))
-            }
+            SinkInfo::OutputFileInfo(info) => LocalPhysicalPlan::physical_write(
+                input,
+                data_schema,
+                file_schema,
+                info.clone(),
+                StatsState::NotMaterialized,
+            ),
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(info) => match &info.catalog {
                 daft_logical_plan::CatalogType::DeltaLake(..)
-                | daft_logical_plan::CatalogType::Iceberg(..) => {
-                    let catalog = info.catalog.clone().bind(&data_schema)?;
-                    Ok(LocalPhysicalPlan::catalog_write(
-                        input,
-                        catalog,
-                        data_schema,
-                        file_schema,
-                        StatsState::NotMaterialized,
-                    ))
-                }
-                daft_logical_plan::CatalogType::Lance(info) => Ok(LocalPhysicalPlan::lance_write(
+                | daft_logical_plan::CatalogType::Iceberg(..) => LocalPhysicalPlan::catalog_write(
+                    input,
+                    info.catalog.clone(),
+                    data_schema,
+                    file_schema,
+                    StatsState::NotMaterialized,
+                ),
+                daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
                     input,
                     info.clone(),
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                )),
+                ),
             },
             #[cfg(feature = "python")]
-            SinkInfo::DataSinkInfo(data_sink_info) => Ok(LocalPhysicalPlan::data_sink(
+            SinkInfo::DataSinkInfo(data_sink_info) => LocalPhysicalPlan::data_sink(
                 input,
                 data_sink_info.clone(),
                 file_schema,
                 StatsState::NotMaterialized,
-            )),
+            ),
         }
     }
 
     async fn finish_writes_and_commit(
         self: Arc<Self>,
-        info: OutputFileInfo<ExprRef>,
-        input: RunningPipelineNode,
+        info: OutputFileInfo<BoundExpr>,
+        input: SubmittableTaskStream,
         scheduler: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
-        sender: Sender<PipelineOutput<SwordfishTask>>,
+        sender: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
         let file_schema = self.config.schema.clone();
-        let data_schema = self.data_schema.clone();
         let materialized_stream = input.materialize(scheduler);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
         let task = make_new_task_from_materialized_outputs(
             TaskContext::from((&self.context, task_id_counter.next())),
             materialized,
             &(self as Arc<dyn DistributedPipelineNode>),
-            &move |input| {
-                Ok(LocalPhysicalPlan::commit_write(
+            move |input| {
+                LocalPhysicalPlan::commit_write(
                     input,
-                    file_schema.clone(),
-                    info.clone().bind(&data_schema)?,
+                    file_schema,
+                    info,
                     StatsState::NotMaterialized,
-                ))
+                )
             },
         )?;
-        let _ = sender.send(PipelineOutput::Task(task)).await;
+        let _ = sender.send(task).await;
         Ok(())
     }
 
@@ -220,16 +212,19 @@ impl DistributedPipelineNode for SinkNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         let sink_node = self.clone();
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
+        let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             sink_node.create_sink_plan(input, sink_node.data_schema.clone())
         };
 
         let pipelined_node_with_writes =
-            input_node.pipeline_instruction(stage_context, self.clone(), plan_builder);
+            input_node.pipeline_instruction(self.clone(), plan_builder);
         if let SinkInfo::OutputFileInfo(info) = self.sink_info.as_ref()
             && matches!(
                 info.write_mode,
@@ -248,7 +243,7 @@ impl DistributedPipelineNode for SinkNode {
                 task_id_counter,
                 sender,
             ));
-            RunningPipelineNode::new(receiver)
+            SubmittableTaskStream::from(receiver)
         } else {
             pipelined_node_with_writes
         }

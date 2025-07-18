@@ -12,19 +12,17 @@ use daft_logical_plan::{
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, repartition::RepartitionNode,
-        translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, PipelineOutput,
+        repartition::RepartitionNode, translate::LogicalPlanToPipelineNodeTranslator, NodeID,
+        NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct HashJoinNode {
@@ -107,26 +105,6 @@ impl HashJoinNode {
         res
     }
 
-    fn make_in_memory_task(
-        self: Arc<Self>,
-        input: PipelineOutput<SwordfishTask>,
-        task_id_counter: &TaskIDCounter,
-    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-        match input {
-            PipelineOutput::Running(_) => {
-                unreachable!("All running tasks should be materialized before this point")
-            }
-            PipelineOutput::Materialized(materialized_output) => {
-                make_in_memory_scan_from_materialized_outputs(
-                    TaskContext::from((self.context(), task_id_counter.next())),
-                    vec![materialized_output],
-                    &(self as Arc<dyn DistributedPipelineNode>),
-                )
-            }
-            PipelineOutput::Task(task) => Ok(task),
-        }
-    }
-
     fn build_hash_join_task(
         &self,
         left_task: SubmittableTask<SwordfishTask>,
@@ -159,34 +137,6 @@ impl HashJoinNode {
             SchedulingStrategy::Spread,
             self.context().to_hashmap(),
         ))
-    }
-
-    async fn execution_loop(
-        self: Arc<Self>,
-        left_input: RunningPipelineNode,
-        right_input: RunningPipelineNode,
-        task_id_counter: TaskIDCounter,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
-    ) -> DaftResult<()> {
-        // Materialize both sides of the join in parallel
-        let left_transposed = left_input.materialize_running();
-        let right_transposed = right_input.materialize_running();
-        let mut outputs = left_transposed.zip(right_transposed);
-
-        // Make each pair of partition groups input into in-memory scans -> hash join
-        while let Some((left_group, right_group)) = outputs.next().await {
-            let left_task = self
-                .clone()
-                .make_in_memory_task(left_group?, &task_id_counter)?;
-            let right_task = self
-                .clone()
-                .make_in_memory_task(right_group?, &task_id_counter)?;
-
-            let task = self.build_hash_join_task(left_task, right_task, &task_id_counter);
-            let _ = result_tx.send(PipelineOutput::Task(task)).await;
-        }
-
-        Ok(())
     }
 }
 
@@ -228,20 +178,22 @@ impl DistributedPipelineNode for HashJoinNode {
         vec![self.left.clone(), self.right.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let left_input = self.left.clone().start(stage_context);
-        let right_input = self.right.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let left_input = self.left.clone().produce_tasks(stage_context);
+        let right_input = self.right.clone().produce_tasks(stage_context);
+        let task_id_counter = stage_context.task_id_counter();
 
-        let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(
-            left_input,
-            right_input,
-            stage_context.task_id_counter(),
-            result_tx,
-        );
-        stage_context.spawn(execution_loop);
-
-        RunningPipelineNode::new(result_rx)
+        SubmittableTaskStream::new(
+            left_input
+                .zip(right_input)
+                .map(move |(left_task, right_task)| {
+                    self.build_hash_join_task(left_task, right_task, &task_id_counter)
+                })
+                .boxed(),
+        )
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
