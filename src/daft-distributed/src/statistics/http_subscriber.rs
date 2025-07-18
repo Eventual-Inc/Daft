@@ -244,18 +244,19 @@ impl HttpSubscriber {
             StatisticsEvent::TaskSubmitted { context, name } => {
                 let plan_id = context.plan_id;
                 if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
-                    let task_state = plan_data
-                        .tasks
-                        .entry(*context)
-                        .or_insert_with(|| TaskState {
-                            name: name.clone(),
-                            status: TaskExecutionStatus::Created,
-                            pending: 0,
-                            completed: 0,
-                            canceled: 0,
-                            failed: 0,
-                            total: 0,
-                        });
+                    let task_state =
+                        plan_data
+                            .tasks
+                            .entry(context.clone())
+                            .or_insert_with(|| TaskState {
+                                name: name.clone(),
+                                status: TaskExecutionStatus::Created,
+                                pending: 0,
+                                completed: 0,
+                                canceled: 0,
+                                failed: 0,
+                                total: 0,
+                            });
                     task_state.total += 1;
                 }
                 // If plan doesn't exist yet, ignore the task - it will be processed when PlanSubmitted arrives
@@ -325,8 +326,19 @@ impl HttpSubscriber {
                 };
                 self.plan_data.insert(*plan_id, PlanData::new(plan_state));
             }
-            StatisticsEvent::PlanStarted { .. } | StatisticsEvent::PlanFinished { .. } => {
-                // Plan-level events don't update task state
+            StatisticsEvent::PlanFinished { plan_id, .. } => {
+                if let Some(plan_data) = self.plan_data.get_mut(plan_id) {
+                    for task_state in plan_data.tasks.values_mut() {
+                        if task_state.pending > 0 {
+                            task_state.canceled += task_state.pending;
+                            task_state.pending = 0;
+                            task_state.status = TaskExecutionStatus::Completed;
+                        }
+                    }
+                }
+            }
+            StatisticsEvent::PlanStarted { .. } => {
+                // No task state updates needed here
             }
         }
 
@@ -422,30 +434,31 @@ impl HttpSubscriber {
         }
 
         for (context, task_state) in &plan_data.tasks {
-            let node_id = context
-                .logical_node_id
-                .expect("Logical node ID must be set for optimized logical plan");
+            for logical_node_id in &context.logical_node_ids {
+                let node_id = *logical_node_id;
 
-            if let Some(existing_node) = nodes_map.get_mut(&node_id) {
-                // Update node with task information
-                existing_node.label = Self::extract_operation_name(&task_state.name);
-                existing_node.description.clone_from(&task_state.name);
-                existing_node.metadata = HashMap::from([
-                    ("plan_id".to_string(), context.plan_id.to_string()),
-                    ("stage_id".to_string(), context.stage_id.to_string()),
-                    ("node_id".to_string(), context.node_id.to_string()),
-                ]);
+                if let Some(existing_node) = nodes_map.get_mut(&node_id) {
+                    // Update node with task information
+                    existing_node.label = Self::extract_operation_name(&existing_node.label);
+                    existing_node.description.clone_from(&task_state.name);
+                    existing_node.metadata = HashMap::from([
+                        ("plan_id".to_string(), context.plan_id.to_string()),
+                        ("stage_id".to_string(), context.stage_id.to_string()),
+                        ("node_id".to_string(), node_id.to_string()),
+                    ]);
 
-                // Collect task progress per node
-                existing_node.pending += task_state.pending;
-                existing_node.completed += task_state.completed;
-                existing_node.canceled += task_state.canceled;
-                existing_node.failed += task_state.failed;
-                existing_node.total += task_state.total;
+                    // Collect task progress per node
+                    existing_node.pending += task_state.pending;
+                    existing_node.completed += task_state.completed;
+                    existing_node.canceled += task_state.canceled;
+                    existing_node.failed += task_state.failed;
+                    existing_node.total += task_state.total;
 
-                // Update status - prioritize Failed > Running > Completed > Canceled > Created
-                let new_status = Self::convert_task_status(&task_state.status);
-                existing_node.status = Self::merge_node_status(&existing_node.status, &new_status);
+                    // Update status - prioritize Failed > Running > Completed > Canceled > Created
+                    let new_status = Self::convert_task_status(&task_state.status);
+                    existing_node.status =
+                        Self::merge_node_status(&existing_node.status, &new_status);
+                }
             }
         }
 

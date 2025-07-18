@@ -7,7 +7,7 @@ use daft_logical_plan::partitioning::HashClusteringConfig;
 use daft_schema::schema::SchemaRef;
 use daft_stats::plan_stats::StatsState;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     stage::{StageConfig, StageExecutionContext},
@@ -112,18 +112,21 @@ impl DistributedPipelineNode for DistinctNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         // Pipeline the distinct op
         let self_clone = self.clone();
-        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
-            Ok(LocalPhysicalPlan::dedup(
+        input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::dedup(
                 input,
                 self_clone.columns.clone(),
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-            ))
+            )
         })
     }
 

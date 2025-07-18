@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_schema::schema::SchemaRef;
 use daft_stats::plan_stats::StatsState;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     stage::{StageConfig, StageExecutionContext},
@@ -109,24 +108,27 @@ impl DistributedPipelineNode for SampleNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         // Create the plan builder closure
         let fraction = self.fraction;
         let with_replacement = self.with_replacement;
         let seed = self.seed;
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::sample(
+        let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
+            LocalPhysicalPlan::sample(
                 input,
                 fraction,
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,
-            ))
+            )
         };
 
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        input_node.pipeline_instruction(self.clone(), plan_builder)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

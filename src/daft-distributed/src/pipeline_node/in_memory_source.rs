@@ -7,7 +7,7 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo};
 use daft_stats::plan_stats::StatsState;
 
-use super::{DistributedPipelineNode, PipelineNodeContext, PipelineOutput, RunningPipelineNode};
+use super::{DistributedPipelineNode, PipelineNodeContext, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig},
     scheduling::{
@@ -65,7 +65,7 @@ impl InMemorySourceNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let partition_refs = self.input_psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
@@ -75,11 +75,7 @@ impl InMemorySourceNode {
                 vec![partition_ref],
                 TaskContext::from((&self.context, task_id_counter.next())),
             )?;
-            if result_tx
-                .send(PipelineOutput::Task(SubmittableTask::new(task)))
-                .await
-                .is_err()
-            {
+            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
                 break;
             }
         }
@@ -148,12 +144,15 @@ impl DistributedPipelineNode for InMemorySourceNode {
         vec![]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
         stage_context.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        SubmittableTaskStream::from(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
