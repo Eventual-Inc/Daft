@@ -74,7 +74,7 @@ impl RayTaskResultHandle {
 
 impl TaskResultHandle for RayTaskResultHandle {
     fn task_context(&self) -> TaskContext {
-        self.task_context
+        self.task_context.clone()
     }
 
     /// Get the result of the task, awaiting if necessary

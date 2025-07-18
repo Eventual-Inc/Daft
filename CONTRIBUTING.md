@@ -347,6 +347,38 @@ def extract_all(self, pattern: Series, index: int = 0) -> Series:
   return self._eval_expressions("extract_all", pattern, index=index)
 ```
 
+##### Docstring Template
+
+We follow [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) python docstrings.
+
+``` py
+def method(args) -> return:
+    """Summary of method
+
+    Args:
+        arg1: description
+
+    Returns:
+        return1: description
+
+    Raises: title (optional)
+         description
+
+    Warning: title (optional)
+         description
+
+    Note: title (optional)
+         description
+
+    Examples: (make sure this is plural!)
+        >>> code example (this needs to be a runnable `doctest` example)
+        output
+
+    Tip: title (optional)
+         description
+    """
+```
+
 #### Step 4: Write tests
 
 For testing, you can add a new file, or update an existing one in `tests/expressions/`

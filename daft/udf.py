@@ -15,6 +15,7 @@ import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
 from daft.datatype import DataType, DataTypeLike
 from daft.dependencies import np, pa
+from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
 
@@ -156,14 +157,16 @@ def run_udf(
         try:
             results.append(func(*args, **kwargs))
         except Exception as user_function_exception:
+            # Remove the call-site `results.append(...)` from the traceback
+            tb = user_function_exception.__traceback__
+            user_function_exception = user_function_exception.with_traceback(tb.tb_next if tb else None)
             series_info = [
                 f"{series.name()} ({series.datatype()}, length={input_series_length})" for series in input_series_list
             ]
             error_note = f"User-defined function `{func}` failed when executing on inputs:\n" + "\n".join(
                 f"  - {info}" for info in series_info
             )
-            user_function_exception.args = (str(user_function_exception) + "\n" + error_note,)
-            raise
+            raise UDFException(error_note) from user_function_exception
 
     # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
     # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
