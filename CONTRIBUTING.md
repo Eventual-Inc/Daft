@@ -51,7 +51,7 @@ To set up your development environment:
 ### Developing
 
 1. `make build`: recompile your code after modifying any Rust code in `src/`
-2. `DAFT_RUNNER=native make test`: run tests
+2. `DAFT_RUNNER=native make test`: run tests, you can set additional run parameters through `EXTRA_ARGS`
 3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests
 4. `make docs`: build docs
 5. `make docs-serve`: build docs in development server
