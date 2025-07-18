@@ -133,7 +133,7 @@ def test_class_udf_init_args_bad_args(use_actor_pool):
         RepeatN.with_init_args(wrong=5)
 
 
-@pytest.mark.parametrize("concurrency", [1, 2, 4])
+@pytest.mark.parametrize("concurrency", [1, 2, 3])
 def test_actor_pool_udf_concurrency(concurrency):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
