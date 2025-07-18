@@ -318,7 +318,8 @@ impl ActorUDF {
             HashMap::from([(self.context.node_id.to_string(), partitions)]),
             SchedulingStrategy::WorkerAffinity {
                 worker_id,
-                soft: false,
+                // TODO: We need to cater for cases where the actor has respawned on a different node, and we need to update the node id.
+                soft: true,
             },
             self.context.to_hashmap(),
         ));
@@ -346,7 +347,7 @@ impl ActorUDF {
         // Set scheduling strategy based on whether we have a valid worker ID
         let scheduling_strategy = SchedulingStrategy::WorkerAffinity {
             worker_id,
-            soft: false,
+            soft: true,
         };
         let psets = submittable_task.task().psets().clone();
 
