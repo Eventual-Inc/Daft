@@ -28,6 +28,21 @@ pub(crate) struct ActorHandle {
 }
 
 impl ActorHandle {
+    fn is_on_current_node(&self) -> DaftResult<bool> {
+        #[cfg(feature = "python")]
+        {
+            Python::with_gil(|py| {
+                let py_actor_handle = self.inner.bind(py);
+                let is_on_current_node = py_actor_handle.call_method0(pyo3::intern!(py, "is_on_current_node"))?;
+                Ok(is_on_current_node.extract::<bool>()?)
+            })
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("Cannot check if an actor is on the current node without compiling for Python");
+        }
+    }
+
     fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         #[cfg(feature = "python")]
         {
@@ -81,8 +96,30 @@ impl DistributedActorPoolProjectOperator {
         batch_size: Option<usize>,
         memory_request: u64,
     ) -> DaftResult<Self> {
+        let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
+        
+        // Filter for actors on the current node
+        let mut local_actor_handles = Vec::new();
+        for handle in &actor_handles {
+            match handle.is_on_current_node() {
+                Ok(true) => local_actor_handles.push(handle.clone()),
+                Ok(false) => continue,
+                Err(_) => {
+                    // If we can't determine if the actor is local, include it as a fallback
+                    continue;
+                }
+            }
+        }
+        
+        // If no actors are on the current node, use all actors as fallback
+        let actor_handles = if local_actor_handles.is_empty() {
+            actor_handles
+        } else {
+            local_actor_handles
+        };
+        
         Ok(Self {
-            actor_handles: actor_handles.into_iter().map(|e| e.into()).collect(),
+            actor_handles,
             batch_size,
             memory_request,
             counter: AtomicUsize::new(0),
@@ -138,7 +175,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        let next_actor_handle_idx = self.counter.fetch_add(1, Ordering::SeqCst);
+        let next_actor_handle_idx = self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
         let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
         Ok(Box::new(DistributedActorPoolProjectState {
             actor_handle: next_actor_handle.clone(),

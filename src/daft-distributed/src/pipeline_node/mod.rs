@@ -329,10 +329,7 @@ where
         plan,
         node.config().execution_config.clone(),
         psets,
-        SchedulingStrategy::WorkerAffinity {
-            worker_id,
-            soft: true,
-        },
+        SchedulingStrategy::Spread,
         node.context().to_hashmap(),
     );
     Ok(SubmittableTask::new(task))
