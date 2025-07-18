@@ -90,8 +90,6 @@ class UdfHandle:
             tb_str = "\n".join(response[2].format())
             if sys.version_info >= (3, 11):
                 base_exc.add_note(tb_str)
-            else:
-                base_exc = base_exc.__class__(tb_str + "\n" + base_exc.args[0], *base_exc.args[1:])
             raise UDFException(response[1]) from base_exc
         elif response[0] == "error":
             raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
