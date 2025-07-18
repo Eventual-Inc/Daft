@@ -8,7 +8,7 @@ use std::{
 
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
@@ -325,7 +325,26 @@ impl LogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: u64, eager: bool) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
+        self.limit_with_offset(None, Some(limit), eager)
+    }
+
+    pub(crate) fn limit_with_offset(
+        &self,
+        offset: Option<u64>,
+        limit: Option<u64>,
+        eager: bool,
+    ) -> DaftResult<Self> {
+        ensure!(
+            offset.is_some() || limit.is_some(),
+            "LIMIT node must have offset or limit"
+        );
+        let logical_plan: LogicalPlan =
+            ops::Limit::try_new(self.plan.clone(), offset, limit, eager)?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn offset(&self, offset: u64) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::Offset::new(self.plan.clone(), offset).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1047,6 +1066,16 @@ impl PyLogicalPlanBuilder {
             )));
         }
         Ok(self.builder.limit(limit as u64, eager)?.into())
+    }
+
+    pub fn offset(&self, offset: i64) -> PyResult<Self> {
+        if offset < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "OFFSET <n> must be greater than or equal to 0, instead got: {}",
+                offset
+            )));
+        }
+        Ok(self.builder.offset(offset as u64)?.into())
     }
 
     pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {

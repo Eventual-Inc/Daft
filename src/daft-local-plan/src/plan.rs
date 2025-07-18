@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{ensure, DaftResult};
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
@@ -189,17 +189,24 @@ impl LocalPhysicalPlan {
 
     pub fn limit(
         input: LocalPhysicalPlanRef,
-        num_rows: u64,
+        offset: Option<u64>,
+        limit: Option<u64>,
         stats_state: StatsState,
-    ) -> LocalPhysicalPlanRef {
+    ) -> DaftResult<LocalPhysicalPlanRef> {
+        ensure!(
+            offset.is_some() || limit.is_some(),
+            "LIMIT node must have offset or limit"
+        );
+
         let schema = input.schema().clone();
-        Self::Limit(Limit {
+        Ok(Self::Limit(Limit {
             input,
-            num_rows,
+            offset,
+            limit,
             schema,
             stats_state,
         })
-        .arced()
+        .arced())
     }
 
     pub fn explode(
@@ -481,20 +488,27 @@ impl LocalPhysicalPlan {
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: u64,
+        offset: Option<u64>,
+        limit: Option<u64>,
         stats_state: StatsState,
-    ) -> LocalPhysicalPlanRef {
+    ) -> DaftResult<LocalPhysicalPlanRef> {
+        ensure!(
+            offset.is_some() || limit.is_some(),
+            "TopN node must have offset or limit"
+        );
+
         let schema = input.schema().clone();
-        Self::TopN(TopN {
+        Ok(Self::TopN(TopN {
             input,
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             schema,
             stats_state,
         })
-        .arced()
+        .arced())
     }
 
     pub fn sample(
@@ -816,7 +830,7 @@ impl LocalPhysicalPlan {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
                 | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
                 Self::Filter(Filter {  predicate, schema,..  }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
-                Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
+                Self::Limit(Limit {  offset, limit, .. }) => Self::limit(new_child.clone(), *offset, *limit, StatsState::NotMaterialized).unwrap(),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -833,7 +847,7 @@ impl LocalPhysicalPlan {
                 Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {  partition_by, order_by, descending, nulls_first, schema, functions, aliases, .. }) => Self::window_partition_and_order_by(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
                 Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {  partition_by, order_by, descending, nulls_first, frame, min_periods, schema, aggregations, aliases, .. }) => Self::window_partition_and_dynamic_frame(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), frame.clone(), *min_periods, schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
                 Self::WindowOrderByOnly(WindowOrderByOnly {  order_by, descending, nulls_first, schema, functions, aliases, .. }) => Self::window_order_by_only(new_child.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
-                Self::TopN(TopN {  sort_by, descending, nulls_first, limit, schema, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, StatsState::NotMaterialized),
+                Self::TopN(TopN {  sort_by, descending, nulls_first, offset, limit, schema, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *offset, *limit, StatsState::NotMaterialized).unwrap(),
                 Self::PhysicalWrite(PhysicalWrite {  data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(new_child.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
                 Self::CommitWrite(CommitWrite {  input, stats_state, file_schema, file_info, .. }) => Self::commit_write(new_child.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
@@ -967,7 +981,8 @@ pub struct Filter {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
-    pub num_rows: u64,
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -996,7 +1011,8 @@ pub struct TopN {
     pub sort_by: Vec<BoundExpr>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
-    pub limit: u64,
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

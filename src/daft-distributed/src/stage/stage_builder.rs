@@ -55,7 +55,7 @@ impl StagePlanBuilder {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 }
-            },
+            }
             LogicalPlan::Join(join) => {
                 // TODO: Support broadcast join
                 if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
@@ -89,7 +89,11 @@ impl StagePlanBuilder {
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::SubqueryAlias(_)
-            | LogicalPlan::Shard(_) => panic!("Intersect, Union, SubqueryAlias, and Shard should be optimized away before planning stages")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_) => panic!(
+                "Logical plan operator {} should be optimized away before planning stages",
+                node.name()
+            ),
         });
         can_translate
     }

@@ -100,19 +100,22 @@ mod tests {
             match plan.as_ref() {
                 PhysicalPlan::Limit(Limit {
                     input,
+                    offset,
                     limit,
                     eager,
                     num_partitions,
                 }) => {
-                    if *limit >= self.cutoff {
+                    let limit = limit.unwrap();
+                    if limit >= self.cutoff {
                         Ok(Transformed::no(plan))
                     } else {
-                        let new_plan = PhysicalPlan::Limit(Limit::new(
+                        let new_plan = PhysicalPlan::Limit(Limit::try_new(
                             input.clone(),
-                            limit + 1,
+                            *offset,
+                            Some(limit + 1),
                             *eager,
                             *num_partitions,
-                        ));
+                        )?);
                         Ok(Transformed::yes(new_plan.arced()))
                     }
                 }
@@ -129,7 +132,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::try_new(plan, None, Some(0), true, 1)?);
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
@@ -138,7 +141,10 @@ mod tests {
             PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
-        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 1, .. }));
+        assert_matches!(
+            plan.as_ref(),
+            PhysicalPlan::Limit(Limit { limit: Some(1), .. })
+        );
         Ok(())
     }
 
@@ -150,7 +156,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::try_new(plan, None, Some(0), true, 1)?);
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 2 })],
@@ -159,7 +165,10 @@ mod tests {
             PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
-        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 2, .. }));
+        assert_matches!(
+            plan.as_ref(),
+            PhysicalPlan::Limit(Limit { limit: Some(2), .. })
+        );
         Ok(())
     }
 
@@ -171,7 +180,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::try_new(plan, None, Some(0), true, 1)?);
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
@@ -180,7 +189,10 @@ mod tests {
             PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
-        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 4, .. }));
+        assert_matches!(
+            plan.as_ref(),
+            PhysicalPlan::Limit(Limit { limit: Some(4), .. })
+        );
         Ok(())
     }
 
@@ -192,7 +204,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::try_new(plan, None, Some(0), true, 1)?);
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
@@ -201,7 +213,10 @@ mod tests {
             PhysicalOptimizerConfig::new(5),
         );
         let plan = optimizer.optimize(plan.arced())?;
-        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 5, .. }));
+        assert_matches!(
+            plan.as_ref(),
+            PhysicalPlan::Limit(Limit { limit: Some(5), .. })
+        );
         Ok(())
     }
 
@@ -213,7 +228,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::try_new(plan, None, Some(0), true, 1)?);
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
@@ -222,7 +237,10 @@ mod tests {
             PhysicalOptimizerConfig::new(7),
         );
         let plan = optimizer.optimize(plan.arced())?;
-        assert_matches!(plan.as_ref(), PhysicalPlan::Limit(Limit { limit: 7, .. }));
+        assert_matches!(
+            plan.as_ref(),
+            PhysicalPlan::Limit(Limit { limit: Some(7), .. })
+        );
         Ok(())
     }
 }
