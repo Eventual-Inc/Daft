@@ -326,8 +326,19 @@ impl HttpSubscriber {
                 };
                 self.plan_data.insert(*plan_id, PlanData::new(plan_state));
             }
-            StatisticsEvent::PlanStarted { .. } | StatisticsEvent::PlanFinished { .. } => {
-                // Plan-level events don't update task state
+            StatisticsEvent::PlanFinished { plan_id, .. } => {
+                if let Some(plan_data) = self.plan_data.get_mut(plan_id) {
+                    for task_state in plan_data.tasks.values_mut() {
+                        if task_state.pending > 0 {
+                            task_state.canceled += task_state.pending;
+                            task_state.pending = 0;
+                            task_state.status = TaskExecutionStatus::Completed;
+                        }
+                    }
+                }
+            }
+            StatisticsEvent::PlanStarted { .. } => {
+                // No task state updates needed here
             }
         }
 
