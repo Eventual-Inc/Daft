@@ -17,7 +17,7 @@ use super::DistributedPipelineNode;
 use crate::{
     pipeline_node::{
         project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, RunningPipelineNode,
+        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     stage::{StageConfig, StageExecutionContext},
 };
@@ -137,28 +137,31 @@ impl DistributedPipelineNode for AggregateNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         // Pipeline the aggregation
         let self_clone = self.clone();
 
-        input_node.pipeline_instruction(stage_context, self.clone(), move |input| {
+        input_node.pipeline_instruction(self.clone(), move |input| {
             if self_clone.group_by.is_empty() {
-                Ok(LocalPhysicalPlan::ungrouped_aggregate(
+                LocalPhysicalPlan::ungrouped_aggregate(
                     input,
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                ))
+                )
             } else {
-                Ok(LocalPhysicalPlan::hash_aggregate(
+                LocalPhysicalPlan::hash_aggregate(
                     input,
                     self_clone.aggs.clone(),
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                ))
+                )
             }
         })
     }

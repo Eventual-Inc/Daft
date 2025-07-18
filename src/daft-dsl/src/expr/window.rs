@@ -1,12 +1,19 @@
 use std::{fmt, sync::Arc};
 
+use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{expr::Expr, LiteralValue};
+use crate::{
+    expr::{
+        bound_expr::{BoundAggExpr, BoundWindowExpr},
+        Expr,
+    },
+    LiteralValue, WindowExpr,
+};
 
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -224,4 +231,20 @@ impl fmt::Display for WindowSpec {
 
         write!(f, ")")
     }
+}
+
+pub fn window_to_agg_exprs(window_exprs: Vec<BoundWindowExpr>) -> DaftResult<Vec<BoundAggExpr>> {
+    window_exprs
+    .into_iter()
+    .map(|w| {
+        if let WindowExpr::Agg(agg_expr) = w.as_ref() {
+            Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
+        } else {
+            Err(DaftError::TypeError(format!(
+                "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
+                w
+            )))
+        }
+    })
+    .collect::<DaftResult<Vec<_>>>()
 }
