@@ -697,7 +697,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -726,7 +726,7 @@ mod tests {
         let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -791,7 +791,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -827,7 +827,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -870,7 +870,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -906,7 +906,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -942,7 +942,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -978,7 +978,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1008,7 +1008,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1048,7 +1048,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1105,7 +1105,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let schema = Schema::new(vec![
@@ -1153,7 +1153,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1217,7 +1217,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1243,7 +1243,7 @@ mod tests {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1278,7 +1278,7 @@ mod tests {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1315,7 +1315,7 @@ mod tests {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1350,7 +1350,7 @@ mod tests {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1385,7 +1385,7 @@ mod tests {
         let file = "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl";
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 

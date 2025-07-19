@@ -314,7 +314,7 @@ mod tests {
         let size = 9882;
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let metadata = read_parquet_metadata(file, size, io_client.clone(), None, None).await?;
