@@ -163,7 +163,7 @@ Our python tests are located in the `tests` directory, you can run all the tests
 To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest]("https://doc.rust-lang.org/cargo/commands/cargo-test.html").
 
 ```
-DAFT_RUNNER=native pytest tests/dataframe
+DAFT_RUNNER=native pytest -s tests/dataframe --log-cli-level=DEBUG
 ```
 
 #### Rust tests
