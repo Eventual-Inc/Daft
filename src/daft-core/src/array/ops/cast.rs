@@ -1282,24 +1282,25 @@ impl EmbeddingArray {
                     fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
-            (DataType::FixedSizeList(inner_dtype_fsl, size_fsl), DataType::Embedding(inner_dtype_self, size_self)) => {
-                if *size_fsl != *size_self {
-                    return Err(DaftError::ValueError(format!(
-                        "Cannot cast from EmbeddingArraySeries with size {} to FixedSizeList with size: {}", size_self, size_fsl
-                    )));
-                }
-                if **inner_dtype_fsl != **inner_dtype_self {
-                    return Err(DaftError::ValueError(format!(
-                        "Cannot cast from EmbeddingArraySeries with dtype {} to FixedSizeList with dtype: {}", inner_dtype_self, inner_dtype_fsl
-                    )));
-                }
-
-                let mut casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                Ok(FixedSizeListArray::new(
-                    self.field.clone(),
-                    self.physical
-                ))
-            }
+            // TODO remove?
+            // (DataType::FixedSizeList(inner_dtype_fsl, size_fsl), DataType::Embedding(inner_dtype_self, size_self)) => {
+            //     if *size_fsl != *size_self {
+            //         return Err(DaftError::ValueError(format!(
+            //             "Cannot cast from EmbeddingArraySeries with size {} to FixedSizeList with size: {}", size_self, size_fsl
+            //         )));
+            //     }
+            //     if **inner_dtype_fsl != **inner_dtype_self {
+            //         return Err(DaftError::ValueError(format!(
+            //             "Cannot cast from EmbeddingArraySeries with dtype {} to FixedSizeList with dtype: {}", inner_dtype_self, inner_dtype_fsl
+            //         )));
+            //     }
+            //
+            //     let mut casted_child = self.physical.cast()
+            //     Ok(FixedSizeListArray::new(
+            //         self.field.clone(),
+            //         self.physical
+            //     ))
+            // }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
             (_, _) => self.physical.cast(dtype),
         }
@@ -2555,7 +2556,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        datatypes::DataArray,
+        datatypes::{DataArray, Int32Array},
         prelude::{Decimal128Type, Float64Array},
     };
 
@@ -2704,14 +2705,34 @@ mod tests {
 
     #[test]
     fn test_fsl_to_embedding() {
-        let mut rng = rng();
-        let mut values
+        let fsl = {
+            let mut rng = rng();
+            let values = (0..100)
+                .map(|_| rng.random_range(-MAX_VAL..MAX_VAL))
+                .collect::<Vec<_>>();
+
+            let field = Arc::new(Field::new(
+                "fsl".to_string(),
+                DataType::FixedSizeList(Box::new(DataType::Float64), values.len()),
+            ));
+
+            // let arrow_vals = ;
+            let arrow_vals = arrow2::array::FixedSizeListArray::new(
+                // arrow2::datatypes::DataType::Float64,
+                Box::new(PrimitiveArray::from_values(values.into_iter())),
+                None,
+            );
+
+            FixedSizeListArray::from_arrow(field.into(), Box::new(arrow_vals)).unwrap()
+        };
+        assert!(fsl.data_type().is_fixed_size_list());
+
+        let embedding = fsl
+            .cast(&DataType::Embedding(Box::new(DataType::Float64), fsl.len()))
+            .unwrap();
+        assert!(embedding.data_type().is_embedding());
     }
 
     #[test]
-    fn test_embedding_to_fsl() {
-
-    }
-
-
+    fn test_embedding_to_fsl() {}
 }
