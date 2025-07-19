@@ -33,7 +33,11 @@ def pytest_configure(config):
 def get_tests_daft_runner_name() -> Literal["ray"] | Literal["native"]:
     """Test utility that checks the environment variable for the runner that is being used for the test."""
     name = os.getenv("DAFT_RUNNER")
-    assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
+    if name is None:
+        import warnings
+
+        warnings.warn("DAFT_RUNNER environment variable is not set, using default value 'native'")
+        name = "native"
     name = name.lower()
 
     assert name in {"ray", "native"}, f"Runner name not recognized: {name}"
