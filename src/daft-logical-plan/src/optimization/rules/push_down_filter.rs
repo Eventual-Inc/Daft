@@ -134,7 +134,7 @@ impl PushDownFilter {
                             return Ok(Transformed::no(plan));
                         }
 
-                        let data_filter = combine_conjunction(data_only_filter);
+                        let data_filter = combine_conjunction(data_only_filter.clone());
                         let partition_filter = combine_conjunction(partition_only_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
@@ -148,6 +148,42 @@ impl PushDownFilter {
                         } else {
                             new_pushdowns
                         };
+
+                        let scan_op = external_info.scan_state.get_scan_op().0.clone();
+                        let remaining_filters = if let Some(supports_pushdown) =
+                            scan_op.as_pushdown_filter()
+                        {
+                            let filters_to_push = new_pushdowns
+                                .filters
+                                .as_ref()
+                                .map(std::slice::from_ref)
+                                .unwrap_or(&[]);
+
+                            let (pushed_filters, post_filters) =
+                                supports_pushdown.push_filters(filters_to_push);
+                            let _ = new_pushdowns.with_pushed_filters(Some(pushed_filters.clone()));
+
+                            let mut seen = HashSet::new();
+                            post_filters
+                                .into_iter()
+                                .chain(
+                                    data_only_filter
+                                        .iter()
+                                        .filter(|f| !pushed_filters.contains(f))
+                                        .cloned(),
+                                )
+                                .filter(|e| seen.insert(e.clone()))
+                                .collect::<Vec<_>>()
+                        } else {
+                            data_only_filter
+                                .into_iter()
+                                .collect::<HashSet<_>>()
+                                .into_iter()
+                                .collect()
+                        };
+
+                        let needing_filter_op = remaining_filters;
+
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source: LogicalPlan = Source::new(
                             source.output_schema.clone(),

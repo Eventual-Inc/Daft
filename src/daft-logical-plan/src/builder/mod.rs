@@ -11,7 +11,10 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
+use common_scan_info::{
+    scan_builder::{ScanBuilder, ScanBuilderImpl},
+    PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy,
+};
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
@@ -170,10 +173,25 @@ impl LogicalPlanBuilder {
         scan_operator: ScanOperatorRef,
         pushdowns: Option<Pushdowns>,
     ) -> DaftResult<Self> {
-        let schema = scan_operator.0.schema();
-        let partitioning_keys = scan_operator.0.partitioning_keys();
+        let builder_pushdowns = pushdowns.clone().unwrap_or_default();
+
+        // Represents the scan operator to be used in the logical plan.
+        // If the original scan operator is a Python scanner, it is used directly.
+        // Otherwise, the scan operator is wrapped using a `ScanBuilderImpl` with the provided pushdown options.
+        let wrapped_operator = if scan_operator.0.is_python_scanner() {
+            scan_operator.0.clone()
+        } else {
+            let builder = ScanBuilderImpl::new(builder_pushdowns);
+            builder.build(scan_operator.0.clone())
+        };
+
+        let wrap_scan_op_ref = ScanOperatorRef(wrapped_operator);
+
+        let schema = wrap_scan_op_ref.0.schema();
+        let partitioning_keys = wrap_scan_op_ref.0.partitioning_keys();
+
         let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
-            scan_operator.clone(),
+            wrap_scan_op_ref.clone(),
             schema.clone(),
             partitioning_keys.into(),
             pushdowns.clone().unwrap_or_default(),
