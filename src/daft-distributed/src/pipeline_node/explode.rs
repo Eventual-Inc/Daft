@@ -6,7 +6,7 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     stage::{StageConfig, StageExecutionContext},
@@ -102,17 +102,20 @@ impl DistributedPipelineNode for ExplodeNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
         let to_explode = self.to_explode.clone();
         let schema = self.config.schema.clone();
-        input_node.pipeline_instruction(stage_context, self, move |input| {
-            Ok(LocalPhysicalPlan::explode(
+        input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-            ))
+            )
         })
     }
 

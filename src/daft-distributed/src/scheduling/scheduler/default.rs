@@ -2,13 +2,14 @@ use std::collections::{BinaryHeap, HashMap};
 
 use super::{PendingTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
-    task::{SchedulingStrategy, Task, TaskDetails},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskResourceRequest},
     worker::WorkerId,
 };
 
 pub(super) struct DefaultScheduler<T: Task> {
     pending_tasks: BinaryHeap<PendingTask<T>>,
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
+    autoscaling_threshold: f64,
 }
 
 impl<T: Task> Default for DefaultScheduler<T> {
@@ -19,10 +20,27 @@ impl<T: Task> Default for DefaultScheduler<T> {
 
 impl<T: Task> DefaultScheduler<T> {
     pub fn new() -> Self {
+        let threshold = Self::get_threshold_from_env().unwrap_or(1.25);
+        Self::with_autoscaling_threshold(threshold)
+    }
+
+    pub fn with_autoscaling_threshold(autoscaling_threshold: f64) -> Self {
+        assert!(
+            autoscaling_threshold >= 1.0,
+            "Autoscaling threshold must be >= 1.0, got: {}",
+            autoscaling_threshold
+        );
         Self {
             pending_tasks: BinaryHeap::new(),
             worker_snapshots: HashMap::new(),
+            autoscaling_threshold,
         }
+    }
+
+    fn get_threshold_from_env() -> Option<f64> {
+        std::env::var("DAFT_AUTOSCALING_THRESHOLD")
+            .ok()
+            .and_then(|val| val.parse::<f64>().ok())
     }
 
     // Spread scheduling: Schedule tasks to the worker with the most available slots, to
@@ -66,6 +84,29 @@ impl<T: Task> DefaultScheduler<T> {
             }
         }
     }
+
+    fn needs_autoscaling(&self) -> bool {
+        // If there are no pending tasks, we don't need to autoscale
+        if self.pending_tasks.is_empty() {
+            return false;
+        }
+
+        // If there are no workers, we need to autoscale
+        if self.worker_snapshots.is_empty() {
+            return true;
+        }
+
+        // If the ratio of pending tasks to total capacity is greater than the autoscaling threshold, we need to autoscale
+        let total_capacity: usize = self
+            .worker_snapshots
+            .values()
+            .map(|worker| worker.total_num_cpus() as usize)
+            .sum();
+
+        let ratio = self.pending_tasks.len() as f64 / total_capacity as f64;
+
+        ratio > self.autoscaling_threshold
+    }
 }
 
 impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
@@ -97,28 +138,25 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
     }
 
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]) {
-        for worker_snapshot in worker_snapshots {
-            if let Some(existing_snapshot) =
-                self.worker_snapshots.get_mut(&worker_snapshot.worker_id)
-            {
-                *existing_snapshot = worker_snapshot.clone();
-            } else {
-                self.worker_snapshots
-                    .insert(worker_snapshot.worker_id.clone(), worker_snapshot.clone());
-            }
-        }
+        self.worker_snapshots = worker_snapshots
+            .iter()
+            .map(|snapshot| (snapshot.worker_id.clone(), snapshot.clone()))
+            .collect();
     }
 
     fn num_pending_tasks(&self) -> usize {
         self.pending_tasks.len()
     }
 
-    fn get_autoscaling_request(&mut self) -> Option<usize> {
-        // if there's no workers, we need to scale up by the number of pending tasks
-        if self.worker_snapshots.is_empty() {
-            return Some(self.pending_tasks.len());
-        }
-        None
+    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
+        // If we need to autoscale, return the resource requests of the pending tasks
+        let needs_autoscaling = self.needs_autoscaling();
+        needs_autoscaling.then(|| {
+            self.pending_tasks
+                .iter()
+                .map(|task| task.task.resource_request().clone())
+                .collect()
+        })
     }
 }
 
@@ -581,6 +619,68 @@ mod tests {
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
-        assert_eq!(scheduler.get_autoscaling_request(), Some(1));
+        assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_default_scheduler_with_insufficient_worker_capacity_can_autoscale() {
+        let worker_1: WorkerId = Arc::from("worker1");
+
+        // Create a worker with only 1 slot available
+        let workers = setup_workers(&[
+            (worker_1.clone(), 1), // 1 slot available
+        ]);
+
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
+
+        // Create 5 tasks - more than the single worker can handle
+        let tasks = vec![
+            create_spread_task(Some(1)),
+            create_spread_task(Some(2)),
+            create_spread_task(Some(3)),
+            create_spread_task(Some(4)),
+            create_spread_task(Some(5)),
+        ];
+
+        scheduler.enqueue_tasks(tasks);
+        let result = scheduler.schedule_tasks();
+
+        // Only 1 task should be scheduled (worker capacity is 1)
+        assert_eq!(result.len(), 1);
+        assert_eq!(scheduler.num_pending_tasks(), 4);
+
+        // Should request 4 workers (ratio 5 total demand / 1 capacity = 5.0 > default threshold 1.25)
+        assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn test_default_scheduler_with_sufficient_worker_capacity_no_autoscale() {
+        let worker_1: WorkerId = Arc::from("worker1");
+        let worker_2: WorkerId = Arc::from("worker2");
+
+        // Create workers with sufficient capacity
+        let workers = setup_workers(&[
+            (worker_1.clone(), 2), // 2 slots available
+            (worker_2.clone(), 3), // 3 slots available
+        ]);
+
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
+
+        // Create 3 tasks - less than total worker capacity (5)
+        let tasks = vec![
+            create_spread_task(Some(1)),
+            create_spread_task(Some(2)),
+            create_spread_task(Some(3)),
+        ];
+
+        scheduler.enqueue_tasks(tasks);
+        let result = scheduler.schedule_tasks();
+
+        // All tasks should be scheduled
+        assert_eq!(result.len(), 3);
+        assert_eq!(scheduler.num_pending_tasks(), 0);
+
+        // Should not request autoscaling
+        assert!(scheduler.get_autoscaling_request().is_none());
     }
 }

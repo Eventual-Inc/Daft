@@ -3,7 +3,10 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use common_error::DaftResult;
 
 use super::task::{Task, TaskDetails, TaskResultHandle};
-use crate::scheduling::{scheduler::WorkerSnapshot, task::TaskContext};
+use crate::scheduling::{
+    scheduler::WorkerSnapshot,
+    task::{TaskContext, TaskResourceRequest},
+};
 
 pub(crate) type WorkerId = Arc<str>;
 
@@ -39,7 +42,8 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId);
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
-    fn try_autoscale(&self, num_cpus: usize) -> DaftResult<()>;
+    fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
+    #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
 }
 
@@ -117,9 +121,9 @@ pub(super) mod tests {
                 .collect())
         }
 
-        fn try_autoscale(&self, _num_cpus: usize) -> DaftResult<()> {
+        fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()> {
             // add 1 worker for each num_cpus
-            let num_workers = _num_cpus as usize;
+            let num_workers = resource_requests.len();
             let mut workers = self.workers.lock().expect("Failed to lock workers");
             let num_existing_workers = workers.len();
             for i in 0..num_workers {

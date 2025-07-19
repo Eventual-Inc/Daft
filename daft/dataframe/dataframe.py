@@ -1293,6 +1293,9 @@ class DataFrame:
 
         Returns:
             DataFrame: A dataframe from the micropartition returned by the DataSink's `.finalize()` method.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
         """
         sink.start()
 
@@ -1310,8 +1313,7 @@ class DataFrame:
         # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
-        write_plan_builder = to_logical_plan_builder(micropartition)
-        return DataFrame(write_plan_builder)
+        return DataFrame._from_micropartitions(micropartition)
 
     @DataframePublicAPI
     def write_lance(
@@ -1331,7 +1333,8 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Note:
-            write_lance` requires python 3.9 or higher
+            `write_lance` requires python 3.9 or higher
+            This call is **blocking** and will execute the DataFrame when called
 
         Examples:
             >>> import daft
@@ -1380,6 +1383,44 @@ class DataFrame:
         if schema is None:
             schema = self.schema()
         sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
+        return self.write_sink(sink)
+
+    @DataframePublicAPI
+    def write_turbopuffer(
+        self,
+        namespace: str,
+        api_key: Optional[str] = None,
+        region: str = "aws-us-west-2",
+        distance_metric: Optional[Literal["cosine_distance", "euclidean_squared"]] = None,
+        schema: Optional[dict[str, Any]] = None,
+        id_column: Optional[str] = None,
+        vector_column: Optional[str] = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame to a Turbopuffer namespace.
+
+        This method transforms each row of the dataframe into a turbopuffer document and writes it to the given namespace.
+        This means that an `id` column is always required. Optionally, the `id_column` parameter can be used to specify the column name to used for the id column.
+        Note that the column with the name specified by `id_column` will be renamed to "id" when written to turbopuffer.
+
+        A `vector` column is required if the namespace has a vector index. Optionally, the `vector_column` parameter can be used to specify the column name to used for the vector index.
+        Note that the column with the name specified by `vector_column` will be renamed to "vector" when written to turbopuffer.
+
+        All other columns become attributes.
+
+        For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
+
+        Args:
+            namespace: The namespace to write to.
+            api_key: Turbopuffer API key (defaults to TURBOPUFFER_API_KEY env var).
+            region: Turbopuffer region (defaults to "aws-us-west-2").
+            distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
+            schema: Optional manual schema specification.
+            id_column: Optional column name for the id column. The data sink will automatically rename the column to "id" for the id column.
+            vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.
+        """
+        from daft.io.turbopuffer.turbopuffer_data_sink import TurbopufferDataSink
+
+        sink = TurbopufferDataSink(namespace, api_key, region, distance_metric, schema, id_column, vector_column)
         return self.write_sink(sink)
 
     ###
@@ -2108,6 +2149,8 @@ class DataFrame:
         Returns:
             int: count of the number of rows in this DataFrame.
         """
+        if self._result is not None:
+            return len(self._result)
         builder = self._builder.count()
         count_df = DataFrame(builder)
         # Expects builder to produce a single-partition, single-row DataFrame containing
