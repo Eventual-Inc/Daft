@@ -25,7 +25,7 @@ impl TaskResourceRequest {
     }
 
     pub fn num_cpus(&self) -> f64 {
-        self.resource_request.num_cpus().unwrap_or(1.0)
+        self.resource_request.num_cpus().unwrap_or(0.0)
     }
 
     pub fn num_gpus(&self) -> f64 {

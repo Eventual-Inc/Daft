@@ -3,12 +3,10 @@ use std::{
     sync::Arc,
 };
 
+use daft_stats::plan_stats::{calculate::calculate_sample_stats, StatsState};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    stats::{PlanStats, StatsState},
-    LogicalPlan,
-};
+use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
@@ -69,12 +67,9 @@ impl Sample {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
         let input_stats = self.input.materialized_stats();
-        let approx_stats = input_stats
-            .approx_stats
-            .apply(|v| ((v as f64) * self.fraction) as usize);
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_sample_stats(input_stats, self.fraction);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

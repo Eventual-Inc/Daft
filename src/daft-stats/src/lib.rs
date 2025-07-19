@@ -4,6 +4,7 @@ use snafu::Snafu;
 
 mod column_stats;
 mod partition_spec;
+pub mod plan_stats;
 mod table_metadata;
 mod table_stats;
 

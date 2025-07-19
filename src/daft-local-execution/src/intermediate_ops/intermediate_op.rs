@@ -4,8 +4,8 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
-use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use daft_stats::plan_stats::PlanStats;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
@@ -88,7 +88,7 @@ pub struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    plan_stats: StatsState,
+    plan_stats: PlanStats,
     node_info: NodeInfo,
 }
 
@@ -96,7 +96,7 @@ impl IntermediateNode {
     pub(crate) fn new(
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
-        plan_stats: StatsState,
+        plan_stats: PlanStats,
         ctx: &RuntimeContext,
     ) -> Self {
         let info = ctx.next_node_info(intermediate_op.name());
@@ -112,7 +112,7 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
         runtime_stats: Arc<RuntimeStatsContext>,
-        plan_stats: StatsState,
+        plan_stats: PlanStats,
         node_info: NodeInfo,
     ) -> Self {
         Self {
@@ -211,9 +211,7 @@ impl TreeDisplay for IntermediateNode {
             level => {
                 let multiline_display = self.intermediate_op.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
-                if let StatsState::Materialized(stats) = &self.plan_stats {
-                    writeln!(display, "Stats = {}", stats).unwrap();
-                }
+                writeln!(display, "Stats = {}", self.plan_stats).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.render();

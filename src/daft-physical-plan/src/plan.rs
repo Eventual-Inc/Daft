@@ -1,12 +1,10 @@
 use std::{cmp::max, collections::HashSet, sync::Arc};
 
 use common_display::ascii::AsciiTreeDisplay;
-use daft_logical_plan::{
-    partitioning::{
-        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
-    },
-    stats::ApproxStats,
+use daft_logical_plan::partitioning::{
+    ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
 };
+use daft_stats::plan_stats::ApproxStats;
 use serde::{Deserialize, Serialize};
 
 use super::ops::*;

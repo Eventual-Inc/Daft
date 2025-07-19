@@ -8,6 +8,7 @@ daft-dsl = {path = "../daft-dsl"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 daft-proto = {path = "../daft-proto"}
 daft-schema = {path = "../daft-schema"}
+daft-stats = {path = "../daft-stats"}
 prost = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 thiserror = {workspace = true}

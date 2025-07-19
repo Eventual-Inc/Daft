@@ -402,7 +402,7 @@ mod tests {
     }
 
     fn setup_scheduler_actor_test_context(
-        worker_configs: &[(WorkerId, usize)],
+        worker_configs: &[(WorkerId, usize, usize)],
     ) -> SchedulerActorTestContext {
         let workers = setup_workers(worker_configs);
         let worker_manager = Arc::new(MockWorkerManager::new(workers));
@@ -421,7 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scheduler_actor_basic_task() -> DaftResult<()> {
-        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
+        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1, 1000)]);
 
         let partition_ref = create_mock_partition_ref(100, 1024);
         let task = MockTaskBuilder::new(partition_ref.clone()).build();
@@ -443,7 +443,7 @@ mod tests {
     async fn test_scheduler_actor_multiple_tasks() -> DaftResult<()> {
         let worker_1: WorkerId = Arc::from("worker1");
 
-        let test_context = setup_scheduler_actor_test_context(&[(worker_1.clone(), 10)]);
+        let test_context = setup_scheduler_actor_test_context(&[(worker_1.clone(), 10, 1000)]);
         let num_tasks = 1000;
         let task_duration = std::time::Duration::from_millis(100);
 
@@ -479,9 +479,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let mut test_context = setup_scheduler_actor_test_context(&[
-            (worker_1.clone(), 10),
-            (worker_2.clone(), 10),
-            (worker_3.clone(), 10),
+            (worker_1.clone(), 10, 1000),
+            (worker_2.clone(), 10, 1000),
+            (worker_3.clone(), 10, 1000),
         ]);
         let num_tasks = 3000;
         let num_concurrent_submitters = 30;
@@ -527,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scheduler_actor_cancelled_task() -> DaftResult<()> {
-        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
+        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1, 1000)]);
 
         let partition_ref = create_mock_partition_ref(100, 100);
         let (cancel_notifier, cancel_receiver) = create_oneshot_channel();
@@ -551,7 +551,7 @@ mod tests {
         let num_workers = 30;
         let mut test_context = setup_scheduler_actor_test_context(
             &(0..num_workers)
-                .map(|i| (format!("worker{}", i).into(), 1))
+                .map(|i| (format!("worker{}", i).into(), 1, 1000))
                 .collect::<Vec<_>>(),
         );
         let num_tasks = 3000;
@@ -624,7 +624,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scheduler_actor_error_from_task() -> DaftResult<()> {
-        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
+        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1, 1000)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
             .with_task_id(0)
@@ -645,7 +645,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scheduler_actor_panic_from_task() -> DaftResult<()> {
-        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
+        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1, 1000)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
             .with_task_id(0)
@@ -663,7 +663,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scheduler_actor_with_no_workers_can_autoscale() -> DaftResult<()> {
-        let test_context = setup_scheduler_actor_test_context(&[]);
+        let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1, 1000)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
             .with_task_id(0)

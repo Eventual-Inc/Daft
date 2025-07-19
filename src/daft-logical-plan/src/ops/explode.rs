@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
+use daft_stats::plan_stats::{calculate::calculate_explode_stats, StatsState};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -68,19 +68,8 @@ impl Explode {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let est_num_exploded_rows = input_stats.approx_stats.num_rows * 4;
-        let acc_selectivity = if input_stats.approx_stats.num_rows == 0 {
-            0.0
-        } else {
-            input_stats.approx_stats.acc_selectivity * est_num_exploded_rows as f64
-                / input_stats.approx_stats.num_rows as f64
-        };
-        let approx_stats = ApproxStats {
-            num_rows: est_num_exploded_rows,
-            size_bytes: input_stats.approx_stats.size_bytes,
-            acc_selectivity,
-        };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_explode_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

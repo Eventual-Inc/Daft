@@ -3,11 +3,12 @@ use std::sync::Arc;
 use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_stats::plan_stats::{calculate::calculate_sort_stats, StatsState};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{logical_plan, logical_plan::CreationSnafu, stats::StatsState, LogicalPlan};
+use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sort {
@@ -70,9 +71,9 @@ impl Sort {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // Sorting does not affect cardinality.
         let input_stats = self.input.materialized_stats();
-        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        let stats = calculate_sort_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

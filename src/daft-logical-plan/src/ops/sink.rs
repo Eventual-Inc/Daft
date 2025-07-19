@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
+use daft_stats::plan_stats::{PlanStats, StatsState};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -8,7 +9,6 @@ use crate::sink_info::CatalogType;
 use crate::{
     logical_plan::{self},
     sink_info::SinkInfo,
-    stats::{PlanStats, StatsState},
     LogicalPlan,
 };
 

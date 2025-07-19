@@ -3,12 +3,10 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{expr::window::WindowSpec, WindowExpr};
+use daft_stats::plan_stats::{calculate::calculate_window_stats, StatsState};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    logical_plan::{LogicalPlan, Result},
-    stats::StatsState,
-};
+use crate::logical_plan::{LogicalPlan, Result};
 
 /// Window operator for computing window functions.
 ///
@@ -87,9 +85,9 @@ impl Window {
     }
 
     pub fn with_materialized_stats(mut self) -> Self {
-        // For now, just use the input's stats as an approximation
         let input_stats = self.input.materialized_stats();
-        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        let stats = calculate_window_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

@@ -4,12 +4,12 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
+use daft_stats::plan_stats::{calculate::calculate_pivot_stats, StatsState};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
-    stats::StatsState,
     LogicalPlan,
 };
 
@@ -81,9 +81,9 @@ impl Pivot {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // TODO(desmond): Pivoting does affect cardinality, but for now we keep the old logic.
         let input_stats = self.input.materialized_stats();
-        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        let stats = calculate_pivot_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

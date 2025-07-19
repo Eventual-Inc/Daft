@@ -3,12 +3,10 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::{calculate::calculate_scan_stats, ApproxStats, PlanStats, StatsState};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
-    stats::{ApproxStats, PlanStats, StatsState},
-};
+use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Source {
@@ -69,40 +67,29 @@ impl Source {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        let approx_stats = match &*self.source_info {
+        let plan_stats = match &*self.source_info {
             SourceInfo::InMemory(InMemoryInfo {
                 size_bytes,
                 num_rows,
                 ..
-            }) => ApproxStats {
+            }) => PlanStats::new(ApproxStats {
                 num_rows: *num_rows,
                 size_bytes: *size_bytes,
                 acc_selectivity: 1.0,
-            },
+            }),
             SourceInfo::Physical(physical_scan_info) => match &physical_scan_info.scan_state {
                 ScanState::Operator(_) => {
                     panic!("Scan nodes should be materialized before stats are materialized")
                 }
-                ScanState::Tasks(scan_tasks) => {
-                    let mut approx_stats = ApproxStats::empty();
-                    for st in scan_tasks.iter() {
-                        if let Some(num_rows) = st.num_rows() {
-                            approx_stats.num_rows += num_rows;
-                        } else if let Some(approx_num_rows) = st.approx_num_rows(None) {
-                            approx_stats.num_rows += approx_num_rows as usize;
-                        }
-                        approx_stats.size_bytes +=
-                            st.estimate_in_memory_size_bytes(None).unwrap_or(0);
-                    }
-                    approx_stats.acc_selectivity = physical_scan_info
-                        .pushdowns
-                        .estimated_selectivity(self.output_schema.as_ref());
-                    approx_stats
-                }
+                ScanState::Tasks(scan_tasks) => calculate_scan_stats(
+                    scan_tasks,
+                    &physical_scan_info.pushdowns,
+                    &self.output_schema,
+                ),
             },
-            SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
+            SourceInfo::PlaceHolder(_) => PlanStats::new(ApproxStats::empty()),
         };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self.stats_state = StatsState::Materialized(plan_stats.into());
         self
     }
 
