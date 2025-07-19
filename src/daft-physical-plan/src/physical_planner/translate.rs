@@ -15,7 +15,7 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::agg::merge_mean,
+    functions::{agg::merge_mean, python::try_get_concurrency},
     is_partition_compatible,
     join::normalize_join_keys,
     lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
@@ -25,13 +25,12 @@ use daft_functions_list::{count_distinct, distinct};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
-        ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
-        Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-        Join as LogicalJoin, Limit as LogicalLimit,
+        Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
+        Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
         MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
         Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        Unpivot as LogicalUnpivot,
+        UDFProject as LogicalUDFProject, Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -123,13 +122,26 @@ pub(super) fn translate_single_logical_node(
                     .arced(),
             )
         }
-        LogicalPlan::ActorPoolProject(LogicalActorPoolProject { projection, .. }) => {
+        LogicalPlan::UDFProject(LogicalUDFProject {
+            project,
+            passthrough_columns,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-                input_physical,
-                projection.clone(),
-            )?)
-            .arced())
+            let projection = passthrough_columns
+                .iter()
+                .chain(std::iter::once(&project.clone()))
+                .cloned()
+                .collect();
+            if try_get_concurrency(project).is_some() {
+                Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+                    input_physical,
+                    projection,
+                )?)
+                .arced())
+            } else {
+                Ok(PhysicalPlan::Project(Project::try_new(input_physical, projection)?).arced())
+            }
         }
         LogicalPlan::Filter(LogicalFilter {
             predicate, input, ..

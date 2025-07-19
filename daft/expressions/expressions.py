@@ -398,6 +398,7 @@ class Expression:
         resource_request: ResourceRequest | None,
         batch_size: int | None,
         concurrency: int | None,
+        run_on_separate_process: bool | None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _udf(
@@ -410,6 +411,7 @@ class Expression:
                 resource_request,
                 batch_size,
                 concurrency,
+                run_on_separate_process,
             )
         )
 

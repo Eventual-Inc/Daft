@@ -518,6 +518,24 @@ impl RecordBatch {
         &self.columns
     }
 
+    pub fn append_column(&self, series: Series) -> DaftResult<Self> {
+        if self.num_rows != series.len() {
+            return Err(DaftError::ValueError(format!(
+                "Cannot append column to RecordBatch of length {} with column of length {}",
+                self.num_rows,
+                series.len()
+            )));
+        }
+
+        let mut new_schema = self.schema.as_ref().clone();
+        new_schema.append(Field::new(series.name(), series.data_type().clone()));
+
+        let mut new_columns = self.columns.as_ref().clone();
+        new_columns.push(series);
+
+        Ok(Self::new_unchecked(new_schema, new_columns, self.num_rows))
+    }
+
     fn eval_agg_expression(
         &self,
         agg_expr: &BoundAggExpr,

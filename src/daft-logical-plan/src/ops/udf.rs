@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
+use daft_core::prelude::Schema;
 use daft_dsl::{
-    count_actor_pool_udfs, exprs_to_schema,
-    functions::python::{get_concurrency, get_resource_request, get_udf_names},
+    expr::count_udfs,
+    functions::python::{get_resource_request, get_udf_names, try_get_concurrency},
     ExprRef,
 };
 use daft_schema::schema::SchemaRef;
@@ -18,35 +19,57 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ActorPoolProject {
+pub struct UDFProject {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
-    pub projection: Vec<ExprRef>,
+    // Projected column info
+    pub project: ExprRef,
+    // Additional columns to pass through
+    pub passthrough_columns: Vec<ExprRef>,
+
     pub projected_schema: SchemaRef,
     pub stats_state: StatsState,
 }
 
-impl ActorPoolProject {
+impl UDFProject {
     /// Same as try_new, but with a DaftResult return type so this can be public.
-    pub fn new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> DaftResult<Self> {
-        Ok(Self::try_new(input, projection)?)
+    pub fn new(
+        input: Arc<LogicalPlan>,
+        project: ExprRef,
+        passthrough_columns: Vec<ExprRef>,
+    ) -> DaftResult<Self> {
+        Ok(Self::try_new(input, project, passthrough_columns)?)
     }
 
-    pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
-        if !num_actor_pool_udfs == 1 {
-            return Err(Error::CreationError { source: DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")) });
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
+        project: ExprRef,
+        passthrough_columns: Vec<ExprRef>,
+    ) -> Result<Self> {
+        let num_udfs: usize = count_udfs(&[project.clone()]);
+        if num_udfs != 1 {
+            return Err(Error::CreationError {
+                source: DaftError::InternalError(format!(
+                    "Expected UDFProject to have exactly 1 UDF expression but found: {num_udfs}"
+                )),
+            });
         }
 
-        let projected_schema = exprs_to_schema(&projection, input.schema())?;
+        let fields = passthrough_columns
+            .iter()
+            .chain(std::iter::once(&project))
+            .map(|e| e.to_field(&input.schema()))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let projected_schema = Arc::new(Schema::new(fields));
 
         Ok(Self {
             plan_id: None,
             node_id: None,
             input,
-            projection,
+            project,
+            passthrough_columns,
             projected_schema,
             stats_state: StatsState::NotMaterialized,
         })
@@ -70,25 +93,29 @@ impl ActorPoolProject {
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
-        get_resource_request(self.projection.as_slice())
+        get_resource_request(&[self.project.clone()])
     }
 
-    pub fn concurrency(&self) -> usize {
-        get_concurrency(self.projection.as_slice())
+    pub fn concurrency(&self) -> Option<usize> {
+        try_get_concurrency(&self.project)
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("ActorPoolProject:".to_string());
+        res.push("UDFProject:".to_string());
         res.push(format!(
-            "Projection = [{}]",
-            self.projection.iter().map(|e| e.to_string()).join(", ")
+            "UDF {} = {}",
+            get_udf_names(&self.project).join(", "),
+            self.project
         ));
         res.push(format!(
-            "UDFs = [{}]",
-            self.projection.iter().flat_map(get_udf_names).join(", ")
+            "Passthrough columns = {}",
+            self.passthrough_columns
+                .iter()
+                .map(|c| c.to_string())
+                .join(", ")
         ));
-        res.push(format!("Concurrency = {}", self.concurrency()));
+        res.push(format!("Concurrency = {:?}", self.concurrency()));
         if let Some(resource_request) = self.resource_request() {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
