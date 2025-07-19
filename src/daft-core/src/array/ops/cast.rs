@@ -2533,11 +2533,11 @@ where
 #[cfg(test)]
 mod tests {
     use arrow2::array::PrimitiveArray;
-    use rand::{rng, thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use super::*;
     use crate::{
-        datatypes::{DataArray, Int32Array},
+        datatypes::DataArray,
         prelude::{Decimal128Type, Float64Array},
     };
 
@@ -2580,12 +2580,15 @@ mod tests {
     const MIN_DIFF_FOR_PRECISION: usize = 12;
     #[test]
     fn test_decimal_to_decimal_cast() {
-        let mut rng = thread_rng();
-        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        let mut rng = rng();
+        let mut values: Vec<f64> = (0..100)
+            .map(|_| rng.random_range(-MAX_VAL..MAX_VAL))
+            .collect();
         values.extend_from_slice(&[0.0, -0.0]);
 
-        let initial_scale: usize = rng.gen_range(0..=MAX_SCALE);
-        let initial_precision: usize = rng.gen_range(initial_scale + MIN_DIFF_FOR_PRECISION..=32);
+        let initial_scale: usize = rng.random_range(0..=MAX_SCALE);
+        let initial_precision: usize =
+            rng.random_range(initial_scale + MIN_DIFF_FOR_PRECISION..=32);
         let min_integral_comp = initial_precision - initial_scale;
         let i128_values: Vec<i128> = values
             .iter()
@@ -2594,9 +2597,9 @@ mod tests {
         let original = create_test_decimal_array(i128_values, initial_precision, initial_scale);
 
         // We always widen the Decimal, otherwise we lose information and can no longer compare with the original Decimal values.
-        let intermediate_scale: usize = rng.gen_range(initial_scale..=32 - min_integral_comp);
+        let intermediate_scale: usize = rng.random_range(initial_scale..=32 - min_integral_comp);
         let intermediate_precision: usize =
-            rng.gen_range(intermediate_scale + min_integral_comp..=32);
+            rng.random_range(intermediate_scale + min_integral_comp..=32);
 
         let result = original
             .cast(&DataType::Decimal128(
@@ -2620,13 +2623,15 @@ mod tests {
     // of floats during casting, while avoiding flakiness due small differences in floats.
     #[test]
     fn test_decimal_to_float() {
-        let mut rng = thread_rng();
-        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        let mut rng = rng();
+        let mut values: Vec<f64> = (0..100)
+            .map(|_| rng.random_range(-MAX_VAL..MAX_VAL))
+            .collect();
         values.extend_from_slice(&[0.0, -0.0]);
         let num_values = values.len();
 
-        let scale: usize = rng.gen_range(0..=MAX_SCALE);
-        let precision: usize = rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=32);
+        let scale: usize = rng.random_range(0..=MAX_SCALE);
+        let precision: usize = rng.random_range(scale + MIN_DIFF_FOR_PRECISION..=32);
         // when the scale is 0, the created decimal values are integers, the epsilon should be 1
         let epsilon = if scale == 0 { 1f64 } else { 0.1f64 };
 
@@ -2655,13 +2660,15 @@ mod tests {
     const MAX_DIFF_FOR_PRECISION: usize = 18;
     #[test]
     fn test_decimal_to_int() {
-        let mut rng = thread_rng();
-        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        let mut rng = rng();
+        let mut values: Vec<f64> = (0..100)
+            .map(|_| rng.random_range(-MAX_VAL..MAX_VAL))
+            .collect();
         values.extend_from_slice(&[0.0, -0.0]);
 
-        let scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let scale: usize = rng.random_range(0..=MAX_SCALE);
         let precision: usize =
-            rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=scale + MAX_DIFF_FOR_PRECISION);
+            rng.random_range(scale + MIN_DIFF_FOR_PRECISION..=scale + MAX_DIFF_FOR_PRECISION);
         let i128_values: Vec<i128> = values
             .iter()
             .map(|&x| (x * 10_f64.powi(scale as i32) as f64) as i128)
