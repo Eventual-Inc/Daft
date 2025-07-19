@@ -6,7 +6,7 @@ import pytest
 
 from daft.recordbatch import MicroPartition
 
-BUCKETS = ["head-retries-parquet-bucket", "get-retries-parquet-bucket"]
+BUCKETS = ["retries-parquet-bucket"]
 
 
 @pytest.mark.integration()

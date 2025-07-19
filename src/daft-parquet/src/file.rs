@@ -211,12 +211,8 @@ impl ParquetReaderBuilder {
         io_stats: Option<IOStatsRef>,
         field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     ) -> super::Result<Self> {
-        // TODO(sammy): We actually don't need this since we can do negative offsets when reading the metadata
-        let size = io_client
-            .single_url_get_size(uri.into(), io_stats.clone())
-            .await?;
         let metadata =
-            read_parquet_metadata(uri, size, io_client, io_stats, field_id_mapping).await?;
+            read_parquet_metadata(uri, None, io_client, io_stats, field_id_mapping, None).await?;
         Ok(Self {
             uri: uri.into(),
             metadata,

@@ -29,9 +29,9 @@ use unity::UnitySource;
 mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
-mod range;
+pub mod range;
 
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
@@ -284,18 +284,14 @@ impl IOClient {
     pub async fn single_url_get(
         &self,
         input: String,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
 
         let get_result = source
-            .get(
-                path.as_ref(),
-                range.clone().map(GetRange::from),
-                io_stats.clone(),
-            )
+            .get(path.as_ref(), range.clone(), io_stats.clone())
             .await?;
         Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }
