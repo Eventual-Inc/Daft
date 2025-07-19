@@ -488,7 +488,6 @@ def write_lance(
     kwargs: dict[str, Any] | None,
 ) -> MicroPartition:
     import lance
-
     from daft.io.object_store_options import io_config_to_storage_options
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
