@@ -19,28 +19,34 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
     [
-        ([1, 2, None], pa.int64(), DataType.int64(), DataType.int64()),
-        (["a", "b", ""], pa.large_string(), DataType.string(), DataType.string()),
+        # ALREADY TESTED
+        # ([1, 2, None], pa.int64(), DataType.int64(), DataType.int64()),
+        # # ALREADY TESTED
+        # (["a", "b", ""], pa.large_string(), DataType.string(), DataType.string()),
         # TODO(desmond): Arrow-rs writes binaries as strings of hexadecimals. Technically the JSON spec (RFC 8259) does not
         #                support BINARY. In practice, libraries such as SIMD-JSON expects binary to be represented as a
         #                string that's properly encoded e.g. you can encode your binary values in base64.
         #                We should make our readers and writers compatible.
         # ([b"a", b"b", b""], pa.large_binary(), DataType.binary(), DataType.string()),
-        ([True, False, None], pa.bool_(), DataType.bool(), DataType.bool()),
-        ([None, None, None], pa.null(), DataType.null(), DataType.null()),
+        # ALREADY TESTED
+        # ([True, False, None], pa.bool_(), DataType.bool(), DataType.bool()),
+        # ALREADY TESTED
+        # ([None, None, None], pa.null(), DataType.null(), DataType.null()),
         (
             [decimal.Decimal("1.23"), decimal.Decimal("1.24"), None],
             pa.decimal128(16, 8),
             DataType.decimal128(16, 8),
             DataType.float64(),
         ),
-        ([datetime.date(1994, 1, 1), datetime.date(1995, 1, 1), None], pa.date32(), DataType.date(), DataType.date()),
-        (
-            [datetime.time(1, 2, 3, 4), datetime.time(5, 6, 7, 8), None],
-            pa.time64("us"),
-            DataType.time(TimeUnit.us()),
-            DataType.time(TimeUnit.us()),
-        ),
+        # ALREADY TESTED
+        # ([datetime.date(1994, 1, 1), datetime.date(1995, 1, 1), None], pa.date32(), DataType.date(), DataType.date()),
+        # ALREADY TESTED
+        # (
+        #     [datetime.time(1, 2, 3, 4), datetime.time(5, 6, 7, 8), None],
+        #     pa.time64("us"),
+        #     DataType.time(TimeUnit.us()),
+        #     DataType.time(TimeUnit.us()),
+        # ),
         (
             [datetime.time(1, 2, 3, 4), datetime.time(5, 6, 7, 8), None],
             pa.time64("ns"),
