@@ -381,6 +381,18 @@ impl PySeries {
         Ok(self.series.fill_null(&fill_value.series)?.into())
     }
 
+    pub fn fill_null_with_strategy(
+        &self,
+        fill_value: Option<&Self>,
+        strategy: &crate::join::FillNullStrategy,
+    ) -> PyResult<Self> {
+        let fill_value = fill_value.map(|v| &v.series);
+        Ok(self
+            .series
+            .fill_null_with_strategy(fill_value, *strategy)?
+            .into())
+    }
+
     pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
         let values = bincode::serialize(&self.series).unwrap();
         Ok(PyBytes::new(py, &values).into())

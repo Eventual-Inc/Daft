@@ -293,10 +293,21 @@ fn translate_clustering_spec_expr(
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             Ok(newchild.not_null())
         }
-        Expr::FillNull(child, fill_value) => {
+        Expr::FillNull(child, fill_value, strategy) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newfill = translate_clustering_spec_expr(fill_value, old_colname_to_new_colname)?;
-            Ok(newchild.fill_null(newfill))
+            match (fill_value, strategy) {
+                (Some(fv), daft_core::join::FillNullStrategy::Value) => {
+                    let newfill = translate_clustering_spec_expr(fv, old_colname_to_new_colname)?;
+                    Ok(newchild.fill_null(newfill))
+                }
+                (None, strategy) => {
+                    use daft_dsl::ExprRef;
+                    Ok(ExprRef::new(daft_dsl::Expr::FillNull(
+                        newchild, None, *strategy,
+                    )))
+                }
+                _ => Err(()),
+            }
         }
         Expr::IsIn(child, items) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;

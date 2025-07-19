@@ -89,7 +89,11 @@ impl ToFromProto for ir::Expr {
             proto::ExprVariant::FillNull(fill_null) => {
                 let expr = from_proto_arc(fill_null.expr)?;
                 let fill_value = from_proto_arc(fill_null.fill_value)?;
-                Self::FillNull(expr, fill_value)
+                Self::FillNull(
+                    expr,
+                    Some(fill_value),
+                    daft_core::join::FillNullStrategy::Value,
+                )
             }
             proto::ExprVariant::IsIn(is_in) => {
                 let expr = from_proto_arc(is_in.expr)?;
@@ -212,13 +216,16 @@ impl ToFromProto for ir::Expr {
                 let expr = expr.to_proto()?.into();
                 proto::ExprVariant::NotNull(proto::NotNull { expr: Some(expr) }.into())
             }
-            Self::FillNull(expr, fill_value) => {
+            Self::FillNull(expr, fill_value, _strategy) => {
                 let expr = expr.to_proto()?.into();
-                let fill_value = fill_value.to_proto()?.into();
+                let fill_value = match fill_value {
+                    Some(fv) => Some(fv.to_proto()?.into()),
+                    None => None,
+                };
                 proto::ExprVariant::FillNull(
                     proto::FillNull {
                         expr: Some(expr),
-                        fill_value: Some(fill_value),
+                        fill_value,
                     }
                     .into(),
                 )

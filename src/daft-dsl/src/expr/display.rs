@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use daft_core::join::FillNullStrategy;
 use itertools::Itertools;
 
 use super::{Expr, ExprRef, Operator};
@@ -49,5 +50,19 @@ pub fn expr_list_display_without_formatter(
         "list({})",
         items.iter().map(|x| x.to_string()).join(", ")
     )?;
+    Ok(f)
+}
+
+/// Display for Expr::FillNull
+pub fn expr_fill_null_display_without_formatter(
+    expr: &ExprRef,
+    fill_value: Option<&ExprRef>,
+    strategy: &FillNullStrategy,
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    match fill_value {
+        Some(fv) => write!(&mut f, "fill_null({}, {}, {})", expr, fv, strategy)?,
+        None => write!(&mut f, "fill_null({}, None, {})", expr, strategy)?,
+    }
     Ok(f)
 }

@@ -23,7 +23,7 @@ use daft_core::{
         try_mean_aggregation_supertype, try_skew_aggregation_supertype,
         try_stddev_aggregation_supertype, try_sum_supertype, InferDataType,
     },
-    join::JoinSide,
+    join::{FillNullStrategy, JoinSide},
     prelude::*,
     utils::supertype::{try_get_collection_supertype, try_get_supertype},
 };
@@ -261,8 +261,8 @@ pub enum Expr {
     #[display("not_null({_0})")]
     NotNull(ExprRef),
 
-    #[display("fill_null({_0}, {_1})")]
-    FillNull(ExprRef, ExprRef),
+    #[display("{}", display::expr_fill_null_display_without_formatter(_0, _1.as_ref(), _2)?)]
+    FillNull(ExprRef, Option<ExprRef>, FillNullStrategy),
 
     #[display("{}", display::expr_is_in_display_without_formatter(_0, _1)?)]
     IsIn(ExprRef, Vec<ExprRef>),
@@ -1052,7 +1052,15 @@ impl Expr {
     }
 
     pub fn fill_null(self: ExprRef, fill_value: ExprRef) -> ExprRef {
-        Self::FillNull(self, fill_value).into()
+        Self::FillNull(self, Some(fill_value), FillNullStrategy::Value).into()
+    }
+
+    pub fn fill_null_with_strategy(
+        self: ExprRef,
+        fill_value: Option<ExprRef>,
+        strategy: FillNullStrategy,
+    ) -> ExprRef {
+        Self::FillNull(self, fill_value, strategy).into()
     }
 
     pub fn is_in(self: ExprRef, items: Vec<ExprRef>) -> ExprRef {
@@ -1165,10 +1173,15 @@ impl Expr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.not_null()"))
             }
-            Self::FillNull(expr, fill_value) => {
+            Self::FillNull(expr, fill_value, strategy) => {
                 let child_id = expr.semantic_id(schema);
-                let fill_value_id = fill_value.semantic_id(schema);
-                FieldID::new(format!("{child_id}.fill_null({fill_value_id})"))
+                let fill_value_id = fill_value.as_ref().map(|fv| fv.semantic_id(schema));
+                match fill_value_id {
+                    Some(fv_id) => {
+                        FieldID::new(format!("{child_id}.fill_null({fv_id}, {strategy})"))
+                    }
+                    None => FieldID::new(format!("{child_id}.fill_null(None, {strategy})")),
+                }
             }
             Self::IsIn(expr, items) => {
                 let child_id = expr.semantic_id(schema);
@@ -1299,7 +1312,13 @@ impl Expr {
             } => {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
-            Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
+            Self::FillNull(expr, fill_value, _) => {
+                let mut children = vec![expr.clone()];
+                if let Some(fv) = fill_value {
+                    children.push(fv.clone());
+                }
+                children
+            }
             Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
         }
     }
@@ -1364,10 +1383,11 @@ impl Expr {
                 children.get(1).expect("Should have 2 child").clone(),
                 children.get(2).expect("Should have 3 child").clone(),
             ),
-            Self::FillNull(..) => Self::FillNull(
-                children.first().expect("Should have 1 child").clone(),
-                children.get(1).expect("Should have 2 child").clone(),
-            ),
+            Self::FillNull(_, _, strategy) => {
+                let expr = children.first().expect("Should have 1 child").clone();
+                let fill_value = children.get(1).cloned();
+                Self::FillNull(expr, fill_value, *strategy)
+            }
             // ternary
             Self::IfElse { .. } => Self::IfElse {
                 if_true: children.first().expect("Should have 1 child").clone(),
@@ -1458,14 +1478,24 @@ impl Expr {
             }
             Self::IsNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
             Self::NotNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
-            Self::FillNull(expr, fill_value) => {
+            Self::FillNull(expr, fill_value, strategy) => {
                 let expr_field = expr.to_field(schema)?;
-                let fill_value_field = fill_value.to_field(schema)?;
-                match try_get_supertype(&expr_field.dtype, &fill_value_field.dtype) {
-                    Ok(supertype) => Ok(Field::new(expr_field.name.as_str(), supertype)),
-                    Err(_) => Err(DaftError::TypeError(format!(
-                        "Expected expr and fill_value arguments for fill_null to be castable to the same supertype, but received {expr_field} and {fill_value_field}",
-                    )))
+                match (fill_value, strategy) {
+                    (Some(fv), FillNullStrategy::Value) => {
+                        let fill_value_field = fv.to_field(schema)?;
+                        match try_get_supertype(&expr_field.dtype, &fill_value_field.dtype) {
+                            Ok(supertype) => Ok(Field::new(expr_field.name.as_str(), supertype)),
+                            Err(_) => Err(DaftError::TypeError(format!(
+                                "Expected expr and fill_value arguments for fill_null to be castable to the same supertype, but received {expr_field} and {fill_value_field}",
+                            )))
+                        }
+                    }
+                    (None, FillNullStrategy::Forward | FillNullStrategy::Backward) => {
+                        Ok(expr_field)
+                    }
+                    _ => Err(DaftError::ValueError(
+                        "Invalid combination of fill_value and strategy".to_string(),
+                    )),
                 }
             }
             Self::IsIn(expr, items) => {
@@ -1800,7 +1830,9 @@ impl Expr {
             Self::Not(expr) => expr.has_compute(),
             Self::IsNull(expr) => expr.has_compute(),
             Self::NotNull(expr) => expr.has_compute(),
-            Self::FillNull(expr, fill_value) => expr.has_compute() || fill_value.has_compute(),
+            Self::FillNull(expr, fill_value, _) => {
+                expr.has_compute() || fill_value.as_ref().is_some_and(|fv| fv.has_compute())
+            }
             Self::IfElse {
                 if_true,
                 if_false,
@@ -2067,7 +2099,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }
-        | Expr::FillNull(_, _) => match expr.to_field(schema) {
+        | Expr::FillNull(_, _, _) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,
             _ => 1.0,
         },

@@ -660,11 +660,38 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.not_null())
 
-    def fill_null(self, fill_value: object) -> Series:
-        if not isinstance(fill_value, Series):
-            raise ValueError(f"expected another Series but got {type(fill_value)}")
-        assert self._series is not None and fill_value._series is not None
-        return Series._from_pyseries(self._series.fill_null(fill_value._series))
+    def fill_null(self, fill_value: object = None, *, strategy: str = "value") -> Series:
+        # Handle backward compatibility
+        if fill_value is not None and strategy == "value":
+            if not isinstance(fill_value, Series):
+                raise ValueError(f"expected another Series but got {type(fill_value)}")
+            assert self._series is not None and fill_value._series is not None
+            return Series._from_pyseries(self._series.fill_null(fill_value._series))
+
+        # Handle new strategy-based API
+        if strategy not in ("value", "forward", "backward"):
+            raise ValueError(f"strategy must be one of 'value', 'forward', 'backward', got {strategy}")
+
+        if strategy == "value" and fill_value is None:
+            raise ValueError("fill_value must be provided when strategy is 'value'")
+
+        if strategy in ("forward", "backward") and fill_value is not None:
+            raise ValueError(f"fill_value should not be provided when strategy is '{strategy}'")
+
+        # Convert strategy string to enum internally
+        from daft.daft import FillNullStrategy  # type: ignore
+
+        strategy_enum = FillNullStrategy.from_fill_null_strategy_str(strategy)
+
+        # Convert fill_value to Series if needed
+        fill_value_series = None
+        if fill_value is not None:
+            if not isinstance(fill_value, Series):
+                raise ValueError(f"expected another Series but got {type(fill_value)}")
+            fill_value_series = fill_value._series
+
+        assert self._series is not None
+        return Series._from_pyseries(self._series.fill_null_with_strategy(fill_value_series, strategy_enum))  # type: ignore
 
     def minhash(
         self,
