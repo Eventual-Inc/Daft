@@ -128,6 +128,9 @@ from daft.udf import udf, _DaftFunc as func
 from daft.viz import register_viz_hook
 from daft.window import Window
 
+import daft.context as context
+import daft.io as io
+
 to_struct = Expression.to_struct
 
 __all__ = [
@@ -137,6 +140,7 @@ __all__ = [
     "DataFrame",
     "DataType",
     "Expression",
+    "IOConfig",
     "Identifier",
     "ImageFormat",
     "ImageMode",
@@ -153,6 +157,7 @@ __all__ = [
     "attach_table",
     "coalesce",
     "col",
+    "context",
     "create_namespace",
     "create_namespace_if_not_exists",
     "create_table",
@@ -182,6 +187,7 @@ __all__ = [
     "has_namespace",
     "has_table",
     "interval",
+    "io",
     "list_",
     "list_catalogs",
     "list_tables",
