@@ -17,6 +17,7 @@ use daft_core::{
         display_time64, display_timestamp,
     },
 };
+use daft_hash::HashFunctionKind;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -137,7 +138,7 @@ impl Hash for LiteralValue {
                 scale.hash(state);
             }
             Self::Series(series) => {
-                let hash_result = series.hash(None);
+                let hash_result = series.hash(None, HashFunctionKind::XxHash);
                 match hash_result {
                     Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
                     Err(..) => panic!("Cannot hash series"),
@@ -547,7 +548,6 @@ impl LiteralValue {
                 *tu,
                 tz.clone(),
             )),
-            DataType::Date => Ok(Self::Date(s.date()?.get(idx).ok_or_else(err)?)),
             DataType::Time(time_unit) => {
                 Ok(Self::Time(s.time()?.get(idx).ok_or_else(err)?, *time_unit))
             }
