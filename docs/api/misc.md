@@ -9,5 +9,3 @@
 ::: daft.daft.ImageFormat
     options:
         filters: ["!^_"]
-
-<!-- fix: how come there's no source? -->

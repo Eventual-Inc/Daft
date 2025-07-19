@@ -1,38 +1,54 @@
 # Configuration
 
-Configure the execution backend, Daft in various ways during execution, and how Daft interacts with storage.
+Configure Daft's execution backend, runtime behavior, and storage interactions for optimal performance.
+
+<div class="grid cards api" markdown>
+
+* [**Setting the Runner**](#setting-the-runner)
+
+    Control which execution backend (native or Ray) Daft uses for distributed processing.
+
+* [**Setting Configurations**](#setting-configurations)
+
+    Configure Daft's planning and execution behavior during runtime.
+
+* [**I/O Configuration**s](#io-configurations)
+
+    Configure storage credentials, retry policies, and performance settings.
+
+</div>
 
 ## Setting the Runner
 
 Control the execution backend that Daft will run on by calling these functions once at the start of your application.
 
-::: daft.context.set_runner_native
-    options:
-        heading_level: 3
+<!-- BEGIN GENERATED TABLE -->
+| Method | Description |
+|--------|-------------|
+| [`set_runner_native`][daft.context.set_runner_native] | Configure Daft to execute dataframes using native multi-threaded processing. |
+| [`set_runner_ray`][daft.context.set_runner_ray] | Configure Daft to execute dataframes using the Ray distributed computing framework. |
+<!-- END GENERATED TABLE -->
 
+::: daft.context.set_runner_native
 ::: daft.context.set_runner_ray
-    options:
-        heading_level: 3
 
 ## Setting Configurations
 
 Configure Daft in various ways during execution.
 
-::: daft.context.set_planning_config
-    options:
-        heading_level: 3
-
-::: daft.context.planning_config_ctx
-    options:
-        heading_level: 3
-
-::: daft.context.set_execution_config
-    options:
-        heading_level: 3
+<!-- BEGIN GENERATED TABLE -->
+| Method | Description |
+|--------|-------------|
+| [`execution_config_ctx`][daft.context.execution_config_ctx] | Context manager that wraps set_execution_config to reset the config to its original setting afternwards. |
+| [`planning_config_ctx`][daft.context.planning_config_ctx] | Context manager that wraps set_planning_config to reset the config to its original setting afternwards. |
+| [`set_execution_config`][daft.context.set_execution_config] | Globally sets various configuration parameters which control various aspects of Daft execution. |
+| [`set_planning_config`][daft.context.set_planning_config] | Globally sets various configuration parameters which control Daft plan construction behavior. |
+<!-- END GENERATED TABLE -->
 
 ::: daft.context.execution_config_ctx
-    options:
-        heading_level: 3
+::: daft.context.planning_config_ctx
+::: daft.context.set_execution_config
+::: daft.context.set_planning_config
 
 ## I/O Configurations
 
