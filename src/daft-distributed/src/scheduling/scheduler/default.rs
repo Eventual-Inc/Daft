@@ -183,9 +183,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 3), // 3 slots available
-            (worker_2.clone(), 3), // 3 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 3, 1000), // 3 slots available
+            (worker_2.clone(), 3, 1000), // 3 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -226,9 +226,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -269,9 +269,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 1), // 1 slot available
-            (worker_3.clone(), 2), // 2 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 1, 1000), // 1 slot available
+            (worker_3.clone(), 2, 1000), // 2 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -325,9 +325,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -385,15 +385,24 @@ mod tests {
         let worker_2: WorkerId = Arc::from("worker2");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 1), // 1 slot available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 1, 1000), // 1 slot available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
 
         // Add a lot of low priority tasks
         let tasks = (0..100)
-            .map(|_| create_schedulable_task(MockTaskBuilder::default().with_priority(1).build()))
+            .map(|_| {
+                create_schedulable_task(
+                    MockTaskBuilder::default()
+                        .with_priority(1)
+                        .with_resource_request(
+                            ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(),
+                        )
+                        .build(),
+                )
+            })
             .collect();
 
         scheduler.enqueue_tasks(tasks);
@@ -404,8 +413,14 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 98);
 
         // Add a high-priority task
-        let high_priority_task =
-            create_schedulable_task(MockTaskBuilder::default().with_priority(100).build());
+        let high_priority_task = create_schedulable_task(
+            MockTaskBuilder::default()
+                .with_priority(100)
+                .with_resource_request(
+                    ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(),
+                )
+                .build(),
+        );
         scheduler.enqueue_tasks(vec![high_priority_task]);
 
         // The high-priority task should not be scheduled because worker1 is full
@@ -415,7 +430,7 @@ mod tests {
 
         // Update scheduler state to add a new worker with 1 slot available
         let worker_3: WorkerId = Arc::from("worker3");
-        let new_worker = MockWorker::new(worker_3.clone(), 1.0, 0.0);
+        let new_worker = MockWorker::new(worker_3.clone(), 1.0, 0.0, 1000);
         let new_worker_snapshot = WorkerSnapshot::from(&new_worker);
         scheduler.update_worker_state(&[new_worker_snapshot]);
 
@@ -433,9 +448,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -502,9 +517,9 @@ mod tests {
         let worker_3: WorkerId = Arc::from("worker3");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 2), // 2 slots available
-            (worker_3.clone(), 3), // 3 slots available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 2, 1000), // 2 slots available
+            (worker_3.clone(), 3, 1000), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -574,8 +589,8 @@ mod tests {
         let worker_2: WorkerId = Arc::from("worker2");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 1), // 1 slot available
+            (worker_1.clone(), 1, 1000), // 1 slot available
+            (worker_2.clone(), 1, 1000), // 1 slot available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);

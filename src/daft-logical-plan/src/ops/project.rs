@@ -7,13 +7,13 @@ use daft_dsl::{
     functions::FunctionArgs, optimization, resolved_col, AggExpr, ApproxPercentileParams, Column,
     Expr, ExprRef,
 };
+use daft_stats::plan_stats::{calculate::calculate_project_stats, StatsState};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
-    stats::StatsState,
     LogicalPlan,
 };
 
@@ -78,9 +78,9 @@ impl Project {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
         let input_stats = self.input.materialized_stats();
-        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        let stats = calculate_project_stats(input_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

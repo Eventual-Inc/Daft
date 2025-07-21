@@ -18,7 +18,7 @@ use daft_local_plan::{
     WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
-use daft_logical_plan::{stats::StatsState, JoinType};
+use daft_logical_plan::JoinType;
 use daft_micropartition::{
     partitioning::{MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
@@ -217,21 +217,15 @@ pub fn physical_plan_to_pipeline(
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
-        LocalPhysicalPlan::PlaceholderScan(_) => {
-            panic!("PlaceholderScan should not be converted to a pipeline node")
-        }
-        LocalPhysicalPlan::EmptyScan(EmptyScan {
-            schema,
-            stats_state,
-        }) => {
+        LocalPhysicalPlan::EmptyScan(EmptyScan { schema, stats }) => {
             let source = EmptyScanSource::new(schema.clone());
-            SourceNode::new(source.arced(), stats_state.clone(), ctx).boxed()
+            SourceNode::new(source.arced(), stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             scan_tasks,
             pushdowns,
             schema,
-            stats_state,
+            stats,
         }) => {
             let scan_tasks = scan_tasks
                 .iter()
@@ -240,13 +234,13 @@ pub fn physical_plan_to_pipeline(
 
             let scan_task_source =
                 ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
-            SourceNode::new(scan_task_source.arced(), stats_state.clone(), ctx).boxed()
+            SourceNode::new(scan_task_source.arced(), stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::WindowPartitionOnly(WindowPartitionOnly {
             input,
             partition_by,
             schema,
-            stats_state,
+            stats,
             aggregations,
             aliases,
         }) => {
@@ -259,7 +253,7 @@ pub fn physical_plan_to_pipeline(
             BlockingSinkNode::new(
                 Arc::new(window_partition_only_sink),
                 input_node,
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
@@ -271,7 +265,7 @@ pub fn physical_plan_to_pipeline(
             descending,
             nulls_first,
             schema,
-            stats_state,
+            stats,
             functions,
             aliases,
         }) => {
@@ -291,7 +285,7 @@ pub fn physical_plan_to_pipeline(
             BlockingSinkNode::new(
                 Arc::new(window_partition_and_order_by_sink),
                 input_node,
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
@@ -305,7 +299,7 @@ pub fn physical_plan_to_pipeline(
             frame,
             min_periods,
             schema,
-            stats_state,
+            stats,
             aggregations,
             aliases,
         }) => {
@@ -327,7 +321,7 @@ pub fn physical_plan_to_pipeline(
             BlockingSinkNode::new(
                 Arc::new(window_partition_and_dynamic_frame_sink),
                 input_node,
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
@@ -338,7 +332,7 @@ pub fn physical_plan_to_pipeline(
             descending,
             nulls_first,
             schema,
-            stats_state,
+            stats,
             functions,
             aliases,
         }) => {
@@ -357,12 +351,12 @@ pub fn physical_plan_to_pipeline(
             BlockingSinkNode::new(
                 Arc::new(window_order_by_only_op),
                 input_node,
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
         }
-        LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats_state }) => {
+        LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, stats }) => {
             let cache_key: Arc<str> = info.cache_key.clone().into();
 
             let materialized_pset = psets.get_partition_set(&cache_key);
@@ -372,12 +366,12 @@ pub fn physical_plan_to_pipeline(
                 info.size_bytes,
             )
             .arced();
-            SourceNode::new(in_memory_source, stats_state.clone(), ctx).boxed()
+            SourceNode::new(in_memory_source, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Project(Project {
             input,
             projection,
-            stats_state,
+            stats,
             ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone()).with_context(|_| {
@@ -386,18 +380,12 @@ pub fn physical_plan_to_pipeline(
                 }
             })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(proj_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node], stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::ActorPoolProject(ActorPoolProject {
             input,
             projection,
-            stats_state,
+            stats,
             ..
         }) => {
             let proj_op =
@@ -407,13 +395,7 @@ pub fn physical_plan_to_pipeline(
                     }
                 })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(proj_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node], stats.clone(), ctx).boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::DistributedActorPoolProject(
@@ -422,7 +404,7 @@ pub fn physical_plan_to_pipeline(
                 actor_objects,
                 batch_size,
                 memory_request,
-                stats_state,
+                stats,
                 ..
             },
         ) => {
@@ -438,7 +420,7 @@ pub fn physical_plan_to_pipeline(
             IntermediateNode::new(
                 Arc::new(distributed_actor_pool_project_op),
                 vec![child_node],
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
@@ -448,66 +430,48 @@ pub fn physical_plan_to_pipeline(
             fraction,
             with_replacement,
             seed,
-            stats_state,
+            stats,
             ..
         }) => {
             let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(sample_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            IntermediateNode::new(Arc::new(sample_op), vec![child_node], stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input,
             predicate,
-            stats_state,
+            stats,
             ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(filter_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            IntermediateNode::new(Arc::new(filter_op), vec![child_node], stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
-            stats_state,
+            stats,
             ..
         }) => {
             let explode_op = ExplodeOperator::new(to_explode.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(explode_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            IntermediateNode::new(Arc::new(explode_op), vec![child_node], stats.clone(), ctx)
+                .boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input,
             num_rows,
-            stats_state,
+            stats,
             ..
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            StreamingSinkNode::new(Arc::new(sink), vec![child_node], stats_state.clone(), ctx)
-                .boxed()
+            StreamingSinkNode::new(Arc::new(sink), vec![child_node], stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Concat(Concat {
             input,
             other,
-            stats_state,
+            stats,
             ..
         }) => {
             let left_child = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -516,7 +480,7 @@ pub fn physical_plan_to_pipeline(
             StreamingSinkNode::new(
                 Arc::new(sink),
                 vec![left_child, right_child],
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
@@ -524,7 +488,7 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -533,13 +497,13 @@ pub fn physical_plan_to_pipeline(
                     plan_name: physical_plan.name(),
                 }
             })?;
-            BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats_state.clone(), ctx).boxed()
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
             aggregations,
             group_by,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -547,20 +511,19 @@ pub fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
-            BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats_state.clone(), ctx).boxed()
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Dedup(Dedup {
             input,
             columns,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let dedup_sink = DedupSink::new(columns).with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
-            BlockingSinkNode::new(Arc::new(dedup_sink), child_node, stats_state.clone(), ctx)
-                .boxed()
+            BlockingSinkNode::new(Arc::new(dedup_sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Unpivot(Unpivot {
             input,
@@ -568,7 +531,7 @@ pub fn physical_plan_to_pipeline(
             values,
             variable_name,
             value_name,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -578,13 +541,8 @@ pub fn physical_plan_to_pipeline(
                 variable_name.clone(),
                 value_name.clone(),
             );
-            IntermediateNode::new(
-                Arc::new(unpivot_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            IntermediateNode::new(Arc::new(unpivot_op), vec![child_node], stats.clone(), ctx)
+                .boxed()
         }
         LocalPhysicalPlan::Pivot(Pivot {
             input,
@@ -593,7 +551,7 @@ pub fn physical_plan_to_pipeline(
             value_column,
             aggregation,
             names,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -604,20 +562,19 @@ pub fn physical_plan_to_pipeline(
                 aggregation.clone(),
                 names.clone(),
             );
-            BlockingSinkNode::new(Arc::new(pivot_sink), child_node, stats_state.clone(), ctx)
-                .boxed()
+            BlockingSinkNode::new(Arc::new(pivot_sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
             sort_by,
             descending,
             nulls_first,
-            stats_state,
+            stats,
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            BlockingSinkNode::new(Arc::new(sort_sink), child_node, stats_state.clone(), ctx).boxed()
+            BlockingSinkNode::new(Arc::new(sort_sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::TopN(TopN {
             input,
@@ -625,7 +582,7 @@ pub fn physical_plan_to_pipeline(
             descending,
             nulls_first,
             limit,
-            stats_state,
+            stats,
             ..
         }) => {
             let sink = TopNSink::new(
@@ -635,14 +592,14 @@ pub fn physical_plan_to_pipeline(
                 *limit as usize,
             );
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            BlockingSinkNode::new(Arc::new(sink), child_node, stats_state.clone(), ctx).boxed()
+            BlockingSinkNode::new(Arc::new(sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
             starting_offset,
             schema,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -654,7 +611,7 @@ pub fn physical_plan_to_pipeline(
             StreamingSinkNode::new(
                 Arc::new(monotonically_increasing_id_sink),
                 vec![child_node],
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
@@ -667,7 +624,7 @@ pub fn physical_plan_to_pipeline(
             null_equals_null,
             join_type,
             schema,
-            stats_state,
+            stats,
             ..
         }) => {
             let left_schema = left.schema();
@@ -676,86 +633,36 @@ pub fn physical_plan_to_pipeline(
             // To determine whether to use the left or right side of a join for building a probe table, we consider:
             // 1. Cardinality of the sides. Probe tables should be built on the smaller side.
             // 2. Join type. Different join types have different requirements for which side can build the probe table.
-            let left_stats_state = left.get_stats_state();
-            let right_stats_state = right.get_stats_state();
+            let left_stats = left.materialized_stats();
+            let right_stats = right.materialized_stats();
             let build_on_left = match join_type {
-                // Inner and outer joins can build on either side. If stats are available, choose the smaller side.
-                // Else, default to building on the left.
-                JoinType::Inner | JoinType::Outer => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        left_size <= right_size
-                    }
-                    // If stats are only available on the right side of the join, and the upper bound bytes on the
-                    // right are under the broadcast join size threshold, we build on the right instead of the left.
-                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
-                        right_stats.approx_stats.size_bytes
-                            > cfg.broadcast_join_size_bytes_threshold
-                    }
-                    _ => true,
-                },
+                // Inner and outer joins can build on either side. Choose the smaller side.
+                JoinType::Inner | JoinType::Outer => {
+                    let left_size = left_stats.approx_stats.num_rows;
+                    let right_size = right_stats.approx_stats.num_rows;
+                    left_size <= right_size
+                }
                 // Left joins can build on the left side, but prefer building on the right because building on left requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
-                JoinType::Left => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        right_size as f64 >= left_size as f64 * 1.5
-                    }
-                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
-                    // are under the broadcast join size threshold, we build on the left instead of the right.
-                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                        left_stats.approx_stats.size_bytes
-                            <= cfg.broadcast_join_size_bytes_threshold
-                    }
-                    _ => false,
-                },
+                // of used indices in a bitmap.
+                JoinType::Left => {
+                    let left_size = left_stats.approx_stats.num_rows;
+                    let right_size = right_stats.approx_stats.num_rows;
+                    right_size as f64 >= left_size as f64 * 1.5
+                }
                 // Right joins can build on the right side, but prefer building on the left because building on right requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the right side if its smaller than the left side by a factor of 1.5.
-                JoinType::Right => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        (right_size as f64 * 1.5) >= left_size as f64
-                    }
-                    // If stats are only available on the right side of the join, and the upper bound bytes on the
-                    // right are under the broadcast join size threshold, we build on the right instead of the left.
-                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
-                        right_stats.approx_stats.size_bytes
-                            > cfg.broadcast_join_size_bytes_threshold
-                    }
-                    _ => true,
-                },
+                // of used indices in a bitmap. Only select the right side if its smaller than the left side by a factor of 1.5.
+                JoinType::Right => {
+                    let left_size = left_stats.approx_stats.num_rows;
+                    let right_size = right_stats.approx_stats.num_rows;
+                    (right_size as f64 * 1.5) >= left_size as f64
+                }
                 // Anti/semi joins can build on the left side, but prefer building on the right because building on left requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
-                JoinType::Anti | JoinType::Semi => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        right_size as f64 > left_size as f64 * 1.5
-                    }
-                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
-                    // are under the broadcast join size threshold, we build on the left instead of the right.
-                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                        left_stats.approx_stats.size_bytes
-                            <= cfg.broadcast_join_size_bytes_threshold
-                    }
-                    // Else, default to building on the right
-                    _ => false,
-                },
+                // of used indices in a bitmap. Only select the left side if its smaller than the right side by a factor of 1.5.
+                JoinType::Anti | JoinType::Semi => {
+                    let left_size = left_stats.approx_stats.num_rows;
+                    let right_size = right_stats.approx_stats.num_rows;
+                    right_size as f64 > left_size as f64 * 1.5
+                }
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
                 true => (left_on, right_on, left, right),
@@ -804,7 +711,7 @@ pub fn physical_plan_to_pipeline(
                 let build_node = BlockingSinkNode::new(
                     Arc::new(build_sink),
                     build_child_node,
-                    build_child.get_stats_state().clone(),
+                    build_child.materialized_stats().clone(),
                     ctx
                 )
                 .boxed();
@@ -821,7 +728,7 @@ pub fn physical_plan_to_pipeline(
                             build_on_left,
                         )),
                         vec![build_node, probe_child_node],
-                        stats_state.clone(),
+                        stats.clone(),
                         ctx
                     )
                     .boxed()),
@@ -836,7 +743,7 @@ pub fn physical_plan_to_pipeline(
                             probe_state_bridge,
                         )),
                         vec![build_node, probe_child_node],
-                        stats_state.clone(),
+                        stats.clone(),
                         ctx
                     )
                     .boxed()),
@@ -853,7 +760,7 @@ pub fn physical_plan_to_pipeline(
                                 probe_state_bridge,
                             )?),
                             vec![build_node, probe_child_node],
-                            stats_state.clone(),
+                            stats.clone(),
                             ctx
                         )
                         .boxed())
@@ -868,26 +775,16 @@ pub fn physical_plan_to_pipeline(
             left,
             right,
             schema,
-            stats_state,
+            stats,
             ..
         }) => {
-            let left_stats_state = left.get_stats_state();
-            let right_stats_state = right.get_stats_state();
+            let left_stats = left.materialized_stats();
+            let right_stats = right.materialized_stats();
 
             // To determine whether to use the left or right side of a join for collecting vs streaming, we choose
             // the larger side to stream so that it can be parallelized via an intermediate op. Default to left side.
-            let stream_on_left = match (left_stats_state, right_stats_state) {
-                (StatsState::Materialized(left_stats), StatsState::Materialized(right_stats)) => {
-                    left_stats.approx_stats.num_rows > right_stats.approx_stats.num_rows
-                }
-                // If stats are only available on the left side of the join, and the upper bound bytes on the
-                // left are under the broadcast join size threshold, we stream on the right.
-                (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                    left_stats.approx_stats.size_bytes > cfg.broadcast_join_size_bytes_threshold
-                }
-                // If stats are not available, we fall back and stream on the left by default.
-                _ => true,
-            };
+            let stream_on_left =
+                left_stats.approx_stats.num_rows > right_stats.approx_stats.num_rows;
 
             let stream_side = if stream_on_left {
                 JoinSide::Left
@@ -907,7 +804,7 @@ pub fn physical_plan_to_pipeline(
             let collect_node = BlockingSinkNode::new(
                 Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
                 collect_child_node,
-                collect_child.get_stats_state().clone(),
+                collect_child.materialized_stats().clone(),
                 ctx,
             )
             .boxed();
@@ -919,7 +816,7 @@ pub fn physical_plan_to_pipeline(
                     state_bridge,
                 )),
                 vec![collect_node, stream_child_node],
-                stats_state.clone(),
+                stats.clone(),
                 ctx,
             )
             .boxed()
@@ -928,7 +825,7 @@ pub fn physical_plan_to_pipeline(
             input,
             file_info,
             file_schema,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -951,27 +848,25 @@ pub fn physical_plan_to_pipeline(
                 file_info.partition_cols.clone(),
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
-                .boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::CommitWrite(CommitWrite {
             input,
             file_schema,
             file_info,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let write_sink = CommitWriteSink::new(file_schema.clone(), file_info.clone());
-            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
-                .boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats.clone(), ctx).boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
             input,
             catalog_type,
             file_schema,
-            stats_state,
+            stats,
             ..
         }) => {
             use daft_logical_plan::CatalogType;
@@ -1010,15 +905,14 @@ pub fn physical_plan_to_pipeline(
                 partition_by,
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
-                .boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats.clone(), ctx).boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::LanceWrite(daft_local_plan::LanceWrite {
             input,
             lance_info,
             file_schema,
-            stats_state,
+            stats,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -1029,15 +923,14 @@ pub fn physical_plan_to_pipeline(
                 None,
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
-                .boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats.clone(), ctx).boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::DataSink(daft_local_plan::DataSink {
             input,
             data_sink_info,
             file_schema,
-            stats_state,
+            stats,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let writer_factory =
@@ -1048,26 +941,19 @@ pub fn physical_plan_to_pipeline(
                 None,
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
-                .boxed()
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
             input,
             columns,
             num_partitions,
-            stats_state,
+            stats,
             schema,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let repartition_op =
                 RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
-            BlockingSinkNode::new(
-                Arc::new(repartition_op),
-                child_node,
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            BlockingSinkNode::new(Arc::new(repartition_op), child_node, stats.clone(), ctx).boxed()
         }
     };
 

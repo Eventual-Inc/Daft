@@ -2,12 +2,15 @@ use std::sync::Arc;
 
 use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::{
+    calculate::{calculate_hash_aggregate_stats, calculate_ungrouped_aggregate_stats},
+    StatsState,
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -65,32 +68,16 @@ impl Aggregate {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // TODO(desmond): We can use the schema here for better estimations. For now, use the old logic.
         let input_stats = self.input.materialized_stats();
-        let est_bytes_per_row =
-            input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
-        let acc_selectivity = if input_stats.approx_stats.num_rows == 0 {
-            0.0
+        let stats = if self.groupby.is_empty() {
+            calculate_ungrouped_aggregate_stats(input_stats)
         } else {
-            input_stats.approx_stats.acc_selectivity / input_stats.approx_stats.num_rows as f64
+            calculate_hash_aggregate_stats(
+                input_stats,
+                &self.groupby.iter().map(|e| e.as_ref()).collect::<Vec<_>>(),
+            )
         };
-        let approx_stats = if self.groupby.is_empty() {
-            ApproxStats {
-                num_rows: 1,
-                size_bytes: est_bytes_per_row,
-                acc_selectivity,
-            }
-        } else {
-            // Assume high cardinality for group by columns, and 80% of rows are unique.
-            let est_num_groups = input_stats.approx_stats.num_rows * 4 / 5;
-            ApproxStats {
-                num_rows: est_num_groups,
-                size_bytes: est_bytes_per_row * est_num_groups,
-                acc_selectivity: input_stats.approx_stats.acc_selectivity * est_num_groups as f64
-                    / input_stats.approx_stats.num_rows as f64,
-            }
-        };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

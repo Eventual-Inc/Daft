@@ -157,6 +157,7 @@ pub(crate) struct WorkerSnapshot {
     worker_id: WorkerId,
     total_num_cpus: f64,
     total_num_gpus: f64,
+    total_memory_bytes: usize,
     active_task_details: HashMap<TaskContext, TaskDetails>,
 }
 
@@ -165,12 +166,14 @@ impl WorkerSnapshot {
         worker_id: WorkerId,
         total_num_cpus: f64,
         total_num_gpus: f64,
+        total_memory_bytes: usize,
         active_task_details: HashMap<TaskContext, TaskDetails>,
     ) -> Self {
         Self {
             worker_id,
             total_num_cpus,
             total_num_gpus,
+            total_memory_bytes,
             active_task_details,
         }
     }
@@ -189,12 +192,23 @@ impl WorkerSnapshot {
             .sum::<f64>()
     }
 
+    pub fn active_memory_bytes(&self) -> usize {
+        self.active_task_details
+            .values()
+            .map(|details| details.memory_bytes())
+            .sum::<usize>()
+    }
+
     pub fn available_num_cpus(&self) -> f64 {
         self.total_num_cpus - self.active_num_cpus()
     }
 
     pub fn available_num_gpus(&self) -> f64 {
         self.total_num_gpus - self.active_num_gpus()
+    }
+
+    pub fn available_memory_bytes(&self) -> usize {
+        self.total_memory_bytes - self.active_memory_bytes()
     }
 
     #[allow(dead_code)]
@@ -218,6 +232,8 @@ impl WorkerSnapshot {
             return false;
         }
         self.available_num_cpus() >= task.resource_request().num_cpus()
+            && (self.available_memory_bytes() >= task.resource_request().memory_bytes()
+                || self.active_task_details.is_empty())
     }
 }
 
@@ -233,6 +249,7 @@ impl<W: Worker> From<&W> for WorkerSnapshot {
             worker.id().clone(),
             worker.total_num_cpus(),
             worker.total_num_gpus(),
+            worker.total_memory_bytes(),
             worker.active_task_details(),
         )
     }
@@ -243,6 +260,8 @@ pub(super) mod test_utils {
 
     use std::collections::HashMap;
 
+    use common_resource_request::ResourceRequest;
+
     use super::*;
     use crate::scheduling::{
         task::TaskID,
@@ -251,11 +270,11 @@ pub(super) mod test_utils {
     };
 
     // Helper function to create workers with given configurations
-    pub fn setup_workers(configs: &[(WorkerId, usize)]) -> HashMap<WorkerId, MockWorker> {
+    pub fn setup_workers(configs: &[(WorkerId, usize, usize)]) -> HashMap<WorkerId, MockWorker> {
         configs
             .iter()
-            .map(|(id, num_slots)| {
-                let worker = MockWorker::new(id.clone(), *num_slots as f64, 0.0);
+            .map(|(id, num_slots, memory_bytes)| {
+                let worker = MockWorker::new(id.clone(), *num_slots as f64, 0.0, *memory_bytes);
                 (id.clone(), worker)
             })
             .collect::<HashMap<_, _>>()
@@ -287,6 +306,9 @@ pub(super) mod test_utils {
     pub fn create_spread_task(id: Option<TaskID>) -> PendingTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::Spread)
+            .with_resource_request(
+                ResourceRequest::try_new_internal(Some(1.0), Some(0.0), Some(10)).unwrap(),
+            )
             .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)
@@ -302,6 +324,9 @@ pub(super) mod test_utils {
                 worker_id: worker_id.clone(),
                 soft,
             })
+            .with_resource_request(
+                ResourceRequest::try_new_internal(Some(1.0), Some(0.0), Some(10)).unwrap(),
+            )
             .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)

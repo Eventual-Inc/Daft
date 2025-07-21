@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{estimated_selectivity, ExprRef};
+use daft_dsl::ExprRef;
+use daft_stats::plan_stats::{calculate::calculate_filter_stats, StatsState};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -57,18 +57,9 @@ impl Filter {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // Assume no row/column pruning in cardinality-affecting operations.
-        // TODO(desmond): We can do better estimations here. For now, reuse the old logic.
         let input_stats = self.input.materialized_stats();
-        let estimated_selectivity = estimated_selectivity(&self.predicate, &self.input.schema());
-        let approx_stats = ApproxStats {
-            num_rows: (input_stats.approx_stats.num_rows as f64 * estimated_selectivity).ceil()
-                as usize,
-            size_bytes: (input_stats.approx_stats.size_bytes as f64 * estimated_selectivity).ceil()
-                as usize,
-            acc_selectivity: input_stats.approx_stats.acc_selectivity * estimated_selectivity,
-        };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_filter_stats(input_stats, &self.predicate, &self.input.schema());
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

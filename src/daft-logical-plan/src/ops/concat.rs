@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
+use daft_stats::plan_stats::{calculate::calculate_concat_stats, StatsState};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
-    stats::{PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -55,11 +55,10 @@ impl Concat {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
-        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
         let input_stats = self.input.materialized_stats();
         let other_stats = self.other.materialized_stats();
-        let approx_stats = &input_stats.approx_stats + &other_stats.approx_stats;
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_concat_stats(input_stats, other_stats);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

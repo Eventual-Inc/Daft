@@ -109,6 +109,10 @@ impl Worker for RaySwordfishWorker {
         self.num_gpus
     }
 
+    fn total_memory_bytes(&self) -> usize {
+        self.total_memory_bytes
+    }
+
     fn active_num_cpus(&self) -> f64 {
         self.active_task_details
             .values()

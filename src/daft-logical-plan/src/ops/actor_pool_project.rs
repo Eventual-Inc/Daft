@@ -8,12 +8,12 @@ use daft_dsl::{
     ExprRef,
 };
 use daft_schema::schema::SchemaRef;
+use daft_stats::plan_stats::StatsState;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{Error, Result},
-    stats::StatsState,
     LogicalPlan,
 };
 

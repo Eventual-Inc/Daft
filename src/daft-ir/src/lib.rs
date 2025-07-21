@@ -66,6 +66,7 @@ pub mod rel {
 
     use common_error::DaftError;
     use common_error::DaftResult;
+    use daft_stats::plan_stats::StatsState;
     pub use daft_logical_plan::*;
     pub use daft_logical_plan::ops::*;
     use crate::schema::Schema;
@@ -120,7 +121,7 @@ pub mod rel {
         let input: Arc<LogicalPlan> = input.into();
         let predicate: Arc<Expr> = predicate.into();
         Ok(Filter { plan_id: None,
-            node_id: None, input, predicate, stats_state: stats::StatsState::NotMaterialized })
+            node_id: None, input, predicate, stats_state: StatsState::NotMaterialized })
     }
 
     /// Creates a new limit relational operator.
@@ -130,7 +131,7 @@ pub mod rel {
     {
         let input: Arc<LogicalPlan> = input.into();
         Ok(Limit { plan_id: None,
-            node_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
+            node_id: None, input, limit, eager: false, stats_state: StatsState::NotMaterialized })
     }
 
     /// Creates a new distinct relational operator.
@@ -140,7 +141,7 @@ pub mod rel {
     {
         let input: Arc<LogicalPlan> = input.into();
         Ok(Distinct { plan_id: None,
-            node_id: None, input, stats_state: stats::StatsState::NotMaterialized, columns: None })
+            node_id: None, input, stats_state: StatsState::NotMaterialized, columns: None })
     }
 
     /// Creates a new concat relational operator.
@@ -151,7 +152,7 @@ pub mod rel {
         let lhs = lhs.into();
         let rhs = rhs.into();
         Ok(Concat { plan_id: None,
-            node_id: None, input: lhs, other: rhs, stats_state: stats::StatsState::NotMaterialized })
+            node_id: None, input: lhs, other: rhs, stats_state: StatsState::NotMaterialized })
     }
 
     /// Creates a new intersect relational operator.

@@ -4,8 +4,8 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
-use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use daft_stats::plan_stats::PlanStats;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -82,7 +82,7 @@ pub struct StreamingSinkNode {
     name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    plan_stats: StatsState,
+    plan_stats: PlanStats,
     node_info: NodeInfo,
 }
 
@@ -90,7 +90,7 @@ impl StreamingSinkNode {
     pub(crate) fn new(
         op: Arc<dyn StreamingSink>,
         children: Vec<Box<dyn PipelineNode>>,
-        plan_stats: StatsState,
+        plan_stats: PlanStats,
         ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name();
@@ -197,9 +197,7 @@ impl TreeDisplay for StreamingSinkNode {
             level => {
                 let multiline_display = self.op.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
-                if let StatsState::Materialized(stats) = &self.plan_stats {
-                    writeln!(display, "Stats = {}", stats).unwrap();
-                }
+                writeln!(display, "Stats = {}", self.plan_stats).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.render();
                     for (name, value) in rt_result {

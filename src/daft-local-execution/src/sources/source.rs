@@ -6,8 +6,8 @@ use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_io::{IOStatsContext, IOStatsRef};
-use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use daft_stats::plan_stats::PlanStats;
 use futures::{stream::BoxStream, StreamExt};
 use indexmap::IndexMap;
 use indicatif::HumanCount;
@@ -57,13 +57,13 @@ pub trait Source: Send + Sync {
 pub(crate) struct SourceNode {
     source: Arc<dyn Source>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    plan_stats: StatsState,
+    plan_stats: PlanStats,
     io_stats: IOStatsRef,
     node_info: NodeInfo,
 }
 
 impl SourceNode {
-    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
+    pub fn new(source: Arc<dyn Source>, plan_stats: PlanStats, ctx: &RuntimeContext) -> Self {
         let info = ctx.next_node_info(source.name());
         let runtime_stats = RuntimeStatsContext::new_with_builder(
             info.clone(),
@@ -97,9 +97,7 @@ impl TreeDisplay for SourceNode {
                 let multiline_display = self.source.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
 
-                if let StatsState::Materialized(stats) = &self.plan_stats {
-                    writeln!(display, "Stats = {}", stats).unwrap();
-                }
+                writeln!(display, "Stats = {}", self.plan_stats).unwrap();
 
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.render();

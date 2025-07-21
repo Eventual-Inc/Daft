@@ -3,14 +3,12 @@ use std::sync::Arc;
 use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_stats::plan_stats::{calculate::calculate_top_n_stats, StatsState};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{
-    logical_plan::{CreationSnafu, LogicalPlan, Result},
-    stats::{ApproxStats, PlanStats, StatsState},
-};
+use crate::logical_plan::{CreationSnafu, LogicalPlan, Result};
 
 /// TopN operator for computing the largest / smallest N rows based on a set of
 /// sort keys and orderings.
@@ -91,29 +89,8 @@ impl TopN {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let limit = self.limit as usize;
-        let limit_selectivity = if input_stats.approx_stats.num_rows > limit {
-            if input_stats.approx_stats.num_rows == 0 {
-                0.0
-            } else {
-                limit as f64 / input_stats.approx_stats.num_rows as f64
-            }
-        } else {
-            1.0
-        };
-
-        let approx_stats = ApproxStats {
-            num_rows: limit.min(input_stats.approx_stats.num_rows),
-            size_bytes: if input_stats.approx_stats.num_rows > limit {
-                let est_bytes_per_row =
-                    input_stats.approx_stats.size_bytes / input_stats.approx_stats.num_rows.max(1);
-                limit * est_bytes_per_row
-            } else {
-                input_stats.approx_stats.size_bytes
-            },
-            acc_selectivity: input_stats.approx_stats.acc_selectivity * limit_selectivity,
-        };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        let stats = calculate_top_n_stats(input_stats, self.limit);
+        self.stats_state = StatsState::Materialized(stats.into());
         self
     }
 

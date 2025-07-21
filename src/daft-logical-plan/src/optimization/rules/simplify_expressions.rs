@@ -46,13 +46,13 @@ mod test {
     use daft_core::prelude::Schema;
     use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_schema::{dtype::DataType, field::Field};
+    use daft_stats::plan_stats::StatsState;
 
     use super::SimplifyExpressionsRule;
     use crate::{
         ops::{Filter, Project, Source},
         optimization::rules::OptimizerRule,
         source_info::PlaceHolderInfo,
-        stats::StatsState,
         ClusteringSpec, LogicalPlan, LogicalPlanBuilder, SourceInfo,
     };
 
