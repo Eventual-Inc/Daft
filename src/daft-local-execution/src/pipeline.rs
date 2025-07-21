@@ -1042,7 +1042,7 @@ pub fn physical_plan_to_pipeline(
             let writer_factory =
                 daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
             let write_sink = WriteSink::new(
-                WriteFormat::DataSink,
+                WriteFormat::DataSink(data_sink_info.name.clone()),
                 writer_factory,
                 None,
                 file_schema.clone(),
