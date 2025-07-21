@@ -331,7 +331,7 @@ class Series:
         return Series._from_pyseries(self._series.sort(descending, nulls_first))
 
     def hash(self, seed: Series | None = None) -> Series:
-        return self._eval_expressions("hash", seed=seed)
+        return self._eval_expressions("hash_with", seed=seed)
 
     def murmur3_32(self) -> Series:
         return Series._from_pyseries(self._series.murmur3_32())

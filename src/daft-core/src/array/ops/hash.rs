@@ -27,14 +27,10 @@ impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,
 {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -47,14 +43,10 @@ where
 }
 
 impl Utf8Array {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -67,14 +59,10 @@ impl Utf8Array {
 }
 
 impl BinaryArray {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -87,14 +75,10 @@ impl BinaryArray {
 }
 
 impl FixedSizeBinaryArray {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -107,14 +91,10 @@ impl FixedSizeBinaryArray {
 }
 
 impl BooleanArray {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -127,14 +107,10 @@ impl BooleanArray {
 }
 
 impl NullArray {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -174,7 +150,7 @@ fn hash_list(
                 let hashed_child = flat_child
                     .slice(start, end)
                     .ok()?
-                    .hash(Some(&flat_seed), hash_function)
+                    .hash_with(Some(&flat_seed), hash_function)
                     .ok()?;
                 let child_bytes: Vec<u8> = hashed_child
                     .as_arrow()
@@ -206,7 +182,7 @@ fn hash_list(
         )
         .with_validity(combined_validity)
     } else {
-        let hashed_child = flat_child.hash(None, hash_function)?;
+        let hashed_child = flat_child.hash_with(None, hash_function)?;
         let child_bytes: Vec<u8> = hashed_child
             .as_arrow()
             .values_iter()
@@ -241,14 +217,10 @@ fn hash_list(
 }
 
 impl ListArray {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -265,14 +237,10 @@ impl ListArray {
 }
 
 impl FixedSizeListArray {
-    pub fn hash(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, hash_function)
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
     }
-    pub fn hash_with_specified_algorithm(
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
         _hash_function: HashFunctionKind,
@@ -292,19 +260,27 @@ impl FixedSizeListArray {
 }
 
 impl StructArray {
-    pub fn hash(
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with(seed, HashFunctionKind::XxHash)
+    }
+
+    pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
+        _hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         if self.children.is_empty() {
             return Err(DaftError::ValueError(
                 "Cannot hash struct with no children".into(),
             ));
         }
-        let mut res = self.children.first().unwrap().hash(seed, hash_function)?;
+        let mut res = self
+            .children
+            .first()
+            .unwrap()
+            .hash_with(seed, _hash_function)?;
         for child in self.children.iter().skip(1) {
-            res = child.hash(Some(&res), hash_function)?;
+            res = child.hash_with(Some(&res), _hash_function)?;
         }
         res.rename(self.name())
             .with_validity(self.validity().cloned())
