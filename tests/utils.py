@@ -37,7 +37,7 @@ def random_numerical_embedding(
     floating point values before rounding them to make integer vectors. Only applicable when
     :param:`dtype` is a signed or unsigned integer. Must be nonzero.
 
-    :raises:`ValueError` if :param:`mult_for_int_like` is nonzero and :param:``dtype` is integer.
+    :raises:`ValueError` if :param:`mult_for_int_like` is nonzero and :param:`dtype` is integer.
     """
     if dtype in (np.float32, np.float64):
         return rng.random(size=(size,), dtype=dtype)
