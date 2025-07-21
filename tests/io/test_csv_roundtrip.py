@@ -63,10 +63,6 @@ PYARROW_GE_11_0_0: bool = tuple(int(s) for s in pa.__version__.split(".") if s.i
             # NOTE: Duration ends up being written as int64
             DataType.int64(),
         ),
-        # TODO: Verify that these types throw an error when we write dataframes with them
-        # ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
-        # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
-        # ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, expected_inferred_dtype):
