@@ -117,8 +117,8 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
-    fn name(&self) -> &'static str {
-        "HashJoinBuild"
+    fn name(&self) -> Arc<str> {
+        Arc::from("HashJoinBuild")
     }
 
     fn multiline_display(&self) -> Vec<String> {

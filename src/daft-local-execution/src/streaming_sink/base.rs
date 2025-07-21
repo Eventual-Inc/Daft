@@ -57,7 +57,7 @@ pub trait StreamingSink: Send + Sync {
     ) -> StreamingSinkFinalizeResult;
 
     /// The name of the StreamingSink operator.
-    fn name(&self) -> &'static str;
+    fn name(&self) -> Arc<str>;
 
     fn multiline_display(&self) -> Vec<String>;
 
@@ -79,7 +79,6 @@ pub trait StreamingSink: Send + Sync {
 
 pub struct StreamingSinkNode {
     op: Arc<dyn StreamingSink>,
-    name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
@@ -97,7 +96,6 @@ impl StreamingSinkNode {
         let node_info = ctx.next_node_info(name);
         Self {
             op,
-            name,
             children,
             runtime_stats: RuntimeStatsContext::new(node_info.clone()),
             plan_stats,
@@ -226,8 +224,8 @@ impl PipelineNode for StreamingSinkNode {
             .collect()
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -236,8 +234,8 @@ impl PipelineNode for StreamingSinkNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let progress_bar = runtime_handle.make_progress_bar(
-            self.name(),
-            ProgressBarColor::Red,
+            &self.name(),
+            ProgressBarColor::Yellow,
             self.node_id(),
             self.runtime_stats.clone(),
         );
@@ -272,7 +270,7 @@ impl PipelineNode for StreamingSinkNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
@@ -316,7 +314,7 @@ impl PipelineNode for StreamingSinkNode {
                 }
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }

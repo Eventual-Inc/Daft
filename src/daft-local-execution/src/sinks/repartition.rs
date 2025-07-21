@@ -131,8 +131,8 @@ impl BlockingSink for RepartitionSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Repartition"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Repartition")
     }
 
     fn multiline_display(&self) -> Vec<String> {

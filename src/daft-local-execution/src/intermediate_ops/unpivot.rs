@@ -82,7 +82,7 @@ impl IntermediateOperator for UnpivotOperator {
         res
     }
 
-    fn name(&self) -> &'static str {
-        "Unpivot"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Unpivot")
     }
 }

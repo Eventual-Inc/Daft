@@ -30,8 +30,8 @@ impl CrossJoinCollectSink {
 }
 
 impl BlockingSink for CrossJoinCollectSink {
-    fn name(&self) -> &'static str {
-        "CrossJoinCollect"
+    fn name(&self) -> Arc<str> {
+        Arc::from("CrossJoinCollect")
     }
 
     fn sink(

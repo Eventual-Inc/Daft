@@ -110,8 +110,8 @@ impl BlockingSink for SortSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Sort"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Sort")
     }
 
     fn multiline_display(&self) -> Vec<String> {

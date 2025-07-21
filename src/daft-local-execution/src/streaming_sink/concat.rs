@@ -36,8 +36,8 @@ impl StreamingSink for ConcatSink {
         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
     }
 
-    fn name(&self) -> &'static str {
-        "Concat"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Concat")
     }
 
     fn multiline_display(&self) -> Vec<String> {

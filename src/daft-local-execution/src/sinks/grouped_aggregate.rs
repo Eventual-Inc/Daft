@@ -421,8 +421,8 @@ impl BlockingSink for GroupedAggregateSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "GroupedAggregate"
+    fn name(&self) -> Arc<str> {
+        Arc::from("GroupedAggregate")
     }
 
     fn multiline_display(&self) -> Vec<String> {

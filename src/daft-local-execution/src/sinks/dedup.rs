@@ -189,8 +189,8 @@ impl BlockingSink for DedupSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Dedup"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Dedup")
     }
 
     fn multiline_display(&self) -> Vec<String> {

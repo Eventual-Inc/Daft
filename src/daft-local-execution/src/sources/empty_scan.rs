@@ -34,8 +34,8 @@ impl Source for EmptyScanSource {
         let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
         Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
     }
-    fn name(&self) -> &'static str {
-        "EmptyScan"
+    fn name(&self) -> Arc<str> {
+        Arc::from("EmptyScan")
     }
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];

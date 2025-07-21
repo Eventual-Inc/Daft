@@ -173,21 +173,21 @@ impl BlockingSink for WriteSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        match self.write_format {
-            WriteFormat::Parquet => "ParquetSink",
-            WriteFormat::PartitionedParquet => "PartitionedParquetSink",
-            WriteFormat::Csv => "CsvSink",
-            WriteFormat::PartitionedCsv => "PartitionedCsvSink",
-            WriteFormat::Json => "JsonSink",
-            WriteFormat::PartitionedJson => "PartitionedJsonSink",
-            WriteFormat::Iceberg => "IcebergSink",
-            WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
-            WriteFormat::Deltalake => "DeltalakeSink",
-            WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
-            WriteFormat::Lance => "LanceSink",
-            WriteFormat::DataSink => "DataSink",
-        }
+    fn name(&self) -> Arc<str> {
+        Arc::from(match self.write_format {
+            WriteFormat::Parquet => "Parquet Write",
+            WriteFormat::PartitionedParquet => "PartitionedParquet Write",
+            WriteFormat::Csv => "Csv Write",
+            WriteFormat::PartitionedCsv => "PartitionedCsv Write",
+            WriteFormat::Json => "Json Write",
+            WriteFormat::PartitionedJson => "PartitionedJson Write",
+            WriteFormat::Iceberg => "Iceberg Write",
+            WriteFormat::PartitionedIceberg => "PartitionedIceberg Write",
+            WriteFormat::Deltalake => "Deltalake Write",
+            WriteFormat::PartitionedDeltalake => "PartitionedDeltalake Write",
+            WriteFormat::Lance => "Lance Write",
+            WriteFormat::DataSink => "Data Sink",
+        })
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

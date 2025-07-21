@@ -207,8 +207,8 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowPartitionAndDynamicFrame"
+    fn name(&self) -> Arc<str> {
+        Arc::from("WindowPartitionAndDynamicFrame")
     }
 
     fn multiline_display(&self) -> Vec<String> {

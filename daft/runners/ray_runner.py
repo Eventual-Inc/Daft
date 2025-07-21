@@ -1128,13 +1128,13 @@ class DaftRayActor:
     def __init__(
         self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection
     ) -> None:
-        from daft.daft import get_udf_names
+        from daft.daft import get_udf_name
 
         self.daft_execution_config = daft_execution_config
 
         logger.info(
             "Initializing stateful UDFs: %s",
-            ", ".join(name for expr in uninitialized_projection for name in get_udf_names(expr._expr)),
+            ", ".join(get_udf_name(expr._expr) for expr in uninitialized_projection),
         )
         self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 

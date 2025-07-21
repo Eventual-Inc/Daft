@@ -168,8 +168,9 @@ impl Source for ScanTaskSource {
         Ok(Box::pin(result_stream))
     }
 
-    fn name(&self) -> &'static str {
-        "ScanTaskSource"
+    fn name(&self) -> Arc<str> {
+        let format_name = self.scan_tasks[0].file_format_config.var_name();
+        Arc::from(format!("{} Scan", format_name))
     }
 
     fn multiline_display(&self) -> Vec<String> {

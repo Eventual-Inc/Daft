@@ -204,8 +204,8 @@ impl BlockingSink for WindowOrderByOnlySink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowOrderByOnly"
+    fn name(&self) -> Arc<str> {
+        Arc::from("WindowOrderByOnly")
     }
 
     fn multiline_display(&self) -> Vec<String> {

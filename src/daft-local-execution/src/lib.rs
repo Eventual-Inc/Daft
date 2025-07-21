@@ -175,7 +175,7 @@ impl ExecutionRuntimeContext {
 
     pub fn make_progress_bar(
         &self,
-        prefix: &'static str,
+        prefix: &str,
         color: ProgressBarColor,
         node_id: usize,
         runtime_stats: Arc<RuntimeStatsContext>,

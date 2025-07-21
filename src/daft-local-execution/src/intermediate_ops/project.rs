@@ -140,8 +140,18 @@ impl IntermediateOperator for ProjectOperator {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Project"
+    fn name(&self) -> Arc<str> {
+        if self.projection.iter().any(|e| e.inner().has_compute()) {
+            Arc::from("Project")
+        } else if self
+            .projection
+            .iter()
+            .any(|e| e.inner().unwrap_alias().1.is_some())
+        {
+            Arc::from("Rename Columns")
+        } else {
+            Arc::from("Reorder Columns")
+        }
     }
 
     fn multiline_display(&self) -> Vec<String> {

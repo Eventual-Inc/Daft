@@ -208,8 +208,8 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "InnerHashJoinProbe"
+    fn name(&self) -> Arc<str> {
+        Arc::from("InnerHashJoinProbe")
     }
 
     fn multiline_display(&self) -> Vec<String> {

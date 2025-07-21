@@ -99,8 +99,8 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "MonotonicallyIncreasingId"
+    fn name(&self) -> Arc<str> {
+        Arc::from("MonotonicallyIncreasingId")
     }
 
     fn multiline_display(&self) -> Vec<String> {

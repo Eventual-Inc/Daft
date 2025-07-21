@@ -74,8 +74,8 @@ impl IntermediateOperator for FilterOperator {
         vec![format!("Filter: {}", self.predicate)]
     }
 
-    fn name(&self) -> &'static str {
-        "Filter"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Filter")
     }
 
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {

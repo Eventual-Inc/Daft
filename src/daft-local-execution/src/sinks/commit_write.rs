@@ -162,8 +162,8 @@ impl BlockingSink for CommitWriteSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "CommitWriteSink"
+    fn name(&self) -> Arc<str> {
+        Arc::from("CommitWriteSink")
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

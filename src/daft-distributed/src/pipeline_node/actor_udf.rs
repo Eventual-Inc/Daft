@@ -276,7 +276,7 @@ impl ActorUDF {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use daft_dsl::functions::python::{get_concurrency, get_resource_request, get_udf_names};
+        use daft_dsl::functions::python::{get_concurrency, get_resource_request, get_udf_name};
         use itertools::Itertools;
         let mut res = vec![];
         res.push("ActorUDF:".to_string());
@@ -288,7 +288,7 @@ impl ActorUDF {
             "UDFs = [{}]",
             self.projection
                 .iter()
-                .flat_map(|expr| get_udf_names(expr.inner()))
+                .map(|expr| get_udf_name(expr.inner()))
                 .join(", ")
         ));
         res.push(format!(

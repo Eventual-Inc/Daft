@@ -50,7 +50,7 @@ pub trait IntermediateOperator: Send + Sync {
         state: Box<dyn IntermediateOpState>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> Arc<str>;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
@@ -191,7 +191,7 @@ impl IntermediateNode {
                     runtime_handle.runtime_stats_handler(),
                     memory_manager.clone(),
                 ),
-                self.intermediate_op.name(),
+                &self.intermediate_op.name(),
             );
         }
         output_receiver
@@ -239,8 +239,8 @@ impl PipelineNode for IntermediateNode {
             .collect()
     }
 
-    fn name(&self) -> &'static str {
-        self.intermediate_op.name()
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -250,7 +250,7 @@ impl PipelineNode for IntermediateNode {
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         let progress_bar = runtime_handle.make_progress_bar(
-            self.name(),
+            &self.name(),
             ProgressBarColor::Magenta,
             self.node_id(),
             self.runtime_stats.clone(),
@@ -267,7 +267,7 @@ impl PipelineNode for IntermediateNode {
         }
         let op = self.intermediate_op.clone();
         let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
-            node_name: self.name(),
+            node_name: self.name().to_string(),
         })?;
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(
@@ -287,7 +287,7 @@ impl PipelineNode for IntermediateNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let mut output_receiver = self.spawn_workers(
@@ -305,7 +305,7 @@ impl PipelineNode for IntermediateNode {
                 }
                 Ok(())
             },
-            op.name(),
+            &op.name(),
         );
         Ok(destination_receiver)
     }

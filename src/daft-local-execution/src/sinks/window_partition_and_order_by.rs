@@ -253,8 +253,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowPartitionAndOrderBy"
+    fn name(&self) -> Arc<str> {
+        Arc::from("WindowPartitionAndOrderBy")
     }
 
     fn multiline_display(&self) -> Vec<String> {

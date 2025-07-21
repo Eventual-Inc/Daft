@@ -9,7 +9,7 @@ use daft_dsl::{
     expr::{bound_expr::BoundExpr, count_udfs},
     functions::{
         python::{
-            get_resource_request, get_run_on_separate_process, get_udf_names,
+            get_resource_request, get_run_on_separate_process, get_udf_name,
             try_get_batch_size_from_udf, try_get_concurrency,
         },
         FunctionExpr,
@@ -333,8 +333,14 @@ impl IntermediateOperator for UdfOperator {
         fut.into()
     }
 
-    fn name(&self) -> &'static str {
-        "UdfOperator"
+    fn name(&self) -> Arc<str> {
+        let full_name = get_udf_name(self.project.inner());
+
+        let Some((_, udf_name)) = full_name.rsplit_once('.') else {
+            return Arc::from(full_name);
+        };
+
+        Arc::from(udf_name)
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -342,7 +348,7 @@ impl IntermediateOperator for UdfOperator {
         res.push("UDF Executor:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_names(self.project.inner()).first().unwrap(),
+            get_udf_name(self.project.inner()),
             self.project
         ));
         res.push(format!(

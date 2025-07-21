@@ -147,8 +147,8 @@ impl BlockingSink for TopNSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "TopN"
+    fn name(&self) -> Arc<str> {
+        Arc::from("TopN")
     }
 
     fn multiline_display(&self) -> Vec<String> {

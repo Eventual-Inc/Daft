@@ -69,7 +69,7 @@ impl IntermediateOperator for SampleOperator {
         res
     }
 
-    fn name(&self) -> &'static str {
-        "Sample"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Sample")
     }
 }

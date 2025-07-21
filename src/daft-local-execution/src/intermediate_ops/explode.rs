@@ -59,7 +59,7 @@ impl IntermediateOperator for ExplodeOperator {
         )]
     }
 
-    fn name(&self) -> &'static str {
-        "Explode"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Explode")
     }
 }

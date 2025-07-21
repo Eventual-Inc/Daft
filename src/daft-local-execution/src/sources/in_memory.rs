@@ -48,8 +48,8 @@ impl Source for InMemorySource {
             .clone()
             .to_partition_stream())
     }
-    fn name(&self) -> &'static str {
-        "InMemorySource"
+    fn name(&self) -> Arc<str> {
+        Arc::from("InMemorySource")
     }
 
     fn multiline_display(&self) -> Vec<String> {

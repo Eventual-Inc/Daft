@@ -5,7 +5,7 @@ use common_resource_request::ResourceRequest;
 use daft_core::prelude::Schema;
 use daft_dsl::{
     expr::count_udfs,
-    functions::python::{get_resource_request, get_udf_names, try_get_concurrency},
+    functions::python::{get_resource_request, get_udf_name, try_get_concurrency},
     ExprRef,
 };
 use daft_schema::schema::SchemaRef;
@@ -105,7 +105,7 @@ impl UDFProject {
         res.push("UDFProject:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_names(&self.project).join(", "),
+            get_udf_name(&self.project),
             self.project
         ));
         res.push(format!(

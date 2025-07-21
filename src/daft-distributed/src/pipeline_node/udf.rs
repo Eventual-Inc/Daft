@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use daft_dsl::{
     expr::bound_expr::BoundExpr,
-    functions::python::{get_resource_request, get_udf_names},
+    functions::python::{get_resource_request, get_udf_name},
 };
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
@@ -75,7 +75,7 @@ impl UDFNode {
         res.push("UDF Executor:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_names(self.project.inner()).first().unwrap(),
+            get_udf_name(self.project.inner()),
             self.project
         ));
         res.push(format!(

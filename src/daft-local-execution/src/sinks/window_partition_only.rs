@@ -166,8 +166,8 @@ impl BlockingSink for WindowPartitionOnlySink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowPartitionOnly"
+    fn name(&self) -> Arc<str> {
+        Arc::from("WindowPartitionOnly")
     }
 
     fn multiline_display(&self) -> Vec<String> {

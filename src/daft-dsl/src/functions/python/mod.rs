@@ -319,8 +319,8 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
 }
 
 /// Get the names of all UDFs in expression
-pub fn get_udf_names(expr: &ExprRef) -> Vec<String> {
-    let mut names = Vec::new();
+pub fn get_udf_name(expr: &ExprRef) -> String {
+    let mut udf_name = None;
 
     expr.apply(|e| {
         if let Expr::Function {
@@ -328,12 +328,13 @@ pub fn get_udf_names(expr: &ExprRef) -> Vec<String> {
             ..
         } = e.as_ref()
         {
-            names.push(name.to_string());
+            udf_name = Some(name.as_ref().clone());
+            return Ok(TreeNodeRecursion::Stop);
         }
 
         Ok(TreeNodeRecursion::Continue)
     })
     .unwrap();
 
-    names
+    udf_name.expect("get_udf_name expects one UDF")
 }

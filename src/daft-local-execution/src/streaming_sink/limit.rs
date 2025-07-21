@@ -83,8 +83,8 @@ impl StreamingSink for LimitSink {
         }
     }
 
-    fn name(&self) -> &'static str {
-        "Limit"
+    fn name(&self) -> Arc<str> {
+        Arc::from(format!("Limit {}", self.limit))
     }
 
     fn multiline_display(&self) -> Vec<String> {

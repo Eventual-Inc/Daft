@@ -53,7 +53,7 @@ pub trait BlockingSink: Send + Sync {
         states: Vec<Box<dyn BlockingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> Arc<str>;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
@@ -74,7 +74,6 @@ pub trait BlockingSink: Send + Sync {
 
 pub struct BlockingSinkNode {
     op: Arc<dyn BlockingSink>,
-    name: &'static str,
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
@@ -97,7 +96,6 @@ impl BlockingSinkNode {
         );
         Self {
             op,
-            name,
             child,
             runtime_stats,
             plan_stats,
@@ -198,8 +196,8 @@ impl PipelineNode for BlockingSinkNode {
         vec![self.child.as_ref()]
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -208,7 +206,7 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let progress_bar = runtime_handle.make_progress_bar(
-            self.name(),
+            &self.name(),
             ProgressBarColor::Cyan,
             self.node_id(),
             self.runtime_stats.clone(),
@@ -241,7 +239,7 @@ impl PipelineNode for BlockingSinkNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
@@ -291,7 +289,7 @@ impl PipelineNode for BlockingSinkNode {
                 }
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }

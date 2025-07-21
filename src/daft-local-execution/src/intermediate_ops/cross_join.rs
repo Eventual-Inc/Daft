@@ -138,8 +138,8 @@ impl IntermediateOperator for CrossJoinOperator {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "CrossJoin"
+    fn name(&self) -> Arc<str> {
+        Arc::from("CrossJoin")
     }
 
     fn multiline_display(&self) -> Vec<String> {

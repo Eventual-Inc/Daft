@@ -117,8 +117,8 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         fut.into()
     }
 
-    fn name(&self) -> &'static str {
-        "DistributedActorPoolProject"
+    fn name(&self) -> Arc<str> {
+        Arc::from("DistributedActorPoolProject")
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -130,8 +130,8 @@ impl BlockingSink for PivotSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Pivot"
+    fn name(&self) -> Arc<str> {
+        Arc::from("Pivot")
     }
 
     fn multiline_display(&self) -> Vec<String> {
