@@ -16,7 +16,7 @@ pub struct Ceil;
 
 #[typetag::serde]
 impl ScalarUDF for Ceil {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         match input.data_type() {
             DataType::Int8
@@ -40,7 +40,7 @@ impl ScalarUDF for Ceil {
         "ceil"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

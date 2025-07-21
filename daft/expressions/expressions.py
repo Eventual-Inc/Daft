@@ -114,6 +114,16 @@ def lit(value: object) -> Expression:
     return Expression._from_pyexpr(lit_value)
 
 
+def element() -> Expression:
+    """Creates an expression referring to an elementwise list operation.
+
+    This is used to create an expression that operates on each element of a list column.
+
+    If used outside of a list column, it will raise an error.
+    """
+    return col("")
+
+
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
@@ -981,12 +991,13 @@ class Expression:
     def shift_right(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the right (``expr >> other``).
 
-        .. NOTE::
+        Args:
+            other: The number of bits to shift the expression to the right
+
+        Note:
             For unsigned integers, this expression perform a logical right shift.
             For signed integers, this expression perform an arithmetic right shift.
 
-        Args:
-            other: The number of bits to shift the expression to the right
         """
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
@@ -1918,6 +1929,82 @@ class Expression:
             The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
         """
         f = native.get_function_from_registry("url_parse")
+        return Expression._from_pyexpr(f(self._expr))
+
+    def explode(self) -> Expression:
+        """Explode a list expression.
+
+        A row is created for each item in the lists, and the other non-exploded output columns are broadcasted to match.
+
+        If exploding multiple columns at once, all list lengths must match.
+
+        Tip: See also
+            [DataFrame.explode](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.explain)
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"id": [1, 2, 3], "sentence": ["lorem ipsum", "foo bar baz", "hi"]})
+            >>>
+            >>> # Explode one column, broadcast the rest
+            >>> df.with_column("word", df["sentence"].str.split(" ").explode()).show()
+            ╭───────┬─────────────┬───────╮
+            │ id    ┆ sentence    ┆ word  │
+            │ ---   ┆ ---         ┆ ---   │
+            │ Int64 ┆ Utf8        ┆ Utf8  │
+            ╞═══════╪═════════════╪═══════╡
+            │ 1     ┆ lorem ipsum ┆ lorem │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ lorem ipsum ┆ ipsum │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ foo bar baz ┆ foo   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ foo bar baz ┆ bar   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ foo bar baz ┆ baz   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ hi          ┆ hi    │
+            ╰───────┴─────────────┴───────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+            >>>
+            >>> # Explode multiple columns with the same lengths
+            >>> df.select(
+            ...     df["sentence"].str.split(" ").explode().alias("word"),
+            ...     df["sentence"].str.capitalize().str.split(" ").explode().alias("capitalized_word"),
+            ... ).show()
+            ╭───────┬──────────────────╮
+            │ word  ┆ capitalized_word │
+            │ ---   ┆ ---              │
+            │ Utf8  ┆ Utf8             │
+            ╞═══════╪══════════════════╡
+            │ lorem ┆ Lorem            │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ ipsum ┆ ipsum            │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ foo   ┆ Foo              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ bar   ┆ bar              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ baz   ┆ baz              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hi    ┆ Hi               │
+            ╰───────┴──────────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+            >>>
+            >>> # This will error because exploded lengths are different:
+            >>> # df.select(
+            >>> #     df["sentence"]
+            >>> #             .str.split(" ")
+            >>> #             .explode()
+            >>> #             .alias("word"),
+            >>> #     df["sentence"]
+            >>> #             .str.split("a")
+            >>> #             .explode()
+            >>> #             .alias("split_on_a")
+            >>> # ).show()
+        """
+        f = native.get_function_from_registry("explode")
         return Expression._from_pyexpr(f(self._expr))
 
 
@@ -4459,6 +4546,30 @@ class ExpressionStringNamespace(ExpressionNamespace):
 class ExpressionListNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.list` attribute."""
 
+    def map(self, expr: Expression) -> Expression:
+        """Evaluates an expression on all elements in the list.
+
+        Args:
+            expr: Expression to run.  you can select the element with `daft.element()`
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+            >>> df.with_column("letters_capitalized", df["letters"].list.map(daft.element().str.upper())).collect()
+            ╭──────────────┬─────────────────────╮
+            │ letters      ┆ letters_capitalized │
+            │ ---          ┆ ---                 │
+            │ List[Utf8]   ┆ List[Utf8]          │
+            ╞══════════════╪═════════════════════╡
+            │ [a, b, a]    ┆ [A, B, A]           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ [B, C, B, C]        │
+            ╰──────────────┴─────────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return self._eval_expressions("list_map", expr)
+
     def join(self, delimiter: str | Expression) -> Expression:
         """Joins every element of a list using the specified string delimiter.
 
@@ -5144,7 +5255,7 @@ class ExpressionJsonNamespace(ExpressionNamespace):
 
         """
         warnings.warn(
-            "This API is deprecated in daft >=0.5.1 and will be removed in >=0.6.0. Users should use `Expression.jq` instead.",
+            "`.json.query` is deprecated in daft >=0.5.1 and will be removed in >=0.6.0. Users should use `.jq` instead. Example: `col('x').jq('query')`",
             DeprecationWarning,
             stacklevel=2,
         )

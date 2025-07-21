@@ -274,7 +274,7 @@ class DataFrame:
             if get_context().get_or_create_runner().name != "native":
                 # Check if flotilla is enabled for distributed execution
                 daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.flotilla:
+                if daft_execution_config.use_experimental_distributed_engine:
                     try:
                         from daft.daft import DistributedPhysicalPlan
 
@@ -556,7 +556,7 @@ class DataFrame:
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
-            preview_partition = preview_results._get_merged_micropartition()
+            preview_partition = preview_results._get_merged_micropartition(self.schema())
             self._preview = Preview(
                 partition=preview_partition,
                 total_rows=len(self),
@@ -816,6 +816,75 @@ class DataFrame:
             )
 
     @DataframePublicAPI
+    def write_json(
+        self,
+        root_dir: Union[str, pathlib.Path],
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        partition_cols: Optional[list[ColumnInputType]] = None,
+        io_config: Optional[IOConfig] = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
+
+        Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
+
+        Args:
+            root_dir (str): root file path to write JSON files to.
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+
+        Returns:
+            DataFrame: The filenames that were written out as strings.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
+
+        !!! Currently only supported with the Native runner!
+        """
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        cols: Optional[list[Expression]] = None
+        if partition_cols is not None:
+            cols = self.__column_input_to_expression(tuple(partition_cols))
+
+        builder = self._builder.write_tabular(
+            root_dir=root_dir,
+            partition_cols=cols,
+            write_mode=WriteMode.from_str(write_mode),
+            file_format=FileFormat.Json,
+            io_config=io_config,
+        )
+        # Block and write, then retrieve data
+        write_df = DataFrame(builder)
+        write_df.collect()
+        assert write_df._result is not None
+
+        if len(write_df) > 0:
+            # Populate and return a new disconnected DataFrame
+            result_df = DataFrame(write_df._builder)
+            result_df._result_cache = write_df._result_cache
+            result_df._preview = write_df._preview
+            return result_df
+        else:
+            from daft import from_pydict
+            from daft.recordbatch.recordbatch_io import write_empty_tabular
+
+            file_path = write_empty_tabular(root_dir, FileFormat.Json, self.schema(), io_config=io_config)
+
+            return from_pydict(
+                {
+                    "path": [file_path],
+                }
+            )
+
+    @DataframePublicAPI
     def write_iceberg(
         self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
     ) -> "DataFrame":
@@ -839,7 +908,7 @@ class DataFrame:
         import pyiceberg
         from packaging.version import parse
 
-        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
+        from daft.io.iceberg._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -1008,15 +1077,19 @@ class DataFrame:
 
         import deltalake
         import pyarrow as pa
-        from deltalake.schema import _convert_pa_schema_to_delta
-        from deltalake.writer import AddAction, try_get_deltatable, write_deltalake_pyarrow
+        from deltalake.exceptions import TableNotFoundError
         from packaging.version import parse
 
         from daft import from_pydict
         from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
-        from daft.io._deltalake import large_dtypes_kwargs
+        from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
+        from daft.io.delta_lake.delta_lake_write import (
+            AddAction,
+            convert_pa_schema_to_delta,
+            create_table_with_add_actions,
+        )
         from daft.io.object_store_options import io_config_to_storage_options
 
         def _create_metadata_param(metadata: Optional[dict[str, str]]) -> Any:
@@ -1071,7 +1144,10 @@ class DataFrame:
                 )
 
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
-            table = try_get_deltatable(table_uri, storage_options=storage_options)
+            try:
+                table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
+            except TableNotFoundError:
+                table = None
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
         scheme = get_protocol_from_path(table_uri)
@@ -1091,7 +1167,7 @@ class DataFrame:
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
         large_dtypes = True
-        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
+        delta_schema = convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=large_dtypes)
 
         if table:
             if partition_cols and partition_cols != table.metadata().partition_columns:
@@ -1103,8 +1179,10 @@ class DataFrame:
 
             table.update_incremental()
 
-            table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
-            if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
+            table_schema = delta_schema_to_pyarrow(table.schema())
+            if Schema.from_pyarrow_schema(delta_schema) != Schema.from_pyarrow_schema(table_schema) and not (
+                mode == "overwrite" and schema_mode == "overwrite"
+            ):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
                     f"Data schema:\n{delta_schema}\nTable Schema:\n{table_schema}"
@@ -1157,7 +1235,7 @@ class DataFrame:
             sizes.append(add_action.size)
 
         if table is None:
-            write_deltalake_pyarrow(
+            create_table_with_add_actions(
                 table_uri,
                 delta_schema,
                 add_actions,
@@ -1171,7 +1249,7 @@ class DataFrame:
             )
         else:
             if mode == "overwrite":
-                old_actions = table.get_add_actions()
+                old_actions = pa.record_batch(table.get_add_actions())
                 old_actions_dict = old_actions.to_pydict()
                 for i in range(old_actions.num_rows):
                     operations.append("DELETE")
@@ -1180,9 +1258,19 @@ class DataFrame:
                     sizes.append(old_actions_dict["size_bytes"][i])
 
             metadata_param = _create_metadata_param(custom_metadata)
-            table._table.create_write_transaction(
-                add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
-            )
+            if parse(deltalake.__version__) < parse("1.0.0"):
+                table._table.create_write_transaction(
+                    add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
+                )
+            else:
+                table._table.create_write_transaction(
+                    add_actions,
+                    mode,
+                    partition_cols or [],
+                    deltalake.Schema.from_arrow(delta_schema),
+                    None,
+                    metadata_param,
+                )
             table.update_incremental()
 
         with_operations = from_pydict(
@@ -1205,6 +1293,9 @@ class DataFrame:
 
         Returns:
             DataFrame: A dataframe from the micropartition returned by the DataSink's `.finalize()` method.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
         """
         sink.start()
 
@@ -1222,8 +1313,7 @@ class DataFrame:
         # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
-        write_plan_builder = to_logical_plan_builder(micropartition)
-        return DataFrame(write_plan_builder)
+        return DataFrame._from_micropartitions(micropartition)
 
     @DataframePublicAPI
     def write_lance(
@@ -1243,7 +1333,8 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Note:
-            write_lance` requires python 3.9 or higher
+            `write_lance` requires python 3.9 or higher
+            This call is **blocking** and will execute the DataFrame when called
 
         Examples:
             >>> import daft
@@ -1287,11 +1378,49 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        from daft.dataframe.lance_data_sink import LanceDataSink
+        from daft.io.lance.lance_data_sink import LanceDataSink
 
         if schema is None:
             schema = self.schema()
         sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
+        return self.write_sink(sink)
+
+    @DataframePublicAPI
+    def write_turbopuffer(
+        self,
+        namespace: str,
+        api_key: Optional[str] = None,
+        region: str = "aws-us-west-2",
+        distance_metric: Optional[Literal["cosine_distance", "euclidean_squared"]] = None,
+        schema: Optional[dict[str, Any]] = None,
+        id_column: Optional[str] = None,
+        vector_column: Optional[str] = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame to a Turbopuffer namespace.
+
+        This method transforms each row of the dataframe into a turbopuffer document and writes it to the given namespace.
+        This means that an `id` column is always required. Optionally, the `id_column` parameter can be used to specify the column name to used for the id column.
+        Note that the column with the name specified by `id_column` will be renamed to "id" when written to turbopuffer.
+
+        A `vector` column is required if the namespace has a vector index. Optionally, the `vector_column` parameter can be used to specify the column name to used for the vector index.
+        Note that the column with the name specified by `vector_column` will be renamed to "vector" when written to turbopuffer.
+
+        All other columns become attributes.
+
+        For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
+
+        Args:
+            namespace: The namespace to write to.
+            api_key: Turbopuffer API key (defaults to TURBOPUFFER_API_KEY env var).
+            region: Turbopuffer region (defaults to "aws-us-west-2").
+            distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
+            schema: Optional manual schema specification.
+            id_column: Optional column name for the id column. The data sink will automatically rename the column to "id" for the id column.
+            vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.
+        """
+        from daft.io.turbopuffer.turbopuffer_data_sink import TurbopufferDataSink
+
+        sink = TurbopufferDataSink(namespace, api_key, region, distance_metric, schema, id_column, vector_column)
         return self.write_sink(sink)
 
     ###
@@ -1363,7 +1492,7 @@ class DataFrame:
         """Generates a column of monotonically increasing unique ids for the DataFrame.
 
         The implementation of this method puts the partition number in the upper 28 bits, and the row number in each partition
-        in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
+        in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^36 ≈ 68 billion rows per partition.
 
         Args:
             column_name (Optional[str], optional): name of the new column. Defaults to "id".
@@ -1963,15 +2092,13 @@ class DataFrame:
 
         Args:
             num (int): maximum rows to allow.
-            eager (bool): whether to maximize for latency (time to first result) by eagerly executing
-                only one partition at a time, or throughput by executing multiple limits at a time
 
         Returns:
             DataFrame: Limited DataFrame
 
         Examples:
             >>> import daft
-            >>> df = df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
             >>> df_limited = df.limit(5)  # returns 5 rows
             >>> df_limited.show()
             ╭───────╮
@@ -2022,6 +2149,8 @@ class DataFrame:
         Returns:
             int: count of the number of rows in this DataFrame.
         """
+        if self._result is not None:
+            return len(self._result)
         builder = self._builder.count()
         count_df = DataFrame(builder)
         # Expects builder to produce a single-partition, single-row DataFrame containing
@@ -3402,7 +3531,7 @@ class DataFrame:
         self.collect()
         result = self._result
         assert result is not None
-        return result.to_pydict()
+        return result.to_pydict(schema=self.schema())
 
     @DataframePublicAPI
     def to_pylist(self) -> list[Any]:
@@ -3574,7 +3703,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,
@@ -3667,7 +3796,7 @@ class DataFrame:
             preview_results = partition_set
 
         # set preview
-        preview_partition = preview_results._get_merged_micropartition()
+        preview_partition = preview_results._get_merged_micropartition(df.schema())
         df._preview = Preview(
             partition=preview_partition,
             total_rows=dataframe_num_rows,

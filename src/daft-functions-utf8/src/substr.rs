@@ -35,7 +35,7 @@ impl ScalarUDF for Substr {
         "substr"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let SubstrArgs {
             input: data,
             start,
@@ -71,7 +71,7 @@ impl ScalarUDF for Substr {
             })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

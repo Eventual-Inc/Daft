@@ -73,10 +73,11 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
+from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
+    IOConfig,
     from_glob_path,
     _range as range,
     read_csv,
@@ -123,9 +124,12 @@ from daft.session import (
     detach_function,
 )
 from daft.sql import sql, sql_expr
-from daft.udf import udf
+from daft.udf import udf, _DaftFunc as func
 from daft.viz import register_viz_hook
 from daft.window import Window
+
+import daft.context as context
+import daft.io as io
 
 to_struct = Expression.to_struct
 
@@ -136,6 +140,7 @@ __all__ = [
     "DataFrame",
     "DataType",
     "Expression",
+    "IOConfig",
     "Identifier",
     "ImageFormat",
     "ImageMode",
@@ -152,6 +157,7 @@ __all__ = [
     "attach_table",
     "coalesce",
     "col",
+    "context",
     "create_namespace",
     "create_namespace_if_not_exists",
     "create_table",
@@ -165,6 +171,7 @@ __all__ = [
     "detach_table",
     "drop_namespace",
     "drop_table",
+    "element",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
@@ -173,12 +180,14 @@ __all__ = [
     "from_pydict",
     "from_pylist",
     "from_ray_dataset",
+    "func",
     "get_catalog",
     "get_table",
     "has_catalog",
     "has_namespace",
     "has_table",
     "interval",
+    "io",
     "list_",
     "list_catalogs",
     "list_tables",

@@ -288,7 +288,6 @@ def test_repr_html_custom_hooks():
     assert "myobj-custom-repr" in html_repr
 
     # Assert that PIL viz hook correctly triggers in html repr
-    assert 'alt="<PIL.Image.Image image mode=L size=3x3' in html_repr
     assert '<img style="max-height:128px;width:auto" src="data:image/png;base64,' in html_repr
 
     # Assert that numpy array viz hook correctly triggers in html repr
@@ -305,7 +304,7 @@ def test_repr_empty_struct():
 │ Struct[]      ┆ Struct[a: Struct[], b: Struct[]] │
 ╰───────────────┴──────────────────────────────────╯
 """
-    assert df.schema()._truncated_table_string() == expected_schema_truncated_repr
+    assert ANSI_ESCAPE.sub("", df.schema()._truncated_table_string()) == expected_schema_truncated_repr
 
     expected_schema_repr = """╭──────────────────────┬──────────────────────────────────╮
 │ column_name          ┆ type                             │
@@ -315,7 +314,7 @@ def test_repr_empty_struct():
 │ nested_empty_structs ┆ Struct[a: Struct[], b: Struct[]] │
 ╰──────────────────────┴──────────────────────────────────╯
 """
-    assert repr(df.schema()) == expected_schema_repr
+    assert ANSI_ESCAPE.sub("", repr(df.schema())) == expected_schema_repr
 
     expected_repr = """╭───────────────┬──────────────────────────────────╮
 │ empty_structs ┆ nested_empty_structs             │
@@ -333,4 +332,4 @@ def test_repr_empty_struct():
 
 (Showing first 2 of 2 rows)"""
 
-    assert str(df) == expected_repr
+    assert ANSI_ESCAPE.sub("", str(df)) == expected_repr

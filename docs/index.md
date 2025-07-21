@@ -16,7 +16,7 @@ Built for modern AI/ML workflows with Python at its core and Rust under the hood
 
 **:fontawesome-solid-laptop: Seamless scaling, from laptop to cluster**
 
-Start local, scale global—without changing a line of code. Daft's Rust-powered engine delivers blazing performance on a single machine and effortlessly extends to distributed clusters with when you need more horsepower.
+Start local, scale global—without changing a line of code. Daft's Rust-powered engine delivers blazing performance on a single machine and effortlessly extends to distributed clusters when you need more horsepower.
 
 ## Key Features
 

@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 
 use super::{
-    scheduler::{SchedulableTask, ScheduledTask},
+    scheduler::{PendingTask, ScheduledTask},
     task::{Task, TaskResultAwaiter, TaskStatus},
     worker::{Worker, WorkerManager},
 };
@@ -12,6 +12,8 @@ use crate::{
     statistics::StatisticsManagerRef,
     utils::joinset::{JoinSet, JoinSetId},
 };
+
+const DISPATCHER_LOG_TARGET: &str = "DaftFlotillaDispatcher";
 
 pub(super) struct Dispatcher<W: Worker> {
     // JoinSet of task results futures
@@ -48,6 +50,7 @@ impl<W: Worker> Dispatcher<W> {
         }
 
         let result_handles = worker_manager.submit_tasks_to_workers(worker_to_tasks)?;
+
         for result_handle in result_handles {
             let scheduled_task = task_context_to_task
                 .remove(&result_handle.task_context())
@@ -59,6 +62,7 @@ impl<W: Worker> Dispatcher<W> {
                 .spawn(result_awaiter.await_result());
             self.joinset_id_to_task.insert(id, scheduled_task);
         }
+
         Ok(())
     }
 
@@ -69,26 +73,33 @@ impl<W: Worker> Dispatcher<W> {
         &mut self,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         statistics_manager: &StatisticsManagerRef,
-    ) -> DaftResult<Vec<SchedulableTask<W::Task>>> {
+    ) -> DaftResult<Vec<PendingTask<W::Task>>> {
         let mut failed_tasks = Vec::new();
         let mut task_results = Vec::new();
 
         // Wait for at least one task to complete
         if let Some((id, task_result)) = self.task_result_joinset.join_next_with_id().await {
-            task_results.push((id, task_result));
+            let scheduled_task = self
+                .joinset_id_to_task
+                .remove(&id)
+                .expect("Task should be present in joinset_id_to_task");
+            task_results.push(CompletedTask::new(task_result, scheduled_task));
 
             // Collect any additional completed tasks that are immediately available
             while let Some((id, task_result)) = self.task_result_joinset.try_join_next_with_id() {
-                task_results.push((id, task_result));
-            }
-
-            // Process all completed tasks
-            for (id, task_result) in task_results {
                 let scheduled_task = self
                     .joinset_id_to_task
                     .remove(&id)
                     .expect("Task should be present in joinset_id_to_task");
-                let (worker_id, task, result_tx, canc) = scheduled_task.into_inner();
+                task_results.push(CompletedTask::new(task_result, scheduled_task));
+            }
+
+            tracing::info!(target: DISPATCHER_LOG_TARGET, num_tasks = task_results.len(), "Awaited completed tasks");
+            tracing::debug!(target: DISPATCHER_LOG_TARGET, completed_tasks = %format!("{:#?}", task_results));
+
+            // Process all completed tasks
+            for CompletedTask { task_result, task } in task_results {
+                let (worker_id, task, result_tx, canc) = task.into_inner();
 
                 // Always mark the task as finished regardless of the result
                 worker_manager.mark_task_finished(task.task_context(), worker_id.clone());
@@ -99,20 +110,14 @@ impl<W: Worker> Dispatcher<W> {
                     Ok(task_status) => match task_status {
                         // Task completed successfully, send the result to the result_tx
                         TaskStatus::Success { result } => {
-                            if result_tx.send(Ok(result)).is_err() {
-                                eprintln!(
-                                    "Failed to send result of task {:?} to result_tx",
-                                    task.task_context()
-                                );
+                            if result_tx.send(Ok(Some(result))).is_err() {
+                                tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send result of task to result_tx", task_context = ?task.task_context());
                             }
                         }
                         // Task failed, send the error to the result_tx
                         TaskStatus::Failed { error } => {
                             if result_tx.send(Err(error)).is_err() {
-                                eprintln!(
-                                    "Failed to send error of task {:?} to result_tx",
-                                    task.task_context()
-                                );
+                                tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send error of task to result_tx", task_context = ?task.task_context());
                             }
                         }
                         // Task cancelled, do nothing
@@ -120,22 +125,19 @@ impl<W: Worker> Dispatcher<W> {
                         // Task worker died, add the task to the failed tasks, and mark the worker as dead
                         TaskStatus::WorkerDied => {
                             worker_manager.mark_worker_died(worker_id);
-                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            let schedulable_task = PendingTask::new(task, result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                         // Task worker unavailable, add the task to the failed tasks
                         TaskStatus::WorkerUnavailable => {
-                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            let schedulable_task = PendingTask::new(task, result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                     },
                     // Task failed because of panic in joinset, send the error to the result_tx
                     Err(e) => {
                         if result_tx.send(Err(e)).is_err() {
-                            eprintln!(
-                                "Failed to send error of task {:?} to result_tx",
-                                task.task_context()
-                            );
+                            tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send error of task to result_tx", task_context = ?task.task_context());
                         }
                     }
                 }
@@ -147,6 +149,28 @@ impl<W: Worker> Dispatcher<W> {
 
     pub fn has_running_tasks(&self) -> bool {
         !self.task_result_joinset.is_empty()
+    }
+}
+
+struct CompletedTask<T: Task> {
+    task_result: DaftResult<TaskStatus>,
+    task: ScheduledTask<T>,
+}
+
+impl<T: Task> CompletedTask<T> {
+    fn new(task_result: DaftResult<TaskStatus>, task: ScheduledTask<T>) -> Self {
+        Self { task_result, task }
+    }
+}
+
+impl<T: Task> std::fmt::Debug for CompletedTask<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "CompletedTask({:?}, {:?})",
+            self.task.task().task_context(),
+            self.task_result
+        )
     }
 }
 
@@ -204,7 +228,7 @@ mod tests {
         assert!(failed_tasks.is_empty());
 
         let result = submitted_task.await?;
-        let partition = result[0].partition();
+        let partition = result.unwrap().partitions()[0].clone();
         assert!(Arc::ptr_eq(&partition, &partition_ref));
 
         Ok(())
@@ -247,7 +271,7 @@ mod tests {
         // Verify results
         for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
             let result = submitted_task.await?;
-            let partition = result[0].partition();
+            let partition = result.unwrap().partitions()[0].clone();
             assert_eq!(partition.num_rows().unwrap(), 100 + i);
             assert_eq!(partition.size_bytes().unwrap(), Some(1024 * (i + 1)));
         }

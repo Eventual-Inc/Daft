@@ -68,7 +68,8 @@ impl RaySwordfishWorker {
             )?;
             let coroutine = py_task_handle.call_method0(py, pyo3::intern!(py, "get_result"))?;
 
-            self.active_task_details.insert(task_context, task_details);
+            self.active_task_details
+                .insert(task_context.clone(), task_details);
 
             let task_locals = task_locals.clone_ref(py);
             let ray_task_result_handle = RayTaskResultHandle::new(
@@ -84,6 +85,7 @@ impl RaySwordfishWorker {
         Ok(task_handles)
     }
 
+    #[allow(dead_code)]
     pub fn shutdown(&self, py: Python<'_>) {
         self.ray_worker_handle
             .call_method0(py, pyo3::intern!(py, "shutdown"))

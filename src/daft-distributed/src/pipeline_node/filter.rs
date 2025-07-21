@@ -6,7 +6,7 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     stage::{StageConfig, StageExecutionContext},
@@ -23,8 +23,9 @@ impl FilterNode {
     const NODE_NAME: NodeName = "Filter";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         predicate: BoundExpr,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -35,8 +36,13 @@ impl FilterNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
         Self {
             config,
             context,
@@ -92,16 +98,15 @@ impl DistributedPipelineNode for FilterNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         let predicate = self.predicate.clone();
-        input_node.pipeline_instruction(stage_context, self, move |input| {
-            Ok(LocalPhysicalPlan::filter(
-                input,
-                predicate.clone(),
-                StatsState::NotMaterialized,
-            ))
+        input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::filter(input, predicate.clone(), StatsState::NotMaterialized)
         })
     }
 

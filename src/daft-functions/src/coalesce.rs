@@ -26,7 +26,7 @@ impl ScalarUDF for Coalesce {
     ///  > the <result> of the first (leftmost) <searched when clause> whose <search
     ///  > condition> evaluates to True, cast as the declared type of the <case
     ///  > specification>.
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         let inputs = inputs.as_slice();
         match inputs.len() {
@@ -66,7 +66,7 @@ impl ScalarUDF for Coalesce {
             }
         }
     }
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -112,7 +112,10 @@ mod tests {
         prelude::{DataType, Field, FullNull, Int8Array, Schema, Utf8Array},
         series::{IntoSeries, Series},
     };
-    use daft_dsl::{functions::ScalarUDF, lit, null_lit, resolved_col};
+    use daft_dsl::{
+        functions::{FunctionArgs, ScalarUDF},
+        lit, null_lit, resolved_col,
+    };
 
     #[test]
     fn test_coalesce_0() {
@@ -133,7 +136,9 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate_from_series(&[s0, s1, s2]).unwrap();
+        let args = FunctionArgs::new_unnamed(vec![s0, s1, s2]);
+
+        let output = coalesce.call(args).unwrap();
         let actual = output.i8().unwrap();
         let expected = Int8Array::from_iter(
             Field::new("s0", DataType::Int8),
@@ -158,7 +163,8 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate_from_series(&[s0, s1]).unwrap();
+        let args = FunctionArgs::new_unnamed(vec![s0, s1]);
+        let output = coalesce.call(args).unwrap();
         let actual = output.i8().unwrap();
         let expected = Int8Array::from_iter(
             Field::new("s0", DataType::Int8),
@@ -171,7 +177,8 @@ mod tests {
     #[test]
     fn test_coalesce_no_args() {
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate_from_series(&[]);
+        let args = FunctionArgs::new_unnamed(vec![]);
+        let output = coalesce.call(args);
 
         assert!(output.is_err());
     }
@@ -185,7 +192,8 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate_from_series(&[s0.clone()]).unwrap();
+        let args = FunctionArgs::new_unnamed(vec![s0.clone()]);
+        let output = coalesce.call(args).unwrap();
         // can't directly compare as null != null
         let output = output.i8().unwrap();
         let s0 = s0.i8().unwrap();
@@ -199,7 +207,8 @@ mod tests {
         let s2 = Series::full_null("s2", &DataType::Utf8, 100);
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate_from_series(&[s0, s1, s2]).unwrap();
+        let args = FunctionArgs::new_unnamed(vec![s0.clone(), s1.clone(), s2.clone()]);
+        let output = coalesce.call(args).unwrap();
         let actual = output.utf8().unwrap();
         let expected = Utf8Array::full_null("s0", &DataType::Utf8, 100);
 
@@ -232,13 +241,14 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate_from_series(&[s0, s1, s2]);
+        let args = FunctionArgs::new_unnamed(vec![s0.clone(), s1.clone(), s2.clone()]);
+        let output = coalesce.call(args).unwrap();
 
         let expected = Utf8Array::from_iter(
             "s2",
             vec![None, Some("2"), Some("10"), Some("11"), Some("world")].into_iter(),
         );
-        assert_eq!(output.unwrap().utf8().unwrap(), &expected);
+        assert_eq!(output.utf8().unwrap(), &expected);
     }
 
     #[test]
@@ -253,7 +263,9 @@ mod tests {
         let expected = Field::new("s0", DataType::Int32);
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.to_field(&[col_0, fallback], &schema).unwrap();
+        let output = coalesce
+            .get_return_field(FunctionArgs::new_unnamed(vec![col_0, fallback]), &schema)
+            .unwrap();
         assert_eq!(output, expected);
     }
 
@@ -272,7 +284,10 @@ mod tests {
 
         let coalesce = super::Coalesce {};
         let output = coalesce
-            .to_field(&[col_0, col_1, fallback], &schema)
+            .get_return_field(
+                FunctionArgs::new_unnamed(vec![col_0, col_1, fallback]),
+                &schema,
+            )
             .unwrap();
         assert_eq!(output, expected);
     }
@@ -291,7 +306,10 @@ mod tests {
         let expected = "could not determine supertype of Date and Boolean".to_string();
         let coalesce = super::Coalesce {};
         let DaftError::TypeError(e) = coalesce
-            .to_field(&[col_0, col_1, col_2], &schema)
+            .get_return_field(
+                FunctionArgs::new_unnamed(vec![col_0, col_1, col_2]),
+                &schema,
+            )
             .unwrap_err()
         else {
             panic!("Expected error")

@@ -4,7 +4,6 @@ use std::{
     collections::HashMap,
     io::Write,
     num::{NonZeroI32, NonZeroUsize},
-    ops::Range,
     pin::Pin,
     string::FromUtf8Error,
     sync::Arc,
@@ -51,11 +50,12 @@ use url::{ParseError, Position};
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     Error::InvalidArgument,
-    FileFormat, InvalidArgumentSnafu, SourceType,
+    FileFormat, InvalidArgumentSnafu, InvalidRangeRequestSnafu, SourceType,
 };
 
 const S3_DELIMITER: &str = "/";
@@ -691,7 +691,7 @@ impl S3LikeSource {
         &self,
         permit: OwnedSemaphorePermit,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         region: &Region,
     ) -> super::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
@@ -716,11 +716,10 @@ impl S3LikeSource {
 
             let request = match &range {
                 None => request,
-                Some(range) => request.range(format!(
-                    "bytes={}-{}",
-                    range.start,
-                    range.end.saturating_sub(1)
-                )),
+                Some(range) => {
+                    range.validate().context(InvalidRangeRequestSnafu)?;
+                    request.range(range.to_string())
+                }
             };
 
             let response = request.send().await;
@@ -1167,7 +1166,7 @@ impl ObjectSource for S3LikeSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let permit = self
@@ -1680,7 +1679,7 @@ mod tests {
 
     use common_io_config::S3Config;
 
-    use crate::{object_io::ObjectSource, Result, S3LikeSource};
+    use crate::{integrations::test_full_get, object_io::ObjectSource, Result, S3LikeSource};
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {
@@ -1698,38 +1697,7 @@ mod tests {
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
-        let first_bytes = client
-            .get(parquet_file_path, Some(0..10), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 10);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
-
-        let first_bytes = client
-            .get(parquet_file_path, Some(10..100), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 90);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
-
-        let last_bytes = client
-            .get(
-                parquet_file_path,
-                Some((all_bytes.len() - 10)..(all_bytes.len() + 10)),
-                None,
-            )
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(last_bytes.len(), 10);
-        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
-
-        let size_from_get_size = client.get_size(parquet_file_path, None).await?;
-        assert_eq!(size_from_get_size, all_bytes.len());
-
-        Ok(())
+        test_full_get(client, &parquet_file_path, &bytes).await
     }
 
     #[tokio::test]
