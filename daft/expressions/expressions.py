@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
+    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8zlib"]
 
 
 def lit(value: object) -> Expression:
@@ -424,6 +424,38 @@ class Expression:
             category=DeprecationWarning,
         )
         return struct(*fields)
+
+    def unnest(self) -> Expression:
+        """Flatten the fields of a struct expression into columns in a DataFrame.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "struct": [
+            ...             {"x": 1, "y": 2},
+            ...             {"x": 3, "y": 4},
+            ...         ]
+            ...     }
+            ... )
+            >>> unnested_df = df.select(df["struct"].unnest())
+            >>> unnested_df.show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 2     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 4     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+            >>> # These are also equivalent syntactic sugars for above
+            >>> unnested_df = df.select(df["struct"].struct.get("*"))
+            >>> unnested_df = df.select(df["struct"]["*"])
+        """
+        return self.struct.get("*")
 
     def __bool__(self) -> bool:
         raise ValueError(
