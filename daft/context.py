@@ -47,6 +47,12 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
+    def get_runner_type(self) -> str:
+        if self._ctx._runner is not None:
+            return self._ctx._runner.name
+
+        return self._ctx.get_runner_type()
+
     def get_or_create_runner(self) -> Runner[PartitionT]:
         return self._ctx.get_or_create_runner()
 
