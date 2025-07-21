@@ -608,7 +608,7 @@ mod tests {
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
-                run_on_separate_process: None,
+                use_process: None,
             }),
             inputs,
         }

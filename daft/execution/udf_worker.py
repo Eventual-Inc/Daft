@@ -6,7 +6,7 @@ from multiprocessing.connection import Client
 from traceback import TracebackException
 
 from daft.errors import UDFException
-from daft.execution.udf import _SENTINEL, SharedMemoryTransport
+from daft.execution.udf import _ENTER, _ERROR, _SENTINEL, _SUCCESS, _UDF_ERROR, SharedMemoryTransport
 from daft.expressions.expressions import ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 
@@ -20,8 +20,8 @@ def udf_event_loop(
 
     # Wait for the expression projection
     name, expr_projection_bytes = conn.recv()
-    if name != "__ENTER__":
-        raise ValueError(f"Expected '__ENTER__' but got {name}")
+    if name != _ENTER:
+        raise ValueError(f"Expected '{_ENTER}' but got {name}")
     uninitialized_projection: ExpressionsProjection = pickle.loads(expr_projection_bytes)
 
     transport = SharedMemoryTransport()
@@ -39,14 +39,14 @@ def udf_event_loop(
             output_bytes = evaluated.to_ipc_stream()
 
             out_name, out_size = transport.write_and_close(output_bytes)
-            conn.send(("success", out_name, out_size))
+            conn.send((_SUCCESS, out_name, out_size))
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None
-        conn.send(("udf_error", e.message, TracebackException.from_exception(exc), pickle.dumps(exc)))
+        conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), pickle.dumps(exc)))
     except Exception as e:
         try:
-            conn.send(("error", TracebackException.from_exception(e)))
+            conn.send((_ERROR, TracebackException.from_exception(e)))
         except Exception:
             # If the connection is broken, it's because the parent process has died.
             # We can just exit here.

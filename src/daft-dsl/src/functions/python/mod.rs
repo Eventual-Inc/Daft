@@ -77,7 +77,7 @@ pub struct PythonUDF {
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
-    pub run_on_separate_process: Option<bool>,
+    pub use_process: Option<bool>,
 }
 
 impl PythonUDF {
@@ -95,7 +95,7 @@ impl PythonUDF {
             resource_request: None,
             batch_size: None,
             concurrency: Some(4),
-            run_on_separate_process: None,
+            use_process: None,
         }
     }
 }
@@ -111,7 +111,7 @@ pub fn udf(
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
-    run_on_separate_process: Option<bool>,
+    use_process: Option<bool>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF {
@@ -123,7 +123,7 @@ pub fn udf(
             resource_request,
             batch_size,
             concurrency,
-            run_on_separate_process,
+            use_process,
         }),
         inputs: expressions.into(),
     })
@@ -242,18 +242,14 @@ pub fn try_get_batch_size_from_udf(expr: &ExprRef) -> DaftResult<Option<usize>> 
     }
 }
 
-pub fn get_run_on_separate_process(expr: &ExprRef) -> DaftResult<Option<bool>> {
+pub fn get_use_process(expr: &ExprRef) -> DaftResult<Option<bool>> {
     let mut finder = None;
     expr.apply(|e| match e.as_ref() {
         Expr::Function {
-            func:
-                FunctionExpr::Python(PythonUDF {
-                    run_on_separate_process,
-                    ..
-                }),
+            func: FunctionExpr::Python(PythonUDF { use_process, .. }),
             ..
         } => {
-            finder = Some(*run_on_separate_process);
+            finder = Some(*use_process);
             Ok(common_treenode::TreeNodeRecursion::Stop)
         }
         _ => Ok(common_treenode::TreeNodeRecursion::Continue),
@@ -264,7 +260,7 @@ pub fn get_run_on_separate_process(expr: &ExprRef) -> DaftResult<Option<bool>> {
         Ok(finder)
     } else {
         Err(DaftError::ValueError(format!(
-            "No UDF with run_on_separate_process found in expression: {:?}",
+            "No UDF with use_process found in expression: {:?}",
             expr
         )))
     }

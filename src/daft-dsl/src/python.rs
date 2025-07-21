@@ -230,7 +230,7 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     resource_request=None,
     batch_size=None,
     concurrency=None,
-    run_on_separate_process=None
+    use_process=None
 ))]
 pub fn udf(
     name: &str,
@@ -242,7 +242,7 @@ pub fn udf(
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
-    run_on_separate_process: Option<bool>,
+    use_process: Option<bool>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -266,7 +266,7 @@ pub fn udf(
             resource_request,
             batch_size,
             concurrency,
-            run_on_separate_process,
+            use_process,
         )?
         .into(),
     })

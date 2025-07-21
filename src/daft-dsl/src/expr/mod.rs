@@ -1843,7 +1843,8 @@ impl Expr {
 
     pub fn unwrap_alias(self: &ExprRef) -> (ExprRef, Option<Arc<str>>) {
         match self.as_ref() {
-            Self::Alias(expr, name) => (expr.clone(), Some(name.clone())),
+            // Recursively unwrap if nested aliases, but only return the outermost
+            Self::Alias(expr, name) => (expr.clone().unwrap_alias().0, Some(name.clone())),
             _ => (self.clone(), None),
         }
     }

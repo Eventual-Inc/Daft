@@ -717,7 +717,7 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
 def test_run_udf_on_same_process(batch_size):
     df = daft.from_pydict({"a": [None] * 3})
 
-    @udf(return_dtype=int, batch_size=batch_size, run_on_separate_process=False)
+    @udf(return_dtype=int, batch_size=batch_size, use_process=False)
     def udf_1(data):
         return [os.getpid()] * len(data)
 
@@ -733,7 +733,7 @@ def test_run_udf_on_same_process(batch_size):
 def test_run_udf_on_separate_process(batch_size):
     df = daft.from_pydict({"a": [None] * 3})
 
-    @udf(return_dtype=int, batch_size=batch_size, run_on_separate_process=True)
+    @udf(return_dtype=int, batch_size=batch_size, use_process=True)
     def udf_1(data):
         return [os.getpid()] * len(data)
 
