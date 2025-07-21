@@ -148,7 +148,7 @@ impl BlockingSink for TopNSink {
     }
 
     fn name(&self) -> Arc<str> {
-        Arc::from("TopN")
+        Arc::from(format!("TopN {}", self.params.limit))
     }
 
     fn multiline_display(&self) -> Vec<String> {

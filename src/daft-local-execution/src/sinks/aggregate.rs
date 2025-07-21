@@ -52,15 +52,23 @@ struct AggParams {
 }
 
 pub struct AggregateSink {
+    title_name: &'static str,
     agg_sink_params: Arc<AggParams>,
 }
 
 impl AggregateSink {
     pub fn new(aggregations: &[BoundAggExpr], input_schema: &SchemaRef) -> DaftResult<Self> {
+        let aggregate_name = if aggregations.len() == 1 {
+            aggregations[0].as_ref().agg_name()
+        } else {
+            "Aggregate"
+        };
+
         let (sink_agg_exprs, finalize_agg_exprs, final_projections) =
             daft_physical_plan::populate_aggregation_stages_bound(aggregations, input_schema, &[])?;
 
         Ok(Self {
+            title_name: aggregate_name,
             agg_sink_params: Arc::new(AggParams {
                 sink_agg_exprs,
                 finalize_agg_exprs,
@@ -125,7 +133,7 @@ impl BlockingSink for AggregateSink {
     }
 
     fn name(&self) -> Arc<str> {
-        Arc::from("Aggregate")
+        Arc::from(self.title_name)
     }
 
     fn multiline_display(&self) -> Vec<String> {
