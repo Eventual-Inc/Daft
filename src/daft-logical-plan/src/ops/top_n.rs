@@ -15,8 +15,8 @@ use crate::{
 /// TopN operator for computing the largest / smallest N rows based on a set of
 /// sort keys and orderings.
 ///
-/// The TopN operator is essentially a Sort followed by a Limit. But it can be
-/// computed more efficiently as a single operator via an O(n) algorithm instead
+/// The TopN operator is essentially a Sort followed by a Limit with optional Offset. But it
+/// can be computed more efficiently as a single operator via an O(n) algorithm instead
 /// of a O(n log n) algorithm for sorting.
 ///
 /// It is currently unavailable in the Python API and only constructed by the
@@ -34,6 +34,8 @@ pub struct TopN {
     pub nulls_first: Vec<bool>,
     /// Limit on number of rows.
     pub limit: u64,
+    /// Offset on number of rows. This is optional, it's equivalent to offset = 0 if not passed.
+    pub offset: Option<u64>,
     /// The plan statistics.
     pub stats_state: StatsState,
 }
@@ -45,11 +47,21 @@ impl TopN {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         limit: u64,
+        offset: Option<u64>,
     ) -> Result<Self> {
         if sort_by.is_empty() {
             return Err(DaftError::InternalError(
                 "TopN must be given at least one column/expression to sort by".to_string(),
             ))
+            .context(CreationSnafu);
+        }
+
+        if offset.is_some_and(|o| o > limit) {
+            return Err(DaftError::ValueError(format!(
+                "TopN node's offset {} is greater than limit {}",
+                offset.unwrap(),
+                limit
+            )))
             .context(CreationSnafu);
         }
 
@@ -75,6 +87,7 @@ impl TopN {
             descending,
             nulls_first,
             limit,
+            offset,
             stats_state: StatsState::NotMaterialized,
         })
     }
@@ -91,23 +104,25 @@ impl TopN {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let limit = self.limit as usize;
-        let limit_selectivity = if input_stats.approx_stats.num_rows > limit {
-            if input_stats.approx_stats.num_rows == 0 {
-                0.0
-            } else {
-                limit as f64 / input_stats.approx_stats.num_rows as f64
-            }
+        let approx_num_rows = input_stats.approx_stats.num_rows;
+
+        let limit_num_rows = match self.offset {
+            Some(o) => (self.limit - o) as usize,
+            None => self.limit as usize,
+        };
+
+        let limit_selectivity = if approx_num_rows == 0 {
+            0.0
         } else {
-            1.0
+            (limit_num_rows as f64 / approx_num_rows as f64).clamp(0.0, 1.0)
         };
 
         let approx_stats = ApproxStats {
-            num_rows: limit.min(input_stats.approx_stats.num_rows),
-            size_bytes: if input_stats.approx_stats.num_rows > limit {
+            num_rows: limit_num_rows.min(approx_num_rows),
+            size_bytes: if approx_num_rows > limit_num_rows {
                 let est_bytes_per_row =
-                    input_stats.approx_stats.size_bytes / input_stats.approx_stats.num_rows.max(1);
-                limit * est_bytes_per_row
+                    input_stats.approx_stats.size_bytes / approx_num_rows.max(1);
+                limit_num_rows * est_bytes_per_row
             } else {
                 input_stats.approx_stats.size_bytes
             },
@@ -135,10 +150,19 @@ impl TopN {
                 )
             })
             .join(", ");
-        res.push(format!(
-            "TopN: Sort by = {}, Num Rows = {}",
-            pairs, self.limit
-        ));
+
+        res.push(match self.offset {
+            Some(o) => {
+                format!(
+                    "TopN: Sort by = {}, Num Rows = {}, Offset = {}",
+                    pairs,
+                    self.limit - o,
+                    o
+                )
+            }
+            None => format!("TopN: Sort by = {}, Num Rows = {}", pairs, self.limit),
+        });
+
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }

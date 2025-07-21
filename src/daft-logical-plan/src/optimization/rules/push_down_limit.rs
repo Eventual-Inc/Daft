@@ -5,7 +5,9 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
+    ops::{
+        Limit as LogicalLimit, Sort as LogicalSort, Source as LogicalSource, TopN as LogicalTopN,
+    },
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -36,6 +38,7 @@ impl PushDownLimit {
             LogicalPlan::Limit(LogicalLimit {
                 input,
                 limit,
+                offset,
                 eager,
                 ..
             }) => {
@@ -55,8 +58,12 @@ impl PushDownLimit {
                     // Push limit into source as a "local" limit.
                     //
                     // Limit-Source -> Limit-Source[with_limit]
-                    LogicalPlan::Source(source) => {
-                        match source.source_info.as_ref() {
+                    LogicalPlan::Source(LogicalSource {
+                        output_schema,
+                        source_info,
+                        ..
+                    }) => {
+                        match source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
@@ -70,8 +77,8 @@ impl PushDownLimit {
                             SourceInfo::Physical(external_info) => {
                                 let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
-                                let new_source = LogicalPlan::Source(Source::new(
-                                    source.output_schema.clone(),
+                                let new_source = LogicalPlan::Source(LogicalSource::new(
+                                    output_schema.clone(),
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
@@ -97,18 +104,32 @@ impl PushDownLimit {
                     // Limit-Limit -> Limit
                     LogicalPlan::Limit(LogicalLimit {
                         input,
+                        offset: child_offset,
                         limit: child_limit,
                         eager: child_eager,
                         ..
                     }) => {
-                        let new_limit = limit.min(*child_limit as usize);
-                        let new_eager = eager | child_eager;
+                        let new_offset = offset
+                            .zip(*child_offset)
+                            .map(|(o1, o2)| o1 + o2)
+                            .or(*offset)
+                            .or(*child_offset);
 
-                        let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
-                            input.clone(),
-                            new_limit as u64,
-                            new_eager,
-                        )));
+                        let new_limit = (limit as u64).min(*child_limit);
+                        let new_eager = eager | child_eager;
+                        // FIXME(zhenchao) is this the right way?
+                        let new_plan = Arc::new(LogicalPlan::Limit(match new_offset {
+                            Some(o) if o >= new_limit => {
+                                LogicalLimit::try_new(input.clone(), 0, None, new_eager)?
+                            }
+                            _ => LogicalLimit::try_new(
+                                input.clone(),
+                                new_limit,
+                                new_offset,
+                                new_eager,
+                            )?,
+                        }));
+
                         // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
                         let optimized = self
                             .try_optimize_node(new_plan.clone())?
@@ -132,6 +153,7 @@ impl PushDownLimit {
                             descending.clone(),
                             nulls_first.clone(),
                             limit as u64,
+                            *offset,
                         )?));
 
                         Ok(Transformed::yes(new_plan))
@@ -260,11 +282,12 @@ mod tests {
         Ok(())
     }
 
-    /// Tests that multiple adjacent Limits fold into the smallest limit.
+    /// Tests that multiple adjacent Limits with offset fold into the smallest limit.
     ///
-    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
+    /// Limit[o1, l1]-Limit[o2, l2] -> Limit[o1 + o2, min(l1,l2)]
     #[rstest]
     fn limit_folds_with_smaller_limit(
+        #[values(false, true)] none_offset: bool,
         #[values(false, true)] smaller_first: bool,
     ) -> DaftResult<()> {
         let smaller_limit = 5;
@@ -274,14 +297,22 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .limit(if smaller_first { smaller_limit } else { limit }, false)?
+            .limit_with_offset(
+                if smaller_first { smaller_limit } else { limit },
+                if none_offset { None } else { Some(1) },
+                false,
+            )?
             .limit(if smaller_first { limit } else { smaller_limit }, false)?
             .build();
         let expected = dummy_scan_node_with_pushdowns(
             scan_op,
             Pushdowns::default().with_limit(Some(smaller_limit as usize)),
         )
-        .limit(smaller_limit, false)?
+        .limit_with_offset(
+            smaller_limit,
+            if none_offset { None } else { Some(1) },
+            false,
+        )?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
