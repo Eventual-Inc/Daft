@@ -144,14 +144,14 @@ pub fn viz_pipeline_mermaid(
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(frozen))]
 pub struct RelationshipNode {
     pub id: usize,
     pub parent_id: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(frozen))]
 pub struct RelationshipInformation {
     pub ids: Vec<RelationshipNode>,
     pub plan_id: Arc<str>,

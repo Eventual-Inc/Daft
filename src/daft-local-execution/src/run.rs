@@ -17,16 +17,13 @@ use daft_micropartition::{
     MicroPartition, MicroPartitionRef,
 };
 use futures::{stream::BoxStream, Stream, StreamExt};
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{
-        pyclass, pymethods, Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
-    },
+    pyo3::{pyclass, pymethods, Bound, IntoPyObject, PyAny, PyObject, PyRef, PyResult, Python},
 };
 
 use crate::{
@@ -42,9 +39,9 @@ use crate::{
 };
 
 #[cfg(feature = "python")]
-#[pyclass]
+#[pyclass(frozen)]
 struct LocalPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
+    iter: Arc<std::sync::Mutex<Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>>>,
 }
 
 #[cfg(feature = "python")]
@@ -53,16 +50,19 @@ impl LocalPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
-        let iter = &mut slf.iter;
-        Ok(py.allow_threads(|| iter.next().transpose())?)
+    fn __next__(slf: PyRef<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
+        let iter = slf.iter.clone();
+        Ok(py.allow_threads(|| {
+            let mut iter = iter.lock().unwrap();
+            iter.next().transpose()
+        })?)
     }
 }
 
 #[cfg(feature = "python")]
 #[pyclass(frozen)]
 struct LocalPartitionStream {
-    stream: Arc<Mutex<BoxStream<'static, DaftResult<PyObject>>>>,
+    stream: Arc<tokio::sync::Mutex<BoxStream<'static, DaftResult<PyObject>>>>,
 }
 
 #[cfg(feature = "python")]
@@ -150,7 +150,9 @@ impl PyNativeExecutor {
                     .into_any())
             })
         }));
-        let part_iter = LocalPartitionIterator { iter };
+        let part_iter = LocalPartitionIterator {
+            iter: Arc::new(std::sync::Mutex::new(iter)),
+        };
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
@@ -198,7 +200,7 @@ impl PyNativeExecutor {
             })
         }));
         let stream = LocalPartitionStream {
-            stream: Arc::new(Mutex::new(stream)),
+            stream: Arc::new(tokio::sync::Mutex::new(stream)),
         };
         Ok(stream.into_pyobject(py)?.into_any())
     }

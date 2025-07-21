@@ -1,4 +1,8 @@
-use std::{fs::File, pin::Pin, sync::Arc};
+use std::{
+    fs::File,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use arrow2::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use arrow_flight::{
@@ -142,19 +146,24 @@ impl FlightService for ShuffleFlightServer {
     }
 }
 
-pub struct FlightServerConnectionHandle {
-    port: u16,
+struct FlightServerConnectionHandleInner {
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
     server_task: Option<RuntimeTask<DaftResult<()>>>,
 }
 
+pub struct FlightServerConnectionHandle {
+    port: u16,
+    inner: Mutex<FlightServerConnectionHandleInner>,
+}
+
 impl FlightServerConnectionHandle {
-    pub fn shutdown(&mut self) -> DaftResult<()> {
-        let Some(shutdown_signal) = self.shutdown_signal.take() else {
+    pub fn shutdown(&self) -> DaftResult<()> {
+        let mut inner = self.inner.lock().unwrap();
+        let Some(shutdown_signal) = inner.shutdown_signal.take() else {
             return Ok(());
         };
         let _ = shutdown_signal.send(());
-        let Some(server_task) = self.server_task.take() else {
+        let Some(server_task) = inner.server_task.take() else {
             return Ok(());
         };
         common_runtime::get_io_runtime(true).block_on_current_thread(server_task)??;
@@ -205,8 +214,10 @@ pub fn start_flight_server(
 
     let handle = FlightServerConnectionHandle {
         port,
-        shutdown_signal: Some(shutdown_tx),
-        server_task: Some(server_task),
+        inner: Mutex::new(FlightServerConnectionHandleInner {
+            shutdown_signal: Some(shutdown_tx),
+            server_task: Some(server_task),
+        }),
     };
     Ok(handle)
 }

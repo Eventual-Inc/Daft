@@ -47,7 +47,7 @@ impl Neg for &IntervalValue {
     }
 }
 
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "python", pyclass(frozen))]
 #[derive(Debug, Default, Clone)]
 pub struct IntervalValueBuilder {
     pub years: Option<i32>,

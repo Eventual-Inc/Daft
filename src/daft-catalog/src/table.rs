@@ -68,7 +68,7 @@ pub trait Table: Sync + Send + std::fmt::Debug {
 
 /// View is an immutable Table backed by a DataFrame.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(frozen))]
 pub struct View {
     name: String,
     plan: LogicalPlanBuilder,

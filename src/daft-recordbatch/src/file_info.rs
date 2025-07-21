@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Metadata for a single file.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct FileInfo {
     pub file_path: String,
     pub file_size: Option<i64>,

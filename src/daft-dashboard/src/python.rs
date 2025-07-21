@@ -1,4 +1,4 @@
-use std::{io::ErrorKind, pin::pin};
+use std::{io::ErrorKind, pin::pin, sync::Mutex};
 
 use pyo3::{exceptions, pyclass, pyfunction, pymethods, PyErr, PyResult, Python};
 use tokio::{
@@ -8,9 +8,9 @@ use tokio::{
 
 use crate::DashboardState;
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct ConnectionHandle {
-    shutdown_signal: Option<oneshot::Sender<()>>,
+    shutdown_signal: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 fn make_listener() -> std::io::Result<std::net::TcpListener> {
@@ -19,8 +19,11 @@ fn make_listener() -> std::io::Result<std::net::TcpListener> {
 
 #[pymethods]
 impl ConnectionHandle {
-    pub fn shutdown(&mut self, noop_if_shutdown: bool) -> PyResult<()> {
-        match (self.shutdown_signal.take(), noop_if_shutdown) {
+    pub fn shutdown(&self, noop_if_shutdown: bool) -> PyResult<()> {
+        match (
+            self.shutdown_signal.lock().unwrap().take(),
+            noop_if_shutdown,
+        ) {
             (Some(shutdown_signal), _) => shutdown_signal.send(()).map_err(|()| {
                 PyErr::new::<exceptions::PyRuntimeError, _>("unable to send shutdown signal")
             }),
@@ -36,7 +39,7 @@ impl ConnectionHandle {
 pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandle> {
     match (make_listener(), noop_if_initialized) {
         (Err(_), true) => Ok(ConnectionHandle {
-            shutdown_signal: None,
+            shutdown_signal: Mutex::new(None),
         }),
         (Err(e), false) if e.kind() == ErrorKind::AddrInUse => {
             Err(PyErr::new::<exceptions::PyRuntimeError, _>(
@@ -48,7 +51,7 @@ pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandl
             let (send, recv) = oneshot::channel::<()>();
 
             let handle = ConnectionHandle {
-                shutdown_signal: Some(send),
+                shutdown_signal: Mutex::new(Some(send)),
             };
 
             py.allow_threads(move || {

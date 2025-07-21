@@ -380,7 +380,7 @@ impl Join {
     }
 }
 
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "python", pyclass(frozen))]
 #[derive(Clone, Default)]
 pub struct JoinOptions {
     pub prefix: Option<String>,

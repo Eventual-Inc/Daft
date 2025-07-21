@@ -16,7 +16,7 @@ use {
 /// Configuration for interacting with a particular storage backend, using a particular
 /// I/O layer implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct StorageConfig {
     // TODO: store Arc<IOConfig> instead
     pub io_config: Option<IOConfig>,

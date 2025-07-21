@@ -113,14 +113,14 @@ impl PyShuffleCache {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "FlightServerConnectionHandle")]
+#[pyclass(module = "daft.daft", name = "FlightServerConnectionHandle", frozen)]
 pub struct PyFlightServerConnectionHandle {
     handle: FlightServerConnectionHandle,
 }
 
 #[pymethods]
 impl PyFlightServerConnectionHandle {
-    pub fn shutdown(&mut self) -> PyResult<()> {
+    pub fn shutdown(&self) -> PyResult<()> {
         self.handle.shutdown()?;
         Ok(())
     }

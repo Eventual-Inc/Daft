@@ -31,6 +31,8 @@ mod spark_analyzer;
 #[cfg(feature = "python")]
 pub mod util;
 
+use std::sync::Mutex;
+
 #[cfg(feature = "python")]
 use connect_service::DaftSparkConnectService;
 #[cfg(feature = "python")]
@@ -47,16 +49,16 @@ use tracing::info;
 #[cfg(feature = "python")]
 pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(frozen))]
 pub struct ConnectionHandle {
-    shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
+    shutdown_signal: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     port: u16,
 }
 
 #[cfg_attr(feature = "python", pyo3::pymethods)]
 impl ConnectionHandle {
-    pub fn shutdown(&mut self) {
-        let Some(shutdown_signal) = self.shutdown_signal.take() else {
+    pub fn shutdown(&self) {
+        let Some(shutdown_signal) = self.shutdown_signal.lock().unwrap().take() else {
             return;
         };
         shutdown_signal.send(()).unwrap();
@@ -119,7 +121,7 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
     let port = port_rx.blocking_recv().expect("Failed to receive port");
 
     let handle = ConnectionHandle {
-        shutdown_signal: Some(shutdown_signal),
+        shutdown_signal: Mutex::new(Some(shutdown_signal)),
         port,
     };
     Ok(handle)

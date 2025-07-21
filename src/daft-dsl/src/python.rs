@@ -283,7 +283,7 @@ pub fn get_udf_names(expr: PyExpr) -> Vec<String> {
     get_udf_names(&expr.expr)
 }
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {
     pub expr: crate::ExprRef,

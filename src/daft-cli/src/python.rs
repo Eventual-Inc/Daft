@@ -25,7 +25,7 @@ pub fn cli(py: Python, args: Vec<String>) {
                 daft_dashboard::SERVER_ADDR,
                 daft_dashboard::SERVER_PORT
             );
-            let mut handle =
+            let handle =
                 daft_dashboard::python::launch(false, py).expect("Failed to launch Daft Dashboard");
             loop {
                 if py.check_signals().is_err() {

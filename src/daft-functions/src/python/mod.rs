@@ -13,7 +13,7 @@ use pyo3::{
     wrap_pyfunction, Bound, PyResult,
 };
 
-#[pyo3::pyclass]
+#[pyo3::pyclass(frozen)]
 pub struct PyScalarFunction {
     pub inner: Arc<dyn ScalarFunctionFactory>,
 }

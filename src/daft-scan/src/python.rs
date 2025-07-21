@@ -174,7 +174,7 @@ pub mod pylib {
             Ok(Self { scan_op })
         }
     }
-    #[pyclass(module = "daft.daft")]
+    #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug)]
     struct PythonScanOperatorBridge {
         name: String,

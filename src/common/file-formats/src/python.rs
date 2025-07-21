@@ -14,7 +14,7 @@ use crate::{
 #[serde(transparent)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "daft.daft", name = "FileFormatConfig")
+    pyclass(module = "daft.daft", name = "FileFormatConfig", frozen)
 )]
 pub struct PyFileFormatConfig(Arc<FileFormatConfig>);
 
