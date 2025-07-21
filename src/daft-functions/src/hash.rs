@@ -21,7 +21,7 @@ struct Args<T> {
 #[typetag::serde]
 impl ScalarUDF for HashFunction {
     fn name(&self) -> &'static str {
-        "hash"
+        "hash_with"
     }
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
@@ -52,7 +52,7 @@ impl ScalarUDF for HashFunction {
                     let seed = seed.cast(&DataType::UInt64)?;
                     let seed = seed.u64().unwrap();
                     input
-                        .hash(Some(seed), hash_function)
+                        .hash_with(Some(seed), hash_function)
                         .map(IntoSeries::into_series)
                 }
                 1 => {
@@ -65,14 +65,14 @@ impl ScalarUDF for HashFunction {
                         std::iter::repeat_n(Some(seed), input.len()),
                     );
                     input
-                        .hash(Some(&seed), hash_function)
+                        .hash_with(Some(&seed), hash_function)
                         .map(IntoSeries::into_series)
                 }
                 _ if seed.len() == input.len() => {
                     let seed = seed.cast(&DataType::UInt64)?;
                     let seed = seed.u64().unwrap();
                     input
-                        .hash(Some(seed), hash_function)
+                        .hash_with(Some(seed), hash_function)
                         .map(IntoSeries::into_series)
                 }
                 _ => Err(DaftError::ValueError(
@@ -80,7 +80,9 @@ impl ScalarUDF for HashFunction {
                 )),
             }
         } else {
-            input.hash(None, hash_function).map(IntoSeries::into_series)
+            input
+                .hash_with(None, hash_function)
+                .map(IntoSeries::into_series)
         }
     }
 
@@ -108,7 +110,7 @@ impl ScalarUDF for HashFunction {
 }
 
 #[must_use]
-pub fn hash(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef>) -> ExprRef {
+pub fn hash_with(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef>) -> ExprRef {
     let mut inputs = vec![input];
     if let Some(seed) = seed {
         inputs.push(seed);

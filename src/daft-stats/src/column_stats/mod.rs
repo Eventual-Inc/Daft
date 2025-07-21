@@ -8,7 +8,6 @@ use std::{
 };
 
 use daft_core::prelude::*;
-use daft_hash::HashFunctionKind;
 use snafu::{ResultExt, Snafu};
 
 use crate::DaftCoreComputeSnafu;
@@ -24,11 +23,11 @@ impl Hash for ColumnRangeStatistics {
             Self::Missing => (),
             Self::Loaded(l, u) => {
                 let lower_hashes = l
-                    .hash(None, HashFunctionKind::XxHash)
+                    .hash(None)
                     .expect("Failed to hash lower column range statistics");
                 lower_hashes.into_iter().for_each(|h| h.hash(state));
                 let upper_hashes = u
-                    .hash(None, HashFunctionKind::XxHash)
+                    .hash(None)
                     .expect("Failed to hash upper column range statistics");
                 upper_hashes.into_iter().for_each(|h| h.hash(state));
             }

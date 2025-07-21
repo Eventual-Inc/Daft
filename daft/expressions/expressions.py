@@ -1518,7 +1518,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def hash(
-        self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = None
+        self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash"
     ) -> Expression:
         """Hashes the values in the Expression.
 
@@ -1538,7 +1538,7 @@ class Expression:
             kwargs["seed"] = seed
         if hash_function is not None:
             kwargs["hash_function"] = hash_function
-        return self._eval_expressions("hash", **kwargs)
+        return self._eval_expressions("hash_with", **kwargs)
 
     def minhash(
         self,

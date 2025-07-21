@@ -174,6 +174,13 @@ impl FunctionRegistry {
     pub fn entries(&self) -> impl Iterator<Item = (&String, &Arc<dyn ScalarFunctionFactory>)> {
         self.map.iter()
     }
+
+    /// Adds an alias for an existing function.
+    pub fn add_alias(&mut self, alias: &str, target: &str) {
+        if let Some(func) = self.get(target) {
+            self.map.insert(alias.to_string(), func);
+        }
+    }
 }
 
 pub static FUNCTION_REGISTRY: LazyLock<RwLock<FunctionRegistry>> =

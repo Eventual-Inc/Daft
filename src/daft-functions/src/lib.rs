@@ -55,6 +55,8 @@ impl FunctionModule for HashFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
+        // Register "hash" as an alias for "hash_with"
+        parent.add_alias("hash", "hash_with");
     }
 }
 

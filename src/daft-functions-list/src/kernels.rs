@@ -17,12 +17,10 @@ use daft_core::{
     series::{IntoSeries, Series},
     utils::identity_hash_set::IdentityBuildHasher,
 };
-use daft_hash::HashFunctionKind;
 use indexmap::{
     map::{raw_entry_v1::RawEntryMut, RawEntryApiV1},
     IndexMap,
 };
-
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
@@ -76,7 +74,7 @@ impl ListArrayExtension for ListArray {
 
         let original_name = self.name();
 
-        let hashes = self.flat_child.hash(None, HashFunctionKind::XxHash)?;
+        let hashes = self.flat_child.hash(None)?;
 
         let flat_child = self.flat_child.to_arrow();
         let flat_child = &*flat_child;
