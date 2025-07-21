@@ -4,6 +4,7 @@ import os
 import pathlib
 
 import pandas as pd
+import pytest
 
 import daft
 from tests.conftest import assert_df_equals
@@ -145,3 +146,39 @@ def test_glob_files_recursive(tmpdir):
     pd_df = pd_df.astype({"num_rows": float})
 
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+
+
+def test_glob_files_from_multiple_path(tmpdir):
+    sub_folder_a = pathlib.Path(tmpdir) / "abc"
+    sub_folder_b = pathlib.Path(tmpdir) / "bca"
+    sub_folder_c = pathlib.Path(tmpdir) / "cab"
+    sub_folder_a.mkdir()
+    sub_folder_b.mkdir()
+    sub_folder_c.mkdir()
+
+    paths = []
+    for i in range(5):
+        for prefix in [sub_folder_a, sub_folder_b]:
+            filepath = prefix / f"file_{i}.foo"
+            filepath.write_text("a" * i)
+            paths.append(filepath)
+
+        filepath = sub_folder_c / f"file_{i}.foo"
+        filepath.write_text("a" * i)
+
+    daft_df = daft.from_glob_path([str(sub_folder_a), str(sub_folder_b), "/not_exists"])
+    daft_pd_df = daft_df.to_pandas()
+
+    listing_records = [
+        {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
+        for path, size in zip(paths, [i for i in range(5) for _ in range(2)])
+    ]
+    pd_df = pd.DataFrame.from_records(listing_records)
+    pd_df = pd_df.astype({"num_rows": float})
+    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+
+    with pytest.raises(FileNotFoundError):
+        daft.from_glob_path(str(pathlib.Path(tmpdir)))
+
+    with pytest.raises(FileNotFoundError):
+        daft.from_glob_path("/not_exists")
