@@ -7,8 +7,8 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::ExecutionTaskSpawner;
 
@@ -140,7 +140,7 @@ impl BlockingSink for TopNSink {
                         &params.nulls_first,
                         params.limit,
                     )?);
-                    Ok(Some(final_output))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
                 },
                 Span::current(),
             )

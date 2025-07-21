@@ -14,6 +14,8 @@ from typing import (
     get_origin,
 )
 
+from daft.errors import UDFException
+
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
 else:
@@ -31,7 +33,14 @@ def DataframePublicAPI(func: Callable[P, T]) -> Callable[P, T]:
     def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
         __tracebackhide__ = True
         type_check_function(func, *args, **kwargs)
-        return func(*args, **kwargs)
+        try:
+            return func(*args, **kwargs)
+        except UDFException as e:
+            e = e.with_traceback(None)
+            raise
+        except Exception as e:
+            e = e.with_traceback(e.__traceback__.tb_next if e.__traceback__ else None)
+            raise  # If we `raise e`, it will add a new frame right here
 
     return _wrap
 
@@ -43,7 +52,14 @@ def PublicAPI(func: Callable[P, T]) -> Callable[P, T]:
     def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
         __tracebackhide__ = True
         type_check_function(func, *args, **kwargs)
-        return func(*args, **kwargs)
+        try:
+            return func(*args, **kwargs)
+        except UDFException as e:
+            e = e.with_traceback(None)
+            raise
+        except Exception as e:
+            e = e.with_traceback(e.__traceback__.tb_next if e.__traceback__ else None)
+            raise  # If we `raise e`, it will add a new frame right here
 
     return _wrap
 

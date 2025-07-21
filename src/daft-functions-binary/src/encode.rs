@@ -27,7 +27,7 @@ impl ScalarUDF for BinaryEncode {
     fn name(&self) -> &'static str {
         "encode"
     }
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -47,7 +47,7 @@ impl ScalarUDF for BinaryEncode {
         Ok(Field::new(input.name, DataType::Binary))
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, codec } = inputs.try_into()?;
 
         match input.data_type() {
@@ -78,7 +78,7 @@ impl ScalarUDF for BinaryTryEncode {
         "try_encode"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -97,7 +97,7 @@ impl ScalarUDF for BinaryTryEncode {
         Ok(Field::new(input.name, DataType::Binary))
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, codec } = inputs.try_into()?;
 
         match input.data_type() {

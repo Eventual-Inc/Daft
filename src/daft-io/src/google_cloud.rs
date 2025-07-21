@@ -1,4 +1,4 @@
-use std::{any::Any, ops::Range, sync::Arc, time::Duration};
+use std::{any::Any, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_io_config::GCSConfig;
@@ -18,10 +18,11 @@ use tokio::sync::Semaphore;
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    range::GetRange,
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, GetResult,
+    FileFormat, GetResult, InvalidRangeRequestSnafu,
 };
 
 const GCS_DELIMITER: &str = "/";
@@ -189,7 +190,7 @@ impl GCSClientWrapper {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let (bucket, key) = parse_raw_uri(uri)?;
@@ -208,14 +209,19 @@ impl GCSClientWrapper {
             object: key.into(),
             ..Default::default()
         };
-        use google_cloud_storage::http::objects::download::Range as GRange;
+        use google_cloud_storage::http::objects::download::Range as GcsRange;
         let (grange, size) = if let Some(range) = range {
-            (
-                GRange(Some(range.start as u64), Some(range.end as u64)),
-                Some(range.len()),
-            )
+            range.validate().context(InvalidRangeRequestSnafu)?;
+            match range {
+                GetRange::Bounded(r) => (
+                    GcsRange(Some(r.start as u64), Some(r.end as u64 - 1)),
+                    Some(r.len()),
+                ),
+                GetRange::Offset(o) => (GcsRange(Some(o as u64), None), None),
+                GetRange::Suffix(n) => (GcsRange(None, Some(n as u64)), Some(n)),
+            }
         } else {
-            (GRange::default(), None)
+            (GcsRange::default(), None)
         };
         let owned_uri = uri.to_string();
         let response = client
@@ -543,7 +549,7 @@ impl ObjectSource for GCSSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         self.client.get(uri, range, io_stats).await
@@ -602,5 +608,34 @@ impl ObjectSource for GCSSource {
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_io_config::GCSConfig;
+
+    use crate::{google_cloud::GCSSource, integrations::test_full_get, object_io::ObjectSource};
+
+    #[tokio::test]
+    async fn test_full_get_from_gcs() -> crate::Result<()> {
+        let test_file_path = "gs://covid19-open-data/dm-c19-data/raw/SAPE22DT6a-mid-2019-ccg-2020-estimates-unformatted.xlsx";
+        let expected_md5 = "c4ed100cd2f99fd368c846317abcdaf5";
+
+        // TODO it's wired that will read 254635 bytes from the file, but the file size is 25933 bytes
+        // let test_file_path = "gs://covid19-open-data/v3/location/AF_BDG.json";
+
+        let config = GCSConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+        let client = GCSSource::get_client(&config).await?;
+        let test_file = client.get(test_file_path, None, None).await?;
+        let bytes = test_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, expected_md5);
+
+        test_full_get(client, &test_file_path, &bytes).await
     }
 }

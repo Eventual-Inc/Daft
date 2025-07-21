@@ -24,7 +24,7 @@ pytest==7.4.3
 pytest-benchmark==4.0.0
 pytest-cov==4.1.0
 pytest-lazy-fixture==0.6.3
-memray==1.13.4; platform_system != "Windows"
+memray==1.17.2; platform_system != "Windows"
 pytest-codspeed==2.2.1
 
 # Testing dependencies
@@ -36,7 +36,7 @@ pandas-stubs==2.2.2.240807
 xxhash>=3.0.0
 Pillow==10.4.0
 opencv-python==4.10.0.84
-tiktoken==0.7.0
+tiktoken==0.9.0
 duckdb==1.1.2
 
 # TQDM
@@ -61,7 +61,7 @@ tenacity==8.2.3
 
 # Delta Lake
 deltalake==0.5.8; platform_system == "Windows"
-deltalake==0.19.2; platform_system != "Windows"
+deltalake==1.0.2; platform_system != "Windows"
 
 # Databricks
 databricks-sdk==0.12.0
@@ -101,7 +101,7 @@ mkdocs-simple-hooks
 pymdown-extensions
 mkdocs-material[imaging]
 mkdocstrings-python
-ruff
+ruff==0.8.2
 mkdocs-minify-plugin
 mkdocs-redirects
 

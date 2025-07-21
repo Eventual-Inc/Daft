@@ -24,10 +24,12 @@ pub(crate) struct FlotillaProgressBar {
 }
 
 impl FlotillaProgressBar {
-    pub fn try_new(py: Python) -> PyResult<Self> {
+    pub fn try_new(py: Python, use_ray_tqdm: bool) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
-        let progress_bar = progress_bar_class.call1((true,))?.extract::<PyObject>()?;
+        let progress_bar = progress_bar_class
+            .call1((use_ray_tqdm,))?
+            .extract::<PyObject>()?;
         Ok(Self {
             progress_bar_pyobject: progress_bar,
         })
@@ -71,25 +73,29 @@ impl Drop for FlotillaProgressBar {
 }
 
 impl StatisticsSubscriber for FlotillaProgressBar {
-    fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()> {
+    fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()> {
         match event {
-            StatisticsEvent::SubmittedTask { context, name } => {
+            StatisticsEvent::TaskSubmitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
                 Ok(())
             }
             // For progress bar we don't care if it is scheduled, for now.
-            StatisticsEvent::ScheduledTask { .. } => Ok(()),
-            StatisticsEvent::FinishedTask { context } => {
+            StatisticsEvent::TaskScheduled { .. } => Ok(()),
+            StatisticsEvent::TaskStarted { .. } => Ok(()), // Progress bar doesn't need to handle task start separately
+            StatisticsEvent::TaskCompleted { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
             // We don't care about failed tasks as they will be retried
-            StatisticsEvent::FailedTask { .. } => Ok(()),
+            StatisticsEvent::TaskFailed { .. } => Ok(()),
             // We consider cancelled tasks as finished tasks
-            StatisticsEvent::CancelledTask { context } => {
+            StatisticsEvent::TaskCancelled { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
+            StatisticsEvent::PlanSubmitted { .. } => Ok(()),
+            StatisticsEvent::PlanStarted { .. } => Ok(()),
+            StatisticsEvent::PlanFinished { .. } => Ok(()),
         }
     }
 }

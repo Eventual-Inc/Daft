@@ -62,9 +62,17 @@ build: check-toolchain .venv  ## Compile and install Daft for development
 build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
 
+.PHONY: build-whl
+build-whl: check-toolchain .venv  ## Compile Daft for development, only generate whl file without installation
+	cargo clean --target-dir target
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build
+
 .PHONY: test
 test: .venv build  ## Run tests
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration
+	# You can set additional run parameters through EXTRA_ARGS, such as running a specific test case file or method:
+	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py" # Run a single test file
+	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe" # Run a single test method
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
 
 .PHONY: doctests
 doctests:
@@ -74,12 +82,22 @@ doctests:
 dsdgen: .venv ## Generate TPC-DS data
 	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
 
+.PHONY: install-docs-deps
+install-docs-deps:
+	@if ! command -v bun >/dev/null 2>&1; then \
+		echo "Installing Bun..."; \
+		curl -fsSL https://bun.sh/install | bash; \
+		export PATH="$$HOME/.bun/bin:$$PATH"; \
+	fi
+	. $(VENV_BIN)/activate && uv pip install -r requirements-doc.txt
+	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
+
 .PHONY: docs
-docs: .venv ## Build Daft documentation
+docs: .venv install-docs-deps ## Build Daft documentation
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs build -f mkdocs.yml
 
 .PHONY: docs-serve
-docs-serve: .venv ## Build Daft documentation in development server
+docs-serve: .venv install-docs-deps ## Build Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
 
 .PHONY: daft-proto
@@ -110,3 +128,5 @@ precommit:  check-toolchain .venv  ## Run all pre-commit hooks
 clean:
 	rm -rf $(VENV)
 	rm -rf ./target
+	rm -rf ./site
+	rm -f daft/daft.abi3.so

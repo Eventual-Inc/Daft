@@ -471,7 +471,7 @@ class GlueIcebergTable(GlueTable):
         return gc._convert_glue_to_iceberg(table)
 
     def read(self, **options: Any) -> DataFrame:
-        from daft.io._iceberg import read_iceberg
+        from daft.io.iceberg._iceberg import read_iceberg
 
         return read_iceberg(
             table=self._pyiceberg_table, snapshot_id=options.get("snapshot_id"), io_config=self._io_config
@@ -532,7 +532,7 @@ class GlueDeltaTable(GlueTable):
         return UnityCatalogTable(table_info, table_uri, io_config)
 
     def read(self, **options: Any) -> DataFrame:
-        from daft.io._deltalake import read_deltalake
+        from daft.io.delta_lake._deltalake import read_deltalake
 
         return read_deltalake(
             table=self._unity_catalog_table,

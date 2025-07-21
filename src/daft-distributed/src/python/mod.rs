@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 use crate::{
     plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::StatisticsManager,
+    statistics::{HttpSubscriber, StatisticsManager, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
@@ -29,6 +29,7 @@ impl PythonPartitionRefStream {
     fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
+
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let inner = self.inner.clone();
         // future into py requires that the future is Send + 'static, so we wrap the inner in an Arc<Mutex<>>
@@ -41,7 +42,6 @@ impl PythonPartitionRefStream {
                 Some(result) => {
                     let result = result?;
                     let ray_part_ref = result
-                        .partition()
                         .as_any()
                         .downcast_ref::<RayPartitionRef>()
                         .expect("Failed to downcast to RayPartitionRef")
@@ -98,15 +98,17 @@ impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {
     runner: Arc<PlanRunner<RaySwordfishWorker>>,
+    on_ray_actor: bool,
 }
 
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new(py: Python) -> PyResult<Self> {
+    fn new(py: Python, on_ray_actor: bool) -> PyResult<Self> {
         let worker_manager = RayWorkerManager::try_new(py)?;
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
+            on_ray_actor,
         })
     }
 
@@ -127,8 +129,24 @@ impl PyDistributedPhysicalPlanRunner {
                 )
             })
             .collect();
-        let statistics_manager =
-            StatisticsManager::new(vec![Box::new(FlotillaProgressBar::try_new(py)?)]);
+
+        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> = vec![Box::new(
+            FlotillaProgressBar::try_new(py, self.on_ray_actor)?,
+        )];
+
+        tracing::info!("Checking DAFT_DASHBOARD_URL environment variable");
+        match std::env::var("DAFT_DASHBOARD_URL") {
+            Ok(url) => {
+                tracing::info!("DAFT_DASHBOARD_URL is set to: {}", url);
+                tracing::info!("Adding HttpSubscriber to statistics manager");
+                subscribers.push(Box::new(HttpSubscriber::new()));
+            }
+            Err(_) => {
+                tracing::info!("DAFT_DASHBOARD_URL not set, skipping HttpSubscriber");
+            }
+        }
+
+        let statistics_manager = StatisticsManager::new(subscribers);
         let plan_result = self
             .runner
             .run_plan(&plan.plan, psets, statistics_manager)?;

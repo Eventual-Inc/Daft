@@ -9,8 +9,8 @@ use itertools::Itertools;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
@@ -171,7 +171,7 @@ impl BlockingSink for HashJoinBuildSink {
         let finalized_probe_state = probe_table_state.finalize();
         self.probe_state_bridge
             .set_state(finalized_probe_state.into());
-        Ok(None).into()
+        Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
     }
 
     fn max_concurrency(&self) -> usize {

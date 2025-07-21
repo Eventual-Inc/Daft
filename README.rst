@@ -22,6 +22,8 @@ Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 * `About Daft`_
 * `Getting Started`_
 * `Benchmarks`_
+* `Contributing`_
+* `Telemetry`_
 * `Related Projects`_
 * `License`_
 
@@ -89,7 +91,7 @@ More Resources
 Contributing
 ------------
 
-To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_
+We <3 developers! To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_ This document describes the development lifecycle and toolchain for working on Daft. It also details how to add new functionality to the core engine and expose it through a Python API.
 
 Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22>`_ to get yourself warmed up with Daft. Comment in the issue to pick it up, and feel free to ask any questions!
 
@@ -143,8 +145,8 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
    :alt: Benchmarks for SF100 TPCH
 
-.. |Banner| image:: https://github.com/user-attachments/assets/9fb749e4-2f6d-4e45-bb28-97e9cb07050d
-   :target: https://www.getdaft.io
+.. |Banner| image:: https://daft.ai/images/diagram.png
+   :target: https://www.daft.ai
    :alt: Daft dataframes can load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying
 
 .. |CI| image:: https://github.com/Eventual-Inc/Daft/actions/workflows/pr-test-suite.yml/badge.svg

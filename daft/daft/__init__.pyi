@@ -463,7 +463,49 @@ class HTTPConfig:
     ): ...
 
 class S3Config:
-    """I/O configuration for accessing an S3-compatible system."""
+    """I/O configuration for accessing an S3-compatible system.
+
+    Args:
+        region_name (str, optional): Name of the region to be used (used when accessing AWS S3), defaults to "us-east-1".
+            If wrongly provided, Daft will attempt to auto-detect the buckets' region at the cost of extra S3 requests.
+        endpoint_url (str, optional): URL to the S3 endpoint, defaults to endpoints to AWS
+        key_id (str, optional): AWS Access Key ID, defaults to auto-detection from the current environment
+        access_key (str, optional): AWS Secret Access Key, defaults to auto-detection from the current environment
+        credentials_provider (Callable[[], S3Credentials], optional): Custom credentials provider function, should return a `S3Credentials` object
+        buffer_time (int, optional): Amount of time in seconds before the actual credential expiration time where credentials given by `credentials_provider` are considered expired, defaults to 10s
+        max_connections (int, optional): Maximum number of connections to S3 at any time per io thread, defaults to 8
+        session_token (str, optional): AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+        retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
+        connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 30 seconds
+        read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 30 seconds
+        num_tries (int, optional): Number of attempts to make a connection, defaults to 25
+        retry_mode (str, optional): Retry Mode when a request fails, current supported values are `standard` and `adaptive`, defaults to `adaptive`
+        anonymous (bool, optional): Whether or not to use "anonymous mode", which will access S3 without any credentials
+        use_ssl (bool, optional): Whether or not to use SSL, which require accessing S3 over HTTPS rather than HTTP, defaults to True
+        verify_ssl (bool, optional): Whether or not to verify ssl certificates, which will access S3 without checking if the certs are valid, defaults to True
+        check_hostname_ssl (bool, optional): Whether or not to verify the hostname when verifying ssl certificates, this was the legacy behavior for openssl, defaults to True
+        requester_pays (bool, optional): Whether or not the authenticated user will assume transfer costs, which is required by some providers of bulk data, defaults to False
+        force_virtual_addressing (bool, optional): Force S3 client to use virtual addressing in all cases. If False, virtual addressing will only be used if `endpoint_url` is empty, defaults to False
+        profile_name (str, optional): Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
+
+    Examples:
+        >>> # For AWS S3
+        >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
+        >>> daft.read_parquet("s3://some-path", io_config=io_config)
+
+        >>> # For S3-compatible services (e.g. Volcengine TOS)
+        >>> io_config = IOConfig(
+        ...     s3=S3Config(
+        ...         endpoint_url="tos-s3-{region}.ivolces.com",
+        ...         region_name="cn-beijing",
+        ...         force_virtual_addressing=True,
+        ...         verify_ssl=True,
+        ...         key_id="your-access-key-id",
+        ...         access_key="your-secret-access-key",
+        ...     )
+        ... )
+        >>> daft.read_parquet("s3://some-path", io_config=io_config)
+    """
 
     region_name: str | None
     endpoint_url: str | None
@@ -1271,9 +1313,9 @@ class PySqlCatalog:
 
 class PySeries:
     @staticmethod
-    def from_arrow(name: str, pyarrow_array: pa.Array) -> PySeries: ...
+    def from_arrow(name: str, pyarrow_array: pa.Array, dtype: PyDataType | None = None) -> PySeries: ...
     @staticmethod
-    def from_pylist(name: str, pylist: list[Any], pyobj: str) -> PySeries: ...
+    def from_pylist(name: str, pylist: list[Any], dtype: PyDataType) -> PySeries: ...
     def to_pylist(self) -> list[Any]: ...
     def to_arrow(self) -> pa.Array: ...
     def __abs__(self) -> PySeries: ...
@@ -1437,6 +1479,8 @@ class PyMicroPartition:
     def from_arrow_record_batches(record_batches: list[pa.RecordBatch], schema: PySchema) -> PyMicroPartition: ...
     @staticmethod
     def concat(tables: list[PyMicroPartition]) -> PyMicroPartition: ...
+    @staticmethod
+    def concat_or_empty(tables: list[PyMicroPartition], schema: PySchema) -> PyMicroPartition: ...
     @staticmethod
     def read_from_ipc_stream(bytes: bytes) -> PyMicroPartition: ...
     def write_to_ipc_stream(self) -> bytes: ...
@@ -1733,7 +1777,7 @@ class DistributedPhysicalPlan:
     def repr_mermaid(self, options: MermaidOptions) -> str: ...
 
 class DistributedPhysicalPlanRunner:
-    def __init__(self) -> None: ...
+    def __init__(self, on_actor: bool) -> None: ...
     def run_plan(
         self, plan: DistributedPhysicalPlan, psets: dict[str, list[RayPartitionRef]]
     ) -> AsyncIterator[RayPartitionRef]: ...
@@ -1791,14 +1835,14 @@ class NativeExecutor:
         results_buffer_size: int | None,
         context: dict[str, str] | None,
     ) -> AsyncIterator[PyMicroPartition]: ...
-    def repr_ascii(
-        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool
-    ) -> str: ...
+    @staticmethod
+    def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
+    @staticmethod
     def repr_mermaid(
-        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
+        builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
     ) -> str: ...
+    @staticmethod
     def get_relationship_info(
-        self,
         logical_plan_builder: LogicalPlanBuilder,
         daft_execution_config: PyDaftExecutionConfig,
     ) -> RelationshipInformation: ...
@@ -1842,7 +1886,7 @@ class PyDaftExecutionConfig:
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
         native_parquet_writer: bool | None = None,
-        flotilla: bool | None = None,
+        use_experimental_distributed_engine: bool | None = None,
         min_cpu_per_task: float | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -1892,7 +1936,7 @@ class PyDaftExecutionConfig:
     @property
     def enable_ray_tracing(self) -> bool: ...
     @property
-    def flotilla(self) -> bool: ...
+    def use_experimental_distributed_engine(self) -> bool: ...
     @property
     def min_cpu_per_task(self) -> float: ...
 
@@ -1925,6 +1969,13 @@ def set_runner_ray(
 ) -> PyDaftContext: ...
 def set_runner_native(num_threads: int | None = None) -> PyDaftContext: ...
 def get_context() -> PyDaftContext: ...
+def reset_runner() -> None:
+    """Reset/clear the current runner.
+
+    Note: This clears all in-memory state, including the partition cache.
+    """
+    ...
+
 def build_type() -> str: ...
 def version() -> str: ...
 def refresh_logger() -> None: ...

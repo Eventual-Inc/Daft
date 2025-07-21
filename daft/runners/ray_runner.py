@@ -26,7 +26,7 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
-from daft.runners.flotilla import LocalFlotillaPlanRunner, RemoteFlotillaPlanRunner
+from daft.runners.flotilla import FlotillaRunner
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -277,12 +277,13 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def items(self) -> list[tuple[PartID, MaterializedResult[ray.ObjectRef]]]:
         return [(pid, result) for pid, result in sorted(self._results.items())]
 
-    def _get_merged_micropartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
         ids_and_partitions = self.items()
-        assert ids_and_partitions[0][0] == 0
-        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+        if len(ids_and_partitions) > 0:
+            assert ids_and_partitions[0][0] == 0
+            assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
-        return MicroPartition.concat(all_partitions)
+        return MicroPartition.concat_or_empty(all_partitions, schema)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
@@ -887,16 +888,16 @@ class Scheduler(ActorPoolManager):
         )
 
         with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
-            raw_tasks = plan_scheduler.to_partition_tasks(
-                psets,
-                self,
-                # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
-                # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
-                # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
-                None if results_buffer_size is None else max(results_buffer_size - 1, 1),
-            )
-            tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
             try:
+                raw_tasks = plan_scheduler.to_partition_tasks(
+                    psets,
+                    self,
+                    # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
+                    # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
+                    # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
+                    None if results_buffer_size is None else max(results_buffer_size - 1, 1),
+                )
+                tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
                 ###
                 # Scheduling Loop:
                 #
@@ -1021,18 +1022,6 @@ class Scheduler(ActorPoolManager):
 
 SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
-FLOTILLA_PLAN_RUNNER_NAME = "flotilla-plan-runner"
-
-
-def get_head_node_id() -> str | None:
-    for node in ray.nodes():
-        if (
-            "Resources" in node
-            and "node:__internal_head__" in node["Resources"]
-            and node["Resources"]["node:__internal_head__"] == 1
-        ):
-            return node["NodeID"]
-    return None
 
 
 @ray.remote(num_cpus=1)
@@ -1253,7 +1242,6 @@ class RayRunner(Runner[ray.ObjectRef]):
                     address = "ray://" + address
             ray.init(address=address)
 
-        self.flotilla_enabled = os.getenv("DAFT_FLOTILLA") == "1"
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
         self.ray_client_mode: bool = force_client_mode or ray.util.client.ray.get_context().is_connected()
 
@@ -1267,28 +1255,12 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=True,
             )
-            head_node_id = get_head_node_id()
-            self.flotilla_plan_runner = (
-                RemoteFlotillaPlanRunner.options(  # type: ignore
-                    name=FLOTILLA_PLAN_RUNNER_NAME,
-                    namespace=SCHEDULER_ACTOR_NAMESPACE,
-                    get_if_exists=True,
-                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=head_node_id,
-                        soft=False,
-                    )
-                    if head_node_id is not None
-                    else "DEFAULT",
-                ).remote()
-                if self.flotilla_enabled
-                else None
-            )
         else:
             self.scheduler = Scheduler(
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
-            self.flotilla_plan_runner = LocalFlotillaPlanRunner() if self.flotilla_enabled else None
+        self.flotilla_plan_runner: FlotillaRunner | None = None
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return PartitionSetCache()
@@ -1403,7 +1375,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
-        elif daft_execution_config.flotilla:
+        elif daft_execution_config.use_experimental_distributed_engine:
             try:
                 distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
                     builder._builder, daft_execution_config
@@ -1413,26 +1385,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                 # Fallback to regular execution
                 yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
-                assert self.flotilla_plan_runner is not None
-                plan_id = distributed_plan.id()
-                if self.ray_client_mode:
-                    ray.get(
-                        self.flotilla_plan_runner.run_plan.remote(
-                            distributed_plan, self._part_set_cache.get_all_partition_sets()
-                        )
-                    )
-                    while True:
-                        materialized_result = ray.get(self.flotilla_plan_runner.get_next_partition.remote(plan_id))
-                        if materialized_result is None:
-                            break
-                        yield materialized_result
-                else:
-                    self.flotilla_plan_runner.run_plan(distributed_plan, self._part_set_cache.get_all_partition_sets())
-                    while True:
-                        materialized_result = self.flotilla_plan_runner.get_next_partition(plan_id)
-                        if materialized_result is None:
-                            break
-                        yield materialized_result
+                if self.flotilla_plan_runner is None:
+                    self.flotilla_plan_runner = FlotillaRunner(self.ray_client_mode)
+                yield from self.flotilla_plan_runner.stream_plan(
+                    distributed_plan, self._part_set_cache.get_all_partition_sets()
+                )
 
         else:
             yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
