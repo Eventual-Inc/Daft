@@ -5,7 +5,8 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
+    logical_plan::{Sort, TopN},
+    ops::{Limit as LogicalLimit, Source},
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -35,11 +36,10 @@ impl PushDownLimit {
         match plan.as_ref() {
             LogicalPlan::Limit(LogicalLimit {
                 input,
+                offset,
                 limit,
-                eager,
                 ..
             }) => {
-                let limit = *limit as usize;
                 match input.as_ref() {
                     // Naive commuting with unary ops.
                     //
@@ -56,6 +56,11 @@ impl PushDownLimit {
                     //
                     // Limit-Source -> Limit-Source[with_limit]
                     LogicalPlan::Source(source) => {
+                        if limit.is_none() {
+                            return Ok(Transformed::no(plan));
+                        }
+
+                        let limit = limit.unwrap() as usize;
                         match source.source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
@@ -92,46 +97,23 @@ impl PushDownLimit {
                             }
                         }
                     }
-                    // Fold Limit together.
-                    //
-                    // Limit-Limit -> Limit
-                    LogicalPlan::Limit(LogicalLimit {
-                        input,
-                        limit: child_limit,
-                        eager: child_eager,
-                        ..
-                    }) => {
-                        let new_limit = limit.min(*child_limit as usize);
-                        let new_eager = eager | child_eager;
-
-                        let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
-                            input.clone(),
-                            new_limit as u64,
-                            new_eager,
-                        )));
-                        // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
-                        let optimized = self
-                            .try_optimize_node(new_plan.clone())?
-                            .or(Transformed::yes(new_plan))
-                            .data;
-                        Ok(Transformed::yes(optimized))
-                    }
                     // Combine Limit with Sort into TopN
                     //
                     // Limit-Sort -> TopN
-                    LogicalPlan::Sort(LogicalSort {
+                    LogicalPlan::Sort(Sort {
                         input,
                         sort_by,
                         descending,
                         nulls_first,
                         ..
                     }) => {
-                        let new_plan = Arc::new(LogicalPlan::TopN(LogicalTopN::try_new(
+                        let new_plan = Arc::new(LogicalPlan::TopN(TopN::try_new(
                             input.clone(),
                             sort_by.clone(),
                             descending.clone(),
                             nulls_first.clone(),
-                            limit as u64,
+                            *offset,
+                            *limit,
                         )?));
 
                         Ok(Transformed::yes(new_plan))
@@ -154,7 +136,6 @@ mod tests {
     use daft_dsl::unresolved_col;
     #[cfg(feature = "python")]
     use pyo3::Python;
-    use rstest::rstest;
 
     use crate::{
         optimization::{
@@ -166,9 +147,6 @@ mod tests {
         LogicalPlan, LogicalPlanBuilder,
     };
 
-    /// Helper that creates an optimizer with the PushDownLimit rule registered, optimizes
-    /// the provided plan with said optimizer, and compares the optimized plan with
-    /// the provided expected plan.
     fn assert_optimized_plan_eq(
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
@@ -260,33 +238,6 @@ mod tests {
         Ok(())
     }
 
-    /// Tests that multiple adjacent Limits fold into the smallest limit.
-    ///
-    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
-    #[rstest]
-    fn limit_folds_with_smaller_limit(
-        #[values(false, true)] smaller_first: bool,
-    ) -> DaftResult<()> {
-        let smaller_limit = 5;
-        let limit = 10;
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ]);
-        let plan = dummy_scan_node(scan_op.clone())
-            .limit(if smaller_first { smaller_limit } else { limit }, false)?
-            .limit(if smaller_first { limit } else { smaller_limit }, false)?
-            .build();
-        let expected = dummy_scan_node_with_pushdowns(
-            scan_op,
-            Pushdowns::default().with_limit(Some(smaller_limit as usize)),
-        )
-        .limit(smaller_limit, false)?
-        .build();
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
     /// Tests that Limit does not push into in-memory Source.
     #[test]
     #[cfg(feature = "python")]
@@ -303,6 +254,21 @@ mod tests {
         )?
         .limit(5, false)?
         .build();
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does not push into Scan when only has offset
+    #[test]
+    fn limit_does_not_push_into_scan_if_none() -> DaftResult<()> {
+        let offset = 10;
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .limit_with_offset(Some(offset), None, false)?
+            .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }

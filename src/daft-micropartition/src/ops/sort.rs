@@ -58,7 +58,8 @@ impl MicroPartition {
         sort_keys: &[BoundExpr],
         descending: &[bool],
         nulls_first: &[bool],
-        limit: usize,
+        offset: Option<usize>,
+        limit: Option<usize>,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::top_n");
 
@@ -67,7 +68,7 @@ impl MicroPartition {
         match tables.as_slice() {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
-                let sorted = single.top_n(sort_keys, descending, nulls_first, limit)?;
+                let sorted = single.top_n(sort_keys, descending, nulls_first, offset, limit)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
                     Arc::new(vec![sorted]),

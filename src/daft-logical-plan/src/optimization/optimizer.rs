@@ -6,18 +6,16 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
-        EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
-        MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
-        PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
-        RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
+        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateLimits, EliminateOffsets,
+        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
+        PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
+        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
+        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
-use crate::{
-    optimization::rules::{PushDownShard, ShardScans, SplitExplodeFromProject},
-    LogicalPlan,
-};
+use crate::LogicalPlan;
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -144,10 +142,23 @@ impl Default for OptimizerBuilder {
                     // TODO(Clark): Refine this fixed-point policy.
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
-                // --- Limit pushdowns ---
+                // --- Eliminate Offsets and Limits ---
                 // This needs to be separate from PushDownProjection because otherwise the limit and
                 // projection just keep swapping places, preventing optimization
                 // (see https://github.com/Eventual-Inc/Daft/issues/2616)
+                RuleBatch::new(
+                    vec![
+                        Box::new(EliminateLimits::new()),
+                        Box::new(EliminateOffsets::new()),
+                    ],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
+                // --- Rewrite offsets ---
+                RuleBatch::new(
+                    vec![Box::new(RewriteOffset::new())],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
+                // --- Limit pushdowns ---
                 RuleBatch::new(
                     vec![Box::new(PushDownLimit::new())],
                     RuleExecutionStrategy::FixedPoint(Some(3)),

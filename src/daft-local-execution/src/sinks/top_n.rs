@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{ensure, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -18,8 +18,8 @@ struct TopNParams {
     sort_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
-    // Limit Parameters
-    limit: usize,
+    offset: Option<usize>,
+    limit: Option<usize>,
 }
 
 /// Current status of the TopN operation
@@ -68,16 +68,23 @@ impl TopNSink {
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: usize,
-    ) -> Self {
-        Self {
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> DaftResult<Self> {
+        ensure!(
+            offset.is_some() || limit.is_some(),
+            "TopNSink node must have offset or limit"
+        );
+
+        Ok(Self {
             params: Arc::new(TopNParams {
                 sort_by,
                 descending,
                 nulls_first,
+                offset,
                 limit,
             }),
-        }
+        })
     }
 }
 
@@ -104,6 +111,7 @@ impl BlockingSink for TopNSink {
                         &params.sort_by,
                         &params.descending,
                         &params.nulls_first,
+                        Some(0),
                         params.limit,
                     )?;
 
@@ -138,6 +146,7 @@ impl BlockingSink for TopNSink {
                         &params.sort_by,
                         &params.descending,
                         &params.nulls_first,
+                        params.offset,
                         params.limit,
                     )?);
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
@@ -169,10 +178,21 @@ impl BlockingSink for TopNSink {
                 )
             })
             .join(", ");
-        lines.push(format!(
-            "TopN: Sort by = {}, Num Rows = {}",
-            pairs, self.params.limit
-        ));
+
+        lines.push(match (self.params.offset, self.params.limit) {
+            (Some(o), Some(l)) => {
+                format!(
+                    "TopN: Sort by = {}, Num Rows = {}, Offset = {}",
+                    pairs,
+                    l.saturating_sub(o),
+                    o
+                )
+            }
+            (Some(o), None) => format!("TopN: Sort by = {}, Num Rows = N/A, Offset = {}", pairs, o),
+            (None, Some(l)) => format!("TopN: Sort by = {}, Num Rows = {}", pairs, l),
+            (None, None) => unreachable!(),
+        });
+
         lines
     }
 
