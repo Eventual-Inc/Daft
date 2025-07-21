@@ -163,8 +163,15 @@ Our python tests are located in the `tests` directory, you can run all the tests
 To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest](https://docs.pytest.org/en/stable/how-to/usage.html).
 
 ```
-DAFT_RUNNER=native pytest -s tests/dataframe --log-cli-level=DEBUG
+DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit
 ```
+
+To enable debug logs from tests, set the `--log-cli-level` option, as well as disable capturing.
+
+```
+DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit -s --log-cli-level=DEBUG
+```
+
 
 #### Rust tests
 
