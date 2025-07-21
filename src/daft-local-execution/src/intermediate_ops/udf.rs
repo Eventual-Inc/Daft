@@ -3,6 +3,7 @@ use std::{ops::RangeInclusive, sync::Arc, time::Duration, vec};
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
+use daft_core::prelude::SchemaRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -37,6 +38,7 @@ const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
 struct UdfHandle {
     udf_expr: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
+    output_schema: SchemaRef,
     // Optional PyObject handle to external UDF worker.
     // Required for ActorPoolUDFs
     // Optional for stateless UDFs
@@ -56,12 +58,14 @@ impl UdfHandle {
     fn no_handle(
         udf_expr: &BoundExpr,
         passthrough_columns: &[BoundExpr],
+        output_schema: SchemaRef,
         check_gil_contention: bool,
         min_num_test_iterations: usize,
     ) -> Self {
         Self {
             udf_expr: udf_expr.clone(),
             passthrough_columns: passthrough_columns.to_vec(),
+            output_schema,
             #[cfg(feature = "python")]
             inner: None,
             check_gil_contention,
@@ -176,9 +180,8 @@ impl UdfHandle {
             self.create_handle()?;
         }
 
-        let out_schema = output_batches[0].schema.clone();
         Ok(Arc::new(MicroPartition::new_loaded(
-            out_schema,
+            self.output_schema.clone(),
             Arc::new(output_batches),
             None,
         )))
@@ -248,6 +251,7 @@ impl IntermediateOpState for UdfState {
 pub struct UdfOperator {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
+    output_schema: SchemaRef,
     is_actor_pool_udf: bool,
     concurrency: usize,
     batch_size: Option<usize>,
@@ -256,7 +260,11 @@ pub struct UdfOperator {
 }
 
 impl UdfOperator {
-    pub fn try_new(project: BoundExpr, passthrough_columns: Vec<BoundExpr>) -> DaftResult<Self> {
+    pub fn try_new(
+        project: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
+        output_schema: &SchemaRef,
+    ) -> DaftResult<Self> {
         let project_unbound = project.inner().clone();
 
         // count_udfs counts both actor pool and stateless udfs
@@ -285,6 +293,7 @@ impl UdfOperator {
         Ok(Self {
             project,
             passthrough_columns,
+            output_schema: output_schema.clone(),
             is_actor_pool_udf,
             concurrency,
             batch_size,
@@ -386,6 +395,7 @@ impl IntermediateOperator for UdfOperator {
         let mut udf_handle = UdfHandle::no_handle(
             &self.project,
             &self.passthrough_columns,
+            self.output_schema.clone(),
             matches!(self.use_process, Some(false)),
             rng.gen_range(NUM_TEST_ITERATIONS_RANGE),
         );
