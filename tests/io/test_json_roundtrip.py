@@ -19,6 +19,11 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
     [
+        #
+        # NOTE: For all marked "ALREADY TESTED", see the tests/io/test_roundtrip.py file.
+        #       Note that the `fmt` will be "json" for these.
+        #
+        #
         # ALREADY TESTED
         # ([1, 2, None], pa.int64(), DataType.int64(), DataType.int64()),
         # # ALREADY TESTED
