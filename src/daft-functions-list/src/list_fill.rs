@@ -86,15 +86,14 @@ mod tests {
 
         let fill = ListFill {};
         let args = FunctionArgs::new_unnamed(vec![col1_str.clone(), col0_null.clone()]);
-        let DaftError::TypeError(e) = dbg!(fill.get_return_field(args, &schema).unwrap_err())
-        else {
+        let DaftError::TypeError(e) = fill.get_return_field(args, &schema).unwrap_err() else {
             panic!("Expected TypeError error");
         };
         assert_eq!(
             e,
             "Expected num field to be of numeric type, received: Null"
         );
-        let args = FunctionArgs::new_unnamed(vec![col1_str.clone(), col0_null.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![col1_str.clone(), col0_null]);
         let DaftError::TypeError(e) = fill.get_return_field(args, &schema).unwrap_err() else {
             panic!("Expected TypeError error");
         };
@@ -103,12 +102,12 @@ mod tests {
             "Expected num field to be of numeric type, received: Null"
         );
 
-        let args = FunctionArgs::new_unnamed(vec![col1_null.clone(), col0_num.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![col1_null, col0_num.clone()]);
 
         let list_of_null = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Null)));
         assert_eq!(list_of_null, expected);
-        let args = FunctionArgs::new_unnamed(vec![col1_str.clone(), col0_num.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![col1_str, col0_num]);
 
         let list_of_str = fill.get_return_field(args, &schema).unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Utf8)));
@@ -124,7 +123,7 @@ mod tests {
         )
         .into_series();
 
-        let args = FunctionArgs::new_unnamed(vec![num.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![num]);
 
         let error = fill.call(args).unwrap_err();
         assert_eq!(
@@ -143,7 +142,7 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let args = FunctionArgs::new_unnamed(vec![str.clone(), num.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![str, num]);
         let error =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fill.call(args).unwrap()));
         assert!(error.is_err());
@@ -159,7 +158,7 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let args = FunctionArgs::new_unnamed(vec![str.clone(), num.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![str, num]);
         let result = fill.call(args)?;
         // the expected result should be a list of strings: [[None], [], ["world", "world", "world"]]
         let flat_child = Utf8Array::from_iter(
