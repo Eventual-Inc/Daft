@@ -6,18 +6,16 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
-        EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
-        MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
-        PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
-        RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
+        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateOffsets,
+        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
+        PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
+        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
+        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
-use crate::{
-    optimization::rules::{PushDownShard, ShardScans, SplitExplodeFromProject},
-    LogicalPlan,
-};
+use crate::LogicalPlan;
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -61,7 +59,7 @@ impl RuleBatch {
     }
 
     /// Get the maximum number of passes the optimizer should make over this rule batch.
-    fn max_passes(&self, config: &OptimizerConfig) -> usize {
+    pub fn max_passes(&self, config: &OptimizerConfig) -> usize {
         use RuleExecutionStrategy::*;
 
         match self.strategy {
@@ -137,6 +135,7 @@ impl Default for OptimizerBuilder {
                         Box::new(EliminateCrossJoin::new()),
                         Box::new(SimplifyNullFilteredJoin::new()),
                         Box::new(PushDownJoinPredicate::new()),
+                        Box::new(EliminateOffsets::new()),
                     ],
                     // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
                     // at the current node, which would require another batch application in order to have a chance to push
@@ -144,12 +143,15 @@ impl Default for OptimizerBuilder {
                     // TODO(Clark): Refine this fixed-point policy.
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
-                // --- Limit pushdowns ---
+                // --- Rewrite Offset and Pushdown Limit ---
                 // This needs to be separate from PushDownProjection because otherwise the limit and
                 // projection just keep swapping places, preventing optimization
                 // (see https://github.com/Eventual-Inc/Daft/issues/2616)
                 RuleBatch::new(
-                    vec![Box::new(PushDownLimit::new())],
+                    vec![
+                        Box::new(RewriteOffset::new()),
+                        Box::new(PushDownLimit::new()),
+                    ],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
                 // --- Rewrite projections ---
