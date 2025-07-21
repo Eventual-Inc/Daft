@@ -288,6 +288,10 @@ impl ToFromProto for ir::Expr {
                 // todo(conner)
                 not_implemented_err!("exists")
             }
+            Self::PythonUDF(_) => {
+                // todo
+                not_implemented_err!("python udf")
+            }
         };
         Ok(proto::Expr {
             variant: Some(variant),

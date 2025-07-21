@@ -12,7 +12,7 @@ from daft.io.sink import WriteResultType
 from daft.runners.flotilla import RaySwordfishActorHandle
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
-from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
+from daft.udf.legacy import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -1255,6 +1255,13 @@ def udf(
     resource_request: ResourceRequest | None,
     batch_size: int | None,
     concurrency: int | None,
+) -> PyExpr: ...
+def scalar_udf(
+    name: str,
+    inner: Callable[..., Any],
+    return_dtype: PyDataType,
+    original_args: tuple[tuple[Any, ...], dict[str, Any]],
+    children_exprs: list[PyExpr],
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def get_udf_names(expression: PyExpr) -> list[str]: ...

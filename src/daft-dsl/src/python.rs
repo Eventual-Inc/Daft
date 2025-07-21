@@ -269,6 +269,33 @@ pub fn udf(
     })
 }
 
+#[pyfunction]
+pub fn scalar_udf(
+    name: &str,
+    inner: PyObject,
+    return_dtype: PyDataType,
+    original_args: PyObject,
+    children_exprs: Vec<PyExpr>,
+) -> PyExpr {
+    use crate::python_udf::scalar_udf;
+
+    let children = children_exprs
+        .into_iter()
+        .map(|pyexpr| pyexpr.expr)
+        .collect();
+
+    PyExpr {
+        expr: scalar_udf(
+            name,
+            inner.into(),
+            return_dtype.into(),
+            original_args.into(),
+            children,
+        )
+        .into(),
+    }
+}
+
 /// Initializes all uninitialized UDFs in the expression
 #[pyfunction]
 pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {

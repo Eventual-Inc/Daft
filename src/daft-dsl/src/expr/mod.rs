@@ -28,6 +28,7 @@ use daft_core::{
     utils::supertype::{try_get_collection_supertype, try_get_supertype},
 };
 use derive_more::Display;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::functions::FunctionExpr;
@@ -35,7 +36,7 @@ use crate::{
     expr::bound_expr::BoundExpr,
     functions::{
         function_display_without_formatter, function_semantic_id,
-        python::PythonUDF,
+        python::LegacyPythonUDF,
         scalar::scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
@@ -43,6 +44,7 @@ use crate::{
     },
     lit,
     optimization::{get_required_columns, requires_computation},
+    python_udf::{PythonUDF, ScalarPythonUDF},
 };
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
@@ -294,6 +296,9 @@ pub enum Expr {
 
     #[display("exists {_0}")]
     Exists(Subquery),
+
+    #[display("{_0}")]
+    PythonUDF(PythonUDF),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -1261,6 +1266,17 @@ impl Expr {
                 let child_id = window_expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.window_function()"))
             }
+            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+                function_name: name,
+                children,
+                ..
+            })) => {
+                let children_ids = children
+                    .iter()
+                    .map(|expr| expr.semantic_id(schema).id)
+                    .join(",");
+                FieldID::new(format!("ScalarPythonUDF_{name}({children_ids})"))
+            }
         }
     }
 
@@ -1301,6 +1317,9 @@ impl Expr {
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
             Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
+            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF { children, .. })) => {
+                children.clone()
+            }
         }
     }
 
@@ -1417,6 +1436,26 @@ impl Expr {
                     udf: sf.udf.clone(),
                     inputs: FunctionArgs::new_unchecked(new_children),
                 })
+            }
+            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+                function_name: name,
+                inner: func,
+                return_dtype,
+                original_args,
+                children: old_children,
+            })) => {
+                assert!(
+                    children.len() == old_children.len(),
+                    "Should have same number of children"
+                );
+
+                Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+                    function_name: name.clone(),
+                    inner: func.clone(),
+                    return_dtype: return_dtype.clone(),
+                    original_args: original_args.clone(),
+                    children,
+                }))
             }
         }
     }
@@ -1617,6 +1656,20 @@ impl Expr {
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
             Self::Over(expr, _) => expr.to_field(schema),
             Self::WindowFunction(expr) => expr.to_field(schema),
+            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+                function_name: name,
+                children,
+                return_dtype,
+                ..
+            })) => {
+                let field_name = if let Some(first_child) = children.first() {
+                    first_child.get_name(schema)?
+                } else {
+                    name.to_string()
+                };
+
+                Ok(Field::new(field_name, return_dtype.clone()))
+            }
         }
     }
 
@@ -1667,6 +1720,17 @@ impl Expr {
             Self::Exists(subquery) => subquery.name(),
             Self::Over(expr, ..) => expr.name(),
             Self::WindowFunction(expr) => expr.name(),
+            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+                function_name: name,
+                children,
+                ..
+            })) => {
+                if let Some(first_child) = children.first() {
+                    first_child.name()
+                } else {
+                    name.as_ref()
+                }
+            }
         }
     }
 
@@ -1753,6 +1817,7 @@ impl Expr {
                 | Expr::Exists(..)
                 | Expr::Over(..)
                 | Expr::WindowFunction(..)
+                | Expr::PythonUDF(..)
                 | Expr::Column(_) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
@@ -1808,6 +1873,7 @@ impl Expr {
             } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
+            Self::PythonUDF(..) => true,
         }
     }
 
@@ -1972,7 +2038,7 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
     matches!(
         expr.as_ref(),
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF {
+            func: FunctionExpr::Python(LegacyPythonUDF {
                 concurrency: Some(_),
                 ..
             }),
@@ -2067,7 +2133,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }
-        | Expr::FillNull(_, _) => match expr.to_field(schema) {
+        | Expr::FillNull(_, _)
+        | Expr::PythonUDF(..) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,
             _ => 1.0,
         },

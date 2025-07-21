@@ -11,6 +11,7 @@ pub mod optimization;
 pub mod pyobj_serde;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod python_udf;
 
 #[cfg(feature = "python")]
 mod visitor;
@@ -51,6 +52,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::decimal_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::series_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::udf, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::scalar_udf, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::initialize_udfs, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::get_udf_names, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::eq, parent)?)?;

@@ -9,7 +9,7 @@ from daft.daft import PySession, PyTableSource, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
-from daft.udf import UDF
+from daft.udf.legacy import UDF
 
 __all__ = [
     "Session",

@@ -20,7 +20,7 @@ use std::{
 use common_error::DaftResult;
 use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
-use python::PythonUDF;
+use python::LegacyPythonUDF;
 use scalar::DynamicScalarFunction;
 pub use scalar::{ScalarFunction, ScalarFunctionFactory, ScalarUDF};
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ pub enum FunctionExpr {
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
-    Python(PythonUDF),
+    Python(LegacyPythonUDF),
     Partitioning(PartitioningExpr),
 }
 

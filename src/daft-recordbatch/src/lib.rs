@@ -728,6 +728,10 @@ impl RecordBatch {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
+            Expr::PythonUDF(python_udf) => {
+                let args = python_udf.children().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
+                python_udf.call(args)
+            }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),

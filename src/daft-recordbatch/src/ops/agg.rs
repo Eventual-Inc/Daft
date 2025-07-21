@@ -82,15 +82,15 @@ impl RecordBatch {
         group_by: &[BoundExpr],
     ) -> DaftResult<Self> {
         use daft_core::array::ops::IntoGroups;
-        use daft_dsl::functions::python::PythonUDF;
+        use daft_dsl::functions::python::LegacyPythonUDF;
 
         let udf = match func {
             FunctionExpr::Python(
-                udf @ PythonUDF {
+                udf @ LegacyPythonUDF {
                     concurrency: None, ..
                 },
             ) => udf,
-            FunctionExpr::Python(PythonUDF {
+            FunctionExpr::Python(LegacyPythonUDF {
                 concurrency: Some(_),
                 ..
             }) => {

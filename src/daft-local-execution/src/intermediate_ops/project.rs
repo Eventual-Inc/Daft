@@ -6,7 +6,7 @@ use daft_dsl::{
     common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
     functions::{
-        python::{get_resource_request, PythonUDF},
+        python::{get_resource_request, LegacyPythonUDF},
         FunctionExpr, ScalarFunction,
     },
     Expr,
@@ -52,7 +52,7 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
             .apply(|e| {
                 let found_batch_size = match e.as_ref() {
                     Expr::Function {
-                        func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+                        func: FunctionExpr::Python(LegacyPythonUDF { batch_size, .. }),
                         ..
                     } => *batch_size,
                     Expr::ScalarFunction(ScalarFunction { udf, inputs, .. })

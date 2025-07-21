@@ -376,7 +376,7 @@ mod tests {
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
-        functions::{python::PythonUDF, FunctionExpr},
+        functions::{python::LegacyPythonUDF, FunctionExpr},
         lit, resolved_col, unresolved_col, Expr,
     };
 
@@ -688,7 +688,7 @@ mod tests {
 
         // Create an actor pool project expression.
         let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::new_testing_udf()),
+            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
             inputs: vec![resolved_col("a").into()],
         });
 
@@ -743,7 +743,7 @@ mod tests {
 
         // Create an actor pool project expression.
         let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::new_testing_udf()),
+            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
             inputs: vec![resolved_col("a").into()],
         });
 

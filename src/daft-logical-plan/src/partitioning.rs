@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use daft_dsl::{functions::FunctionArgs, Column, ExprRef, ResolvedColumn};
+use daft_dsl::{
+    functions::FunctionArgs,
+    python_udf::{PythonUDF, ScalarPythonUDF},
+    Column, ExprRef, ResolvedColumn,
+};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -334,6 +338,27 @@ fn translate_clustering_spec_expr(
             let expr = translate_clustering_spec_expr(expr, old_colname_to_new_colname)?;
 
             Ok(expr.in_subquery(subquery.clone()))
+        }
+        Expr::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+            function_name: name,
+            inner: func,
+            return_dtype,
+            original_args,
+            children,
+        })) => {
+            let new_children = children
+                .iter()
+                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Arc::new(Expr::PythonUDF(PythonUDF::Scalar(
+                ScalarPythonUDF {
+                    function_name: name.clone(),
+                    inner: func.clone(),
+                    return_dtype: return_dtype.clone(),
+                    original_args: original_args.clone(),
+                    children: new_children,
+                },
+            ))))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
         Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),

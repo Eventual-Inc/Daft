@@ -32,6 +32,7 @@ from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import lit as _lit
+from daft.daft import scalar_udf as _scalar_udf
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
@@ -44,7 +45,7 @@ from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
-    from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
+    from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
     EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
@@ -411,6 +412,18 @@ class Expression:
                 batch_size,
                 concurrency,
             )
+        )
+
+    @staticmethod
+    def _scalar_udf(
+        name: builtins.str,
+        inner: Callable[..., Any],
+        return_dtype: DataType,
+        original_args: tuple[tuple[Any, ...], dict[builtins.str, Any]],
+        children_exprs: builtins.list[Expression],
+    ) -> Expression:
+        return Expression._from_pyexpr(
+            _scalar_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in children_exprs])
         )
 
     @staticmethod
@@ -1341,7 +1354,7 @@ class Expression:
             (Showing first 3 of 3 rows)
 
         """
-        from daft.udf import UDF
+        from daft.udf.legacy import UDF
 
         inferred_return_dtype = DataType._infer_type(return_dtype)
 

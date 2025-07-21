@@ -21,11 +21,11 @@ pub use crate::{
 pub mod rex {
     use std::sync::Arc;
 
-    use daft_dsl::functions::{python::PythonUDF, FunctionArgs, FunctionExpr, ScalarFunction, ScalarUDF};
+    use daft_dsl::functions::{python::LegacyPythonUDF, FunctionArgs, FunctionExpr, ScalarFunction, ScalarUDF};
     pub use daft_dsl::*;
 
     /// Creates an expression from a python-scalar function
-    pub fn from_py_func<A, E>(func: PythonUDF, args: A) -> Expr
+    pub fn from_py_func<A, E>(func: LegacyPythonUDF, args: A) -> Expr
     where
         A: IntoIterator<Item = E>,
         E: Into<Arc<Expr>>,

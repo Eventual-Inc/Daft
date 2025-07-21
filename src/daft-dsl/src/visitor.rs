@@ -8,6 +8,7 @@ use pyo3::{
 use crate::{
     functions::{FunctionExpr, ScalarFunction},
     python::PyExpr,
+    python_udf::{PythonUDF, ScalarPythonUDF},
     AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec,
 };
 
@@ -43,6 +44,7 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
         Expr::Subquery(subquery) => visitor.visit_subquery(subquery),
         Expr::InSubquery(expr, subquery) => visitor.visit_in_subquery(expr, subquery),
         Expr::Exists(subquery) => visitor.visit_exists(subquery),
+        Expr::PythonUDF(python_udf) => visitor.visit_python_udf(python_udf),
     }
 }
 
@@ -159,6 +161,23 @@ impl<'py> PyVisitor<'py> {
         };
 
         self.visit_function(name, args)
+    }
+
+    fn visit_python_udf(&self, udf: &PythonUDF) -> PyVisitorResult<'py> {
+        match udf {
+            PythonUDF::Scalar(ScalarPythonUDF {
+                function_name: name,
+                children,
+                ..
+            }) => {
+                let args = children
+                    .iter()
+                    .map(|expr| self.to_expr(expr))
+                    .collect::<PyResult<Vec<_>>>()?;
+
+                self.visit_function(name, args)
+            }
+        }
     }
 
     #[allow(unused_variables)]
