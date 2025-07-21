@@ -46,7 +46,7 @@ tqdm
 # Pyarrow 19.0.0 has a forwards compatibility bug so we use pyarrow 19.0.1 instead.
 # Pyarrow 20.0.0 is incompatible with Ray hence we can't use newer versions for now.
 # See: https://github.com/Eventual-Inc/Daft/pull/4301
-pyarrow==19.0.1
+pyarrow==20.0.0
 pyarrow-stubs==19.4
 # Ray
 ray[data, client]==2.34.0
@@ -82,7 +82,7 @@ s3fs==2023.12.0
 # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
 # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
 boto3==1.36.20
-boto3-stubs[essential,glue,s3,s3tables]==1.36.20
+boto3-stubs[essential,glue,s3,s3tables]==1.38.46
 moto[glue,s3,s3tables,server]==5.1.1
 
 # Azure
