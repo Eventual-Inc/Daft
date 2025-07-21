@@ -336,11 +336,13 @@ impl IntermediateOperator for UdfOperator {
     fn name(&self) -> Arc<str> {
         let full_name = get_udf_name(self.project.inner());
 
-        let Some((_, udf_name)) = full_name.rsplit_once('.') else {
-            return Arc::from(full_name);
+        let udf_name = if let Some((_, udf_name)) = full_name.rsplit_once('.') {
+            udf_name
+        } else {
+            &full_name
         };
 
-        Arc::from(udf_name)
+        Arc::from(format!("UDF {}", udf_name))
     }
 
     fn multiline_display(&self) -> Vec<String> {
