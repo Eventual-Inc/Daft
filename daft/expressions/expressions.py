@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8zlib"]
+    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
 
 
 def lit(value: object) -> Expression:
