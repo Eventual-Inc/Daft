@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from daft import udf
 from daft.datatype import DataType
 from daft.expressions import col
+from daft.udf import udf
 from tests.conftest import assert_df_equals
 from tests.dataframe.test_aggregations import _assert_all_hashable
 

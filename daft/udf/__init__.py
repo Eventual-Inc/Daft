@@ -2,9 +2,10 @@ from daft.udf.scalar import ScalarUdf
 from daft.datatype import DataType
 from typing import overload, Any, Callable, Optional, Union
 import functools
+from daft.udf.legacy import udf, UDF
 
 
-class UdfDecorator:
+class _DaftFuncDecorator:
     """`@daft.func` Decorator to convert a Python function into a `UDF`.
 
     Unlike `@daft.udf(...)`, `@daft.func` operates on single values instead of batches.
@@ -45,3 +46,6 @@ class UdfDecorator:
     ) -> Union[ScalarUdf, Callable[[Callable[..., Any]], ScalarUdf]]:
         partial_udf = functools.partial(ScalarUdf, return_dtype=return_dtype)
         return partial_udf if fn is None else partial_udf(fn)
+
+
+__all__ = ["UDF", "udf"]

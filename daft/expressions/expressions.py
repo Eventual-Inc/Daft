@@ -1354,7 +1354,7 @@ class Expression:
             (Showing first 3 of 3 rows)
 
         """
-        from daft.udf.legacy import UDF
+        from daft.udf import UDF
 
         inferred_return_dtype = DataType._infer_type(return_dtype)
 
