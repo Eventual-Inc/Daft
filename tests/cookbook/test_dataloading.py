@@ -149,24 +149,25 @@ def test_glob_files_recursive(tmpdir):
 
 
 def test_glob_files_from_multiple_path(tmpdir):
-    sub_folder_a = pathlib.Path(tmpdir) / "abc"
-    sub_folder_b = pathlib.Path(tmpdir) / "bca"
-    sub_folder_c = pathlib.Path(tmpdir) / "cab"
-    sub_folder_a.mkdir()
-    sub_folder_b.mkdir()
-    sub_folder_c.mkdir()
+    folder_a = pathlib.Path(tmpdir) / "abc"
+    folder_b = pathlib.Path(tmpdir) / "bca"
+    folder_c = pathlib.Path(tmpdir) / "cab"
+    folder_a.mkdir()
+    folder_b.mkdir()
+    folder_c.mkdir()
 
     paths = []
     for i in range(5):
-        for prefix in [sub_folder_a, sub_folder_b]:
+        for prefix in [folder_a, folder_b]:
             filepath = prefix / f"file_{i}.foo"
             filepath.write_text("a" * i)
             paths.append(filepath)
 
-        filepath = sub_folder_c / f"file_{i}.foo"
+        filepath = folder_c / f"file_{i}.foo"
         filepath.write_text("a" * i)
 
-    daft_df = daft.from_glob_path([str(sub_folder_a), str(sub_folder_b), "/not_exists"])
+    # glob files from folder a & b and an non-exist path
+    daft_df = daft.from_glob_path([str(folder_a), str(folder_b), "/not_exists"])
     daft_pd_df = daft_df.to_pandas()
 
     listing_records = [
@@ -176,6 +177,14 @@ def test_glob_files_from_multiple_path(tmpdir):
     pd_df = pd.DataFrame.from_records(listing_records)
     pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+
+    # glob files from folder a and b twice
+    daft_df = daft.from_glob_path([str(folder_a), str(folder_b), str(folder_a), str(folder_b)])
+    assert_df_equals(daft_df.to_pandas(), pd_df, sort_key="path")
+
+    # glob files with different glob paths with same results.
+    daft_df = daft.from_glob_path([str(folder_a), str(folder_b), str(folder_a) + "/*.foo"])
+    assert_df_equals(daft_df.to_pandas(), pd_df, sort_key="path")
 
     with pytest.raises(FileNotFoundError):
         daft.from_glob_path(str(pathlib.Path(tmpdir)))

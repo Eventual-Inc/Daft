@@ -35,7 +35,7 @@ class NativeRunnerIO(runner_io.RunnerIO):
     ) -> FileInfos:
         file_infos = FileInfos()
         file_format = file_format_config.file_format() if file_format_config is not None else None
-        for source_path in source_paths:
+        for source_path in set(source_paths):
             try:
                 path_file_infos = glob_path_with_stats(source_path, file_format, io_config)
                 file_infos.extend(path_file_infos)
