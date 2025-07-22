@@ -154,7 +154,7 @@ impl PythonRowWiseFunc {
                         .collect::<PyResult<Vec<_>>>()?;
 
                     let result = py
-                        .import(pyo3::intern!(py, "daft.udf.scalar"))?
+                        .import(pyo3::intern!(py, "daft.udf.row_wise"))?
                         .getattr(pyo3::intern!(py, "call_func_with_evaluated_exprs"))?
                         .call1((
                             self.inner.clone().unwrap().as_ref(),
