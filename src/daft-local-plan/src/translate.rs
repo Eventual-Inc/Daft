@@ -79,16 +79,19 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 project.stats_state.clone(),
             ))
         }
-        LogicalPlan::ActorPoolProject(actor_pool_project) => {
-            let input = translate(&actor_pool_project.input)?;
+        LogicalPlan::UDFProject(udf_project) => {
+            let input = translate(&udf_project.input)?;
 
-            let projection = BoundExpr::bind_all(&actor_pool_project.projection, input.schema())?;
+            let project = BoundExpr::try_new(udf_project.project.clone(), input.schema())?;
+            let passthrough_columns =
+                BoundExpr::bind_all(&udf_project.passthrough_columns, input.schema())?;
 
-            Ok(LocalPhysicalPlan::actor_pool_project(
+            Ok(LocalPhysicalPlan::udf_project(
                 input,
-                projection,
-                actor_pool_project.projected_schema.clone(),
-                actor_pool_project.stats_state.clone(),
+                project,
+                passthrough_columns,
+                udf_project.projected_schema.clone(),
+                udf_project.stats_state.clone(),
             ))
         }
         LogicalPlan::Sample(sample) => {

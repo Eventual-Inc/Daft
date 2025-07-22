@@ -39,7 +39,7 @@ impl PushDownShard {
                     //
                     // Shard-UnaryOp -> UnaryOp-Shard
                     LogicalPlan::Project(_)
-                    | LogicalPlan::ActorPoolProject(_)
+                    | LogicalPlan::UDFProject(_)
                     | LogicalPlan::Filter(_)
                     | LogicalPlan::Limit(_)
                     | LogicalPlan::Explode(_)
