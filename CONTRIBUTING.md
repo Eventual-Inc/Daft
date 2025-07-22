@@ -244,13 +244,13 @@ impl ScalarUDF for MyToUpperCase {
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let s = inputs.required(0)?;
         // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
-        // Returned series must have the same name as the input series
         let arr = s
             .utf8()
             .expect("type should have been validated already during `get_return_field`")
             .into_iter()
             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
             .collect::<Utf8Array>()
+            // Returned series must have the same name as the input series
             .rename(s.name());
         Ok(arr.into_series())
     }
