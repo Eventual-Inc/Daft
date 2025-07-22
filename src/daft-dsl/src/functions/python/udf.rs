@@ -1,3 +1,6 @@
+#[cfg(feature = "python")]
+use std::time::Duration;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
@@ -60,7 +63,9 @@ fn run_udf(
 
 impl LegacyPythonUDF {
     #[cfg(feature = "python")]
-    pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<Series> {
+    pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<(Series, Duration)> {
+        use std::time::Instant;
+
         use pyo3::Python;
 
         use crate::functions::python::{py_udf_initialize, MaybeInitializedUDF};
@@ -73,7 +78,10 @@ impl LegacyPythonUDF {
             )));
         }
 
+        let start_time = Instant::now();
         Python::with_gil(|py| {
+            let gil_contention_time = start_time.elapsed();
+
             let func = match &self.func {
                 MaybeInitializedUDF::Initialized(func) => func.clone().unwrap().clone_ref(py),
                 MaybeInitializedUDF::Uninitialized { inner, init_args } => {
@@ -91,6 +99,7 @@ impl LegacyPythonUDF {
                 &self.return_dtype,
                 self.batch_size,
             )
+            .map(|result| (result, gil_contention_time))
         })
     }
 }
@@ -123,7 +132,7 @@ impl FunctionEvaluator for LegacyPythonUDF {
         }
         #[cfg(feature = "python")]
         {
-            self.call_udf(inputs)
+            Ok(self.call_udf(inputs)?.0)
         }
     }
 }

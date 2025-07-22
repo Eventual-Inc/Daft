@@ -53,6 +53,7 @@ mod sink;
 mod sort;
 mod top_n;
 mod translate;
+mod udf;
 mod unpivot;
 mod window;
 

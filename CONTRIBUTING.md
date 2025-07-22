@@ -224,6 +224,9 @@ For more advanced use cases, see existing implementations in [daft-functions-utf
 // This prelude defines all required ScalarUDF dependencies.
 use daft_dsl::functions::prelude::*;
 
+// Couple of imports which are used here but are not in prelude
+use daft_core::prelude::{Utf8Array, IntoSeries};
+
 // We need these for the trait.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct MyToUpperCase;
@@ -246,7 +249,9 @@ impl ScalarUDF for MyToUpperCase {
             .expect("type should have been validated already during `get_return_field`")
             .into_iter()
             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
-            .collect::<Utf8Array>();
+            .collect::<Utf8Array>()
+            // Returned series must have the same name as the input series
+            .rename(s.name());
         Ok(arr.into_series())
     }
 

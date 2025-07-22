@@ -352,6 +352,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
         // Convert the numeric fields back to their original types
         let concurrency = message.concurrency.map(|c| c as usize);
         let batch_size = message.batch_size.map(|b| b as usize);
+        let use_process = message.use_process;
 
         // Reconstruct the ResourceRequest from the flattened fields
         let resource_request = {
@@ -379,6 +380,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             resource_request,
             batch_size,
             concurrency,
+            use_process,
         })
     }
 
@@ -432,6 +434,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             num_cpus,
             num_gpus,
             max_memory_bytes,
+            use_process: self.use_process,
         })
     }
 }

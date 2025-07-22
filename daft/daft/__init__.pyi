@@ -1255,6 +1255,7 @@ def udf(
     resource_request: ResourceRequest | None,
     batch_size: int | None,
     concurrency: int | None,
+    use_process: bool | None,
 ) -> PyExpr: ...
 def scalar_udf(
     name: str,

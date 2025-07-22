@@ -1907,6 +1907,14 @@ impl Expr {
             .data)
     }
 
+    pub fn unwrap_alias(self: &ExprRef) -> (ExprRef, Option<Arc<str>>) {
+        match self.as_ref() {
+            // Recursively unwrap if nested aliases, but only return the outermost
+            Self::Alias(expr, name) => (expr.clone().unwrap_alias().0, Some(name.clone())),
+            _ => (self.clone(), None),
+        }
+    }
+
     pub fn explode(self: Arc<Self>) -> DaftResult<ExprRef> {
         let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
         let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
@@ -2045,6 +2053,36 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
             ..
         }
     )
+}
+
+#[inline]
+pub fn is_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF { .. }),
+            ..
+        }
+    )
+}
+
+pub fn count_udfs(exprs: &[ExprRef]) -> usize {
+    exprs
+        .iter()
+        .map(|expr| {
+            let mut count = 0;
+            expr.apply(|e| {
+                if is_udf(e) {
+                    count += 1;
+                }
+
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            })
+            .unwrap();
+
+            count
+        })
+        .sum()
 }
 
 pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
