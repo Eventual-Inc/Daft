@@ -3,7 +3,7 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
-    functions::ScalarFunction,
+    functions::{scalar::ScalarFunc, BuiltinScalarFunc},
     is_udf,
     optimization::{get_required_columns, requires_computation},
     resolved_col, Column, Expr, ExprRef, ResolvedColumn,
@@ -190,7 +190,7 @@ impl TreeNodeRewriter for TruncateRootUDF {
                 Ok(common_treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map() can not be split
-            Expr::ScalarFunction(ScalarFunction { udf, .. })
+            Expr::ScalarFunc(ScalarFunc::Builtin(BuiltinScalarFunc { udf, .. }))
                 if udf.as_ref().type_id() == TypeId::of::<ListMap>() =>
             {
                 Ok(common_treenode::Transformed::no(node))
@@ -256,7 +256,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
                 Ok(common_treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map() can not be split
-            Expr::ScalarFunction(ScalarFunction { udf, .. })
+            Expr::ScalarFunc(ScalarFunc::Builtin(BuiltinScalarFunc { udf, .. }))
                 if udf.as_ref().type_id() == TypeId::of::<ListMap>() =>
             {
                 self.is_list_map = true;
@@ -296,7 +296,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
 }
 
 fn is_list_map(expr: &ExprRef) -> bool {
-    matches!(expr.as_ref(), Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<ListMap>())
+    matches!(expr.as_ref(), Expr::ScalarFunc(ScalarFunc::Builtin(BuiltinScalarFunc { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<ListMap>())
 }
 
 fn exists_skip_list_map<F: FnMut(&ExprRef) -> bool>(expr: &ExprRef, mut f: F) -> bool {

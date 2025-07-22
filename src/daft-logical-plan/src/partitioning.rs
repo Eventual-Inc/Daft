@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use daft_dsl::{
-    functions::FunctionArgs,
-    python_udf::{PythonScalarUDF, RowWiseUDF},
+    functions::{scalar::ScalarFunc, FunctionArgs},
+    python_udf::{PythonRowWiseFunc, PythonScalarFunc},
     Column, ExprRef, ResolvedColumn,
 };
 use indexmap::IndexMap;
@@ -272,7 +272,7 @@ fn translate_clustering_spec_expr(
             }
             .into())
         }
-        Expr::ScalarFunction(func) => {
+        Expr::ScalarFunc(ScalarFunc::Builtin(func)) => {
             let mut func = func.clone();
             let new_inputs = func
                 .inputs
@@ -283,7 +283,7 @@ fn translate_clustering_spec_expr(
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             func.inputs = FunctionArgs::new_unchecked(new_inputs);
-            Ok(Expr::ScalarFunction(func).into())
+            Ok(func.into())
         }
         Expr::Not(child) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
@@ -339,25 +339,25 @@ fn translate_clustering_spec_expr(
 
             Ok(expr.in_subquery(subquery.clone()))
         }
-        Expr::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
+        Expr::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(PythonRowWiseFunc {
             function_name: name,
             inner: func,
             return_dtype,
             original_args,
             children,
-        })) => {
+        }))) => {
             let new_children = children
                 .iter()
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Arc::new(Expr::PythonUDF(PythonScalarUDF::RowWise(
-                RowWiseUDF {
+            Ok(Arc::new(Expr::ScalarFunc(ScalarFunc::Python(
+                PythonScalarFunc::RowWise(PythonRowWiseFunc {
                     function_name: name.clone(),
                     inner: func.clone(),
                     return_dtype: return_dtype.clone(),
                     original_args: original_args.clone(),
                     children: new_children,
-                },
+                }),
             ))))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.

@@ -5,7 +5,7 @@ use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
     common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
-    functions::ScalarFunction,
+    functions::{scalar::ScalarFunc, BuiltinScalarFunc},
     Expr,
 };
 use daft_functions_uri::download::UrlDownloadArgs;
@@ -48,9 +48,11 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
         expr.inner()
             .apply(|e| {
                 let found_batch_size = match e.as_ref() {
-                    Expr::ScalarFunction(ScalarFunction { udf, inputs, .. })
-                        if udf.name() == "url_download" =>
-                    {
+                    Expr::ScalarFunc(ScalarFunc::Builtin(BuiltinScalarFunc {
+                        udf,
+                        inputs,
+                        ..
+                    })) if udf.name() == "url_download" => {
                         let UrlDownloadArgs {
                             max_connections, ..
                         } = inputs.clone().try_into()?;
@@ -196,15 +198,15 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFunc {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
                         0,
                         Field::new("a", DataType::Utf8),
                     ))])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
         ];
 
@@ -220,15 +222,15 @@ mod tests {
         let projection = vec![
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFunc {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![
                         FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
                         FunctionArg::named("max_connections", lit(10)),
                     ])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
         ];
 
@@ -242,26 +244,26 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFunc {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![
                         FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
                         FunctionArg::named("max_connections", lit(4)),
                     ])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFunc {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
                         1,
                         Field::new("b", DataType::Utf8),
                     ))])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
         ];
 

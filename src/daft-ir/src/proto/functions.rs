@@ -110,7 +110,7 @@ pub fn function_expr_to_proto(
 }
 
 /// This is to turn a proto rs function descriptor into the rust factory for linking.
-impl ToFromProto for ir::functions::ScalarFunction {
+impl ToFromProto for ir::functions::BuiltinScalarFunc {
     type Message = proto::Function;
 
     fn from_proto(_: Self::Message) -> ProtoResult<Self>

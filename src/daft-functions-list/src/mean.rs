@@ -5,7 +5,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -43,5 +43,5 @@ impl ScalarUDF for ListMean {
 
 #[must_use]
 pub fn list_mean(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListMean {}, vec![expr]).into()
+    BuiltinScalarFunc::new(ListMean {}, vec![expr]).into()
 }

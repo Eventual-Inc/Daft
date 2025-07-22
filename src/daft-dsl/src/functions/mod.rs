@@ -22,7 +22,7 @@ use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
 use python::LegacyPythonUDF;
 use scalar::DynamicScalarFunction;
-pub use scalar::{ScalarFunction, ScalarFunctionFactory, ScalarUDF};
+pub use scalar::{BuiltinScalarFunc, ScalarFunctionFactory, ScalarUDF};
 use serde::{Deserialize, Serialize};
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};

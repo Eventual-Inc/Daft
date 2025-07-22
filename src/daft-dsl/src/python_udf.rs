@@ -1,35 +1,58 @@
 use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{prelude::DataType, series::Series};
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{functions::python::RuntimePyObject, Expr, ExprRef, LiteralValue};
+use crate::{
+    functions::{python::RuntimePyObject, scalar::ScalarFunc},
+    Expr, ExprRef, LiteralValue,
+};
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[display("{_0}")]
-pub enum PythonScalarUDF {
-    RowWise(RowWiseUDF),
+pub enum PythonScalarFunc {
+    RowWise(PythonRowWiseFunc),
 }
 
-impl PythonScalarUDF {
+impl PythonScalarFunc {
     pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
         match self {
-            Self::RowWise(scalar_python_udf) => scalar_python_udf.call(args),
+            Self::RowWise(func) => func.call(args),
         }
     }
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
-            Self::RowWise(RowWiseUDF { children, .. }) => children.clone(),
+            Self::RowWise(PythonRowWiseFunc { children, .. }) => children.clone(),
         }
     }
 
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
-            Self::RowWise(scalar_python_udf) => {
-                Self::RowWise(scalar_python_udf.with_new_children(children))
+            Self::RowWise(func) => Self::RowWise(func.with_new_children(children)),
+        }
+    }
+
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        match self {
+            Self::RowWise(PythonRowWiseFunc {
+                function_name: name,
+                children,
+                return_dtype,
+                ..
+            }) => {
+                let field_name = if let Some(first_child) = children.first() {
+                    first_child.get_name(schema)?
+                } else {
+                    name.to_string()
+                };
+
+                Ok(Field::new(field_name, return_dtype.clone()))
             }
         }
     }
@@ -42,17 +65,19 @@ pub fn row_wise_udf(
     original_args: RuntimePyObject,
     children: Vec<ExprRef>,
 ) -> Expr {
-    Expr::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
-        function_name: Arc::from(name),
-        inner,
-        return_dtype,
-        original_args,
-        children,
-    }))
+    Expr::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
+        PythonRowWiseFunc {
+            function_name: Arc::from(name),
+            inner,
+            return_dtype,
+            original_args,
+            children,
+        },
+    )))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct RowWiseUDF {
+pub struct PythonRowWiseFunc {
     pub function_name: Arc<str>,
     pub inner: RuntimePyObject,
     pub return_dtype: DataType,
@@ -60,7 +85,7 @@ pub struct RowWiseUDF {
     pub children: Vec<ExprRef>,
 }
 
-impl Display for RowWiseUDF {
+impl Display for PythonRowWiseFunc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let children_str = self.children.iter().map(|expr| expr.to_string()).join(", ");
 
@@ -68,7 +93,7 @@ impl Display for RowWiseUDF {
     }
 }
 
-impl RowWiseUDF {
+impl PythonRowWiseFunc {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         assert_eq!(
             children.len(),

@@ -25,7 +25,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::BinaryOp { .. }
         | Expr::Cast(..)
         | Expr::Function { .. }
-        | Expr::ScalarFunction { .. }
+        | Expr::ScalarFunc { .. }
         | Expr::Not(..)
         | Expr::IsNull(..)
         | Expr::NotNull(..)
@@ -38,8 +38,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::InSubquery { .. }
         | Expr::Exists(..)
         | Expr::Over(..)
-        | Expr::WindowFunction(..)
-        | Expr::PythonUDF(..) => true,
+        | Expr::WindowFunction(..) => true,
     }
 }
 

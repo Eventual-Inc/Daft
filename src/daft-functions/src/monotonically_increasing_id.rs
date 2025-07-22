@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::functions::{prelude::*, ScalarFunction};
+use daft_dsl::functions::{prelude::*, BuiltinScalarFunc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -33,5 +33,5 @@ impl ScalarUDF for MonotonicallyIncreasingId {
 
 #[must_use]
 pub fn monotonically_increasing_id() -> ExprRef {
-    ScalarFunction::new(MonotonicallyIncreasingId, vec![]).into()
+    BuiltinScalarFunc::new(MonotonicallyIncreasingId, vec![]).into()
 }

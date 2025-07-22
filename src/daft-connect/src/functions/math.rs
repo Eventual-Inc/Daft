@@ -1,4 +1,4 @@
-use daft_dsl::functions::ScalarFunction;
+use daft_dsl::functions::BuiltinScalarFunc;
 use daft_functions::numeric::{
     abs::Abs,
     cbrt::Cbrt,
@@ -117,6 +117,6 @@ impl SparkFunction for RoundFunction {
             .map(analyze_expr)
             .collect::<ConnectResult<Vec<_>>>()?;
 
-        Ok(ScalarFunction::new(Round, args).into())
+        Ok(BuiltinScalarFunc::new(Round, args).into())
     }
 }

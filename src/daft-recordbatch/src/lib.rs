@@ -24,7 +24,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
         BoundColumn,
     },
-    functions::{FunctionArgs, FunctionEvaluator},
+    functions::{scalar::ScalarFunc, FunctionArgs, FunctionEvaluator},
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
     SketchType,
 };
@@ -717,7 +717,7 @@ impl RecordBatch {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            Expr::ScalarFunction(func) => {
+            Expr::ScalarFunc(ScalarFunc::Builtin(func)) => {
                 let args = func.inputs
                     .iter()
                     .map(|e| {
@@ -746,7 +746,7 @@ impl RecordBatch {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
-            Expr::PythonUDF(python_udf) => {
+            Expr::ScalarFunc(ScalarFunc::Python(python_udf)) => {
                 let args = python_udf.children().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
                 python_udf.call(args)
             }
