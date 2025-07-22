@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pyarrow as pa
 import pytest
@@ -705,3 +707,37 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
     }
 
     assert result.to_pydict() == expected
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Ray runner will always run UDFs on separate processes",
+)
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_run_udf_on_same_process(batch_size):
+    df = daft.from_pydict({"a": [None] * 3})
+
+    @udf(return_dtype=int, batch_size=batch_size, use_process=False)
+    def udf_1(data):
+        return [os.getpid()] * len(data)
+
+    result = df.select(udf_1(col("a")).alias("udf_1"))
+    assert result.to_pydict() == {"udf_1": [os.getpid()] * len(df)}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Ray runner will always run UDFs on separate processes",
+)
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+def test_run_udf_on_separate_process(batch_size):
+    df = daft.from_pydict({"a": [None] * 3})
+
+    @udf(return_dtype=int, batch_size=batch_size, use_process=True)
+    def udf_1(data):
+        return [os.getpid()] * len(data)
+
+    result = df.select(udf_1(col("a")).alias("udf_1"))
+    current_pid = os.getpid()
+    for pid in result.to_pydict()["udf_1"]:
+        assert pid != current_pid

@@ -12,11 +12,10 @@ use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::join::get_common_join_cols;
 use daft_local_plan::{
-    ActorPoolProject, CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter,
-    HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
-    PhysicalWrite, Pivot, Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
+    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
+    Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -31,11 +30,12 @@ use snafu::ResultExt;
 use crate::{
     channel::Receiver,
     intermediate_ops::{
-        actor_pool_project::ActorPoolProjectOperator, cross_join::CrossJoinOperator,
+        cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
+        project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -394,18 +394,19 @@ pub fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::ActorPoolProject(ActorPoolProject {
+        LocalPhysicalPlan::UDFProject(UDFProject {
             input,
-            projection,
+            project,
+            passthrough_columns,
             stats_state,
+            schema,
             ..
         }) => {
             let proj_op =
-                ActorPoolProjectOperator::try_new(projection.clone()).with_context(|_| {
-                    PipelineCreationSnafu {
+                UdfOperator::try_new(project.clone(), passthrough_columns.clone(), schema)
+                    .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),
-                    }
-                })?;
+                    })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),

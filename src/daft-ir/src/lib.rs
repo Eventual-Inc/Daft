@@ -99,16 +99,17 @@ pub mod rel {
         Project::new(input, projections)
     }
 
-    /// Creates a new projection relational operator where at least one input is an actor pool udf.
-    pub fn new_project_with_actor_pool<I, P, E>(input: I, projections: P) -> DaftResult<ActorPoolProject>
+    /// Creates a new projection relational operator where at least one input is a Udf.
+    pub fn new_project_with_udf<I, P, E>(input: I, project: E, passthrough_columns: P) -> DaftResult<UDFProject>
     where
         I: Into<Arc<LogicalPlan>>,
         P: IntoIterator<Item = E>,
         E: Into<Arc<Expr>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        let projections: Vec<Arc<Expr>> = projections.into_iter().map(|e| e.into()).collect();
-        ActorPoolProject::new(input, projections)
+        let project: Arc<Expr> = project.into();
+        let passthrough_columns: Vec<Arc<Expr>> = passthrough_columns.into_iter().map(|e| e.into()).collect();
+        UDFProject::new(input, project, passthrough_columns)
     }
 
     /// Creates a new filter relational operator.

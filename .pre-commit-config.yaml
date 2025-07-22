@@ -96,7 +96,7 @@ repos:
     args: [--workspace, --all-features, --all-targets]
 
   - id: clippy
-    name: Rust code Quality check
+    name: Rust code quality check
     description: Lint rust sources
     entry: cargo clippy
     language: system
