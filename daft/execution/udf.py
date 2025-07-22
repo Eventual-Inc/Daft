@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ENTER = "__ENTER__"
+_SUCCESS = "success"
+_UDF_ERROR = "udf_error"
+_ERROR = "error"
 _SENTINEL = ("__EXIT__", 0)
 
 
@@ -74,7 +78,7 @@ class UdfHandle:
             [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
         )
         expr_projection_bytes = pickle.dumps(expr_projection)
-        self.handle_conn.send(("__ENTER__", expr_projection_bytes))
+        self.handle_conn.send((_ENTER, expr_projection_bytes))
 
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
         if self.process.poll() is not None:
@@ -85,14 +89,14 @@ class UdfHandle:
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
-        if response[0] == "udf_error":
+        if response[0] == _UDF_ERROR:
             base_exc: Exception = pickle.loads(response[3])
             if sys.version_info >= (3, 11):
                 base_exc.add_note("\n".join(response[2].format()))
             raise UDFException(response[1]) from base_exc
-        elif response[0] == "error":
+        elif response[0] == _ERROR:
             raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
-        elif response[0] == "success":
+        elif response[0] == _SUCCESS:
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = MicroPartition.from_ipc_stream(output_bytes)

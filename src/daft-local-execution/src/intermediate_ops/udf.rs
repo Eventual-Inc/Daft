@@ -1,16 +1,17 @@
-use std::{sync::Arc, time::Duration, vec};
+use std::{ops::RangeInclusive, sync::Arc, time::Duration, vec};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
+use daft_core::prelude::SchemaRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     expr::{bound_expr::BoundExpr, count_udfs},
     functions::{
         python::{
-            get_resource_request, get_run_on_separate_process, get_udf_name,
-            try_get_batch_size_from_udf, try_get_concurrency,
+            get_resource_request, get_udf_name, get_use_process, try_get_batch_size_from_udf,
+            try_get_concurrency,
         },
         FunctionExpr,
     },
@@ -22,6 +23,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use rand::Rng;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -30,12 +32,13 @@ use super::intermediate_op::{
 };
 use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
 
-const NUM_TEST_ITERATIONS: usize = 10;
+const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
 
 struct UdfHandle {
     udf_expr: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
+    output_schema: SchemaRef,
     // Optional PyObject handle to external UDF worker.
     // Required for ActorPoolUDFs
     // Optional for stateless UDFs
@@ -44,18 +47,29 @@ struct UdfHandle {
     #[cfg(feature = "python")]
     inner: Option<PyObject>,
     // Data used to track GIL contention
+    check_gil_contention: bool,
+    min_num_test_iterations: usize,
     total_runtime: Duration,
     total_gil_contention: Duration,
     num_batches: usize,
 }
 
 impl UdfHandle {
-    fn no_handle(udf_expr: &BoundExpr, passthrough_columns: &[BoundExpr]) -> Self {
+    fn no_handle(
+        udf_expr: &BoundExpr,
+        passthrough_columns: &[BoundExpr],
+        output_schema: SchemaRef,
+        check_gil_contention: bool,
+        min_num_test_iterations: usize,
+    ) -> Self {
         Self {
             udf_expr: udf_expr.clone(),
             passthrough_columns: passthrough_columns.to_vec(),
+            output_schema,
             #[cfg(feature = "python")]
             inner: None,
+            check_gil_contention,
+            min_num_test_iterations,
             total_runtime: Duration::from_secs(0),
             total_gil_contention: Duration::from_secs(0),
             num_batches: 0,
@@ -126,10 +140,11 @@ impl UdfHandle {
 
         let input_exprs = BoundExpr::bind_all(input_exprs, input.schema().as_ref())?;
 
-        let mut out_batches = vec![];
+        let input_batches = input.get_tables()?;
+        let mut output_batches = Vec::with_capacity(input_batches.len());
 
         // Iterate over MicroPartition batches
-        for batch in input.get_tables()?.as_ref() {
+        for batch in input_batches.as_ref() {
             use std::time::Instant;
 
             // Get the functions inputs
@@ -153,21 +168,21 @@ impl UdfHandle {
             let passthrough_input =
                 batch.eval_expression_list(self.passthrough_columns.as_slice())?;
             let series = passthrough_input.append_column(result)?;
-            out_batches.push(series);
+            output_batches.push(series);
         }
 
         // Switch to external process if we hit the GIL contention threshold
-        if self.num_batches > NUM_TEST_ITERATIONS
+        if self.check_gil_contention
+            && self.num_batches > self.min_num_test_iterations
             && (self.total_gil_contention.as_secs_f64() / self.total_runtime.as_secs_f64())
                 > GIL_CONTRIBUTION_THRESHOLD
         {
             self.create_handle()?;
         }
 
-        let out_schema = out_batches[0].schema.clone();
         Ok(Arc::new(MicroPartition::new_loaded(
-            out_schema,
-            Arc::new(out_batches),
+            self.output_schema.clone(),
+            Arc::new(output_batches),
             None,
         )))
     }
@@ -236,15 +251,20 @@ impl IntermediateOpState for UdfState {
 pub struct UdfOperator {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
+    output_schema: SchemaRef,
     is_actor_pool_udf: bool,
     concurrency: usize,
     batch_size: Option<usize>,
     memory_request: u64,
-    run_on_separate_process: Option<bool>,
+    use_process: Option<bool>,
 }
 
 impl UdfOperator {
-    pub fn try_new(project: BoundExpr, passthrough_columns: Vec<BoundExpr>) -> DaftResult<Self> {
+    pub fn try_new(
+        project: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
+        output_schema: &SchemaRef,
+    ) -> DaftResult<Self> {
         let project_unbound = project.inner().clone();
 
         // count_udfs counts both actor pool and stateless udfs
@@ -255,12 +275,13 @@ impl UdfOperator {
         let exp_concurrency = try_get_concurrency(&project_unbound);
         let is_actor_pool_udf = exp_concurrency.is_some();
 
-        let run_on_separate_process = get_run_on_separate_process(&project_unbound)?;
+        let use_process = get_use_process(&project_unbound)?;
 
+        let full_name = get_udf_name(&project_unbound);
         let resource_request = get_resource_request(&[project_unbound.clone()]);
 
         // Determine optimal parallelism
-        let max_concurrency = Self::get_optimal_allocation(resource_request.as_ref())?;
+        let max_concurrency = Self::get_optimal_allocation(&full_name, resource_request.as_ref())?;
         // If parallelism is already specified, use that
         let concurrency = exp_concurrency.unwrap_or(max_concurrency);
         let batch_size = try_get_batch_size_from_udf(&project_unbound)?;
@@ -272,16 +293,20 @@ impl UdfOperator {
         Ok(Self {
             project,
             passthrough_columns,
+            output_schema: output_schema.clone(),
             is_actor_pool_udf,
             concurrency,
             batch_size,
             memory_request,
-            run_on_separate_process,
+            use_process,
         })
     }
 
     // This function is used to determine the optimal allocation of concurrency and expression parallelism
-    fn get_optimal_allocation(resource_request: Option<&ResourceRequest>) -> DaftResult<usize> {
+    fn get_optimal_allocation(
+        full_name: &str,
+        resource_request: Option<&ResourceRequest>,
+    ) -> DaftResult<usize> {
         let num_cpus = get_compute_pool_num_threads();
         // The number of CPUs available for the operator.
         let available_cpus = match resource_request {
@@ -292,8 +317,8 @@ impl UdfOperator {
                 let requested_num_cpus = resource_request.num_cpus().unwrap();
                 if requested_num_cpus > num_cpus as f64 {
                     Err(DaftError::ValueError(format!(
-                        "Requested {} CPUs but found only {} available",
-                        requested_num_cpus, num_cpus
+                        "{}: Requested {} CPUs but only found {} available",
+                        full_name, requested_num_cpus, num_cpus
                     )))
                 } else {
                     Ok((num_cpus as f64 / requested_num_cpus).clamp(1.0, num_cpus as f64) as usize)
@@ -371,9 +396,16 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the udf
-        let mut udf_handle = UdfHandle::no_handle(&self.project, &self.passthrough_columns);
-        if self.is_actor_pool_udf || self.run_on_separate_process.unwrap_or(false) {
+        let mut rng = rand::thread_rng();
+
+        let mut udf_handle = UdfHandle::no_handle(
+            &self.project,
+            &self.passthrough_columns,
+            self.output_schema.clone(),
+            matches!(self.use_process, Some(false)),
+            rng.gen_range(NUM_TEST_ITERATIONS_RANGE),
+        );
+        if self.is_actor_pool_udf || self.use_process.unwrap_or(false) {
             udf_handle.create_handle()?;
         }
 

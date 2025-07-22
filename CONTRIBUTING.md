@@ -51,7 +51,7 @@ To set up your development environment:
 ### Developing
 
 1. `make build`: recompile your code after modifying any Rust code in `src/`
-2. `DAFT_RUNNER=native make test`: run tests
+2. `DAFT_RUNNER=native make test`: run tests, you can set additional run parameters through `EXTRA_ARGS`
 3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests
 4. `make docs`: build docs
 5. `make docs-serve`: build docs in development server
@@ -160,11 +160,18 @@ We run test suites across Python and Rust. Python tests focus on high-level Data
 
 Our python tests are located in the `tests` directory, you can run all the tests at once with `make tests`.
 
-To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest]("https://doc.rust-lang.org/cargo/commands/cargo-test.html").
+To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest](https://docs.pytest.org/en/stable/how-to/usage.html).
 
 ```
-DAFT_RUNNER=native pytest tests/dataframe
+DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit
 ```
+
+To enable debug logs from tests, set the `--log-cli-level` option, as well as disable capturing.
+
+```
+DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit -s --log-cli-level=DEBUG
+```
+
 
 #### Rust tests
 

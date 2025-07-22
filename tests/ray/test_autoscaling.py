@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import pytest
 
 import daft
@@ -32,6 +34,29 @@ def test_basic_autoscaling_cluster():
         result = df.filter(col("x") > 3).to_pydict()
         assert result["x"] == [4, 5]
         assert result["y"] == [9, 10]
+
+
+def test_basic_autoscaling_cluster_with_existing_workers():
+    head_resources = {"CPU": 0}
+    worker_node_types = {
+        "worker1": {
+            "resources": {"CPU": 1},
+            "node_config": {},
+            "min_workers": 1,
+            "max_workers": 4,
+        }
+    }
+
+    with autoscaling_cluster_context(head_resources, worker_node_types):
+
+        @daft.udf(return_dtype=daft.DataType.list(daft.DataType.string()))
+        def fake_udf_needs_2_cpus(x):
+            time.sleep(1)
+            return x
+
+        # Test basic Daft operations on the autoscaling cluster
+        df = daft.from_pydict({"x": [i for i in range(100)]}).repartition(50, "x")
+        df.select(fake_udf_needs_2_cpus(col("x"))).to_pydict()
 
 
 def test_basic_autoscaling_gpu_cluster():

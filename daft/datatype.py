@@ -519,7 +519,8 @@ class DataType:
         elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
             scalar_dtype = cls.from_arrow_type(arrow_type.value_type)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
-        elif isinstance(arrow_type, pa.PyExtensionType):
+        # Only check for PyExtensionType if pyarrow version is < 21.0.0
+        if hasattr(pa, "PyExtensionType") and isinstance(arrow_type, getattr(pa, "PyExtensionType")):
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
             raise ValueError(
                 "pyarrow extension types that subclass pa.PyExtensionType can't be used in Daft, since they can't be "
