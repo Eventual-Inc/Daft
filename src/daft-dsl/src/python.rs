@@ -273,14 +273,14 @@ pub fn udf(
 }
 
 #[pyfunction]
-pub fn scalar_udf(
+pub fn row_wise_udf(
     name: &str,
     inner: PyObject,
     return_dtype: PyDataType,
     original_args: PyObject,
     children_exprs: Vec<PyExpr>,
 ) -> PyExpr {
-    use crate::python_udf::scalar_udf;
+    use crate::python_udf::row_wise_udf;
 
     let children = children_exprs
         .into_iter()
@@ -288,7 +288,7 @@ pub fn scalar_udf(
         .collect();
 
     PyExpr {
-        expr: scalar_udf(
+        expr: row_wise_udf(
             name,
             inner.into(),
             return_dtype.into(),

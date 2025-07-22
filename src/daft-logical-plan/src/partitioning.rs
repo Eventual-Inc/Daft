@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::{
     functions::FunctionArgs,
-    python_udf::{PythonUDF, ScalarPythonUDF},
+    python_udf::{PythonScalarUDF, RowWiseUDF},
     Column, ExprRef, ResolvedColumn,
 };
 use indexmap::IndexMap;
@@ -339,7 +339,7 @@ fn translate_clustering_spec_expr(
 
             Ok(expr.in_subquery(subquery.clone()))
         }
-        Expr::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+        Expr::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
             function_name: name,
             inner: func,
             return_dtype,
@@ -350,8 +350,8 @@ fn translate_clustering_spec_expr(
                 .iter()
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Arc::new(Expr::PythonUDF(PythonUDF::Scalar(
-                ScalarPythonUDF {
+            Ok(Arc::new(Expr::PythonUDF(PythonScalarUDF::RowWise(
+                RowWiseUDF {
                     function_name: name.clone(),
                     inner: func.clone(),
                     return_dtype: return_dtype.clone(),

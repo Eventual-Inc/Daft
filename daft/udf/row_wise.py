@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from daft.daft import PyDataType, PySeries
 
 
-class ScalarUdf:
+class RowWiseUdf:
     def __init__(self, fn: Callable[..., Any], return_dtype: DataType | None):
         self._inner = fn
 
@@ -43,7 +43,7 @@ class ScalarUdf:
             # all inputs are Python literals, evaluate immediately
             return self._inner(*args, **kwargs)
         else:
-            return Expression._scalar_udf(self.name, self._inner, self.return_dtype, (args, kwargs), children_exprs)
+            return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), children_exprs)
 
 
 def call_func_with_evaluated_exprs(

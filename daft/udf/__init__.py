@@ -1,4 +1,4 @@
-from daft.udf.scalar import ScalarUdf
+from daft.udf.row_wise import RowWiseUdf
 from daft.datatype import DataType
 from typing import overload, Any, Callable, Optional, Union
 import functools
@@ -37,14 +37,14 @@ class _DaftFuncDecorator:
     """
 
     @overload
-    def __new__(cls, *, return_dtype: Optional[DataType] = None) -> Callable[[Any], ScalarUdf]: ...  # type: ignore
+    def __new__(cls, *, return_dtype: Optional[DataType] = None) -> Callable[[Any], RowWiseUdf]: ...  # type: ignore
     @overload
-    def __new__(cls, fn: Callable[..., Any], *, return_dtype: Optional[DataType] = None) -> ScalarUdf: ...  # type: ignore
+    def __new__(cls, fn: Callable[..., Any], *, return_dtype: Optional[DataType] = None) -> RowWiseUdf: ...  # type: ignore
 
     def __new__(  # type: ignore
         cls, fn: Optional[Callable[..., Any]] = None, *, return_dtype: Optional[DataType] = None
-    ) -> Union[ScalarUdf, Callable[[Callable[..., Any]], ScalarUdf]]:
-        partial_udf = functools.partial(ScalarUdf, return_dtype=return_dtype)
+    ) -> Union[RowWiseUdf, Callable[[Callable[..., Any]], RowWiseUdf]]:
+        partial_udf = functools.partial(RowWiseUdf, return_dtype=return_dtype)
         return partial_udf if fn is None else partial_udf(fn)
 
 

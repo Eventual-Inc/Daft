@@ -8,7 +8,7 @@ use pyo3::{
 use crate::{
     functions::{FunctionExpr, ScalarFunction},
     python::PyExpr,
-    python_udf::{PythonUDF, ScalarPythonUDF},
+    python_udf::{PythonScalarUDF, RowWiseUDF},
     AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec,
 };
 
@@ -163,9 +163,9 @@ impl<'py> PyVisitor<'py> {
         self.visit_function(name, args)
     }
 
-    fn visit_python_udf(&self, udf: &PythonUDF) -> PyVisitorResult<'py> {
+    fn visit_python_udf(&self, udf: &PythonScalarUDF) -> PyVisitorResult<'py> {
         match udf {
-            PythonUDF::Scalar(ScalarPythonUDF {
+            PythonScalarUDF::RowWise(RowWiseUDF {
                 function_name: name,
                 children,
                 ..

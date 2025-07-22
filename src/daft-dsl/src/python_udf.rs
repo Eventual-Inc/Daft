@@ -9,40 +9,40 @@ use crate::{functions::python::RuntimePyObject, Expr, ExprRef, LiteralValue};
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[display("{_0}")]
-pub enum PythonUDF {
-    Scalar(ScalarPythonUDF),
+pub enum PythonScalarUDF {
+    RowWise(RowWiseUDF),
 }
 
-impl PythonUDF {
+impl PythonScalarUDF {
     pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
         match self {
-            Self::Scalar(scalar_python_udf) => scalar_python_udf.call(args),
+            Self::RowWise(scalar_python_udf) => scalar_python_udf.call(args),
         }
     }
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
-            Self::Scalar(ScalarPythonUDF { children, .. }) => children.clone(),
+            Self::RowWise(RowWiseUDF { children, .. }) => children.clone(),
         }
     }
 
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
-            Self::Scalar(scalar_python_udf) => {
-                Self::Scalar(scalar_python_udf.with_new_children(children))
+            Self::RowWise(scalar_python_udf) => {
+                Self::RowWise(scalar_python_udf.with_new_children(children))
             }
         }
     }
 }
 
-pub fn scalar_udf(
+pub fn row_wise_udf(
     name: &str,
     inner: RuntimePyObject,
     return_dtype: DataType,
     original_args: RuntimePyObject,
     children: Vec<ExprRef>,
 ) -> Expr {
-    Expr::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+    Expr::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
         function_name: Arc::from(name),
         inner,
         return_dtype,
@@ -52,7 +52,7 @@ pub fn scalar_udf(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ScalarPythonUDF {
+pub struct RowWiseUDF {
     pub function_name: Arc<str>,
     pub inner: RuntimePyObject,
     pub return_dtype: DataType,
@@ -60,7 +60,7 @@ pub struct ScalarPythonUDF {
     pub children: Vec<ExprRef>,
 }
 
-impl Display for ScalarPythonUDF {
+impl Display for RowWiseUDF {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let children_str = self.children.iter().map(|expr| expr.to_string()).join(", ");
 
@@ -68,7 +68,7 @@ impl Display for ScalarPythonUDF {
     }
 }
 
-impl ScalarPythonUDF {
+impl RowWiseUDF {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         assert_eq!(
             children.len(),

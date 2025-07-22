@@ -32,7 +32,7 @@ from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import lit as _lit
-from daft.daft import scalar_udf as _scalar_udf
+from daft.daft import row_wise_udf as _row_wise_udf
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
@@ -417,7 +417,7 @@ class Expression:
         )
 
     @staticmethod
-    def _scalar_udf(
+    def _row_wise_udf(
         name: builtins.str,
         inner: Callable[..., Any],
         return_dtype: DataType,
@@ -425,7 +425,7 @@ class Expression:
         children_exprs: builtins.list[Expression],
     ) -> Expression:
         return Expression._from_pyexpr(
-            _scalar_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in children_exprs])
+            _row_wise_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in children_exprs])
         )
 
     @staticmethod

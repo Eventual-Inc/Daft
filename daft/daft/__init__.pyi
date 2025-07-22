@@ -1257,7 +1257,7 @@ def udf(
     concurrency: int | None,
     use_process: bool | None,
 ) -> PyExpr: ...
-def scalar_udf(
+def row_wise_udf(
     name: str,
     inner: Callable[..., Any],
     return_dtype: PyDataType,

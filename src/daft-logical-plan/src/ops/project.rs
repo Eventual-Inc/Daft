@@ -6,7 +6,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     functions::FunctionArgs,
     optimization,
-    python_udf::{PythonUDF, ScalarPythonUDF},
+    python_udf::{PythonScalarUDF, RowWiseUDF},
     resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
 };
 use indexmap::{IndexMap, IndexSet};
@@ -479,7 +479,7 @@ fn replace_column_with_semantic_id(
                     Transformed::yes(Expr::InSubquery(expr.data, subquery.clone()).into())
                 }
             }
-            Expr::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+            Expr::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
                 function_name: name,
                 inner: func,
                 return_dtype,
@@ -500,8 +500,8 @@ fn replace_column_with_semantic_id(
                         .iter()
                         .map(|t| t.data.clone())
                         .collect::<Vec<_>>();
-                    Transformed::yes(Arc::new(Expr::PythonUDF(PythonUDF::Scalar(
-                        ScalarPythonUDF {
+                    Transformed::yes(Arc::new(Expr::PythonUDF(PythonScalarUDF::RowWise(
+                        RowWiseUDF {
                             function_name: name.clone(),
                             inner: func.clone(),
                             return_dtype: return_dtype.clone(),

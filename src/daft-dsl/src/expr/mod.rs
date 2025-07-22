@@ -44,7 +44,7 @@ use crate::{
     },
     lit,
     optimization::{get_required_columns, requires_computation},
-    python_udf::{PythonUDF, ScalarPythonUDF},
+    python_udf::{PythonScalarUDF, RowWiseUDF},
 };
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
@@ -298,7 +298,7 @@ pub enum Expr {
     Exists(Subquery),
 
     #[display("{_0}")]
-    PythonUDF(PythonUDF),
+    PythonUDF(PythonScalarUDF),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -1266,7 +1266,7 @@ impl Expr {
                 let child_id = window_expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.window_function()"))
             }
-            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+            Self::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
                 function_name: name,
                 children,
                 ..
@@ -1317,7 +1317,7 @@ impl Expr {
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
             Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
-            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF { children, .. })) => {
+            Self::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF { children, .. })) => {
                 children.clone()
             }
         }
@@ -1437,7 +1437,7 @@ impl Expr {
                     inputs: FunctionArgs::new_unchecked(new_children),
                 })
             }
-            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+            Self::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
                 function_name: name,
                 inner: func,
                 return_dtype,
@@ -1449,7 +1449,7 @@ impl Expr {
                     "Should have same number of children"
                 );
 
-                Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+                Self::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
                     function_name: name.clone(),
                     inner: func.clone(),
                     return_dtype: return_dtype.clone(),
@@ -1656,7 +1656,7 @@ impl Expr {
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
             Self::Over(expr, _) => expr.to_field(schema),
             Self::WindowFunction(expr) => expr.to_field(schema),
-            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+            Self::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
                 function_name: name,
                 children,
                 return_dtype,
@@ -1720,7 +1720,7 @@ impl Expr {
             Self::Exists(subquery) => subquery.name(),
             Self::Over(expr, ..) => expr.name(),
             Self::WindowFunction(expr) => expr.name(),
-            Self::PythonUDF(PythonUDF::Scalar(ScalarPythonUDF {
+            Self::PythonUDF(PythonScalarUDF::RowWise(RowWiseUDF {
                 function_name: name,
                 children,
                 ..
