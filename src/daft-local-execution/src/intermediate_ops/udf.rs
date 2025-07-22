@@ -277,7 +277,8 @@ impl UdfOperator {
 
         let use_process = get_use_process(&project_unbound)?;
 
-        let full_name = get_udf_name(&project_unbound);
+        let full_name =
+            get_udf_name(&project_unbound).expect("UDFProject should have exactly one UDF");
         let resource_request = get_resource_request(&[project_unbound.clone()]);
 
         // Determine optimal parallelism
@@ -359,7 +360,8 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn name(&self) -> Arc<str> {
-        let full_name = get_udf_name(self.project.inner());
+        let full_name =
+            get_udf_name(self.project.inner()).expect("UDFProject should have exactly one UDF");
 
         let udf_name = if let Some((_, udf_name)) = full_name.rsplit_once('.') {
             udf_name
@@ -375,7 +377,7 @@ impl IntermediateOperator for UdfOperator {
         res.push("UDF Executor:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_name(self.project.inner()),
+            get_udf_name(self.project.inner()).expect("UDFProject should have exactly one UDF"),
             self.project
         ));
         res.push(format!(

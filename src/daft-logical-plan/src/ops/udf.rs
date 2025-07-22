@@ -105,7 +105,7 @@ impl UDFProject {
         res.push("UDFProject:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_name(&self.project),
+            get_udf_name(&self.project).expect("UDFProject should have exactly one UDF"),
             self.project
         ));
         res.push(format!(

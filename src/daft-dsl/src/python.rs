@@ -281,9 +281,9 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
 
 /// Get the names of all UDFs in expression
 #[pyfunction]
-pub fn get_udf_name(expr: PyExpr) -> String {
+pub fn try_get_udf_name(expr: PyExpr) -> String {
     use crate::functions::python::get_udf_name;
-    get_udf_name(&expr.expr)
+    get_udf_name(&expr.expr).unwrap_or_default()
 }
 
 #[pyclass(module = "daft.daft")]

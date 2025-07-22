@@ -315,7 +315,7 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
 }
 
 /// Get the names of all UDFs in expression
-pub fn get_udf_name(expr: &ExprRef) -> String {
+pub fn get_udf_name(expr: &ExprRef) -> Option<String> {
     let mut udf_name = None;
 
     expr.apply(|e| {
@@ -332,5 +332,5 @@ pub fn get_udf_name(expr: &ExprRef) -> String {
     })
     .unwrap();
 
-    udf_name.expect("get_udf_name expects one UDF")
+    udf_name
 }

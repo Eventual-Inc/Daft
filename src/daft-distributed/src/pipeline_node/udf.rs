@@ -75,7 +75,7 @@ impl UDFNode {
         res.push("UDF Executor:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_name(self.project.inner()),
+            get_udf_name(self.project.inner()).expect("UDFProject should have exactly one UDF"),
             self.project
         ));
         res.push(format!(

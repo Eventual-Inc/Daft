@@ -231,7 +231,8 @@ impl ActorUDF {
             "UDFs = [{}]",
             self.projection
                 .iter()
-                .map(|expr| get_udf_name(expr.inner()))
+                .map(|expr| get_udf_name(expr.inner())
+                    .expect("UDFProject should have exactly one UDF"))
                 .join(", ")
         ));
         res.push(format!(
