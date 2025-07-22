@@ -60,8 +60,8 @@ impl FileInfos {
         Self::new_internal(file_paths, file_sizes, num_rows)
     }
 
-    /// Concatenate two FileInfos together.
-    pub fn extend(&mut self, new_infos: Self) {
+    /// Merge two FileInfos together.
+    pub fn merge(&mut self, new_infos: Self) {
         let mut index_map = HashMap::new();
         for (i, path) in self.file_paths.iter().enumerate() {
             index_map.insert(path.clone(), i);
@@ -74,16 +74,16 @@ impl FileInfos {
         merged_sizes.extend_from_slice(&self.file_sizes);
         merged_rows.extend_from_slice(&self.num_rows);
 
-        for (new_path, new_size, new_rows) in new_infos.into_iter() {
-            if let Some(&idx) = index_map.get(&new_path) {
-                merged_sizes[idx] = new_size;
-                merged_rows[idx] = new_rows;
+        new_infos.into_iter().for_each(|file_info| {
+            if let Some(&idx) = index_map.get(&file_info.file_path) {
+                merged_sizes[idx] = file_info.file_size;
+                merged_rows[idx] = file_info.num_rows;
             } else {
-                merged_paths.push(new_path);
-                merged_sizes.push(new_size);
-                merged_rows.push(new_rows);
+                merged_paths.push(file_info.file_path);
+                merged_sizes.push(file_info.file_size);
+                merged_rows.push(file_info.num_rows);
             }
-        }
+        });
 
         self.file_paths = merged_paths;
         self.file_sizes = merged_sizes;
@@ -108,16 +108,16 @@ impl FileInfos {
 }
 
 impl IntoIterator for FileInfos {
-    type Item = (String, Option<i64>, Option<i64>);
+    type Item = FileInfo;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
         let mut result = Vec::new();
         for i in 0..self.file_paths.len() {
-            result.push((
+            result.push(FileInfo::new_internal(
                 self.file_paths[i].clone(),
-                self.file_sizes.get(i).cloned().unwrap_or_default(),
-                self.num_rows.get(i).cloned().unwrap_or_default(),
+                self.file_sizes.get(i).copied().unwrap_or_default(),
+                self.num_rows.get(i).copied().unwrap_or_default(),
             ));
         }
         result.into_iter()
@@ -166,7 +166,7 @@ mod tests {
 
         let new = FileInfos::from_infos(vec!["path2".into()], vec![Some(200)], vec![Some(2000)]);
 
-        base.extend(new);
+        base.merge(new);
 
         assert_eq!(base.file_paths, vec!["path1", "path2"]);
         assert_eq!(base.file_sizes, vec![Some(100), Some(200)]);
@@ -187,7 +187,7 @@ mod tests {
             vec![Some(250), Some(150), Some(400)],
         );
 
-        base.extend(new);
+        base.merge(new);
 
         assert_eq!(base.file_paths, vec!["p1", "p2", "p3", "p4"]);
         assert_eq!(
@@ -214,7 +214,7 @@ mod tests {
             vec![None, Some(3000)],
         );
 
-        base.extend(new);
+        base.merge(new);
 
         assert_eq!(base.file_paths, vec!["path1", "path2", "path3"]);
         assert_eq!(base.file_sizes, vec![None, Some(200), Some(300)]);
