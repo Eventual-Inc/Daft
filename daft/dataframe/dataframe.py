@@ -38,7 +38,7 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionT,
 )
-from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
+from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions, in_notebook
 
 if TYPE_CHECKING:
     import dask
@@ -3453,10 +3453,10 @@ class DataFrame:
         try:
             from IPython.display import HTML, display
 
-            if preview.partition is not None:
+            if in_notebook() and preview.partition is not None:
                 try:
                     interactive_html = _generate_interactive_html(preview.partition.to_record_batch())
-                    display(HTML(interactive_html))
+                    display(HTML(interactive_html), clear=True)
                     return None
                 except Exception:
                     pass
