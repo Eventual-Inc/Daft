@@ -76,7 +76,7 @@ test: .venv build  ## Run tests
 
 .PHONY: doctests
 doctests:
-	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/functions.py daft/datatype.py
+	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/ daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data

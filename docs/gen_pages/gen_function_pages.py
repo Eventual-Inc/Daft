@@ -87,7 +87,7 @@ def gen_index():
         )
 
     template = env.get_template("functions.md.j2")
-    content = template.render(categories=categories, category_titles=CATEGORY_TITLES, module=module)
+    content = template.render(categories=categories, category_titles=CATEGORY_TITLES)
 
     with mkdocs_gen_files.open("api/functions2/index.md", "w") as f:
         f.write(content)
