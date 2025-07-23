@@ -145,6 +145,10 @@ class ParquetFileWriter(FileWriterBase):
             compression=self.compression,
             use_compliant_nested_type=False,
             filesystem=self.fs,
+            # When using Arrow 8, it defaults to parquet version 1.
+            # This hits a known bug where Arrow cannot correctly write u32 values in Parquet files:
+            # https://issues.apache.org/jira/browse/ARROW-12201
+            # The fix is to always use at least Parquet version 2.
             version="2.6",
             **opts,
         )

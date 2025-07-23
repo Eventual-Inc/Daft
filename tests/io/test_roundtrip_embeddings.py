@@ -69,18 +69,12 @@ def test_roundtrip_embedding(tmp_path: Path, fmt: FMT, dtype: np.dtype, size: in
     # make some embeddings of the specified data type and dimensionality
     # with uniformly at random distributed values
     make_array = partial(random_numerical_embedding, np.random.default_rng(), dtype, size)
-    test_df = (
-        daft.from_pydict({"e": [make_array() for _ in range(50)]})
-        .with_column("e", daft.col("e").cast(DataType.embedding(DataType.from_numpy_dtype(dtype), size)))
+    test_df = daft.from_pydict({"e": [make_array() for _ in range(50)]}).with_column(
+        "e", daft.col("e").cast(DataType.embedding(DataType.from_numpy_dtype(dtype), size))
     )
 
     # make a checking function for the loaded dataframe & verify our original dataframe
     check = _make_check_embeddings(test_df, dtype)
-
-    if fmt == 'parquet':
-        new_temp_path = f"./roundtrip_{dtype}_{size}.parquet"
-        getattr(test_df, f"write_{fmt}")(new_temp_path)
-        print(f"WROTE TO: {new_temp_path}")
 
     # write the embeddings-containing dataframe to disk using the specified format
     getattr(test_df, f"write_{fmt}")(str(tmp_path))
