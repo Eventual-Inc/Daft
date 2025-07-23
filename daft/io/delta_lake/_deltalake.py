@@ -1,6 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
-
+import os
 from typing import TYPE_CHECKING, Optional, Union
 
 from daft import context
@@ -66,7 +66,7 @@ def read_deltalake(
     storage_config = StorageConfig(multithreaded_io, io_config)
 
     if isinstance(table, str):
-        table_uri = table
+        table_uri = os.path.expanduser(table)
     elif isinstance(table, DataCatalogTable):
         table_uri = table.table_uri(io_config)
     elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
