@@ -89,7 +89,6 @@ jobs:
       if: ${{ (runner.os == 'Linux') }}
       run: |
         maturin develop
-        python -c 'import pyarrow; pyarrow.show_versions()'
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
