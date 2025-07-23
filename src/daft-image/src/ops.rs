@@ -457,19 +457,21 @@ pub fn image_html_value_with_truncate(arr: &ImageArray, idx: usize, truncate: bo
             let processed_image = if truncate {
                 image.fit_to(128, 128)
             } else {
-                image  // Use the full-size image
+                image // Use the full-size image
             };
             let mut bytes: Vec<u8> = vec![];
             let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            processed_image.encode(ImageFormat::PNG, &mut writer).unwrap();
+            processed_image
+                .encode(ImageFormat::PNG, &mut writer)
+                .unwrap();
             drop(writer);
-            
+
             let style = if truncate {
                 "max-height:128px;width:auto"
             } else {
                 "max-width:90%;max-height:90vh;width:auto;height:auto"
             };
-            
+
             format!(
                 "<img style=\"{}\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
                 style,
@@ -486,7 +488,11 @@ pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize) -> String 
 }
 
 #[must_use]
-pub fn fixed_image_html_value_with_truncate(arr: &FixedShapeImageArray, idx: usize, truncate: bool) -> String {
+pub fn fixed_image_html_value_with_truncate(
+    arr: &FixedShapeImageArray,
+    idx: usize,
+    truncate: bool,
+) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();
 
@@ -496,19 +502,21 @@ pub fn fixed_image_html_value_with_truncate(arr: &FixedShapeImageArray, idx: usi
             let processed_image = if truncate {
                 image.fit_to(128, 128)
             } else {
-                image  // Use the full-size image
+                image // Use the full-size image
             };
             let mut bytes: Vec<u8> = vec![];
             let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            processed_image.encode(ImageFormat::PNG, &mut writer).unwrap();
+            processed_image
+                .encode(ImageFormat::PNG, &mut writer)
+                .unwrap();
             drop(writer);
-            
+
             let style = if truncate {
                 "max-height:128px;width:auto"
             } else {
                 "max-width:90%;max-height:90vh;width:auto;height:auto"
             };
-            
+
             format!(
                 "<img style=\"{}\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
                 style,

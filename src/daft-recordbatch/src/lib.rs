@@ -950,15 +950,15 @@ impl RecordBatch {
             (self.len(), 0)
         };
 
-        let styled_td =
-            "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
-
         for i in 0..head_rows {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in &*self.columns {
-                res.push_str(styled_td);
+            for (col_idx, col) in self.columns.iter().enumerate() {
+                res.push_str(&format!(
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">",
+                    i, col_idx
+                ));
                 res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
             }
@@ -969,8 +969,11 @@ impl RecordBatch {
 
         if tail_rows != 0 {
             res.push_str("<tr>");
-            for _ in &*self.columns {
-                res.push_str("<td>...</td>");
+            for col_idx in 0..self.columns.len() {
+                res.push_str(&format!(
+                    "<td data-row=\"...\" data-col=\"{}\">...</td>",
+                    col_idx
+                ));
             }
             res.push_str("</tr>\n");
         }
@@ -979,10 +982,13 @@ impl RecordBatch {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in &*self.columns {
-                res.push_str(styled_td);
+            for (col_idx, col) in self.columns.iter().enumerate() {
+                res.push_str(&format!(
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">",
+                    i, col_idx
+                ));
                 res.push_str(&html_value(col, i));
-                res.push_str("</td>");
+                res.push_str("</div></td>");
             }
 
             // End row.

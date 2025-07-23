@@ -3429,8 +3429,30 @@ class DataFrame:
             },
         )
 
+        def _generate_interactive_html(preview: Preview) -> str:
+            from daft.daft import dashboard as dashboard_native
+            from daft.dashboard import launch
+
+            # Ensure the server is running (no-op if already running)
+            launch(noop_if_initialized=True)
+
+            # Register the partition with the display server and generate HTML
+            record_batch = preview.partition.to_record_batch()
+            df_id = dashboard_native.register_dataframe_for_display(record_batch._recordbatch)
+            html = dashboard_native.generate_interactive_html(df_id)
+            return html
+
         try:
-            from IPython.display import display
+            from IPython.display import HTML, display
+
+            if preview.partition is not None:
+                try:
+                    interactive_html = _generate_interactive_html(preview)
+                    display(HTML(interactive_html))
+                    return None
+                except Exception:
+                    pass
+
             display(preview_formatter, clear=True)
         except ImportError:
             print(preview_formatter)

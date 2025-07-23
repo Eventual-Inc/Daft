@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -127,38 +127,9 @@ class PreviewFormatter:
 
     def _to_html(self) -> str:
         if self._preview.partition is not None:
-            # Check if interactive mode is enabled
-            interactive = self._options._options.get("interactive", True)
-            if interactive:
-                return self._to_interactive_html()
-            else:
-                return self._preview.partition.to_record_batch()._repr_html_()
+            return self._preview.partition.to_record_batch()._repr_html_()
         else:
             return self._schema._truncated_table_html()
-            
-    def _to_interactive_html(self) -> str:
-        """Generate interactive HTML that uses the background server."""
-        try:
-            # Import the Rust dashboard functions
-            from daft.dashboard import launch
-            from daft.daft import dashboard as dashboard_native
-            
-            # Ensure the server is running (no-op if already running)
-            try:
-                launch(noop_if_initialized=True)
-            except Exception:
-                # If server can't start, fallback to regular HTML
-                return self._preview.partition.to_record_batch()._repr_html_()
-            
-            # Register the partition with the display server and generate HTML
-            record_batch = self._preview.partition.to_record_batch()
-            df_id, host, port = dashboard_native.register_dataframe_for_display(record_batch._recordbatch)
-            return dashboard_native.generate_interactive_html(record_batch._recordbatch, df_id)
-        except Exception as e:
-            print("Error in _to_interactive_html", e)
-            # Fallback to regular HTML if anything fails
-            return self._preview.partition.to_record_batch()._repr_html_()
-
 
     def _to_text(self) -> str:
         # give an error to hopefully avoid bug reports until we implement this
