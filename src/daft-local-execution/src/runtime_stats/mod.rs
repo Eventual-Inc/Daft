@@ -2,10 +2,13 @@ mod subscribers;
 mod values;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     task::{Context, Poll},
     time::{Duration, Instant},
 };
@@ -54,6 +57,7 @@ fn should_enable_progress_bar() -> bool {
 /// This prevents the subscribers from being overwhelmed by too many events.
 pub struct RuntimeStatsManager {
     flush_tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
+    node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     _handle: JoinHandle<()>,
 }
 
@@ -109,7 +113,7 @@ impl RuntimeStatsManager {
         }
 
         let subscribers = Arc::new(subscribers);
-        let throttle_interval = Duration::from_millis(100);
+        let throttle_interval = Duration::from_millis(200);
         Self::new_impl(subscribers, node_stats, throttle_interval)
     }
 
@@ -119,33 +123,42 @@ impl RuntimeStatsManager {
         node_stats: Vec<(Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         throttle_interval: Duration,
     ) -> Self {
+        let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
+        let node_tx = Arc::new(node_tx);
         let (flush_tx, mut flush_rx) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
 
         let rt = get_io_runtime(true);
         let handle = rt.runtime.spawn(async move {
             let mut interval = interval(throttle_interval);
+            let mut active_nodes = HashSet::with_capacity(node_stats.len());
 
             loop {
                 tokio::select! {
-                    Some(flush_response) = flush_rx.recv() => {
-                         // Process all events immediately
-                        for (node_info, runtime_stats) in &node_stats {
-                            let event = runtime_stats.snapshot();
-
+                    biased;
+                    Some((node_id, is_initialize)) = node_rx.recv() => {
+                        if is_initialize && active_nodes.insert(node_id) {
+                            for subscriber in subscribers.iter() {
+                                if let Err(e) = subscriber.initialize_node(&node_stats[node_id].0) {
+                                    log::error!("Failed to initialize node: {}", e);
+                                }
+                            }
+                        } else if !is_initialize && active_nodes.remove(&node_id) {
+                            let (node_info, runtime_stats) = &node_stats[node_id];
+                            let event = runtime_stats.flush();
                             for subscriber in subscribers.iter() {
                                 if let Err(e) = subscriber.handle_event(&event, node_info) {
                                     log::error!("Failed to handle event: {}", e);
                                 }
-                                if let Err(e) = subscriber.flush().await {
-                                    log::error!("Failed to flush subscriber: {}", e);
+                                if let Err(e) = subscriber.finalize_node(&node_stats[node_id].0) {
+                                    log::error!("Failed to finalize node: {}", e);
                                 }
                             }
                         }
-                        let _ = flush_response.send(());
-                     }
+                    }
 
                     _ = interval.tick() => {
-                        for (node_info, runtime_stats) in &node_stats {
+                        for node_id in &active_nodes {
+                            let (node_info, runtime_stats) = &node_stats[*node_id];
                             let event = runtime_stats.snapshot();
                             for subscriber in subscribers.iter() {
                                 if let Err(e) = subscriber.handle_event(&event, node_info) {
@@ -154,14 +167,39 @@ impl RuntimeStatsManager {
                             }
                         }
                     }
+
+                    Some(flush_response) = flush_rx.recv() => {
+                        if !active_nodes.is_empty() {
+                            log::error!("Received flush event while nodes are active: {:?}", active_nodes);
+                        }
+                        for subscriber in subscribers.iter() {
+                            if let Err(e) = subscriber.flush().await {
+                                log::error!("Failed to flush subscriber: {}", e);
+                            }
+                        }
+                        let _ = flush_response.send(());
+                    }
                 }
             }
         });
 
         Self {
             flush_tx,
+            node_tx,
             _handle: handle,
         }
+    }
+
+    pub fn activate_node(&self, node_id: usize) {
+        self.node_tx
+            .send((node_id, true))
+            .expect("The node_tx channel was closed");
+    }
+
+    pub fn finalize_node(&self, node_id: usize) {
+        self.node_tx
+            .send((node_id, false))
+            .expect("The node_tx channel was closed");
     }
 
     pub async fn flush(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -209,6 +247,7 @@ impl<F: Future> Future for TimedFuture<F> {
     }
 }
 
+/// Sender that wraps an internal sender and counts the number of rows passed through
 pub struct CountingSender {
     sender: Sender<Arc<MicroPartition>>,
     rt: Arc<dyn RuntimeStats>,
@@ -226,19 +265,44 @@ impl CountingSender {
     }
 }
 
-pub struct CountingReceiver {
+/// Receiver that wraps an internal received and
+/// - Counts the number of rows passed through
+/// - Activates the associated node on first receive
+pub struct InitializingCountingReceiver {
     receiver: Receiver<Arc<MicroPartition>>,
     rt: Arc<dyn RuntimeStats>,
+
+    first_receive: AtomicBool,
+    node_id: usize,
+    stats_manager: Arc<RuntimeStatsManager>,
 }
 
-impl CountingReceiver {
-    pub(crate) fn new(receiver: Receiver<Arc<MicroPartition>>, rt: Arc<dyn RuntimeStats>) -> Self {
-        Self { receiver, rt }
+impl InitializingCountingReceiver {
+    pub(crate) fn new(
+        receiver: Receiver<Arc<MicroPartition>>,
+        node_id: usize,
+        rt: Arc<dyn RuntimeStats>,
+        stats_manager: Arc<RuntimeStatsManager>,
+    ) -> Self {
+        Self {
+            receiver,
+            node_id,
+            rt,
+            stats_manager,
+            first_receive: AtomicBool::new(true),
+        }
     }
     #[inline]
     pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
+            if self
+                .first_receive
+                .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                self.stats_manager.activate_node(self.node_id);
+            }
             self.rt.add_rows_received(v.len() as u64);
         }
         v
@@ -283,7 +347,11 @@ mod tests {
             self
         }
 
-        fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+        fn initialize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
+            Ok(())
+        }
+
+        fn finalize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
             Ok(())
         }
 
@@ -489,9 +557,13 @@ mod tests {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
-            fn initialize(&mut self, _: &NodeInfo) -> DaftResult<()> {
+            fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
                 Ok(())
             }
+            fn finalize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+                Ok(())
+            }
+
             fn handle_event(&self, _: &StatSnapshot, _: &NodeInfo) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),

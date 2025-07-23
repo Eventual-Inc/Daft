@@ -304,8 +304,11 @@ impl NativeExecutor {
             });
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle =
-                    ExecutionRuntimeContext::new(cfg.default_morsel_size, memory_manager.clone());
+                let mut runtime_handle = ExecutionRuntimeContext::new(
+                    cfg.default_morsel_size,
+                    memory_manager.clone(),
+                    stats_manager.clone(),
+                );
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 while let Some(val) = receiver.recv().await {

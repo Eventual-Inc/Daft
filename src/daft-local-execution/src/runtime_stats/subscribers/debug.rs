@@ -17,7 +17,11 @@ impl RuntimeStatsSubscriber for DebugSubscriber {
         self
     }
 
-    fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+    fn initialize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
+        Ok(())
+    }
+
+    fn finalize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
         Ok(())
     }
 

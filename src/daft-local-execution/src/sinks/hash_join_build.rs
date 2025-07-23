@@ -1,4 +1,10 @@
-use std::sync::Arc;
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -6,13 +12,18 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{make_probeable_builder, ProbeState, ProbeableBuilder, RecordBatch};
 use itertools::Itertools;
+use smallvec::smallvec;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{
+    runtime_stats::{RuntimeStats, Stat, CPU_US_KEY, ROWS_RECEIVED_KEY},
+    state_bridge::BroadcastStateBridgeRef,
+    ExecutionTaskSpawner,
+};
 
 enum ProbeTableState {
     Building {
@@ -87,6 +98,41 @@ impl ProbeTableState {
 impl BlockingSinkState for ProbeTableState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+#[derive(Default)]
+struct HashJoinBuildRuntimeStats {
+    cpu_us: AtomicU64,
+    rows_received: AtomicU64,
+}
+
+impl RuntimeStats for HashJoinBuildRuntimeStats {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn build_snapshot(&self, ordering: Ordering) -> crate::runtime_stats::StatSnapshot {
+        smallvec![
+            (
+                CPU_US_KEY,
+                Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
+            ),
+            (
+                ROWS_RECEIVED_KEY,
+                Stat::Count(self.rows_received.load(ordering))
+            ),
+        ]
+    }
+
+    fn add_rows_received(&self, rows: u64) {
+        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_rows_emitted(&self, _: u64) {}
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
     }
 }
 
@@ -185,5 +231,9 @@ impl BlockingSink for HashJoinBuildSink {
             self.nulls_equal_aware.as_ref(),
             self.track_indices,
         )?))
+    }
+
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(HashJoinBuildRuntimeStats::default())
     }
 }

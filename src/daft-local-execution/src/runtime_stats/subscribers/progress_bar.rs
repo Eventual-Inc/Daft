@@ -79,7 +79,7 @@ impl IndicatifProgressBarManager {
             "🗡️ 🐟[{node_id:>total_len$}/{total}] {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
             color = color.to_str(),
             node_id = (node_info.id + 1),
-            total = (self.total + 1),
+            total = self.total,
             total_len = self.total.to_string().len(),
         );
 
@@ -93,14 +93,8 @@ impl IndicatifProgressBarManager {
             )
             .with_prefix(formatted_prefix);
         self.multi_progress.add(pb.clone());
-
-        pb.enable_steady_tick(TICK_INTERVAL);
+        // Additional reference for updating bar directly
         self.pbars.push(pb);
-    }
-
-    fn update_bar(&self, node_id: usize, message: String) {
-        let pb = self.pbars.get(node_id).unwrap();
-        pb.set_message(message);
     }
 }
 
@@ -112,16 +106,26 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         self
     }
 
-    fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+    fn initialize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
+        let pb = self.pbars.get(node_info.id).unwrap();
+        pb.enable_steady_tick(TICK_INTERVAL);
+        Ok(())
+    }
+
+    fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
+        let pb = self.pbars.get(node_info.id).unwrap();
+        pb.finish();
         Ok(())
     }
 
     fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
-        self.update_bar(node_info.id, event_to_message(event));
+        let pb = self.pbars.get(node_info.id).unwrap();
+        pb.set_message(event_to_message(event));
         Ok(())
     }
 
     async fn flush(&self) -> DaftResult<()> {
+        self.multi_progress.clear()?;
         Ok(())
     }
 }
@@ -224,7 +228,13 @@ mod python {
             self
         }
 
-        fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+        fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+            Ok(())
+        }
+
+        fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
+            let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
+            self.close_bar(*pb_id)?;
             Ok(())
         }
 

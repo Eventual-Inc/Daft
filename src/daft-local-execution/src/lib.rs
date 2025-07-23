@@ -24,7 +24,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeRef, RuntimeTask};
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
-use runtime_stats::{RuntimeStats, TimedFuture};
+use runtime_stats::{RuntimeStats, RuntimeStatsManager, TimedFuture};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 use tracing::Instrument;
 
@@ -128,17 +128,24 @@ pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
+    stats_manager: Arc<RuntimeStatsManager>,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
-    pub fn new(default_morsel_size: usize, memory_manager: Arc<MemoryManager>) -> Self {
+    pub fn new(
+        default_morsel_size: usize,
+        memory_manager: Arc<MemoryManager>,
+        stats_manager: Arc<RuntimeStatsManager>,
+    ) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
             memory_manager,
+            stats_manager,
         }
     }
+
     pub fn spawn_local(
         &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + 'static,
@@ -169,6 +176,11 @@ impl ExecutionRuntimeContext {
     #[must_use]
     pub(crate) fn memory_manager(&self) -> Arc<MemoryManager> {
         self.memory_manager.clone()
+    }
+
+    #[must_use]
+    pub(crate) fn stats_manager(&self) -> Arc<RuntimeStatsManager> {
+        self.stats_manager.clone()
     }
 }
 

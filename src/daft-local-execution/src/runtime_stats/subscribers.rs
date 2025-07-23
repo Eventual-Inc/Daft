@@ -13,7 +13,8 @@ pub trait RuntimeStatsSubscriber: Send + Sync + std::fmt::Debug {
     #[cfg(test)]
     #[allow(dead_code)]
     fn as_any(&self) -> &dyn std::any::Any;
-    fn initialize(&mut self, node_info: &NodeInfo) -> DaftResult<()>;
+    fn initialize_node(&self, node_info: &NodeInfo) -> DaftResult<()>;
+    fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()>;
     fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()>;
     async fn flush(&self) -> DaftResult<()>;
 }

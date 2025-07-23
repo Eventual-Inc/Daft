@@ -32,7 +32,7 @@ use crate::{
 struct WriteStats {
     cpu_us: AtomicU64,
     rows_received: AtomicU64,
-    rows_emitted: AtomicU64, // TODO: Remove?
+    rows_emitted: AtomicU64, // TODO: Remove or rename to files written?
     bytes_written: AtomicU64,
 }
 

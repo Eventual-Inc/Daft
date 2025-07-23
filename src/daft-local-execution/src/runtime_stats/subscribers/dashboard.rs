@@ -137,7 +137,11 @@ impl RuntimeStatsSubscriber for DashboardSubscriber {
         self
     }
 
-    fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+    fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+        Ok(())
+    }
+
+    fn finalize_node(&self, _: &NodeInfo) -> DaftResult<()> {
         Ok(())
     }
 

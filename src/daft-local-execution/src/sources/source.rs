@@ -159,6 +159,9 @@ impl PipelineNode for SourceNode {
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
+        let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
+
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         runtime_handle.spawn_local(
@@ -167,14 +170,18 @@ impl PipelineNode for SourceNode {
                 let mut source_stream = source.get_data(maintain_order, io_stats).await?;
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
+                    stats_manager.activate_node(node_id);
                     if counting_sender.send(part?).await.is_err() {
                         return Ok(());
                     }
                 }
                 if !has_data {
+                    stats_manager.activate_node(node_id);
                     let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
                     let _ = counting_sender.send(empty).await;
                 }
+
+                stats_manager.finalize_node(node_id);
                 Ok(())
             },
             self.name(),

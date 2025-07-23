@@ -13,7 +13,9 @@ use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, DefaultRuntimeStats, RuntimeStats},
+    runtime_stats::{
+        CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
@@ -196,8 +198,12 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let child_results_receiver = self.child.start(false, runtime_handle)?;
-        let counting_receiver =
-            CountingReceiver::new(child_results_receiver, self.runtime_stats.clone());
+        let counting_receiver = InitializingCountingReceiver::new(
+            child_results_receiver,
+            self.node_id(),
+            self.runtime_stats.clone(),
+            runtime_handle.stats_manager(),
+        );
 
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
@@ -218,6 +224,8 @@ impl PipelineNode for BlockingSinkNode {
         );
 
         let memory_manager = runtime_handle.memory_manager();
+        let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
         runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
@@ -259,6 +267,8 @@ impl PipelineNode for BlockingSinkNode {
                         }
                     }
                 }
+
+                stats_manager.finalize_node(node_id);
                 Ok(())
             },
             self.name(),

@@ -17,7 +17,9 @@ use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, DefaultRuntimeStats, RuntimeStats},
+    runtime_stats::{
+        CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
 
@@ -231,9 +233,11 @@ impl PipelineNode for IntermediateNode {
 
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(CountingReceiver::new(
+            child_result_receivers.push(InitializingCountingReceiver::new(
                 child_result_receiver,
+                self.node_id(),
                 self.runtime_stats.clone(),
+                runtime_handle.stats_manager().clone(),
             ));
         }
         let op = self.intermediate_op.clone();
@@ -262,6 +266,8 @@ impl PipelineNode for IntermediateNode {
             maintain_order,
             runtime_handle.memory_manager(),
         );
+        let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
         runtime_handle.spawn_local(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {
@@ -269,6 +275,7 @@ impl PipelineNode for IntermediateNode {
                         return Ok(());
                     }
                 }
+                stats_manager.finalize_node(node_id);
                 Ok(())
             },
             op.name(),
