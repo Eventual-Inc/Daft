@@ -1,0 +1,6 @@
+User-agent: *
+
+Disallow: /en/
+Allow: /en/stable
+
+Sitemap: https://docs.daft.ai/en/stable/sitemap.xml

@@ -29,7 +29,7 @@ pub enum LocalPhysicalPlan {
     EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
-    ActorPoolProject(ActorPoolProject),
+    UDFProject(UDFProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -94,7 +94,7 @@ impl LocalPhysicalPlan {
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
-            | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -232,15 +232,17 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn actor_pool_project(
+    pub fn udf_project(
         input: LocalPhysicalPlanRef,
-        projection: Vec<BoundExpr>,
+        project: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
-        Self::ActorPoolProject(ActorPoolProject {
+        Self::UDFProject(UDFProject {
             input,
-            projection,
+            project,
+            passthrough_columns,
             schema,
             stats_state,
         })
@@ -696,7 +698,7 @@ impl LocalPhysicalPlan {
             | Self::Filter(Filter { schema, .. })
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
-            | Self::ActorPoolProject(ActorPoolProject { schema, .. })
+            | Self::UDFProject(UDFProject { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Dedup(Dedup { schema, .. })
@@ -736,14 +738,8 @@ impl LocalPhysicalPlan {
     pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
         let mut base = ResourceRequest::default_cpu();
         self.apply(|plan| match plan.as_ref() {
-            Self::Project(Project { projection, .. }) => {
-                if let Some(resource_request) = get_resource_request(projection) {
-                    base = base.max(&resource_request);
-                }
-                Ok(TreeNodeRecursion::Continue)
-            }
-            Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
-                if let Some(resource_request) = get_resource_request(projection) {
+            Self::UDFProject(UDFProject { project, .. }) => {
+                if let Some(resource_request) = get_resource_request([project]) {
                     base = base.max(&resource_request);
                 }
                 Ok(TreeNodeRecursion::Continue)
@@ -773,7 +769,7 @@ impl LocalPhysicalPlan {
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
             | Self::Project(Project { input, .. })
-            | Self::ActorPoolProject(ActorPoolProject { input, .. })
+            | Self::UDFProject(UDFProject { input, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { input, .. })
             | Self::HashAggregate(HashAggregate { input, .. })
             | Self::Dedup(Dedup { input, .. })
@@ -818,7 +814,7 @@ impl LocalPhysicalPlan {
                 Self::Filter(Filter {  predicate, schema,..  }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
                 Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -939,9 +935,10 @@ pub struct Project {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ActorPoolProject {
+pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
-    pub projection: Vec<BoundExpr>,
+    pub project: BoundExpr,
+    pub passthrough_columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

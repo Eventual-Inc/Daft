@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing as mp
+import os
 import pickle
+import secrets
+import subprocess
+import sys
+import tempfile
 from multiprocessing import resource_tracker, shared_memory
-from traceback import TracebackException
+from multiprocessing.connection import Listener
 from typing import TYPE_CHECKING
 
 from daft.errors import UDFException
@@ -12,12 +16,14 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from multiprocessing.connection import Connection
-
     from daft.daft import PyExpr, PyMicroPartition
 
 logger = logging.getLogger(__name__)
 
+_ENTER = "__ENTER__"
+_SUCCESS = "success"
+_UDF_ERROR = "udf_error"
+_ERROR = "error"
 _SENTINEL = ("__EXIT__", 0)
 
 
@@ -44,60 +50,53 @@ class SharedMemoryTransport:
         return data
 
 
-def actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Connection) -> None:
-    transport = SharedMemoryTransport()
-    try:
-        initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
+class UdfHandle:
+    def __init__(self, project_expr: PyExpr, passthrough_exprs: list[PyExpr]) -> None:
+        # Construct UNIX socket path for basic communication
+        with tempfile.NamedTemporaryFile(delete=True) as tmp:
+            self.socket_path = tmp.name
+        secret = secrets.token_bytes(32)
+        self.listener = Listener(self.socket_path, authkey=secret)
 
-        while True:
-            name, size = conn.recv()
-            if (name, size) == _SENTINEL:
-                break
+        # Start the worker process
+        self.process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "daft.execution.udf_worker",
+                self.socket_path,
+                secret.hex(),
+            ]
+        )
 
-            input_bytes = transport.read_and_release(name, size)
-            input = MicroPartition.from_ipc_stream(input_bytes)
-            evaluated = input.eval_expression_list(initialized_projection)
-            output_bytes = evaluated.to_ipc_stream()
-
-            out_name, out_size = transport.write_and_close(output_bytes)
-            conn.send(("success", out_name, out_size))
-    except UDFException as e:
-        exc = e.__cause__
-        assert exc is not None
-        conn.send(("udf_error", e.message, TracebackException.from_exception(exc), pickle.dumps(exc)))
-    except Exception as e:
-        try:
-            conn.send(("error", TracebackException.from_exception(e)))
-        except Exception:
-            # If the connection is broken, it's because the parent process has died.
-            # We can just exit here.
-            pass
-    finally:
-        conn.close()
-
-
-class ActorHandle:
-    def __init__(self, projection: list[PyExpr]) -> None:
-        self.handle_conn, actor_conn = mp.Pipe(duplex=True)
-        expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
-        self.actor_process = mp.Process(target=actor_event_loop, args=(expr_projection, actor_conn), daemon=True)
-        self.actor_process.start()
+        # Initialize communication
+        self.handle_conn = self.listener.accept()
         self.transport = SharedMemoryTransport()
 
+        # Serialize and send the expression projection
+        expr_projection = ExpressionsProjection(
+            [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
+        )
+        expr_projection_bytes = pickle.dumps(expr_projection)
+        self.handle_conn.send((_ENTER, expr_projection_bytes))
+
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
-        if not self.actor_process.is_alive():
-            raise RuntimeError("Actor process is not alive")
+        if self.process.poll() is not None:
+            raise RuntimeError("UDF process has terminated")
 
         serialized = input.write_to_ipc_stream()
         shm_name, shm_size = self.transport.write_and_close(serialized)
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
-        if response[0] == "udf_error":
-            raise UDFException(response[1], response[2]) from pickle.loads(response[3])
-        elif response[0] == "error":
+        if response[0] == _UDF_ERROR:
+            base_exc: Exception = pickle.loads(response[3])
+            if sys.version_info >= (3, 11):
+                base_exc.add_note("\n".join(response[2].format()))
+            raise UDFException(response[1]) from base_exc
+        elif response[0] == _ERROR:
             raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
-        elif response[0] == "success":
+        elif response[0] == _SUCCESS:
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = MicroPartition.from_ipc_stream(output_bytes)
@@ -109,12 +108,16 @@ class ActorHandle:
         try:
             self.handle_conn.send(_SENTINEL)
         except (BrokenPipeError, EOFError):
-            # If the connection is broken, just exit and join the actor process.
+            # If the connection is broken, just exit and join the process.
             pass
         self.handle_conn.close()
+        self.listener.close()
 
-        self.actor_process.join(timeout)
-        if self.actor_process.is_alive():
-            logger.warning("Actor did not shut down in time; terminating...")
-            self.actor_process.terminate()
-            self.actor_process.join()
+        self.process.wait(timeout)
+        if self.process.poll() is None:
+            logger.warning("UDF did not shut down in time; terminating...")
+            self.process.terminate()
+            self.process.wait()
+
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
