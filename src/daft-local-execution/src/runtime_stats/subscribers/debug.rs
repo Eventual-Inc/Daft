@@ -1,6 +1,9 @@
 use common_error::DaftResult;
 
-use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEvent};
+use crate::{
+    pipeline::NodeInfo,
+    runtime_stats::{subscribers::RuntimeStatsSubscriber, StatSnapshot},
+};
 
 #[derive(Debug)]
 /// Simple Debug Subscriber that prints events to stdout.
@@ -14,8 +17,12 @@ impl RuntimeStatsSubscriber for DebugSubscriber {
         self
     }
 
-    fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
-        println!("{:#?}", event);
+    fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+        Ok(())
+    }
+
+    fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
+        println!("{:?} {:#?}", node_info, event);
         Ok(())
     }
     async fn flush(&self) -> DaftResult<()> {

@@ -2,7 +2,13 @@ use common_error::DaftResult;
 use common_tracing::flush_oltp_metrics_provider;
 use opentelemetry::{global, metrics::Counter, KeyValue};
 
-use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEvent};
+use crate::{
+    pipeline::NodeInfo,
+    runtime_stats::{
+        subscribers::RuntimeStatsSubscriber, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY,
+        ROWS_RECEIVED_KEY,
+    },
+};
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
@@ -29,17 +35,33 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
+
+    fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+        Ok(())
+    }
+
+    fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
         let mut attributes = vec![
-            KeyValue::new("name", event.node_info.name.to_string()),
-            KeyValue::new("id", event.node_info.id.to_string()),
+            KeyValue::new("name", node_info.name.to_string()),
+            KeyValue::new("id", node_info.id.to_string()),
         ];
-        for (k, v) in &event.node_info.context {
+        for (k, v) in &node_info.context {
             attributes.push(KeyValue::new(k.clone(), v.clone()));
         }
-        self.rows_received.add(event.rows_received, &attributes);
-        self.rows_emitted.add(event.rows_emitted, &attributes);
-        self.cpu_us.add(event.cpu_us, &attributes);
+
+        if let Some((_, Stat::Count(rows_received))) =
+            event.iter().find(|(k, _)| *k == ROWS_RECEIVED_KEY)
+        {
+            self.rows_received.add(*rows_received, &attributes);
+        }
+        if let Some((_, Stat::Count(rows_emitted))) =
+            event.iter().find(|(k, _)| *k == ROWS_EMITTED_KEY)
+        {
+            self.rows_emitted.add(*rows_emitted, &attributes);
+        }
+        if let Some((_, Stat::Count(cpu_us))) = event.iter().find(|(k, _)| *k == CPU_US_KEY) {
+            self.cpu_us.add(*cpu_us, &attributes);
+        }
         Ok(())
     }
 

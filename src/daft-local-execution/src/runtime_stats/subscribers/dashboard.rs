@@ -5,13 +5,16 @@ use common_runtime::get_io_runtime;
 use reqwest::{header, Client};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEvent};
+use crate::{
+    pipeline::NodeInfo,
+    runtime_stats::{subscribers::RuntimeStatsSubscriber, StatSnapshot},
+};
 
 /// Similar to `RuntimeStatsEventHandler`, the `DashboardSubscriber` also has it's own internal mechanism to throttle events.
 /// Since there could be many queries broadcasting to the dashboard at the same time, we want to be conscientious about how often we send updates.
 #[derive(Debug)]
 pub struct DashboardSubscriber {
-    event_tx: mpsc::UnboundedSender<RuntimeStatsEvent>,
+    event_tx: mpsc::UnboundedSender<(StatSnapshot, NodeInfo)>,
     flush_tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
 }
 
@@ -96,18 +99,18 @@ impl DashboardSubscriber {
     }
 }
 
-async fn send_metrics_batch(url: &str, client: &Arc<Client>, events: &[RuntimeStatsEvent]) {
+async fn send_metrics_batch(url: &str, client: &Arc<Client>, events: &[(StatSnapshot, NodeInfo)]) {
     let mut batch_payload = Vec::new();
 
     for event in events {
-        let context = &event.node_info;
-        let mut payload = event.node_info.context.clone();
+        let context = &event.1;
+        let mut payload = event.1.context.clone();
 
         payload.insert("name".to_string(), context.name.to_string());
         payload.insert("id".to_string(), context.id.to_string());
-        payload.insert("rows_received".to_string(), event.rows_received.to_string());
-        payload.insert("rows_emitted".to_string(), event.rows_emitted.to_string());
-        payload.insert("cpu_usage".to_string(), event.cpu_us.to_string());
+        for (name, value) in &event.0 {
+            payload.insert(name.to_string(), value.to_string());
+        }
 
         if let Ok(run_id) = env::var("DAFT_DASHBOARD_RUN_ID") {
             payload.insert("run_id".to_string(), run_id);
@@ -134,9 +137,13 @@ impl RuntimeStatsSubscriber for DashboardSubscriber {
         self
     }
 
-    fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
+    fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+        Ok(())
+    }
+
+    fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
         self.event_tx
-            .send(event.clone())
+            .send((event.clone(), node_info.clone()))
             .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
         Ok(())
     }

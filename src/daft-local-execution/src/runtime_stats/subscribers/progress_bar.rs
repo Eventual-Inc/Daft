@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 
-use crate::runtime_stats::RuntimeStatsContext;
+use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStats};
 
 /// Convert statistics to a message for progress bars
 fn stats_to_message(stats: IndexMap<&'static str, String>) -> String {
@@ -58,16 +58,13 @@ impl ProgressBarColor {
 
 pub struct OperatorProgressBar {
     inner_progress_bar: Box<dyn ProgressBar>,
-    runtime_stats: Arc<RuntimeStatsContext>,
+    runtime_stats: Arc<dyn RuntimeStats>,
     start_time: Instant,
     last_update: AtomicU64,
 }
 
 impl OperatorProgressBar {
-    pub fn new(
-        progress_bar: Box<dyn ProgressBar>,
-        runtime_stats: Arc<RuntimeStatsContext>,
-    ) -> Self {
+    pub fn new(progress_bar: Box<dyn ProgressBar>, runtime_stats: Arc<dyn RuntimeStats>) -> Self {
         Self {
             inner_progress_bar: progress_bar,
             runtime_stats,
@@ -203,7 +200,7 @@ impl ProgressBarManager for IndicatifProgressBarManager {
     }
 }
 
-pub fn make_progress_bar_manager(total: usize) -> Arc<dyn ProgressBarManager> {
+pub fn make_progress_bar_manager(total: usize) -> Arc<dyn RuntimeStatsSubscriber> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
@@ -224,6 +221,7 @@ mod python {
     use pyo3::{types::PyAnyMethods, PyObject, Python};
 
     use super::*;
+    use crate::{pipeline::NodeInfo, runtime_stats::StatSnapshot};
 
     pub fn in_notebook() -> bool {
         pyo3::Python::with_gil(|py| {
@@ -233,21 +231,6 @@ mod python {
                 .and_then(|m| m.extract())
                 .expect("Failed to determine if running in notebook")
         })
-    }
-
-    struct TqdmProgressBar {
-        pb_id: usize,
-        manager: TqdmProgressBarManager,
-    }
-
-    impl ProgressBar for TqdmProgressBar {
-        fn set_message(&self, message: String) -> DaftResult<()> {
-            self.manager.update_bar(self.pb_id, message.as_str())
-        }
-
-        fn close(&self) -> DaftResult<()> {
-            self.manager.close_bar(self.pb_id)
-        }
     }
 
     #[derive(Clone, Debug)]
@@ -284,31 +267,46 @@ mod python {
         }
     }
 
-    impl ProgressBarManager for TqdmProgressBarManager {
-        fn make_new_bar(
-            &self,
-            _color: ProgressBarColor,
-            prefix: &'static str,
-            _node_id: usize,
-        ) -> DaftResult<Box<dyn ProgressBar>> {
-            let bar_format = format!("🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}", prefix = prefix);
-            let pb_id = Python::with_gil(|py| {
-                let pb_id = self.inner.call_method1(py, "make_new_bar", (bar_format,))?;
-                let pb_id = pb_id.extract::<usize>(py)?;
-                DaftResult::Ok(pb_id)
-            })?;
-
-            DaftResult::Ok(Box::new(TqdmProgressBar {
-                pb_id,
-                manager: self.clone(),
-            }))
+    #[async_trait::async_trait]
+    impl RuntimeStatsSubscriber for TqdmProgressBarManager {
+        #[cfg(test)]
+        #[allow(dead_code)]
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
         }
 
-        fn close_all(&self) -> DaftResult<()> {
+        fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+            Ok(())
+        }
+
+        fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
+            self.update_bar(node_info.id, &event_to_message(event))
+        }
+
+        async fn flush(&self) -> DaftResult<()> {
             Python::with_gil(|py| {
-                self.inner.call_method0(py, "close")?;
+                self.inner.call_method0(py, "flush")?;
                 DaftResult::Ok(())
             })
         }
+
+        // fn make_new_bar(
+        //     &self,
+        //     _color: ProgressBarColor,
+        //     prefix: &'static str,
+        //     _node_id: usize,
+        // ) -> DaftResult<Box<dyn ProgressBar>> {
+        //     let bar_format = format!("🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}", prefix = prefix);
+        //     let pb_id = Python::with_gil(|py| {
+        //         let pb_id = self.inner.call_method1(py, "make_new_bar", (bar_format,))?;
+        //         let pb_id = pb_id.extract::<usize>(py)?;
+        //         DaftResult::Ok(pb_id)
+        //     })?;
+
+        //     DaftResult::Ok(Box::new(TqdmProgressBar {
+        //         pb_id,
+        //         manager: self.clone(),
+        //     }))
+        // }
     }
 }

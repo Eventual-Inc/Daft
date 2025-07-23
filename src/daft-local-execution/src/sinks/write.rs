@@ -1,4 +1,10 @@
-use std::sync::{atomic::AtomicU64, Arc};
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -7,8 +13,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriterFactory};
-use indexmap::IndexMap;
-use indicatif::{HumanBytes, HumanCount};
+use smallvec::smallvec;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -17,35 +22,56 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    runtime_stats::{RuntimeStatsBuilder, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
+    runtime_stats::{
+        RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-struct WriteStatsBuilder {
+#[derive(Default)]
+struct WriteStats {
+    cpu_us: AtomicU64,
+    rows_received: AtomicU64,
+    rows_emitted: AtomicU64, // TODO: Remove?
     bytes_written: AtomicU64,
 }
 
-impl RuntimeStatsBuilder for WriteStatsBuilder {
+impl RuntimeStats for WriteStats {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
 
-    fn build(
-        &self,
-        stats: &mut IndexMap<&'static str, String>,
-        rows_received: u64,
-        rows_emitted: u64,
-    ) {
-        stats.insert(ROWS_RECEIVED_KEY, HumanCount(rows_received).to_string());
-        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
-        stats.insert(
-            "bytes written",
-            HumanBytes(
-                self.bytes_written
-                    .load(std::sync::atomic::Ordering::Relaxed),
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
+        smallvec![
+            (
+                CPU_US_KEY,
+                Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
+            ),
+            (
+                ROWS_RECEIVED_KEY,
+                Stat::Count(self.rows_received.load(ordering))
+            ),
+            (
+                ROWS_EMITTED_KEY,
+                Stat::Count(self.rows_emitted.load(ordering))
+            ),
+            (
+                "bytes written",
+                Stat::Count(self.bytes_written.load(ordering))
             )
-            .to_string(),
-        );
+        ]
+    }
+
+    fn add_rows_received(&self, rows: u64) {
+        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_rows_emitted(&self, rows: u64) {
+        self.rows_emitted.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
     }
 }
 
@@ -116,7 +142,7 @@ impl BlockingSink for WriteSink {
         mut state: Box<dyn BlockingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        let builder = spawner.runtime_context.builder.clone();
+        let builder = spawner.runtime_stats.clone();
 
         spawner
             .spawn(
@@ -131,8 +157,8 @@ impl BlockingSink for WriteSink {
 
                     builder
                         .as_any_arc()
-                        .downcast_ref::<WriteStatsBuilder>()
-                        .expect("WriteStatsBuilder should be the additional stats builder")
+                        .downcast_ref::<WriteStats>()
+                        .expect("WriteStats should be the additional stats builder")
                         .bytes_written
                         .fetch_add(bytes_written as u64, std::sync::atomic::Ordering::Relaxed);
 
@@ -195,10 +221,8 @@ impl BlockingSink for WriteSink {
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
     }
 
-    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
-        Arc::new(WriteStatsBuilder {
-            bytes_written: AtomicU64::new(0),
-        })
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(WriteStats::default())
     }
 
     fn dispatch_spawner(

@@ -35,9 +35,8 @@ use crate::{
         get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
     },
-    progress_bar::make_progress_bar_manager,
     resource_manager::get_or_init_memory_manager,
-    runtime_stats::RuntimeStatsEventHandler,
+    runtime_stats::RuntimeStatsManager,
     ExecutionRuntimeContext,
 };
 
@@ -245,7 +244,6 @@ impl PyNativeExecutor {
 pub struct NativeExecutor {
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     enable_explain_analyze: bool,
 }
 
@@ -255,7 +253,6 @@ impl Default for NativeExecutor {
             cancel: CancellationToken::new(),
             runtime: None,
             enable_explain_analyze: should_enable_explain_analyze(),
-            rt_stats_handler: Arc::new(RuntimeStatsEventHandler::new()),
         }
     }
 }
@@ -287,14 +284,12 @@ impl NativeExecutor {
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
-        let total_nodes = pipeline.node_id();
-        let pb_manager =
-            should_enable_progress_bar().then(|| make_progress_bar_manager(total_nodes));
+
+        let stats_manager = Arc::new(RuntimeStatsManager::new(pipeline.as_ref()));
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
-        let stats_handler = self.rt_stats_handler.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
@@ -312,8 +307,7 @@ impl NativeExecutor {
                 let mut runtime_handle = ExecutionRuntimeContext::new(
                     cfg.default_morsel_size,
                     memory_manager.clone(),
-                    pb_manager,
-                    stats_handler.clone(),
+                    stats_manager.clone(),
                 );
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
@@ -351,7 +345,7 @@ impl NativeExecutor {
                 };
 
                 // Flush remaining stats events
-                if let Err(e) = stats_handler.flush().await {
+                if let Err(e) = stats_manager.flush().await {
                     log::warn!("Failed to flush runtime stats: {}", e);
                 }
 
@@ -465,15 +459,6 @@ fn should_enable_explain_analyze() -> bool {
         true
     } else {
         false
-    }
-}
-
-fn should_enable_progress_bar() -> bool {
-    let progress_var_name = "DAFT_PROGRESS_BAR";
-    if let Ok(val) = std::env::var(progress_var_name) {
-        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-    } else {
-        true // Return true when env var is not set
     }
 }
 

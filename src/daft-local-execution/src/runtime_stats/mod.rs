@@ -1,72 +1,60 @@
 mod subscribers;
+mod values;
+
 use std::{
     collections::HashMap,
     future::Future,
     pin::Pin,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::Arc,
     task::{Context, Poll},
     time::{Duration, Instant},
 };
 
 use common_runtime::get_io_runtime;
 use common_tracing::should_enable_opentelemetry;
+use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
-use indexmap::IndexMap;
-use indicatif::{HumanCount, HumanDuration};
 use kanal::SendError;
-use parking_lot::Mutex;
 use tokio::{
-    sync::{mpsc, oneshot, watch},
+    sync::{mpsc, oneshot},
     task::JoinHandle,
     time::interval,
 };
 use tracing::{instrument::Instrumented, Instrument};
+pub use values::{
+    DefaultRuntimeStats, RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY,
+    ROWS_RECEIVED_KEY,
+};
 
 #[cfg(debug_assertions)]
 use crate::runtime_stats::subscribers::debug::DebugSubscriber;
 use crate::{
     channel::{Receiver, Sender},
-    pipeline::NodeInfo,
-    progress_bar::OperatorProgressBar,
+    pipeline::{NodeInfo, PipelineNode},
     runtime_stats::subscribers::{
         dashboard::DashboardSubscriber, opentelemetry::OpenTelemetrySubscriber,
-        RuntimeStatsSubscriber,
+        progress_bar::make_progress_bar_manager, RuntimeStatsSubscriber,
     },
 };
 
-// ----------------------- General Traits for Runtime Stat Collection ----------------------- //
-pub trait RuntimeStatsBuilder: Send + Sync + std::any::Any {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
-
-    fn build(
-        &self,
-        stats: &mut IndexMap<&'static str, String>,
-        rows_received: u64,
-        rows_emitted: u64,
-    );
+fn should_enable_progress_bar() -> bool {
+    let progress_var_name = "DAFT_PROGRESS_BAR";
+    if let Ok(val) = std::env::var(progress_var_name) {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        true // Return true when env var is not set
+    }
 }
 
-pub const ROWS_RECEIVED_KEY: &str = "rows received";
-pub const ROWS_EMITTED_KEY: &str = "rows emitted";
+struct NodeStatsBuilder {
+    node_stats: HashMap<usize, (Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
+}
 
-pub struct BaseStatsBuilder {}
-
-impl RuntimeStatsBuilder for BaseStatsBuilder {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
-    }
-
-    fn build(
-        &self,
-        stats: &mut IndexMap<&'static str, String>,
-        rows_received: u64,
-        rows_emitted: u64,
-    ) {
-        stats.insert(ROWS_RECEIVED_KEY, HumanCount(rows_received).to_string());
-        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
+impl NodeStatsBuilder {
+    pub fn new() -> Self {
+        Self {
+            node_stats: HashMap::new(),
+        }
     }
 }
 
@@ -76,30 +64,40 @@ impl RuntimeStatsBuilder for BaseStatsBuilder {
 ///
 /// For a given event, the event handler ensures that the subscribers only get the latest event at a frequency of once every 500ms
 /// This prevents the subscribers from being overwhelmed by too many events.
-pub struct RuntimeStatsEventHandler {
-    senders: Arc<Mutex<HashMap<String, watch::Sender<Option<RuntimeStatsEvent>>>>>,
-    new_receiver_tx: mpsc::UnboundedSender<(String, watch::Receiver<Option<RuntimeStatsEvent>>)>,
+pub struct RuntimeStatsManager {
     flush_tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
     _handle: JoinHandle<()>,
 }
 
-impl std::fmt::Debug for RuntimeStatsEventHandler {
+impl std::fmt::Debug for RuntimeStatsManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "RuntimeStatsEventHandler")
     }
 }
 
-impl RuntimeStatsEventHandler {
-    pub async fn flush(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (tx, rx) = oneshot::channel();
-        self.flush_tx.send(tx)?;
-        rx.await?;
+impl RuntimeStatsManager {
+    pub fn new(pipeline: &Box<dyn PipelineNode>) -> Self {
+        // Construct mapping between node id and their node info and runtime stats
+        let mut node_stats_map = HashMap::new();
+        pipeline.apply(|node| {
+            let node_info = node.node_info();
+            let runtime_stats = node.runtime_stats();
+            node_stats_map.insert(node_info.id, (node_info, runtime_stats));
+            Ok(TreeNodeRecursion::Continue)
+        });
+        let total_nodes = node_stats_map.len();
+        let node_stats = (0..total_nodes)
+            .map(|id| {
+                let (node_info, runtime_stats) = node_stats_map.remove(&id).unwrap();
+                (node_info, runtime_stats)
+            })
+            .collect::<Vec<_>>();
 
-        Ok(())
-    }
-
-    pub fn new() -> Self {
         let mut subscribers: Vec<Arc<dyn RuntimeStatsSubscriber>> = Vec::new();
+
+        if should_enable_progress_bar() {
+            subscribers.push(make_progress_bar_manager(total_nodes));
+        }
 
         if should_enable_opentelemetry() {
             subscribers.push(Arc::new(OpenTelemetrySubscriber::new()));
@@ -122,233 +120,66 @@ impl RuntimeStatsEventHandler {
 
         let subscribers = Arc::new(subscribers);
         let throttle_interval = Duration::from_millis(100);
-        Self::new_impl(subscribers, throttle_interval)
+        Self::new_impl(subscribers, node_stats, throttle_interval)
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
     fn new_impl(
         subscribers: Arc<Vec<Arc<dyn RuntimeStatsSubscriber>>>,
+        node_stats: Vec<(Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         throttle_interval: Duration,
     ) -> Self {
-        let senders = Arc::new(Mutex::new(HashMap::new()));
-        let (new_receiver_tx, mut new_receiver_rx) = mpsc::unbounded_channel();
         let (flush_tx, mut flush_rx) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
 
         let rt = get_io_runtime(true);
         let handle = rt.runtime.spawn(async move {
-            let mut last_sent: HashMap<String, Instant> = HashMap::new();
-            let mut receivers: HashMap<String, watch::Receiver<Option<RuntimeStatsEvent>>> = HashMap::new();
-
             let mut interval = interval(throttle_interval);
 
             loop {
                 tokio::select! {
-                    Some((key, rx)) = new_receiver_rx.recv() => {
-                        receivers.insert(key, rx);
-                    }
                     Some(flush_response) = flush_rx.recv() => {
                          // Process all events immediately
-                         for rx in receivers.values_mut() {
-                             if rx.has_changed().unwrap_or(false) {
-                                 let event = rx.borrow_and_update().clone();
-                                 if let Some(event) = event {
-                                    for subscriber in subscribers.iter() {
-                                        if let Err(e) = subscriber.handle_event(&event) {
-                                            log::error!("Failed to handle event: {}", e);
-                                        }
-                                        if let Err(e) = subscriber.flush().await {
-                                            log::error!("Failed to flush subscriber: {}", e);
-                                        }
-                                    }
-                                 }
-                             }
-                         }
-                         let _ = flush_response.send(());
-                     }
+                        for (node_info, runtime_stats) in node_stats.iter() {
+                            let event = runtime_stats.snapshot();
 
-                    _ = interval.tick() => {
-                        // Process all receivers
-                        for (key, rx) in &mut receivers {
-                            if rx.has_changed().unwrap_or(false) {
-                                let event = rx.borrow_and_update().clone();
-                                if let Some(event) = event {
-                                    let now = Instant::now();
-                                    let should_send = last_sent.get(key).is_none_or(|last| {
-                                        // Handle potential time overflow
-                                        now.checked_duration_since(*last)
-                                            .map(|duration| duration >= throttle_interval)
-                                            .unwrap_or(true)
-                                    });
-
-                                    if should_send {
-                                        for subscriber in subscribers.iter() {
-                                            if let Err(e) = subscriber.handle_event(&event) {
-                                                log::error!("Failed to handle event: {}", e);
-                                            }
-                                        }
-                                        last_sent.insert(key.clone(), now);
-                                    }
+                            for subscriber in subscribers.iter() {
+                                if let Err(e) = subscriber.handle_event(&event, &node_info) {
+                                    log::error!("Failed to handle event: {}", e);
+                                }
+                                if let Err(e) = subscriber.flush().await {
+                                    log::error!("Failed to flush subscriber: {}", e);
                                 }
                             }
                         }
-                        // Cleanup - remove old events to free up memory
-                        let cutoff = Instant::now().checked_sub(Duration::from_secs(300)).unwrap_or_else(Instant::now);
-                        last_sent.retain(|_, &mut last_time| last_time > cutoff);
+                        let _ = flush_response.send(());
+                     }
+
+                    _ = interval.tick() => {
+                        for (node_info, runtime_stats) in node_stats.iter() {
+                            let event = runtime_stats.snapshot();
+                            for subscriber in subscribers.iter() {
+                                if let Err(e) = subscriber.handle_event(&event, node_info) {
+                                    log::error!("Failed to handle event: {}", e);
+                                }
+                            }
+                        }
                     }
                 }
             }
         });
 
         Self {
-            senders,
-            new_receiver_tx,
             flush_tx,
             _handle: handle,
         }
     }
 
-    fn get_or_create_sender(&self, key: String) -> watch::Sender<Option<RuntimeStatsEvent>> {
-        let mut senders = self.senders.lock();
-        if let Some(sender) = senders.get(&key) {
-            sender.clone()
-        } else {
-            let (tx, rx) = watch::channel(None);
-            senders.insert(key.clone(), tx.clone());
-            let _ = self.new_receiver_tx.send((key, rx));
-            tx
-        }
-    }
-}
+    pub async fn flush(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (tx, rx) = oneshot::channel();
+        self.flush_tx.send(tx)?;
+        rx.await?;
 
-pub struct RuntimeStatsContext {
-    rows_received: AtomicU64,
-    rows_emitted: AtomicU64,
-    cpu_us: AtomicU64,
-    node_info: NodeInfo,
-    pub builder: Arc<dyn RuntimeStatsBuilder>,
-}
-
-#[derive(Clone, Debug)]
-struct RuntimeStatsEvent {
-    rows_received: u64,
-    rows_emitted: u64,
-    cpu_us: u64,
-    node_info: NodeInfo,
-}
-
-impl From<&RuntimeStatsContext> for RuntimeStatsEvent {
-    fn from(value: &RuntimeStatsContext) -> Self {
-        Self {
-            rows_received: value.rows_received.load(Ordering::Relaxed),
-            rows_emitted: value.rows_emitted.load(Ordering::Relaxed),
-            cpu_us: value.cpu_us.load(Ordering::Relaxed),
-            node_info: value.node_info.clone(),
-        }
-    }
-}
-
-pub(crate) struct RuntimeEventsProducer {
-    sender: watch::Sender<Option<RuntimeStatsEvent>>,
-    rt: Arc<RuntimeStatsContext>,
-}
-
-impl RuntimeEventsProducer {
-    pub fn new(
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
-        rt: Arc<RuntimeStatsContext>,
-    ) -> Self {
-        let key = format!("{}:{}", rt.node_info.name, rt.node_info.id);
-        let sender = rt_stats_handler.get_or_create_sender(key);
-
-        Self { sender, rt }
-    }
-
-    fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
-        self.rt.record_elapsed_cpu_time(elapsed);
-        self.emit_event();
-    }
-
-    pub(crate) fn mark_rows_received(&self, rows: u64) {
-        self.rt.mark_rows_received(rows);
-        self.emit_event();
-    }
-
-    pub(crate) fn mark_rows_emitted(&self, rows: u64) {
-        self.rt.mark_rows_emitted(rows);
-        self.emit_event();
-    }
-
-    fn emit_event(&self) {
-        // Use send to avoid blocking, but log if we can't send
-        if let Err(e) = self.sender.send(Some(self.rt.as_ref().into())) {
-            // Log send failures (channel might be closed during shutdown)
-            eprintln!("Failed to send runtime stats event: {}", e);
-        }
-    }
-}
-
-impl RuntimeStatsContext {
-    pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
-        Self::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}))
-    }
-    pub(crate) fn new_with_builder(
-        node_info: NodeInfo,
-        builder: Arc<dyn RuntimeStatsBuilder>,
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            rows_received: AtomicU64::new(0),
-            rows_emitted: AtomicU64::new(0),
-            cpu_us: AtomicU64::new(0),
-            node_info,
-            builder,
-        })
-    }
-
-    fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
-        self.cpu_us.fetch_add(
-            elapsed.as_micros() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-    }
-
-    fn mark_rows_received(&self, rows: u64) {
-        self.rows_received
-            .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn mark_rows_emitted(&self, rows: u64) {
-        self.rows_emitted
-            .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    #[allow(unused)]
-    pub(crate) fn reset(&self) {
-        self.rows_received
-            .store(0, std::sync::atomic::Ordering::Release);
-        self.rows_emitted
-            .store(0, std::sync::atomic::Ordering::Release);
-        self.cpu_us.store(0, std::sync::atomic::Ordering::Release);
-    }
-
-    /// Export the runtime stats out as a pair of (name, value)
-    /// Name is a small description. Can be rendered with different casing
-    /// Value can be a string. Function is responsible for formatting the value
-    /// This is used to update in-progress stats and final stats in UI clients
-    pub(crate) fn render(&self) -> IndexMap<&'static str, String> {
-        let rows_received = self
-            .rows_received
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let rows_emitted = self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed);
-        let cpu_us = self.cpu_us.load(std::sync::atomic::Ordering::Relaxed);
-
-        let mut stats = IndexMap::new();
-        stats.insert(
-            "cpu time",
-            HumanDuration(Duration::from_micros(cpu_us)).to_string(),
-        );
-
-        self.builder.build(&mut stats, rows_received, rows_emitted);
-        stats
+        Ok(())
     }
 }
 
@@ -357,22 +188,16 @@ pub struct TimedFuture<F: Future> {
     start: Option<Instant>,
     #[pin]
     future: Instrumented<F>,
-    rt_stats_producer: RuntimeEventsProducer,
+    runtime_stats: Arc<dyn RuntimeStats>,
 }
 
 impl<F: Future> TimedFuture<F> {
-    pub fn new(
-        future: F,
-        runtime_context: Arc<RuntimeStatsContext>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
-        span: tracing::Span,
-    ) -> Self {
+    pub fn new(future: F, runtime_stats: Arc<dyn RuntimeStats>, span: tracing::Span) -> Self {
         let instrumented = future.instrument(span);
-        let rt_stats_producer = RuntimeEventsProducer::new(rt_stats_handler, runtime_context);
         Self {
             start: None,
             future: instrumented,
-            rt_stats_producer,
+            runtime_stats,
         }
     }
 }
@@ -385,7 +210,7 @@ impl<F: Future> Future for TimedFuture<F> {
         let start = this.start.get_or_insert_with(Instant::now);
         let inner_poll = this.future.as_mut().poll(cx);
         let elapsed = start.elapsed();
-        this.rt_stats_producer.record_elapsed_cpu_time(elapsed);
+        this.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
 
         match inner_poll {
             Poll::Pending => Poll::Pending,
@@ -396,31 +221,16 @@ impl<F: Future> Future for TimedFuture<F> {
 
 pub struct CountingSender {
     sender: Sender<Arc<MicroPartition>>,
-    progress_bar: Option<Arc<OperatorProgressBar>>,
-    rt_stats_producer: RuntimeEventsProducer,
+    rt: Arc<dyn RuntimeStats>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(
-        sender: Sender<Arc<MicroPartition>>,
-        rt: Arc<RuntimeStatsContext>,
-        progress_bar: Option<Arc<OperatorProgressBar>>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
-    ) -> Self {
-        let rt_stats_producer = RuntimeEventsProducer::new(rt_stats_handler, rt);
-
-        Self {
-            sender,
-            progress_bar,
-            rt_stats_producer,
-        }
+    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<dyn RuntimeStats>) -> Self {
+        Self { sender, rt }
     }
     #[inline]
     pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
-        self.rt_stats_producer.mark_rows_emitted(v.len() as u64);
-        if let Some(ref pb) = self.progress_bar {
-            pb.render();
-        }
+        self.rt.add_rows_emitted(v.len() as u64);
         self.sender.send(v).await?;
         Ok(())
     }
@@ -428,33 +238,18 @@ impl CountingSender {
 
 pub struct CountingReceiver {
     receiver: Receiver<Arc<MicroPartition>>,
-    progress_bar: Option<Arc<OperatorProgressBar>>,
-    rt_stats_producer: RuntimeEventsProducer,
+    rt: Arc<dyn RuntimeStats>,
 }
 
 impl CountingReceiver {
-    pub(crate) fn new(
-        receiver: Receiver<Arc<MicroPartition>>,
-        rt: Arc<RuntimeStatsContext>,
-        progress_bar: Option<Arc<OperatorProgressBar>>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
-    ) -> Self {
-        let rt_stats_producer = RuntimeEventsProducer::new(rt_stats_handler, rt);
-
-        Self {
-            receiver,
-            progress_bar,
-            rt_stats_producer,
-        }
+    pub(crate) fn new(receiver: Receiver<Arc<MicroPartition>>, rt: Arc<dyn RuntimeStats>) -> Self {
+        Self { receiver, rt }
     }
     #[inline]
     pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
-            self.rt_stats_producer.mark_rows_received(v.len() as u64);
-            if let Some(ref pb) = self.progress_bar {
-                pb.render();
-            }
+            self.rt.add_rows_received(v.len() as u64);
         }
         v
     }
@@ -467,11 +262,12 @@ mod tests {
     use tokio::time::{sleep, Duration};
 
     use super::*;
+    use crate::pipeline::NodeType;
 
     #[derive(Debug)]
     struct MockSubscriber {
         total_calls: AtomicU64,
-        events: Mutex<Vec<RuntimeStatsEvent>>,
+        events: Mutex<Vec<StatSnapshot>>,
     }
 
     impl MockSubscriber {
@@ -486,7 +282,7 @@ mod tests {
             self.total_calls.load(std::sync::atomic::Ordering::Relaxed)
         }
 
-        fn get_events(&self) -> Vec<RuntimeStatsEvent> {
+        fn get_events(&self) -> Vec<StatSnapshot> {
             self.events.lock().unwrap().clone()
         }
     }
@@ -497,7 +293,11 @@ mod tests {
             self
         }
 
-        fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
+        fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+            Ok(())
+        }
+
+        fn handle_event(&self, event: &StatSnapshot, _node_info: &NodeInfo) -> DaftResult<()> {
             self.total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.events.lock().unwrap().push(event.clone());
@@ -508,12 +308,14 @@ mod tests {
         }
     }
 
-    fn create_node_info(name: &str, id: usize) -> NodeInfo {
-        NodeInfo {
+    fn create_node_info(name: &str, id: usize) -> Arc<NodeInfo> {
+        let node_info = NodeInfo {
             name: Arc::from(name.to_string()),
             id,
+            node_type: NodeType::Intermediate,
             context: std::collections::HashMap::new(),
-        }
+        };
+        Arc::new(node_info)
     }
 
     #[tokio::test]
@@ -522,19 +324,20 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
+
+        let node_info = create_node_info("test_node", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler.clone(), rt_context);
 
         // Send multiple events rapidly
-        producer.mark_rows_received(100);
-        producer.mark_rows_received(200);
-        producer.mark_rows_received(300);
+        node_stat.add_rows_received(100);
+        node_stat.add_rows_received(200);
+        node_stat.add_rows_received(300);
 
         // Wait for processing
         sleep(Duration::from_millis(100)).await;
@@ -549,23 +352,25 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
-            subscribers,
-            throttle_interval,
-        ));
 
         let node_info1 = create_node_info("node1", 1);
         let node_info2 = create_node_info("node2", 2);
-        let rt_context1 = RuntimeStatsContext::new(node_info1);
-        let producer1 = RuntimeEventsProducer::new(handler.clone(), rt_context1);
+        let node_stat1 = Arc::new(DefaultRuntimeStats::default());
+        let node_stat2 = Arc::new(DefaultRuntimeStats::default());
 
-        let rt_context2 = RuntimeStatsContext::new(node_info2);
-        let producer2 = RuntimeEventsProducer::new(handler, rt_context2);
+        let throttle_interval = Duration::from_millis(50);
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
+            subscribers,
+            vec![
+                (node_info1, node_stat1.clone()),
+                (node_info2, node_stat2.clone()),
+            ],
+            throttle_interval,
+        ));
 
         // Send events for different nodes
-        producer1.mark_rows_received(100);
-        producer2.mark_rows_received(200);
+        node_stat1.add_rows_received(100);
+        node_stat2.add_rows_received(200);
 
         // Wait for processing - use longer interval for Windows compatibility
         sleep(Duration::from_millis(100)).await;
@@ -580,17 +385,18 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
+
+        let node_info = create_node_info("test_node", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler.clone(), rt_context);
 
         // Send first event
-        producer.mark_rows_received(100);
+        node_stat.add_rows_received(100);
         assert_eq!(
             mock_subscriber.get_total_calls(),
             0,
@@ -598,7 +404,7 @@ mod tests {
         );
 
         // Send second event rapidly (within throttle interval)
-        producer.mark_rows_received(200);
+        node_stat.add_rows_received(200);
         sleep(Duration::from_millis(100)).await;
 
         // Should only get 1 call due to throttling
@@ -610,7 +416,7 @@ mod tests {
 
         // Wait for throttle interval to pass, then send another event
         sleep(throttle_interval).await;
-        producer.mark_rows_received(300);
+        node_stat.add_rows_received(300);
         sleep(Duration::from_millis(100)).await;
 
         // Should now get a second call
@@ -628,18 +434,19 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
+
+        let node_info = create_node_info("test_node", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
-        producer.mark_rows_received(100);
-        producer.record_elapsed_cpu_time(Duration::from_micros(1000));
-        producer.mark_rows_emitted(50);
+        node_stat.add_rows_received(100);
+        node_stat.add_cpu_us(1000);
+        node_stat.add_rows_emitted(50);
 
         sleep(Duration::from_millis(100)).await;
 
@@ -651,9 +458,9 @@ mod tests {
 
         // Event should contain cumulative stats
         let event = &events[0];
-        assert_eq!(event.rows_received, 100);
-        assert_eq!(event.rows_emitted, 50);
-        assert_eq!(event.cpu_us, 1000);
+        assert_eq!(event[0], (CPU_US_KEY, Stat::Count(1000)));
+        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
+        assert_eq!(event[2], (ROWS_EMITTED_KEY, Stat::Count(50)));
     }
 
     #[tokio::test]
@@ -664,16 +471,17 @@ mod tests {
             subscriber1.clone() as Arc<dyn RuntimeStatsSubscriber>,
             subscriber2.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
+
+        let node_info = create_node_info("test_node", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
-        producer.mark_rows_received(100);
+        node_stat.add_rows_received(100);
         sleep(Duration::from_millis(100)).await;
 
         // Both subscribers should receive the event
@@ -691,7 +499,10 @@ mod tests {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
-            fn handle_event(&self, _: &RuntimeStatsEvent) -> DaftResult<()> {
+            fn initialize(&mut self, _: &NodeInfo) -> DaftResult<()> {
+                Ok(())
+            }
+            fn handle_event(&self, _: &StatSnapshot, _: &NodeInfo) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
@@ -707,16 +518,17 @@ mod tests {
             failing_subscriber as Arc<dyn RuntimeStatsSubscriber>,
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
+
+        let node_info = create_node_info("test_node", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
-        producer.mark_rows_received(100);
+        node_stat.add_rows_received(100);
         sleep(Duration::from_millis(100)).await;
 
         // Mock subscriber should still receive event despite other failing
@@ -725,29 +537,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
-        let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
 
         // Test initial state
-        let stats = rt_context.render();
-        assert_eq!(stats.get(ROWS_RECEIVED_KEY).unwrap(), "0");
-        assert_eq!(stats.get(ROWS_EMITTED_KEY).unwrap(), "0");
+        let stats = node_stat.snapshot();
+        assert_eq!(stats[0], (ROWS_RECEIVED_KEY, Stat::Count(0)));
+        assert_eq!(stats[1], (ROWS_EMITTED_KEY, Stat::Count(0)));
 
         // Test incremental updates
-        rt_context.mark_rows_received(100);
-        rt_context.mark_rows_received(50);
-        let stats = rt_context.render();
-        assert_eq!(stats.get(ROWS_RECEIVED_KEY).unwrap(), "150");
+        node_stat.add_rows_received(100);
+        node_stat.add_rows_received(50);
+        let stats = node_stat.snapshot();
+        assert_eq!(stats[0], (ROWS_RECEIVED_KEY, Stat::Count(150)));
 
-        rt_context.mark_rows_emitted(75);
-        let stats = rt_context.render();
-        assert_eq!(stats.get(ROWS_EMITTED_KEY).unwrap(), "75");
-
-        // Test reset
-        rt_context.reset();
-        let stats = rt_context.render();
-        assert_eq!(stats.get(ROWS_RECEIVED_KEY).unwrap(), "0");
-        assert_eq!(stats.get(ROWS_EMITTED_KEY).unwrap(), "0");
+        node_stat.add_rows_emitted(75);
+        let stats = node_stat.snapshot();
+        assert_eq!(stats[1], (ROWS_EMITTED_KEY, Stat::Count(75)));
     }
 
     #[tokio::test]
@@ -756,18 +561,19 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
+
+        let node_info = create_node_info("rapid_node", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("rapid_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Send many rapid updates
         for i in 1..=20 {
-            producer.mark_rows_received(i * 10);
+            node_stat.add_rows_received(i * 10);
         }
 
         sleep(Duration::from_millis(100)).await;
@@ -779,7 +585,7 @@ mod tests {
         let event = &events[0];
 
         // Should contain cumulative rows: 10+20+30+...+200 = 2100
-        assert_eq!(event.rows_received, 2100);
+        assert_eq!(event[0], (ROWS_RECEIVED_KEY, Stat::Count(2100)));
     }
 
     #[tokio::test]
@@ -788,21 +594,22 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
+
+        let node_info = create_node_info("mixed_node", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("mixed_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Interleave different event types
-        producer.mark_rows_received(100);
-        producer.record_elapsed_cpu_time(Duration::from_micros(500));
-        producer.mark_rows_emitted(50);
-        producer.mark_rows_received(200); // Additional increment
-        producer.record_elapsed_cpu_time(Duration::from_micros(1500));
+        node_stat.add_rows_received(100);
+        node_stat.add_cpu_us(500);
+        node_stat.add_rows_emitted(50);
+        node_stat.add_rows_received(200); // Additional increment
+        node_stat.add_cpu_us(1500);
 
         sleep(Duration::from_millis(100)).await;
 
@@ -812,9 +619,9 @@ mod tests {
         let event = &events[0];
 
         // Should contain cumulative values
-        assert_eq!(event.rows_received, 300); // 100 + 200
-        assert_eq!(event.rows_emitted, 50);
-        assert_eq!(event.cpu_us, 2000); // 500 + 1500
+        assert_eq!(event[0], (CPU_US_KEY, Stat::Count(2000))); // 500 + 1500
+        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(300))); // 100 + 200
+        assert_eq!(event[2], (ROWS_EMITTED_KEY, Stat::Count(50)));
     }
 
     #[tokio::test]
@@ -827,19 +634,18 @@ mod tests {
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-
-        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+        let node_info = create_node_info("fast_query", 1);
+        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let _handler = Arc::new(RuntimeStatsManager::new_impl(
             subscribers,
+            vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
-        let node_info = create_node_info("fast_query", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Simulate a fast query that completes within the throttle interval (500ms)
-        producer.mark_rows_received(100);
-        producer.mark_rows_emitted(50);
-        producer.record_elapsed_cpu_time(Duration::from_micros(1000));
+        node_stat.add_rows_received(100);
+        node_stat.add_rows_emitted(50);
+        node_stat.add_cpu_us(1000);
 
         // Wait less than throttle interval (500ms) but enough for processing (1ms)
         sleep(Duration::from_millis(10)).await;
@@ -851,8 +657,8 @@ mod tests {
         assert_eq!(events.len(), 1);
 
         let event = &events[0];
-        assert_eq!(event.rows_received, 100);
-        assert_eq!(event.rows_emitted, 50);
-        assert_eq!(event.cpu_us, 1000);
+        assert_eq!(event[0], (CPU_US_KEY, Stat::Count(1000)));
+        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
+        assert_eq!(event[2], (ROWS_EMITTED_KEY, Stat::Count(50)));
     }
 }

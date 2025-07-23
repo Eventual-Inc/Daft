@@ -11,13 +11,9 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
-    progress_bar::ProgressBarColor,
+    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
-    runtime_stats::{
-        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
-        RuntimeStatsContext, RuntimeStatsEventHandler,
-    },
+    runtime_stats::{CountingReceiver, CountingSender, DefaultRuntimeStats, RuntimeStats},
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
@@ -56,8 +52,8 @@ pub trait BlockingSink: Send + Sync {
     fn name(&self) -> &'static str;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
-    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
-        Arc::new(BaseStatsBuilder {})
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::default())
     }
     fn dispatch_spawner(
         &self,
@@ -76,9 +72,9 @@ pub struct BlockingSinkNode {
     op: Arc<dyn BlockingSink>,
     name: &'static str,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<RuntimeStatsContext>,
+    runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
-    node_info: NodeInfo,
+    node_info: Arc<NodeInfo>,
 }
 
 impl BlockingSinkNode {
@@ -89,19 +85,15 @@ impl BlockingSinkNode {
         ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name();
-        let node_info = ctx.next_node_info(name);
-
-        let runtime_stats = RuntimeStatsContext::new_with_builder(
-            node_info.clone(),
-            op.make_runtime_stats_builder(),
-        );
+        let node_info = ctx.next_node_info(name, NodeType::BlockingSink);
+        let runtime_stats = op.make_runtime_stats();
         Self {
             op,
             name,
             child,
             runtime_stats,
             plan_stats,
-            node_info,
+            node_info: Arc::new(node_info),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -112,19 +104,13 @@ impl BlockingSinkNode {
     async fn run_worker(
         op: Arc<dyn BlockingSink>,
         input_receiver: Receiver<Arc<MicroPartition>>,
-        rt_context: Arc<RuntimeStatsContext>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(
-            compute_runtime,
-            memory_manager,
-            rt_context,
-            rt_stats_handler,
-            span,
-        );
+        let spawner =
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats, span);
         let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             let result = op.sink(morsel, state, &spawner).await??;
@@ -145,16 +131,14 @@ impl BlockingSinkNode {
         op: Arc<dyn BlockingSink>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
         task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
-        stats: Arc<RuntimeStatsContext>,
-        stats_handler: Arc<RuntimeStatsEventHandler>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
     ) {
         for input_receiver in input_receivers {
             task_set.spawn(Self::run_worker(
                 op.clone(),
                 input_receiver,
-                stats.clone(),
-                stats_handler.clone(),
+                runtime_stats.clone(),
                 memory_manager.clone(),
             ));
         }
@@ -178,8 +162,8 @@ impl TreeDisplay for BlockingSinkNode {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.render();
-                    for (name, value) in rt_result {
+                    let rt_result = self.runtime_stats.snapshot();
+                    for (name, value) in rt_result.into_iter() {
                         writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
                     }
                 }
@@ -198,6 +182,10 @@ impl PipelineNode for BlockingSinkNode {
         vec![self.child.as_ref()]
     }
 
+    fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
+        vec![&self.child]
+    }
+
     fn name(&self) -> &'static str {
         self.name
     }
@@ -207,27 +195,12 @@ impl PipelineNode for BlockingSinkNode {
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let progress_bar = runtime_handle.make_progress_bar(
-            self.name(),
-            ProgressBarColor::Cyan,
-            self.node_id(),
-            self.runtime_stats.clone(),
-        );
         let child_results_receiver = self.child.start(false, runtime_handle)?;
-        let counting_receiver = CountingReceiver::new(
-            child_results_receiver,
-            self.runtime_stats.clone(),
-            progress_bar.clone(),
-            runtime_handle.runtime_stats_handler(),
-        );
+        let counting_receiver =
+            CountingReceiver::new(child_results_receiver, self.runtime_stats.clone());
 
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender = CountingSender::new(
-            destination_sender,
-            self.runtime_stats.clone(),
-            progress_bar,
-            runtime_handle.runtime_stats_handler(),
-        );
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
@@ -245,7 +218,6 @@ impl PipelineNode for BlockingSinkNode {
         );
 
         let memory_manager = runtime_handle.memory_manager();
-        let rt_stats_handler = runtime_handle.runtime_stats_handler();
         runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
@@ -254,7 +226,6 @@ impl PipelineNode for BlockingSinkNode {
                     spawned_dispatch_result.worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
-                    rt_stats_handler.clone(),
                     memory_manager.clone(),
                 );
 
@@ -269,7 +240,6 @@ impl PipelineNode for BlockingSinkNode {
                     compute_runtime,
                     memory_manager,
                     runtime_stats.clone(),
-                    rt_stats_handler,
                     info_span!("BlockingSink::Finalize"),
                 );
                 loop {
@@ -303,5 +273,11 @@ impl PipelineNode for BlockingSinkNode {
     }
     fn plan_id(&self) -> Arc<str> {
         Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
+    }
+    fn node_info(&self) -> Arc<NodeInfo> {
+        self.node_info.clone()
+    }
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        self.runtime_stats.clone()
     }
 }
