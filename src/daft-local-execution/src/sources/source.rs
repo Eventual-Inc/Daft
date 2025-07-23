@@ -50,10 +50,14 @@ impl RuntimeStats for SourceStats {
                 ROWS_EMITTED_KEY,
                 Stat::Count(self.rows_emitted.load(ordering))
             ),
+            (
+                "bytes read",
+                Stat::Bytes(self.io_stats.load_bytes_read() as u64)
+            )
         ]
     }
 
-    fn add_rows_received(&self, _rows: u64) {
+    fn add_rows_received(&self, _: u64) {
         unimplemented!("Source Nodes shouldn't receive rows")
     }
 

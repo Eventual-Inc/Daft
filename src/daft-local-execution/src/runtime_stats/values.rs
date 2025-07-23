@@ -15,7 +15,6 @@ use smallvec::{smallvec, SmallVec};
 pub enum Stat {
     // Integer Representations
     Count(u64),
-    #[allow(dead_code)]
     Bytes(u64),
     // Base Types
     Float(f64),
