@@ -77,6 +77,11 @@ def test_roundtrip_embedding(tmp_path: Path, fmt: FMT, dtype: np.dtype, size: in
     # make a checking function for the loaded dataframe & verify our original dataframe
     check = _make_check_embeddings(test_df, dtype)
 
+    if fmt == 'parquet':
+        new_temp_path = f"./roundtrip_{dtype}_{size}.parquet"
+        getattr(test_df, f"write_{fmt}")(new_temp_path)
+        print(f"WROTE TO: {new_temp_path}")
+
     # write the embeddings-containing dataframe to disk using the specified format
     getattr(test_df, f"write_{fmt}")(str(tmp_path))
 

@@ -83,6 +83,17 @@ jobs:
       if: ${{ (matrix.pyarrow-version == '8.0.0') }}
       run: uv pip install deltalake==0.10.0
 
+    - name: debug build (Linux)
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        maturin develop
+        pytest -v --cov=daft 'tests/io/test_roundtrip_embeddings.py::test_roundtrip_embedding[uint32-256-parquet]'
+      env:
+        CARGO_TARGET_DIR: ./target
+
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
+
     - name: Setup upterm session
       uses: lhotari/action-upterm@v1
 
