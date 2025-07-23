@@ -2,7 +2,7 @@
 pub mod python;
 mod response;
 
-use std::{io::Cursor, net::Ipv4Addr, sync::Arc};
+use std::{collections::HashMap, io::Cursor, net::Ipv4Addr, sync::Arc};
 
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
@@ -18,6 +18,7 @@ use parking_lot::RwLock;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, spawn};
+use uuid::Uuid;
 
 type StrRef = Arc<str>;
 type Req<T = Incoming> = Request<T>;
@@ -58,15 +59,38 @@ struct QueryInformation {
     run_id: Option<StrRef>,
 }
 
+// DataFrame display structures
+#[derive(Debug, Clone)]
+struct DataFrameInfo {
+    id: String,
+    record_batch: daft_recordbatch::RecordBatch,
+}
+
+#[derive(Deserialize)]
+struct CellRequest {
+    row: usize,
+    col: usize,
+}
+
+#[derive(Serialize)]
+struct CellResponse {
+    #[serde(rename = "type")]
+    cell_type: String,
+    value: String,
+    data_type: String,
+}
+
 #[derive(Clone, Debug)]
 struct DashboardState {
     queries: Arc<RwLock<Vec<QueryInformation>>>,
+    dataframes: Arc<RwLock<HashMap<String, DataFrameInfo>>>,
 }
 
 impl DashboardState {
     fn new() -> Self {
         Self {
             queries: Arc::default(),
+            dataframes: Arc::default(),
         }
     }
 
@@ -79,6 +103,24 @@ impl DashboardState {
     fn add_query(&self, query_information: QueryInformation) {
         self.queries.write().push(query_information);
     }
+
+    fn register_dataframe(&self, record_batch: daft_recordbatch::RecordBatch) -> String {
+        let id = Uuid::new_v4().to_string();
+        let info = DataFrameInfo {
+            id: id.clone(),
+            record_batch,
+        };
+        self.dataframes.write().insert(id.clone(), info);
+        id
+    }
+
+    fn get_dataframe(&self, id: &str) -> Option<DataFrameInfo> {
+        self.dataframes.read().get(id).cloned()
+    }
+
+    fn cleanup_dataframe(&self, id: &str) {
+        self.dataframes.write().remove(id);
+    }
 }
 
 async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req<T>> {
@@ -90,14 +132,470 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req
     Ok(Request::from_parts(parts, body))
 }
 
+fn parse_query_params(query: Option<&str>) -> HashMap<String, String> {
+    query
+        .unwrap_or("")
+        .split('&')
+        .filter_map(|param| {
+            let mut parts = param.splitn(2, '=');
+            match (parts.next(), parts.next()) {
+                (Some(key), Some(value)) => Some((key.to_string(), value.to_string())),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+async fn serve_cell_content(
+    dataframe_id: &str,
+    params: HashMap<String, String>,
+    state: &DashboardState,
+) -> ServerResult<Res> {
+    println!("[Dashboard Server] serve_cell_content called for dataframe_id: {}, params: {:?}", dataframe_id, params);
+    
+    let row: usize = params
+        .get("row")
+        .and_then(|r| r.parse().ok())
+        .ok_or_else(|| {
+            println!("[Dashboard Server] ERROR: Invalid row parameter");
+            (
+                StatusCode::BAD_REQUEST,
+                anyhow::anyhow!("Invalid row parameter"),
+            )
+        })?;
+
+    let col: usize = params
+        .get("col")
+        .and_then(|c| c.parse().ok())
+        .ok_or_else(|| {
+            println!("[Dashboard Server] ERROR: Invalid col parameter");
+            (
+                StatusCode::BAD_REQUEST,
+                anyhow::anyhow!("Invalid col parameter"),
+            )
+        })?;
+
+    println!("[Dashboard Server] Looking for dataframe with id: {}", dataframe_id);
+    let dataframe = state.get_dataframe(dataframe_id).ok_or_else(|| {
+        println!("[Dashboard Server] ERROR: DataFrame not found for id: {}", dataframe_id);
+        (
+            StatusCode::NOT_FOUND,
+            anyhow::anyhow!("DataFrame not found"),
+        )
+    })?;
+
+    println!("[Dashboard Server] Found dataframe, checking bounds: row={}, col={}, dataframe_rows={}, dataframe_cols={}", 
+             row, col, dataframe.record_batch.len(), dataframe.record_batch.num_columns());
+
+    if row >= dataframe.record_batch.len() || col >= dataframe.record_batch.num_columns() {
+        println!("[Dashboard Server] ERROR: Row or column index out of bounds");
+        return Err((
+            StatusCode::BAD_REQUEST,
+            anyhow::anyhow!("Row or column index out of bounds"),
+        ));
+    }
+
+    let column = dataframe.record_batch.get_column(col);
+    println!("[Dashboard Server] Getting cell content for row={}, col={}, column_len={}", row, col, column.len());
+    
+    // Use html_value_with_truncate(truncate=false) to get full content
+    let cell_html = if row < column.len() {
+        daft_recordbatch::html_value_with_truncate(column, row, false)
+    } else {
+        "N/A".to_string()
+    };
+
+    println!("[Dashboard Server] Generated cell HTML (length={})", cell_html.len());
+    let response = CellResponse {
+        cell_type: "html".to_string(),
+        value: cell_html,
+        data_type: format!("{:?}", column.data_type()),
+    };
+
+    println!("[Dashboard Server] Returning successful response");
+    Ok(response::with_body(StatusCode::OK, response))
+}
+
+
+
+fn generate_interactive_html(
+    record_batch: &daft_recordbatch::RecordBatch,
+    df_id: &str,
+    host: &str,
+    port: u16,
+) -> String {
+    let mut html = vec!["<div>".to_string()];
+    
+    // Add modal HTML structure
+    html.push(r#"
+        <div id="cell-modal" class="modal" style="display: none;">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-title">Cell Content</h3>
+                    <button class="modal-close" id="modal-close">&times;</button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <div class="loading-spinner" id="modal-loading">Loading...</div>
+                    <div id="modal-content-area"></div>
+                </div>
+            </div>
+        </div>
+        "#.to_string());
+    
+    // Add CSS and JavaScript
+    html.push(r#"
+        <style>
+        .interactive-dataframe {
+            border-collapse: collapse;
+        }
+        .interactive-dataframe td {
+            cursor: pointer;
+            position: relative;
+            transition: background-color 0.2s;
+        }
+        .interactive-dataframe td:hover {
+            background-color: #f0f0f0;
+        }
+        .interactive-dataframe td.image-cell:hover {
+            background-color: #e6f3ff;
+        }
+        .interactive-dataframe td.loading {
+            background-color: #e3f2fd;
+            opacity: 0.7;
+        }
+        .cell-content {
+            max-width: 192px;
+            max-height: 64px;
+            overflow: auto;
+        }
+        
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            cursor: pointer;
+        }
+        
+        .modal-content {
+            position: relative;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            max-width: 80vw;
+            max-height: 80vh;
+            min-width: 400px;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            z-index: 1001;
+        }
+        
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f8f9fa;
+            border-radius: 8px 8px 0 0;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+            color: #333;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        
+        .modal-close:hover {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+        
+        .modal-body {
+            padding: 20px;
+            overflow: auto;
+            flex: 1;
+            position: relative;
+        }
+        
+        .loading-spinner {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
+        
+        #modal-content-area {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        /* Hide scrollbars for webkit browsers while keeping scroll functionality */
+        .modal-body::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .modal-body::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        .modal-body::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+        
+        .modal-body::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+        </style>
+        "#.to_string());
+    
+    // Start the table
+    html.push("<table class=\"dataframe interactive-dataframe\">".to_string());
+    
+    // Generate the table header
+    html.push("<thead><tr>".to_string());
+    for field in record_batch.schema.as_ref() {
+        html.push(format!(
+            r#"<th style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left">{}<br />{}</th>"#,
+            html_escape::encode_text(&field.name),
+            html_escape::encode_text(&format!("{}", field.dtype))
+        ));
+    }
+    html.push("</tr></thead>".to_string());
+    
+    // Generate the table body
+    html.push("<tbody>".to_string());
+    
+    // Determine how many rows to show (same logic as original)
+    let num_rows = record_batch.len();
+    let (head_rows, tail_rows) = if num_rows > 10 {
+        (5, 5)
+    } else {
+        (num_rows, 0)
+    };
+    
+            // Generate head rows
+        for i in 0..head_rows {
+            html.push("<tr>".to_string());
+            for col_idx in 0..record_batch.num_columns() {
+                let column = record_batch.get_column(col_idx);
+                
+                // Check if this is an image column
+                let is_image = format!("{:?}", column.data_type()).contains("Image");
+                let cell_class = if is_image { "image-cell" } else { "" };
+                
+                html.push(format!(
+                    r#"<td class="{}" data-row="{}" data-col="{}">"#,
+                    cell_class, i, col_idx
+                ));
+                html.push(r#"<div class="cell-content">"#.to_string());
+                
+                // Get the cell value using html_value_with_truncate
+                let cell_content = if i < column.len() {
+                    daft_recordbatch::html_value_with_truncate(column, i, true)
+                } else {
+                    "N/A".to_string()
+                };
+                
+                html.push(cell_content);
+                html.push("</div></td>".to_string());
+            }
+            html.push("</tr>".to_string());
+        }
+    
+    // Add ellipsis row if needed
+    if tail_rows > 0 {
+        html.push("<tr>".to_string());
+        for _ in 0..record_batch.num_columns() {
+            html.push("<td>...</td>".to_string());
+        }
+        html.push("</tr>".to_string());
+    }
+    
+            // Generate tail rows
+        for i in (num_rows - tail_rows)..num_rows {
+            html.push("<tr>".to_string());
+            for col_idx in 0..record_batch.num_columns() {
+                let column = record_batch.get_column(col_idx);
+                
+                // Check if this is an image column
+                let is_image = format!("{:?}", column.data_type()).contains("Image");
+                let cell_class = if is_image { "image-cell" } else { "" };
+                
+                html.push(format!(
+                    r#"<td class="{}" data-row="{}" data-col="{}">"#,
+                    cell_class, i, col_idx
+                ));
+                html.push(r#"<div class="cell-content">"#.to_string());
+                
+                // Get the cell value using html_value_with_truncate
+                let cell_content = if i < column.len() {
+                    daft_recordbatch::html_value_with_truncate(column, i, true)
+                } else {
+                    "N/A".to_string()
+                };
+                
+                html.push(cell_content);
+                html.push("</div></td>".to_string());
+            }
+            html.push("</tr>".to_string());
+        }
+    
+    html.push("</tbody>".to_string());
+    html.push("</table>".to_string());
+    
+    // Add JavaScript after the table is rendered
+    html.push(format!(r#"
+        <script>
+        (function() {{
+            console.log('Dashboard script starting...');
+            const serverUrl = 'http://{}:{}';
+            const dfId = '{}';
+            console.log('Server URL:', serverUrl, 'DF ID:', dfId);
+            
+            function showModal(row, col) {{
+                console.log('showModal called with row:', row, 'col:', col);
+                const modal = document.getElementById('cell-modal');
+                const modalTitle = document.getElementById('modal-title');
+                const modalLoading = document.getElementById('modal-loading');
+                const modalContent = document.getElementById('modal-content-area');
+                
+                modalTitle.textContent = `Cell Content (Row ${{row + 1}}, Column ${{col + 1}})`;
+                modalLoading.style.display = 'block';
+                modalContent.style.display = 'none';
+                modal.style.display = 'flex';
+                
+                const url = `${{serverUrl}}/api/dataframes/${{dfId}}/cell?row=${{row}}&col=${{col}}`;
+                console.log('Fetching from:', url);
+                
+                fetch(url)
+                    .then(response => {{
+                        console.log('Response status:', response.status);
+                        return response.json();
+                    }})
+                    .then(data => {{
+                        console.log('Response data:', data);
+                        modalLoading.style.display = 'none';
+                        modalContent.innerHTML = data.value;
+                        modalContent.style.display = 'block';
+                    }})
+                    .catch(err => {{
+                        console.error('Fetch error:', err);
+                        modalLoading.style.display = 'none';
+                        modalContent.innerHTML = 'Error loading content: ' + err.message;
+                        modalContent.style.display = 'block';
+                    }});
+            }}
+            
+            function hideModal() {{
+                console.log('hideModal called');
+                document.getElementById('cell-modal').style.display = 'none';
+            }}
+            
+            // Find and add click handlers to cells
+            console.log('Looking for clickable cells...');
+            const cells = document.querySelectorAll('.interactive-dataframe td[data-row][data-col]');
+            console.log('Found', cells.length, 'clickable cells');
+            
+            cells.forEach((cell, index) => {{
+                console.log(`Cell ${{index}}: row=${{cell.dataset.row}}, col=${{cell.dataset.col}}`);
+                cell.onclick = function() {{
+                    console.log('Cell clicked!');
+                    showModal(parseInt(this.dataset.row), parseInt(this.dataset.col));
+                }};
+                // Add visual feedback
+                cell.style.cursor = 'pointer';
+                cell.title = 'Click to view full content';
+            }});
+            
+            // Modal close handlers
+            const modalClose = document.getElementById('modal-close');
+            const modalOverlay = document.querySelector('.modal-overlay');
+            
+            if (modalClose) {{
+                modalClose.onclick = hideModal;
+                console.log('Modal close button handler added');
+            }} else {{
+                console.log('Modal close button not found');
+            }}
+            
+            if (modalOverlay) {{
+                modalOverlay.onclick = hideModal;
+                console.log('Modal overlay handler added');
+            }} else {{
+                console.log('Modal overlay not found');
+            }}
+            
+            document.addEventListener('keydown', function(e) {{
+                if (e.key === 'Escape') {{
+                    console.log('Escape key pressed');
+                    hideModal();
+                }}
+            }});
+            
+            console.log('Dashboard script setup complete');
+        }})();
+        </script>
+        "#, host, port, df_id));
+    
+    html.push("</div>".to_string()); // Close the wrapper div
+    
+    html.join("")
+}
+
 async fn http_server_application(req: Req, state: DashboardState) -> ServerResult<Res> {
     let request_path = req.uri().path();
+    let query_string = req.uri().query().unwrap_or("");
+    println!("[Dashboard Server] Incoming request: {} {} {}", req.method(), request_path, query_string);
+    
     let paths = request_path
         .split('/')
         .filter(|segment| !segment.is_empty())
         .collect::<Vec<_>>();
 
+    println!("[Dashboard Server] Parsed paths: {:?}", paths);
+
     Ok(match (req.method(), paths.as_slice()) {
+        // Handle CORS preflight requests
+        (&Method::OPTIONS, _) => {
+            println!("[Dashboard Server] Handling OPTIONS preflight request");
+            response::empty(StatusCode::OK)
+        }
         (&Method::POST, ["api", "queries"]) => {
             let req = deserialize::<QueryInformation>(req).await?;
             state.add_query(req.into_body());
@@ -107,6 +605,12 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
             let query_informations = state.queries();
 
             response::with_body(StatusCode::OK, query_informations.as_slice())
+        }
+        (&Method::GET, ["api", "dataframes", dataframe_id, "cell"]) => {
+            println!("[Dashboard Server] Handling cell request for dataframe: {}", dataframe_id);
+            let params = parse_query_params(req.uri().query());
+            println!("[Dashboard Server] Query params: {:?}", params);
+            serve_cell_content(dataframe_id, params, &state).await?
         }
         (_, ["api", ..]) => response::empty(StatusCode::NOT_FOUND),
 
@@ -146,6 +650,9 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
                     Response::builder()
                         .status(StatusCode::OK)
                         .header("Content-Type", content_type)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                        .header("Access-Control-Allow-Headers", "Content-Type")
                         .body(
                             Full::new(bytes)
                                 .map_err(|infallible| match infallible {})
@@ -195,6 +702,8 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 
     let module = PyModule::new(parent.py(), "dashboard")?;
     module.add_wrapped(wrap_pyfunction!(python::launch))?;
+    module.add_wrapped(wrap_pyfunction!(python::register_dataframe_for_display))?;
+    module.add_wrapped(wrap_pyfunction!(python::generate_interactive_html))?;
     // module.add_wrapped(wrap_pyfunction!(python::shutdown))?;
     // module.add_wrapped(wrap_pyfunction!(python::cli))?;
     module.add("DAFT_DASHBOARD_ENV_NAME", DAFT_DASHBOARD_ENV_NAME)?;

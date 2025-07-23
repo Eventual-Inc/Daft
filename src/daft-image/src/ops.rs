@@ -443,19 +443,36 @@ where
 
 #[must_use]
 pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
+    image_html_value_with_truncate(arr, idx, true)
+}
+
+#[must_use]
+pub fn image_html_value_with_truncate(arr: &ImageArray, idx: usize, truncate: bool) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();
 
     match maybe_image {
         None => "None".to_string(),
         Some(image) => {
-            let thumb = image.fit_to(128, 128);
+            let processed_image = if truncate {
+                image.fit_to(128, 128)
+            } else {
+                image  // Use the full-size image
+            };
             let mut bytes: Vec<u8> = vec![];
             let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            thumb.encode(ImageFormat::PNG, &mut writer).unwrap();
+            processed_image.encode(ImageFormat::PNG, &mut writer).unwrap();
             drop(writer);
+            
+            let style = if truncate {
+                "max-height:128px;width:auto"
+            } else {
+                "max-width:90%;max-height:90vh;width:auto;height:auto"
+            };
+            
             format!(
-                "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                "<img style=\"{}\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                style,
                 base64::engine::general_purpose::STANDARD.encode(&mut bytes),
                 str_val,
             )
@@ -465,19 +482,36 @@ pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
 
 #[must_use]
 pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize) -> String {
+    fixed_image_html_value_with_truncate(arr, idx, true)
+}
+
+#[must_use]
+pub fn fixed_image_html_value_with_truncate(arr: &FixedShapeImageArray, idx: usize, truncate: bool) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();
 
     match maybe_image {
         None => "None".to_string(),
         Some(image) => {
-            let thumb = image.fit_to(128, 128);
+            let processed_image = if truncate {
+                image.fit_to(128, 128)
+            } else {
+                image  // Use the full-size image
+            };
             let mut bytes: Vec<u8> = vec![];
             let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            thumb.encode(ImageFormat::PNG, &mut writer).unwrap();
+            processed_image.encode(ImageFormat::PNG, &mut writer).unwrap();
             drop(writer);
+            
+            let style = if truncate {
+                "max-height:128px;width:auto"
+            } else {
+                "max-width:90%;max-height:90vh;width:auto;height:auto"
+            };
+            
             format!(
-                "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                "<img style=\"{}\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                style,
                 base64::engine::general_purpose::STANDARD.encode(&mut bytes),
                 str_val,
             )

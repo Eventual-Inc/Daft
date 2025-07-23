@@ -4,28 +4,15 @@ use serde::Serialize;
 
 use crate::Res;
 
-/// This bypasses CORS restrictions.
+/// This bypasses CORS restrictions for the dashboard.
 ///
 /// # Note
-/// If you are running the web application from another port than [`super::SERVER_PORT`], you will need to change
-/// the below port. If you do not, you will get a CORS policy error.
-fn cors() -> String {
-    #[cfg(debug_assertions)]
-    {
-        /// During development of the dashboard, the dev server attaches to port 3000 instead.
-        /// Thus, we enable CORS for that port as well.
-        ///
-        /// # Note
-        /// We only do this for debug builds.
-        const BUN_DEV_PORT: u16 = 3238;
-
-        format!("http://127.0.0.1:{}", BUN_DEV_PORT)
-    }
-
-    #[cfg(not(debug_assertions))]
-    {
-        format!("http://localhost:{}", super::SERVER_PORT)
-    }
+/// We allow all origins (*) because:
+/// 1. This is a local development tool running on localhost
+/// 2. It needs to work in various Jupyter environments (VS Code, JupyterLab, Colab, etc.)
+/// 3. It doesn't handle sensitive data requiring strict CORS protection
+fn cors() -> &'static str {
+    "*"
 }
 
 fn response_builder(status: StatusCode, body: Option<impl Serialize>) -> Res {
@@ -33,6 +20,8 @@ fn response_builder(status: StatusCode, body: Option<impl Serialize>) -> Res {
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, cors())
+        .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS")
+        .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type")
         .body(body.map_or_else(
             || {
                 Empty::default()

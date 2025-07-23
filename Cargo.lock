@@ -2495,6 +2495,10 @@ name = "daft-dashboard"
 version = "0.3.0-dev0"
 dependencies = [
  "anyhow",
+ "base64 0.21.7",
+ "common-display",
+ "daft-recordbatch",
+ "html-escape",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -2505,6 +2509,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uuid 1.17.0",
 ]
 
 [[package]]

@@ -3431,7 +3431,6 @@ class DataFrame:
 
         try:
             from IPython.display import display
-
             display(preview_formatter, clear=True)
         except ImportError:
             print(preview_formatter)

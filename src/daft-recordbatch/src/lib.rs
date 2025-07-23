@@ -44,6 +44,7 @@ mod repr_html;
 pub use growable::GrowableRecordBatch;
 pub use ops::{get_column_by_name, get_columns_by_name};
 pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
+pub use repr_html::html_value_with_truncate;
 
 #[cfg(feature = "python")]
 pub mod python;

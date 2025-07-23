@@ -10,6 +10,11 @@ serde_json = "1.0"
 log.workspace = true
 serde.workspace = true
 tokio.workspace = true
+uuid = {version = "1.0", features = ["v4"]}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false, features = ["python"]}
+base64 = "0.21"
+common-display = {path = "../common/display", default-features = false}
+html-escape = "0.2"
 
 [features]
 default = ["python"]

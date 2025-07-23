@@ -1,10 +1,14 @@
 use daft_core::{datatypes::ExtensionArray, prelude::DataType, series::Series};
 
 pub fn html_value(s: &Series, idx: usize) -> String {
+    html_value_with_truncate(s, idx, true)
+}
+
+pub fn html_value_with_truncate(s: &Series, idx: usize, truncate: bool) -> String {
     match s.data_type() {
         DataType::Image(_) => {
             let arr = s.image().unwrap();
-            daft_image::ops::image_html_value(arr, idx)
+            daft_image::ops::image_html_value_with_truncate(arr, idx, truncate)
         }
         DataType::Null => {
             let arr = s.null().unwrap();
@@ -117,7 +121,7 @@ pub fn html_value(s: &Series, idx: usize) -> String {
         }
         DataType::FixedShapeImage(_, _, _) => {
             let arr = s.fixed_size_image().unwrap();
-            daft_image::ops::fixed_image_html_value(arr, idx)
+            daft_image::ops::fixed_image_html_value_with_truncate(arr, idx, truncate)
         }
         DataType::Tensor(_) => {
             let arr = s.tensor().unwrap();
