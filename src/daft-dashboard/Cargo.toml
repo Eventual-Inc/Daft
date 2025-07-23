@@ -1,6 +1,6 @@
 [dependencies]
 anyhow = "1.0"
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false, features = ["python"]}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 http-body-util = "0.1"
 hyper = {features = ["full"], version = "1.6"}
 hyper-util = {features = ["tokio"], version = "0.1"}
@@ -8,10 +8,10 @@ include_dir = "0.7.4"
 parking_lot = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde_json = "1.0"
-uuid = {version = "1.0", features = ["v4"]}
 log.workspace = true
 serde.workspace = true
 tokio.workspace = true
+uuid.workspace = true
 
 [features]
 default = ["python"]
