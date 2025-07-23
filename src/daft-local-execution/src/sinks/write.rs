@@ -57,7 +57,7 @@ impl RuntimeStats for WriteStats {
             ),
             (
                 "bytes written",
-                Stat::Count(self.bytes_written.load(ordering))
+                Stat::Bytes(self.bytes_written.load(ordering))
             )
         ]
     }

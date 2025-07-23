@@ -92,7 +92,7 @@ impl IndicatifProgressBarManager {
                     .tick_chars("⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈✓"),
             )
             .with_prefix(formatted_prefix);
-        self.multi_progress.insert(0, pb.clone());
+        self.multi_progress.add(pb.clone());
 
         pb.enable_steady_tick(TICK_INTERVAL);
         self.pbars.push(pb);
