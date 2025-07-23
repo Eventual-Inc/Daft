@@ -15,6 +15,7 @@ use smallvec::{smallvec, SmallVec};
 pub enum Stat {
     // Integer Representations
     Count(u64),
+    #[allow(dead_code)]
     Bytes(u64),
     // Base Types
     Float(f64),
@@ -24,10 +25,10 @@ pub enum Stat {
 impl std::fmt::Display for Stat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Stat::Count(value) => write!(f, "{}", HumanCount(*value)),
-            Stat::Bytes(value) => write!(f, "{}", HumanBytes(*value)),
-            Stat::Float(value) => write!(f, "{}", HumanFloatCount(*value)),
-            Stat::Duration(value) => write!(f, "{}", HumanDuration(*value)),
+            Self::Count(value) => write!(f, "{}", HumanCount(*value)),
+            Self::Bytes(value) => write!(f, "{}", HumanBytes(*value)),
+            Self::Float(value) => write!(f, "{}", HumanFloatCount(*value)),
+            Self::Duration(value) => write!(f, "{}", HumanDuration(*value)),
         }
     }
 }

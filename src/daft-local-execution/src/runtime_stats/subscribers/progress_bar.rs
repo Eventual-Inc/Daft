@@ -1,41 +1,21 @@
-use std::{
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
 use common_error::DaftResult;
-use indexmap::IndexMap;
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 
-use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStats};
+use crate::{
+    pipeline::{NodeInfo, NodeType},
+    runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStats, StatSnapshot, CPU_US_KEY},
+};
 
 /// Convert statistics to a message for progress bars
-fn stats_to_message(stats: IndexMap<&'static str, String>) -> String {
-    stats
-        .into_iter()
-        .filter(|(name, _)| *name != "cpu time")
+fn event_to_message(event: &StatSnapshot) -> String {
+    event
+        .iter()
+        .filter(|(name, _)| *name != CPU_US_KEY)
         .map(|(name, value)| format!("{} {}", value, name.to_lowercase()))
         .join(", ")
-}
-
-pub trait ProgressBar: Send + Sync {
-    fn set_message(&self, message: String) -> DaftResult<()>;
-    fn close(&self) -> DaftResult<()>;
-}
-
-pub trait ProgressBarManager: std::fmt::Debug + Send + Sync {
-    fn make_new_bar(
-        &self,
-        color: ProgressBarColor,
-        prefix: &'static str,
-        node_id: usize,
-    ) -> DaftResult<Box<dyn ProgressBar>>;
-
-    fn close_all(&self) -> DaftResult<()>;
 }
 
 pub enum ProgressBarColor {
@@ -56,129 +36,54 @@ impl ProgressBarColor {
     }
 }
 
-pub struct OperatorProgressBar {
-    inner_progress_bar: Box<dyn ProgressBar>,
-    runtime_stats: Arc<dyn RuntimeStats>,
-    start_time: Instant,
-    last_update: AtomicU64,
-}
-
-impl OperatorProgressBar {
-    pub fn new(progress_bar: Box<dyn ProgressBar>, runtime_stats: Arc<dyn RuntimeStats>) -> Self {
-        Self {
-            inner_progress_bar: progress_bar,
-            runtime_stats,
-            start_time: Instant::now(),
-            last_update: AtomicU64::new(0),
-        }
-    }
-
-    // 250ms = 250_000_000ns
-    const UPDATE_INTERVAL: u64 = 250_000_000;
-
-    fn should_update_progress_bar(&self, now: Instant) -> bool {
-        if now < self.start_time {
-            return false;
-        }
-
-        {
-            {
-                let prev = self.last_update.load(Ordering::Acquire);
-                let elapsed = (now - self.start_time).as_nanos() as u64;
-                let diff = elapsed.saturating_sub(prev);
-
-                // Fast path - check if enough time has passed
-                if diff < Self::UPDATE_INTERVAL {
-                    return false;
-                }
-
-                // Only calculate remainder if we're actually going to update
-                let remainder = diff % Self::UPDATE_INTERVAL;
-                self.last_update
-                    .store(elapsed - remainder, Ordering::Release);
-                true
-            }
-        }
-    }
-
-    pub fn render(&self) {
-        let now = Instant::now();
-        if self.should_update_progress_bar(now) {
-            let _ = self
-                .inner_progress_bar
-                .set_message(stats_to_message(self.runtime_stats.render()));
-        }
-    }
-}
-
-impl Drop for OperatorProgressBar {
-    fn drop(&mut self) {
-        let _ = self.inner_progress_bar.close();
-    }
-}
-
-struct IndicatifProgressBar {
-    progress_bar: indicatif::ProgressBar,
-    started: AtomicBool,
-}
-
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
-
-impl ProgressBar for IndicatifProgressBar {
-    fn set_message(&self, message: String) -> DaftResult<()> {
-        if !self.started.load(Ordering::Acquire) {
-            self.progress_bar.enable_steady_tick(TICK_INTERVAL);
-            self.started.store(true, Ordering::Release);
-        }
-
-        self.progress_bar.set_message(message);
-        Ok(())
-    }
-
-    fn close(&self) -> DaftResult<()> {
-        self.progress_bar.finish();
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
+    pbars: Vec<indicatif::ProgressBar>,
     total: usize,
 }
 
 impl IndicatifProgressBarManager {
-    fn new(total: usize) -> Self {
+    fn new(node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)]) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
         multi_progress.set_move_cursor(true);
         multi_progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
 
-        Self {
+        let total = node_stats.len();
+
+        let mut manager = Self {
             multi_progress,
+            pbars: Vec::new(),
             total,
+        };
+
+        for (node_info, _) in node_stats {
+            manager.make_new_bar(node_info.as_ref());
         }
+
+        manager
     }
-}
 
-pub const MAX_PIPELINE_NAME_LEN: usize = 18;
+    fn make_new_bar(&mut self, node_info: &NodeInfo) {
+        let color = match node_info.node_type {
+            NodeType::Source => ProgressBarColor::Blue,
+            NodeType::Intermediate => ProgressBarColor::Magenta,
+            NodeType::BlockingSink => ProgressBarColor::Cyan,
+            NodeType::StreamingSink => ProgressBarColor::Red,
+        };
 
-impl ProgressBarManager for IndicatifProgressBarManager {
-    fn make_new_bar(
-        &self,
-        color: ProgressBarColor,
-        prefix: &'static str,
-        node_id: usize,
-    ) -> DaftResult<Box<dyn ProgressBar>> {
         #[allow(clippy::literal_string_with_formatting_args)]
         let template_str = format!(
             "🗡️ 🐟[{node_id:>total_len$}/{total}] {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
             color = color.to_str(),
-            node_id = (node_id + 1),
+            node_id = (node_info.id + 1),
             total = (self.total + 1),
             total_len = self.total.to_string().len(),
         );
 
-        let formatted_prefix = format!("{:>1$}", prefix, MAX_PIPELINE_NAME_LEN);
+        let formatted_prefix = format!("{:>1$}", node_info.name, MAX_PIPELINE_NAME_LEN);
 
         let pb = indicatif::ProgressBar::new_spinner()
             .with_style(
@@ -188,36 +93,63 @@ impl ProgressBarManager for IndicatifProgressBarManager {
             )
             .with_prefix(formatted_prefix);
         self.multi_progress.insert(0, pb.clone());
-        DaftResult::Ok(Box::new(IndicatifProgressBar {
-            progress_bar: pb,
-            started: AtomicBool::new(false),
-        }))
+
+        pb.enable_steady_tick(TICK_INTERVAL);
+        self.pbars.push(pb);
     }
 
-    fn close_all(&self) -> DaftResult<()> {
-        self.multi_progress.clear()?;
+    fn update_bar(&self, node_id: usize, message: String) {
+        let pb = self.pbars.get(node_id).unwrap();
+        pb.set_message(message);
+    }
+}
+
+#[async_trait::async_trait]
+impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
+    #[cfg(test)]
+    #[allow(dead_code)]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn initialize(&mut self, _node_info: &NodeInfo) -> DaftResult<()> {
+        Ok(())
+    }
+
+    fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
+        self.update_bar(node_info.id, event_to_message(event));
+        Ok(())
+    }
+
+    async fn flush(&self) -> DaftResult<()> {
         Ok(())
     }
 }
 
-pub fn make_progress_bar_manager(total: usize) -> Arc<dyn RuntimeStatsSubscriber> {
+pub const MAX_PIPELINE_NAME_LEN: usize = 18;
+
+pub fn make_progress_bar_manager(
+    node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)],
+) -> Arc<dyn RuntimeStatsSubscriber> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
-            Arc::new(python::TqdmProgressBarManager::new())
+            Arc::new(python::TqdmProgressBarManager::new(node_stats))
         } else {
-            Arc::new(IndicatifProgressBarManager::new(total))
+            Arc::new(IndicatifProgressBarManager::new(node_stats))
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Arc::new(IndicatifProgressBarManager::new(total))
+        Arc::new(IndicatifProgressBarManager::new(node_stats))
     }
 }
 
 #[cfg(feature = "python")]
 mod python {
+    use std::collections::HashMap;
+
     use pyo3::{types::PyAnyMethods, PyObject, Python};
 
     use super::*;
@@ -236,16 +168,33 @@ mod python {
     #[derive(Clone, Debug)]
     pub struct TqdmProgressBarManager {
         inner: Arc<PyObject>,
+        node_id_to_pb_id: HashMap<usize, usize>,
     }
 
     impl TqdmProgressBarManager {
-        pub fn new() -> Self {
+        pub fn new(node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)]) -> Self {
+            let mut node_id_to_pb_id = HashMap::new();
+
             Python::with_gil(|py| {
                 let module = py.import("daft.runners.progress_bar")?;
                 let progress_bar_class = module.getattr("SwordfishProgressBar")?;
                 let pb_object = progress_bar_class.call0()?;
+
+                for (node_info, _) in node_stats {
+                    let bar_format = format!(
+                        "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
+                        prefix = node_info.name
+                    );
+
+                    let pb_id = pb_object.call_method1("make_new_bar", (bar_format,))?;
+                    let pb_id = pb_id.extract::<usize>()?;
+
+                    node_id_to_pb_id.insert(node_info.id, pb_id);
+                }
+
                 DaftResult::Ok(Self {
                     inner: Arc::new(pb_object.into()),
+                    node_id_to_pb_id,
                 })
             })
             .expect("Failed to create progress bar")
@@ -280,7 +229,8 @@ mod python {
         }
 
         fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
-            self.update_bar(node_info.id, &event_to_message(event))
+            let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
+            self.update_bar(*pb_id, &event_to_message(event))
         }
 
         async fn flush(&self) -> DaftResult<()> {
@@ -289,24 +239,5 @@ mod python {
                 DaftResult::Ok(())
             })
         }
-
-        // fn make_new_bar(
-        //     &self,
-        //     _color: ProgressBarColor,
-        //     prefix: &'static str,
-        //     _node_id: usize,
-        // ) -> DaftResult<Box<dyn ProgressBar>> {
-        //     let bar_format = format!("🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}", prefix = prefix);
-        //     let pb_id = Python::with_gil(|py| {
-        //         let pb_id = self.inner.call_method1(py, "make_new_bar", (bar_format,))?;
-        //         let pb_id = pb_id.extract::<usize>(py)?;
-        //         DaftResult::Ok(pb_id)
-        //     })?;
-
-        //     DaftResult::Ok(Box::new(TqdmProgressBar {
-        //         pb_id,
-        //         manager: self.clone(),
-        //     }))
-        // }
     }
 }

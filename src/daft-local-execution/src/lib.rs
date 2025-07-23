@@ -128,21 +128,15 @@ pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
-    rt_stats_manager: Arc<RuntimeStatsManager>,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
-    pub fn new(
-        default_morsel_size: usize,
-        memory_manager: Arc<MemoryManager>,
-        rt_stats_manager: Arc<RuntimeStatsManager>,
-    ) -> Self {
+    pub fn new(default_morsel_size: usize, memory_manager: Arc<MemoryManager>) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
             memory_manager,
-            rt_stats_manager,
         }
     }
     pub fn spawn_local(
@@ -175,11 +169,6 @@ impl ExecutionRuntimeContext {
     #[must_use]
     pub(crate) fn memory_manager(&self) -> Arc<MemoryManager> {
         self.memory_manager.clone()
-    }
-
-    #[must_use]
-    pub(crate) fn runtime_stats_handler(&self) -> Arc<RuntimeStatsManager> {
-        self.rt_stats_manager.clone()
     }
 }
 
@@ -245,8 +234,6 @@ impl ExecutionTaskSpawner {
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-
-use crate::runtime_stats::RuntimeStatsManager;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

@@ -285,7 +285,7 @@ impl NativeExecutor {
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
 
-        let stats_manager = Arc::new(RuntimeStatsManager::new(pipeline.as_ref()));
+        let stats_manager = Arc::new(RuntimeStatsManager::new(&pipeline));
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
@@ -304,11 +304,8 @@ impl NativeExecutor {
             });
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle = ExecutionRuntimeContext::new(
-                    cfg.default_morsel_size,
-                    memory_manager.clone(),
-                    stats_manager.clone(),
-                );
+                let mut runtime_handle =
+                    ExecutionRuntimeContext::new(cfg.default_morsel_size, memory_manager.clone());
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 while let Some(val) = receiver.recv().await {

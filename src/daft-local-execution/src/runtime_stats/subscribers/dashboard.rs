@@ -109,7 +109,7 @@ async fn send_metrics_batch(url: &str, client: &Arc<Client>, events: &[(StatSnap
         payload.insert("name".to_string(), context.name.to_string());
         payload.insert("id".to_string(), context.id.to_string());
         for (name, value) in &event.0 {
-            payload.insert(name.to_string(), value.to_string());
+            payload.insert((*name).to_string(), value.to_string());
         }
 
         if let Ok(run_id) = env::var("DAFT_DASHBOARD_RUN_ID") {

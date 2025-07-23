@@ -192,7 +192,7 @@ impl TreeDisplay for IntermediateNode {
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result.into_iter() {
+                    for (name, value) in rt_result {
                         writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
                     }
                 }

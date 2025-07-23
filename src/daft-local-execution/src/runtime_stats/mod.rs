@@ -46,18 +46,6 @@ fn should_enable_progress_bar() -> bool {
     }
 }
 
-struct NodeStatsBuilder {
-    node_stats: HashMap<usize, (Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
-}
-
-impl NodeStatsBuilder {
-    pub fn new() -> Self {
-        Self {
-            node_stats: HashMap::new(),
-        }
-    }
-}
-
 /// Event handler for RuntimeStats
 /// The event handler contains a vector of subscribers
 /// When a new event is broadcast, `RuntimeStatsEventHandler` manages notifying the subscribers.
@@ -76,15 +64,17 @@ impl std::fmt::Debug for RuntimeStatsManager {
 }
 
 impl RuntimeStatsManager {
+    #[allow(clippy::borrowed_box)]
     pub fn new(pipeline: &Box<dyn PipelineNode>) -> Self {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
-        pipeline.apply(|node| {
+        let _ = pipeline.apply(|node| {
             let node_info = node.node_info();
             let runtime_stats = node.runtime_stats();
             node_stats_map.insert(node_info.id, (node_info, runtime_stats));
             Ok(TreeNodeRecursion::Continue)
         });
+
         let total_nodes = node_stats_map.len();
         let node_stats = (0..total_nodes)
             .map(|id| {
@@ -96,7 +86,7 @@ impl RuntimeStatsManager {
         let mut subscribers: Vec<Arc<dyn RuntimeStatsSubscriber>> = Vec::new();
 
         if should_enable_progress_bar() {
-            subscribers.push(make_progress_bar_manager(total_nodes));
+            subscribers.push(make_progress_bar_manager(&node_stats));
         }
 
         if should_enable_opentelemetry() {
@@ -139,11 +129,11 @@ impl RuntimeStatsManager {
                 tokio::select! {
                     Some(flush_response) = flush_rx.recv() => {
                          // Process all events immediately
-                        for (node_info, runtime_stats) in node_stats.iter() {
+                        for (node_info, runtime_stats) in &node_stats {
                             let event = runtime_stats.snapshot();
 
                             for subscriber in subscribers.iter() {
-                                if let Err(e) = subscriber.handle_event(&event, &node_info) {
+                                if let Err(e) = subscriber.handle_event(&event, node_info) {
                                     log::error!("Failed to handle event: {}", e);
                                 }
                                 if let Err(e) = subscriber.flush().await {
@@ -155,7 +145,7 @@ impl RuntimeStatsManager {
                      }
 
                     _ = interval.tick() => {
-                        for (node_info, runtime_stats) in node_stats.iter() {
+                        for (node_info, runtime_stats) in &node_stats {
                             let event = runtime_stats.snapshot();
                             for subscriber in subscribers.iter() {
                                 if let Err(e) = subscriber.handle_event(&event, node_info) {

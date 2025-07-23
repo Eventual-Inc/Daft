@@ -68,6 +68,7 @@ use crate::{
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
+    #[allow(clippy::borrowed_box)]
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>>;
     fn name(&self) -> &'static str;
     fn start(
