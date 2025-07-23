@@ -46,7 +46,7 @@ pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
-use crate::range::GetRange;
+pub use crate::range::GetRange;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

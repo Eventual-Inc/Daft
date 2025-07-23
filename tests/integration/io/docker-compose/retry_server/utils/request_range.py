@@ -5,9 +5,9 @@ from typing import Annotated
 from fastapi import Header
 
 
-def parse_range_from_header(range: Annotated[str, Header()], length: int) -> tuple[int, int]:
+def parse_range_from_header(range_header: Annotated[str, Header()], length: int) -> tuple[int, int]:
     """Parse the range header into a tuple of (start, end)."""
-    start, end = (i for i in range[len("bytes=") :].split("-"))
+    start, end = (i for i in range_header[len("bytes=") :].split("-"))
 
     if start == "":  # suffix range: "bytes=-128"
         range_len = int(end)

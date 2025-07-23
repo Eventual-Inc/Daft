@@ -4,7 +4,7 @@ use bytes::{Bytes, BytesMut};
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
 use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
-use daft_io::{range::GetRange, IOClient, IOStatsRef};
+use daft_io::{GetRange, IOClient, IOStatsRef};
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
@@ -275,7 +275,7 @@ pub(crate) async fn read_parquet_metadata(
         None => GetRange::Suffix(footer_read_size),
         Some(size) => {
             let default_end_len = std::cmp::min(footer_read_size, size);
-            let start = size.saturating_sub(default_end_len);
+            let start = size - default_end_len;
             (start..size).into()
         }
     };
@@ -295,7 +295,7 @@ pub(crate) async fn read_parquet_metadata(
         }
     }
 
-    let remaining = if footer_len < buffer.len() {
+    let remaining = if footer_len <= buffer.len() {
         // the whole metadata is in the bytes we already read
         buffer.len() - footer_len
     } else {
