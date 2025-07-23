@@ -442,12 +442,7 @@ where
 }
 
 #[must_use]
-pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
-    image_html_value_with_truncate(arr, idx, true)
-}
-
-#[must_use]
-pub fn image_html_value_with_truncate(arr: &ImageArray, idx: usize, truncate: bool) -> String {
+pub fn image_html_value(arr: &ImageArray, idx: usize, truncate: bool) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();
 
@@ -483,16 +478,7 @@ pub fn image_html_value_with_truncate(arr: &ImageArray, idx: usize, truncate: bo
 }
 
 #[must_use]
-pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize) -> String {
-    fixed_image_html_value_with_truncate(arr, idx, true)
-}
-
-#[must_use]
-pub fn fixed_image_html_value_with_truncate(
-    arr: &FixedShapeImageArray,
-    idx: usize,
-    truncate: bool,
-) -> String {
+pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize, truncate: bool) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();
 

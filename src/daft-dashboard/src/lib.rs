@@ -184,12 +184,7 @@ async fn serve_cell_content(
     }
 
     let column = dataframe.record_batch.get_column(col);
-
-    let cell_html = if row < column.len() {
-        daft_recordbatch::html_value_with_truncate(column, row, false)
-    } else {
-        "N/A".to_string()
-    };
+    let cell_html = daft_recordbatch::html_value(column, row, false);
 
     let response = CellResponse {
         cell_type: "html".to_string(),
