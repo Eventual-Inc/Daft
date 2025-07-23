@@ -145,6 +145,7 @@ class ParquetFileWriter(FileWriterBase):
             compression=self.compression,
             use_compliant_nested_type=False,
             filesystem=self.fs,
+            version="2.6",
             **opts,
         )
 

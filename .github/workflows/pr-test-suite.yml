@@ -83,25 +83,6 @@ jobs:
       if: ${{ (matrix.pyarrow-version == '8.0.0') }}
       run: uv pip install deltalake==0.10.0
 
-      # Rust code coverage does not work on ubuntu-latest, so we only run it on macOS
-      # For more info: https://github.com/Eventual-Inc/Daft/issues/3801
-    - name: DEBUG Build library and Test with pytest (Linux)
-      if: ${{ (runner.os == 'Linux') }}
-      run: |
-        maturin develop
-        python -c 'import pyarrow; print(f"pyarrow=={pyarrow.__version__}"); pyarrow.show_versions()'
-        pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest -v --cov=daft 'tests/io/test_roundtrip_embeddings.py::test_roundtrip_embedding[uint32-256-parquet]' || true
-        
-      env:
-        CARGO_TARGET_DIR: ./target
-
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
-
-    - name: Setup upterm session
-      uses: lhotari/action-upterm@v1
-
     # Rust code coverage does not work on ubuntu-latest, so we only run it on macOS
     # For more info: https://github.com/Eventual-Inc/Daft/issues/3801
     - name: Build library and Test with pytest (Linux)
