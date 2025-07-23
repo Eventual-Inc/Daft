@@ -1,0 +1,20 @@
+---
+title: Functions
+---
+
+# Functions
+Built-in Daft Functions
+
+{% for category, title in category_titles.items() %}
+## {{ title }}
+
+<table>
+  {%- for fn in categories[category] %}
+  <tr>
+    <td><a href="{{ fn.name }}">{{ fn.name }}</a>({{ fn.signature }})</td>
+    <td>{{ fn.description }}</td>
+  </tr>
+  {%- endfor %}
+</table>
+
+{% endfor %}
