@@ -30,6 +30,7 @@ from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
+from daft.recordbatch.recordbatch import RecordBatch
 from daft.runners.partitioning import (
     LocalPartitionSet,
     MaterializedResult,
@@ -3429,7 +3430,7 @@ class DataFrame:
             },
         )
 
-        def _generate_interactive_html(preview: Preview) -> str:
+        def _generate_interactive_html(rb: RecordBatch) -> str:
             from daft.daft import dashboard as dashboard_native
             from daft.dashboard import launch
 
@@ -3437,8 +3438,7 @@ class DataFrame:
             launch(noop_if_initialized=True)
 
             # Register the partition with the display server and generate HTML
-            record_batch = preview.partition.to_record_batch()
-            df_id = dashboard_native.register_dataframe_for_display(record_batch._recordbatch)
+            df_id = dashboard_native.register_dataframe_for_display(rb._recordbatch)
             html = dashboard_native.generate_interactive_html(df_id)
             return html
 
@@ -3447,7 +3447,7 @@ class DataFrame:
 
             if preview.partition is not None:
                 try:
-                    interactive_html = _generate_interactive_html(preview)
+                    interactive_html = _generate_interactive_html(preview.partition.to_record_batch())
                     display(HTML(interactive_html))
                     return None
                 except Exception:
