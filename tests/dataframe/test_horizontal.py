@@ -4,12 +4,12 @@ import pytest
 
 from daft.expressions import col
 from daft.functions import (
+    columns_avg,
     columns_max,
     columns_mean,
     columns_min,
     columns_sum,
 )
-from daft.functions.functions import columns_avg
 
 
 def test_columns_sum(make_df) -> None:
