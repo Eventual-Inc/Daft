@@ -1127,7 +1127,7 @@ class DataFrame:
             storage_options.update(new_storage_options or {})
         else:
             if isinstance(table, str):
-                table_uri = table
+                table_uri = os.path.expanduser(table)
             elif isinstance(table, pathlib.Path):
                 table_uri = str(table)
             elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
