@@ -69,7 +69,7 @@ def gen_index():
         category = fn.module.name
         if category not in categories:
             raise ValueError(
-                f"`daft.functions.{category}` not in category order. Add it in `docs/gen_pages/gen_functions.py`"
+                f"`daft.functions.{category}` not in category titles mapping. Add it in `docs/gen_pages/gen_functions.py`"
             )
 
         # Create enhanced function object with formatted signature
@@ -83,7 +83,7 @@ def gen_index():
     empty_categories = [k for k, v in categories.items() if len(v) == 0]
     if len(empty_categories) > 0:
         raise ValueError(
-            f"These function submodules no longer exist: {empty_categories}. Remove them from the category order in `docs/gen_pages/gen_functions.py`"
+            f"These function submodules no longer exist: {empty_categories}. Remove them from the category titles mapping in `docs/gen_pages/gen_functions.py`"
         )
 
     template = env.get_template("functions.md.j2")
