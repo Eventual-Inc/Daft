@@ -21,7 +21,7 @@ struct Args<T> {
 #[typetag::serde]
 impl ScalarUDF for HashFunction {
     fn name(&self) -> &'static str {
-        "hash_with"
+        "hash"
     }
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
@@ -110,7 +110,7 @@ impl ScalarUDF for HashFunction {
 }
 
 #[must_use]
-pub fn hash_with(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef>) -> ExprRef {
+pub fn hash(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef>) -> ExprRef {
     let mut inputs = vec![input];
     if let Some(seed) = seed {
         inputs.push(seed);

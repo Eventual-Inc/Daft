@@ -33,11 +33,11 @@ where
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
         let seed = seed.map(|v| v.as_arrow());
-        let result = kernels::hashing::hash(as_arrowed, seed, _hash_function)?;
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
@@ -49,11 +49,11 @@ impl Utf8Array {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
         let seed = seed.map(|v| v.as_arrow());
-        let result = kernels::hashing::hash(as_arrowed, seed, _hash_function)?;
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
@@ -65,11 +65,11 @@ impl BinaryArray {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
         let seed = seed.map(|v| v.as_arrow());
-        let result = kernels::hashing::hash(as_arrowed, seed, _hash_function)?;
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
@@ -81,11 +81,11 @@ impl FixedSizeBinaryArray {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
         let seed = seed.map(|v| v.as_arrow());
-        let result = kernels::hashing::hash(as_arrowed, seed, _hash_function)?;
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
@@ -97,11 +97,11 @@ impl BooleanArray {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
         let seed = seed.map(|v| v.as_arrow());
-        let result = kernels::hashing::hash(as_arrowed, seed, _hash_function)?;
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
@@ -113,11 +113,11 @@ impl NullArray {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.data();
         let seed = seed.map(|v| v.as_arrow());
-        let result = kernels::hashing::hash(as_arrowed, seed, _hash_function)?;
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
@@ -167,6 +167,8 @@ fn hash_list(
                         }
                     }
                     HashFunctionKind::MurmurHash3 => {
+                        // Use 42 as default seed,
+                        // refer to: https://github.com/Eventual-Inc/Daft/blob/7be4b1ff9ed3fdc3a45947beefab7e7291cd3be7/src/daft-hash/src/lib.rs#L18
                         let hasher = MurBuildHasher::new(cur_seed_opt.unwrap_or(42) as u32);
                         let mut hasher = hasher.build_hasher();
                         hasher.write(&child_bytes);
@@ -199,6 +201,8 @@ fn hash_list(
                 match hash_function {
                     HashFunctionKind::XxHash => Some(xxh3_64(&child_bytes[start..end])),
                     HashFunctionKind::MurmurHash3 => {
+                        // Use 42 as default seed,
+                        // refer to: https://github.com/Eventual-Inc/Daft/blob/7be4b1ff9ed3fdc3a45947beefab7e7291cd3be7/src/daft-hash/src/lib.rs#L18
                         let hasher = MurBuildHasher::new(42);
                         let mut hasher = hasher.build_hasher();
                         hasher.write(&child_bytes[start..end]);
@@ -223,7 +227,7 @@ impl ListArray {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         hash_list(
             self.name(),
@@ -231,7 +235,7 @@ impl ListArray {
             &self.flat_child,
             self.validity(),
             seed,
-            _hash_function,
+            hash_function,
         )
     }
 }
@@ -243,7 +247,7 @@ impl FixedSizeListArray {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
         let len = self.flat_child.len() as i64;
@@ -254,7 +258,7 @@ impl FixedSizeListArray {
             &self.flat_child,
             self.validity(),
             seed,
-            _hash_function,
+            hash_function,
         )
     }
 }
@@ -267,7 +271,7 @@ impl StructArray {
     pub fn hash_with(
         &self,
         seed: Option<&UInt64Array>,
-        _hash_function: HashFunctionKind,
+        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         if self.children.is_empty() {
             return Err(DaftError::ValueError(
@@ -278,9 +282,9 @@ impl StructArray {
             .children
             .first()
             .unwrap()
-            .hash_with(seed, _hash_function)?;
+            .hash_with(seed, hash_function)?;
         for child in self.children.iter().skip(1) {
-            res = child.hash_with(Some(&res), _hash_function)?;
+            res = child.hash_with(Some(&res), hash_function)?;
         }
         res.rename(self.name())
             .with_validity(self.validity().cloned())
