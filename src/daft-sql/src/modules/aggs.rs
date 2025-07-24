@@ -82,7 +82,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
             Some(plan) => {
                 let schema = plan.schema();
                 let pushdown_col = schema
-                    .min_fixed_byte_column()
+                    .min_estimated_size_column()
                     .map(|name| name.to_string())
                     .unwrap_or_else(|| schema[0].name.clone());
                 unresolved_col(pushdown_col)
@@ -100,7 +100,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                         plan.plan.clone().get_schema_for_alias(&ident.to_string())?
                     {
                         let pushdown_col = schema
-                            .min_fixed_byte_column()
+                            .min_estimated_size_column()
                             .map(|name| name.to_string())
                             .unwrap_or_else(|| schema[0].name.clone());
                         unresolved_col(pushdown_col)
@@ -124,7 +124,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                     Some(plan) => {
                         let schema = plan.schema();
                         let pushdown_col = schema
-                            .min_fixed_byte_column()
+                            .min_estimated_size_column()
                             .map(|name| name.to_string())
                             .unwrap_or_else(|| schema[0].name.clone());
                         unresolved_col(pushdown_col)

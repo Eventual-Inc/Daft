@@ -143,10 +143,6 @@ impl Field {
             ))),
         }
     }
-
-    pub fn fixed_byte_size(&self) -> Option<usize> {
-        self.dtype.estimate_size_bytes().map(|v| v as usize)
-    }
 }
 
 impl From<&ArrowField> for Field {
