@@ -42,7 +42,7 @@ pub fn read_json_local(
         let predicate = convert_options
             .as_ref()
             .and_then(|options| options.predicate.clone());
-        parse_json_chunk(bytes, bytes.len(), schema.into(), predicate)
+        read_json_array_impl(bytes, schema.into(), predicate)
     } else {
         let reader = JsonReader::try_new(
             bytes,
@@ -55,9 +55,8 @@ pub fn read_json_local(
     }
 }
 
-fn parse_json_chunk(
+pub fn read_json_array_impl(
     bytes: &[u8],
-    chunk_size: usize,
     schema: Schema,
     predicate: Option<ExprRef>,
 ) -> DaftResult<RecordBatch> {
@@ -68,10 +67,6 @@ fn parse_json_chunk(
 
     let arrow_schema = schema.to_arrow()?;
 
-    // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
-    // This is a trick to use the line-based deserializer from serde_json to iterate over the lines
-    // This is more accurate than using a `Lines` iterator.
-    // Ideally, we would instead use a line-based deserializer from simd_json, but that is not available.
     let iter =
         serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
@@ -81,7 +76,7 @@ fn parse_json_chunk(
         .map(|f| {
             (
                 Cow::Owned(f.name.to_string()),
-                allocate_array(f, chunk_size),
+                allocate_array(f, bytes.len()),
             )
         })
         .collect::<IndexMap<_, _>>();
