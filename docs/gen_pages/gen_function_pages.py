@@ -104,7 +104,7 @@ def gen_function_page(fn: griffe.Function):
 def gen_nav_summary():
     nav = mkdocs_gen_files.Nav()
 
-    nav["index.md"] = "index.md"
+    nav["Functions"] = "index.md"
     for fn_name in module.exports:
         nav[fn_name] = f"{fn_name}.md"
 
