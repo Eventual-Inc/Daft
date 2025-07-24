@@ -183,6 +183,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
                     arrow_table = self._prepare_arrow_table(data.to_arrow())
 
+                    TurbopufferDataSink._check_namespace_name(namespace_name)
                     namespace = tpuf.namespace(namespace_name)
                     write_response = namespace.write(
                         upsert_rows=arrow_table.to_pylist(),
