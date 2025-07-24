@@ -128,7 +128,6 @@ def test_hive_pyarrow_daft_compatibility(tmpdir, partition_by, file_format, filt
         ["str_col"],
         ["int_col"],
         ["date_col"],
-        # TODO(desmond): Same issue as the timestamp issue mentioned above.
         ["timestamp_col"],
         ["nullable_str"],
         ["nullable_int"],
