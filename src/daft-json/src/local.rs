@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::{expr::bound_expr::BoundExpr, Expr};
+use daft_dsl::{expr::bound_expr::BoundExpr, Expr, ExprRef};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
@@ -36,14 +36,127 @@ pub fn read_json_local(
     let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
 
     let bytes = &mmap[..];
-    let reader = JsonReader::try_new(
-        bytes,
-        convert_options,
-        parse_options,
-        read_options,
-        max_chunks_in_flight,
-    )?;
-    reader.finish()
+    if bytes[0] == b'[' {
+        let schema = infer_schema(bytes, None, None)?;
+
+        let predicate = convert_options
+            .as_ref()
+            .and_then(|options| options.predicate.clone());
+        parse_json_chunk(bytes, bytes.len(), schema.into(), predicate)
+    } else {
+        let reader = JsonReader::try_new(
+            bytes,
+            convert_options,
+            parse_options,
+            read_options,
+            max_chunks_in_flight,
+        )?;
+        reader.finish()
+    }
+}
+
+fn parse_json_chunk(
+    bytes: &[u8],
+    chunk_size: usize,
+    schema: Schema,
+    predicate: Option<ExprRef>,
+) -> DaftResult<RecordBatch> {
+    let mut scratch = vec![];
+    let scratch = &mut scratch;
+
+    let daft_fields = schema.into_iter().cloned().map(Arc::new);
+
+    let arrow_schema = schema.to_arrow()?;
+
+    // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
+    // This is a trick to use the line-based deserializer from serde_json to iterate over the lines
+    // This is more accurate than using a `Lines` iterator.
+    // Ideally, we would instead use a line-based deserializer from simd_json, but that is not available.
+    let iter =
+        serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
+
+    let mut columns = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            (
+                Cow::Owned(f.name.to_string()),
+                allocate_array(f, chunk_size),
+            )
+        })
+        .collect::<IndexMap<_, _>>();
+
+    let mut num_rows = 0;
+    for record in iter {
+        let value = record.map_err(|e| super::Error::JsonDeserializationError {
+            string: e.to_string(),
+        })?;
+        let v = parse_raw_value(value, scratch)?;
+
+        match v {
+            Value::Array(arr) => {
+                for value in arr {
+                    if let Value::Object(record) = value {
+                        for (s, inner) in &mut columns {
+                            match record.get(s) {
+                                Some(value) => {
+                                    deserialize_into(inner, &[value]);
+                                }
+                                None => {
+                                    Err(super::Error::JsonDeserializationError {
+                                        string: "Field not found in schema".to_string(),
+                                    })?;
+                                }
+                            }
+                        }
+                    } else {
+                        Err(super::Error::JsonDeserializationError {
+                            string: "Expected JSON object".to_string(),
+                        })?;
+                    }
+                }
+            }
+            Value::Object(record) => {
+                for (s, inner) in &mut columns {
+                    match record.get(s) {
+                        Some(value) => {
+                            deserialize_into(inner, &[value]);
+                        }
+                        None => {
+                            Err(super::Error::JsonDeserializationError {
+                                string: "Field not found in schema".to_string(),
+                            })?;
+                        }
+                    }
+                }
+            }
+            _ => {
+                return Err(super::Error::JsonDeserializationError {
+                    string: "Expected JSON object".to_string(),
+                }
+                .into());
+            }
+        }
+
+        num_rows += 1;
+    }
+    let columns = columns
+        .into_values()
+        .zip(daft_fields)
+        .map(|(mut ma, fld)| {
+            let arr = ma.as_box();
+            Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    let tbl = RecordBatch::new_unchecked(schema.clone(), columns, num_rows);
+
+    if let Some(pred) = &predicate {
+        let pred = BoundExpr::try_new(pred.clone(), &schema)?;
+        tbl.filter(&[pred])
+    } else {
+        Ok(tbl)
+    }
 }
 
 struct JsonReader<'a> {

@@ -135,7 +135,7 @@ pub(crate) async fn read_json_schema_single(
 }
 
 async fn infer_schema<R>(
-    reader: R,
+    mut reader: R,
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
 ) -> DaftResult<arrow2::datatypes::Schema>
@@ -143,8 +143,40 @@ where
     R: tokio::io::AsyncBufRead + Unpin + Send,
 {
     let max_records = max_rows.unwrap_or(usize::MAX);
-    let max_bytes = max_bytes.unwrap_or(usize::MAX);
     let mut total_bytes = 0;
+    use tokio::io::AsyncReadExt;
+    let first_byte = reader.fill_buf().await?[0];
+    match first_byte {
+        b'[' => {
+            // for reading into memory, we want a more conservative max_bytes.
+            // We don't want to OOM by reading too much data into memory.
+            // The user can override this default by passing a max_bytes parameter.
+
+            let max_bytes_default = 256 * 1024 * 1024; // 256MB
+            let max_bytes = max_bytes.unwrap_or(max_bytes_default);
+
+            let mut buf = Vec::with_capacity(max_bytes);
+
+            let bytes_read = reader.take(max_bytes as _).read_to_end(&mut buf).await?;
+            if bytes_read == max_bytes {
+                return Err(super::Error::JsonDeserializationError {
+                    string: "Maximum bytes exceeded, please try again with a smaller file or increase the max_bytes parameter.".to_string(),
+                }
+                .into());
+            }
+            let parsed_record = crate::deserializer::to_value(&mut buf).map_err(|e| {
+                super::Error::JsonDeserializationError {
+                    string: e.to_string(),
+                }
+            })?;
+            let inferred_schema = infer_records_schema(&parsed_record).context(ArrowSnafu);
+            return Ok(inferred_schema?);
+        }
+        b'{' => {}
+        _ => panic!("Invalid JSON format"),
+    };
+    let max_bytes = max_bytes.unwrap_or(usize::MAX);
+
     // Stream of unparsed JSON string records.
     let line_stream = tokio_stream::wrappers::LinesStream::new(reader.lines());
     let mut schema_stream = line_stream

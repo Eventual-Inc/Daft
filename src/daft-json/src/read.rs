@@ -7,7 +7,10 @@ use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{
+    stream::{once, BoxStream},
+    Stream, StreamExt, TryStreamExt,
+};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{
     futures::{try_future::Context, TryFutureExt, TryStreamExt as _},
@@ -307,6 +310,20 @@ pub async fn stream_json(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let (source_type, fixed_uri) = parse_url(&uri)?;
+    let is_compressed = CompressionCodec::from_uri(&uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        let fixed_uri = fixed_uri.to_string();
+        return Ok(Box::pin(once(async move {
+            read_json_local(
+                fixed_uri.as_ref(),
+                convert_options,
+                parse_options,
+                read_options,
+                max_chunks_in_flight,
+            )
+        })));
+    }
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -552,6 +569,7 @@ fn parse_into_column_array_chunk_stream(
                                 })
                         })
                         .collect::<super::Result<Vec<_>>>()?;
+                    println!("parsed: {:?}", parsed);
                     let chunk = deserialize_records(&parsed, schema.as_ref(), schema_is_projection)
                         .context(ArrowSnafu)?;
                     let all_series = chunk
