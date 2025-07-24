@@ -1,9 +1,11 @@
 [dependencies]
 async-trait = {workspace = true}
+capitalize = "*"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
+common-resource-request = {path = "../common/resource-request", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-system-info = {path = "../common/system-info", default-features = false}
@@ -30,12 +32,12 @@ indicatif = "0.17.9"
 itertools = {workspace = true}
 kanal = "0.1"
 log = {workspace = true}
-num-format = {workspace = true}
 opentelemetry = {workspace = true}
 parking_lot = {workspace = true}
 pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
+rand = {workspace = true}
 reqwest = {version = "0.12.19", default-features = false}
 snafu = {workspace = true}
 tokio = {workspace = true}

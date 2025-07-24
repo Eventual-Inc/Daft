@@ -44,8 +44,8 @@ where
             LogicalPlan::Project(project) => json!({
                 "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
-            LogicalPlan::ActorPoolProject(project) => json!({
-                "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            LogicalPlan::UDFProject(project) => json!({
+                "project": project.project.to_string(),
             }),
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],
@@ -208,7 +208,7 @@ mod tests {
                     .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
-            .add_monotonically_increasing_id(Some("id2"))?
+            .add_monotonically_increasing_id(Some("id2"), None)?
             .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();

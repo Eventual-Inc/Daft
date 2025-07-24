@@ -11,12 +11,11 @@ use super::{
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
         RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitActorPoolProjects, SplitGranularProjection, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::{
-    optimization::rules::{PushDownShard, ShardScans},
+    optimization::rules::{PushDownShard, ShardScans, SplitExplodeFromProject},
     LogicalPlan,
 };
 
@@ -106,6 +105,7 @@ impl Default for OptimizerBuilder {
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
                         Box::new(ExtractWindowFunction::new()),
+                        Box::new(SplitExplodeFromProject::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
@@ -153,12 +153,13 @@ impl Default for OptimizerBuilder {
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
                 // --- Rewrite projections ---
-                // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.
+                // Once optimization rules have been applied, split UDFs and detect monotonic IDs.
                 // By delaying these rewrite rules, we avoid having to special case optimization rules for
-                // actor pool projects and monotonically increasing ids.
+                // UDFs and monotonically increasing ids.
                 RuleBatch::new(
                     vec![
-                        Box::new(SplitActorPoolProjects::new()),
+                        Box::new(SplitUDFs::new()),
+                        Box::new(PushDownProjection::new()),
                         Box::new(DetectMonotonicId::new()),
                     ],
                     RuleExecutionStrategy::Once,
@@ -381,7 +382,7 @@ mod tests {
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
-        ops::{ActorPoolProject, Filter, Project},
+        ops::{Filter, Project, UDFProject},
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
@@ -704,10 +705,11 @@ mod tests {
         )
         .limit(limit, false)?
         .build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            vec![actor_pool_expr.alias("a")],
+            actor_pool_expr.alias("a"),
+            vec![],
         )?)
         .arced();
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
@@ -761,10 +763,11 @@ mod tests {
             Pushdowns::default().with_filters(Some(resolved_col("a").lt(lit(2)))),
         )
         .build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            vec![resolved_col("a"), actor_pool_expr.alias("renamed_col")],
+            actor_pool_expr.alias("renamed_col"),
+            vec![resolved_col("a")],
         )?)
         .arced();
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();

@@ -77,6 +77,7 @@ pub struct PythonUDF {
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
+    pub use_process: Option<bool>,
 }
 
 impl PythonUDF {
@@ -94,6 +95,7 @@ impl PythonUDF {
             resource_request: None,
             batch_size: None,
             concurrency: Some(4),
+            use_process: None,
         }
     }
 }
@@ -109,6 +111,7 @@ pub fn udf(
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
+    use_process: Option<bool>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(PythonUDF {
@@ -120,6 +123,7 @@ pub fn udf(
             resource_request,
             batch_size,
             concurrency,
+            use_process,
         }),
         inputs: expressions.into(),
     })
@@ -195,34 +199,69 @@ pub fn get_concurrency<'a, E: Into<&'a ExprRef>>(exprs: impl IntoIterator<Item =
     projection_concurrency.expect("get_concurrency expects one UDF with concurrency set")
 }
 
+pub fn try_get_concurrency(expr: &ExprRef) -> Option<usize> {
+    let mut projection_concurrency = None;
+    expr.apply(|e| match e.as_ref() {
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
+            ..
+        } => {
+            projection_concurrency = *concurrency;
+            Ok(common_treenode::TreeNodeRecursion::Stop)
+        }
+        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+    })
+    .unwrap();
+
+    projection_concurrency
+}
+
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 /// Errors if no UDF is found
-pub fn try_get_batch_size_from_udf(exprs: &[ExprRef]) -> DaftResult<Option<usize>> {
+pub fn try_get_batch_size_from_udf(expr: &ExprRef) -> DaftResult<Option<usize>> {
     let mut projection_batch_size = None;
-    for expr in exprs {
-        let mut found_udf = false;
-        expr.apply(|e| match e.as_ref() {
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
-                ..
-            } => {
-                found_udf = true;
-                projection_batch_size = Some(*batch_size);
-                Ok(common_treenode::TreeNodeRecursion::Stop)
-            }
-            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-        })
-        .unwrap();
-        if found_udf {
-            break;
+    expr.apply(|e| match e.as_ref() {
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+            ..
+        } => {
+            projection_batch_size = Some(*batch_size);
+            Ok(common_treenode::TreeNodeRecursion::Stop)
         }
-    }
+        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+    })
+    .unwrap();
+
     if let Some(batch_size) = projection_batch_size {
         Ok(batch_size)
     } else {
         Err(DaftError::ValueError(format!(
-            "No UDF with batch size found in expressions: {:?}",
-            exprs
+            "No UDF with batch size found in expression: {:?}",
+            expr
+        )))
+    }
+}
+
+pub fn get_use_process(expr: &ExprRef) -> DaftResult<Option<bool>> {
+    let mut finder = None;
+    expr.apply(|e| match e.as_ref() {
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF { use_process, .. }),
+            ..
+        } => {
+            finder = Some(*use_process);
+            Ok(common_treenode::TreeNodeRecursion::Stop)
+        }
+        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+    })
+    .unwrap();
+
+    if let Some(finder) = finder {
+        Ok(finder)
+    } else {
+        Err(DaftError::ValueError(format!(
+            "No UDF with use_process found in expression: {:?}",
+            expr
         )))
     }
 }

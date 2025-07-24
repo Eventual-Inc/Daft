@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import date, datetime, time, timedelta, timezone
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,7 @@ from daft.datatype import DataType, ImageMode, TimeUnit
 from daft.exceptions import DaftCoreException
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
+from tests.utils import random_numerical_embedding
 
 daft_int_types = [
     DataType.int8(),
@@ -359,7 +361,7 @@ def test_series_cast_python_to_list(dtype) -> None:
         (1, 2),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.list(DataType.from_arrow_type(dtype))
 
@@ -388,7 +390,7 @@ def test_series_cast_python_to_fixed_size_list(dtype) -> None:
         (1, 2, 3),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.fixed_size_list(DataType.from_arrow_type(dtype), 3)
 
@@ -417,7 +419,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
         (1, 2, 3),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.embedding(DataType.from_arrow_type(dtype), 3)
 
@@ -464,7 +466,7 @@ def test_series_cast_numpy_to_image() -> None:
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -486,7 +488,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
         np.arange(4, 31, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image()
 
@@ -527,7 +529,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -549,7 +551,7 @@ def test_series_cast_numpy_to_tensor() -> None:
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.tensor(DataType.uint8())
 
@@ -570,7 +572,7 @@ def test_series_cast_numpy_to_fixed_shape_tensor() -> None:
         np.arange(4, 8, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.tensor(DataType.uint8(), shape)
 
@@ -596,7 +598,7 @@ def test_series_cast_image_to_fixed_shape_image() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -621,7 +623,7 @@ def test_series_cast_image_to_tensor() -> None:
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -650,7 +652,7 @@ def test_series_cast_image_to_fixed_shape_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -678,7 +680,7 @@ def test_series_cast_fixed_shape_image_to_image() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -706,7 +708,7 @@ def test_series_cast_fixed_shape_image_to_fixed_shape_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -734,7 +736,7 @@ def test_series_cast_fixed_shape_image_to_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -763,7 +765,7 @@ def test_series_cast_fixed_shape_tensor_to_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.tensor(DataType.uint8(), shape)
 
@@ -785,6 +787,76 @@ def test_series_cast_fixed_shape_tensor_to_tensor() -> None:
 ### Embedding ###
 
 
+@pytest.mark.parametrize(
+    ["dtype", "size"],
+    [
+        (np.float32, 1024),
+        (np.float64, 512),
+        (np.int8, 2048),
+        (np.int16, 512),
+        (np.int32, 256),
+        (np.int64, 128),
+        (np.uint8, 2048),
+        (np.uint16, 512),
+        (np.uint32, 256),
+        (np.uint64, 128),
+    ],
+)
+def test_series_cast_fixed_shape_list_to_embedding(dtype: np.dtype, size: int):
+    daft_dtype = DataType.from_numpy_dtype(dtype)
+    make_array = partial(random_numerical_embedding, np.random.default_rng(), dtype, size)
+
+    data = [make_array() for _ in range(5)]
+    s = Series.from_pylist(data, dtype=DataType.fixed_size_list(daft_dtype, size))
+
+    target_dtype = DataType.embedding(daft_dtype, size)
+    t = s.cast(target_dtype)
+    assert len(t) == len(s)
+    assert t.datatype() == target_dtype, f"Expecting {target_dtype} but cast resulted in {t.datatype()}"
+    for i, (s_lst, t_arr) in enumerate(zip(s, t)):
+        assert len(s_lst) == len(t_arr)
+        assert len(s_lst) == size
+        assert isinstance(s_lst, list)
+        assert isinstance(t_arr, np.ndarray)
+        assert t_arr.shape == (size,)
+        assert (np.array(s_lst) == t_arr).all()
+
+
+@pytest.mark.parametrize(
+    ["dtype", "size"],
+    [
+        (np.float32, 1024),
+        (np.float64, 512),
+        (np.int8, 2048),
+        (np.int16, 512),
+        (np.int32, 256),
+        (np.int64, 128),
+        (np.uint8, 2048),
+        (np.uint16, 512),
+        (np.uint32, 256),
+        (np.uint64, 128),
+    ],
+)
+def test_series_cast_embedding_to_fixed_shape_list(dtype: np.dtype, size: int):
+    daft_dtype = DataType.from_numpy_dtype(dtype)
+    make_array = partial(random_numerical_embedding, np.random.default_rng(), dtype, size)
+
+    data = [make_array() for _ in range(5)]
+    s = Series.from_pylist(data, dtype=DataType.embedding(daft_dtype, size))
+
+    target_dtype = DataType.fixed_size_list(daft_dtype, size)
+    t = s.cast(target_dtype)
+    assert len(t) == len(s)
+    assert t.datatype() == target_dtype, f"Expecting {target_dtype} but cast resulted in {t.datatype()}"
+    for i, (s_arr, t_lst) in enumerate(zip(s, t)):
+        assert len(s_arr) == len(t_lst)
+        assert len(t_lst) == size
+        assert isinstance(s_arr, np.ndarray)
+        assert isinstance(t_lst, list)
+        assert s_arr.shape == (size,)
+        assert (np.array(t_lst) == s_arr).all()
+
+
 def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
     shape = (4,)
     data = [
@@ -792,7 +864,7 @@ def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
         np.arange(4, 8, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.embedding(DataType.uint8(), 4)
 
@@ -819,7 +891,7 @@ def test_series_cast_embedding_to_tensor() -> None:
         np.arange(4, 8, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.embedding(DataType.uint8(), 4)
 

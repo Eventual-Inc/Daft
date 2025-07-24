@@ -11,7 +11,7 @@ use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler};
+use super::{default::DefaultScheduler, linear::LinearScheduler, PendingTask, Scheduler};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
@@ -29,8 +29,8 @@ use crate::{
     },
 };
 
-pub(crate) type SchedulerSender<T> = UnboundedSender<SchedulableTask<T>>;
-pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<SchedulableTask<T>>;
+pub(crate) type SchedulerSender<T> = UnboundedSender<PendingTask<T>>;
+pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<PendingTask<T>>;
 
 const SCHEDULER_LOG_TARGET: &str = "DaftFlotillaScheduler";
 const SCHEDULER_TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -90,7 +90,7 @@ where
     }
 
     fn handle_new_tasks(
-        maybe_new_task: Option<SchedulableTask<W::Task>>,
+        maybe_new_task: Option<PendingTask<W::Task>>,
         task_rx: &mut SchedulerReceiver<W::Task>,
         statistics_manager: &StatisticsManagerRef,
         scheduler: &mut S,
@@ -111,7 +111,7 @@ where
             // Register statistics for all tasks
             for task in &enqueueable_tasks {
                 let task_context = task.task_context();
-                statistics_manager.handle_event(StatisticsEvent::SubmittedTask {
+                statistics_manager.handle_event(StatisticsEvent::TaskSubmitted {
                     context: task_context,
                     name: task.task.task_name().clone(),
                 })?;
@@ -148,7 +148,7 @@ where
             scheduler.update_worker_state(&worker_snapshots);
 
             // 1: Get all tasks that are ready to be scheduled
-            let scheduled_tasks = scheduler.get_schedulable_tasks();
+            let scheduled_tasks = scheduler.schedule_tasks();
             // 2: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
@@ -157,7 +157,7 @@ where
                 // Report to statistics manager
                 for task in &scheduled_tasks {
                     let task_context = task.task().task_context();
-                    statistics_manager.handle_event(StatisticsEvent::ScheduledTask {
+                    statistics_manager.handle_event(StatisticsEvent::TaskScheduled {
                         context: task_context,
                     })?;
                 }
@@ -168,7 +168,7 @@ where
             // 3: Send autoscaling request if needed
             let autoscaling_request = scheduler.get_autoscaling_request();
             if let Some(request) = autoscaling_request {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = request, "Sending autoscaling request");
+                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
                 worker_manager.try_autoscale(request)?;
             }
 
@@ -238,19 +238,19 @@ impl<T: Task> SchedulerHandle<T> {
 
     pub fn prepare_task_for_submission(
         submittable_task: SubmittableTask<T>,
-    ) -> (SchedulableTask<T>, SubmittedTask) {
+    ) -> (PendingTask<T>, SubmittedTask) {
         let task_id = submittable_task.task.task_id();
-
-        let schedulable_task = SchedulableTask::new(
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let schedulable_task = PendingTask::new(
             submittable_task.task,
-            submittable_task.result_tx,
+            result_tx,
             submittable_task.cancel_token.clone(),
         );
         let submitted_task = SubmittedTask::new(
             task_id,
-            submittable_task.result_rx,
+            result_rx,
             Some(submittable_task.cancel_token),
-            submittable_task.notify_token,
+            submittable_task.notify_tokens,
         );
 
         (schedulable_task, submitted_task)
@@ -269,22 +269,17 @@ impl<T: Task> SchedulerHandle<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
-    result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: CancellationToken,
-    notify_token: Option<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<()>>,
 }
 
 impl<T: Task> SubmittableTask<T> {
     pub fn new(task: T) -> Self {
-        let (result_tx, result_rx) = create_oneshot_channel();
         let cancel_token = CancellationToken::new();
         Self {
             task,
-            result_tx,
-            result_rx,
             cancel_token,
-            notify_token: None,
+            notify_tokens: vec![],
         }
     }
 
@@ -292,9 +287,9 @@ impl<T: Task> SubmittableTask<T> {
         &self.task
     }
 
-    pub fn with_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
+    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
         let (notify_token, notify_rx) = create_oneshot_channel();
-        self.notify_token = Some(notify_token);
+        self.notify_tokens.push(notify_token);
         (self, notify_rx)
     }
 
@@ -311,24 +306,24 @@ impl<T: Task> SubmittableTask<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
     _task_id: TaskID,
-    result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
+    result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
-    notify_token: Option<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<()>>,
     finished: bool,
 }
 
 impl SubmittedTask {
     fn new(
         task_id: TaskID,
-        result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
+        result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
-        notify_token: Option<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<()>>,
     ) -> Self {
         Self {
             _task_id: task_id,
             result_rx,
             cancel_token,
-            notify_token,
+            notify_tokens,
             finished: false,
         }
     }
@@ -340,24 +335,24 @@ impl SubmittedTask {
 }
 
 impl Future for SubmittedTask {
-    type Output = DaftResult<Vec<MaterializedOutput>>;
+    type Output = DaftResult<Option<MaterializedOutput>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
-                if let Some(notify_token) = self.notify_token.take() {
+                for notify_token in self.notify_tokens.drain(..) {
                     let _ = notify_token.send(());
                 }
                 Poll::Ready(result)
             }
-            // If the receiver is dropped, return no results
+            // If the sender is dropped (i.e. the task is cancelled), return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
-                if let Some(notify_token) = self.notify_token.take() {
+                for notify_token in self.notify_tokens.drain(..) {
                     let _ = notify_token.send(());
                 }
-                Poll::Ready(Ok(vec![]))
+                Poll::Ready(Ok(None))
             }
             Poll::Pending => Poll::Pending,
         }
@@ -435,7 +430,10 @@ mod tests {
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
 
         let result = submitted_task.await?;
-        assert!(Arc::ptr_eq(&result[0].partition(), &partition_ref));
+        assert!(Arc::ptr_eq(
+            &result.unwrap().partitions()[0],
+            &partition_ref
+        ));
 
         test_context.cleanup().await?;
         Ok(())
@@ -463,7 +461,7 @@ mod tests {
         let mut counter = 0;
         for submitted_task in submitted_tasks {
             let result = submitted_task.await?;
-            let partition = result[0].partition();
+            let partition = result.unwrap().partitions()[0].clone();
             assert_eq!(partition.num_rows().unwrap(), 100 + counter);
             assert_eq!(partition.size_bytes().unwrap(), Some(1024 + 1));
             counter += 1;
@@ -518,7 +516,7 @@ mod tests {
         drop(submitted_task_tx);
         while let Some((submitted_task, num_rows, num_bytes)) = submitted_task_rx.recv().await {
             let result = submitted_task.await?;
-            let partition = result[0].partition();
+            let partition = result.unwrap().partitions()[0].clone();
             assert_eq!(partition.num_rows().unwrap(), num_rows);
             assert_eq!(partition.size_bytes().unwrap(), Some(num_bytes));
         }
@@ -614,7 +612,7 @@ mod tests {
                 cancel_receiver.await.unwrap();
             } else {
                 let result = submitted_task.await?;
-                let partition = result[0].partition();
+                let partition = result.unwrap().partitions()[0].clone();
                 assert_eq!(partition.num_rows().unwrap(), num_rows);
                 assert_eq!(partition.size_bytes().unwrap(), Some(num_bytes));
             }
@@ -673,7 +671,7 @@ mod tests {
         let submittable_task = SubmittableTask::new(task);
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         let result = submitted_task.await?;
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.unwrap().partitions().len(), 1);
 
         test_context.cleanup().await?;
         Ok(())

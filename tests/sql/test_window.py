@@ -14,7 +14,9 @@ from daft.sql.sql import SQLCatalog
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+    get_tests_daft_runner_name() == "ray",
+    # and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    reason="requires Native Runner to be in use",
 )
 
 

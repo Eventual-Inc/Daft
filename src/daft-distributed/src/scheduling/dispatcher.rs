@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 
 use super::{
-    scheduler::{SchedulableTask, ScheduledTask},
+    scheduler::{PendingTask, ScheduledTask},
     task::{Task, TaskResultAwaiter, TaskStatus},
     worker::{Worker, WorkerManager},
 };
@@ -73,7 +73,7 @@ impl<W: Worker> Dispatcher<W> {
         &mut self,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         statistics_manager: &StatisticsManagerRef,
-    ) -> DaftResult<Vec<SchedulableTask<W::Task>>> {
+    ) -> DaftResult<Vec<PendingTask<W::Task>>> {
         let mut failed_tasks = Vec::new();
         let mut task_results = Vec::new();
 
@@ -110,7 +110,7 @@ impl<W: Worker> Dispatcher<W> {
                     Ok(task_status) => match task_status {
                         // Task completed successfully, send the result to the result_tx
                         TaskStatus::Success { result } => {
-                            if result_tx.send(Ok(result)).is_err() {
+                            if result_tx.send(Ok(Some(result))).is_err() {
                                 tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send result of task to result_tx", task_context = ?task.task_context());
                             }
                         }
@@ -125,12 +125,12 @@ impl<W: Worker> Dispatcher<W> {
                         // Task worker died, add the task to the failed tasks, and mark the worker as dead
                         TaskStatus::WorkerDied => {
                             worker_manager.mark_worker_died(worker_id);
-                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            let schedulable_task = PendingTask::new(task, result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                         // Task worker unavailable, add the task to the failed tasks
                         TaskStatus::WorkerUnavailable => {
-                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            let schedulable_task = PendingTask::new(task, result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                     },
@@ -228,7 +228,7 @@ mod tests {
         assert!(failed_tasks.is_empty());
 
         let result = submitted_task.await?;
-        let partition = result[0].partition();
+        let partition = result.unwrap().partitions()[0].clone();
         assert!(Arc::ptr_eq(&partition, &partition_ref));
 
         Ok(())
@@ -271,7 +271,7 @@ mod tests {
         // Verify results
         for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
             let result = submitted_task.await?;
-            let partition = result[0].partition();
+            let partition = result.unwrap().partitions()[0].clone();
             assert_eq!(partition.num_rows().unwrap(), 100 + i);
             assert_eq!(partition.size_bytes().unwrap(), Some(1024 * (i + 1)));
         }

@@ -83,7 +83,7 @@ def test_series_pyobj_strict_arrow_err() -> None:
 def test_series_pyobj_explicit_roundtrip() -> None:
     objects = [0, 1.1, "foo"]
 
-    s = Series.from_pylist(objects, pyobj="force")
+    s = Series.from_pylist(objects, dtype=DataType.python())
 
     result = s.to_pylist()
 
