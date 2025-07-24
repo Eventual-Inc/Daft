@@ -89,7 +89,7 @@ def gen_index():
     template = env.get_template("functions.md.j2")
     content = template.render(categories=categories, category_titles=CATEGORY_TITLES)
 
-    with mkdocs_gen_files.open("api/functions2/index.md", "w") as f:
+    with mkdocs_gen_files.open("api/functions/index.md", "w") as f:
         f.write(content)
 
 
@@ -97,7 +97,7 @@ def gen_function_page(fn: griffe.Function):
     template = env.get_template("function_page.md.j2")
     content = template.render(fn=fn)
 
-    with mkdocs_gen_files.open(f"api/functions2/{fn.name}.md", "w") as f:
+    with mkdocs_gen_files.open(f"api/functions/{fn.name}.md", "w") as f:
         f.write(content)
 
 
@@ -108,7 +108,7 @@ def gen_nav_summary():
     for fn_name in module.exports:
         nav[fn_name] = f"{fn_name}.md"
 
-    with mkdocs_gen_files.open("api/functions2/SUMMARY.md", "w") as f:
+    with mkdocs_gen_files.open("api/functions/SUMMARY.md", "w") as f:
         f.writelines(nav.build_literate_nav())
 
 
