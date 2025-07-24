@@ -59,9 +59,6 @@ def assert_tables_equal(daft_recordbatch, pa_table):
         ["str_col"],
         ["int_col"],
         ["date_col"],
-        # TODO(desmond): pyarrow does not conform to RFC 3339, so their timestamp format differs
-        # from ours. Specifically, their timestamps are output as `%Y-%m-%d %H:%M:%S%.f%:z` but we
-        # parse ours as %Y-%m-%dT%H:%M:%S%.f%:z.
         ["timestamp_col"],
         ["nullable_str"],
         ["nullable_int"],
