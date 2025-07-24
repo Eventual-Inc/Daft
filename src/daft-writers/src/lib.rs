@@ -2,6 +2,7 @@ mod batch;
 mod file;
 mod ipc;
 mod json_writer;
+mod lance_writer;
 mod parquet_writer;
 mod partition;
 mod physical;
