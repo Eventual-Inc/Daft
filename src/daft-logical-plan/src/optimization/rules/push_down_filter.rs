@@ -91,6 +91,10 @@ impl PushDownFilter {
                         if matches!(external_info.scan_state, ScanState::Tasks(_)) {
                             return Ok(Transformed::no(plan));
                         }
+                        // if datasource scan can't support pushdown, we don't pushdown the filter.
+                        if !external_info.scan_state.get_scan_op().0.can_absorb_filter() {
+                            return Ok(Transformed::no(plan));
+                        }
                         let predicate = &filter.predicate;
                         let new_predicate = external_info
                             .pushdowns
