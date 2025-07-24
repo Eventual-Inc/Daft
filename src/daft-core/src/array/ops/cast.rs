@@ -2690,4 +2690,32 @@ mod tests {
             scale,
         );
     }
+
+    #[test]
+    fn cast_fsl_into_embedding() {
+        let fsl = FixedSizeListArray::new(
+            Arc::new(Field::new(
+                "item",
+                DataType::FixedSizeList(Box::new(DataType::Int64), 0),
+            )),
+            Series::empty("item", &DataType::Int64),
+            None,
+        );
+
+        assert!(
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Int64), 0))
+                .is_ok(),
+            "Expected to be able to cast FixedSizeList into Embedding of same datatype & size."
+        );
+        assert!(
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Int64), 1))
+                .is_err(),
+            "Not expected to be able to cast FixedSizeList into Embedding with different size."
+        );
+
+        assert!(
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0)).is_err(),
+            "Not expected to be able to cast FixedSizeList into Embedding with different element type."
+        );
+    }
 }
