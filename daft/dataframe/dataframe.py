@@ -1470,6 +1470,7 @@ class DataFrame:
         self,
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
+        use_native_writer: bool = False,
         io_config: Optional[IOConfig] = None,
         schema: Optional[Schema] = None,
         **kwargs: Any,
@@ -1531,6 +1532,46 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        if use_native_writer:
+            io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+            # cols: Optional[list[Expression]] = None
+            # if partition_cols is not None:
+            #     cols = self.__column_input_to_expression(tuple(partition_cols))
+
+            builder = self._builder.write_tabular(
+                root_dir=uri,
+                partition_cols=None,  # FIXME by zhenchao add partition_cols?
+                write_mode=WriteMode.Overwrite,  # FIXME by zhenchao lance write mode
+                file_format=FileFormat.Lance,
+                compression=None,  # FIXME by zhenchao add compression?
+                io_config=io_config,
+            )
+            # Block and write, then retrieve data
+            write_df = DataFrame(builder)
+            write_df.collect()
+            assert write_df._result is not None
+
+            if len(write_df) > 0:
+                # Populate and return a new disconnected DataFrame
+                result_df = DataFrame(write_df._builder)
+                result_df._result_cache = write_df._result_cache
+                result_df._preview = write_df._preview
+                return result_df
+            else:
+                from daft import from_pydict
+                from daft.recordbatch.recordbatch_io import write_empty_tabular
+
+                file_path = write_empty_tabular(
+                    uri, FileFormat.Parquet, self.schema(), compression=None, io_config=io_config
+                )
+
+                return from_pydict(
+                    {
+                        "path": [file_path],
+                    }
+                )
+
         from daft.io.lance.lance_data_sink import LanceDataSink
 
         if schema is None:
@@ -1687,10 +1728,13 @@ class DataFrame:
 
         @overload
         def __getitem__(self, item: int) -> Expression: ...
+
         @overload
         def __getitem__(self, item: str) -> Expression: ...
+
         @overload
         def __getitem__(self, item: slice) -> "DataFrame": ...
+
         @overload
         def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
 
@@ -4619,10 +4663,13 @@ class GroupedDataFrame:
 
         @overload
         def __getitem__(self, item: int) -> Expression: ...
+
         @overload
         def __getitem__(self, item: str) -> Expression: ...
+
         @overload
         def __getitem__(self, item: slice) -> DataFrame: ...
+
         @overload
         def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
 

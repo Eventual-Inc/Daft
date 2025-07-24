@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::mermaid::MermaidDisplayOptions;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 #[cfg(feature = "python")]
 use common_file_formats::WriteMode;
@@ -17,8 +17,8 @@ use daft_physical_plan::{
     ops::{
         ActorPoolProject, Aggregate, BroadcastJoin, Concat, Dedup, EmptyScan, Explode, Filter,
         HashJoin, InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
-        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, TopN,
-        Unpivot,
+        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteLance,
+        TabularWriteParquet, TopN, Unpivot,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -996,6 +996,10 @@ fn physical_plan_to_partition_tasks(
             partition_cols.as_ref(),
             io_config.as_ref(),
         ),
+        PhysicalPlan::TabularWriteLance(TabularWriteLance { .. }) => {
+            // TODO add impl by zhenchao
+            Err(DaftError::not_implemented("not impl physical_plan_to_partition_tasks").into())
+        }
         #[cfg(feature = "python")]
         PhysicalPlan::IcebergWrite(IcebergWrite {
             schema: _,

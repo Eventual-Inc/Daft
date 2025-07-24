@@ -47,12 +47,12 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     };
                     let left_child = left_child.with_context(left_on.clone());
                     let right_child = right_child.with_context(right_on.clone());
-                    return Ok(Transformed::no(c.with_new_children(vec![left_child, right_child])?))
+                    return Ok(Transformed::no(c.with_new_children(vec![left_child, right_child])?));
                 }
                 // for other joins, hash partitioning doesn't matter
                 PhysicalPlan::BroadcastJoin(..) |
                 PhysicalPlan::SortMergeJoin(..) => return Ok(Transformed::no(c)),
-                _ => {},
+                _ => {}
             }
 
             // check clustering spec for compatibility
@@ -114,7 +114,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                         values: values.clone(),
                         value_name: value_name.clone(),
                         variable_name: variable_name.clone(),
-                        clustering_spec: new_spec.into()
+                        clustering_spec: new_spec.into(),
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
@@ -126,24 +126,24 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { .. }}) => {
+                PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy: ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { .. } }) => {
                     let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
                         input: input.clone(),
-                        strategy: ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec: new_spec.into() }
+                        strategy: ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec: new_spec.into() },
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { pre_shuffle_merge_threshold,.. }}) => {
+                PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy: ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { pre_shuffle_merge_threshold, .. } }) => {
                     let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
                         input: input.clone(),
-                        strategy: ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec: new_spec.into(), pre_shuffle_merge_threshold: *pre_shuffle_merge_threshold }
+                        strategy: ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec: new_spec.into(), pre_shuffle_merge_threshold: *pre_shuffle_merge_threshold },
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::FlightShuffle { shuffle_dirs, .. }}) => {
+                PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy: ShuffleExchangeStrategy::FlightShuffle { shuffle_dirs, .. } }) => {
                     let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
                         input: input.clone(),
-                        strategy: ShuffleExchangeStrategy::FlightShuffle { target_spec: new_spec.into(), shuffle_dirs: shuffle_dirs.clone() }
+                        strategy: ShuffleExchangeStrategy::FlightShuffle { target_spec: new_spec.into(), shuffle_dirs: shuffle_dirs.clone() },
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
@@ -157,10 +157,11 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::Pivot(..) |
                 PhysicalPlan::TabularWriteCsv(..) |
                 PhysicalPlan::TabularWriteJson(..) |
-                PhysicalPlan::TabularWriteParquet(..) => Ok(Transformed::no(c.propagate())),
+                PhysicalPlan::TabularWriteParquet(..) |
+                PhysicalPlan::TabularWriteLance(..) => Ok(Transformed::no(c.propagate())),
 
                 // the rest should have been dealt with earlier
-                PhysicalPlan::ShuffleExchange(ShuffleExchange {strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum { .. }, ..}) |
+                PhysicalPlan::ShuffleExchange(ShuffleExchange { strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum { .. }, .. }) |
                 PhysicalPlan::Sort(..) |
                 PhysicalPlan::TopN(..) |
                 PhysicalPlan::InMemoryScan(..) |
