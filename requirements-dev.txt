@@ -104,6 +104,10 @@ mkdocstrings-python
 ruff==0.8.2
 mkdocs-minify-plugin
 mkdocs-redirects
+mkdocs-gen-files
+griffe
+mkdocs-literate-nav
+Jinja2
 
 # Daft connect testing
 pyspark==3.5.3
