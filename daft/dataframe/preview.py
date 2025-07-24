@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
     from daft.recordbatch import MicroPartition
+    from daft.recordbatch.recordbatch import RecordBatch
 
 
 @dataclass(frozen=True)
@@ -145,3 +146,24 @@ class PreviewFormatter:
                 return self._preview.partition.to_record_batch()._recordbatch.__repr__()
         else:
             return self._schema._truncated_table_string()
+
+
+def _generate_interactive_html(rb: RecordBatch) -> str:
+    """Generate interactive HTML for a RecordBatch using the dashboard server.
+
+    Args:
+        rb: The RecordBatch to generate interactive HTML for.
+
+    Returns:
+        str: HTML string for interactive display.
+    """
+    from daft.daft import dashboard as dashboard_native
+    from daft.dashboard import launch
+
+    # Ensure the server is running (no-op if already running)
+    launch(noop_if_initialized=True)
+
+    # Register the partition with the display server and generate HTML
+    df_id = dashboard_native.register_dataframe_for_display(rb._recordbatch)
+    html = dashboard_native.generate_interactive_html(df_id)
+    return html

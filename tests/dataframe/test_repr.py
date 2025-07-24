@@ -171,9 +171,9 @@ def test_alias_repr(make_df):
 <table class="dataframe">
 <thead><tr><th {TH_STYLE}>A2<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
 <tbody>
-<tr><td><div {TD_STYLE}>1</div></td><td><div {TD_STYLE}>a</div></td></tr>
-<tr><td><div {TD_STYLE}>2</div></td><td><div {TD_STYLE}>b</div></td></tr>
-<tr><td><div {TD_STYLE}>3</div></td><td><div {TD_STYLE}>c</div></td></tr>
+<tr><td data-row="0" data-col="0"><div {TD_STYLE}>1</div></td><td data-row="0" data-col="1"><div {TD_STYLE}>a</div></td></tr>
+<tr><td data-row="1" data-col="0"><div {TD_STYLE}>2</div></td><td data-row="1" data-col="1"><div {TD_STYLE}>b</div></td></tr>
+<tr><td data-row="2" data-col="0"><div {TD_STYLE}>3</div></td><td data-row="2" data-col="1"><div {TD_STYLE}>c</div></td></tr>
 </tbody>
 </table>
 <small>(Showing first 3 of 3 rows)</small>
@@ -206,9 +206,9 @@ def test_repr_with_unicode(make_df, data_source):
 <table class="dataframe">
 <thead><tr><th {TH_STYLE}>🔥<br />Int64</th><th {TH_STYLE}>🦁<br />Utf8</th></tr></thead>
 <tbody>
-<tr><td><div {TD_STYLE}>1</div></td><td><div {TD_STYLE}>{string_array[0]}</div></td></tr>
-<tr><td><div {TD_STYLE}>2</div></td><td><div {TD_STYLE}>{string_array[1]}</div></td></tr>
-<tr><td><div {TD_STYLE}>3</div></td><td><div {TD_STYLE}>{string_array[2]}</div></td></tr>
+<tr><td data-row="0" data-col="0"><div {TD_STYLE}>1</div></td><td data-row="0" data-col="1"><div {TD_STYLE}>{string_array[0]}</div></td></tr>
+<tr><td data-row="1" data-col="0"><div {TD_STYLE}>2</div></td><td data-row="1" data-col="1"><div {TD_STYLE}>{string_array[1]}</div></td></tr>
+<tr><td data-row="2" data-col="0"><div {TD_STYLE}>3</div></td><td data-row="2" data-col="1"><div {TD_STYLE}>{string_array[2]}</div></td></tr>
 </tbody>
 </table>
 <small>(Showing first 3 of 3 rows)</small>
@@ -239,7 +239,10 @@ def test_repr_with_html_string():
     html_table = df._repr_html_()
     for i in range(3):
         assert f"<div>body{i}</div>" in non_html_table
-        assert f"<tr><td><div {TD_STYLE}>&lt;div&gt;body{i}&lt;/div&gt;</div></td></tr>" in html_table
+        assert (
+            f'<tr><td data-row="{i}" data-col="0"><div {TD_STYLE}>&lt;div&gt;body{i}&lt;/div&gt;</div></td></tr>'
+            in html_table
+        )
 
 
 class MyObj:
@@ -291,7 +294,10 @@ def test_repr_html_custom_hooks():
     assert '<img style="max-height:128px;width:auto" src="data:image/png;base64,' in html_repr
 
     # Assert that numpy array viz hook correctly triggers in html repr
-    assert f"<td><div {TD_STYLE}>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</div></td><td>" in html_repr
+    assert (
+        f'<td data-row="0" data-col="1"><div {TD_STYLE}>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</div></td><td data-row="0" data-col="2">'
+        in html_repr
+    )
 
 
 def test_repr_empty_struct():
@@ -333,3 +339,61 @@ def test_repr_empty_struct():
 (Showing first 2 of 2 rows)"""
 
     assert ANSI_ESCAPE.sub("", str(df)) == expected_repr
+
+
+def test_interactive_html_with_record_batch():
+    """Test interactive HTML generation with a RecordBatch directly."""
+    from daft.dataframe.preview import _generate_interactive_html
+
+    # Create a DataFrame and get its RecordBatch
+    df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+    df.collect()
+    record_batch = df._result.get_partition(0).partition().to_record_batch()
+
+    # Generate interactive HTML
+    html = _generate_interactive_html(record_batch)
+
+    # Test that the HTML contains the expected structure
+    assert "<div>" in html
+    assert '<table class="dataframe interactive-dataframe">' in html
+    assert "<thead>" in html
+    assert "<tbody>" in html
+    assert "</table>" in html
+    assert "</div>" in html
+
+    # Test that it contains the modal structure
+    assert "cell-modal" in html
+    assert "modal-overlay" in html
+    assert "modal-content" in html
+    assert "modal-header" in html
+    assert "modal-body" in html
+
+    # Test that it contains JavaScript for interactivity
+    assert "showModal" in html
+    assert "hideModal" in html
+    assert "onclick" in html
+    assert "fetch(" in html
+
+    # Test that it contains CSS styles
+    assert "cursor: pointer" in html
+    assert "position: fixed" in html
+    assert "z-index: 1000" in html
+
+    # Test that the data attributes are present for cell identification
+    assert "data-row=" in html
+    assert "data-col=" in html
+
+    # Test that the server URL is embedded in the JavaScript
+    assert "127.0.0.1:3238" in html
+
+    # Test that the table contains the expected data
+    assert "A" in html
+    assert "B" in html
+    assert "Int64" in html
+    assert "Utf8" in html
+    assert "1" in html
+    assert "2" in html
+    assert "3" in html
+    assert "a" in html
+    assert "b" in html
+    assert "c" in html
