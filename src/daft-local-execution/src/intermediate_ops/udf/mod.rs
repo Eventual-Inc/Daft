@@ -1,8 +1,18 @@
-use std::{sync::Arc, time::Duration, vec};
+mod logging;
+
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+    vec,
+};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
+use console::style;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -20,6 +30,7 @@ use daft_dsl::{
 use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
+use logging::with_py_thread_logger;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use tracing::{instrument, Span};
@@ -33,9 +44,16 @@ use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
 const NUM_TEST_ITERATIONS: usize = 10;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
 
-struct UdfHandle {
+/// Common parameters for UDF handle and operator
+struct UdfParams {
     udf_expr: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
+    name: String,
+}
+
+struct UdfHandle {
+    params: Arc<UdfParams>,
+    worker_idx: usize,
     // Optional PyObject handle to external UDF worker.
     // Required for ActorPoolUDFs
     // Optional for stateless UDFs
@@ -50,10 +68,10 @@ struct UdfHandle {
 }
 
 impl UdfHandle {
-    fn no_handle(udf_expr: &BoundExpr, passthrough_columns: &[BoundExpr]) -> Self {
+    fn no_handle(params: Arc<UdfParams>, worker_idx: usize) -> Self {
         Self {
-            udf_expr: udf_expr.clone(),
-            passthrough_columns: passthrough_columns.to_vec(),
+            params,
+            worker_idx,
             #[cfg(feature = "python")]
             inner: None,
             total_runtime: Duration::from_secs(0),
@@ -65,13 +83,15 @@ impl UdfHandle {
     fn create_handle(&mut self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
-            let py_expr = PyExpr::from(self.udf_expr.as_ref().clone());
+            let py_expr = PyExpr::from(self.params.udf_expr.as_ref().clone());
             let passthrough_exprs = self
+                .params
                 .passthrough_columns
                 .iter()
                 .map(|expr| PyExpr::from(expr.as_ref().clone()))
                 .collect::<Vec<_>>();
-            self.inner = Some(Python::with_gil(|py| {
+
+            let inner = Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
                     py.import(pyo3::intern!(py, "daft.execution.udf"))?
@@ -79,7 +99,24 @@ impl UdfHandle {
                         .call1((py_expr, passthrough_exprs))?
                         .unbind(),
                 )
-            })?);
+            })?;
+
+            Python::with_gil(|py| {
+                let log_lines = inner
+                    .bind(py)
+                    .call_method0(pyo3::intern!(py, "trace_output"))?
+                    .extract::<Vec<String>>()?;
+                let label = style(format!(
+                    "[`{}` Worker #{}]",
+                    self.params.name, self.worker_idx
+                ))
+                .green();
+                for line in log_lines {
+                    log::error!(target: "PYTHON", "{} {}", label, line);
+                }
+                Ok::<(), PyErr>(())
+            })?;
+            self.inner = Some(inner);
         }
 
         #[cfg(not(feature = "python"))]
@@ -96,22 +133,31 @@ impl UdfHandle {
         input: Arc<MicroPartition>,
         inner: &PyObject,
     ) -> DaftResult<Arc<MicroPartition>> {
-        Python::with_gil(|py| {
-            Ok(inner
+        let (micropartition, outs) = Python::with_gil(|py| {
+            inner
                 .bind(py)
                 .call_method1(
                     pyo3::intern!(py, "eval_input"),
                     (PyMicroPartition::from(input),),
                 )?
-                .extract::<PyMicroPartition>()?
-                .into())
-        })
+                .extract::<(PyMicroPartition, Vec<String>)>()
+        })?;
+
+        let label = style(format!(
+            "[`{}` Worker #{}]",
+            self.params.name, self.worker_idx
+        ))
+        .green();
+        for line in outs {
+            log::error!(target: "PYTHON", "{} {}", label, line);
+        }
+        Ok(micropartition.into())
     }
 
     #[cfg(feature = "python")]
     fn eval_input_inline(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         // Extract the udf_expr into a PythonUDF and optional name
-        let inner_expr = self.udf_expr.inner();
+        let inner_expr = self.params.udf_expr.inner();
         let (inner_expr, out_name) = inner_expr.unwrap_alias();
         let Expr::Function {
             func: FunctionExpr::Python(func),
@@ -135,10 +181,12 @@ impl UdfHandle {
             // Get the functions inputs
             let func_input = batch.eval_expression_list(input_exprs.as_slice())?;
             // Call the UDF, getting the GIL contention time and total runtime
-            let start_time = Instant::now();
-            let (mut result, gil_contention_time) = func.call_udf(func_input.columns())?;
-            let end_time = Instant::now();
-            let total_runtime = end_time - start_time;
+            let (total_runtime, gil_contention_time, mut result) = with_py_thread_logger(|| {
+                let start_time = Instant::now();
+                let (result, gil_contention_time) = func.call_udf(func_input.columns())?;
+                let end_time = Instant::now();
+                Ok((end_time - start_time, gil_contention_time, result))
+            })?;
 
             // Rename if necessary
             if let Some(out_name) = out_name.as_ref() {
@@ -151,7 +199,7 @@ impl UdfHandle {
             self.num_batches += 1;
 
             let passthrough_input =
-                batch.eval_expression_list(self.passthrough_columns.as_slice())?;
+                batch.eval_expression_list(self.params.passthrough_columns.as_slice())?;
             let series = passthrough_input.append_column(result)?;
             out_batches.push(series);
         }
@@ -234,8 +282,8 @@ impl IntermediateOpState for UdfState {
 }
 
 pub struct UdfOperator {
-    project: BoundExpr,
-    passthrough_columns: Vec<BoundExpr>,
+    params: Arc<UdfParams>,
+    worker_count: AtomicUsize,
     is_actor_pool_udf: bool,
     concurrency: usize,
     batch_size: Option<usize>,
@@ -270,8 +318,12 @@ impl UdfOperator {
             .unwrap_or(0);
 
         Ok(Self {
-            project,
-            passthrough_columns,
+            params: Arc::new(UdfParams {
+                udf_expr: project,
+                passthrough_columns,
+                name: get_udf_name(&project_unbound),
+            }),
+            worker_count: AtomicUsize::new(0),
             is_actor_pool_udf,
             concurrency,
             batch_size,
@@ -334,7 +386,7 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn name(&self) -> Arc<str> {
-        let full_name = get_udf_name(self.project.inner());
+        let full_name = get_udf_name(self.params.udf_expr.inner());
 
         let udf_name = if let Some((_, udf_name)) = full_name.rsplit_once('.') {
             udf_name
@@ -350,15 +402,15 @@ impl IntermediateOperator for UdfOperator {
         res.push("UDF Executor:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_name(self.project.inner()),
-            self.project
+            get_udf_name(self.params.udf_expr.inner()),
+            self.params.udf_expr
         ));
         res.push(format!(
             "Passthrough Columns = [{}]",
-            self.passthrough_columns.iter().join(", ")
+            self.params.passthrough_columns.iter().join(", ")
         ));
         res.push(format!("Concurrency = {:?}", self.concurrency));
-        if let Some(resource_request) = get_resource_request(&[self.project.clone()]) {
+        if let Some(resource_request) = get_resource_request(&[self.params.udf_expr.clone()]) {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
@@ -371,8 +423,8 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the udf
-        let mut udf_handle = UdfHandle::no_handle(&self.project, &self.passthrough_columns);
+        let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
+        let mut udf_handle = UdfHandle::no_handle(self.params.clone(), worker_count);
         if self.is_actor_pool_udf || self.run_on_separate_process.unwrap_or(false) {
             udf_handle.create_handle()?;
         }

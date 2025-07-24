@@ -62,7 +62,10 @@ class UdfHandle:
                 "daft.execution.udf_worker",
                 self.socket_path,
                 secret.hex(),
-            ]
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env={"PYTHONUNBUFFERED": "1"},
         )
 
         # Initialize communication
@@ -75,8 +78,24 @@ class UdfHandle:
         )
         expr_projection_bytes = pickle.dumps(expr_projection)
         self.handle_conn.send(("__ENTER__", expr_projection_bytes))
+        # print("sent expr projection", file=sys.stderr)
+        response = self.handle_conn.recv()
+        # print("received response", response, file=sys.stderr)
+        if response != "ready":
+            print("bad response", response, file=sys.stderr)
+            raise RuntimeError(f"Expected 'ready' but got {response}")
+        # print("good to go", file=sys.stderr)
 
-    def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
+    def trace_output(self) -> str:
+        lines = []
+        while True:
+            line = self.process.stdout.readline()
+            if line == b"" or line == b"DAFTDAFTDAFTDAFT\n" or self.process.poll() is not None:
+                break
+            lines.append(line.decode().rstrip())
+        return lines
+
+    def eval_input(self, input: PyMicroPartition) -> tuple[PyMicroPartition, str]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
@@ -85,18 +104,21 @@ class UdfHandle:
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
+        outs = self.trace_output()
         if response[0] == "udf_error":
             base_exc: Exception = pickle.loads(response[3])
             if sys.version_info >= (3, 11):
                 base_exc.add_note("\n".join(response[2].format()))
+            print(outs)
             raise UDFException(response[1]) from base_exc
         elif response[0] == "error":
+            print(outs)
             raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
         elif response[0] == "success":
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = MicroPartition.from_ipc_stream(output_bytes)
-            return deserialized._micropartition
+            return (deserialized._micropartition, outs)
         else:
             raise RuntimeError(f"Unknown response from actor: {response}")
 

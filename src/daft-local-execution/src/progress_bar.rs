@@ -1,15 +1,17 @@
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
 
 use common_error::DaftResult;
+use common_logging::GLOBAL_LOGGER;
 use indexmap::IndexMap;
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
+use log::Log;
 
 use crate::runtime_stats::RuntimeStatsContext;
 
@@ -144,20 +146,61 @@ impl ProgressBar for IndicatifProgressBar {
     }
 }
 
+struct IndicatifLogger<L: Log> {
+    pbar: indicatif::MultiProgress,
+    inner: L,
+}
+
+impl<L: Log> IndicatifLogger<L> {
+    fn new(pbar: indicatif::MultiProgress, inner: L) -> Self {
+        Self { pbar, inner }
+    }
+}
+
+impl<L: Log> Log for IndicatifLogger<L> {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        self.inner.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record) {
+        // Redirecting Python output from user-defined code
+        if record.target() == "PYTHON" {
+            self.pbar.println(format!("{}", record.args())).unwrap();
+        }
+        // Regular Logging
+        else if self.inner.enabled(record.metadata()) {
+            self.pbar.suspend(|| self.inner.log(record));
+        }
+    }
+
+    fn flush(&self) {
+        self.inner.flush()
+    }
+}
+
 #[derive(Debug)]
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
+    // Additional reference is required to prevent finished bars to be overwritten by prints.
+    // TODO: Drop the mutex
+    inner_pbars: Mutex<Vec<indicatif::ProgressBar>>,
     total: usize,
 }
 
 impl IndicatifProgressBarManager {
     fn new(total: usize) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
+        GLOBAL_LOGGER.set_inner_logger(Box::new(IndicatifLogger::new(
+            multi_progress.clone(),
+            GLOBAL_LOGGER.get_inner(),
+        )));
+
         multi_progress.set_move_cursor(true);
         multi_progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
 
         Self {
             multi_progress,
+            inner_pbars: Mutex::new(vec![]),
             total,
         }
     }
@@ -195,6 +238,11 @@ impl ProgressBarManager for IndicatifProgressBarManager {
             )
             .with_prefix(formatted_prefix);
         self.multi_progress.insert(0, pb.clone());
+        {
+            let mut inner_pbars = self.inner_pbars.lock().unwrap();
+            inner_pbars.push(pb.clone());
+        }
+
         DaftResult::Ok(Box::new(IndicatifProgressBar {
             progress_bar: pb,
             started: AtomicBool::new(false),
@@ -203,6 +251,7 @@ impl ProgressBarManager for IndicatifProgressBarManager {
 
     fn close_all(&self) -> DaftResult<()> {
         self.multi_progress.clear()?;
+        self.inner_pbars.lock().unwrap().clear();
         Ok(())
     }
 }

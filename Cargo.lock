@@ -1833,6 +1833,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-logging"
+version = "0.3.0-dev0"
+dependencies = [
+ "arc-swap",
+ "log",
+]
+
+[[package]]
 name = "common-macros"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2267,6 +2275,7 @@ dependencies = [
  "common-display",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-logging",
  "common-partitioning",
  "common-resource-request",
  "common-runtime",
@@ -2847,11 +2856,13 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-logging",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",
  "common-system-info",
  "common-tracing",
+ "console",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -2871,6 +2882,7 @@ dependencies = [
  "futures",
  "indexmap 2.9.0",
  "indicatif",
+ "indicatif-log-bridge",
  "itertools 0.14.0",
  "kanal",
  "log",
@@ -4676,6 +4688,16 @@ dependencies = [
  "portable-atomic",
  "unicode-width 0.2.1",
  "web-time",
+]
+
+[[package]]
+name = "indicatif-log-bridge"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63703cf9069b85dbe6fe26e1c5230d013dee99d3559cd3d02ba39e099ef7ab02"
+dependencies = [
+ "indicatif",
+ "log",
 ]
 
 [[package]]
