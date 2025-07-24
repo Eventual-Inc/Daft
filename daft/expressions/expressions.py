@@ -1593,7 +1593,7 @@ class Expression:
             kwargs["seed"] = seed
         if hash_function is not None:
             kwargs["hash_function"] = hash_function
-        return self._eval_expressions("hash_with", **kwargs)
+        return self._eval_expressions("hash", **kwargs)
 
     def minhash(
         self,
