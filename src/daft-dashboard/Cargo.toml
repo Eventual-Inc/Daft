@@ -14,8 +14,7 @@ tokio.workspace = true
 uuid.workspace = true
 
 [features]
-default = ["python"]
-python = ["dep:pyo3"]
+python = ["dep:pyo3", "daft-recordbatch/python"]
 
 [lints]
 workspace = true

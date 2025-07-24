@@ -922,15 +922,18 @@ impl RecordBatch {
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 
-        let mut res = "<table class=\"dataframe\">\n".to_string();
+        let num_columns = self.columns.len();
+
+        // Pure CSS approach: use viewport units and calc() for dynamic sizing
+        let table_style = "table-layout: fixed; min-width: 100%";
+
+        let mut res = format!("<table class=\"dataframe\" style=\"{}\">\n", table_style);
 
         // Begin the header.
         res.push_str("<thead><tr>");
 
         for field in self.schema.as_ref() {
-            res.push_str(
-                "<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
-            );
+            res.push_str(&format!("<th style=\"text-wrap: nowrap; width: calc(100vw / {}); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left\">", num_columns));
             res.push_str(&html_escape::encode_text(&field.name));
             res.push_str("<br />");
             res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
@@ -955,8 +958,8 @@ impl RecordBatch {
 
             for (col_idx, col) in self.columns.iter().enumerate() {
                 res.push_str(&format!(
-                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">",
-                    i, col_idx
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto\">",
+                    i, col_idx, num_columns
                 ));
                 res.push_str(&html_value(col, i, true));
                 res.push_str("</div></td>");
@@ -983,8 +986,8 @@ impl RecordBatch {
 
             for (col_idx, col) in self.columns.iter().enumerate() {
                 res.push_str(&format!(
-                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">",
-                    i, col_idx
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto\">",
+                    i, col_idx, num_columns
                 ));
                 res.push_str(&html_value(col, i, true));
                 res.push_str("</div></td>");
