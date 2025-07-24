@@ -4,7 +4,6 @@ import pytest
 
 import daft
 from daft import col
-from tests.conftest import get_tests_daft_runner_name
 
 
 @pytest.fixture(scope="session")
@@ -68,10 +67,6 @@ def test_limit_with_sort(tmp_data):
     assert df3.to_pydict() == {"name": [f"user_{i}" for i in range(0, 3)]}
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_negative_offset(tmp_data):
     df = daft.read_parquet(path=tmp_data)
 
@@ -80,10 +75,6 @@ def test_negative_offset(tmp_data):
     assert "OFFSET <n> must be greater than or equal to 0, instead got: -1" in str(excinfo.value)
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_offset(tmp_data):
     df = daft.read_parquet(path=tmp_data)
 
@@ -106,10 +97,6 @@ def test_offset(tmp_data):
     assert 0 == df5.count_rows()
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_limit_offset(tmp_data):
     df = daft.read_parquet(path=tmp_data)
 
@@ -141,10 +128,6 @@ def test_limit_offset(tmp_data):
     assert 3 == df6.count_rows()
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_offset_limit(tmp_data):
     df = daft.read_parquet(path=tmp_data)
 
@@ -186,10 +169,6 @@ def test_offset_limit(tmp_data):
     assert 3 == df6.count_rows()
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_limit_offset_with_sort(tmp_data):
     df = daft.read_parquet(path=tmp_data)
 
@@ -236,10 +215,6 @@ def test_limit_offset_with_sort(tmp_data):
     assert df6.to_pydict() == {"name": [f"user_{i}" for i in range(507, 504, -1)]}
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_offset_limit_with_sort(tmp_data):
     df = daft.read_parquet(path=tmp_data)
 
