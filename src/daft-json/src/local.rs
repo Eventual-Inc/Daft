@@ -36,6 +36,12 @@ pub fn read_json_local(
     let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
 
     let bytes = &mmap[..];
+    if bytes.is_empty() {
+        return Err(super::Error::JsonDeserializationError {
+            string: "Invalid JSON format - file is empty".to_string(),
+        }
+        .into());
+    }
     if bytes[0] == b'[' {
         let schema = infer_schema(bytes, None, None)?;
 
@@ -109,6 +115,7 @@ pub fn read_json_array_impl(
                             string: "Expected JSON object".to_string(),
                         })?;
                     }
+                    num_rows += 1;
                 }
             }
             Value::Object(record) => {
@@ -124,6 +131,7 @@ pub fn read_json_array_impl(
                         }
                     }
                 }
+                num_rows += 1;
             }
             _ => {
                 return Err(super::Error::JsonDeserializationError {
@@ -132,8 +140,6 @@ pub fn read_json_array_impl(
                 .into());
             }
         }
-
-        num_rows += 1;
     }
     let columns = columns
         .into_values()
