@@ -4,6 +4,7 @@ mod response;
 
 use std::{collections::HashMap, io::Cursor, net::Ipv4Addr, sync::Arc};
 
+use daft_recordbatch::RecordBatch;
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
     body::{Bytes, Incoming},
@@ -59,14 +60,6 @@ struct QueryInformation {
     run_id: Option<StrRef>,
 }
 
-// DataFrame display structures
-#[derive(Debug, Clone)]
-struct DataFrameInfo {
-    #[allow(dead_code)]
-    id: String,
-    record_batch: daft_recordbatch::RecordBatch,
-}
-
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct CellRequest {
@@ -85,14 +78,14 @@ struct CellResponse {
 #[derive(Clone, Debug)]
 struct DashboardState {
     queries: Arc<RwLock<Vec<QueryInformation>>>,
-    dataframes: Arc<RwLock<HashMap<String, DataFrameInfo>>>,
+    dataframe_previews: Arc<RwLock<HashMap<String, RecordBatch>>>,
 }
 
 impl DashboardState {
     fn new() -> Self {
         Self {
             queries: Arc::default(),
-            dataframes: Arc::default(),
+            dataframe_previews: Arc::default(),
         }
     }
 
@@ -106,18 +99,16 @@ impl DashboardState {
         self.queries.write().push(query_information);
     }
 
-    fn register_dataframe(&self, record_batch: daft_recordbatch::RecordBatch) -> String {
+    fn register_dataframe_preview(&self, record_batch: RecordBatch) -> String {
         let id = Uuid::new_v4().to_string();
-        let info = DataFrameInfo {
-            id: id.clone(),
-            record_batch,
-        };
-        self.dataframes.write().insert(id.clone(), info);
+        self.dataframe_previews
+            .write()
+            .insert(id.clone(), record_batch);
         id
     }
 
-    fn get_dataframe(&self, id: &str) -> Option<DataFrameInfo> {
-        self.dataframes.read().get(id).cloned()
+    fn get_dataframe_preview(&self, id: &str) -> Option<RecordBatch> {
+        self.dataframe_previews.read().get(id).cloned()
     }
 }
 
@@ -169,21 +160,24 @@ async fn serve_cell_content(
             )
         })?;
 
-    let dataframe = state.get_dataframe(dataframe_id).ok_or_else(|| {
+    let record_batch = state.get_dataframe_preview(dataframe_id).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            anyhow::anyhow!("DataFrame not found"),
+            anyhow::anyhow!(
+                "DataFrame preview not found for dataframe id: {}",
+                dataframe_id
+            ),
         )
     })?;
 
-    if row >= dataframe.record_batch.len() || col >= dataframe.record_batch.num_columns() {
+    if row >= record_batch.len() || col >= record_batch.num_columns() {
         return Err((
             StatusCode::BAD_REQUEST,
             anyhow::anyhow!("Row or column index out of bounds"),
         ));
     }
 
-    let column = dataframe.record_batch.get_column(col);
+    let column = record_batch.get_column(col);
     let cell_html = daft_recordbatch::html_value(column, row, false);
 
     let response = CellResponse {
@@ -196,15 +190,15 @@ async fn serve_cell_content(
 }
 
 fn generate_interactive_html(
-    data_frame: &DataFrameInfo,
+    record_batch: &RecordBatch,
     df_id: &str,
     host: &str,
     port: u16,
 ) -> String {
     // Start with the basic table HTML from repr_html
-    let table_html = data_frame.record_batch.repr_html();
+    let table_html = record_batch.repr_html();
     // Build the complete interactive HTML
-    let mut html = vec!["<div>".to_string()];
+    let mut html = vec!["<div style=\"position: relative;\">".to_string()];
 
     // Add modal HTML structure
     html.push(
@@ -233,26 +227,6 @@ fn generate_interactive_html(
     html.push(format!(
         r#"
         <style>
-        .dataframe {{
-            border-collapse: collapse;
-        }}
-        .dataframe td {{
-            cursor: pointer;
-            position: relative;
-            transition: background-color 0.2s;
-        }}
-
-
-        .dataframe td.loading {{
-            background-color: #e3f2fd;
-            opacity: 0.7;
-        }}
-        .cell-content {{
-            max-width: 192px;
-            max-height: 64px;
-            overflow: auto;
-        }}
-
         /* Modal styles */
         .modal {{
             position: fixed;
@@ -344,6 +318,7 @@ fn generate_interactive_html(
         #modal-content-area {{
             word-wrap: break-word;
             overflow-wrap: break-word;
+            color: #000000;
         }}
 
         /* Hide scrollbars for webkit browsers while keeping scroll functionality */

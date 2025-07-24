@@ -48,15 +48,15 @@ pub fn register_dataframe_for_display(
     record_batch: daft_recordbatch::python::PyRecordBatch,
 ) -> PyResult<String> {
     let state = get_global_state();
-    let df_id = state.register_dataframe(record_batch.record_batch);
+    let df_id = state.register_dataframe_preview(record_batch.record_batch);
     Ok(df_id)
 }
 
 #[pyfunction]
 pub fn generate_interactive_html(df_id: String) -> PyResult<String> {
-    let data_frame = get_global_state().get_dataframe(&df_id);
+    let record_batch = get_global_state().get_dataframe_preview(&df_id);
     let html = super::generate_interactive_html(
-        data_frame.as_ref().unwrap(),
+        record_batch.as_ref().unwrap(),
         &df_id,
         &super::SERVER_ADDR.to_string(),
         super::SERVER_PORT,
