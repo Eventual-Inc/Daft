@@ -499,8 +499,15 @@ async fn read_json_single_into_stream(
     };
 
     use tokio::io::AsyncReadExt;
-    let first_byte = reader.fill_buf().await?[0];
-    match first_byte {
+    let buf = reader.fill_buf().await?;
+
+    if buf.is_empty() {
+        return Err(super::Error::JsonDeserializationError {
+            string: "Empty JSON file".to_string(),
+        }
+        .into());
+    }
+    match buf[0] {
         b'[' => {
             let schema_clone = schema.clone();
             let inner: Context<JoinHandle<Result<RecordBatch, DaftError>>, JoinSnafu, _> =

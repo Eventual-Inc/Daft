@@ -145,8 +145,15 @@ where
     let max_records = max_rows.unwrap_or(usize::MAX);
     let mut total_bytes = 0;
     use tokio::io::AsyncReadExt;
-    let first_byte = reader.fill_buf().await?[0];
-    match first_byte {
+    let buf = reader.fill_buf().await?;
+
+    if buf.is_empty() {
+        return Err(super::Error::JsonDeserializationError {
+            string: "Empty JSON file".to_string(),
+        }
+        .into());
+    }
+    match buf[0] {
         b'[' => {
             let mut buf = Vec::new();
             reader.read_to_end(&mut buf).await?;
@@ -209,7 +216,10 @@ where
             let fields = column_types_map_to_fields(column_types);
             Ok(fields.into())
         }
-        _ => panic!("Invalid JSON format"),
+        _ => Err(super::Error::JsonDeserializationError {
+            string: "Invalid JSON format - file must start with '[' or '{'".to_string(),
+        }
+        .into()),
     }
 }
 
