@@ -213,20 +213,114 @@ fn generate_interactive_html(
 ) -> String {
     // Start with the basic table HTML from repr_html
     let table_html = record_batch.repr_html();
-    // Build the complete interactive HTML
-    let mut html = vec!["<div>".to_string()];
+    // Build the complete interactive HTML with side pane layout
+    let mut html = vec![r#"
+        <style>
+        .dashboard-container {
+            display: flex;
+            gap: 20px;
+            max-width: 100%;
+            height: 100%;
+        }
+        .table-container {
+            flex: 1;
+            overflow: auto;
+        }
+        .side-pane {
+            width: 30vw;
+            max-width: 500px;
+            min-height: 300px;
+            max-height: 80vh;
+            border: 1px solid;
+            border-radius: 4px;
+            padding: 15px;
+            display: none;
+            overflow: auto;
+        }
+        .side-pane.visible {
+            display: block;
+        }
+        .side-pane-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid;
+        }
+        .side-pane-title {
+            font-weight: bold;
+        }
+        .close-button {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .side-pane-content {
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        .dataframe td.clickable {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .dataframe td.clickable:hover {
+            background-color: rgba(0, 0, 0, 0.1);
+        }
+        .dataframe td.clickable.selected {
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+        </style>
+        <div class="dashboard-container">
+            <div class="table-container">
+        "#
+    .to_string()];
 
-    // Add the table HTML
-    html.push(table_html);
+    // Add the table HTML with ID
+    html.push(format!(
+        r#"<div id="dataframe-{}">{}</div>"#,
+        df_id, table_html
+    ));
 
-    // Add CSS and JavaScript for in-place expansion
+    // Add the side pane
+    html.push(format!(
+        r#"
+            </div>
+            <div class="side-pane" id="side-pane-{}">
+                <div class="side-pane-header">
+                    <div class="side-pane-title" id="side-pane-title-{}">Cell Details</div>
+                    <button class="close-button" id="close-button-{}">×</button>
+                </div>
+                <div class="side-pane-content" id="side-pane-content-{}">
+                    <p style="font-style: italic;">Click on a cell to view its full content</p>
+                </div>
+            </div>
+        </div>
+    "#,
+        df_id, df_id, df_id, df_id
+    ));
+
+    // Add JavaScript for side pane functionality
     html.push(format!(
         r#"
         <script>
         (function() {{
             const serverUrl = 'http://{}:{}';
             const dfId = '{}';
-            const cells = document.querySelectorAll('.dataframe td');
+            const dataframeElement = document.getElementById('dataframe-' + dfId);
+            const cells = dataframeElement ? dataframeElement.querySelectorAll('td') : [];
+            const sidePane = document.getElementById('side-pane-' + dfId);
+            const sidePaneTitle = document.getElementById('side-pane-title-' + dfId);
+            const sidePaneContent = document.getElementById('side-pane-content-' + dfId);
+            const closeButton = document.getElementById('close-button-' + dfId);
+            let selectedCell = null;
 
             // Function to check if the server is available
             async function isServerAvailable() {{
@@ -238,11 +332,40 @@ fn generate_interactive_html(
                 }}
             }}
 
+            function closeSidePane(paneId) {{
+                const pane = document.getElementById('side-pane-' + paneId);
+                if (pane) {{
+                    pane.classList.remove('visible');
+                    if (selectedCell) {{
+                        selectedCell.classList.remove('selected');
+                        selectedCell = null;
+                    }}
+                }}
+            }}
+
+            function showSidePane(title, content) {{
+                sidePaneTitle.textContent = title;
+                sidePaneContent.innerHTML = content;
+                sidePane.classList.add('visible');
+            }}
+
+            function showLoadingContent() {{
+                sidePaneContent.innerHTML = '<div style="text-align:center; padding:20px;"><span style="font-style:italic">Loading full content...</span></div>';
+            }}
+
             isServerAvailable().then((available) => {{
                 if (!available) {{
-                    // Server is unavailable, do not attach any handlers or modify cells
+                    // Server is unavailable, do not attach any handlers
                     return;
                 }}
+
+                // Add event listener for close button
+                if (closeButton) {{
+                    closeButton.addEventListener('click', function() {{
+                        closeSidePane(dfId);
+                    }});
+                }}
+
                 cells.forEach((cell) => {{
                     // Skip cells that do not have data-row and data-col attributes (e.g., ellipsis row)
                     const rowAttr = cell.getAttribute('data-row');
@@ -251,52 +374,40 @@ fn generate_interactive_html(
 
                     const row = parseInt(rowAttr);
                     const col = parseInt(colAttr);
-                    let expanded = false;
-                    let originalContent = null;
+                    cell.classList.add('clickable');
 
                     cell.onclick = function() {{
-                        if (!expanded) {{
-                            originalContent = cell.innerHTML;
-
-                            // Start the fetch immediately
-                            const fetchPromise = fetch(`${{serverUrl}}/api/dataframes/${{dfId}}/cell?row=${{row}}&col=${{col}}`);
-
-                            // Show loading message after a short delay (only if fetch is still pending)
-                            const loadingTimeout = setTimeout(() => {{
-                                if (!expanded) {{
-                                    cell.innerHTML = '<div style="text-align:left"><span style="color:#888;font-style:italic">Loading full content...</span></div>';
-                                }}
-                            }}, 100); // 100ms delay before showing loading message
-
-                            (async () => {{
-                                try {{
-                                    const response = await fetchPromise;
-                                    const data = await response.json();
-
-                                    // Clear the timeout since we got the response
-                                    clearTimeout(loadingTimeout);
-
-                                    cell.innerHTML = '<div style="max-width:500px; max-height:500px; overflow:auto; word-wrap:break-word; text-align:left;">' + data.value + '</div>';
-                                    expanded = true;
-                                }} catch (err) {{
-                                    // Clear the timeout on error
-                                    clearTimeout(loadingTimeout);
-
-                                    // On error, restore the original content
-                                    cell.innerHTML = originalContent;
-                                    expanded = false;
-                                }}
-                            }})();
-                            cell.title = 'Click to collapse';
-                        }} else {{
-                            cell.innerHTML = originalContent;
-                            expanded = false;
-                            cell.title = 'Click to view full content';
-                            originalContent = null;
+                        // Remove selection from previously selected cell
+                        if (selectedCell && selectedCell !== cell) {{
+                            selectedCell.classList.remove('selected');
                         }}
+
+                        // Toggle selection for current cell
+                        if (selectedCell === cell) {{
+                            cell.classList.remove('selected');
+                            selectedCell = null;
+                            closeSidePane(dfId);
+                            return;
+                        }} else {{
+                            cell.classList.add('selected');
+                            selectedCell = cell;
+                        }}
+
+                        // Show the side pane immediately
+                        showSidePane('Cell [' + row + ', ' + col + ']', '');
+                        showLoadingContent();
+
+                        // Fetch the cell content
+                        fetch(serverUrl + '/api/dataframes/' + dfId + '/cell?row=' + row + '&col=' + col)
+                            .then(response => response.json())
+                            .then(data => {{
+                                const content = '<div style="max-width:100%; overflow:auto;">' + data.value + '</div>';
+                                showSidePane('Cell [' + row + ', ' + col + '] (' + data.data_type + ')', content);
+                            }})
+                            .catch(err => {{
+                                showSidePane('Cell [' + row + ', ' + col + ']', '<div style="color:red;">Error loading content</div>');
+                            }});
                     }};
-                    cell.title = 'Click to view full content';
-                    cell.style.cursor = 'pointer';
                 }});
             }});
         }})();
@@ -304,8 +415,6 @@ fn generate_interactive_html(
         "#,
         host, port, df_id
     ));
-
-    html.push("</div>".to_string()); // Close the wrapper div
 
     html.join("")
 }
