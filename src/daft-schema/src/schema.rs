@@ -391,6 +391,23 @@ impl Schema {
         }))
         .to_string()
     }
+
+    pub fn min_estimated_size_column(&self) -> Option<&str> {
+        self.fields
+            .iter()
+            .filter_map(|field| {
+                field
+                    .dtype
+                    .estimate_size_bytes()
+                    .map(|size| (size, field.name.as_str()))
+            })
+            .min_by(|(size_a, _), (size_b, _)| {
+                size_a
+                    .partial_cmp(size_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(_, name)| name)
+    }
 }
 
 impl Default for Schema {
