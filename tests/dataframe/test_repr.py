@@ -8,7 +8,15 @@ import pytest
 from PIL import Image
 
 import daft
-from tests.utils import ANSI_ESCAPE, TD_STYLE, TH_STYLE
+from tests.utils import ANSI_ESCAPE
+
+# Updated styles to match the new HTML structure
+TD_STYLE = 'style="text-align:left; width: calc(100vw / 2); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto"'
+TH_STYLE = 'style="text-wrap: nowrap; width: calc(100vw / 2); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left"'
+
+# Old styles for unmaterialized dataframes (schema-only display)
+OLD_TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:auto"'
+OLD_TH_STYLE = 'style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left"'
 
 ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
@@ -105,7 +113,7 @@ def test_empty_df_repr(make_df):
         df._repr_html_()
         == f"""<div>
 <table class="dataframe">
-<thead><tr><th {TH_STYLE}>A<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {OLD_TH_STYLE}>A<br />Int64</th><th {OLD_TH_STYLE}>B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -126,7 +134,7 @@ def test_empty_df_repr(make_df):
     assert (
         df._repr_html_()
         == f"""<div>
-<table class="dataframe">
+<table class="dataframe" style="table-layout: fixed; min-width: 100%">
 <thead><tr><th {TH_STYLE}>A<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
 <tbody>
 </tbody>
@@ -146,7 +154,7 @@ def test_alias_repr(make_df):
         df._repr_html_()
         == f"""<div>
 <table class="dataframe">
-<thead><tr><th {TH_STYLE}>A2<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {OLD_TH_STYLE}>A2<br />Int64</th><th {OLD_TH_STYLE}>B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -168,7 +176,7 @@ def test_alias_repr(make_df):
     assert (
         df._repr_html_()
         == f"""<div>
-<table class="dataframe">
+<table class="dataframe" style="table-layout: fixed; min-width: 100%">
 <thead><tr><th {TH_STYLE}>A2<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
 <tbody>
 <tr><td data-row="0" data-col="0"><div {TD_STYLE}>1</div></td><td data-row="0" data-col="1"><div {TD_STYLE}>a</div></td></tr>
@@ -196,19 +204,22 @@ def test_repr_with_unicode(make_df, data_source):
     }
 
     string_array = ["🔥a", "b🔥", "🦁🔥" * 60]  # we dont truncate for html
+    # For 2 columns, use calc(100vw / 2)
+    th_style_2col = 'style="text-wrap: nowrap; width: calc(100vw / 2); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left"'
+    td_style_2col = 'style="text-align:left; width: calc(100vw / 2); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto"'
     expected_html_unmaterialized = f"""<div>
 <table class="dataframe">
-<thead><tr><th {TH_STYLE}>🔥<br />Int64</th><th {TH_STYLE}>🦁<br />Utf8</th></tr></thead>
+<thead><tr><th {OLD_TH_STYLE}>🔥<br />Int64</th><th {OLD_TH_STYLE}>🦁<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
     expected_html_materialized = f"""<div>
-<table class="dataframe">
-<thead><tr><th {TH_STYLE}>🔥<br />Int64</th><th {TH_STYLE}>🦁<br />Utf8</th></tr></thead>
+<table class="dataframe" style="table-layout: fixed; min-width: 100%">
+<thead><tr><th {th_style_2col}>🔥<br />Int64</th><th {th_style_2col}>🦁<br />Utf8</th></tr></thead>
 <tbody>
-<tr><td data-row="0" data-col="0"><div {TD_STYLE}>1</div></td><td data-row="0" data-col="1"><div {TD_STYLE}>{string_array[0]}</div></td></tr>
-<tr><td data-row="1" data-col="0"><div {TD_STYLE}>2</div></td><td data-row="1" data-col="1"><div {TD_STYLE}>{string_array[1]}</div></td></tr>
-<tr><td data-row="2" data-col="0"><div {TD_STYLE}>3</div></td><td data-row="2" data-col="1"><div {TD_STYLE}>{string_array[2]}</div></td></tr>
+<tr><td data-row="0" data-col="0"><div {td_style_2col}>1</div></td><td data-row="0" data-col="1"><div {td_style_2col}>{string_array[0]}</div></td></tr>
+<tr><td data-row="1" data-col="0"><div {td_style_2col}>2</div></td><td data-row="1" data-col="1"><div {td_style_2col}>{string_array[1]}</div></td></tr>
+<tr><td data-row="2" data-col="0"><div {td_style_2col}>3</div></td><td data-row="2" data-col="1"><div {td_style_2col}>{string_array[2]}</div></td></tr>
 </tbody>
 </table>
 <small>(Showing first 3 of 3 rows)</small>
@@ -239,8 +250,10 @@ def test_repr_with_html_string():
     html_table = df._repr_html_()
     for i in range(3):
         assert f"<div>body{i}</div>" in non_html_table
+        # For 1 column, use calc(100vw / 1)
+        td_style_1col = 'style="text-align:left; width: calc(100vw / 1); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto"'
         assert (
-            f'<tr><td data-row="{i}" data-col="0"><div {TD_STYLE}>&lt;div&gt;body{i}&lt;/div&gt;</div></td></tr>'
+            f'<tr><td data-row="{i}" data-col="0"><div {td_style_1col}>&lt;div&gt;body{i}&lt;/div&gt;</div></td></tr>'
             in html_table
         )
 
@@ -294,8 +307,10 @@ def test_repr_html_custom_hooks():
     assert '<img style="max-height:128px;width:auto" src="data:image/png;base64,' in html_repr
 
     # Assert that numpy array viz hook correctly triggers in html repr
+    # For 3 columns, use calc(100vw / 3)
+    td_style_3col = 'style="text-align:left; width: calc(100vw / 3); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto"'
     assert (
-        f'<td data-row="0" data-col="1"><div {TD_STYLE}>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</div></td><td data-row="0" data-col="2">'
+        f'<td data-row="0" data-col="1"><div {td_style_3col}>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</div></td><td data-row="0" data-col="2">'
         in html_repr
     )
 
@@ -343,41 +358,38 @@ def test_repr_empty_struct():
 
 def test_interactive_html_with_record_batch():
     """Test interactive HTML generation with a RecordBatch directly."""
-    from daft.dataframe.preview import _generate_interactive_html
+    from daft.dataframe.preview import PreviewFormatter
 
     # Create a DataFrame and get its RecordBatch
     df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df.collect()
-    record_batch = df._result.get_partition(0).partition().to_record_batch()
 
-    # Generate interactive HTML
-    html = _generate_interactive_html(record_batch)
+    # Create a PreviewFormatter and generate interactive HTML
+    preview = df._preview
+    schema = df.schema()
+    formatter = PreviewFormatter(preview, schema)
+    html = formatter._generate_interactive_html()
 
     # Test that the HTML contains the expected structure
-    assert "<div>" in html
-    assert '<table class="dataframe interactive-dataframe">' in html
+    assert "<style>" in html
+    assert '<table class="dataframe" style="table-layout: fixed; min-width: 100%">' in html
     assert "<thead>" in html
     assert "<tbody>" in html
     assert "</table>" in html
-    assert "</div>" in html
 
-    # Test that it contains the modal structure
-    assert "cell-modal" in html
-    assert "modal-overlay" in html
-    assert "modal-content" in html
-    assert "modal-header" in html
-    assert "modal-body" in html
+    # Test that it contains the side pane structure
+    assert "side-pane" in html
+    assert "side-pane-header" in html
+    assert "side-pane-title" in html
 
     # Test that it contains JavaScript for interactivity
-    assert "showModal" in html
-    assert "hideModal" in html
+    assert "showSidePane" in html
     assert "onclick" in html
     assert "fetch(" in html
 
     # Test that it contains CSS styles
     assert "cursor: pointer" in html
-    assert "position: fixed" in html
-    assert "z-index: 1000" in html
+    assert "display: flex" in html
 
     # Test that the data attributes are present for cell identification
     assert "data-row=" in html
