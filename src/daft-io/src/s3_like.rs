@@ -67,7 +67,6 @@ pub struct S3LikeSource {
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
     default_region: Region,
     s3_config: S3Config,
-    anonymous: bool,
 }
 
 #[derive(Debug, Snafu)]
@@ -192,9 +191,6 @@ enum Error {
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
     UnableToParseUtf8 { path: String, source: FromUtf8Error },
-
-    #[snafu(display("Uploads cannot be anonymous. Please disable anonymous S3 access."))]
-    UploadsCannotBeAnonymous {},
 }
 
 /// List of AWS error codes that are due to throttling
@@ -640,7 +636,7 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
 }
 
 async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let (anonymous, client) = build_s3_client(config).await?;
+    let (_, client) = build_s3_client(config).await?;
     let mut client_map = HashMap::new();
     let default_region = client.config().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
@@ -652,7 +648,6 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
         )),
         s3_config: config.clone(),
         default_region,
-        anonymous,
     })
 }
 const REGION_HEADER: &str = "x-amz-bucket-region";
@@ -998,11 +993,7 @@ impl S3LikeSource {
                 request
             };
 
-            let response = if self.anonymous {
-                return Err(Error::UploadsCannotBeAnonymous {}.into());
-            } else {
-                request.send().await
-            };
+            let response = request.send().await;
 
             match response {
                 Ok(_) => Ok(()),
@@ -1017,10 +1008,6 @@ impl S3LikeSource {
         bucket: &str,
         key: &str,
     ) -> super::Result<Cow<'static, str>> {
-        if self.anonymous {
-            return Err(Error::UploadsCannotBeAnonymous {}.into());
-        }
-
         let region = &self.default_region;
 
         let _permit = self
@@ -1067,10 +1054,6 @@ impl S3LikeSource {
         upload_id: Cow<'static, str>,
         completed_parts: Vec<CompletedPart>,
     ) -> super::Result<()> {
-        if self.anonymous {
-            return Err(Error::UploadsCannotBeAnonymous {}.into());
-        }
-
         let region = &self.default_region;
 
         let _permit = self
@@ -1119,10 +1102,6 @@ impl S3LikeSource {
         part_number: NonZeroI32,
         data: bytes::Bytes,
     ) -> super::Result<UploadPartOutput> {
-        if self.anonymous {
-            return Err(Error::UploadsCannotBeAnonymous {}.into());
-        }
-
         let region = &self.default_region;
 
         let _permit = self
