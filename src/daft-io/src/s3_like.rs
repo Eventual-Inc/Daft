@@ -476,7 +476,7 @@ async fn provide_credentials_with_retry(
     Ok(creds)
 }
 
-async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
+async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let region = if let Some(region_name) = &config.region_name {
@@ -523,8 +523,6 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
             None
         }
     };
-
-    let anonymous = credentials_provider.is_none();
 
     let identity_cache = config.buffer_time.map(|buffer_time| {
         IdentityCache::lazy()
@@ -627,16 +625,16 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
 
     let s3_conf = builder.build();
 
-    Ok((anonymous, s3_conf))
+    Ok(s3_conf)
 }
 
-async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
-    let (anonymous, s3_conf) = build_s3_conf(config).await?;
-    Ok((anonymous, s3::Client::from_conf(s3_conf)))
+async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
+    let s3_conf = build_s3_conf(config).await?;
+    Ok(s3::Client::from_conf(s3_conf))
 }
 
 async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let (_, client) = build_s3_client(config).await?;
+    let client = build_s3_client(config).await?;
     let mut client_map = HashMap::new();
     let default_region = client.config().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
@@ -673,7 +671,7 @@ impl S3LikeSource {
         let mut new_config = self.s3_config.clone();
         new_config.region_name = Some(region.to_string());
 
-        let (_, new_client) = build_s3_client(&new_config).await?;
+        let new_client = build_s3_client(&new_config).await?;
 
         if w_handle.get(region).is_none() {
             w_handle.insert(region.clone(), new_client.into());
@@ -993,9 +991,7 @@ impl S3LikeSource {
                 request
             };
 
-            let response = request.send().await;
-
-            match response {
+            match request.send().await {
                 Ok(_) => Ok(()),
                 Err(err) => Err(UnableToPutFileSnafu { path: uri }.into_error(err).into()),
             }
