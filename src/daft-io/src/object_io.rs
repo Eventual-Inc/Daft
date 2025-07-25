@@ -1,4 +1,4 @@
-use std::{any::Any, ops::Range, sync::Arc, time::Duration};
+use std::{any::Any, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -18,7 +18,7 @@ use crate::{
 pub struct StreamingRetryParams {
     source: Arc<dyn ObjectSource>,
     input: String,
-    range: Option<Range<usize>>,
+    range: Option<GetRange>,
     io_stats: Option<IOStatsRef>,
 }
 
@@ -26,7 +26,7 @@ impl StreamingRetryParams {
     pub(crate) fn new(
         source: Arc<dyn ObjectSource>,
         input: String,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> Self {
         Self {
