@@ -62,4 +62,8 @@ impl IntermediateOperator for ExplodeOperator {
     fn name(&self) -> &'static str {
         "Explode"
     }
+
+    fn r#type(&self) -> crate::pipeline::NodeType {
+        "Explode"
+    }
 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import socket
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -145,6 +146,7 @@ class RaySwordfishActorHandle:
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     handles = []
+    scheduler_node_url = f"{ray.util.get_node_ip_address()}:15001"
     for node in ray.nodes():
         if (
             "Resources" in node
@@ -155,6 +157,11 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             and node["NodeID"] not in existing_worker_ids
         ):
             actor = RaySwordfishActor.options(  # type: ignore
+                runtime_env={
+                    "env_vars": {
+                        "DAFT_RPC_URL": scheduler_node_url,
+                    }
+                },
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
                     soft=False,
@@ -274,6 +281,7 @@ class RemoteFlotillaRunner:
 
     def __init__(self) -> None:
         self.core = FlotillaRunnerCore(on_actor=True)
+        os.environ["DAFT_RPC_URL"] = f"{ray.util.get_node_ip_address()}:15001"
 
     def run_plan(
         self,
@@ -320,6 +328,11 @@ class FlotillaRunner:
                     if head_node_id is not None
                     else "DEFAULT"
                 ),
+                runtime_env={
+                    "env_vars": {
+                        "DAFT_RPC_URL": f"{socket.gethostbyname(socket.gethostname())}:3839",
+                    }
+                },
             ).remote()
         else:
             self.runner = LocalFlotillaRunner()

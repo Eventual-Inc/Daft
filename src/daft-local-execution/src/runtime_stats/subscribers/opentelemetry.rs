@@ -73,4 +73,8 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
         flush_oltp_metrics_provider();
         Ok(())
     }
+
+    fn finish(self: Box<Self>) -> DaftResult<()> {
+        Ok(())
+    }
 }

@@ -1,0 +1,9 @@
+[dependencies]
+indicatif = "0.17.9"
+serde = {workspace = true}
+smallvec = {version = "1.15.1", features = ["serde"]}
+
+[package]
+edition = {workspace = true}
+name = "common-metrics"
+version = {workspace = true}

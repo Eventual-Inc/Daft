@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
+    pipeline::{NodeCategory, NodeInfo, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -98,7 +98,7 @@ impl StreamingSinkNode {
         ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name();
-        let node_info = ctx.next_node_info(name, NodeType::StreamingSink);
+        let node_info = ctx.next_node_info(name, "StreamingSink", NodeCategory::StreamingSink);
         let runtime_stats = op.make_runtime_stats();
         Self {
             op,

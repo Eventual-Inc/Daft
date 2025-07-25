@@ -9,7 +9,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeType, ExecutionTaskSpawner};
 
 struct UnpivotParams {
     ids: Vec<BoundExpr>,
@@ -83,6 +83,10 @@ impl IntermediateOperator for UnpivotOperator {
     }
 
     fn name(&self) -> &'static str {
+        "Unpivot"
+    }
+
+    fn r#type(&self) -> NodeType {
         "Unpivot"
     }
 }

@@ -11,7 +11,7 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
+    pipeline::{NodeCategory, NodeInfo, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -87,7 +87,7 @@ impl BlockingSinkNode {
         ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name();
-        let node_info = ctx.next_node_info(name, NodeType::BlockingSink);
+        let node_info = ctx.next_node_info(name, "BlockingSink", NodeCategory::BlockingSink);
         let runtime_stats = op.make_runtime_stats();
         Self {
             op,

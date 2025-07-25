@@ -32,4 +32,7 @@ impl RuntimeStatsSubscriber for DebugSubscriber {
     async fn flush(&self) -> DaftResult<()> {
         Ok(())
     }
+    fn finish(self: Box<Self>) -> DaftResult<()> {
+        Ok(())
+    }
 }

@@ -242,6 +242,11 @@ impl SwordfishTask {
         mut context: HashMap<String, String>,
     ) -> Self {
         let resource_request = TaskResourceRequest::new(plan.resource_request());
+        context.insert(
+            "logical_node_id".to_string(),
+            task_context.node_id.to_string(),
+        );
+        context.insert("stage_id".to_string(), task_context.stage_id.to_string());
         context.insert("task_id".to_string(), task_context.task_id.to_string());
 
         Self {

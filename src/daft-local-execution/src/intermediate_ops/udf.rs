@@ -364,6 +364,10 @@ impl IntermediateOperator for UdfOperator {
         "UdfOperator"
     }
 
+    fn r#type(&self) -> crate::pipeline::NodeType {
+        "UdfOperator"
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("UDF Executor:".to_string());
