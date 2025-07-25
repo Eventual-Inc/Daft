@@ -193,18 +193,26 @@ def run_udf(
 
 
 def _safe_concat_arrays(pa_arrays: list[pa.Array | pa.ChunkedArray]) -> pa.ChunkedArray:
-    chunks = []
+    if len(pa_arrays) == 0:
+        return pa.concat_arrays([])
+
     data_type = pa_arrays[0].type
+    chunks = []
+    is_chunked = False
 
     for arr in pa_arrays:
         if isinstance(arr, pa.Array):
             chunks.append(arr)
         elif isinstance(arr, pa.ChunkedArray):
+            is_chunked = True
             chunks.extend(arr.chunks)
         else:
             raise TypeError(f"Unsupported type: {type(arr)}")
 
-    return pa.chunked_array(chunks, type=data_type)
+    if is_chunked:
+        return pa.chunked_array(chunks, type=data_type)
+    else:
+        return pa.concat_arrays(chunks)
 
 
 # Marker that helps us differentiate whether a user provided the argument or not
