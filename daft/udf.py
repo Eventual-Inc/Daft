@@ -569,7 +569,7 @@ def udf(
         **Concurrency:**
 
         With the `concurrency` parameter, you can tell Daft how many instances of your UDF you want to run at the same time.
-        If `concurrency` is set with a class UDF, only that many instances of the class will be run at a time, and each instance will reused for different baches.
+        If `concurrency` is set with a class UDF, only that many instances of the class will be run at a time, and each instance will reused for different batches.
 
         This is especially useful if your UDF has a costly initialization step, for example, if you are loading a ML model into memory.
 
