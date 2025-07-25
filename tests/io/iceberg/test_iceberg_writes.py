@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
@@ -42,6 +43,26 @@ from pyiceberg.types import (
 )
 
 import daft
+
+
+@pytest.fixture(scope="function", params=[False, True], ids=["no_mock", "with_mock"])
+def patch_scan_task_file_path_scheme(request):
+    """Fixture to patch ScanTask.catalog_scan_task to use file:/ scheme."""
+    use_mock = request.param
+
+    if use_mock:
+        from daft.daft import ScanTask
+
+        original_catalog_scan_task = ScanTask.catalog_scan_task
+
+        def patched_catalog_scan_task(file: str, **kwargs):
+            normalized_file = file.replace("file:///", "file:/")
+            return original_catalog_scan_task(file=normalized_file, **kwargs)
+
+        with patch("daft.daft.ScanTask.catalog_scan_task", side_effect=patched_catalog_scan_task):
+            yield
+    else:
+        yield
 
 
 @pytest.fixture(scope="function")
@@ -229,9 +250,9 @@ def complex_table() -> tuple[pa.Table, Schema]:
             "binary": [b"foo", b"bar", b"baz"],
             "boolean": [True, False, True],
             "timestamp": [
-                datetime.datetime(2024, 2, 10),
-                datetime.datetime(2024, 2, 11),
-                datetime.datetime(2024, 2, 12),
+                datetime.datetime(2024, 2, 10, 12, 1, 40),
+                datetime.datetime(2024, 2, 11, 12, 2, 41),
+                datetime.datetime(2024, 2, 12, 12, 3, 42),
             ],
             "date": [datetime.date(2024, 2, 10), datetime.date(2024, 2, 11), datetime.date(2024, 2, 12)],
             "decimal": pa.array(
@@ -342,7 +363,7 @@ def complex_table() -> tuple[pa.Table, Schema]:
         ),
         pytest.param(
             PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=BucketTransform(2), name="timestamp")),
-            1,
+            2,
             id="datetime_bucket_partitioned",
         ),
         pytest.param(
@@ -415,7 +436,9 @@ def complex_table() -> tuple[pa.Table, Schema]:
         ),
     ],
 )
-def test_complex_table_write_read(local_catalog, complex_table, partition_spec, num_partitions):
+def test_complex_table_write_read(
+    local_catalog, complex_table, partition_spec, num_partitions, patch_scan_task_file_path_scheme
+):
     pa_table, schema = complex_table
     table = local_catalog.create_table("default.test", schema, partition_spec=partition_spec)
     df = daft.from_arrow(pa_table)
