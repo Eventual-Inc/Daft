@@ -244,6 +244,13 @@ class UDF:
 
         # construct the UninitializedUdf here so that the constructed expressions can maintain equality
         if isinstance(self.inner, type):
+            if self.concurrency is None:
+                import warnings
+
+                warnings.warn(
+                    "Class UDF was created with `concurrency=None`. Consider setting the concurrency if UDF instances can be reused."
+                )
+
             self.wrapped_inner = UninitializedUdf(self.inner)
         else:
             self.wrapped_inner = UninitializedUdf(lambda: self.inner)
@@ -558,6 +565,25 @@ def udf(
         ╰───────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
+
+        **Concurrency:**
+
+        With the `concurrency` parameter, you can tell Daft how many instances of your UDF you want to run at the same time.
+        If `concurrency` is set with a class UDF, only that many instances of the class will be run at a time, and each instance will reused for different baches.
+
+        This is especially useful if your UDF has a costly initialization step, for example, if you are loading a ML model into memory.
+
+        >>> import daft
+        >>> @daft.udf(
+        ...     return_dtype=daft.DataType.string(),
+        ...     concurrency=4,  # only create 4 instances of this UDF
+        ... )
+        ... class MLModelUDF:
+        ...     def __init__(self):
+        ...         self.model = some_slow_initialization_step()
+        ...
+        ...     def __call__(self, data):
+        ...         return self.model(data.to_pylist())
 
     """
     inferred_return_dtype = DataType._infer_type(return_dtype)
