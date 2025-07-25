@@ -228,42 +228,76 @@ fn generate_interactive_html(
             const dfId = '{}';
             const cells = document.querySelectorAll('.dataframe td');
 
-            cells.forEach((cell) => {{
-                // Skip cells that do not have data-row and data-col attributes (e.g., ellipsis row)
-                const rowAttr = cell.getAttribute('data-row');
-                const colAttr = cell.getAttribute('data-col');
-                if (rowAttr === null || colAttr === null) return;
+            // Function to check if the server is available
+            async function isServerAvailable() {{
+                try {{
+                    const response = await fetch(serverUrl + '/api/ping', {{ method: 'HEAD' }});
+                    return response.ok;
+                }} catch (e) {{
+                    return false;
+                }}
+            }}
 
-                const row = parseInt(rowAttr);
-                const col = parseInt(colAttr);
-                let expanded = false;
-                let originalContent = null;
+            isServerAvailable().then((available) => {{
+                if (!available) {{
+                    // Server is unavailable, do not attach any handlers or modify cells
+                    return;
+                }}
+                cells.forEach((cell) => {{
+                    // Skip cells that do not have data-row and data-col attributes (e.g., ellipsis row)
+                    const rowAttr = cell.getAttribute('data-row');
+                    const colAttr = cell.getAttribute('data-col');
+                    if (rowAttr === null || colAttr === null) return;
 
-                cell.onclick = function() {{
-                    if (!expanded) {{
-                        originalContent = cell.innerHTML;
-                        cell.innerHTML = '<div style="text-align:left"><span style="color:#888;font-style:italic">Loading full content...</span></div>';
-                        (async () => {{
-                            try {{
-                                const response = await fetch(`${{serverUrl}}/api/dataframes/${{dfId}}/cell?row=${{row}}&col=${{col}}`);
-                                const data = await response.json();
-                                cell.innerHTML = '<div style="max-width:500px; max-height:500px; overflow:auto; word-wrap:break-word; text-align:left;">' + data.value + '</div>';
-                                expanded = true;
-                            }} catch (err) {{
-                                cell.innerHTML = '<div style="text-align:left"><span style="color:red">Error: Server is not available</span></div>';
-                                expanded = true;
-                            }}
-                        }})();
-                        cell.title = 'Click to collapse';
-                    }} else {{
-                        cell.innerHTML = originalContent;
-                        expanded = false;
-                        cell.title = 'Click to view full content';
-                        originalContent = null;
-                    }}
-                }};
-                cell.title = 'Click to view full content';
-                cell.style.cursor = 'pointer';
+                    const row = parseInt(rowAttr);
+                    const col = parseInt(colAttr);
+                    let expanded = false;
+                    let originalContent = null;
+
+                    cell.onclick = function() {{
+                        if (!expanded) {{
+                            originalContent = cell.innerHTML;
+
+                            // Start the fetch immediately
+                            const fetchPromise = fetch(`${{serverUrl}}/api/dataframes/${{dfId}}/cell?row=${{row}}&col=${{col}}`);
+
+                            // Show loading message after a short delay (only if fetch is still pending)
+                            const loadingTimeout = setTimeout(() => {{
+                                if (!expanded) {{
+                                    cell.innerHTML = '<div style="text-align:left"><span style="color:#888;font-style:italic">Loading full content...</span></div>';
+                                }}
+                            }}, 100); // 100ms delay before showing loading message
+
+                            (async () => {{
+                                try {{
+                                    const response = await fetchPromise;
+                                    const data = await response.json();
+
+                                    // Clear the timeout since we got the response
+                                    clearTimeout(loadingTimeout);
+
+                                    cell.innerHTML = '<div style="max-width:500px; max-height:500px; overflow:auto; word-wrap:break-word; text-align:left;">' + data.value + '</div>';
+                                    expanded = true;
+                                }} catch (err) {{
+                                    // Clear the timeout on error
+                                    clearTimeout(loadingTimeout);
+
+                                    // On error, restore the original content
+                                    cell.innerHTML = originalContent;
+                                    expanded = false;
+                                }}
+                            }})();
+                            cell.title = 'Click to collapse';
+                        }} else {{
+                            cell.innerHTML = originalContent;
+                            expanded = false;
+                            cell.title = 'Click to view full content';
+                            originalContent = null;
+                        }}
+                    }};
+                    cell.title = 'Click to view full content';
+                    cell.style.cursor = 'pointer';
+                }});
             }});
         }})();
         </script>
@@ -300,6 +334,9 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
         (&Method::GET, ["api", "dataframes", dataframe_id, "cell"]) => {
             let params = parse_query_params(req.uri().query());
             serve_cell_content(dataframe_id, params, &state).await?
+        }
+        (&Method::HEAD, ["api", "ping"]) | (&Method::GET, ["api", "ping"]) => {
+            response::empty(StatusCode::OK)
         }
         (_, ["api", ..]) => response::empty(StatusCode::NOT_FOUND),
 
