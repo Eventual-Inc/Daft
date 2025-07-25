@@ -5,10 +5,10 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 8.0.0",
+  "pyarrow>=8.0.0",
   "fsspec",
   "tqdm",
-  "typing-extensions >= 4.0.0; python_version < '3.10'"
+  "typing-extensions>=4.0.0; python_version<'3.10'"
 ]
 description = "Distributed Dataframes for Multimodal Data"
 dynamic = ["version"]
@@ -20,6 +20,13 @@ maintainers = [
 name = "daft"
 readme = "README.rst"
 requires-python = ">=3.9"
+
+[project.scripts]
+daft = "daft.cli:main"
+
+[project.urls]
+homepage = "https://www.getdaft.io"
+repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
 all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity]"]
@@ -39,17 +46,94 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
-spark = ["googleapis-common-protos == 1.56.4", "grpcio >= 1.48, < 1.57", "grpcio-status >= 1.48, < 1.57", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
-sql = ["connectorx", "sqlalchemy", "sqlglot"]
-unity = ["httpx <= 0.27.2", "unitycatalog"]
+spark = [
+  "googleapis-common-protos==1.56.4",
+  "grpcio>=1.60",
+  "grpcio-status>=1.60",
+  "numpy>=1.15",
+  "pandas>=1.0.5",
+  "py4j>=0.10.9.7",
+  "pyspark==3.5.5"
+]
+sql = [
+  "connectorx==0.2.3; platform_system=='Linux' and platform_machine=='aarch64'",
+  "connectorx==0.3.3; platform_system!='Linux' or platform_machine!='aarch64'",
+  "sqlalchemy",
+  "sqlglot"
+]
+unity = ["httpx<=0.27.2", "unitycatalog"]
 viz = []
 
-[project.scripts]
-daft = "daft.cli:main"
-
-[project.urls]
-homepage = "https://www.getdaft.io"
-repository = "https://github.com/Eventual-Inc/Daft"
+[dependency-groups]
+dev = [
+  "ipdb",
+  "maturin",
+  "pre-commit",
+  "docker",
+  "pydantic==2.10.6",
+  "tenacity==8.2.3",
+  # tracing
+  "orjson==3.10.12",
+  "py-spy>=0.3.14",
+  "viztracer==0.15.6",
+  # storage
+  "databricks-sdk==0.12.0",
+  "s3fs==2023.12.0",
+  "boto3-stubs[essential,glue,s3,s3tables]>=1.39.0",
+  "moto[glue,s3,s3tables,server]>=5.1.9",
+  "adlfs==2024.7.0",
+  "azure-storage-blob==12.24.0",
+  "gcsfs==2023.12.0",
+  # sql
+  "trino[sqlalchemy]==0.328.0",
+  "PyMySQL==1.1.0",
+  "psycopg2-binary==2.9.10",
+  "pyodbc==5.1.0",
+  # ai
+  "vllm; platform_system == 'Linux' and platform_machine == 'x86_64'",
+  "openai",
+  # test frameworks
+  "hypothesis==6.79.2",
+  "pytest==7.4.3",
+  "pytest-benchmark==4.0.0",
+  "pytest-cov==4.1.0",
+  "pytest-lazy-fixture==0.6.3",
+  "memray==1.17.2; platform_system != 'Windows'",
+  "pytest-codspeed==2.2.1",
+  # test dependencies
+  "lxml==5.3.0",
+  "dask[dataframe]==2024.4.0",
+  "pandas-stubs==2.2.2.240807",
+  "xxhash>=3.0.0",
+  "Pillow==10.4.0",
+  "opencv-python==4.10.0.84",
+  "tiktoken==0.9.0",
+  "duckdb==1.1.2",
+  "pyarrow==19.0.1",
+  "pyarrow-stubs==19.4",
+  "pyiceberg==0.7.0",
+  "ray[data]==2.34.0",
+  "ray[client]==2.34.0"
+]
+docs = [
+  "markdown-exec",
+  "mkdocs-jupyter",
+  "mkdocs-material",
+  "mkdocs-macros-plugin",
+  "mkdocs-simple-hooks",
+  "pymdown-extensions",
+  "mkdocs-material[imaging]",
+  "mkdocstrings-python",
+  "mkdocs-minify-plugin",
+  "mkdocs-redirects",
+  "mkdocs-gen-files",
+  "griffe",
+  "mkdocs-literate-nav",
+  "Jinja2"
+]
+lint = [
+  "ruff==0.8.2"
+]
 
 [tool]
 
