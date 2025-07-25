@@ -3,14 +3,24 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
-from typing import Any, Callable, ForwardRef, Literal, TypeVar, Union, get_args, get_origin
+from typing import (
+    Any,
+    Callable,
+    ForwardRef,
+    Literal,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
+
+from daft.errors import UDFException
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
 else:
     from typing import ParamSpec
 
-from daft.analytics import time_df_method, time_func
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -21,9 +31,16 @@ def DataframePublicAPI(func: Callable[P, T]) -> Callable[P, T]:
 
     @functools.wraps(func)
     def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+        __tracebackhide__ = True
         type_check_function(func, *args, **kwargs)
-        timed_method = time_df_method(func)
-        return timed_method(*args, **kwargs)
+        try:
+            return func(*args, **kwargs)
+        except UDFException as e:
+            e = e.with_traceback(None)
+            raise
+        except Exception as e:
+            e = e.with_traceback(e.__traceback__.tb_next if e.__traceback__ else None)
+            raise  # If we `raise e`, it will add a new frame right here
 
     return _wrap
 
@@ -35,8 +52,14 @@ def PublicAPI(func: Callable[P, T]) -> Callable[P, T]:
     def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
         __tracebackhide__ = True
         type_check_function(func, *args, **kwargs)
-        timed_func = time_func(func)
-        return timed_func(*args, **kwargs)
+        try:
+            return func(*args, **kwargs)
+        except UDFException as e:
+            e = e.with_traceback(None)
+            raise
+        except Exception as e:
+            e = e.with_traceback(e.__traceback__.tb_next if e.__traceback__ else None)
+            raise  # If we `raise e`, it will add a new frame right here
 
     return _wrap
 

@@ -12,8 +12,8 @@ pub struct RuntimePyObject {
 }
 
 impl RuntimePyObject {
-    #[cfg(feature = "test-utils")]
-    pub fn new_testing_none() -> Self {
+    /// Creates a new 'None' python value as 'None' is used where a non-optional RuntimePyObject is expected.
+    pub fn new_none() -> Self {
         use std::sync::Arc;
 
         #[cfg(feature = "python")]

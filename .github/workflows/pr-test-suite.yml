@@ -155,10 +155,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   integration-test-build:
@@ -749,10 +749,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   benchmark-codspeed:
@@ -808,7 +808,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v3
       with:
-        run: pytest tests/benchmarks -m benchmark --codspeed
+        run: pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
@@ -886,10 +886,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   check-unused-cargo-deps:
@@ -1072,10 +1072,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
 

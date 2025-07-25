@@ -13,8 +13,14 @@ try:
 except ImportError:
     raise
 
+MAX_UDFACTOR_ACTOR_RESTARTS = 4
+MAX_UDFACTOR_ACTOR_TASK_RETRIES = 4
 
-@ray.remote
+
+@ray.remote(
+    max_restarts=MAX_UDFACTOR_ACTOR_RESTARTS,
+    max_task_retries=MAX_UDFACTOR_ACTOR_TASK_RETRIES,
+)
 class UDFActor:
     def __init__(self, uninitialized_projection: ExpressionsProjection) -> None:
         self.projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
@@ -36,6 +42,9 @@ class UDFActorHandle:
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
         return ray.get(self.actor.eval_input.remote(input))
 
+    def is_on_current_node(self) -> bool:
+        return self.node_id == ray.get_runtime_context().get_node_id()
+
     def teardown(self) -> None:
         ray.kill(self.actor)
 
@@ -44,11 +53,11 @@ def start_udf_actors(
     projection: list[PyExpr],
     num_actors: int,
     num_gpus_per_actor: float,
-    memory_per_actor: float,
     num_cpus_per_actor: float,
-) -> list[tuple[str, list[UDFActorHandle]]]:
+    memory_per_actor: float,
+) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
-    handles: dict[str, list[UDFActorHandle]] = {}
+
     actors = [
         UDFActor.options(  # type: ignore
             scheduling_strategy="SPREAD",
@@ -59,8 +68,5 @@ def start_udf_actors(
         for _ in range(num_actors)
     ]
     node_ids = ray.get([actor.get_node_id.remote() for actor in actors])
-    for actor, node_id in zip(actors, node_ids):
-        handles.setdefault(node_id, []).append(UDFActorHandle(node_id, actor))
-
-    res = [(node_id, handles) for node_id, handles in handles.items()]
-    return res
+    handles = [UDFActorHandle(node_id, actor) for actor, node_id in zip(actors, node_ids)]
+    return handles

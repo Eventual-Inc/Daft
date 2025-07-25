@@ -1,17 +1,27 @@
 # Contributing to Daft
 
+Daft is an open-source project and we welcome contributions from the community. Whether you're reporting bugs, proposing features, or contributing code, this guide will help you get started.
+
+## Quick Start
+
+- **Found a bug?** 🐛 [Report it here](#reporting-issues)
+- **Have a feature idea?** 💡 [Start a discussion](#proposing-features)
+- **Want to make your first PR?** 🚀 [Contribute new code](#contributing-code)
+
 ## Reporting Issues
 
-To report bugs and issues with Daft, please report in detail:
+To report bugs and issues with Daft, please file an issue on our [issues](https://github.com/Eventual-Inc/Daft/issues) page.
+
+Additionally, please include the following information in your bug report:
 
 1. Operating system
 2. Daft version
 3. Python version
-4. Runner that your code is using
+4. Daft runner (native or Ray)
 
 ## Proposing Features
 
-Please start a GitHub Discussion in our [Ideas channel](https://github.com/Eventual-Inc/Daft/discussions/categories/ideas). Once the feature is clarified, fleshed out and approved, the corresponding issue(s) will be created from the GitHub discussion.
+We highly encourage you to propose new features or ideas. Please start a GitHub Discussion in our [Ideas channel](https://github.com/Eventual-Inc/Daft/discussions/categories/ideas).
 
 When proposing features, please include:
 
@@ -21,23 +31,37 @@ When proposing features, please include:
 
 ## Contributing Code
 
+> **💡 Already set up?**
+>
+>  See our quick [tutorial](#adding-new-expressions) on how to add a new expression to Daft.
+
 ### Development Environment
 
 To set up your development environment:
 
 1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.12)
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
-3. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
-4. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
-5. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
+3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
+4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
+5. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
+6. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
+7. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
+8. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
 
 ### Developing
 
 1. `make build`: recompile your code after modifying any Rust code in `src/`
-2. `DAFT_RUNNER=native make test`: run tests
+2. `DAFT_RUNNER=native make test`: run tests, you can set additional run parameters through `EXTRA_ARGS`
 3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests
 4. `make docs`: build docs
 5. `make docs-serve`: build docs in development server
+6. `make format`: format all Python and Rust code
+7. `make lint`: lint all Python and Rust code
+8. `make check-format`: check that all Python and Rust code is formatted, alias `make format-check`
+9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
+10. `make build-release`: perform a full release build of Daft
+11. `make build-whl`: recompile your code after modifying any Rust code in `src/` for development, only generate `whl` file without installation
+12. `make daft-proto`: build Daft proto sources in `src/daft-proto`
 
 #### Note about Developing `daft-dashboard`
 
@@ -128,6 +152,56 @@ At this point, your debugger should stop on breakpoints in any .rs file located 
 > echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
 > ```
 
+### Testing
+
+We run test suites across Python and Rust. Python tests focus on high-level DataFrame and Expression functionality, while Rust tests validate individual kernel implementations at a lower level.
+
+#### Python tests
+
+Our python tests are located in the `tests` directory, you can run all the tests at once with `make tests`.
+
+To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest](https://docs.pytest.org/en/stable/how-to/usage.html).
+
+```
+DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit
+```
+
+To enable debug logs from tests, set the `--log-cli-level` option, as well as disable capturing.
+
+```
+DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit -s --log-cli-level=DEBUG
+```
+
+
+#### Rust tests
+
+Our rust tests are distributed across crates, you can run all tests with `cargo test --no-default-features --workspace`.
+
+To run rust tests that call into Python, the `--features python` flag and libpython3.*.so dynamic libraries are required. Please ensure that these are installed, here's a table of common locations on different os:
+
+| Operating System        | Package Manager | Architecture      | Library Path Pattern                          |
+|-------------------------|----------------|-------------------|-----------------------------------------------|
+| **Ubuntu/Debian**       | apt            | x86_64            | `/usr/lib/x86_64-linux-gnu/libpython3.x.so.1.0` |
+|                         |                | Other             | `/usr/lib/libpython3.x.so.1.0`                |
+| **Red Hat/CentOS**      | yum/dnf        | x86_64            | `/usr/lib64/libpython3.x.so.1.0`               |
+| **macOS (Homebrew)**    | Homebrew       | Intel             | `/usr/local/opt/python@3.x/lib/libpython3.x.dylib` |
+|                         |                | Apple Silicon     | `/opt/homebrew/opt/python@3.x/lib/libpython3.x.dylib` |
+| **macOS (System)**      | Installer      | All               | `/Library/Frameworks/Python.framework/Versions/3.x/lib/libpython3.x.dylib` |
+
+Set environment variables to locate the Python library:
+
+```sh
+export PYO3_PYTHON=".venv/bin/python"
+export PYO3_PYTHON_PYLIB="/usr/lib/x86_64-linux-gnu/libpython3.11.so.1"
+export RUSTFLAGS="-C link-arg=-Wl,-rpath,${PYO3_PYTHON_PYLIB%/*} -C link-arg=-L${PYO3_PYTHON_PYLIB%/*} -C link-arg=-lpython3.11"
+```
+
+Execute the test after configuration:
+
+```sh
+cargo test -p daft-dsl --features python -- expr::tests
+```
+
 ### Benchmarking
 
 Benchmark tests are located in `tests/benchmarks`. If you would like to run benchmarks, make sure to first do `make build-release` instead of `make build` in order to compile an optimized build of Daft.
@@ -150,6 +224,9 @@ For more advanced use cases, see existing implementations in [daft-functions-utf
 // This prelude defines all required ScalarUDF dependencies.
 use daft_dsl::functions::prelude::*;
 
+// Couple of imports which are used here but are not in prelude
+use daft_core::prelude::{Utf8Array, IntoSeries};
+
 // We need these for the trait.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct MyToUpperCase;
@@ -164,20 +241,22 @@ impl ScalarUDF for MyToUpperCase {
     }
 
     // Then we add an implementation for it.
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let s = inputs.required(0)?;
         // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
         let arr = s
             .utf8()
-            .expect("type should have been validated already during `function_args_to_field`")
+            .expect("type should have been validated already during `get_return_field`")
             .into_iter()
             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
-            .collect::<Utf8Array>();
+            .collect::<Utf8Array>()
+            // Returned series must have the same name as the input series
+            .rename(s.name());
         Ok(arr.into_series())
     }
 
-    // We also need a `function_args_to_field` which is used during planning to ensure that the args and datatypes are compatible.
-    fn function_args_to_field(
+    // We also need a `get_return_field` which is used during planning to ensure that the args and datatypes are compatible.
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -280,6 +359,38 @@ def extract_all(self, pattern: Series, index: int = 0) -> Series:
   return self._eval_expressions("extract_all", pattern, index=index)
 ```
 
+##### Docstring Template
+
+We follow [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) python docstrings.
+
+``` py
+def method(args) -> return:
+    """Summary of method
+
+    Args:
+        arg1: description
+
+    Returns:
+        return1: description
+
+    Raises: title (optional)
+         description
+
+    Warning: title (optional)
+         description
+
+    Note: title (optional)
+         description
+
+    Examples: (make sure this is plural!)
+        >>> code example (this needs to be a runnable `doctest` example)
+        output
+
+    Tip: title (optional)
+         description
+    """
+```
+
 #### Step 4: Write tests
 
 For testing, you can add a new file, or update an existing one in `tests/expressions/`
@@ -290,7 +401,7 @@ here's an example of testing the `extract` function using the `test_expression` 
 
 ```py
 def test_extract(test_expression):
-    test_data =["123-456", "789-012", "345-678"]
+    test_data = ["123-456", "789-012", "345-678"]
     regex = r"(\d)(\d*)"
     expected = ["123", "789", "345"]
     test_expression(

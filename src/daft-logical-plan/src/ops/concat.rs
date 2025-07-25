@@ -13,6 +13,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Concat {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,
     pub other: Arc<LogicalPlan>,
@@ -36,6 +37,7 @@ impl Concat {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             other,
             stats_state: StatsState::NotMaterialized,
@@ -44,6 +46,11 @@ impl Concat {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 

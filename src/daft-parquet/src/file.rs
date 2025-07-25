@@ -211,12 +211,8 @@ impl ParquetReaderBuilder {
         io_stats: Option<IOStatsRef>,
         field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     ) -> super::Result<Self> {
-        // TODO(sammy): We actually don't need this since we can do negative offsets when reading the metadata
-        let size = io_client
-            .single_url_get_size(uri.into(), io_stats.clone())
-            .await?;
         let metadata =
-            read_parquet_metadata(uri, size, io_client, io_stats, field_id_mapping).await?;
+            read_parquet_metadata(uri, None, io_client, io_stats, field_id_mapping, None).await?;
         Ok(Self {
             uri: uri.into(),
             metadata,
@@ -322,7 +318,7 @@ pub struct ParquetFileReader {
 }
 
 impl ParquetFileReader {
-    const DEFAULT_CHUNK_SIZE: usize = 2048;
+    const DEFAULT_CHUNK_SIZE: usize = 128 * 1024;
     // Set to 2GB because that's the maximum size of strings allowable by Parquet (using i32 offsets).
     // See issue: https://github.com/Eventual-Inc/Daft/issues/3007
     const MAX_PAGE_SIZE: usize = 2 * 1024 * 1024 * 1024;

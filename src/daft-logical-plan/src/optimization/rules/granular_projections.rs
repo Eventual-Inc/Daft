@@ -14,9 +14,22 @@ use crate::{
     LogicalPlan,
 };
 
+#[derive(Clone)]
+enum SplitExpr {
+    Passthrough(ExprRef),
+    UrlDownload {
+        child_name: String,
+        args: UrlDownloadArgs<ExprRef>,
+    },
+    UrlUpload {
+        child_name: String,
+        args: UrlUploadArgs<ExprRef>,
+    },
+}
+
 /// This rule will split projections into multiple projections such that expressions that
 /// need their own granular morsel sizing will be isolated. Right now, those would be
-/// URL downloads, but this may be extended in the future to other functions and Python UDFs.
+/// URL downloads and uploads, but may be extended to other operations in the future.
 ///
 /// Example of Original Plan:
 ///     3) Sink
@@ -94,7 +107,7 @@ impl SplitGranularProjection {
                                 // TODO: Remove with ordinals
                                 let child_name = format!("id-{}", uuid::Uuid::new_v4());
                                 let child = child.alias(child_name.clone());
-                                split_exprs.push(either::Either::Left(child));
+                                split_exprs.push(SplitExpr::Passthrough(child));
 
                                 children.push(resolved_col(child_name));
                             }
@@ -126,10 +139,10 @@ impl SplitGranularProjection {
                             let child_name = format!("id-{}", uuid::Uuid::new_v4());
 
                             let args: UrlDownloadArgs<ExprRef> = inputs.clone().try_into()?;
-                            split_exprs.push(either::Either::Right((
-                                child_name.clone(),
-                                either::Either::Left(args),
-                            )));
+                            split_exprs.push(SplitExpr::UrlDownload {
+                                child_name: child_name.clone(),
+                                args,
+                            });
 
                             new_children[idx] = resolved_col(child_name);
                         } else if let Expr::ScalarFunction(ScalarFunction { udf, inputs }) =
@@ -144,10 +157,10 @@ impl SplitGranularProjection {
                             let child_name = format!("id-{}", uuid::Uuid::new_v4());
 
                             let args: UrlUploadArgs<ExprRef> = inputs.clone().try_into()?;
-                            split_exprs.push(either::Either::Right((
-                                child_name.clone(),
-                                either::Either::Right(args),
-                            )));
+                            split_exprs.push(SplitExpr::UrlUpload {
+                                child_name: child_name.clone(),
+                                args,
+                            });
 
                             new_children[idx] = resolved_col(child_name);
                         }
@@ -165,7 +178,7 @@ impl SplitGranularProjection {
             })?;
 
             // Push the top level expression that was changed
-            split_exprs.push(either::Either::Left(res.data));
+            split_exprs.push(SplitExpr::Passthrough(res.data));
             all_split_exprs.push(split_exprs);
         }
 
@@ -202,34 +215,31 @@ impl SplitGranularProjection {
                 let expr = split.get(i).cloned().unwrap_or_else(|| {
                     let passthrough = split.last().unwrap();
                     let passthrough_name = match passthrough {
-                        either::Either::Left(expr) => expr.name(),
-                        either::Either::Right((name, _)) => name.as_str(),
+                        SplitExpr::Passthrough(expr) => expr.name(),
+                        SplitExpr::UrlDownload { child_name, .. } => child_name.as_str(),
+                        SplitExpr::UrlUpload { child_name, .. } => child_name.as_str(),
                     };
-                    either::Either::Left(resolved_col(passthrough_name))
+                    SplitExpr::Passthrough(resolved_col(passthrough_name))
                 });
 
                 match expr {
-                    either::Either::Left(expr) => {
+                    SplitExpr::Passthrough(expr) => {
                         out_names.insert(expr.name().to_string());
                         out_exprs.push(expr);
                     }
-                    either::Either::Right((name, args)) => {
-                        out_names.insert(name.clone());
-                        out_exprs.push(resolved_col(name.clone()));
-                        // eprintln!("args: {:?}, name: {}", args, name);
-                        match args {
-                            either::Either::Left(args) => {
-                                last_child = Arc::new(LogicalPlan::UrlDownload(
-                                    UrlDownloadOp::new(last_child, args, name),
-                                ));
-                            }
-                            either::Either::Right(args) => {
-                                last_child = Arc::new(LogicalPlan::UrlUpload(UrlUploadOp::new(
-                                    last_child, args, name,
-                                )));
-                            }
-                        }
-                        // eprintln!("last_child schema: {}", last_child.schema());
+                    SplitExpr::UrlDownload { child_name, args } => {
+                        out_names.insert(child_name.clone());
+                        out_exprs.push(resolved_col(child_name.clone()));
+                        last_child = Arc::new(LogicalPlan::UrlDownload(UrlDownloadOp::new(
+                            last_child, args, child_name,
+                        )));
+                    }
+                    SplitExpr::UrlUpload { child_name, args } => {
+                        out_names.insert(child_name.clone());
+                        out_exprs.push(resolved_col(child_name.clone()));
+                        last_child = Arc::new(LogicalPlan::UrlUpload(UrlUploadOp::new(
+                            last_child, args, child_name,
+                        )));
                     }
                 }
             }
@@ -366,7 +376,6 @@ mod tests {
             panic!("Expected top level project");
         };
         assert_eq!(top_project.projection.len(), 4);
-        eprintln!("top_project: {:#?}", top_project);
         assert!(matches!(
             top_project.projection[0].as_ref(),
             Expr::Alias(..)

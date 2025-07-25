@@ -41,7 +41,7 @@ impl ScalarUDF for UrlDownload {
     fn name(&self) -> &'static str {
         "url_download"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let UrlDownloadArgs {
             input,
             multi_thread,
@@ -79,7 +79,7 @@ impl ScalarUDF for UrlDownload {
         Ok(result.into_series())
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

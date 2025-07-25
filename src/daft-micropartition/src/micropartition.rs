@@ -55,7 +55,9 @@ impl Display for TableState {
             Self::Loaded(tables) => {
                 writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
                 for tab in tables.iter() {
-                    writeln!(f, "{tab}")?;
+                    if !tab.is_empty() {
+                        writeln!(f, "{tab}")?;
+                    }
                 }
                 Ok(())
             }
@@ -628,6 +630,17 @@ impl MicroPartition {
         } else {
             unreachable!()
         }
+    }
+
+    pub fn concat_or_get_option(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
+        let tables = self.tables_or_read(io_stats)?;
+        if tables.len() <= 1 {
+            return Ok(None);
+        }
+
+        let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
+            .context(DaftCoreComputeSnafu)?;
+        Ok(Some(new_table))
     }
 
     pub fn add_monotonically_increasing_id(
@@ -1285,6 +1298,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                     )
                 }),
                 num_rows,
+                None,
             ),
             generated_fields,
         );

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -17,7 +18,10 @@ use crate::{
     pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::{
+        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
+        RuntimeStatsContext, RuntimeStatsEventHandler,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
 
@@ -50,6 +54,9 @@ pub trait IntermediateOperator: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
+    }
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(BaseStatsBuilder {})
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -94,7 +101,10 @@ impl IntermediateNode {
     ) -> Self {
         let info = ctx.next_node_info(intermediate_op.name());
 
-        let rts = RuntimeStatsContext::new(info.clone());
+        let rts = RuntimeStatsContext::new_with_builder(
+            info.clone(),
+            intermediate_op.make_runtime_stats_builder(),
+        );
         Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats, info)
     }
 
@@ -124,12 +134,18 @@ impl IntermediateNode {
         receiver: Receiver<Arc<MicroPartition>>,
         sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
         memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
-        let task_spawner =
-            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
+        let task_spawner = ExecutionTaskSpawner::new(
+            compute_runtime,
+            memory_manager,
+            rt_context,
+            rt_stats_handler,
+            span,
+        );
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
@@ -172,6 +188,7 @@ impl IntermediateNode {
                     input_receiver,
                     output_sender,
                     self.runtime_stats.clone(),
+                    runtime_handle.runtime_stats_handler(),
                     memory_manager.clone(),
                 ),
                 self.intermediate_op.name(),
@@ -199,8 +216,10 @@ impl TreeDisplay for IntermediateNode {
                 }
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
-                    let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display, true, true, true).unwrap();
+                    let rt_result = self.runtime_stats.render();
+                    for (name, value) in rt_result {
+                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                    }
                 }
             }
         }
@@ -233,15 +252,17 @@ impl PipelineNode for IntermediateNode {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Magenta,
-            true,
+            self.node_id(),
             self.runtime_stats.clone(),
         );
+
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
                 progress_bar.clone(),
+                runtime_handle.runtime_stats_handler(),
             ));
         }
         let op = self.intermediate_op.clone();
@@ -249,8 +270,12 @@ impl PipelineNode for IntermediateNode {
             node_name: self.name(),
         })?;
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
+        let counting_sender = CountingSender::new(
+            destination_sender,
+            self.runtime_stats.clone(),
+            progress_bar,
+            runtime_handle.runtime_stats_handler(),
+        );
 
         let dispatch_spawner = self
             .intermediate_op

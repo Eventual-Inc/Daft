@@ -215,6 +215,12 @@ impl PyMicroPartition {
         py.allow_threads(|| Ok(MicroPartition::concat(mps_iter)?.into()))
     }
 
+    #[staticmethod]
+    pub fn concat_or_empty(py: Python, to_concat: Vec<Self>, schema: PySchema) -> PyResult<Self> {
+        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
+        py.allow_threads(|| Ok(MicroPartition::concat_or_empty(mps_iter, schema.schema)?.into()))
+    }
+
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
         py.allow_threads(|| Ok(self.inner.slice(start as usize, end as usize)?.into()))
     }
@@ -303,6 +309,11 @@ impl PyMicroPartition {
                 .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
                 .into())
         })
+    }
+
+    pub fn dedup(&self, py: Python, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let converted_columns = BoundExpr::bind_all(&columns, &self.inner.schema)?;
+        py.allow_threads(|| Ok(self.inner.dedup(converted_columns.as_slice())?.into()))
     }
 
     pub fn pivot(

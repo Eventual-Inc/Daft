@@ -10,7 +10,8 @@ use tracing::{instrument, Span};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
+        BlockingSinkSinkResult, BlockingSinkState,
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
@@ -145,7 +146,9 @@ impl BlockingSink for WindowPartitionOnlySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                            empty_result,
+                        )]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -154,7 +157,9 @@ impl BlockingSink for WindowPartitionOnlySink {
                         None,
                     );
 
-                    Ok(Some(Arc::new(final_result)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        final_result,
+                    )]))
                 },
                 Span::current(),
             )

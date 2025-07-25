@@ -3,9 +3,11 @@
 mod batch;
 mod file;
 mod ipc;
+mod json_writer;
 mod parquet_writer;
 mod partition;
 mod physical;
+mod storage_backend;
 #[cfg(test)]
 mod test;
 mod utils;
@@ -95,7 +97,6 @@ pub fn make_physical_writer_factory(
         file_info.clone(),
         file_schema.clone(),
         cfg.native_parquet_writer,
-        cfg.native_remote_writer,
     )?;
     match file_info.file_format {
         FileFormat::Parquet => {
@@ -150,7 +151,28 @@ pub fn make_physical_writer_factory(
                 Ok(Arc::new(file_writer_factory))
             }
         }
-        _ => unreachable!("Physical write should only support Parquet and CSV"),
+        FileFormat::Json => {
+            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                cfg.json_target_filesize,
+                cfg.json_inflation_factor,
+            );
+
+            let file_writer_factory = TargetFileSizeWriterFactory::new(
+                Arc::new(base_writer_factory),
+                Arc::new(file_size_calculator),
+            );
+
+            if let Some(partition_cols) = &file_info.partition_cols {
+                let partitioned_writer_factory = PartitionedWriterFactory::new(
+                    Arc::new(file_writer_factory),
+                    partition_cols.clone(),
+                );
+                Ok(Arc::new(partitioned_writer_factory))
+            } else {
+                Ok(Arc::new(file_writer_factory))
+            }
+        }
+        _ => unreachable!("Physical write should only support Parquet, CSV, and JSON"),
     }
 }
 

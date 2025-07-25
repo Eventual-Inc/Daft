@@ -362,6 +362,10 @@ impl<T> FunctionArgs<T> {
         Self(inner)
     }
 
+    pub fn new_unnamed(inner: Vec<T>) -> Self {
+        Self(inner.into_iter().map(FunctionArg::Unnamed).collect())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

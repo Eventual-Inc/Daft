@@ -528,8 +528,9 @@ fn pull_up_correlated_cols(
         // ops that cannot pull up correlated columns
         LogicalPlan::UrlDownload(..)
         | LogicalPlan::UrlUpload(..)
-        | LogicalPlan::ActorPoolProject(..)
+        | LogicalPlan::UDFProject(..)
         | LogicalPlan::Limit(..)
+        | LogicalPlan::Shard(..)
         | LogicalPlan::TopN(..)
         | LogicalPlan::Sample(..)
         | LogicalPlan::Source(..)

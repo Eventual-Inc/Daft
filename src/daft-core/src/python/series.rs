@@ -21,7 +21,7 @@ use crate::{
         DataArray,
     },
     count_mode::CountMode,
-    datatypes::{DataType, Field, ImageMode, PythonType},
+    datatypes::{DataType, Field, PythonType},
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
@@ -35,35 +35,39 @@ pub struct PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn from_arrow(py: Python, name: &str, pyarrow_array: Bound<PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (name, pyarrow_array, dtype=None))]
+    pub fn from_arrow(
+        py: Python,
+        name: &str,
+        pyarrow_array: Bound<PyAny>,
+        dtype: Option<PyDataType>,
+    ) -> PyResult<Self> {
         let arrow_array = ffi::array_to_rust(py, pyarrow_array)?;
         let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
-        let series = series::Series::try_from((name, arrow_array))?;
+
+        let series = if let Some(dtype) = dtype {
+            let field = Field::new(name, dtype.into());
+            series::Series::try_from_field_and_arrow_array(field, arrow_array)?
+        } else {
+            series::Series::try_from((name, arrow_array))?
+        };
+
         Ok(series.into())
     }
 
     // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(
-        py: Python<'_>,
-        name: &str,
-        pylist: Bound<PyAny>,
-        pyobj: &str,
-    ) -> PyResult<Self> {
+    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, dtype: PyDataType) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let dtype = match pyobj {
-            "force" => DataType::Python,
-            "allow" => infer_daft_dtype_for_sequence(&vec_pyobj, py, name)?.unwrap_or(DataType::Python),
-            "disallow" => panic!("Cannot create a Series from a pylist and being strict about only using Arrow types by setting pyobj=disallow"),
-            _ => panic!("Unsupported pyobj behavior when creating Series from pylist: {}", pyobj)
-        };
+
         let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
-        let field = Field::new(name, DataType::Python);
 
+        let field = Field::new(name, DataType::Python);
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = data_array.cast(&dtype)?;
+        let series = data_array.cast(&dtype.into())?;
+
         Ok(series.into())
     }
 
@@ -81,13 +85,11 @@ impl PySeries {
         PyList::new(py, pyobj_vec_cloned)
     }
 
-    pub fn to_arrow(&self) -> PyResult<PyObject> {
+    pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-        Python::with_gil(|py| {
-            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-            Ok(ffi::to_py_array(py, arrow_array, &pyarrow)?.unbind())
-        })
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        ffi::to_py_array(py, arrow_array, &pyarrow)
     }
 
     pub fn __abs__(&self) -> PyResult<Self> {
@@ -405,105 +407,4 @@ impl From<PySeries> for series::Series {
     fn from(item: PySeries) -> Self {
         item.series
     }
-}
-
-fn infer_daft_dtype_for_sequence(
-    vec_pyobj: &[PyObject],
-    py: pyo3::Python,
-    _name: &str,
-) -> PyResult<Option<DataType>> {
-    let py_pil_image_type = py
-        .import(pyo3::intern!(py, "PIL.Image"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
-    let np_ndarray_type = py
-        .import(pyo3::intern!(py, "numpy"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "ndarray")));
-    let np_generic_type = py
-        .import(pyo3::intern!(py, "numpy"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "generic")));
-    let from_numpy_dtype = {
-        py.import(pyo3::intern!(py, "daft.datatype"))?
-            .getattr(pyo3::intern!(py, "DataType"))?
-            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
-    };
-    let mut dtype: Option<DataType> = None;
-    for obj in vec_pyobj {
-        let obj = obj.bind(py);
-        if let Ok(pil_image_type) = &py_pil_image_type
-            && obj.is_instance(pil_image_type)?
-        {
-            let mode_str = obj
-                .getattr(pyo3::intern!(py, "mode"))?
-                .extract::<String>()?;
-            let mode = ImageMode::from_pil_mode_str(&mode_str)?;
-            match &dtype {
-                Some(DataType::Image(Some(existing_mode))) => {
-                    if *existing_mode != mode {
-                        // Mixed-mode case, set mode to None.
-                        dtype = Some(DataType::Image(None));
-                    }
-                }
-                None => {
-                    // Set to (currently) uniform mode image dtype.
-                    dtype = Some(DataType::Image(Some(mode)));
-                }
-                // No-op, since dtype is already for mixed-mode images.
-                Some(DataType::Image(None)) => {}
-                _ => {
-                    // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
-                    dtype = None;
-                    break;
-                }
-            }
-        } else if let Ok(np_ndarray_type) = &np_ndarray_type
-            && let Ok(np_generic_type) = &np_generic_type
-            && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?)
-        {
-            let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
-            let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| {
-                dt.getattr(pyo3::intern!(py, "_dtype"))
-                    .unwrap()
-                    .extract::<PyDataType>()
-                    .unwrap()
-                    .dtype
-            });
-            let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;
-            let inferred_dtype = match inferred_inner_dtype {
-                Ok(inferred_inner_dtype) if shape.len() == 1 => {
-                    Some(DataType::List(Box::new(inferred_inner_dtype)))
-                }
-                Ok(inferred_inner_dtype) if shape.len() > 1 => {
-                    Some(DataType::Tensor(Box::new(inferred_inner_dtype)))
-                }
-                _ => None,
-            };
-            match (&dtype, &inferred_dtype) {
-                // Tensors with mixed inner dtypes is not supported, short-circuit.
-                (Some(existing_dtype), Some(inferred_dtype))
-                    if existing_dtype != inferred_dtype =>
-                {
-                    // TODO(Clark): Do some basic type promotion here, e.g. (u32, u64) --> u64.
-                    dtype = None;
-                    break;
-                }
-                // Existing and inferred dtypes must be the same here, so this is a no-op.
-                (Some(_), Some(_)) => {}
-                // No existing dtype and inferred is non-None, so set cached dtype to inferred.
-                (None, Some(inferred_dtype)) => {
-                    dtype = Some(inferred_dtype.clone());
-                }
-                // Inferred inner dtype isn't representable with Arrow, so we'll need to use a plain Python representation.
-                (_, None) => {
-                    dtype = None;
-                    break;
-                }
-            }
-        } else if !obj.is_none() {
-            // Non-image types; short-circuit since only image types are supported and union dtypes are not (yet)
-            // supported.
-            dtype = None;
-            break;
-        }
-    }
-    Ok(dtype)
 }

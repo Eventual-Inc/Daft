@@ -229,7 +229,8 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     init_args,
     resource_request=None,
     batch_size=None,
-    concurrency=None
+    concurrency=None,
+    use_process=None
 ))]
 pub fn udf(
     name: &str,
@@ -241,6 +242,7 @@ pub fn udf(
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
+    use_process: Option<bool>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -264,6 +266,7 @@ pub fn udf(
             resource_request,
             batch_size,
             concurrency,
+            use_process,
         )?
         .into(),
     })
@@ -603,6 +606,17 @@ impl PyExpr {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.expr.hash(&mut hasher);
         hasher.finish()
+    }
+
+    pub fn as_py<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        if let Expr::Literal(lit) = self.expr.as_ref() {
+            lit.clone().into_pyobject(py)
+        } else {
+            Err(PyValueError::new_err(format!(
+                "The method .py_any() was called on a non literal value! Got: {}",
+                &self.expr
+            )))
+        }
     }
 }
 

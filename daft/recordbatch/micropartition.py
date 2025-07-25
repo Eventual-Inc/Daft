@@ -134,6 +134,15 @@ class MicroPartition:
             micropartitions.append(t._micropartition)
         return MicroPartition._from_pymicropartition(_PyMicroPartition.concat(micropartitions))
 
+    @classmethod
+    def concat_or_empty(cls, to_merge: list[MicroPartition], schema: Schema) -> MicroPartition:
+        micropartitions = []
+        for t in to_merge:
+            if not isinstance(t, MicroPartition):
+                raise TypeError(f"Expected a MicroPartition for concat, got {type(t)}")
+            micropartitions.append(t._micropartition)
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.concat_or_empty(micropartitions, schema._schema))
+
     def slice(self, start: int, end: int) -> MicroPartition:
         if not isinstance(start, int):
             raise TypeError(f"expected int for start but got {type(start)}")
@@ -150,7 +159,7 @@ class MicroPartition:
         return self.to_record_batch()
 
     def to_record_batch(self) -> RecordBatch:
-        """Returns the MicroPartition as a RecordBatch."""
+        """Returns the MicroPartition as a single (concatenated) RecordBatch."""
         return RecordBatch._from_pyrecordbatch(self._micropartition.to_record_batch())
 
     def to_arrow(self, concat_record_batches: bool = False) -> pa.Table:
@@ -259,6 +268,10 @@ class MicroPartition:
         to_agg_pyexprs = [e._expr for e in to_agg]
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
         return MicroPartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
+
+    def dedup(self, columns: ExpressionsProjection) -> MicroPartition:
+        columns_pyexprs = [e._expr for e in columns]
+        return MicroPartition._from_pymicropartition(self._micropartition.dedup(columns_pyexprs))
 
     def pivot(
         self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
@@ -438,9 +451,11 @@ class MicroPartition:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], MicroPartition], tuple[dict[str, Series]]]:
-        names = self.column_names()
-        return MicroPartition.from_pydict, ({name: self.get_column_by_name(name) for name in names},)
+    def __reduce__(self) -> tuple[Callable, tuple]:  # type: ignore[type-arg]
+        batches = self.get_record_batches()
+        if len(batches) == 0:
+            return MicroPartition.empty, (self.schema(),)
+        return MicroPartition._from_record_batches, (batches,)
 
     @classmethod
     def read_parquet_statistics(

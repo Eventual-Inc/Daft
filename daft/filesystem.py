@@ -9,10 +9,9 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
-from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.dependencies import fsspec, pafs
-from daft.expressions.expressions import col
+from daft.expressions.expressions import ExpressionsProjection, col
 from daft.recordbatch import MicroPartition
 
 logger = logging.getLogger(__name__)
@@ -220,6 +219,7 @@ def _infer_filesystem(
             _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
             _set_if_not_none(translated_kwargs, "region", s3_config.region_name)
             _set_if_not_none(translated_kwargs, "anonymous", s3_config.anonymous)
+            _set_if_not_none(translated_kwargs, "force_virtual_addressing", s3_config.force_virtual_addressing)
             if s3_config.num_tries is not None:
                 try:
                     from pyarrow.fs import AwsStandardS3RetryStrategy
@@ -395,11 +395,11 @@ def overwrite_files(
             # The root directory does not exist, so there are no files to delete.
             return
 
-    all_file_paths_df = from_pydict({"path": all_file_paths})
+    all_file_paths_df = MicroPartition.from_pydict({"path": all_file_paths})
 
     # Find the files that were not written to in this run and delete them.
-    to_delete = all_file_paths_df.where(~(col("path").is_in(written_file_paths)))
+    to_delete = all_file_paths_df.filter(ExpressionsProjection([~(col("path").is_in(written_file_paths))]))
 
     # TODO: Look into parallelizing this
-    for entry in to_delete:
-        fs.delete_file(entry["path"])
+    for entry in to_delete.get_column_by_name("path"):
+        fs.delete_file(entry)

@@ -1,26 +1,12 @@
-use std::{
-    collections::VecDeque,
-    future::Future,
-    io::{BufWriter, Write},
-    num::NonZeroUsize,
-    path::{Path, PathBuf},
-    pin::Pin,
-    sync::Arc,
-};
+use std::{collections::VecDeque, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
-use common_runtime::{
-    get_compute_pool_num_threads, get_compute_runtime, get_io_runtime, RuntimeTask,
-};
+use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{
-    get_io_client, parse_url, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, SourceType,
-};
+use daft_io::{parse_url, IOConfig, SourceType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use parking_lot::Mutex;
 use parquet::{
     arrow::{
         arrow_writer::{compute_leaves, get_column_writers, ArrowColumnChunk, ArrowLeafColumn},
@@ -34,196 +20,23 @@ use parquet::{
     schema::types::SchemaDescriptor,
 };
 
-use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
+use crate::{
+    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    utils::build_filename,
+    AsyncFileWriter,
+};
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
-/// We currently support two kinds of storage backends: FileStorageBackend for local file writes,
-/// and S3StorageBackend for writes to S3.
-#[async_trait]
-trait StorageBackend: Send + Sync + 'static {
-    type Writer: Write + Send + Sync;
-
-    /// Create the output buffer (buffered file writer, S3 buffer, etc).
-    async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer>;
-
-    /// Finalize the write operation (close file, await upload to S3, etc).
-    async fn finalize(&mut self) -> DaftResult<()>;
-}
-
-struct FileStorageBackend {}
-
-impl FileStorageBackend {
-    // Buffer potentially small writes for highly compressed columns.
-    const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024;
-}
-
-#[async_trait]
-impl StorageBackend for FileStorageBackend {
-    type Writer = BufWriter<std::fs::File>;
-
-    async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer> {
-        // Create directories if they don't exist.
-        if let Some(parent) = filename.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let file = std::fs::File::create(filename)?;
-        Ok(BufWriter::with_capacity(
-            Self::DEFAULT_WRITE_BUFFER_SIZE,
-            file,
-        ))
-    }
-    async fn finalize(&mut self) -> DaftResult<()> {
-        // Nothing needed for finalizing file storage.
-        Ok(())
-    }
-}
-
-struct S3StorageBackend {
-    scheme: String,
-    io_config: IOConfig,
-    s3_client: Option<Arc<S3LikeSource>>,
-    s3part_buffer: Option<Arc<Mutex<S3PartBuffer>>>,
-    upload_task: Option<RuntimeTask<DaftResult<()>>>,
-}
-
-impl S3StorageBackend {
-    const S3_MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024; // 8 MB
-    const S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT: usize = 100; // 100 uploads per S3 object
-
-    fn new(scheme: String, io_config: IOConfig) -> Self {
-        Self {
-            scheme,
-            io_config,
-            s3_client: None,
-            s3part_buffer: None,
-            upload_task: None,
-        }
-    }
-}
-
-/// A Send and Sync wrapper around S3PartBuffer.
-pub struct SharedS3PartBuffer {
-    inner: Arc<Mutex<S3PartBuffer>>,
-}
-
-impl Write for SharedS3PartBuffer {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.inner.lock().write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.inner.lock().flush()
-    }
-}
-
-#[async_trait]
-impl StorageBackend for S3StorageBackend {
-    type Writer = SharedS3PartBuffer;
-
-    async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer> {
-        let filename = filename.to_string_lossy().to_string();
-        let part_size = NonZeroUsize::new(Self::S3_MULTIPART_PART_SIZE)
-            .expect("S3 multipart part size must be non-zero");
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-
-        // Create the S3 part buffer that interfaces with parquet-rs.
-        let s3part_buffer = Arc::new(Mutex::new(S3PartBuffer::new(part_size, tx)));
-        self.s3part_buffer = Some(s3part_buffer.clone());
-
-        if self.s3_client.is_none() {
-            // Initialize S3 client if needed.
-            let io_config = Arc::new(self.io_config.clone());
-
-            let io_client = get_io_client(true, io_config)?;
-            let s3_client = io_client
-                .get_source(&format!("s3://{}", filename))
-                .await?
-                .as_any_arc()
-                .downcast()
-                .unwrap();
-            self.s3_client = Some(s3_client);
-        }
-
-        // Spawn background upload thread.
-        let s3_client = self
-            .s3_client
-            .clone()
-            .expect("S3 client must be initialized");
-        let uri = format!("{}://{}", self.scheme, filename);
-
-        let io_runtime = get_io_runtime(true);
-
-        let mut s3_multipart_writer = S3MultipartWriter::create(
-            uri,
-            part_size,
-            NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
-                .expect("S3 multipart concurrent uploads per object must be non-zero"),
-            s3_client,
-        )
-        .await
-        .expect("Failed to create S3 multipart writer");
-
-        let background_task = io_runtime.spawn(async move {
-            while let Some(part) = rx.recv().await {
-                s3_multipart_writer.write_part(part).await?;
-            }
-            s3_multipart_writer.shutdown().await?;
-            Ok(())
-        });
-
-        self.upload_task = Some(background_task);
-
-        Ok(SharedS3PartBuffer {
-            inner: s3part_buffer,
-        })
-    }
-
-    async fn finalize(&mut self) -> DaftResult<()> {
-        let part_buffer = self
-            .s3part_buffer
-            .take()
-            .expect("S3 part buffer must be initialized for multipart upload");
-        let upload_task = self
-            .upload_task
-            .take()
-            .expect("Upload thread must be initialized for multipart upload");
-
-        let io_runtime = get_io_runtime(true);
-
-        io_runtime
-            .spawn_blocking(move || -> DaftResult<()> {
-                // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
-                part_buffer.lock().shutdown()?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
-
-        // Wait for the upload task to complete.
-        upload_task
-            .await
-            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
-
-        Ok(())
-    }
-}
-
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_parquet_writer_supported(
-    file_format: FileFormat,
     root_dir: &str,
     file_schema: &SchemaRef,
-    remote_writes_enabled: bool,
 ) -> DaftResult<bool> {
-    // TODO(desmond): Currently we only support native parquet writes.
-    if !matches!(file_format, FileFormat::Parquet) {
-        return Ok(false);
-    }
     let (source_type, _) = parse_url(root_dir)?;
     match source_type {
         SourceType::File => {}
-        SourceType::S3 if remote_writes_enabled => {}
+        SourceType::S3 => {}
         _ => return Ok(false),
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
@@ -260,7 +73,13 @@ pub(crate) fn create_native_parquet_writer(
 {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
-    let filename = build_filename(source_type, root_dir.as_ref(), partition_values, file_idx)?;
+    let filename = build_filename(
+        source_type,
+        root_dir.as_ref(),
+        partition_values,
+        file_idx,
+        "parquet",
+    )?;
 
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
@@ -311,57 +130,6 @@ pub(crate) fn create_native_parquet_writer(
     }
 }
 
-/// Helper function to build the filename for the parquet file.
-fn build_filename(
-    source_type: SourceType,
-    root_dir: &str,
-    partition_values: Option<&RecordBatch>,
-    file_idx: usize,
-) -> DaftResult<PathBuf> {
-    let partition_path = get_partition_path(partition_values)?;
-    let filename = generate_parquet_filename(file_idx);
-
-    match source_type {
-        SourceType::File => build_local_file_path(root_dir, partition_path, filename),
-        SourceType::S3 => build_s3_path(root_dir, partition_path, filename),
-        _ => Err(DaftError::ValueError(format!(
-            "Unsupported source type: {:?}",
-            source_type
-        ))),
-    }
-}
-
-/// Helper function to get the partition path from the record batch.
-fn get_partition_path(partition_values: Option<&RecordBatch>) -> DaftResult<PathBuf> {
-    match partition_values {
-        Some(partition_values) => Ok(record_batch_to_partition_path(partition_values, None)?),
-        None => Ok(PathBuf::new()),
-    }
-}
-
-// Helper function to generate the parquet filename.
-fn generate_parquet_filename(file_idx: usize) -> String {
-    format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx)
-}
-
-/// Helper function to build the path to a local file.
-fn build_local_file_path(
-    root_dir: &str,
-    partition_path: PathBuf,
-    filename: String,
-) -> DaftResult<PathBuf> {
-    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
-    let dir = root_dir.join(partition_path);
-    Ok(dir.join(filename))
-}
-
-/// Helper function to build the path to an S3 url.
-fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
-    let (_scheme, bucket, key) = daft_io::s3_like::parse_s3_url(root_dir)?;
-    let key = Path::new(&key).join(partition_path).join(filename);
-    Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
-}
-
 struct ParquetWriter<B: StorageBackend> {
     filename: PathBuf,
     writer_properties: Arc<WriterProperties>,
@@ -370,6 +138,7 @@ struct ParquetWriter<B: StorageBackend> {
     partition_values: Option<RecordBatch>,
     storage_backend: B,
     file_writer: Option<SerializedFileWriter<B::Writer>>,
+    total_bytes_written: usize,
 }
 
 impl<B: StorageBackend> ParquetWriter<B> {
@@ -391,6 +160,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             partition_values,
             storage_backend,
             file_writer: None,
+            total_bytes_written: 0,
         }
     }
 
@@ -492,7 +262,6 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
-        let starting_bytes_written = self.bytes_written();
         let record_batches = data.get_tables()?;
 
         let row_group_writer_thread_handle = {
@@ -561,9 +330,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             .await
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
+        let bytes_written = file_writer.bytes_written() - self.total_bytes_written;
+        self.total_bytes_written = file_writer.bytes_written();
         self.file_writer.replace(file_writer);
 
-        Ok(self.bytes_written() - starting_bytes_written)
+        Ok(bytes_written)
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
@@ -611,13 +382,10 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     }
 
     fn bytes_written(&self) -> usize {
-        match &self.file_writer {
-            None => unreachable!("File writer must be created before bytes_written can be called"),
-            Some(writer) => writer.bytes_written(),
-        }
+        self.total_bytes_written
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        vec![self.bytes_written()]
+        vec![self.total_bytes_written]
     }
 }

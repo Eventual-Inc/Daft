@@ -18,6 +18,8 @@ use crate::{
 pub struct UrlDownload {
     /// An id for the plan.
     pub plan_id: Option<usize>,
+    /// An id for the node.
+    pub node_id: Option<usize>,
     /// Upstream node.
     pub input: Arc<LogicalPlan>,
     /// Output schema.
@@ -30,7 +32,7 @@ pub struct UrlDownload {
 }
 
 impl UrlDownload {
-    pub(crate) fn new(
+    pub fn new(
         input: Arc<LogicalPlan>,
         args: UrlDownloadArgs<ExprRef>,
         output_column: String,
@@ -40,6 +42,7 @@ impl UrlDownload {
 
         Self {
             plan_id: None,
+            node_id: None,
             input,
             output_column,
             output_schema: Arc::new(output_schema),
@@ -54,6 +57,11 @@ impl UrlDownload {
 
     pub fn with_plan_id(mut self, id: usize) -> Self {
         self.plan_id = Some(id);
+        self
+    }
+
+    pub fn with_node_id(mut self, id: usize) -> Self {
+        self.node_id = Some(id);
         self
     }
 

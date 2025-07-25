@@ -1,453 +1,550 @@
+use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_scan_info::{Pushdowns, ScanState, ScanTaskLikeRef};
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
-use daft_local_plan::translate;
-use daft_logical_plan::{
-    ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, InMemoryInfo, LogicalPlan,
-    LogicalPlanRef, SourceInfo,
+use common_scan_info::ScanState;
+use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    functions::python::{get_resource_request, try_get_batch_size_from_udf, try_get_concurrency},
+    resolved_col,
 };
+use daft_functions_uri::{UrlDownloadArgs, UrlUploadArgs};
+use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        in_memory_source::InMemorySourceNode, intermediate::IntermediateNode, limit::LimitNode,
-        scan_source::ScanSourceNode, DistributedPipelineNode,
+        concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
+        gather::GatherNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
+        repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
+        sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode,
+        url_download::UrlDownloadNode, url_upload::UrlUploadNode, window::WindowNode,
+        DistributedPipelineNode, NodeID,
     },
-    plan::PlanID,
-    stage::StageID,
+    stage::StageConfig,
 };
 
 pub(crate) fn logical_plan_to_pipeline_node(
-    plan_id: PlanID,
-    stage_id: StageID,
+    stage_config: StageConfig,
     plan: LogicalPlanRef,
-    config: Arc<DaftExecutionConfig>,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-    #[allow(dead_code)]
-    struct PipelineNodeBoundarySplitter {
-        plan_id: PlanID,
-        stage_id: StageID,
-        root: LogicalPlanRef,
-        current_nodes: Vec<Arc<dyn DistributedPipelineNode>>,
-        config: Arc<DaftExecutionConfig>,
-        node_id_counter: usize,
-        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    }
+    let mut translator = LogicalPlanToPipelineNodeTranslator::new(stage_config, psets);
+    let _ = plan.visit(&mut translator)?;
+    Ok(translator.curr_node.pop().unwrap())
+}
 
-    impl PipelineNodeBoundarySplitter {
-        fn get_next_node_id(&mut self) -> usize {
-            let node_id = self.node_id_counter;
-            self.node_id_counter += 1;
-            node_id
-        }
+pub(crate) struct LogicalPlanToPipelineNodeTranslator {
+    pub stage_config: StageConfig,
+    pipeline_node_id_counter: NodeID,
+    psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    curr_node: Vec<Arc<dyn DistributedPipelineNode>>,
+}
 
-        fn create_node(
-            &mut self,
-            logical_plan: LogicalPlanRef,
-            current_nodes: Vec<Arc<dyn DistributedPipelineNode>>,
-        ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-            // If current_nodes is not empty, create an intermediate node immediately
-            if !current_nodes.is_empty() {
-                let translated = translate(&logical_plan)?;
-                return Ok(Arc::new(IntermediateNode::new(
-                    self.plan_id.clone(),
-                    self.stage_id.clone(),
-                    self.get_next_node_id(),
-                    self.config.clone(),
-                    translated,
-                    current_nodes,
-                )) as Arc<dyn DistributedPipelineNode>);
-            }
-
-            // Otherwise create a node based on pipeline_input
-            let (logical_plan, inputs) = extract_inputs_from_logical_plan(logical_plan)?;
-            let translated = translate(&logical_plan)?;
-            let node = match inputs {
-                PipelineInput::InMemorySource { info } => Arc::new(InMemorySourceNode::new(
-                    self.plan_id.clone(),
-                    self.stage_id.clone(),
-                    self.get_next_node_id(),
-                    self.config.clone(),
-                    info,
-                    translated,
-                    self.psets.clone(),
-                ))
-                    as Arc<dyn DistributedPipelineNode>,
-                PipelineInput::ScanTasks {
-                    pushdowns,
-                    scan_tasks,
-                } => Arc::new(ScanSourceNode::new(
-                    self.plan_id.clone(),
-                    self.stage_id.clone(),
-                    self.get_next_node_id(),
-                    self.config.clone(),
-                    translated,
-                    pushdowns,
-                    scan_tasks,
-                )) as Arc<dyn DistributedPipelineNode>,
-            };
-            Ok(node)
+impl LogicalPlanToPipelineNodeTranslator {
+    fn new(stage_config: StageConfig, psets: Arc<HashMap<String, Vec<PartitionRef>>>) -> Self {
+        Self {
+            stage_config,
+            pipeline_node_id_counter: 0,
+            psets,
+            curr_node: Vec::new(),
         }
     }
 
-    impl TreeNodeRewriter for PipelineNodeBoundarySplitter {
-        type Node = LogicalPlanRef;
+    pub fn get_next_pipeline_node_id(&mut self) -> NodeID {
+        self.pipeline_node_id_counter += 1;
+        self.pipeline_node_id_counter
+    }
 
-        fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            Ok(Transformed::no(node))
+    pub fn gen_gather_node(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        input_node: Arc<dyn DistributedPipelineNode>,
+    ) -> Arc<dyn DistributedPipelineNode> {
+        if input_node.config().clustering_spec.num_partitions() == 1 {
+            return input_node;
         }
 
-        fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            match node.as_ref() {
-                LogicalPlan::Limit(limit) => {
-                    let current_nodes = std::mem::take(&mut self.current_nodes);
-                    let input_node = self.create_node(node.clone(), current_nodes)?;
-                    let limit_node = Arc::new(LimitNode::new(
-                        self.plan_id.clone(),
-                        self.stage_id.clone(),
-                        self.get_next_node_id(),
-                        limit.limit as usize,
-                        node.schema(),
-                        self.config.clone(),
-                        input_node,
-                    ));
+        GatherNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            input_node.config().schema.clone(),
+            input_node,
+        )
+        .arced()
+    }
 
-                    self.current_nodes = vec![limit_node];
-                    // Here we will have to return a placeholder, essentially cutting off the plan
-                    let placeholder =
-                        PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
-                    Ok(Transformed::yes(
-                        LogicalPlan::Source(Source::new(
-                            node.schema(),
-                            SourceInfo::PlaceHolder(placeholder).into(),
-                        ))
-                        .into(),
-                    ))
+    pub fn gen_shuffle_node(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        input_node: Arc<dyn DistributedPipelineNode>,
+        partition_cols: Vec<BoundExpr>,
+    ) -> Arc<dyn DistributedPipelineNode> {
+        if partition_cols.is_empty() {
+            self.gen_gather_node(logical_node_id, input_node)
+        } else {
+            RepartitionNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                partition_cols,
+                None,
+                input_node.config().schema.clone(),
+                input_node,
+            )
+            .arced()
+        }
+    }
+}
+
+impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
+    type Node = LogicalPlanRef;
+
+    fn f_down(&mut self, _node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+
+    fn f_up(&mut self, node: &LogicalPlanRef) -> DaftResult<TreeNodeRecursion> {
+        let logical_node_id = node.node_id().map(|id| id as NodeID);
+        let output = match node.as_ref() {
+            LogicalPlan::Source(source) => {
+                match source.source_info.as_ref() {
+                    SourceInfo::InMemory(info) => InMemorySourceNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.stage_config,
+                        info.clone(),
+                        self.psets.clone(),
+                        logical_node_id,
+                    ).arced(),
+                    SourceInfo::Physical(info) => {
+                        // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
+                        let scan_tasks = match &info.scan_state {
+                            ScanState::Operator(_) => unreachable!("ScanOperator should not be present in the optimized logical plan for pipeline node translation"),
+                            ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                        };
+                        ScanSourceNode::new(
+                            self.get_next_pipeline_node_id(),
+                            &self.stage_config,
+                            info.pushdowns.clone(),
+                            scan_tasks,
+                            source.output_schema.clone(),
+                            logical_node_id,
+                        ).arced()
+                    }
+                    SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),
                 }
+            }
+            LogicalPlan::UDFProject(udf) if try_get_concurrency(&udf.project).is_some() => {
                 #[cfg(feature = "python")]
-                LogicalPlan::ActorPoolProject(project) => {
-                    let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let input_node = self.create_node(project.input.clone(), input_nodes)?;
-                    let project_node = Arc::new(crate::pipeline_node::actor_udf::ActorUDF::new(
-                        self.plan_id.clone(),
-                        self.stage_id.clone(),
-                        self.get_next_node_id(),
-                        self.config.clone(),
-                        project.projection.clone(),
-                        project.input.schema(),
-                        input_node.clone(),
-                    )?);
-
-                    self.current_nodes = vec![project_node];
-                    // Here we will have to return a placeholder, essentially cutting off the plan
-                    let placeholder =
-                        PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
-                    Ok(Transformed::yes(
-                        LogicalPlan::Source(Source::new(
-                            node.schema(),
-                            SourceInfo::PlaceHolder(placeholder).into(),
-                        ))
-                        .into(),
-                    ))
+                {
+                    let batch_size = try_get_batch_size_from_udf(&udf.project)?;
+                    let memory_request = get_resource_request(&[udf.project.clone()])
+                        .and_then(|req| req.memory_bytes())
+                        .map(|m| m as u64)
+                        .unwrap_or(0);
+                    let projection = udf
+                        .passthrough_columns
+                        .iter()
+                        .chain(std::iter::once(&udf.project.clone()))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let projection =
+                        BoundExpr::bind_all(projection.as_slice(), &udf.input.schema())?;
+                    crate::pipeline_node::actor_udf::ActorUDF::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.stage_config,
+                        projection,
+                        batch_size,
+                        memory_request,
+                        udf.projected_schema.clone(),
+                        self.curr_node.pop().unwrap(),
+                    )?
+                    .arced()
                 }
-                _ => Ok(Transformed::no(node)),
+                #[cfg(not(feature = "python"))]
+                {
+                    panic!("ActorUDF is not supported without Python feature")
+                }
             }
-        }
-    }
+            LogicalPlan::UDFProject(udf) => {
+                let project = BoundExpr::try_new(udf.project.clone(), &udf.input.schema())?;
+                let passthrough_columns =
+                    BoundExpr::bind_all(&udf.passthrough_columns, &udf.input.schema())?;
 
-    let mut splitter = PipelineNodeBoundarySplitter {
-        plan_id,
-        stage_id,
-        root: plan.clone(),
-        current_nodes: vec![],
-        config,
-        node_id_counter: 0,
-        psets,
-    };
-
-    let transformed = plan.rewrite(&mut splitter)?;
-    match transformed.data.as_ref() {
-        LogicalPlan::Source(source)
-            if matches!(source.source_info.as_ref(), SourceInfo::PlaceHolder(_)) =>
-        {
-            assert!(splitter.current_nodes.len() == 1);
-            Ok(splitter
-                .current_nodes
-                .pop()
-                .expect("Expected exactly one node"))
-        }
-        _ => {
-            let logical_plan = transformed.data;
-            let current_nodes = std::mem::take(&mut splitter.current_nodes);
-            let node = splitter.create_node(logical_plan, current_nodes)?;
-            Ok(node)
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-enum PipelineInput {
-    InMemorySource {
-        info: InMemoryInfo,
-    },
-    ScanTasks {
-        pushdowns: Pushdowns,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    },
-}
-
-fn extract_inputs_from_logical_plan(
-    logical_plan: LogicalPlanRef,
-) -> DaftResult<(LogicalPlanRef, PipelineInput)> {
-    let mut pipeline_input = None;
-    let transformed_plan = logical_plan.transform_up(|plan| match plan.as_ref() {
-        LogicalPlan::Source(source) => match source.source_info.as_ref() {
-            SourceInfo::InMemory(info) => {
-                pipeline_input = Some(PipelineInput::InMemorySource { info: info.clone() });
-                Ok(Transformed::new(plan, true, TreeNodeRecursion::Stop))
+                UDFNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    project,
+                    passthrough_columns,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
             }
-            SourceInfo::Physical(info) => {
-                let pushdowns = info.pushdowns.clone();
-                let scan_tasks = match &info.scan_state {
-                    ScanState::Tasks(tasks) => tasks.clone(),
-                    ScanState::Operator(_) => unreachable!(),
+            LogicalPlan::UrlDownload(url_download) => {
+                let bound_input = BoundExpr::try_new(
+                    url_download.args.input.clone(),
+                    &url_download.input.schema(),
+                )?;
+                let args = UrlDownloadArgs {
+                    input: bound_input,
+                    multi_thread: url_download.args.multi_thread,
+                    io_config: url_download.args.io_config.clone(),
+                    max_connections: url_download.args.max_connections,
+                    on_error: url_download.args.on_error.clone(),
                 };
-                pipeline_input = Some(PipelineInput::ScanTasks {
-                    pushdowns,
-                    scan_tasks,
-                });
-                let placeholder =
-                    PlaceHolderInfo::new(source.output_schema.clone(), Default::default());
-                let placeholder_source = LogicalPlan::Source(Source::new(
-                    source.output_schema.clone(),
-                    Arc::new(SourceInfo::PlaceHolder(placeholder)),
-                ));
-                Ok(Transformed::new(
-                    placeholder_source.into(),
-                    true,
-                    TreeNodeRecursion::Stop,
-                ))
+
+                UrlDownloadNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    args,
+                    url_download.output_column.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
             }
-            SourceInfo::PlaceHolder(_) => Ok(Transformed::new(plan, true, TreeNodeRecursion::Stop)),
-        },
-        _ => Ok(Transformed::no(plan)),
-    })?;
+            LogicalPlan::UrlUpload(url_upload) => {
+                let bound_input =
+                    BoundExpr::try_new(url_upload.args.input.clone(), &url_upload.input.schema())?;
+                let location = BoundExpr::try_new(
+                    url_upload.args.location.clone(),
+                    &url_upload.input.schema(),
+                )?;
+                let args = UrlUploadArgs {
+                    input: bound_input,
+                    multi_thread: url_upload.args.multi_thread,
+                    io_config: url_upload.args.io_config.clone(),
+                    max_connections: url_upload.args.max_connections,
+                    on_error: url_upload.args.on_error.clone(),
+                    location,
+                    is_single_folder: url_upload.args.is_single_folder,
+                };
 
-    Ok((
-        transformed_plan.data,
-        pipeline_input.expect("Expected pipeline input"),
-    ))
-}
+                UrlUploadNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    args,
+                    url_upload.output_column.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::Filter(filter) => {
+                let predicate =
+                    BoundExpr::try_new(filter.predicate.clone(), &filter.input.schema())?;
+                FilterNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    predicate,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                limit.limit as usize,
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )),
+            LogicalPlan::Project(project) => {
+                let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
+                ProjectNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    projection,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::Explode(explode) => {
+                let to_explode = BoundExpr::bind_all(&explode.to_explode, &explode.input.schema())?;
+                ExplodeNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    to_explode,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::Unpivot(unpivot) => {
+                let ids = BoundExpr::bind_all(&unpivot.ids, &unpivot.input.schema())?;
+                let values = BoundExpr::bind_all(&unpivot.values, &unpivot.input.schema())?;
+                UnpivotNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    ids,
+                    values,
+                    unpivot.variable_name.clone(),
+                    unpivot.value_name.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::Sample(sample) => SampleNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                sample.fraction,
+                sample.with_replacement,
+                sample.seed,
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )
+            .arced(),
+            LogicalPlan::Sink(sink) => {
+                let sink_info = sink.sink_info.bind(&sink.input.schema())?;
+                SinkNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sink_info.into(),
+                    sink.schema.clone(),
+                    sink.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                MonotonicallyIncreasingIdNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    monotonically_increasing_id.column_name.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::Concat(_) => ConcatNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                node.schema(),
+                self.curr_node.pop().unwrap(), // Other
+                self.curr_node.pop().unwrap(), // Child
+            )
+            .arced(),
+            LogicalPlan::Repartition(repartition) => {
+                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
+                    todo!("FLOTILLA_MS3: Support other types of repartition");
+                };
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
+                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
 
-    use common_scan_info::{test::DummyScanOperator, ScanOperatorRef};
-    use daft_dsl::{lit, resolved_col};
-    use daft_logical_plan::{
-        logical_plan::LogicalPlan, ops::Source, source_info::SourceInfo, LogicalPlanBuilder,
-    };
-    use daft_schema::{dtype::DataType, field::Field, schema::Schema};
+                assert!(!columns.is_empty());
+                RepartitionNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    columns,
+                    repart_spec.num_partitions,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::Aggregate(aggregate) => {
+                let input_schema = aggregate.input.schema();
+                let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;
+                let aggregations = aggregate
+                    .aggregations
+                    .iter()
+                    .map(|expr| {
+                        let agg_expr = extract_agg_expr(expr)?;
+                        BoundAggExpr::try_new(agg_expr, &aggregate.input.schema())
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
 
-    use super::*;
+                let input_node = self.curr_node.pop().unwrap();
+                self.gen_agg_nodes(
+                    input_node,
+                    logical_node_id,
+                    group_by,
+                    aggregations,
+                    aggregate.output_schema.clone(),
+                )?
+            }
+            LogicalPlan::Distinct(distinct) => {
+                let columns = distinct.columns.clone().unwrap_or_else(|| {
+                    distinct
+                        .input
+                        .schema()
+                        .field_names()
+                        .map(resolved_col)
+                        .collect::<Vec<_>>()
+                });
+                let columns = BoundExpr::bind_all(&columns, &distinct.input.schema())?;
 
-    fn dummy_in_memory_scan(fields: Vec<Field>) -> DaftResult<LogicalPlanBuilder> {
-        let schema = Arc::new(Schema::new(fields));
+                // First stage: Initial local distinct to reduce the dataset
+                let initial_distinct = DistinctNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    columns.clone(),
+                    distinct.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced();
 
-        let source_info = SourceInfo::InMemory(InMemoryInfo::new(
-            schema.clone(),
-            "".into(),
-            None,
-            1,
-            0,
-            0,
-            None,
-            None,
-        ));
-        let logical_plan: LogicalPlan = Source::new(schema, source_info.into()).into();
+                // Second stage: Repartition to distribute the dataset
+                let repartition = RepartitionNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    columns.clone(),
+                    None,
+                    distinct.input.schema(),
+                    initial_distinct,
+                )
+                .arced();
 
-        Ok(LogicalPlanBuilder::from(Arc::new(logical_plan)))
-    }
+                // Last stage: Redo the distinct to get the final result
+                DistinctNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    columns,
+                    distinct.input.schema(),
+                    repartition,
+                )
+                .arced()
+            }
+            LogicalPlan::Window(window) => {
+                let partition_by =
+                    BoundExpr::bind_all(&window.window_spec.partition_by, &window.input.schema())?;
+                let order_by =
+                    BoundExpr::bind_all(&window.window_spec.order_by, &window.input.schema())?;
+                let window_functions =
+                    BoundWindowExpr::bind_all(&window.window_functions, &window.input.schema())?;
 
-    /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
-    pub fn dummy_scan_operator(fields: Vec<Field>) -> ScanOperatorRef {
-        let schema = Arc::new(Schema::new(fields));
-        ScanOperatorRef(Arc::new(DummyScanOperator {
-            schema,
-            num_scan_tasks: 1,
-            num_rows_per_task: None,
-        }))
-    }
+                // First stage: Shuffle by the partition_by columns to colocate rows
+                let input_node = self.curr_node.pop().unwrap();
+                let repartition =
+                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone());
 
-    /// Create a dummy scan node containing the provided fields in its schema.
-    pub fn dummy_scan_node(scan_op: ScanOperatorRef) -> LogicalPlanBuilder {
-        dummy_scan_node_with_pushdowns(scan_op, Default::default())
-    }
+                // Final stage: The actual window op
+                WindowNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    partition_by,
+                    order_by,
+                    window.window_spec.descending.clone(),
+                    window.window_spec.nulls_first.clone(),
+                    window.window_spec.frame.clone(),
+                    window.window_spec.min_periods,
+                    window_functions,
+                    window.aliases.clone(),
+                    window.schema.clone(),
+                    repartition,
+                )?
+                .arced()
+            }
+            LogicalPlan::Join(join) => {
+                let (remaining_on, _, _, _) = join.on.split_eq_preds();
+                if !remaining_on.is_empty() {
+                    todo!("FLOTILLA_MS?: Implement non-equality joins")
+                }
 
-    /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
-    pub fn dummy_scan_node_with_pushdowns(
-        scan_op: ScanOperatorRef,
-        pushdowns: Pushdowns,
-    ) -> LogicalPlanBuilder {
-        LogicalPlanBuilder::table_scan(scan_op, Some(pushdowns)).unwrap()
-    }
+                // Visitor appends in in-order
+                // TODO: Just use regular recursion?
+                let right_node = self.curr_node.pop().unwrap();
+                let left_node = self.curr_node.pop().unwrap();
 
-    #[test]
-    fn test_logical_in_memory_source_to_pipeline() {
-        let fields = vec![
-            Field::new("category", DataType::Utf8),
-            Field::new("group", DataType::Int64),
-            Field::new("value", DataType::Int64),
-        ];
-        let plan = dummy_in_memory_scan(fields).unwrap().build();
-        let plan_id = Arc::from("foo");
-        let stage_id = StageID::new(0);
-        let pipeline_node = logical_plan_to_pipeline_node(
-            plan_id,
-            stage_id,
-            plan,
-            Arc::new(DaftExecutionConfig::default()),
-            Arc::new(HashMap::new()),
-        )
-        .unwrap();
+                self.gen_hash_join_nodes(
+                    logical_node_id,
+                    join.on.clone(),
+                    left_node,
+                    right_node,
+                    join.join_type,
+                    join.output_schema.clone(),
+                )?
+            }
+            LogicalPlan::Sort(sort) => {
+                let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
 
-        assert_eq!(pipeline_node.name(), "DistributedInMemoryScan");
-        assert_eq!(pipeline_node.children().len(), 0);
-    }
+                // First stage: Gather all data to a single node
+                let input_node = self.curr_node.pop().unwrap();
+                let gather = self.gen_gather_node(logical_node_id, input_node);
 
-    #[test]
-    fn test_logical_scan_source_to_pipeline() {
-        let fields = vec![
-            Field::new("category", DataType::Utf8),
-            Field::new("group", DataType::Int64),
-            Field::new("value", DataType::Int64),
-        ];
-        let plan = dummy_scan_node(dummy_scan_operator(fields))
-            .optimize()
-            .unwrap() // To fill scan node with tasks
-            .build();
-        eprintln!("{}", plan.repr_ascii(false));
-        let plan_id = Arc::from("foo");
-        let stage_id = StageID::new(0);
-        let pipeline_node = logical_plan_to_pipeline_node(
-            plan_id,
-            stage_id,
-            plan,
-            Arc::new(DaftExecutionConfig::default()),
-            Arc::new(HashMap::new()),
-        )
-        .unwrap();
+                // Second stage: Perform a local sort
+                SortNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sort_by,
+                    sort.descending.clone(),
+                    sort.nulls_first.clone(),
+                    sort.input.schema(),
+                    gather,
+                )
+                .arced()
+            }
+            LogicalPlan::TopN(top_n) => {
+                let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
 
-        assert_eq!(pipeline_node.name(), "DistributedScan");
-        assert_eq!(pipeline_node.children().len(), 0);
-    }
+                // First stage: Perform a local topN
+                let local_topn = TopNNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sort_by.clone(),
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced();
 
-    #[test]
-    fn test_logical_limit_to_pipeline() -> DaftResult<()> {
-        let fields = vec![
-            Field::new("category", DataType::Utf8),
-            Field::new("group", DataType::Int64),
-            Field::new("value", DataType::Int64),
-        ];
-        let plan = dummy_scan_node(dummy_scan_operator(fields))
-            .limit(20, false)?
-            .optimize()? // To fill scan node with tasks
-            .build();
-        let plan_id = Arc::from("foo");
-        let stage_id = StageID::new(0);
-        let pipeline_node = logical_plan_to_pipeline_node(
-            plan_id,
-            stage_id,
-            plan,
-            Arc::new(DaftExecutionConfig::default()),
-            Arc::new(HashMap::new()),
-        )
-        .unwrap();
+                // Second stage: Gather all data to a single node
+                let gather = self.gen_gather_node(logical_node_id, local_topn);
 
-        assert_eq!(pipeline_node.name(), "DistributedLimit");
-
-        let children = pipeline_node.children();
-        assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "DistributedScan");
-        assert_eq!(children[0].children().len(), 0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_logical_project_to_pipeline() -> DaftResult<()> {
-        let fields = vec![
-            Field::new("category", DataType::Utf8),
-            Field::new("group", DataType::Int64),
-            Field::new("value", DataType::Int64),
-        ];
-        let plan = dummy_scan_node(dummy_scan_operator(fields))
-            .with_columns(vec![resolved_col("group")
-                .add(resolved_col("value"))
-                .alias("group_value")])?
-            .optimize()? // To fill scan node with tasks
-            .build();
-        let plan_id = Arc::from("foo");
-        let stage_id = StageID::new(0);
-        let pipeline_node = logical_plan_to_pipeline_node(
-            plan_id,
-            stage_id,
-            plan,
-            Arc::new(DaftExecutionConfig::default()),
-            Arc::new(HashMap::new()),
-        )
-        .unwrap();
-
-        assert_eq!(pipeline_node.name(), "DistributedScan");
-        assert_eq!(pipeline_node.children().len(), 0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_map_logical_plan_to_pipeline() -> DaftResult<()> {
-        let fields = vec![
-            Field::new("category", DataType::Utf8),
-            Field::new("group", DataType::Int64),
-            Field::new("value", DataType::Int64),
-        ];
-        let plan = dummy_scan_node(dummy_scan_operator(fields))
-            .optimize()? // To fill scan node with tasks
-            .with_columns(vec![resolved_col("group")
-                .add(resolved_col("value"))
-                .alias("group_value")])?
-            .filter(resolved_col("group_value").eq(lit(0)))?
-            .limit(20, false)?
-            .select(vec![resolved_col("group_value")])?
-            .build();
-        let plan_id = Arc::from("foo");
-        let stage_id = StageID::new(0);
-        let pipeline_node = logical_plan_to_pipeline_node(
-            plan_id,
-            stage_id,
-            plan,
-            Arc::new(DaftExecutionConfig::default()),
-            Arc::new(HashMap::new()),
-        )
-        .unwrap();
-
-        // Intermediate <- Limit <- Source
-        assert_eq!(pipeline_node.name(), "DistributedIntermediateNode");
-
-        let children = pipeline_node.children();
-        assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "DistributedLimit");
-
-        let children = children[0].children();
-        assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "DistributedScan");
-        assert_eq!(children[0].children().len(), 0);
-
-        Ok(())
+                // Final stage: Do another topN to get the final result
+                TopNNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    sort_by,
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.input.schema(),
+                    gather,
+                )
+                .arced()
+            }
+            LogicalPlan::Pivot(_) => {
+                todo!("FLOTILLA_MS3: Implement Pivot")
+            }
+            LogicalPlan::SubqueryAlias(_)
+            | LogicalPlan::Union(_)
+            | LogicalPlan::Intersect(_)
+            | LogicalPlan::Shard(_) => {
+                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
+            }
+        };
+        self.curr_node.push(output);
+        Ok(TreeNodeRecursion::Continue)
     }
 }

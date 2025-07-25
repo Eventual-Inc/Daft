@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap, ops::Range, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -12,6 +12,7 @@ use snafu::ResultExt;
 
 use crate::{
     object_io::{FileMetadata, GetResult, LSResult, ObjectSource},
+    range::GetRange,
     stats::IOStatsRef,
     IOClient, InvalidUrlSnafu, SourceType,
 };
@@ -20,7 +21,7 @@ fn invalid_unity_path(path: &str) -> crate::Error {
     crate::Error::NotFound {
         path: path.to_string(),
         source: Box::new(DaftError::ValueError(format!(
-            "Expected Unity Catalog volume path to be in the form `dbfs:/Volumes/catalog/schema/volume/path`, instead found: {}",
+            "Expected Unity Catalog volume path to be in the form `vol+dbfs:/Volumes/catalog/schema/volume/path`, instead found: {}",
             path
         ))),
     }
@@ -128,12 +129,6 @@ impl UnitySource {
     ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
         let url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
 
-        debug_assert_eq!(
-            url.scheme().to_lowercase(),
-            "dbfs",
-            "UnitySource should only be used for paths with scheme `dbfs`."
-        );
-
         let mut segments = url
             .path_segments()
             .ok_or_else(|| invalid_unity_path(path))?;
@@ -163,7 +158,7 @@ impl ObjectSource for UnitySource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let (source, source_uri) = self.volume_path_to_source_and_url(uri).await?;

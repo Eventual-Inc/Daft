@@ -88,8 +88,8 @@ pub(crate) mod test {
                     .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
-            .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .add_monotonically_increasing_id(Some("id2"), None)?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 
@@ -159,8 +159,8 @@ Project1 --> Limit0
                     .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
-            .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .add_monotonically_increasing_id(Some("id2"), None)?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 
