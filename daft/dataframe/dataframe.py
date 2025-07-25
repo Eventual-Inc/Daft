@@ -223,7 +223,7 @@ class DataFrame:
     def explain(
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
     ) -> Any:
-        """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
+        r"""Prints the (logical and physical) plans that will be executed to produce this DataFrame.
 
         Defaults to showing the unoptimized logical plan. Use `show_all=True` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
@@ -237,6 +237,48 @@ class DataFrame:
 
             file (Optional[io.IOBase]): Location to print the output to, or defaults to None which defaults to the default location for
                 print (in Python, that should be sys.stdout)
+
+        Returns:
+            Union[None, str, MermaidFormatter]:
+                - If `format="mermaid"` and running in a notebook, returns a `MermaidFormatter` instance for rich rendering.
+                - If `format="mermaid"` and not in a notebook, returns a string representation of the plan.
+                - Otherwise, prints the plan(s) to the specified file or stdout and returns `None`.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>>
+            >>> def double(df, column: str):
+            ...     return df.select((df[column] * df[column]).alias(column))
+            >>>
+            >>> df = df.pipe(double, "x")
+            >>>
+            >>> df.explain()
+            == Unoptimized Logical Plan ==
+            ...  # logical plan output truncated
+            <BLANKLINE>
+            (Showing unoptimized logical plan only)
+            <BLANKLINE>
+            >>> df.explain(show_all=True)
+            == Unoptimized Logical Plan ==
+            ...
+            == Optimized Logical Plan ==
+            ...
+            == Physical Plan ==
+            ...
+            <BLANKLINE>
+            (Showing all stages of execution)
+            <BLANKLINE>
+            >>> with open("plan.txt", "w") as f:
+            ...     df.explain(show_all=True, file=f)
+            <BLANKLINE>
+            (Plan written to file `plan.txt`)
+            <BLANKLINE>
+            >>> df.explain(format="mermaid")
+            'graph TD\n  A --> B\n  ...'
+            <BLANKLINE>
+            (Returned Mermaid-format string, or MermaidFormatter if in a notebook)
         """
         is_cached = self._result_cache is not None
         if format == "mermaid":
@@ -305,6 +347,33 @@ class DataFrame:
         return None
 
     def num_partitions(self) -> int:
+        """Returns the number of partitions that will be used to execute this DataFrame.
+
+        The query optimizer may change the partitioning strategy. This method runs the optimizer
+        and then inspects the resulting physical plan scheduler to determine how many partitions
+        the execution will use.
+
+        Args:
+            None
+
+        Returns:
+            int: The number of partitions in the optimized physical execution plan.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> # Create a DataFrame with 1000 rows
+            >>> df = daft.from_pydict({"x": list(range(1000))})
+            >>>
+            >>> # Partition count may depend on default config or optimizer decisions
+            >>> df.num_partitions()
+            4
+            >>>
+            >>> # You can repartition manually (if supported), and then inspect again:
+            >>> df2 = df.repartition(10)
+            >>> df2.num_partitions()
+            10
+        """
         # We need to run the optimizer since that could change the number of partitions
         return (
             self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
@@ -314,8 +383,21 @@ class DataFrame:
     def schema(self) -> Schema:
         """Returns the Schema of the DataFrame, which provides information about each column, as a Python object.
 
+        Args:
+            None
+
         Returns:
             Schema: schema of the DataFrame
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> df.schema()
+            Schema([
+                Field(name='x', dtype=DataType.int64()),
+                Field(name='y', dtype=DataType.string())
+            ])
         """
         return self.__builder.schema()
 
@@ -339,7 +421,24 @@ class DataFrame:
 
     @DataframePublicAPI
     def __iter__(self) -> Iterator[dict[str, Any]]:
-        """Alias of `self.iter_rows()` with default arguments for convenient access of data."""
+        """Alias of `self.iter_rows()` with default arguments for convenient access of data.
+
+        Args:
+            None
+        Returns:
+            Iterator[dict[str, Any]]: An iterator over the rows of the DataFrame, where each row is a dictionary
+            mapping column names to values.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+            >>> for row in df:
+            ...     print(row)
+            {'foo': 1, 'bar': 'a'}
+            {'foo': 2, 'bar': 'b'}
+            {'foo': 3, 'bar': 'c'}
+        !!! tip "See also [`df.iter_rows()`][daft.DataFrame.iter_rows]: iterator over rows with more options"
+        """
         return self.iter_rows(results_buffer_size=None)
 
     @DataframePublicAPI
@@ -370,6 +469,10 @@ class DataFrame:
             * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
 
             The default value is the total number of CPUs available on the current machine.
+
+        Returns:
+            Iterator[dict[str, Any]]: An iterator over the rows of the DataFrame, where each row is a dictionary
+            mapping column names to values.
 
         Examples:
             >>> import daft
@@ -431,7 +534,42 @@ class DataFrame:
         self,
         results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
     ) -> Iterator["pyarrow.RecordBatch"]:
-        """Return an iterator of pyarrow recordbatches for this dataframe."""
+        """Return an iterator of pyarrow recordbatches for this dataframe.
+
+        Args:
+            results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
+                available on the machine).
+        Note: A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
+            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
+            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
+            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
+            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
+            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
+            The default value is the total number of CPUs available on the current machine.
+
+        Returns:
+            Iterator[pyarrow.RecordBatch]: An iterator over the RecordBatches of the DataFrame.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
+            >>> for batch in df.to_arrow_iter():
+            ...     print(batch)
+            pyarrow.RecordBatch with 3 rows and 2 columns
+            foo: int64
+            bar: string
+            ┌─────┬─────┐
+            │ foo ┆ bar │
+            ├─────┼─────┤
+            │ 1   ┆ a   │
+            │ 2   ┆ b   │
+            │ 3   ┆ c   │
+            └─────┴─────┘
+            <BLANKLINE>
+            Statistics: missing
+            <BLANKLINE>
+        """
         for name in self.schema().column_names():
             if self.schema()[name].dtype.is_python():
                 raise ValueError(
@@ -483,6 +621,11 @@ class DataFrame:
             * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
 
             The default value is the total number of CPUs available on the current machine.
+
+        Returns:
+            Iterator[Union[MicroPartition, ray.ObjectRef]]: An iterator over the partitions of the DataFrame.
+            Each partition is a MicroPartition object (if using Python runner backend) or a ray ObjectRef
+            (if using Ray runner backend).
 
         Examples:
             >>> import daft
@@ -699,6 +842,20 @@ class DataFrame:
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> df.write_parquet(
+            ...     "s3://my-bucket/my-data",
+            ...     write_mode="overwrite",
+            ...     partition_cols=["x"],
+            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret)
+            ... )
+            <BLANKLINE>
+            (Writes the DataFrame to S3 in Parquet format, partitioned by column "x" and overwriting existing data)
+            <BLANKLINE>
+        !!! tip "See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]: other formats for writing DataFrames
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -770,6 +927,20 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> df.write_csv(
+            ...     "s3://my-bucket/my-data",
+            ...     write_mode="overwrite",
+            ...     partition_cols=["x"],
+            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret)
+            ... )
+            <BLANKLINE>
+            (Writes the DataFrame to S3 in CSV format, partitioned by column "x" and overwriting existing data)
+            <BLANKLINE>
+        !!! tip "See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]: other formats for writing DataFrames
+
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -839,6 +1010,19 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> df.write_json(
+            ...     "s3://my-bucket/my-data",
+            ...     write_mode="overwrite",
+            ...     partition_cols=["x"],
+            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret)
+            ... )
+            <BLANKLINE>
+            (Writes the DataFrame to S3 in JSON format, partitioned by column "x" and overwriting existing data)
+            <BLANKLINE>
+
         !!! Currently only supported with the Native runner!
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
@@ -902,6 +1086,24 @@ class DataFrame:
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> import pyiceberg
+            >>> from daft.io.iceberg import UnityCatalogTable
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> table = UnityCatalogTable(
+            ...     catalog_name="my_catalog",
+            ...     schema_name="my_schema",
+            ...     table_name="my_table",
+            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret"),
+            ... )
+            >>> df.write_iceberg(
+            ...     table, mode="overwrite", io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret")
+            ... )
+            <BLANKLINE>
+            (Writes the DataFrame to the Iceberg table in overwrite mode, replacing existing data)
+            <BLANKLINE>
 
         """
         import pyarrow as pa
@@ -1072,6 +1274,35 @@ class DataFrame:
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> import deltalake
+            >>> from daft.io.delta_lake import UnityCatalogTable
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> table = UnityCatalogTable(
+            ...     catalog_name="my_catalog",
+            ...     schema_name="my_schema",
+            ...     table_name="my_table",
+            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret"),
+            ... )
+            >>> df.write_deltalake(
+            ...     table,
+            ...     partition_cols=["x"],
+            ...     mode="overwrite",
+            ...     schema_mode="overwrite",
+            ...     name="My Delta Table",
+            ...     description="This is my Delta table",
+            ...     configuration={"delta.appendOnly": "true"},
+            ...     custom_metadata={"key": "value"},
+            ...     dynamo_table_name="my-dynamo-table",
+            ...     allow_unsafe_rename=True,
+            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret"),
+            ... )
+            <BLANKLINE>
+            (Writes the DataFrame to the Delta Lake table, partitioned by column "x",
+            overwriting existing data, with specified metadata and custom configurations)
+            <BLANKLINE>
         """
         import json
 
@@ -1336,6 +1567,9 @@ class DataFrame:
             `write_lance` requires python 3.9 or higher
             This call is **blocking** and will execute the DataFrame when called
 
+        Returns:
+            DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
+
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
@@ -1456,7 +1690,36 @@ class DataFrame:
         def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
 
     def __getitem__(self, item: Union[int, str, slice, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
-        """Gets a column from the DataFrame as an Expression (``df["mycol"]``)."""
+        """Gets a column from the DataFrame as an Expression (``df["mycol"]``).
+
+        Args:
+            item (Union[int, str, slice, Iterable[Union[str, int]]]): The column to get. Can be an integer index, a string column name, a slice for multiple columns, or an iterable of column names or indices.
+
+        Returns:
+            Union[Expression, DataFrame]: If a single column is requested, returns an Expression representing that column.
+            If multiple columns are requested (via a slice or iterable), returns a new DataFrame containing those columns.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+            >>> df["a"]  # Get a single column
+            Expression: a
+            >>> df["b"]  # Get another single column
+            Expression: b
+            >>> df[0]  # Get the first column by index
+            Expression: a
+            >>> df[1:3]  # Get a slice of columns
+            DataFrame with columns: b, c
+            >>> df[["a", "c"]]  # Get multiple columns by name
+            DataFrame with columns: a, c
+            >>> df[["a", 1]]  # Get multiple columns by name and index
+            DataFrame with columns: a, b
+            >>> df[0:2]  # Get a slice of columns by index
+            DataFrame with columns: a, b
+            >>> df[["a", "b", 2]]  # Get a mix of column names and indices
+            DataFrame with columns: a, b, c
+
+        """
         result: Optional[Expression]
 
         if isinstance(item, int):
@@ -1571,6 +1834,9 @@ class DataFrame:
     def describe(self) -> "DataFrame":
         """Returns the Schema of the DataFrame, which provides information about each column, as a new DataFrame.
 
+        Args:
+            None
+
         Returns:
             DataFrame: A dataframe where each row is a column name and its corresponding type.
 
@@ -1597,8 +1863,29 @@ class DataFrame:
     def summarize(self) -> "DataFrame":
         """Returns column statistics for the DataFrame.
 
+        Args:
+            None
+
         Returns:
             DataFrame: new DataFrame with the computed column statistics.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df.summarize().show()
+            ╭─────────────┬─────────────┬─────────────╮
+            │ column_name ┆ num_rows    ┆ num_nulls   │
+            │ ---         ┆ ---         ┆ ---         │
+            │ Utf8        ┆ Int64       ┆ Int64       │
+            ╞═════════════╪═════════════╪═════════════╡
+            │ x           ┆ 3           ┆ 0           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ y           ┆ 3           ┆ 0           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ z           ┆ 3           ┆ 0           │
+            ╰─────────────┴─────────────┴─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
         """
         builder = self._builder.summarize()
         return DataFrame(builder)
@@ -1802,6 +2089,22 @@ class DataFrame:
 
         Tip:
             See also [.where(predicate)][daft.DataFrame.where]
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
+            >>> df.filter((col("x") > 1) & (col("y") > 1)).collect()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 2     ┆ 6     ┆ 8     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 9     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         """
         return self.where(predicate)
@@ -2154,8 +2457,20 @@ class DataFrame:
     def count_rows(self) -> int:
         """Executes the Dataframe to count the number of rows.
 
+        Args:
+            None
+
         Returns:
             int: count of the number of rows in this DataFrame.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df.count_rows()
+            3
+        Note:
+            This will execute the DataFrame and return the number of rows in it.
+
         """
         if self._result is not None:
             return len(self._result)
@@ -2372,6 +2687,28 @@ class DataFrame:
             DataFrames being concatenated **must have exactly the same schema**. You may wish to use the
             [df.select()][daft.DataFrame.select] and [expr.cast()][daft.expressions.Expression.cast] methods
             to ensure schema compatibility before concatenation.
+
+        Examples:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2], "b": [3, 4]})
+            >>> df2 = daft.from_pydict({"a": [5, 6], "b": [7, 8]})
+            >>> concatenated_df = df1.concat(df2)
+            >>> concatenated_df.show()
+            ╭─────┬─────╮
+            │ a   ┆ b   │
+            │ --- ┆ --- │
+            │Int64┆Int64│
+            ╞═════╪═════╡
+            │ 1   ┆ 3   │
+            ├╌╌╌╌╌┼╌╌╌╌╌┤
+            │ 2   ┆ 4   │
+            ├╌╌╌╌╌┼╌╌╌╌╌┤
+            │ 5   ┆ 7   │
+            ├╌╌╌╌╌┼╌╌╌╌╌┤
+            │ 6   ┆ 8   │
+            ╰─────┴─────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
         """
         if self.schema() != other.schema():
             raise ValueError(
@@ -2607,6 +2944,47 @@ class DataFrame:
     ) -> "DataFrame":
         """Alias for unpivot.
 
+        Args:
+            ids (ManyColumnsInputType): Columns to keep as identifiers
+            values (Optional[ManyColumnsInputType]): Columns to unpivot. If not specified, all columns except ids will be unpivoted.
+            variable_name (Optional[str]): Name of the variable column. Defaults to "variable".
+            value_name (Optional[str]): Name of the value column. Defaults to "value".
+
+        Returns:
+            DataFrame: Unpivoted DataFrame
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "year": [2020, 2021, 2022],
+            ...         "Jan": [10, 30, 50],
+            ...         "Feb": [20, 40, 60],
+            ...     }
+            ... )
+            >>> df = df.melt("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
+            >>> df = df.sort("year")
+            >>> df.show()
+            ╭───────┬───────┬───────────╮
+            │ year  ┆ month ┆ inventory │
+            │ ---   ┆ ---   ┆ ---       │
+            │ Int64 ┆ Utf8  ┆ Int64     │
+            ╞═══════╪═══════╪═══════════╡
+            │ 2020  ┆ Jan   ┆ 10        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            │ 2020  ┆ Feb   ┆ 20        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            │ 2021  ┆ Jan   ┆ 30        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            │ 2021  ┆ Feb   ┆ 40        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            │ 2022  ┆ Jan   ┆ 50        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            │ 2022  ┆ Feb   ┆ 60        │
+            ╰───────┴───────┴───────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+
         Tip:
             See also [unpivot][daft.DataFrame.unpivot]
         """
@@ -2717,6 +3095,21 @@ class DataFrame:
             *cols (Union[str, Expression]): columns to sum
         Returns:
             DataFrame: Globally aggregated sums. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.sum("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Int64   │
+            ╞═════════╡
+            │ 6       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.sum, cols)
 
@@ -2728,6 +3121,21 @@ class DataFrame:
             *cols (Union[str, Expression]): columns to mean
         Returns:
             DataFrame: Globally aggregated mean. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.mean("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 2.0     │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.mean, cols)
 
@@ -2766,6 +3174,21 @@ class DataFrame:
             *cols (Union[str, Expression]): columns to min
         Returns:
             DataFrame: Globally aggregated min. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.min("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Int64   │
+            ╞═════════╡
+            │ 1       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.min, cols)
 
@@ -2777,6 +3200,21 @@ class DataFrame:
             *cols (Union[str, Expression]): columns to max
         Returns:
             DataFrame: Globally aggregated max. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.max("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Int64   │
+            ╞═════════╡
+            │ 3       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.max, cols)
 
@@ -2790,6 +3228,21 @@ class DataFrame:
             *cols (Union[str, Expression]): columns to get an arbitrary value from
         Returns:
             DataFrame: DataFrame with any values.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.any_value("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Int64   │
+            ╞═════════╡
+            │ 1       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.any_value, cols)
 
@@ -2801,6 +3254,8 @@ class DataFrame:
             *cols (Union[str, Expression]): columns to count
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
+
+            ///// check the below examples if they are correct /////
 
         Examples:
             If no columns are specified (i.e. in the case you call `df.count()`), or only the literal string "*",
@@ -2869,6 +3324,22 @@ class DataFrame:
             *cols (Union[str, Expression]): columns to form into a list
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.agg_list("col_a")
+            >>> df.show()
+            ╭─────────────╮
+            │ col_a       │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [1, 2, 3]   │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.agg_list, cols)
 
@@ -2881,6 +3352,22 @@ class DataFrame:
 
         Returns:
             DataFrame: Globally aggregated set. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"col_a": [1, 2, 2, 3]})
+            >>> df = df.agg_set("col_a")
+            >>> df.show()
+            ╭─────────────╮
+            │ col_a       │
+            │ ---         │
+            │ Set[Int64]  │
+            ╞═════════════╡
+            │ {1, 2, 3}   │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.agg_set, cols)
 
@@ -2892,6 +3379,22 @@ class DataFrame:
             *cols (Union[str, Expression]): columns that are lists to concatenate
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"col_a": [[1, 2], [3, 4]]})
+            >>> df = df.agg_concat("col_a")
+            >>> df.show()
+            ╭────────═─────╮
+            │ col_a        │
+            │ ---          │
+            │ List[Int64]  │
+            ╞══════════════╡
+            │ [1, 2, 3, 4] │
+            ╰─────────═────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.agg_concat, cols)
 
@@ -3053,6 +3556,12 @@ class DataFrame:
     def union(self, other: "DataFrame") -> "DataFrame":
         """Returns the distinct union of two DataFrames.
 
+        Args:
+            other (DataFrame): The DataFrame to union with this one.
+
+        Returns:
+            DataFrame: A new DataFrame containing the distinct rows from both DataFrames.
+
         Examples:
             >>> import daft
             >>> df1 = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
@@ -3082,6 +3591,12 @@ class DataFrame:
     @DataframePublicAPI
     def union_all(self, other: "DataFrame") -> "DataFrame":
         """Returns the union of two DataFrames, including duplicates.
+
+        Args:
+            other (DataFrame): The DataFrame to union with this one.
+
+        Returns:
+            DataFrame: A new DataFrame containing all rows from both DataFrames, including duplicates.
 
         Examples:
             >>> import daft
@@ -3115,6 +3630,12 @@ class DataFrame:
     def union_by_name(self, other: "DataFrame") -> "DataFrame":
         """Returns the distinct union by name.
 
+        Args:
+            other (DataFrame): The DataFrame to union with this one, matching columns by name.
+
+        Returns:
+            DataFrame: A new DataFrame containing the distinct rows from both DataFrames, with columns matched by name.
+
         Examples:
             >>> import daft
             >>> df1 = daft.from_pydict({"x": [1, 2], "y": [4, 5], "w": [9, 10]})
@@ -3142,6 +3663,12 @@ class DataFrame:
     @DataframePublicAPI
     def union_all_by_name(self, other: "DataFrame") -> "DataFrame":
         """Returns the union of two DataFrames, including duplicates, with columns matched by name.
+
+        Args:
+            other (DataFrame): The DataFrame to union with this one, matching columns by name.
+
+        Returns:
+            DataFrame: A new DataFrame containing all rows from both DataFrames, including duplicates, with columns matched by name.
 
         Examples:
             >>> import daft
@@ -3316,6 +3843,25 @@ class DataFrame:
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df = df.collect()
+            >>> df.show()
+            ╭─────┬─────╮
+            │ x   ┆ y   │
+            │ --- ┆ --- │
+            │ Int ┆ Int │
+            ╞═════╪═════╡
+            │ 1   ┆ 4   │
+            ├╌╌╌╌╌┼╌╌╌╌╌┤
+            │ 2   ┆ 5   │
+            ├╌╌╌╌╌┼╌╌╌╌╌┤
+            │ 3   ┆ 6   │
+            ╰─────┴─────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
         """
         self._broadcast_query_plan()
         self._materialize_results()
@@ -3450,8 +3996,18 @@ class DataFrame:
 
         If dataframe is not materialized yet, raises a runtime error.
 
+        Args:
+            None
+
         Returns:
             int: count of rows.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.collect()
+            >>> len(df)
+            3
 
         """
         if self._result is not None:
@@ -3496,6 +4052,17 @@ class DataFrame:
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> pd_df = df.to_pandas()
+            >>> print(pd_df)
+            a  b
+            0  1  4
+            1  2  5
+            2  3  6
+
         """
         self.collect()
         result = self._result
@@ -3518,6 +4085,22 @@ class DataFrame:
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> arrow_table = df.to_arrow()
+            >>> print(arrow_table)
+            pyarrow.Table
+            a: int64
+            b: int64
+            ----
+            a: [[1, 2, 3]]
+            b: [[4, 5, 6]]
+
+        Tip:
+            See also [DataFrame.to_arrow_iter()][daft.DataFrame.to_arrow_iter] for
+            a streaming iterator over the rows of the DataFrame as Arrow RecordBatches.
         """
         import pyarrow as pa
 
@@ -3535,6 +4118,16 @@ class DataFrame:
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_array({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> print(df.to_pydict())
+            {'a': [1, 2, 3, 4], 'b': [2, 4, 3, 1]}
+
+        Tip:
+            See also [DataFrame.to_pylist()][daft.DataFrame.to_pylist] for
+            a convenience method that converts the DataFrame to a list of Python dict objects.
         """
         self.collect()
         result = self._result
@@ -3544,6 +4137,9 @@ class DataFrame:
     @DataframePublicAPI
     def to_pylist(self) -> list[Any]:
         """Converts the current Dataframe into a python list.
+
+        Args:
+            None
 
         Returns:
             List[dict[str, Any]]: List of python dict objects.
@@ -3588,6 +4184,28 @@ class DataFrame:
             shard_strategy (Optional[Literal["file"]]): Strategy to use for sharding the dataset. Currently only "file" is supported.
             world_size (Optional[int]): Total number of workers for sharding. Required if shard_strategy is specified.
             rank (Optional[int]): Rank of current worker for sharding. Required if shard_strategy is specified.
+
+        Returns:
+            torch.utils.data.Dataset: A PyTorch Dataset containing the data from the DataFrame.
+
+        Note:
+            The produced dataset is meant to be used with the single-process DataLoader,
+            and does not support data sharding hooks for multi-process data loading.
+
+        Examples:
+            >>> import daft
+            >>> import torch
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> torch_dataset = df.to_torch_map_dataset()
+            >>> for item in torch_dataset:
+            ...     print(item)
+            {'x': 1, 'y': 4}
+            {'x': 2, 'y': 5}
+            {'x': 3, 'y': 6}
+
+        Tip:
+            This method returns results locally.
+            For distributed training, you may want to use [DataFrame.to_ray_dataset()][daft.DataFrame.to_ray_dataset].
         """
         from daft.dataframe.to_torch import DaftTorchDataset
 
@@ -3618,6 +4236,20 @@ class DataFrame:
             world_size (Optional[int]): Total number of workers for sharding. Required if shard_strategy is specified.
             rank (Optional[int]): Rank of current worker for sharding. Required if shard_strategy is specified.
 
+        Returns:
+            torch.utils.data.IterableDataset: A PyTorch IterableDataset containing the data from the DataFrame.
+
+        Examples:
+            >>> import daft
+            >>> import torch
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> torch_iter_dataset = df.to_torch_iter_dataset()
+            >>> for item in torch_iter_dataset:
+            ...     print(item)
+            {'x': 1, 'y': 4}
+            {'x': 2, 'y': 5}
+            {'x': 3, 'y': 6}
+
         Note:
             The produced dataset is meant to be used with the single-process DataLoader,
             and does not support data sharding hooks for multi-process data loading.
@@ -3647,8 +4279,18 @@ class DataFrame:
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
         """Converts the current DataFrame to a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset) which is useful for running distributed ML model training in Ray.
 
+        Args:
+            None
+
         Returns:
             ray.data.dataset.DataSet: [Ray dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset)
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> ray_dataset = df.to_ray_dataset()
+            >>> print(ray_dataset)
+            Dataset(num_blocks=1, schema={x: int64, y: int64})
 
         Note:
             This function can only work if Daft is running using the RayRunner
@@ -3751,6 +4393,16 @@ class DataFrame:
 
         Note:
             This function can only work if Daft is running using the RayRunner.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> dask_df = df.to_dask_dataframe()
+            >>> print(dask_df.compute())
+            a  b
+            0  1  4
+            1  2  5
+            2  3  6
 
         """
         from daft.runners.ray_runner import RayPartitionSet
