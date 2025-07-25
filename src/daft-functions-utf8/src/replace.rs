@@ -9,7 +9,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{BuiltinScalarFunc, FunctionArg, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -74,7 +74,7 @@ impl ScalarUDF for Replace {
 
 #[must_use]
 pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bool) -> ExprRef {
-    ScalarFunction {
+    BuiltinScalarFunc {
         udf: if regex {
             Arc::new(RegexpReplace) as _
         } else {

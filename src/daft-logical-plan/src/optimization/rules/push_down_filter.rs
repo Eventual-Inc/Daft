@@ -360,7 +360,7 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{functions::ScalarFunction, lit, resolved_col, unresolved_col, ExprRef};
+    use daft_dsl::{functions::BuiltinScalarFunc, lit, resolved_col, unresolved_col, ExprRef};
     use daft_functions_uri::download::UrlDownload;
     use rstest::rstest;
 
@@ -443,7 +443,7 @@ mod tests {
     /// Tests that we can't pushdown a filter into a ScanOperator if it has an udf-ish expression.
     #[test]
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
-        let pred: ExprRef = ScalarFunction::new(
+        let pred: ExprRef = BuiltinScalarFunc::new(
             UrlDownload,
             vec![resolved_col("a"), lit(1), lit(true), lit(true)],
         )

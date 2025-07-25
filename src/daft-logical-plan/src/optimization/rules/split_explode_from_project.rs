@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{resolved_col, Expr};
+use daft_dsl::{functions::scalar::ScalarFunc, resolved_col, Expr};
 
 use crate::{
     ops::{Explode, Project},
@@ -37,7 +37,7 @@ impl OptimizerRule for SplitExplodeFromProject {
                         unaliased_expr = inner;
                     }
 
-                    if let Expr::ScalarFunction(sf) = unaliased_expr.as_ref()
+                    if let Expr::ScalarFunc(ScalarFunc::Builtin(sf)) = unaliased_expr.as_ref()
                         && sf.is_function_type::<daft_functions_list::Explode>()
                     {
                         let inner = sf

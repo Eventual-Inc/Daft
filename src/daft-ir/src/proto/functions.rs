@@ -31,7 +31,7 @@ pub fn from_proto_function(message: proto::Function) -> ProtoResult<ir::Expr> {
     let expr = match non_null!(message.descriptor) {
         proto::FunctionDescriptor::Py(py) => {
             // handle python functions
-            let func = ir::functions::python::PythonUDF::from_proto(py)?;
+            let func = ir::functions::python::LegacyPythonUDF::from_proto(py)?;
             let args = args.into_inner();
             ir::rex::from_py_func(func, args)
         }
@@ -110,7 +110,7 @@ pub fn function_expr_to_proto(
 }
 
 /// This is to turn a proto rs function descriptor into the rust factory for linking.
-impl ToFromProto for ir::functions::ScalarFunction {
+impl ToFromProto for ir::functions::BuiltinScalarFunc {
     type Message = proto::Function;
 
     fn from_proto(_: Self::Message) -> ProtoResult<Self>
@@ -326,7 +326,7 @@ impl ToFromProto for ir::functions::partitioning::PartitioningExpr {
 }
 
 /// Converts a python UDF into a protobuf via the pickled callable and its args.
-impl ToFromProto for ir::functions::python::PythonUDF {
+impl ToFromProto for ir::functions::python::LegacyPythonUDF {
     type Message = proto::function::PyFunction;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>

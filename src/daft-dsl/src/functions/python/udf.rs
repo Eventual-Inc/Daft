@@ -9,7 +9,7 @@ use pyo3::{
     Bound, PyAny, PyResult,
 };
 
-use super::{super::FunctionEvaluator, PythonUDF};
+use super::{super::FunctionEvaluator, LegacyPythonUDF};
 use crate::{functions::FunctionExpr, ExprRef};
 
 #[cfg(feature = "python")]
@@ -39,7 +39,7 @@ fn run_udf(
     let pyseries = pyseries?;
 
     // Run the function on the converted Vec<Bound<PyAny>>
-    let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.udf"))?;
+    let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.udf.legacy"))?;
     let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_udf"))?;
     let result = run_udf_func.call1((
         func,                                   // Function to run
@@ -61,7 +61,7 @@ fn run_udf(
     }
 }
 
-impl PythonUDF {
+impl LegacyPythonUDF {
     #[cfg(feature = "python")]
     pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<(Series, Duration)> {
         use std::time::Instant;
@@ -104,7 +104,7 @@ impl PythonUDF {
     }
 }
 
-impl FunctionEvaluator for PythonUDF {
+impl FunctionEvaluator for LegacyPythonUDF {
     fn fn_name(&self) -> &'static str {
         "py_udf"
     }

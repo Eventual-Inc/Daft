@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn};
+use daft_dsl::{functions::scalar::ScalarFunc, Column, Expr, ExprRef, ResolvedColumn};
 
 use crate::{
     logical_plan::{LogicalPlan, Project},
@@ -30,7 +30,9 @@ impl DetectMonotonicId {
     /// Helper function to detect if an expression is a monotonically_increasing_id() call
     fn is_monotonic_id_expr(expr: &ExprRef) -> bool {
         match expr.as_ref() {
-            Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+            Expr::ScalarFunc(ScalarFunc::Builtin(func)) => {
+                func.name() == "monotonically_increasing_id"
+            }
             _ => expr.children().iter().any(Self::is_monotonic_id_expr),
         }
     }
@@ -45,7 +47,9 @@ impl DetectMonotonicId {
         Ok(expr
             .clone()
             .transform(|e| match e.as_ref() {
-                Expr::ScalarFunction(func) if func.name() == "monotonically_increasing_id" => {
+                Expr::ScalarFunc(ScalarFunc::Builtin(func))
+                    if func.name() == "monotonically_increasing_id" =>
+                {
                     Ok(Transformed::yes(
                         Expr::Column(Column::Resolved(ResolvedColumn::Basic(Arc::from(
                             column_name,

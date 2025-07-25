@@ -1,7 +1,7 @@
 use common_error::{ensure, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -37,5 +37,5 @@ impl ScalarUDF for ListMin {
 
 #[must_use]
 pub fn list_min(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListMin {}, vec![expr]).into()
+    BuiltinScalarFunc::new(ListMin {}, vec![expr]).into()
 }

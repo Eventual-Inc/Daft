@@ -124,7 +124,7 @@ from daft.session import (
     detach_function,
 )
 from daft.sql import sql, sql_expr
-from daft.udf import udf, _DaftFunc as func
+from daft.udf import udf, _DaftFuncDecorator as func
 from daft.viz import register_viz_hook
 from daft.window import Window
 

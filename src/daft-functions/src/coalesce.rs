@@ -5,7 +5,7 @@ use daft_core::{
     utils::supertype::try_get_collection_supertype,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -102,7 +102,7 @@ impl ScalarUDF for Coalesce {
 /// # Arguments
 /// * `inputs` - A vector of expressions to evaluate in order
 pub fn coalesce(inputs: Vec<ExprRef>) -> ExprRef {
-    ScalarFunction::new(Coalesce {}, inputs).into()
+    BuiltinScalarFunc::new(Coalesce {}, inputs).into()
 }
 
 #[cfg(test)]

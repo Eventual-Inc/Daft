@@ -5,7 +5,7 @@ use daft_core::{
     with_match_float_and_null_daft_types,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -51,5 +51,5 @@ impl ScalarUDF for IsInf {
 
 #[must_use]
 pub fn is_inf(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(IsInf {}, vec![input]).into()
+    BuiltinScalarFunc::new(IsInf {}, vec![input]).into()
 }

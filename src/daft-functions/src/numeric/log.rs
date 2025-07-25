@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ macro_rules! log {
 
         #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
-            ScalarFunction::new($variant, vec![input]).into()
+            BuiltinScalarFunc::new($variant, vec![input]).into()
         }
     };
 }
@@ -118,5 +118,5 @@ impl ScalarUDF for Log {
 
 #[must_use]
 pub fn log(input: ExprRef, base: ExprRef) -> ExprRef {
-    ScalarFunction::new(Log, vec![input, base]).into()
+    BuiltinScalarFunc::new(Log, vec![input, base]).into()
 }

@@ -21,11 +21,11 @@ pub use crate::{
 pub mod rex {
     use std::sync::Arc;
 
-    use daft_dsl::functions::{python::PythonUDF, FunctionArgs, FunctionExpr, ScalarFunction, ScalarUDF};
+    use daft_dsl::functions::{python::LegacyPythonUDF, scalar::ScalarFunc, BuiltinScalarFunc, FunctionArgs, FunctionExpr, ScalarUDF};
     pub use daft_dsl::*;
 
     /// Creates an expression from a python-scalar function
-    pub fn from_py_func<A, E>(func: PythonUDF, args: A) -> Expr
+    pub fn from_py_func<A, E>(func: LegacyPythonUDF, args: A) -> Expr
     where
         A: IntoIterator<Item = E>,
         E: Into<Arc<Expr>>,
@@ -38,8 +38,8 @@ pub mod rex {
     /// Creates an expression from a python-scalar function
     pub fn from_rs_func(func: Arc<dyn ScalarUDF>, args: FunctionArgs<ExprRef>) -> Expr {
         // don't use ::new
-        let func = ScalarFunction { udf: func, inputs: args };
-        Expr::ScalarFunction(func)
+        let func = BuiltinScalarFunc { udf: func, inputs: args };
+        Expr::ScalarFunc(ScalarFunc::Builtin(func))
     }
 }
 

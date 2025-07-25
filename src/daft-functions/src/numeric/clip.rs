@@ -6,7 +6,7 @@ use daft_core::{
     with_match_numeric_daft_types,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -93,5 +93,5 @@ impl ScalarUDF for Clip {
 
 #[must_use]
 pub fn clip(array: ExprRef, min: ExprRef, max: ExprRef) -> ExprRef {
-    ScalarFunction::new(Clip, vec![array, min, max]).into()
+    BuiltinScalarFunc::new(Clip, vec![array, min, max]).into()
 }

@@ -751,7 +751,7 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{
         functions::{
-            python::{MaybeInitializedUDF, PythonUDF, RuntimePyObject},
+            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
             FunctionExpr,
         },
         lit, resolved_col, unresolved_col, Expr, ExprRef,
@@ -787,7 +787,7 @@ mod tests {
 
     fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF {
+            func: FunctionExpr::Python(LegacyPythonUDF {
                 name: Arc::new("my-udf".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),
