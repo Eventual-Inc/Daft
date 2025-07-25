@@ -35,7 +35,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
     - name: Setup Virtual Env
       run: |
         python -m venv venv
@@ -48,8 +47,7 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          source venv/bin/activate
-          uv pip install -r requirements-dev.txt
+          uv sync --all-extras --all-groups
     - name: Build Daft in development mode and generate docs
       run: |
         source activate
