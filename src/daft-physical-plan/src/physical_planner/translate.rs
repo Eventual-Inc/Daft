@@ -155,29 +155,50 @@ pub(super) fn translate_single_logical_node(
             ))
             .arced())
         }
-        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
+        LogicalPlan::Limit(LogicalLimit {
+            offset,
+            limit,
+            eager,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            Ok(
-                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
-                    .arced(),
-            )
+            if offset.is_some() {
+                // TODO(zhenchao) support offset
+                return Err(DaftError::not_implemented(
+                    "distributed runner does not currently support offset",
+                ));
+            }
+            Ok(PhysicalPlan::Limit(Limit::new(
+                input_physical,
+                limit.unwrap(),
+                *eager,
+                num_partitions,
+            ))
+            .arced())
         }
         LogicalPlan::TopN(LogicalTopN {
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
+            if offset.is_some() {
+                // TODO(zhenchao) support offset
+                return Err(DaftError::not_implemented(
+                    "distributed runner does not currently support offset",
+                ));
+            }
             Ok(PhysicalPlan::TopN(TopN::new(
                 input_physical,
                 sort_by.clone(),
                 descending.clone(),
                 nulls_first.clone(),
-                *limit,
+                limit.unwrap(),
                 num_partitions,
             ))
             .arced())
@@ -553,15 +574,13 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            logical_plan.name()
+        ))),
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),

@@ -138,9 +138,11 @@ impl DistributedPipelineNode for TopNNode {
                 self_clone.sort_by.clone(),
                 self_clone.descending.clone(),
                 self_clone.nulls_first.clone(),
-                self_clone.limit,
+                None, // TODO(zhenchao) support offset
+                Some(self_clone.limit),
                 StatsState::NotMaterialized,
             )
+            .unwrap()
         })
     }
 

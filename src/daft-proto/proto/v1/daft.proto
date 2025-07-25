@@ -549,7 +549,8 @@ message RelFilter {
 
 message RelLimit {
   Rel input = 1;
-  uint64 limit = 2;
+  optional uint64 limit = 2;
+  optional uint64 offset = 3;
 }
 
 message RelExplode {

@@ -496,11 +496,14 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Limit(Limit {
             input,
-            num_rows,
+            offset,
+            limit,
             stats_state,
             ..
         }) => {
-            let sink = LimitSink::new(*num_rows as usize);
+            let (offset, limit) = (*offset, *limit);
+            let sink =
+                LimitSink::try_new(offset.map(|x| x as usize), limit.map(|x| x as usize)).unwrap();
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node], stats_state.clone(), ctx)
                 .boxed()
@@ -625,6 +628,7 @@ pub fn physical_plan_to_pipeline(
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             stats_state,
             ..
@@ -633,8 +637,10 @@ pub fn physical_plan_to_pipeline(
                 sort_by.clone(),
                 descending.clone(),
                 nulls_first.clone(),
-                *limit as usize,
-            );
+                offset.map(|x| x as usize),
+                limit.map(|x| x as usize),
+            )
+            .unwrap();
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             BlockingSinkNode::new(Arc::new(sink), child_node, stats_state.clone(), ctx).boxed()
         }
