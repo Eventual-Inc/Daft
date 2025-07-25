@@ -15,6 +15,7 @@ use reqwest_middleware::{
 };
 use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt, Snafu};
+use uuid::Uuid;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
@@ -171,32 +172,44 @@ impl std::fmt::Display for HFPathParts {
 }
 
 impl HFPathParts {
+    // There is a bug within huggingface apis that is incorrectly caching files
+    // https://github.com/huggingface/datasets/issues/7685
+    //
+    // So to bypass this, we add a unique parameter to the url to prevent CDN caching.
+    fn cachebuster(&self) -> String {
+        let cachebuster = Uuid::new_v4();
+        cachebuster.to_string()
+    }
+
     fn get_file_uri(&self) -> String {
         format!(
-            "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
+            "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}?cachebust={CACHEBUSTER}",
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
             REVISION = self.revision,
-            PATH = self.path
+            PATH = self.path,
+            CACHEBUSTER = self.cachebuster()
         )
     }
 
     fn get_api_uri(&self) -> String {
         // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
         format!(
-            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
+            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}?cachebust={CACHEBUSTER}",
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
             REVISION = self.revision,
-            PATH = self.path
+            PATH = self.path,
+            CACHEBUSTER = self.cachebuster()
         )
     }
 
     fn get_parquet_api_uri(&self) -> String {
         format!(
-            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
+            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet?cachebust={CACHEBUSTER}",
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
+            CACHEBUSTER = self.cachebuster()
         )
     }
 }
