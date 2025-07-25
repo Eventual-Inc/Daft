@@ -2881,6 +2881,7 @@ dependencies = [
  "pyo3-async-runtimes",
  "rand 0.8.5",
  "reqwest",
+ "smallvec",
  "snafu",
  "tokio",
  "tokio-util",

@@ -39,6 +39,7 @@ pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
 reqwest = {version = "0.12.19", default-features = false}
+smallvec = "1.15.1"
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
