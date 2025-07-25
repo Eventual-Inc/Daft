@@ -69,11 +69,14 @@ build-whl: check-toolchain .venv  ## Compile Daft for development, only generate
 
 .PHONY: test
 test: .venv build  ## Run tests
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration
+	# You can set additional run parameters through EXTRA_ARGS, such as running a specific test case file or method:
+	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py" # Run a single test file
+	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe" # Run a single test method
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
 
 .PHONY: doctests
 doctests:
-	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/functions.py daft/datatype.py
+	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/ daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
@@ -87,7 +90,7 @@ install-docs-deps:
 		export PATH="$$HOME/.bun/bin:$$PATH"; \
 	fi
 	. $(VENV_BIN)/activate && uv pip install -r requirements-doc.txt
-	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
+# 	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
 
 .PHONY: docs
 docs: .venv install-docs-deps ## Build Daft documentation

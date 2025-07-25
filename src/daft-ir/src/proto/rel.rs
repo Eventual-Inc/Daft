@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_logical_plan::ops::ActorPoolProject;
+use daft_logical_plan::ops::UDFProject;
 
 use super::{ProtoResult, ToFromProto};
 use crate::{
@@ -40,10 +40,9 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let project = ir::rel::Project::from_proto(*project)?;
                 Self::Project(project)
             }
-            proto::RelVariant::ActorPoolProject(actor_pool_project) => {
-                let actor_pool_project =
-                    ir::rel::ActorPoolProject::from_proto(*actor_pool_project)?;
-                Self::ActorPoolProject(actor_pool_project)
+            proto::RelVariant::UdfProject(udf_project) => {
+                let udf_project = ir::rel::UDFProject::from_proto(*udf_project)?;
+                Self::UDFProject(udf_project)
             }
             proto::RelVariant::Filter(filter) => {
                 let filter = ir::rel::Filter::from_proto(*filter)?;
@@ -157,9 +156,9 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let project = project.to_proto()?.into();
                 proto::RelVariant::Project(project)
             }
-            Self::ActorPoolProject(actor_pool_project) => {
-                let actor_pool_project = actor_pool_project.to_proto()?.into();
-                proto::RelVariant::ActorPoolProject(actor_pool_project)
+            Self::UDFProject(udf_project) => {
+                let udf_project = udf_project.to_proto()?.into();
+                proto::RelVariant::UdfProject(udf_project)
             }
             Self::Filter(filter) => {
                 let filter = filter.to_proto()?.into();
@@ -534,24 +533,32 @@ impl ToFromProto for ir::rel::Aggregate {
     }
 }
 
-impl ToFromProto for ActorPoolProject {
-    type Message = proto::RelActorPoolProject;
+impl ToFromProto for UDFProject {
+    type Message = proto::RelUdfProject;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
     where
         Self: Sized,
     {
         let input = ir::rel::LogicalPlan::from_proto(*non_null!(message.input))?;
-        let projections = from_protos(message.projections)?;
-        Ok(ir::rel::new_project_with_actor_pool(input, projections)?)
+        let project = message.project;
+        let project = from_proto(project.map(|p| (*p).into()))?;
+        let passthrough_columns = from_protos(message.passthrough_columns)?;
+        Ok(ir::rel::new_project_with_udf(
+            input,
+            project,
+            passthrough_columns,
+        )?)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let input = self.input.to_proto()?.into();
-        let projections = to_protos(&self.projection)?;
-        Ok(proto::RelActorPoolProject {
+        let project = self.project.to_proto()?;
+        let passthrough_columns = to_protos(&self.passthrough_columns)?;
+        Ok(proto::RelUdfProject {
             input: Some(input),
-            projections,
+            project: Some(Box::new(project)),
+            passthrough_columns,
         })
     }
 }

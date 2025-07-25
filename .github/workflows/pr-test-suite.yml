@@ -155,10 +155,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   integration-test-build:
@@ -749,10 +749,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   benchmark-codspeed:
@@ -886,10 +886,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   check-unused-cargo-deps:
@@ -1072,10 +1072,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
 

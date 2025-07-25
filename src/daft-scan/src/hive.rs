@@ -1,11 +1,29 @@
 use arrow2::datatypes::DataType;
 use common_error::DaftResult;
-use daft_core::{datatypes::Utf8Array, series::Series};
-use daft_decoding::inference::infer;
+use daft_core::series::Series;
+use daft_decoding::{deserialize::deserialize_single_value_to_arrow, inference::infer};
 use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};
 use indexmap::IndexMap;
 
 const DEFAULT_HIVE_PARTITION_NAME: &str = "__HIVE_DEFAULT_PARTITION__";
+
+fn parse_hive_value_to_dtype(
+    value: &str,
+    target_dtype: &DaftDataType,
+    field_name: &str,
+) -> DaftResult<Series> {
+    if value.is_empty() {
+        return Ok(Series::full_null(field_name, target_dtype, 1));
+    }
+    let arrow_dtype = target_dtype.to_arrow().map_err(|e| {
+        common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
+    })?;
+    let arrow_array = deserialize_single_value_to_arrow(value.as_bytes(), arrow_dtype)?;
+    Series::try_from_field_and_arrow_array(
+        Field::new(field_name, target_dtype.clone()),
+        arrow_array,
+    )
+}
 
 /// Parses hive-style /key=value/ components from a uri.
 pub fn parse_hive_partitioning(uri: &str) -> DaftResult<IndexMap<String, String>> {
@@ -68,12 +86,7 @@ pub fn hive_partitions_to_series(
         .filter_map(|(key, value)| {
             if table_schema.has_field(key) {
                 let target_dtype = &table_schema.get_field(key).unwrap().dtype;
-                if value.is_empty() {
-                    Some(Ok(Series::full_null(key, target_dtype, 1)))
-                } else {
-                    let daft_utf8_array = Utf8Array::from_values(key, std::iter::once(&value));
-                    Some(daft_utf8_array.cast(target_dtype))
-                }
+                Some(parse_hive_value_to_dtype(value, target_dtype, key))
             } else {
                 None
             }
