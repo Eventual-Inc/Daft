@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -30,8 +30,8 @@ impl CrossJoinCollectSink {
 }
 
 impl BlockingSink for CrossJoinCollectSink {
-    fn name(&self) -> Arc<str> {
-        Arc::from("CrossJoinCollect")
+    fn name(&self) -> Cow<'static, str> {
+        "CrossJoinCollect".into()
     }
 
     fn sink(

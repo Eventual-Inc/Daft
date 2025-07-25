@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -208,8 +208,8 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("InnerHashJoinProbe")
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("InnerHashJoinProbe")
     }
 
     fn multiline_display(&self) -> Vec<String> {

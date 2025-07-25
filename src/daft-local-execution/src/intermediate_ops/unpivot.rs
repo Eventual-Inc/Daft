@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -82,7 +82,7 @@ impl IntermediateOperator for UnpivotOperator {
         res
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Unpivot")
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("Unpivot")
     }
 }

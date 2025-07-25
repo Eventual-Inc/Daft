@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{borrow::Cow, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -131,8 +131,8 @@ impl BlockingSink for RepartitionSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Repartition")
+    fn name(&self) -> Cow<'static, str> {
+        "Repartition".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

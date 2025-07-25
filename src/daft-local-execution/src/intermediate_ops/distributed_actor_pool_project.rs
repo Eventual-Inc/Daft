@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -150,8 +151,8 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         fut.into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("DistributedActorPoolProject")
+    fn name(&self) -> Cow<'static, str> {
+        "DistributedActorPoolProject".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

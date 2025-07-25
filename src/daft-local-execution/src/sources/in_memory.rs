@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -48,8 +48,8 @@ impl Source for InMemorySource {
             .clone()
             .to_partition_stream())
     }
-    fn name(&self) -> Arc<str> {
-        Arc::from("InMemorySource")
+    fn name(&self) -> Cow<'static, str> {
+        "InMemorySource".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

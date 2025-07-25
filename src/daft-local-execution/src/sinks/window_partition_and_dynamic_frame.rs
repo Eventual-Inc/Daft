@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
@@ -207,8 +207,8 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("WindowPartitionAndDynamicFrame")
+    fn name(&self) -> Cow<'static, str> {
+        "WindowPartitionAndDynamicFrame".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

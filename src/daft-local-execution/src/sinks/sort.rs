@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -110,8 +110,8 @@ impl BlockingSink for SortSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Sort")
+    fn name(&self) -> Cow<'static, str> {
+        "Sort".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

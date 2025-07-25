@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::SchemaRef, series::IntoSeries};
@@ -269,8 +269,8 @@ impl StreamingSink for AntiSemiProbeSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("AntiSemiHashJoinProbe")
+    fn name(&self) -> Cow<'static, str> {
+        "AntiSemiHashJoinProbe".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

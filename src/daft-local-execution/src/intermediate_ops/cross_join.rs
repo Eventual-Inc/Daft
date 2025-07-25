@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
@@ -138,8 +138,8 @@ impl IntermediateOperator for CrossJoinOperator {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("CrossJoin")
+    fn name(&self) -> Cow<'static, str> {
+        "CrossJoin".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -117,8 +117,8 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
-    fn name(&self) -> Arc<str> {
-        Arc::from("HashJoinBuild")
+    fn name(&self) -> Cow<'static, str> {
+        "HashJoinBuild".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

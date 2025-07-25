@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
@@ -83,8 +83,8 @@ impl StreamingSink for LimitSink {
         }
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from(format!("Limit {}", self.limit))
+    fn name(&self) -> Cow<'static, str> {
+        format!("Limit {}", self.limit).into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

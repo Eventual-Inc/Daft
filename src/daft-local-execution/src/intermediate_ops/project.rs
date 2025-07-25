@@ -1,4 +1,4 @@
-use std::{cmp::max, sync::Arc};
+use std::{borrow::Cow, cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -140,18 +140,8 @@ impl IntermediateOperator for ProjectOperator {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        if self.projection.iter().any(|e| e.inner().has_compute()) {
-            Arc::from("Project")
-        } else if self
-            .projection
-            .iter()
-            .any(|e| e.inner().unwrap_alias().1.is_some())
-        {
-            Arc::from("Rename Columns")
-        } else {
-            Arc::from("Reorder Columns")
-        }
+    fn name(&self) -> Cow<'static, str> {
+        "Project".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

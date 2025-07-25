@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -166,8 +166,8 @@ impl BlockingSink for WindowPartitionOnlySink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("WindowPartitionOnly")
+    fn name(&self) -> Cow<'static, str> {
+        "WindowPartitionOnly".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

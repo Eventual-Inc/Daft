@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
@@ -204,8 +204,8 @@ impl BlockingSink for WindowOrderByOnlySink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("WindowOrderByOnly")
+    fn name(&self) -> Cow<'static, str> {
+        "WindowOrderByOnly".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashSet,
     sync::{Arc, Mutex},
 };
@@ -421,8 +422,8 @@ impl BlockingSink for GroupedAggregateSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("GroupedAggregate")
+    fn name(&self) -> Cow<'static, str> {
+        "GroupedAggregate".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

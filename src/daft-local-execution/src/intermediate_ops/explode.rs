@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
@@ -59,7 +59,7 @@ impl IntermediateOperator for ExplodeOperator {
         )]
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Explode")
+    fn name(&self) -> Cow<'static, str> {
+        "Explode".into()
     }
 }

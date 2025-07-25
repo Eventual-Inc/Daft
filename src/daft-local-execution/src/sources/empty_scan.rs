@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -34,8 +34,8 @@ impl Source for EmptyScanSource {
         let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
         Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
     }
-    fn name(&self) -> Arc<str> {
-        Arc::from("EmptyScan")
+    fn name(&self) -> Cow<'static, str> {
+        "EmptyScan".into()
     }
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];

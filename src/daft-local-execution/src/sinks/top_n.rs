@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -147,8 +147,8 @@ impl BlockingSink for TopNSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from(format!("TopN {}", self.params.limit))
+    fn name(&self) -> Cow<'static, str> {
+        format!("TopN {}", self.params.limit).into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

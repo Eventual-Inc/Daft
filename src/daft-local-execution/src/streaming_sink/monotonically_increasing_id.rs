@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
@@ -99,8 +99,8 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("MonotonicallyIncreasingId")
+    fn name(&self) -> Cow<'static, str> {
+        "MonotonicallyIncreasingId".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

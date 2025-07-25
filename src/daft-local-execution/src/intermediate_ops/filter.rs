@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -74,8 +74,8 @@ impl IntermediateOperator for FilterOperator {
         vec![format!("Filter: {}", self.predicate)]
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Filter")
+    fn name(&self) -> Cow<'static, str> {
+        "Filter".into()
     }
 
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {

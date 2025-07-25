@@ -1,4 +1,4 @@
-use std::{ops::RangeInclusive, sync::Arc, time::Duration, vec};
+use std::{borrow::Cow, ops::RangeInclusive, sync::Arc, time::Duration, vec};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -9,10 +9,7 @@ use daft_dsl::python::PyExpr;
 use daft_dsl::{
     expr::{bound_expr::BoundExpr, count_udfs},
     functions::{
-        python::{
-            get_resource_request, get_udf_name, get_use_process, try_get_batch_size_from_udf,
-            try_get_concurrency,
-        },
+        python::{get_udf_properties, UDFProperties},
         FunctionExpr,
     },
     Expr,
@@ -252,11 +249,9 @@ pub struct UdfOperator {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
-    is_actor_pool_udf: bool,
+    udf_properties: UDFProperties,
     concurrency: usize,
-    batch_size: Option<usize>,
     memory_request: u64,
-    use_process: Option<bool>,
 }
 
 impl UdfOperator {
@@ -270,23 +265,17 @@ impl UdfOperator {
         // count_udfs counts both actor pool and stateless udfs
         let num_udfs = count_udfs(&[project_unbound.clone()]);
         assert_eq!(num_udfs, 1, "Expected only one udf in an udf project");
-
-        // Determine if its an ActorPoolUDF or not
-        let exp_concurrency = try_get_concurrency(&project_unbound);
-        let is_actor_pool_udf = exp_concurrency.is_some();
-
-        let use_process = get_use_process(&project_unbound)?;
-
-        let full_name =
-            get_udf_name(&project_unbound).expect("UDFProject should have exactly one UDF");
-        let resource_request = get_resource_request(&[project_unbound.clone()]);
+        let udf_properties = get_udf_properties(&project_unbound);
 
         // Determine optimal parallelism
-        let max_concurrency = Self::get_optimal_allocation(&full_name, resource_request.as_ref())?;
+        let resource_request = &udf_properties.resource_request;
+        let max_concurrency =
+            Self::get_optimal_allocation(&udf_properties.name, resource_request.as_ref())?;
         // If parallelism is already specified, use that
-        let concurrency = exp_concurrency.unwrap_or(max_concurrency);
-        let batch_size = try_get_batch_size_from_udf(&project_unbound)?;
+        let concurrency = udf_properties.concurrency.unwrap_or(max_concurrency);
+
         let memory_request = resource_request
+            .as_ref()
             .and_then(|req| req.memory_bytes())
             .map(|m| m as u64)
             .unwrap_or(0);
@@ -295,11 +284,9 @@ impl UdfOperator {
             project,
             passthrough_columns,
             output_schema: output_schema.clone(),
-            is_actor_pool_udf,
+            udf_properties,
             concurrency,
-            batch_size,
             memory_request,
-            use_process,
         })
     }
 
@@ -359,17 +346,15 @@ impl IntermediateOperator for UdfOperator {
         fut.into()
     }
 
-    fn name(&self) -> Arc<str> {
-        let full_name =
-            get_udf_name(self.project.inner()).expect("UDFProject should have exactly one UDF");
-
+    fn name(&self) -> Cow<'static, str> {
+        let full_name = &self.udf_properties.name;
         let udf_name = if let Some((_, udf_name)) = full_name.rsplit_once('.') {
             udf_name
         } else {
-            &full_name
+            full_name
         };
 
-        Arc::from(format!("UDF {}", udf_name))
+        format!("UDF {}", udf_name).into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -377,15 +362,14 @@ impl IntermediateOperator for UdfOperator {
         res.push("UDF Executor:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_name(self.project.inner()).expect("UDFProject should have exactly one UDF"),
-            self.project
+            self.udf_properties.name, self.project
         ));
         res.push(format!(
             "Passthrough Columns = [{}]",
             self.passthrough_columns.iter().join(", ")
         ));
         res.push(format!("Concurrency = {:?}", self.concurrency));
-        if let Some(resource_request) = get_resource_request(&[self.project.clone()]) {
+        if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
@@ -404,10 +388,12 @@ impl IntermediateOperator for UdfOperator {
             &self.project,
             &self.passthrough_columns,
             self.output_schema.clone(),
-            matches!(self.use_process, Some(false)),
+            matches!(self.udf_properties.use_process, Some(false)),
             rng.gen_range(NUM_TEST_ITERATIONS_RANGE),
         );
-        if self.is_actor_pool_udf || self.use_process.unwrap_or(false) {
+        if self.udf_properties.is_actor_pool_udf()
+            || self.udf_properties.use_process.unwrap_or(false)
+        {
             udf_handle.create_handle()?;
         }
 
@@ -419,7 +405,7 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        if let Some(batch_size) = self.batch_size {
+        if let Some(batch_size) = self.udf_properties.batch_size {
             (batch_size, batch_size)
         } else {
             (0, runtime_handle.default_morsel_size())

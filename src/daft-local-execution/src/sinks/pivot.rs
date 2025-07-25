@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
@@ -130,8 +130,8 @@ impl BlockingSink for PivotSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Pivot")
+    fn name(&self) -> Cow<'static, str> {
+        "Pivot".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

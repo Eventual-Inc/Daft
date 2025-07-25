@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
@@ -162,8 +162,8 @@ impl BlockingSink for CommitWriteSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("CommitWriteSink")
+    fn name(&self) -> Cow<'static, str> {
+        "CommitWriteSink".into()
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
@@ -69,7 +69,7 @@ impl IntermediateOperator for SampleOperator {
         res
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Sample")
+    fn name(&self) -> Cow<'static, str> {
+        "Sample".into()
     }
 }

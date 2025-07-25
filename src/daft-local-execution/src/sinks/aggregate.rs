@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -52,7 +52,7 @@ struct AggParams {
 }
 
 pub struct AggregateSink {
-    title_name: &'static str,
+    aggregate_name: &'static str,
     agg_sink_params: Arc<AggParams>,
 }
 
@@ -68,7 +68,7 @@ impl AggregateSink {
             daft_physical_plan::populate_aggregation_stages_bound(aggregations, input_schema, &[])?;
 
         Ok(Self {
-            title_name: aggregate_name,
+            aggregate_name,
             agg_sink_params: Arc::new(AggParams {
                 sink_agg_exprs,
                 finalize_agg_exprs,
@@ -132,8 +132,8 @@ impl BlockingSink for AggregateSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from(self.title_name)
+    fn name(&self) -> Cow<'static, str> {
+        self.aggregate_name.into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

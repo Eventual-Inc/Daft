@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
@@ -36,8 +36,8 @@ impl StreamingSink for ConcatSink {
         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Concat")
+    fn name(&self) -> Cow<'static, str> {
+        "Concat".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
