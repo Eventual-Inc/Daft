@@ -34,7 +34,7 @@ daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
 daft-functions-binary = {path = "../daft-functions-binary", default-features = false}
 daft-functions-utf8 = {path = "../daft-functions-utf8", default-features = false}
 pretty_assertions = {workspace = true}
-rand = "0.8"
+rand = "0.9"
 rstest = {workspace = true}
 test-log = {workspace = true}
 
