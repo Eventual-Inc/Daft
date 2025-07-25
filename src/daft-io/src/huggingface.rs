@@ -296,11 +296,13 @@ impl ObjectSource for HFSource {
 
         let response = match response.error_for_status() {
             Err(e) => {
-                let status_code = e.status().map(|s| s.as_u16());
+                let status_code = e.status();
                 match status_code {
-                    Some(401) => Err(Error::Unauthorized),
-                    Some(416) => {
-                        // try again with cache busting
+                    Some(StatusCode::UNAUTHORIZED) => Err(Error::Unauthorized),
+                    // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
+                    // Retry once with cache busting to bypass the improperly cached response and get correct file metadata.
+                    // If it fails again, we'll return the error.
+                    Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         let request =
                             make_request(uri, true, &self.http_source.client, range.as_ref())?;
 
