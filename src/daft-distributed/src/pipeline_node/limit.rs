@@ -105,8 +105,10 @@ impl LimitNode {
                                 LocalPhysicalPlan::limit(
                                     input,
                                     remaining_limit as u64,
+                                    None, // TODO(zhenchao) support offset
                                     StatsState::NotMaterialized,
                                 )
+                                .unwrap()
                             },
                         )?;
                         (task, true)
@@ -175,7 +177,8 @@ impl DistributedPipelineNode for LimitNode {
 
         let limit = self.limit as u64;
         let local_limit_node = input_node.pipeline_instruction(self.clone(), move |input_plan| {
-            LocalPhysicalPlan::limit(input_plan, limit, StatsState::NotMaterialized)
+            // TODO(zhenchao) support offset
+            LocalPhysicalPlan::limit(input_plan, limit, None, StatsState::NotMaterialized).unwrap()
         });
 
         let (result_tx, result_rx) = create_channel(1);
