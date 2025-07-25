@@ -20,13 +20,13 @@ pub fn cli(py: Python, args: Vec<String>) {
     match cli.command {
         Commands::Dashboard => {
             println!("🚀 Launching Daft Dashboard!");
-            println!(
-                "✨ View the Daft Dashboard at http://{}:{}",
-                daft_dashboard::SERVER_ADDR,
-                daft_dashboard::SERVER_PORT
-            );
             let mut handle =
                 daft_dashboard::python::launch(false, py).expect("Failed to launch Daft Dashboard");
+            println!(
+                "✨ View the Daft Dashboard at http://{}:{}",
+                daft_dashboard::DEFAULT_SERVER_ADDR,
+                handle.get_port()
+            );
             loop {
                 if py.check_signals().is_err() {
                     println!("👋 Thanks for using Daft Dashboard! Shutting down...");
