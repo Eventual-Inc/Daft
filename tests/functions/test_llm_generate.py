@@ -5,9 +5,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from daft import Expression, Series, lit
-from daft.functions.llm import _vLLMGenerator, llm_generate
+from daft.functions.llm import _OpenAIGenerator, _vLLMGenerator, llm_generate
 
 vllm = pytest.importorskip("vllm")
+openai = pytest.importorskip("openai")
 
 
 @patch("vllm.LLM")
@@ -46,3 +47,15 @@ def test_llm_generate_generate(mock_sampling_params: MagicMock, mock_llm: MagicM
     assert res == ["This is a mocked response"]
     assert mock_sampling_params.call_count == 1
     assert mock_llm.call_count == 1
+
+
+@patch("openai.OpenAI")
+def test_llm_generate_generate_openai(mock_llm: MagicMock):
+    # Create mock components
+    mock_llm.return_value.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="This is a mocked response"))]
+    )
+    llm_generator = _OpenAIGenerator(generation_config={"temperature": 0.5})
+    series = Series.from_pylist(["This is a test prompt"])
+    res = llm_generator(series)
+    assert res == ["This is a mocked response"]
