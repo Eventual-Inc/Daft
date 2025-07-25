@@ -1,8 +1,6 @@
-use std::{
-    io::ErrorKind,
-    sync::{Mutex, OnceLock},
-};
+use std::io::ErrorKind;
 
+use parking_lot::Mutex;
 use pyo3::{exceptions, pyclass, pyfunction, pymethods, PyErr, PyResult, Python};
 use tokio::{
     runtime::{Builder, Runtime},
@@ -12,20 +10,38 @@ use tokio::{
 use crate::DashboardState;
 
 // Global shared state
-static GLOBAL_DASHBOARD_STATE: OnceLock<DashboardState> = OnceLock::new();
-static SERVER_RUNNING: Mutex<bool> = Mutex::new(false);
-
-fn get_global_state() -> &'static DashboardState {
-    GLOBAL_DASHBOARD_STATE.get_or_init(DashboardState::new)
-}
+static GLOBAL_DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
 
 #[pyclass]
 pub struct ConnectionHandle {
     shutdown_signal: Option<oneshot::Sender<()>>,
+    port: u16,
 }
 
-fn make_listener() -> std::io::Result<std::net::TcpListener> {
-    std::net::TcpListener::bind((super::SERVER_ADDR, super::SERVER_PORT))
+fn make_listener() -> std::io::Result<(std::net::TcpListener, u16)> {
+    let mut port = super::DEFAULT_SERVER_PORT;
+    let max_port = port + 100; // Try up to 100 ports after the default
+
+    while port <= max_port {
+        match std::net::TcpListener::bind((super::DEFAULT_SERVER_ADDR, port)) {
+            Ok(listener) => {
+                return Ok((listener, port));
+            }
+            Err(e) if e.kind() == ErrorKind::AddrInUse => {
+                port += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Err(std::io::Error::new(
+        ErrorKind::AddrInUse,
+        format!(
+            "No available ports in range {}..={}",
+            super::DEFAULT_SERVER_PORT,
+            max_port
+        ),
+    ))
 }
 
 #[pymethods]
@@ -41,94 +57,102 @@ impl ConnectionHandle {
             )),
         }
     }
+
+    pub fn get_port(&self) -> u16 {
+        self.port
+    }
+}
+
+#[pyfunction]
+pub fn get_dashboard_url() -> Option<String> {
+    let state = GLOBAL_DASHBOARD_STATE.lock();
+    state.as_ref().map(|state| state.get_url())
+}
+
+#[pyfunction]
+pub fn get_dashboard_queries_url() -> Option<String> {
+    let state = GLOBAL_DASHBOARD_STATE.lock();
+    state.as_ref().map(|state| state.get_queries_url())
 }
 
 #[pyfunction]
 pub fn register_dataframe_for_display(
     record_batch: daft_recordbatch::python::PyRecordBatch,
 ) -> PyResult<String> {
-    let state = get_global_state();
-    let df_id = state.register_dataframe_preview(record_batch.record_batch);
-    Ok(df_id)
+    let state = GLOBAL_DASHBOARD_STATE.lock();
+    if let Some(state) = state.as_ref() {
+        let df_id = state.register_dataframe_preview(record_batch.record_batch);
+        Ok(df_id)
+    } else {
+        Err(PyErr::new::<exceptions::PyRuntimeError, _>(
+            "Dashboard is not running",
+        ))
+    }
 }
 
 #[pyfunction]
 pub fn generate_interactive_html(df_id: String) -> PyResult<String> {
-    let record_batch = get_global_state().get_dataframe_preview(&df_id);
-    let html = super::generate_interactive_html(
-        record_batch.as_ref().unwrap(),
-        &df_id,
-        &super::SERVER_ADDR.to_string(),
-        super::SERVER_PORT,
-    );
-    Ok(html)
+    let state = GLOBAL_DASHBOARD_STATE.lock();
+    if let Some(state) = state.as_ref() {
+        let record_batch = state.get_dataframe_preview(&df_id);
+        let html = super::generate_interactive_html(
+            record_batch.as_ref().unwrap(),
+            &df_id,
+            &super::DEFAULT_SERVER_ADDR.to_string(),
+            state.get_port(),
+        );
+        Ok(html)
+    } else {
+        Err(PyErr::new::<exceptions::PyRuntimeError, _>(
+            "Dashboard is not running",
+        ))
+    }
 }
 
 #[pyfunction]
 pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandle> {
     // Check if server is already running
-    {
-        let running = SERVER_RUNNING.lock().unwrap();
-        if *running {
-            if noop_if_initialized {
-                return Ok(ConnectionHandle {
-                    shutdown_signal: None,
-                });
-            } else {
-                return Err(PyErr::new::<exceptions::PyRuntimeError, _>(
-                    "Server is already running",
-                ));
-            }
-        }
-    }
-
-    match make_listener() {
-        Err(e) if e.kind() == ErrorKind::AddrInUse => {
-            if noop_if_initialized {
-                // Port is in use but we're being lenient, assume server is running
-                *SERVER_RUNNING.lock().unwrap() = true;
-                Ok(ConnectionHandle {
-                    shutdown_signal: None,
-                })
-            } else {
-                Err(PyErr::new::<exceptions::PyRuntimeError, _>(
-                    "Port is already in use",
-                ))
-            }
-        }
-        Err(e) => Err(PyErr::new::<exceptions::PyRuntimeError, _>(e)),
-        Ok(listener) => {
-            let (send, recv) = oneshot::channel::<()>();
-
-            let handle = ConnectionHandle {
-                shutdown_signal: Some(send),
-            };
-
-            // Mark server as running
-            *SERVER_RUNNING.lock().unwrap() = true;
-
-            py.allow_threads(move || {
-                std::thread::spawn(move || {
-                    let result = tokio_runtime().block_on(async { run(listener, recv).await });
-                    // Mark server as not running when it exits
-                    *SERVER_RUNNING.lock().unwrap() = false;
-                    result
-                });
+    let mut dashboard_state = GLOBAL_DASHBOARD_STATE.lock();
+    if let Some(dashboard_state) = dashboard_state.as_ref() {
+        if noop_if_initialized {
+            return Ok(ConnectionHandle {
+                shutdown_signal: None,
+                port: dashboard_state.get_port(),
             });
-            Ok(handle)
+        } else {
+            return Err(PyErr::new::<exceptions::PyRuntimeError, _>(
+                "Server is already running",
+            ));
         }
     }
+
+    let (listener, port) = make_listener()?;
+    let (send, recv) = oneshot::channel::<()>();
+
+    let handle = ConnectionHandle {
+        shutdown_signal: Some(send),
+        port,
+    };
+
+    let new_dashboard_state = DashboardState::new(super::DEFAULT_SERVER_ADDR.to_string(), port);
+    *dashboard_state = Some(new_dashboard_state.clone());
+
+    py.allow_threads(move || {
+        std::thread::spawn(move || {
+            tokio_runtime().block_on(async { run(listener, recv, new_dashboard_state).await })
+        });
+    });
+    Ok(handle)
 }
 
 async fn run(
     listener: std::net::TcpListener,
     mut recv: oneshot::Receiver<()>,
+    state: DashboardState,
 ) -> anyhow::Result<()> {
     listener.set_nonblocking(true).map_err(anyhow::Error::new)?;
 
     let listener = tokio::net::TcpListener::from_std(listener).map_err(anyhow::Error::new)?;
-
-    let state = get_global_state().clone();
 
     loop {
         tokio::select! {

@@ -3442,9 +3442,7 @@ class DataFrame:
 
             if in_notebook() and preview.partition is not None:
                 try:
-                    from daft.dataframe.preview import _generate_interactive_html
-
-                    interactive_html = _generate_interactive_html(preview.partition.to_record_batch())
+                    interactive_html = preview_formatter._generate_interactive_html()
                     display(HTML(interactive_html), clear=True)
                     return None
                 except Exception:

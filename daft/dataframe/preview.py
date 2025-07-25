@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
     from daft.recordbatch import MicroPartition
-    from daft.recordbatch.recordbatch import RecordBatch
 
 
 @dataclass(frozen=True)
@@ -147,23 +146,22 @@ class PreviewFormatter:
         else:
             return self._schema._truncated_table_string()
 
+    def _generate_interactive_html(self) -> str:
+        """Generate interactive HTML for the current PreviewFormatter's RecordBatch using the dashboard server."""
+        from daft.daft import dashboard as dashboard_native
+        from daft.dashboard import launch
 
-def _generate_interactive_html(rb: RecordBatch) -> str:
-    """Generate interactive HTML for a RecordBatch using the dashboard server.
+        # Ensure the server is running (no-op if already running)
+        launch(noop_if_initialized=True)
 
-    Args:
-        rb: The RecordBatch to generate interactive HTML for.
+        # Get the RecordBatch from the current preview partition
+        if self._preview.partition is None:
+            raise ValueError("No partition available to generate interactive HTML.")
 
-    Returns:
-        str: HTML string for interactive display.
-    """
-    from daft.daft import dashboard as dashboard_native
-    from daft.dashboard import launch
-
-    # Ensure the server is running (no-op if already running)
-    launch(noop_if_initialized=True)
-
-    # Register the partition with the display server and generate HTML
-    df_id = dashboard_native.register_dataframe_for_display(rb._recordbatch)
-    html = dashboard_native.generate_interactive_html(df_id)
-    return html
+        rb = self._preview.partition.to_record_batch()
+        df_id = dashboard_native.register_dataframe_for_display(rb._recordbatch)
+        html = dashboard_native.generate_interactive_html(df_id)
+        user_message = self._get_user_message()
+        # Add the user message below the interactive HTML
+        html += f"\n<small>{user_message}</small>"
+        return html

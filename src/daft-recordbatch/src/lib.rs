@@ -971,11 +971,8 @@ impl RecordBatch {
 
         if tail_rows != 0 {
             res.push_str("<tr>");
-            for col_idx in 0..self.columns.len() {
-                res.push_str(&format!(
-                    "<td data-row=\"...\" data-col=\"{}\">...</td>",
-                    col_idx
-                ));
+            for _ in 0..self.columns.len() {
+                res.push_str("<td>...</td>");
             }
             res.push_str("</tr>\n");
         }
