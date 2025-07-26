@@ -65,7 +65,6 @@ jobs:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
         cache-dependency-glob: |
-          **/requirements-dev.txt
           **/pyproject.toml
 
     - name: Install dependencies
@@ -74,7 +73,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --all-extras --all-groups
 
     - name: Override pyarrow
       run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
@@ -234,7 +233,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
 
     - name: Download built wheels
       uses: actions/download-artifact@v4
@@ -256,7 +254,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          uv sync --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -317,7 +316,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
 
     - name: Download built wheels
       uses: actions/download-artifact@v4
@@ -337,7 +335,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          uv sync --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -409,7 +408,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
 
     - name: Download built wheels
       uses: actions/download-artifact@v4
@@ -429,7 +427,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          uv sync --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -507,7 +506,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
@@ -526,7 +524,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          uv sync --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - uses: docker/setup-buildx-action@v3
     - uses: docker/build-push-action@v5
@@ -593,7 +592,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
@@ -612,7 +610,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          uv sync --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Install ODBC Driver 18 for SQL Server
       run: |
@@ -678,7 +677,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
     - uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
@@ -710,7 +708,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          uv sync --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Run unity integration tests
       run: |
@@ -789,7 +788,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --all-extras --all-groups
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
@@ -926,7 +925,6 @@ jobs:
         cache: pip
         cache-dependency-path: |
           pyproject.toml
-          requirements-dev.txt
     - name: Setup Virtual Env
       run: |
         python -m venv venv
@@ -938,7 +936,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --all-extras --all-groups
     - name: Run doctests
       run: |
         source activate

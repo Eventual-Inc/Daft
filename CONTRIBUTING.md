@@ -44,9 +44,10 @@ To set up your development environment:
 3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
 4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
 5. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
-6. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
-7. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
-8. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
+6. Install [uv](https://github.com/astral-sh/uv).
+7. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
+8. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
+9. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
 
 ### Developing
 
