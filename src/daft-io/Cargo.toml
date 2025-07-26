@@ -37,6 +37,7 @@ tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tracing = {workspace = true}
 url = {workspace = true}
+uuid = {workspace = true}
 
 [dependencies.reqwest]
 default-features = false
