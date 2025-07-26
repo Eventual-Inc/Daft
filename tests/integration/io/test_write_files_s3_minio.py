@@ -36,7 +36,7 @@ def anonymous_bucket(minio_io_config):
     # paths with random UUIDs to work around this.
     BUCKET = "my-bucket-anonymous"
 
-    # Create authenticated S3 client to set up the bucket
+    # Create authenticated S3 client to set up the bucket.
     s3_client = boto3.client(
         "s3",
         endpoint_url=minio_io_config.s3.endpoint_url,
@@ -46,16 +46,13 @@ def anonymous_bucket(minio_io_config):
         region_name="us-east-1",
     )
 
-    # Create bucket if it doesn't exist
+    # Create bucket if it doesn't exist.
     try:
         s3_client.create_bucket(Bucket=BUCKET)
-        print(f"Created bucket: {BUCKET}")
-    except s3_client.exceptions.BucketAlreadyExists:
-        print(f"Bucket already exists: {BUCKET}")
-    except Exception as e:
-        print(f"Error creating bucket: {e}")
+    except s3_client.exceptions.BucketAlreadyOwnedByYou:
+        pass
 
-    # Set bucket policy for anonymous access
+    # Set bucket policy for anonymous access.
     bucket_policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -67,13 +64,7 @@ def anonymous_bucket(minio_io_config):
             }
         ],
     }
-
-    try:
-        s3_client.put_bucket_policy(Bucket=BUCKET, Policy=json.dumps(bucket_policy))
-        print(f"Successfully set public policy for bucket: {BUCKET}")
-    except Exception as e:
-        print(f"Warning: Could not set bucket policy: {e}")
-        print("Anonymous uploads may not work without the bucket policy")
+    s3_client.put_bucket_policy(Bucket=BUCKET, Policy=json.dumps(bucket_policy))
 
     yield BUCKET
 
