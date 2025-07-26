@@ -44,6 +44,17 @@ def minio_io_config() -> daft.io.IOConfig:
 
 
 @pytest.fixture(scope="session")
+def anonymous_minio_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:9000",
+            use_ssl=False,
+            anonymous=True,
+        )
+    )
+
+
+@pytest.fixture(scope="session")
 def aws_public_s3_config(request) -> daft.io.IOConfig:
     # Use anonymous mode to avoid having to search for credentials in the Github Runner
     # If pytest is run with `--credentials` then we set anonymous=None to go down the credentials chain
