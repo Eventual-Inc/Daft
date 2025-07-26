@@ -432,6 +432,30 @@ pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
 }
 
 impl AggExpr {
+    pub fn agg_name(&self) -> &'static str {
+        match self {
+            Self::Count(_, _) => "Count",
+            Self::CountDistinct(_) => "Count Distinct",
+            Self::Sum(_) => "Sum",
+            Self::ApproxPercentile(_) => "Approx Percentile",
+            Self::ApproxCountDistinct(_) => "Approx Count Distinct",
+            Self::ApproxSketch(_, _) => "Approx Sketch",
+            Self::MergeSketch(_, _) => "Merge Sketch",
+            Self::Mean(_) => "Mean",
+            Self::Stddev(_) => "Stddev",
+            Self::Min(_) => "Min",
+            Self::Max(_) => "Max",
+            Self::BoolAnd(_) => "Bool And",
+            Self::BoolOr(_) => "Bool Or",
+            Self::AnyValue(_, _) => "Any Value",
+            Self::List(_) => "List",
+            Self::Set(_) => "Set",
+            Self::Concat(_) => "Concat",
+            Self::Skew(_) => "Skew",
+            Self::MapGroups { .. } => "Map Groups",
+        }
+    }
+
     pub fn name(&self) -> &str {
         match self {
             Self::Count(expr, ..)

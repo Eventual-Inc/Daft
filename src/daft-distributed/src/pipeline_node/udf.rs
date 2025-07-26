@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_dsl::{
-    expr::bound_expr::BoundExpr,
-    functions::python::{get_resource_request, get_udf_names},
-};
+use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -23,18 +20,21 @@ pub(crate) struct UDFNode {
     context: PipelineNodeContext,
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
+    udf_properties: UDFProperties,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
 impl UDFNode {
     const NODE_NAME: NodeName = "UDF";
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
         project: BoundExpr,
         passthrough_columns: Vec<BoundExpr>,
+        udf_properties: UDFProperties,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -62,6 +62,7 @@ impl UDFNode {
             context,
             project,
             passthrough_columns,
+            udf_properties,
             child,
         }
     }
@@ -75,14 +76,13 @@ impl UDFNode {
         res.push("UDF Executor:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_names(self.project.inner()).first().unwrap(),
-            self.project
+            self.udf_properties.name, self.project
         ));
         res.push(format!(
             "Passthrough Columns = [{}]",
             self.passthrough_columns.iter().join(", ")
         ));
-        if let Some(resource_request) = get_resource_request(&[self.project.clone()]) {
+        if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",

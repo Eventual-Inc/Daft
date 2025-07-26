@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::SchemaRef, series::IntoSeries};
@@ -269,8 +269,8 @@ impl StreamingSink for AntiSemiProbeSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "AntiSemiHashJoinProbe"
+    fn name(&self) -> Cow<'static, str> {
+        "AntiSemiHashJoinProbe".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -334,5 +334,9 @@ impl StreamingSink for AntiSemiProbeSink {
         } else {
             Arc::new(UnorderedDispatcher::with_fixed_threshold(default_size))
         }
+    }
+
+    fn max_concurrency(&self) -> usize {
+        common_runtime::get_compute_pool_num_threads()
     }
 }

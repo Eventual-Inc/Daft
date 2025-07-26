@@ -79,6 +79,10 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
             ]
         )
 
+    def name(self) -> str:
+        """Optional custom sink name."""
+        return "Lance Write"
+
     def schema(self) -> Schema:
         return self._schema
 

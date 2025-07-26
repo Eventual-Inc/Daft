@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
@@ -253,8 +253,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowPartitionAndOrderBy"
+    fn name(&self) -> Cow<'static, str> {
+        "WindowPartitionAndOrderBy".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

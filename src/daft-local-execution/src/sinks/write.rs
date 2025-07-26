@@ -1,4 +1,7 @@
-use std::sync::{atomic::AtomicU64, Arc};
+use std::{
+    borrow::Cow,
+    sync::{atomic::AtomicU64, Arc},
+};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -62,7 +65,7 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
-    DataSink,
+    DataSink(String),
 }
 
 struct WriteState {
@@ -173,20 +176,20 @@ impl BlockingSink for WriteSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        match self.write_format {
-            WriteFormat::Parquet => "ParquetSink",
-            WriteFormat::PartitionedParquet => "PartitionedParquetSink",
-            WriteFormat::Csv => "CsvSink",
-            WriteFormat::PartitionedCsv => "PartitionedCsvSink",
-            WriteFormat::Json => "JsonSink",
-            WriteFormat::PartitionedJson => "PartitionedJsonSink",
-            WriteFormat::Iceberg => "IcebergSink",
-            WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
-            WriteFormat::Deltalake => "DeltalakeSink",
-            WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
-            WriteFormat::Lance => "LanceSink",
-            WriteFormat::DataSink => "DataSink",
+    fn name(&self) -> Cow<'static, str> {
+        match &self.write_format {
+            WriteFormat::Parquet => "Parquet Write".into(),
+            WriteFormat::PartitionedParquet => "PartitionedParquet Write".into(),
+            WriteFormat::Csv => "Csv Write".into(),
+            WriteFormat::PartitionedCsv => "PartitionedCsv Write".into(),
+            WriteFormat::Json => "Json Write".into(),
+            WriteFormat::PartitionedJson => "PartitionedJson Write".into(),
+            WriteFormat::Iceberg => "Iceberg Write".into(),
+            WriteFormat::PartitionedIceberg => "PartitionedIceberg Write".into(),
+            WriteFormat::Deltalake => "Deltalake Write".into(),
+            WriteFormat::PartitionedDeltalake => "PartitionedDeltalake Write".into(),
+            WriteFormat::Lance => "Lance Write".into(),
+            WriteFormat::DataSink(name) => name.clone().into(),
         }
     }
 

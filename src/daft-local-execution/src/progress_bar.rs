@@ -31,7 +31,7 @@ pub trait ProgressBarManager: std::fmt::Debug + Send + Sync {
     fn make_new_bar(
         &self,
         color: ProgressBarColor,
-        prefix: &'static str,
+        prefix: &str,
         node_id: usize,
     ) -> DaftResult<Box<dyn ProgressBar>>;
 
@@ -42,7 +42,7 @@ pub enum ProgressBarColor {
     Blue,
     Magenta,
     Cyan,
-    Red,
+    Yellow,
 }
 
 impl ProgressBarColor {
@@ -51,7 +51,7 @@ impl ProgressBarColor {
             Self::Blue => "blue",
             Self::Magenta => "magenta",
             Self::Cyan => "cyan",
-            Self::Red => "red",
+            Self::Yellow => "yellow",
         }
     }
 }
@@ -169,7 +169,7 @@ impl ProgressBarManager for IndicatifProgressBarManager {
     fn make_new_bar(
         &self,
         color: ProgressBarColor,
-        prefix: &'static str,
+        prefix: &str,
         node_id: usize,
     ) -> DaftResult<Box<dyn ProgressBar>> {
         #[allow(clippy::literal_string_with_formatting_args)]
@@ -181,7 +181,11 @@ impl ProgressBarManager for IndicatifProgressBarManager {
             total_len = self.total.to_string().len(),
         );
 
-        let formatted_prefix = format!("{:>1$}", prefix, MAX_PIPELINE_NAME_LEN);
+        let formatted_prefix = if prefix.len() > MAX_PIPELINE_NAME_LEN {
+            format!("{}...", &prefix[..MAX_PIPELINE_NAME_LEN - 3])
+        } else {
+            format!("{:>1$}", prefix, MAX_PIPELINE_NAME_LEN)
+        };
 
         let pb = indicatif::ProgressBar::new_spinner()
             .with_style(
@@ -288,7 +292,7 @@ mod python {
         fn make_new_bar(
             &self,
             _color: ProgressBarColor,
-            prefix: &'static str,
+            prefix: &str,
             _node_id: usize,
         ) -> DaftResult<Box<dyn ProgressBar>> {
             let bar_format = format!("🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}", prefix = prefix);

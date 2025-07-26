@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use bitmap::{and, Bitmap, MutableBitmap};
 use common_error::DaftResult;
@@ -645,8 +645,8 @@ impl StreamingSink for OuterHashJoinProbeSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "OuterHashJoinProbe"
+    fn name(&self) -> Cow<'static, str> {
+        "OuterHashJoinProbe".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -740,5 +740,9 @@ impl StreamingSink for OuterHashJoinProbeSink {
                 runtime_handle.default_morsel_size(),
             ))
         }
+    }
+
+    fn max_concurrency(&self) -> usize {
+        common_runtime::get_compute_pool_num_threads()
     }
 }
