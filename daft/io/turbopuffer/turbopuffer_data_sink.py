@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import warnings
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -98,11 +99,9 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
         else:
             self._namespace = ExpressionsProjection([namespace])
 
-        self._api_key = api_key
+        self._api_key = api_key or os.getenv("TURBOPUFFER_API_KEY")
         if not self._api_key:
-            warnings.warn(
-                "Turbopuffer API key is not set. Turbopuffer will use the value set in the TURBOPUFFER_API_KEY environment variable"
-            )
+            warnings.warn("Turbopuffer API key is not set and TURBOPUFFER_API_KEY environment variable is not found")
 
         self._region = region
         self._distance_metric = distance_metric
