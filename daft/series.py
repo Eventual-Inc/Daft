@@ -100,7 +100,7 @@ class Series:
                 combined_array = arr_type.wrap_array(combined_storage_array)
             else:
                 combined_array = array.combine_chunks()
-            return Series.from_arrow(combined_array, dtype=dtype)
+            return Series.from_arrow(combined_array, name=name, dtype=dtype)
         else:
             raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 

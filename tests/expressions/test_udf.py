@@ -192,7 +192,7 @@ def test_udf_tuples(batch_size):
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-@pytest.mark.parametrize("container", [Series, list, np.ndarray])
+@pytest.mark.parametrize("container", [Series, list, np.ndarray, pa.Array, pa.ChunkedArray])
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 def test_udf_return_containers(container, batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
@@ -205,6 +205,10 @@ def test_udf_return_containers(container, batch_size):
             return data.to_pylist()
         elif container is np.ndarray:
             return np.array(data.to_arrow())
+        elif container is pa.Array:
+            return data.to_arrow()
+        elif container is pa.ChunkedArray:
+            return pa.chunked_array([data.to_arrow()])
         else:
             raise NotImplementedError(f"Test not implemented for container type: {container}")
 

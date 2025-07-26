@@ -185,12 +185,34 @@ def run_udf(
         result_np = np.concatenate(np_results)
         return Series.from_numpy(result_np, name=name, dtype=return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
-        result_pa = pa.concat_arrays(results)
-        return Series.from_arrow(result_pa, name=name, dtype=return_dtype)._series
+        return Series.from_arrow(_safe_concat_arrays(results), name=name, dtype=return_dtype)._series
     else:
         raise NotImplementedError(
             f"Return type {type(results[0])} not supported for UDF {func}, expected daft.Series, list, np.ndarray, or pa.Array containing {return_dtype}"
         )
+
+
+def _safe_concat_arrays(pa_arrays: list[pa.Array | pa.ChunkedArray]) -> pa.ChunkedArray:
+    if len(pa_arrays) == 0:
+        return pa.concat_arrays([])
+
+    data_type = pa_arrays[0].type
+    chunks = []
+    is_chunked = False
+
+    for arr in pa_arrays:
+        if isinstance(arr, pa.Array):
+            chunks.append(arr)
+        elif isinstance(arr, pa.ChunkedArray):
+            is_chunked = True
+            chunks.extend(arr.chunks)
+        else:
+            raise TypeError(f"Unsupported type: {type(arr)}")
+
+    if is_chunked:
+        return pa.chunked_array(chunks, type=data_type)
+    else:
+        return pa.concat_arrays(chunks)
 
 
 # Marker that helps us differentiate whether a user provided the argument or not
