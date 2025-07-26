@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use common_daft_config::DaftPlanningConfig;
 use common_error::DaftResult;
 use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups, ScanState};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
@@ -134,7 +135,7 @@ impl PushDownFilter {
                             return Ok(Transformed::no(plan));
                         }
 
-                        let data_filter = combine_conjunction(data_only_filter);
+                        let data_filter = combine_conjunction(data_only_filter.clone());
                         let partition_filter = combine_conjunction(partition_only_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
@@ -148,6 +149,50 @@ impl PushDownFilter {
                         } else {
                             new_pushdowns
                         };
+
+                        let scan_op = external_info.scan_state.get_scan_op().0.clone();
+                        let env = DaftPlanningConfig::from_env();
+                        let remaining_filters = if let Some(supports_pushdown) =
+                            scan_op.as_pushdown_filter()
+                            && env.enable_strict_filter_pushdown
+                        {
+                            let filters_to_push = new_pushdowns
+                                .filters
+                                .as_ref()
+                                .map(std::slice::from_ref)
+                                .unwrap_or(&[]);
+
+                            let (pushed_filters, post_filters) =
+                                supports_pushdown.push_filters(filters_to_push);
+                            let _ = new_pushdowns.with_pushed_filters(Some(pushed_filters.clone()));
+                            if !post_filters.is_empty()
+                                && post_filters.len() == filters_to_push.len()
+                            {
+                                // If there are no remaining filters, we can drop the filter op.
+                                return Ok(Transformed::no(plan));
+                            }
+
+                            let mut seen = HashSet::new();
+                            post_filters
+                                .into_iter()
+                                .chain(
+                                    data_only_filter
+                                        .iter()
+                                        .filter(|f| !pushed_filters.contains(f))
+                                        .cloned(),
+                                )
+                                .filter(|e| seen.insert(e.clone()))
+                                .collect::<Vec<_>>()
+                        } else {
+                            // Return an empty Vec if strict pushdown is not supported
+                            Vec::new()
+                        };
+
+                        let needing_filter_op = remaining_filters
+                            .into_iter()
+                            .chain(needing_filter_op)
+                            .collect::<Vec<_>>();
+
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source: LogicalPlan = Source::new(
                             source.output_schema.clone(),
@@ -1011,5 +1056,45 @@ mod tests {
         assert_optimized_plan_eq(plan, expected)?;
 
         Ok(())
+    }
+
+    fn filter_pushdown_strict_mode_scenario(enable_strict_pushdown: bool) -> DaftResult<()> {
+        let pred = resolved_col("value").is_in(vec![lit(2)]);
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("date_col", DataType::Date),
+            Field::new("value", DataType::Int64),
+        ]);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .filter(pred.clone())?
+            .build();
+
+        if enable_strict_pushdown {
+            std::env::set_var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN", "true");
+        }
+
+        let expected = if enable_strict_pushdown {
+            plan.clone()
+        } else {
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
+                .build()
+        };
+
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Filter pushdown respects the strict mode configuration.
+    /// The main reason for not using rstest is that it seems unable to handle the setting of environment variables properly.
+    #[test]
+    fn filter_pushdown_strict_mode_true() -> DaftResult<()> {
+        std::env::remove_var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN");
+        filter_pushdown_strict_mode_scenario(true)
+    }
+
+    #[test]
+    fn filter_pushdown_strict_mode_false() -> DaftResult<()> {
+        std::env::remove_var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN");
+        filter_pushdown_strict_mode_scenario(false)
     }
 }

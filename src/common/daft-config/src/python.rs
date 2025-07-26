@@ -104,6 +104,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer=None,
         use_experimental_distributed_engine=None,
         min_cpu_per_task=None,
+        enable_strict_filter_pushdown=None,
     ))]
     fn with_config_values(
         &self,
@@ -135,6 +136,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer: Option<bool>,
         use_experimental_distributed_engine: Option<bool>,
         min_cpu_per_task: Option<f64>,
+        enable_strict_filter_pushdown: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -245,6 +247,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
             config.min_cpu_per_task = min_cpu_per_task;
+        }
+
+        if let Some(enable_strict_filter_pushdown) = enable_strict_filter_pushdown {
+            config.enable_strict_filter_pushdown = enable_strict_filter_pushdown;
         }
 
         Ok(Self {
@@ -371,6 +377,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn min_cpu_per_task(&self) -> PyResult<f64> {
         Ok(self.config.min_cpu_per_task)
+    }
+
+    #[getter]
+    fn enable_strict_filter_pushdown(&self) -> PyResult<bool> {
+        Ok(self.config.enable_strict_filter_pushdown)
     }
 }
 

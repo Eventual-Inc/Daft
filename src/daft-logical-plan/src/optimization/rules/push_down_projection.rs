@@ -1165,6 +1165,7 @@ mod tests {
                 columns: Some(Arc::new(vec!["a".to_string()])),
                 filters: None,
                 sharder: None,
+                pushed_filters: None,
             },
         )
         .build();
@@ -1210,6 +1211,7 @@ mod tests {
                 ])),
                 filters: None,
                 sharder: None,
+                pushed_filters: None,
             },
         )
         .build();

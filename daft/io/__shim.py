@@ -9,7 +9,7 @@ from daft.daft import (
     PyRecordBatch,
     ScanTask,
 )
-from daft.io.pushdowns import Pushdowns
+from daft.io.pushdowns import Pushdowns, SupportsPushdownFilters
 from daft.io.scan import ScanOperator
 
 if TYPE_CHECKING:
@@ -67,6 +67,9 @@ class _DataSourceShim(ScanOperator):
                 pushdowns=pushdowns,
                 stats=None,
             )
+
+    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
+        return None
 
 
 def _get_record_batches(task: DataSourceTask) -> Iterator[PyRecordBatch]:

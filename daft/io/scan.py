@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
     from daft.logical.schema import Field, Schema
 
+    from .pushdowns import SupportsPushdownFilters
+
 
 def make_partition_field(
     field: Field, source_field: Field | None = None, transform: PyPartitionTransform | None = None
@@ -72,4 +74,8 @@ class ScanOperator(abc.ABC):
     @abc.abstractmethod
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         """Converts this scan operator into scan tasks with the given pushdowns."""
+        raise NotImplementedError()
+
+    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
+        """Returns this scan operator as a SupportsPushdownFilters if it supports pushdown filters."""
         raise NotImplementedError()

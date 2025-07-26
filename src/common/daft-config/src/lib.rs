@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub disable_join_reordering: bool,
+    pub enable_strict_filter_pushdown: bool,
 }
 
 impl DaftPlanningConfig {
@@ -22,6 +23,11 @@ impl DaftPlanningConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.disable_join_reordering = true;
+        }
+        if let Ok(val) = std::env::var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN")
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_strict_filter_pushdown = true;
         }
         cfg
     }
@@ -68,6 +74,7 @@ pub struct DaftExecutionConfig {
     pub native_parquet_writer: bool,
     pub use_experimental_distributed_engine: bool,
     pub min_cpu_per_task: f64,
+    pub enable_strict_filter_pushdown: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -103,6 +110,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_experimental_distributed_engine: true,
             min_cpu_per_task: 0.5,
+            enable_strict_filter_pushdown: false,
         }
     }
 }
