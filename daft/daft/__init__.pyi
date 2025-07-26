@@ -437,8 +437,8 @@ class FileInfos:
 
     @staticmethod
     def from_infos(file_paths: list[str], file_sizes: list[int | None], num_rows: list[int | None]) -> FileInfos: ...
-    def extend(self, new_infos: FileInfos) -> FileInfos:
-        """Concatenate two FileInfos together."""
+    def merge(self, new_infos: FileInfos) -> FileInfos:
+        """Merge two FileInfos together."""
         ...
 
     def __getitem__(self, idx: int) -> FileInfo: ...
