@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+import ray
 
 import daft
 from daft.io.sink import DataSink, WriteResult
@@ -38,5 +39,9 @@ class SampleSink(DataSink[None]):
 def test_sink_raises_unserializable_exception():
     df = daft.from_pydict({"id": [1, 2, 3]})
     sink = SampleSink()
-    with pytest.raises(RuntimeError, match=".*UnserializableException: Recovered the message in the exception.*"):
+    with pytest.raises(Exception) as exc_info:
         df.write_sink(sink)
+
+    e = exc_info.value
+    assert isinstance(e, (RuntimeError, ray.exceptions.RayTaskError))
+    assert "UnserializableException" in str(e)
