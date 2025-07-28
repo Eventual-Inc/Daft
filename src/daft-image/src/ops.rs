@@ -462,7 +462,7 @@ pub fn image_html_value(arr: &ImageArray, idx: usize, truncate: bool) -> String 
             drop(writer);
 
             format!(
-                "<img style=\"max-width:500px;width:auto;height:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                "<img style=\"width:auto;height:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
                 base64::engine::general_purpose::STANDARD.encode(&mut bytes),
                 str_val,
             )

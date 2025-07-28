@@ -182,10 +182,8 @@ fn generate_interactive_html(
             overflow: auto;
         }
         .side-pane {
-            width: 30vw;
-            max-width: 500px;
-            min-height: 300px;
-            max-height: 80vh;
+            width: 35%;
+            max-height: 500px;
             border: 1px solid;
             border-radius: 4px;
             padding: 15px;
@@ -193,7 +191,8 @@ fn generate_interactive_html(
             overflow: auto;
         }
         .side-pane.visible {
-            display: block;
+            display: flex;
+            flex-direction: column;
         }
         .side-pane-header {
             display: flex;
@@ -207,30 +206,21 @@ fn generate_interactive_html(
             font-weight: bold;
         }
         .close-button {
-            background: none;
-            border: none;
-            font-size: 18px;
             cursor: pointer;
-            padding: 0;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
         .side-pane-content {
             word-wrap: break-word;
-            line-height: 1.4;
+            overflow: auto;
         }
         .dataframe td.clickable {
             cursor: pointer;
             transition: background-color 0.2s;
         }
         .dataframe td.clickable:hover {
-            background-color: rgba(0, 0, 0, 0.1);
+            opacity: 0.8;
         }
         .dataframe td.clickable.selected {
-            background-color: rgba(0, 0, 0, 0.2);
+            opacity: 0.6;
         }
         </style>
         <div class="dashboard-container">
@@ -248,18 +238,17 @@ fn generate_interactive_html(
     html.push(format!(
         r#"
             </div>
-            <div class="side-pane" id="side-pane-{}">
+            <div class="side-pane" id="side-pane-{df_id}">
                 <div class="side-pane-header">
-                    <div class="side-pane-title" id="side-pane-title-{}">Cell Details</div>
-                    <button class="close-button" id="close-button-{}">×</button>
+                    <div class="side-pane-title" id="side-pane-title-{df_id}">Cell Details</div>
+                    <button class="close-button" id="close-button-{df_id}">×</button>
                 </div>
-                <div class="side-pane-content" id="side-pane-content-{}">
+                <div class="side-pane-content" id="side-pane-content-{df_id}">
                     <p style="font-style: italic;">Click on a cell to view its full content</p>
                 </div>
             </div>
         </div>
     "#,
-        df_id, df_id, df_id, df_id
     ));
 
     // Add JavaScript for side pane functionality
@@ -298,8 +287,8 @@ fn generate_interactive_html(
                 }}
             }}
 
-            function showSidePane(title, content) {{
-                sidePaneTitle.textContent = title;
+            function showSidePane(row, col, content) {{
+                sidePaneTitle.textContent = 'Cell (' + row + ', ' + col + ')';
                 sidePaneContent.innerHTML = content;
                 sidePane.classList.add('visible');
             }}
@@ -349,18 +338,28 @@ fn generate_interactive_html(
                         }}
 
                         // Show the side pane immediately
-                        showSidePane('Cell [' + row + ', ' + col + ']', '');
-                        showLoadingContent();
+                        showSidePane(row, col, '');
+
+                        // Set a timeout to show loading content after 1 second
+                        const loadingTimeout = setTimeout(() => {{
+                            showLoadingContent();
+                        }}, 100);
 
                         // Fetch the cell content
                         fetch(serverUrl + '/api/dataframes/' + dfId + '/cell?row=' + row + '&col=' + col)
                             .then(response => response.json())
                             .then(data => {{
-                                const content = '<div style="max-width:100%; overflow:auto;">' + data.value + '</div>';
-                                showSidePane('Cell [' + row + ', ' + col + '] (' + data.data_type + ')', content);
+                                clearTimeout(loadingTimeout);
+                                showSidePane(row, col, data.value);
                             }})
                             .catch(err => {{
-                                showSidePane('Cell [' + row + ', ' + col + ']', '<div style="color:red;">Error loading content</div>');
+                                clearTimeout(loadingTimeout);
+                                // Get the original cell content from the table
+                                const cell = selectedCell;
+                                if (cell) {{
+                                    const originalContent = cell.innerHTML;
+                                    showSidePane(row, col, originalContent);
+                                }}
                             }});
                     }};
                 }});
