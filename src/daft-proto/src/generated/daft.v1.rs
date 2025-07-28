@@ -464,8 +464,10 @@ pub struct IfElse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScalarFn {
-    #[prost(oneof = "scalar_fn::Variant", tags = "1, 2")]
-    pub variant: ::core::option::Option<scalar_fn::Variant>,
+    #[prost(message, optional, tag = "3")]
+    pub args: ::core::option::Option<scalar_fn::Args>,
+    #[prost(oneof = "scalar_fn::Descriptor", tags = "1, 2")]
+    pub descriptor: ::core::option::Option<scalar_fn::Descriptor>,
 }
 /// Nested message and enum types in `ScalarFn`.
 pub mod scalar_fn {
@@ -474,25 +476,20 @@ pub mod scalar_fn {
     pub struct BuiltinFn {
         #[prost(string, tag = "1")]
         pub name: ::prost::alloc::string::String,
-        #[prost(message, optional, tag = "2")]
-        pub args: ::core::option::Option<builtin_fn::Args>,
     }
-    /// Nested message and enum types in `BuiltinFn`.
-    pub mod builtin_fn {
-        /// TODO: Daft does not handle static parameter binding.
-        #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct Args {
-            #[prost(message, repeated, tag = "1")]
-            pub args: ::prost::alloc::vec::Vec<Arg>,
-        }
-        /// TODO: Update param to required after static parameter binding is implemented.
-        #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct Arg {
-            #[prost(string, optional, tag = "1")]
-            pub param: ::core::option::Option<::prost::alloc::string::String>,
-            #[prost(message, optional, tag = "2")]
-            pub expr: ::core::option::Option<super::super::Expr>,
-        }
+    /// TODO: Daft does not handle static parameter binding.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Args {
+        #[prost(message, repeated, tag = "1")]
+        pub args: ::prost::alloc::vec::Vec<Arg>,
+    }
+    /// TODO: Update param to required after static parameter binding is implemented.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Arg {
+        #[prost(string, optional, tag = "1")]
+        pub param: ::core::option::Option<::prost::alloc::string::String>,
+        #[prost(message, optional, tag = "2")]
+        pub expr: ::core::option::Option<super::Expr>,
     }
     /// For python functions (UDF), we need the pickled object and bound args.
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -532,8 +529,6 @@ pub mod scalar_fn {
             pub max_memory_bytes: ::core::option::Option<u64>,
             #[prost(bool, optional, tag = "12")]
             pub use_process: ::core::option::Option<bool>,
-            #[prost(message, repeated, tag = "13")]
-            pub args: ::prost::alloc::vec::Vec<super::super::Expr>,
         }
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RowWiseFn {
@@ -545,8 +540,6 @@ pub mod scalar_fn {
             pub inner: ::core::option::Option<super::super::PyObject>,
             #[prost(message, optional, tag = "4")]
             pub original_args: ::core::option::Option<super::super::PyObject>,
-            #[prost(message, repeated, tag = "13")]
-            pub args: ::prost::alloc::vec::Vec<super::super::Expr>,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Variant {
@@ -557,7 +550,7 @@ pub mod scalar_fn {
         }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Variant {
+    pub enum Descriptor {
         #[prost(message, tag = "1")]
         Builtin(BuiltinFn),
         #[prost(message, tag = "2")]

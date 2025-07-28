@@ -5,7 +5,7 @@ use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
         from_proto_vec,
-        functions::{from_proto_function, function_expr_to_proto},
+        functions::{from_proto_function, function_expr_to_proto, scalar_fn_to_proto},
         to_proto_vec, UNIT,
     },
 };
@@ -272,7 +272,7 @@ impl ToFromProto for ir::Expr {
                     .into(),
                 )
             }
-            Self::ScalarFn(sf) => proto::ExprVariant::Function(sf.to_proto()?),
+            Self::ScalarFn(sf) => proto::ExprVariant::Function(scalar_fn_to_proto(sf)?),
             Self::Subquery(_) => {
                 // todo(conner)
                 not_implemented_err!("subquery")

@@ -319,28 +319,27 @@ message IfElse {
 }
 
 message ScalarFn {
-  oneof variant {
+  oneof descriptor {
     BuiltinFn builtin = 1;
     PyFn py = 2;
   }
+  Args args = 3;
 
   // For rust functions (builtins), we only have simple names.
   message BuiltinFn {
     string name = 1;
-    Args args = 2;
-
-    // TODO: Daft does not handle static parameter binding.
-    message Args {
-      repeated Arg args = 1;
-    }
-
-    // TODO: Update param to required after static parameter binding is implemented.
-    message Arg {
-      optional string param = 1;
-      Expr expr = 2;
-    }
   }
 
+  // TODO: Daft does not handle static parameter binding.
+  message Args {
+    repeated Arg args = 1;
+  }
+
+  // TODO: Update param to required after static parameter binding is implemented.
+  message Arg {
+    optional string param = 1;
+    Expr expr = 2;
+  }
 
   // For python functions (UDF), we need the pickled object and bound args.
   message PyFn {
@@ -364,7 +363,6 @@ message ScalarFn {
       optional uint64 num_gpus = 10;
       optional uint64 max_memory_bytes = 11;
       optional bool use_process = 12;
-      repeated Expr args = 13;
     }
 
     message RowWiseFn {
@@ -372,7 +370,6 @@ message ScalarFn {
       DataType return_dtype = 2;
       PyObject inner = 3;
       PyObject original_args = 4;
-      repeated Expr args = 13;
     }
   }
 }
