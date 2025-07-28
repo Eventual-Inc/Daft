@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -57,5 +57,5 @@ impl ScalarUDF for ListGet {
 
 #[must_use]
 pub fn list_get(expr: ExprRef, idx: ExprRef, default_value: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(ListGet {}, vec![expr, idx, default_value]).into()
+    BuiltinScalarFn::new(ListGet {}, vec![expr, idx, default_value]).into()
 }

@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -72,5 +72,5 @@ impl ScalarUDF for ListJoin {
 
 #[must_use]
 pub fn list_join(expr: ExprRef, delim: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(ListJoin {}, vec![expr, delim]).into()
+    BuiltinScalarFn::new(ListJoin {}, vec![expr, delim]).into()
 }

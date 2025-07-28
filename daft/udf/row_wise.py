@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hints, overload
+
+from typing_extensions import ParamSpec
 
 from daft.datatype import DataType
 from daft.expressions import Expression
@@ -10,8 +12,12 @@ if TYPE_CHECKING:
     from daft.daft import PyDataType, PySeries
 
 
-class RowWiseUdf:
-    def __init__(self, fn: Callable[..., Any], return_dtype: DataType | None):
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+class RowWiseUdf(Generic[P, T]):
+    def __init__(self, fn: Callable[P, T], return_dtype: DataType | None):
         self._inner = fn
 
         module_name = getattr(fn, "__module__")
@@ -30,7 +36,12 @@ class RowWiseUdf:
         else:
             self.return_dtype = return_dtype
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression | Any:
+    @overload
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
+    @overload
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression: ...
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
         children_exprs = []
         for arg in args:
             if isinstance(arg, Expression):

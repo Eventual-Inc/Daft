@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -36,5 +36,5 @@ impl ScalarUDF for ListBoolOr {
 
 #[must_use]
 pub fn list_bool_or(expr: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(ListBoolOr, vec![expr]).into()
+    BuiltinScalarFn::new(ListBoolOr, vec![expr]).into()
 }

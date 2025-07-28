@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ impl ScalarUDF for Length {
 
 #[must_use]
 pub fn length(input: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Length, vec![input]).into()
+    BuiltinScalarFn::new(Length, vec![input]).into()
 }
 
 fn length_impl(arr: &Utf8Array) -> DaftResult<UInt64Array> {

@@ -4,9 +4,9 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{scalar::ScalarFunc, FunctionArgs},
+    functions::{scalar::ScalarFn, FunctionArgs},
     optimization,
-    python_udf::{PythonRowWiseFunc, PythonScalarFunc},
+    python_udf::{PyScalarFn, RowWisePyFn},
     resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
 };
 use indexmap::{IndexMap, IndexSet};
@@ -448,7 +448,7 @@ fn replace_column_with_semantic_id(
                     )
                 }
             }
-            Expr::ScalarFunc(ScalarFunc::Builtin(func)) => {
+            Expr::ScalarFn(ScalarFn::Builtin(func)) => {
                 let mut func = func.clone();
                 let transforms = func
                     .inputs
@@ -479,15 +479,13 @@ fn replace_column_with_semantic_id(
                     Transformed::yes(Expr::InSubquery(expr.data, subquery.clone()).into())
                 }
             }
-            Expr::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
-                PythonRowWiseFunc {
-                    function_name: name,
-                    inner: func,
-                    return_dtype,
-                    original_args,
-                    children,
-                },
-            ))) => {
+            Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                inner: func,
+                return_dtype,
+                original_args,
+                children,
+            }))) => {
                 let transforms = children
                     .iter()
                     .map(|e| {
@@ -502,8 +500,8 @@ fn replace_column_with_semantic_id(
                         .iter()
                         .map(|t| t.data.clone())
                         .collect::<Vec<_>>();
-                    Transformed::yes(Arc::new(Expr::ScalarFunc(ScalarFunc::Python(
-                        PythonScalarFunc::RowWise(PythonRowWiseFunc {
+                    Transformed::yes(Arc::new(Expr::ScalarFn(ScalarFn::Python(
+                        PyScalarFn::RowWise(RowWisePyFn {
                             function_name: name.clone(),
                             inner: func.clone(),
                             return_dtype: return_dtype.clone(),

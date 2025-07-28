@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -44,5 +44,5 @@ impl ScalarUDF for Reverse {
 
 #[must_use]
 pub fn reverse(input: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Reverse {}, vec![input]).into()
+    BuiltinScalarFn::new(Reverse {}, vec![input]).into()
 }

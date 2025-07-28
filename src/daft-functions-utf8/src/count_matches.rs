@@ -4,7 +4,7 @@ use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -84,7 +84,7 @@ pub fn count_matches(
     whole_words: bool,
     case_sensitive: bool,
 ) -> ExprRef {
-    BuiltinScalarFunc::new(
+    BuiltinScalarFn::new(
         CountMatches,
         vec![input, patterns, lit(whole_words), lit(case_sensitive)],
     )

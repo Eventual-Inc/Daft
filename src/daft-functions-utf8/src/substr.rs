@@ -10,7 +10,7 @@ use daft_core::{
     with_match_integer_daft_types,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use num_traits::NumCast;
@@ -101,7 +101,7 @@ impl ScalarUDF for Substr {
 
 #[must_use]
 pub fn substr(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Substr {}, vec![input, start, length]).into()
+    BuiltinScalarFn::new(Substr {}, vec![input, start, length]).into()
 }
 
 fn substr_impl<I, J>(

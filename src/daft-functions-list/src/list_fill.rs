@@ -4,7 +4,7 @@ use daft_core::{
     prelude::{Schema, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ impl ScalarUDF for ListFill {
 
 #[must_use]
 pub fn list_fill(elem: ExprRef, n: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(ListFill {}, vec![elem, n]).into()
+    BuiltinScalarFn::new(ListFill {}, vec![elem, n]).into()
 }
 
 #[cfg(test)]

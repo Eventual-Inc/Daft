@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -73,7 +73,7 @@ impl ScalarUDF for RegexpExtract {
 
 #[must_use]
 pub fn regexp_extract(input: ExprRef, pattern: ExprRef, index: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(RegexpExtract, vec![input, pattern, index]).into()
+    BuiltinScalarFn::new(RegexpExtract, vec![input, pattern, index]).into()
 }
 
 fn extract_impl(s: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {

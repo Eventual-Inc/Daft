@@ -6,9 +6,9 @@ use pyo3::{
 };
 
 use crate::{
-    functions::{scalar::ScalarFunc, BuiltinScalarFunc, FunctionExpr},
+    functions::{scalar::ScalarFn, BuiltinScalarFn, FunctionExpr},
     python::PyExpr,
-    python_udf::{PythonRowWiseFunc, PythonScalarFunc},
+    python_udf::{PyScalarFn, RowWisePyFn},
     AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec,
 };
 
@@ -40,10 +40,10 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
             if_false,
             predicate,
         } => visitor.visit_if_else(if_true, if_false, predicate),
-        Expr::ScalarFunc(ScalarFunc::Builtin(scalar_function)) => {
+        Expr::ScalarFn(ScalarFn::Builtin(scalar_function)) => {
             visitor.visit_builtin_scalar_func(scalar_function)
         }
-        Expr::ScalarFunc(ScalarFunc::Python(scalar_function)) => {
+        Expr::ScalarFn(ScalarFn::Python(scalar_function)) => {
             visitor.visit_python_scalar_func(scalar_function)
         }
         Expr::Subquery(subquery) => visitor.visit_subquery(subquery),
@@ -167,9 +167,9 @@ impl<'py> PyVisitor<'py> {
         self.visit_function(name, args)
     }
 
-    fn visit_python_scalar_func(&self, udf: &PythonScalarFunc) -> PyVisitorResult<'py> {
+    fn visit_python_scalar_func(&self, udf: &PyScalarFn) -> PyVisitorResult<'py> {
         match udf {
-            PythonScalarFunc::RowWise(PythonRowWiseFunc {
+            PyScalarFn::RowWise(RowWisePyFn {
                 function_name: name,
                 children,
                 ..
@@ -277,10 +277,7 @@ impl<'py> PyVisitor<'py> {
         self.visit_function(name, args)
     }
 
-    fn visit_builtin_scalar_func(
-        &self,
-        scalar_function: &BuiltinScalarFunc,
-    ) -> PyVisitorResult<'py> {
+    fn visit_builtin_scalar_func(&self, scalar_function: &BuiltinScalarFn) -> PyVisitorResult<'py> {
         let name = scalar_function.name();
         let args: Vec<_> = scalar_function
             .inputs

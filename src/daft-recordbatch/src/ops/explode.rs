@@ -7,7 +7,7 @@ use daft_core::{
     datatypes::{DataType, UInt64Array},
     series::{IntoSeries, Series},
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, functions::scalar::ScalarFunc, Expr};
+use daft_dsl::{expr::bound_expr::BoundExpr, functions::scalar::ScalarFn, Expr};
 use daft_functions_list::SeriesListExtension;
 
 use crate::RecordBatch;
@@ -33,7 +33,7 @@ impl RecordBatch {
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
         for expr in exprs {
             match expr.as_ref() {
-                Expr::ScalarFunc(ScalarFunc::Builtin(func)) => {
+                Expr::ScalarFn(ScalarFn::Builtin(func)) => {
                     if func.name() == "explode" {
                         let inputs = &func.inputs.clone().into_inner();
                         if inputs.len() != 1 {

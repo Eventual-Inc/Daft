@@ -10,15 +10,15 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 use super::function_args::{FunctionArg, FunctionArgs};
-use crate::{python_udf::PythonScalarFunc, Expr, ExprRef};
+use crate::{python_udf::PyScalarFn, Expr, ExprRef};
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum ScalarFunc {
-    Builtin(BuiltinScalarFunc),
-    Python(PythonScalarFunc),
+pub enum ScalarFn {
+    Builtin(BuiltinScalarFn),
+    Python(PyScalarFn),
 }
 
-impl ScalarFunc {
+impl ScalarFn {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
             Self::Builtin(builtin_scalar_func) => builtin_scalar_func.to_field(schema),
@@ -28,12 +28,12 @@ impl ScalarFunc {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuiltinScalarFunc {
+pub struct BuiltinScalarFn {
     pub udf: Arc<dyn ScalarUDF>,
     pub inputs: FunctionArgs<ExprRef>,
 }
 
-impl BuiltinScalarFunc {
+impl BuiltinScalarFn {
     // TODO(cory): use FunctionArgs instead of `Vec<ExprRef>`
     pub fn new<UDF: ScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
         let inputs = inputs.into_iter().map(FunctionArg::unnamed).collect();
@@ -56,9 +56,9 @@ impl BuiltinScalarFunc {
     }
 }
 
-impl From<BuiltinScalarFunc> for ExprRef {
-    fn from(func: BuiltinScalarFunc) -> Self {
-        Self::new(Expr::ScalarFunc(ScalarFunc::Builtin(func)))
+impl From<BuiltinScalarFn> for ExprRef {
+    fn from(func: BuiltinScalarFn) -> Self {
+        Self::new(Expr::ScalarFn(ScalarFn::Builtin(func)))
     }
 }
 
@@ -152,7 +152,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     }
 }
 
-pub fn scalar_function_semantic_id(func: &BuiltinScalarFunc, schema: &Schema) -> FieldID {
+pub fn scalar_function_semantic_id(func: &BuiltinScalarFn, schema: &Schema) -> FieldID {
     let inputs = func
         .inputs
         .clone()
@@ -165,21 +165,21 @@ pub fn scalar_function_semantic_id(func: &BuiltinScalarFunc, schema: &Schema) ->
     FieldID::new(format!("Function_{func:?}({inputs})"))
 }
 
-impl PartialEq for BuiltinScalarFunc {
+impl PartialEq for BuiltinScalarFn {
     fn eq(&self, other: &Self) -> bool {
         self.name() == other.name() && self.inputs == other.inputs
     }
 }
 
-impl Eq for BuiltinScalarFunc {}
-impl std::hash::Hash for BuiltinScalarFunc {
+impl Eq for BuiltinScalarFn {}
+impl std::hash::Hash for BuiltinScalarFn {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name().hash(state);
         self.inputs.hash(state);
     }
 }
 
-impl Display for BuiltinScalarFunc {
+impl Display for BuiltinScalarFn {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "{}(", self.name())?;
         for (i, input) in self.inputs.clone().into_inner().into_iter().enumerate() {

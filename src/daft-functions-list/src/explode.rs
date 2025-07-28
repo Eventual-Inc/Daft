@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -48,5 +48,5 @@ impl ScalarUDF for Explode {
 
 #[must_use]
 pub fn explode(expr: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Explode {}, vec![expr]).into()
+    BuiltinScalarFn::new(Explode {}, vec![expr]).into()
 }

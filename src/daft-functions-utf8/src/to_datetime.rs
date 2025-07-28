@@ -5,7 +5,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     lit, ExprRef, LiteralValue,
 };
 use serde::{Deserialize, Serialize};
@@ -89,7 +89,7 @@ pub fn to_datetime<S: Into<String>>(input: ExprRef, format: S, timezone: Option<
     } else {
         vec![input, lit(format.into())]
     };
-    BuiltinScalarFunc::new(ToDatetime, inputs).into()
+    BuiltinScalarFn::new(ToDatetime, inputs).into()
 }
 
 fn to_datetime_impl(

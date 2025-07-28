@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -40,5 +40,5 @@ impl ScalarUDF for ListMax {
 
 #[must_use]
 pub fn list_max(expr: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(ListMax {}, vec![expr]).into()
+    BuiltinScalarFn::new(ListMax {}, vec![expr]).into()
 }

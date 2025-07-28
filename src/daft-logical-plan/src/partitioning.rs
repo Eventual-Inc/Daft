@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use daft_dsl::{
-    functions::{scalar::ScalarFunc, FunctionArgs},
-    python_udf::{PythonRowWiseFunc, PythonScalarFunc},
+    functions::{scalar::ScalarFn, FunctionArgs},
+    python_udf::{PyScalarFn, RowWisePyFn},
     Column, ExprRef, ResolvedColumn,
 };
 use indexmap::IndexMap;
@@ -272,7 +272,7 @@ fn translate_clustering_spec_expr(
             }
             .into())
         }
-        Expr::ScalarFunc(ScalarFunc::Builtin(func)) => {
+        Expr::ScalarFn(ScalarFn::Builtin(func)) => {
             let mut func = func.clone();
             let new_inputs = func
                 .inputs
@@ -339,7 +339,7 @@ fn translate_clustering_spec_expr(
 
             Ok(expr.in_subquery(subquery.clone()))
         }
-        Expr::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(PythonRowWiseFunc {
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
             function_name: name,
             inner: func,
             return_dtype,
@@ -350,8 +350,8 @@ fn translate_clustering_spec_expr(
                 .iter()
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Arc::new(Expr::ScalarFunc(ScalarFunc::Python(
-                PythonScalarFunc::RowWise(PythonRowWiseFunc {
+            Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
+                PyScalarFn::RowWise(RowWisePyFn {
                     function_name: name.clone(),
                     inner: func.clone(),
                     return_dtype: return_dtype.clone(),

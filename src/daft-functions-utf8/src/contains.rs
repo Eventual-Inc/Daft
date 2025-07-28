@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ impl ScalarUDF for Contains {
 }
 
 pub fn contains(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Contains, vec![input, pattern]).into()
+    BuiltinScalarFn::new(Contains, vec![input, pattern]).into()
 }
 
 fn contains_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {

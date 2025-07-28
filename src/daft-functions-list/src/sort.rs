@@ -1,7 +1,7 @@
 use common_error::{ensure, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     lit, literals_to_series, ExprRef, Literal,
 };
 use serde::{Deserialize, Serialize};
@@ -64,5 +64,5 @@ impl ScalarUDF for ListSort {
 pub fn list_sort(input: ExprRef, desc: Option<ExprRef>, nulls_first: Option<ExprRef>) -> ExprRef {
     let desc = desc.unwrap_or_else(|| lit(false));
     let nulls_first = nulls_first.unwrap_or_else(|| desc.clone());
-    BuiltinScalarFunc::new(ListSort {}, vec![input, desc, nulls_first]).into()
+    BuiltinScalarFn::new(ListSort {}, vec![input, desc, nulls_first]).into()
 }

@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::functions::{prelude::*, BuiltinScalarFunc};
+use daft_dsl::functions::{prelude::*, BuiltinScalarFn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -44,5 +44,5 @@ impl ScalarUDF for ToStructFunction {
 
 #[must_use]
 pub fn to_struct(inputs: Vec<ExprRef>) -> ExprRef {
-    BuiltinScalarFunc::new(ToStructFunction, inputs).into()
+    BuiltinScalarFn::new(ToStructFunction, inputs).into()
 }

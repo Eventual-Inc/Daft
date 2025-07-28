@@ -8,7 +8,7 @@ Learn more about [UDFs](../core_concepts.md#user-defined-functions-udf) in Daft 
 
 ## Creating UDFs
 
-::: daft.udf.legacy.udf
+::: daft.udf.udf
     options:
         heading_level: 3
 

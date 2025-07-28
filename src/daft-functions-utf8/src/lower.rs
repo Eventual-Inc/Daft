@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -45,5 +45,5 @@ impl ScalarUDF for Lower {
 
 #[must_use]
 pub fn lower(input: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Lower, vec![input]).into()
+    BuiltinScalarFn::new(Lower, vec![input]).into()
 }

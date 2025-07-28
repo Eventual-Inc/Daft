@@ -8,7 +8,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArg, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArg, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -82,7 +82,7 @@ impl ScalarUDF for RegexpSplit {
 
 #[must_use]
 pub fn split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
-    BuiltinScalarFunc {
+    BuiltinScalarFn {
         udf: if regex {
             Arc::new(RegexpSplit) as _
         } else {

@@ -176,7 +176,7 @@ message Expr {
     Agg agg = 3;
     BinaryOp binary_op = 4;
     Cast cast = 5;
-    Function function = 6;
+    ScalarFn function = 6;
     Over over = 7;
     WindowFunction window_function = 8;
     Not not = 9;
@@ -318,45 +318,62 @@ message IfElse {
   Expr predicate = 3;
 }
 
-message Function {
-  oneof descriptor {
-    RsFunction rs = 1;
-    PyFunction py = 2;
+message ScalarFn {
+  oneof variant {
+    BuiltinFn builtin = 1;
+    PyFn py = 2;
   }
-  Args args = 3;
 
   // For rust functions (builtins), we only have simple names.
-  message RsFunction {
+  message BuiltinFn {
     string name = 1;
+    Args args = 2;
+
+    // TODO: Daft does not handle static parameter binding.
+    message Args {
+      repeated Arg args = 1;
+    }
+
+    // TODO: Update param to required after static parameter binding is implemented.
+    message Arg {
+      optional string param = 1;
+      Expr expr = 2;
+    }
   }
 
-  // TODO: Daft does not handle static parameter binding.
-  message Args {
-    repeated Arg args = 1;
-  }
-
-  // TODO: Update param to required after static parameter binding is implemented.
-  message Arg {
-    optional string param = 1;
-    Expr expr = 2;
-  }
 
   // For python functions (UDF), we need the pickled object and bound args.
-  message PyFunction {
-    string name = 1;
-    uint64 arity = 2;
-    DataType return_type = 3;
-    //--
-    PyObject callable = 4;
-    PyObject callable_init_args = 5; // the __init__ args for runtime initialization
-    PyObject callable_call_args = 6; // the (possibly) closed args from decoration
-    //--
-    optional uint64 concurrency = 7;
-    optional uint64 batch_size = 8;
-    optional uint64 num_cpus = 9;
-    optional uint64 num_gpus = 10;
-    optional uint64 max_memory_bytes = 11;
-    optional bool use_process = 12;
+  message PyFn {
+    oneof variant {
+      LegacyFn legacy = 1;
+      RowWiseFn row_wise = 2;
+    }
+
+    message LegacyFn {
+      string name = 1;
+      uint64 arity = 2;
+      DataType return_type = 3;
+      //--
+      PyObject callable = 4;
+      PyObject callable_init_args = 5; // the __init__ args for runtime initialization
+      PyObject callable_call_args = 6; // the (possibly) closed args from decoration
+      //--
+      optional uint64 concurrency = 7;
+      optional uint64 batch_size = 8;
+      optional uint64 num_cpus = 9;
+      optional uint64 num_gpus = 10;
+      optional uint64 max_memory_bytes = 11;
+      optional bool use_process = 12;
+      repeated Expr args = 13;
+    }
+
+    message RowWiseFn {
+      string name = 1;
+      DataType return_dtype = 2;
+      PyObject inner = 3;
+      PyObject original_args = 4;
+      repeated Expr args = 13;
+    }
   }
 }
 

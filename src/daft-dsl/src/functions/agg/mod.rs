@@ -3,7 +3,7 @@ use daft_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 
@@ -93,5 +93,5 @@ impl ScalarUDF for MergeMeanFunction {
 
 #[must_use]
 pub fn merge_mean(sum: ExprRef, counts: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(MergeMeanFunction {}, vec![sum, counts]).into()
+    BuiltinScalarFn::new(MergeMeanFunction {}, vec![sum, counts]).into()
 }

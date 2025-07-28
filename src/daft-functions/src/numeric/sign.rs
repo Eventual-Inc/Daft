@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF, UnaryArg},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -55,7 +55,7 @@ impl ScalarUDF for Sign {
 }
 #[must_use]
 pub fn sign(input: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Sign, vec![input]).into()
+    BuiltinScalarFn::new(Sign, vec![input]).into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -123,5 +123,5 @@ impl ScalarUDF for Negative {
 }
 #[must_use]
 pub fn negative(input: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Negative, vec![input]).into()
+    BuiltinScalarFn::new(Negative, vec![input]).into()
 }

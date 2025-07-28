@@ -7,7 +7,7 @@ use daft_core::prelude::Schema;
 use daft_dsl::{
     binary_op,
     expr::window::{WindowBoundary, WindowFrame},
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF, FUNCTION_REGISTRY},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, FUNCTION_REGISTRY},
     unresolved_col, Expr, ExprRef, Operator, WindowExpr, WindowSpec,
 };
 use daft_session::Session;
@@ -99,7 +99,7 @@ impl SQLFunction for Arc<dyn ScalarUDF> {
             .iter()
             .map(|input| planner.plan_function_arg(input))
             .collect::<SQLPlannerResult<Vec<_>>>()?;
-        Ok(BuiltinScalarFunc {
+        Ok(BuiltinScalarFn {
             udf: self.clone(),
             inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
         }

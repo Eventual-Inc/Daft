@@ -111,7 +111,7 @@ pub fn rewrite_predicate_for_partitioning(
                 has_udf = true;
                 Ok(TreeNodeRecursion::Stop)
             }
-            Expr::ScalarFunc(_) => {
+            Expr::ScalarFn(_) => {
                 // TODO: can we support scalar functions here?
                 has_udf = true;
                 Ok(TreeNodeRecursion::Stop)

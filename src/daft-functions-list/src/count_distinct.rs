@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -40,5 +40,5 @@ impl ScalarUDF for ListCountDistinct {
 
 #[must_use]
 pub fn list_count_distinct(expr: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(ListCountDistinct, vec![expr]).into()
+    BuiltinScalarFn::new(ListCountDistinct, vec![expr]).into()
 }

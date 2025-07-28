@@ -37,14 +37,14 @@ use crate::{
     functions::{
         function_display_without_formatter, function_semantic_id,
         python::LegacyPythonUDF,
-        scalar::{scalar_function_semantic_id, ScalarFunc},
+        scalar::{scalar_function_semantic_id, ScalarFn},
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        BuiltinScalarFunc, FunctionArg, FunctionArgs, FunctionEvaluator, FUNCTION_REGISTRY,
+        BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionEvaluator, FUNCTION_REGISTRY,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
-    python_udf::{PythonRowWiseFunc, PythonScalarFunc},
+    python_udf::{PyScalarFn, RowWisePyFn},
 };
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
@@ -286,7 +286,7 @@ pub enum Expr {
     },
 
     #[display("{_0}")]
-    ScalarFunc(ScalarFunc),
+    ScalarFn(ScalarFn),
 
     #[display("subquery {_0}")]
     Subquery(Subquery),
@@ -1237,7 +1237,7 @@ impl Expr {
             Self::Alias(expr, ..) => expr.semantic_id(schema),
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
-            Self::ScalarFunc(ScalarFunc::Builtin(sf)) => scalar_function_semantic_id(sf, schema),
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => scalar_function_semantic_id(sf, schema),
             Self::Subquery(subquery) => subquery.semantic_id(),
             Self::InSubquery(expr, subquery) => {
                 let child_id = expr.semantic_id(schema);
@@ -1287,13 +1287,11 @@ impl Expr {
                 let child_id = window_expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.window_function()"))
             }
-            Self::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
-                PythonRowWiseFunc {
-                    function_name: name,
-                    children,
-                    ..
-                },
-            ))) => {
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                children,
+                ..
+            }))) => {
                 let children_ids = children
                     .iter()
                     .map(|expr| expr.semantic_id(schema).id)
@@ -1339,10 +1337,10 @@ impl Expr {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
-            Self::ScalarFunc(ScalarFunc::Builtin(sf)) => sf.inputs.clone().into_inner(),
-            Self::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
-                PythonRowWiseFunc { children, .. },
-            ))) => children.clone(),
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                children, ..
+            }))) => children.clone(),
         }
     }
 
@@ -1437,7 +1435,7 @@ impl Expr {
                     inputs: children,
                 }
             }
-            Self::ScalarFunc(ScalarFunc::Builtin(sf)) => {
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => {
                 assert!(
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
@@ -1455,34 +1453,30 @@ impl Expr {
                     })
                     .collect();
 
-                Self::ScalarFunc(ScalarFunc::Builtin(BuiltinScalarFunc {
+                Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
                     udf: sf.udf.clone(),
                     inputs: FunctionArgs::new_unchecked(new_children),
                 }))
             }
-            Self::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
-                PythonRowWiseFunc {
-                    function_name: name,
-                    inner: func,
-                    return_dtype,
-                    original_args,
-                    children: old_children,
-                },
-            ))) => {
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                inner: func,
+                return_dtype,
+                original_args,
+                children: old_children,
+            }))) => {
                 assert!(
                     children.len() == old_children.len(),
                     "Should have same number of children"
                 );
 
-                Self::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
-                    PythonRowWiseFunc {
-                        function_name: name.clone(),
-                        inner: func.clone(),
-                        return_dtype: return_dtype.clone(),
-                        original_args: original_args.clone(),
-                        children,
-                    },
-                )))
+                Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                    function_name: name.clone(),
+                    inner: func.clone(),
+                    return_dtype: return_dtype.clone(),
+                    original_args: original_args.clone(),
+                    children,
+                })))
             }
         }
     }
@@ -1572,7 +1566,7 @@ impl Expr {
             }
             Self::Literal(value) => Ok(Field::new("literal", value.get_type())),
             Self::Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
-            Self::ScalarFunc(sf) => sf.to_field(schema),
+            Self::ScalarFn(sf) => sf.to_field(schema),
             Self::BinaryOp { op, left, right } => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
@@ -1717,7 +1711,7 @@ impl Expr {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
-            Self::ScalarFunc(ScalarFunc::Builtin(func)) => match func.name() {
+            Self::ScalarFn(ScalarFn::Builtin(func)) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
                 "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
                 _ => func.inputs.first().unwrap().name(),
@@ -1733,13 +1727,11 @@ impl Expr {
             Self::Exists(subquery) => subquery.name(),
             Self::Over(expr, ..) => expr.name(),
             Self::WindowFunction(expr) => expr.name(),
-            Self::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
-                PythonRowWiseFunc {
-                    function_name: name,
-                    children,
-                    ..
-                },
-            ))) => {
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                children,
+                ..
+            }))) => {
                 if let Some(first_child) = children.first() {
                     first_child.name()
                 } else {
@@ -1826,7 +1818,7 @@ impl Expr {
                 | Expr::Between(..)
                 | Expr::Function { .. }
                 | Expr::FillNull(..)
-                | Expr::ScalarFunc { .. }
+                | Expr::ScalarFn { .. }
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
@@ -1867,7 +1859,7 @@ impl Expr {
             Self::Subquery(..) => false,
             Self::Exists(..) => false,
             Self::Function { .. } => true,
-            Self::ScalarFunc(..) => true,
+            Self::ScalarFn(..) => true,
             Self::Agg(_) => true,
             Self::Over(..) => true,
             Self::WindowFunction(..) => true,
@@ -1932,7 +1924,7 @@ impl Expr {
         let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
         let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
 
-        Ok(Self::ScalarFunc(ScalarFunc::Builtin(BuiltinScalarFunc {
+        Ok(Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
             udf: f,
             inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
         }))
@@ -2177,14 +2169,14 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         },
 
         // String contains
-        Expr::ScalarFunc(ScalarFunc::Builtin(BuiltinScalarFunc { udf, .. }))
+        Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
             if udf.name() == "contains" =>
         {
             0.1
         }
 
         // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
-        Expr::ScalarFunc(_)
+        Expr::ScalarFn(_)
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }

@@ -8,7 +8,7 @@ use daft_core::{
     with_match_integer_daft_types,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use num_traits::NumCast;
@@ -68,7 +68,7 @@ impl ScalarUDF for Left {
 
 #[must_use]
 pub fn left(input: ExprRef, nchars: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Left {}, vec![input, nchars]).into()
+    BuiltinScalarFn::new(Left {}, vec![input, nchars]).into()
 }
 
 fn left_impl<I>(arr: &Utf8Array, nchars: &DataArray<I>) -> DaftResult<Utf8Array>

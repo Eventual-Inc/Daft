@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF, UnaryArg},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,7 @@ macro_rules! exp {
 
         #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
-            BuiltinScalarFunc::new($variant, vec![input]).into()
+            BuiltinScalarFn::new($variant, vec![input]).into()
         }
     };
 }

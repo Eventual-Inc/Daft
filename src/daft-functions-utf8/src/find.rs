@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ impl ScalarUDF for Find {
 
 #[must_use]
 pub fn find(input: ExprRef, substr: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Find {}, vec![input, substr]).into()
+    BuiltinScalarFn::new(Find {}, vec![input, substr]).into()
 }
 
 fn find_impl(arr: &Utf8Array, substr: &Utf8Array) -> DaftResult<Int64Array> {

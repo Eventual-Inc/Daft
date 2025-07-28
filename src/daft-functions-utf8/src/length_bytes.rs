@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ impl ScalarUDF for LengthBytes {
 
 #[must_use]
 pub fn utf8_length_bytes(input: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(LengthBytes {}, vec![input]).into()
+    BuiltinScalarFn::new(LengthBytes {}, vec![input]).into()
 }
 
 fn length_bytes_impl(arr: &Utf8Array) -> DaftResult<UInt64Array> {

@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,7 @@ impl ScalarUDF for Capitalize {
 }
 
 pub fn capitalize(e: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(Capitalize, vec![e]).into()
+    BuiltinScalarFn::new(Capitalize, vec![e]).into()
 }
 
 fn capitalize_impl(s: &Series) -> DaftResult<Series> {

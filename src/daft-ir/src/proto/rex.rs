@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use daft_dsl::functions::scalar::ScalarFunc;
-
 use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
@@ -274,10 +272,7 @@ impl ToFromProto for ir::Expr {
                     .into(),
                 )
             }
-            Self::ScalarFunc(ScalarFunc::Builtin(scalar_function)) => {
-                let function = scalar_function.to_proto()?;
-                proto::ExprVariant::Function(function)
-            }
+            Self::ScalarFn(sf) => proto::ExprVariant::Function(sf.to_proto()?),
             Self::Subquery(_) => {
                 // todo(conner)
                 not_implemented_err!("subquery")
@@ -289,10 +284,6 @@ impl ToFromProto for ir::Expr {
             Self::Exists(_) => {
                 // todo(conner)
                 not_implemented_err!("exists")
-            }
-            Self::ScalarFunc(ScalarFunc::Python(_)) => {
-                // todo
-                not_implemented_err!("python udf")
             }
         };
         Ok(proto::Expr {

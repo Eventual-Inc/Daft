@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -55,5 +55,5 @@ impl ScalarUDF for StartsWith {
 
 #[must_use]
 pub fn startswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(StartsWith {}, vec![input, pattern]).into()
+    BuiltinScalarFn::new(StartsWith {}, vec![input, pattern]).into()
 }

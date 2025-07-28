@@ -9,17 +9,17 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    functions::{python::RuntimePyObject, scalar::ScalarFunc},
+    functions::{python::RuntimePyObject, scalar::ScalarFn},
     Expr, ExprRef, LiteralValue,
 };
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[display("{_0}")]
-pub enum PythonScalarFunc {
-    RowWise(PythonRowWiseFunc),
+pub enum PyScalarFn {
+    RowWise(RowWisePyFn),
 }
 
-impl PythonScalarFunc {
+impl PyScalarFn {
     pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call(args),
@@ -28,7 +28,7 @@ impl PythonScalarFunc {
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
-            Self::RowWise(PythonRowWiseFunc { children, .. }) => children.clone(),
+            Self::RowWise(RowWisePyFn { children, .. }) => children.clone(),
         }
     }
 
@@ -40,7 +40,7 @@ impl PythonScalarFunc {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
-            Self::RowWise(PythonRowWiseFunc {
+            Self::RowWise(RowWisePyFn {
                 function_name: name,
                 children,
                 return_dtype,
@@ -65,19 +65,17 @@ pub fn row_wise_udf(
     original_args: RuntimePyObject,
     children: Vec<ExprRef>,
 ) -> Expr {
-    Expr::ScalarFunc(ScalarFunc::Python(PythonScalarFunc::RowWise(
-        PythonRowWiseFunc {
-            function_name: Arc::from(name),
-            inner,
-            return_dtype,
-            original_args,
-            children,
-        },
-    )))
+    Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+        function_name: Arc::from(name),
+        inner,
+        return_dtype,
+        original_args,
+        children,
+    })))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct PythonRowWiseFunc {
+pub struct RowWisePyFn {
     pub function_name: Arc<str>,
     pub inner: RuntimePyObject,
     pub return_dtype: DataType,
@@ -85,7 +83,7 @@ pub struct PythonRowWiseFunc {
     pub children: Vec<ExprRef>,
 }
 
-impl Display for PythonRowWiseFunc {
+impl Display for RowWisePyFn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let children_str = self.children.iter().map(|expr| expr.to_string()).join(", ");
 
@@ -93,7 +91,7 @@ impl Display for PythonRowWiseFunc {
     }
 }
 
-impl PythonRowWiseFunc {
+impl RowWisePyFn {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         assert_eq!(
             children.len(),

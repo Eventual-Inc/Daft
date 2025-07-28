@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFunc, FunctionArgs, ScalarUDF},
+    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -44,5 +44,5 @@ impl ScalarUDF for RStrip {
 
 #[must_use]
 pub fn rstrip(input: ExprRef) -> ExprRef {
-    BuiltinScalarFunc::new(RStrip {}, vec![input]).into()
+    BuiltinScalarFn::new(RStrip {}, vec![input]).into()
 }
