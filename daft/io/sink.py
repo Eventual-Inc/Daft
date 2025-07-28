@@ -94,7 +94,7 @@ class DataSink(ABC, Generic[WriteResultType]):
         try:
             yield from self.write(micropartitions)
         except Exception as e:
-            raise RuntimeError(f"Exception occurred while writing to {self.name()}: {type(e).__name__}: {e!s}")
+            raise RuntimeError(f"Exception occurred while writing to {self.name()}: {type(e).__name__}: {e!s}") from e
 
     @abstractmethod
     def finalize(self, write_results: list[WriteResult[WriteResultType]]) -> MicroPartition:
