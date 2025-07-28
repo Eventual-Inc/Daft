@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -53,5 +53,5 @@ impl ScalarUDF for LPad {
 
 #[must_use]
 pub fn lpad(input: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
-    ScalarFunction::new(LPad {}, vec![input, length, pad]).into()
+    ScalarFn::builtin(LPad {}, vec![input, length, pad]).into()
 }

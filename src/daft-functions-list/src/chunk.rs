@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -58,5 +58,5 @@ impl ScalarUDF for ListChunk {
 
 #[must_use]
 pub fn list_chunk(expr: ExprRef, size: usize) -> ExprRef {
-    ScalarFunction::new(ListChunk, vec![expr, lit(size as u64)]).into()
+    ScalarFn::builtin(ListChunk, vec![expr, lit(size as u64)]).into()
 }

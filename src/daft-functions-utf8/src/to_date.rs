@@ -6,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,7 @@ impl ScalarUDF for ToDate {
 
 #[must_use]
 pub fn to_date(input: ExprRef, format: ExprRef) -> ExprRef {
-    ScalarFunction::new(ToDate, vec![input, format]).into()
+    ScalarFn::builtin(ToDate, vec![input, format]).into()
 }
 
 fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {

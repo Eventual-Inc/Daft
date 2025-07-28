@@ -272,6 +272,30 @@ pub fn udf(
     })
 }
 
+#[pyfunction]
+pub fn row_wise_udf(
+    name: &str,
+    inner: PyObject,
+    return_dtype: PyDataType,
+    original_args: PyObject,
+    expr_args: Vec<PyExpr>,
+) -> PyExpr {
+    use crate::python_udf::row_wise_udf;
+
+    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
+    PyExpr {
+        expr: row_wise_udf(
+            name,
+            inner.into(),
+            return_dtype.into(),
+            original_args.into(),
+            args,
+        )
+        .into(),
+    }
+}
+
 /// Initializes all uninitialized UDFs in the expression
 #[pyfunction]
 pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
