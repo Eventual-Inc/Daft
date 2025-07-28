@@ -27,7 +27,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 #[derive(Default)]
 struct SinglePartitionDedupState {
@@ -189,8 +189,8 @@ impl BlockingSink for DedupSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Dedup"
+    fn name(&self) -> NodeName {
+        "Dedup".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

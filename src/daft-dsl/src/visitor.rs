@@ -6,8 +6,9 @@ use pyo3::{
 };
 
 use crate::{
-    functions::{FunctionExpr, ScalarFunction},
+    functions::{scalar::ScalarFn, BuiltinScalarFn, FunctionExpr},
     python::PyExpr,
+    python_udf::{PyScalarFn, RowWisePyFn},
     AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec,
 };
 
@@ -39,7 +40,12 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
             if_false,
             predicate,
         } => visitor.visit_if_else(if_true, if_false, predicate),
-        Expr::ScalarFunction(scalar_function) => visitor.visit_scalar_function(scalar_function),
+        Expr::ScalarFn(ScalarFn::Builtin(scalar_function)) => {
+            visitor.visit_builtin_scalar_func(scalar_function)
+        }
+        Expr::ScalarFn(ScalarFn::Python(scalar_function)) => {
+            visitor.visit_python_scalar_func(scalar_function)
+        }
         Expr::Subquery(subquery) => visitor.visit_subquery(subquery),
         Expr::InSubquery(expr, subquery) => visitor.visit_in_subquery(expr, subquery),
         Expr::Exists(subquery) => visitor.visit_exists(subquery),
@@ -161,6 +167,23 @@ impl<'py> PyVisitor<'py> {
         self.visit_function(name, args)
     }
 
+    fn visit_python_scalar_func(&self, udf: &PyScalarFn) -> PyVisitorResult<'py> {
+        match udf {
+            PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                args: children,
+                ..
+            }) => {
+                let args = children
+                    .iter()
+                    .map(|expr| self.to_expr(expr))
+                    .collect::<PyResult<Vec<_>>>()?;
+
+                self.visit_function(name, args)
+            }
+        }
+    }
+
     #[allow(unused_variables)]
     fn visit_over(
         self,
@@ -254,7 +277,7 @@ impl<'py> PyVisitor<'py> {
         self.visit_function(name, args)
     }
 
-    fn visit_scalar_function(&self, scalar_function: &ScalarFunction) -> PyVisitorResult<'py> {
+    fn visit_builtin_scalar_func(&self, scalar_function: &BuiltinScalarFn) -> PyVisitorResult<'py> {
         let name = scalar_function.name();
         let args: Vec<_> = scalar_function
             .inputs

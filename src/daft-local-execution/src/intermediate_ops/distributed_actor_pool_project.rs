@@ -19,7 +19,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ActorHandle {
@@ -150,8 +150,8 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         fut.into()
     }
 
-    fn name(&self) -> &'static str {
-        "DistributedActorPoolProject"
+    fn name(&self) -> NodeName {
+        "DistributedActorPoolProject".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
