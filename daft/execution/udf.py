@@ -71,6 +71,7 @@ class UdfHandle:
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            # Python auto-buffers stdout by default, so disable
             env={"PYTHONUNBUFFERED": "1"},
         )
 
@@ -92,6 +93,8 @@ class UdfHandle:
         lines = []
         while True:
             line = cast("IO[bytes]", self.process.stdout).readline()
+            # UDF process is expected to return the divider
+            # after initialization and every iteration
             if line == b"" or line == _OUTPUT_DIVIDER or self.process.poll() is not None:
                 break
             lines.append(line.decode().rstrip())
@@ -106,7 +109,7 @@ class UdfHandle:
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
-        outs = self.trace_output()
+        stdout = self.trace_output()
         if response[0] == _UDF_ERROR:
             base_exc: Exception = pickle.loads(response[3])
             if sys.version_info >= (3, 11):
@@ -118,7 +121,7 @@ class UdfHandle:
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = MicroPartition.from_ipc_stream(output_bytes)
-            return (deserialized._micropartition, outs)
+            return (deserialized._micropartition, stdout)
         else:
             raise RuntimeError(f"Unknown response from actor: {response}")
 
