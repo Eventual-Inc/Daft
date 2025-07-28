@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::{Stat, StatSnapshot};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -20,7 +21,7 @@ use super::blocking_sink::{
     BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{
-    runtime_stats::{RuntimeStats, Stat, CPU_US_KEY, ROWS_RECEIVED_KEY},
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_RECEIVED_KEY},
     state_bridge::BroadcastStateBridgeRef,
     ExecutionTaskSpawner,
 };
@@ -112,14 +113,14 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> crate::runtime_stats::StatSnapshot {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         smallvec![
             (
-                CPU_US_KEY,
+                CPU_US_KEY.to_string(),
                 Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
             ),
             (
-                ROWS_RECEIVED_KEY,
+                ROWS_RECEIVED_KEY.to_string(),
                 Stat::Count(self.rows_received.load(ordering))
             ),
         ]

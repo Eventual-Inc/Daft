@@ -154,6 +154,10 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         "DistributedActorPoolProject"
     }
 
+    fn r#type(&self) -> crate::pipeline::NodeType {
+        "DistributedActorPoolProject"
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("DistributedActorPoolProject:".to_string());

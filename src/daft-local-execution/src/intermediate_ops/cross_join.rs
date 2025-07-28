@@ -142,6 +142,10 @@ impl IntermediateOperator for CrossJoinOperator {
         "CrossJoin"
     }
 
+    fn r#type(&self) -> crate::pipeline::NodeType {
+        "CrossJoin"
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         vec![
             "CrossJoin:".to_string(),

@@ -1,6 +1,7 @@
 use std::{collections::HashMap, env, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::{Stat, StatSnapshot};
 use common_runtime::{get_io_runtime, RuntimeTask};
 use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ use tokio::sync::{watch, Notify};
 use crate::{
     pipeline_node::NodeID,
     plan::PlanID,
-    scheduling::task::TaskContext,
+    scheduling::task::{TaskContext, TaskID},
     statistics::{
         PlanState, StatisticsEvent, StatisticsSubscriber, TaskExecutionStatus, TaskState,
     },
@@ -92,6 +93,7 @@ pub struct PlanData {
     pub plan_state: PlanState,
     pub tasks: HashMap<TaskContext, TaskState>,
     pub adjacency_list: HashMap<NodeID, Vec<NodeID>>,
+    pub metrics: HashMap<NodeID, HashMap<TaskID, HashMap<String, Stat>>>,
 }
 
 impl PlanData {
@@ -103,6 +105,7 @@ impl PlanData {
             plan_state,
             tasks: HashMap::new(),
             adjacency_list,
+            metrics: HashMap::new(),
         }
     }
 
@@ -290,6 +293,63 @@ impl HttpSubscriber {
                     }
                 }
             }
+            StatisticsEvent::LocalPhysicalNodeMetrics {
+                plan_id,
+                logical_node_id,
+                local_physical_node_type,
+                distributed_physical_node_type,
+                task_id,
+                snapshot,
+                ..
+            } => {
+                if let Some(plan_data) = self.plan_data.get_mut(plan_id) {
+                    // Compute the logical node metrics snapshot
+                    let logical_node_metrics_snapshot = Self::aggregate_local_physical_node_metrics(
+                        distributed_physical_node_type,
+                        local_physical_node_type,
+                        snapshot,
+                    );
+                    // Merge the metrics into the plan metrics hashmap
+                    if let Some(metrics) = logical_node_metrics_snapshot {
+                        let task_metrics = plan_data.metrics.entry(*task_id).or_default();
+                        for (key, stat) in metrics {
+                            task_metrics
+                                .entry(*logical_node_id)
+                                .or_default()
+                                .entry(key.clone())
+                                .and_modify(|existing| {
+                                    match (existing, &stat) {
+                                        (
+                                            Stat::Duration(existing_duration),
+                                            Stat::Duration(new_duration),
+                                        ) => {
+                                            // Duration should be the max of all durations
+                                            if new_duration > existing_duration {
+                                                *existing_duration = *new_duration;
+                                            }
+                                        }
+                                        (Stat::Count(existing_count), Stat::Count(new_count)) => {
+                                            // Simple addition for counts
+                                            *existing_count += new_count;
+                                        }
+                                        (Stat::Bytes(existing_bytes), Stat::Bytes(new_bytes)) => {
+                                            // Simple addition for bytes
+                                            *existing_bytes += new_bytes;
+                                        }
+                                        (Stat::Float(existing_float), Stat::Float(new_float)) => {
+                                            // Simple addition for floats
+                                            *existing_float += new_float;
+                                        }
+                                        _ => {
+                                            // Types don't match or unsupported combination
+                                        }
+                                    }
+                                })
+                                .or_insert_with(|| stat.clone());
+                        }
+                    }
+                }
+            }
             StatisticsEvent::TaskFailed { context, .. } => {
                 let plan_id = context.plan_id;
                 if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
@@ -299,6 +359,13 @@ impl HttpSubscriber {
                             task_state.pending -= 1;
                         }
                         task_state.failed += 1;
+
+                        // For each logical node in the context, invalidate metrics for this task since it may be retried
+                        for logical_node_id in &context.logical_node_ids {
+                            if let Some(task_metrics) = plan_data.metrics.get_mut(logical_node_id) {
+                                task_metrics.remove(&context.task_id);
+                            }
+                        }
                     }
                 }
             }
@@ -458,6 +525,12 @@ impl HttpSubscriber {
                     let new_status = Self::convert_task_status(&task_state.status);
                     existing_node.status =
                         Self::merge_node_status(&existing_node.status, &new_status);
+
+                    // Aggregate metrics for this node
+                    let node_metrics = Self::aggregate_node_metrics(plan_data, node_id);
+                    if !node_metrics.is_empty() {
+                        existing_node.metrics = Some(node_metrics);
+                    }
                 }
             }
         }
@@ -468,6 +541,87 @@ impl HttpSubscriber {
             nodes: nodes_map.into_values().collect(),
             adjacency_list: plan_data.adjacency_list.clone(),
             metrics: None,
+        }
+    }
+
+    fn aggregate_node_metrics(
+        plan_data: &PlanData,
+        node_id: NodeID,
+    ) -> Vec<MetricDisplayInformation> {
+        let mut aggregated_metrics: HashMap<String, Stat> = HashMap::new();
+
+        // Collect metrics from all tasks for this node
+        for task_metrics in plan_data.metrics.values() {
+            if let Some(node_metrics) = task_metrics.get(&node_id) {
+                for (metric_name, stat) in node_metrics {
+                    aggregated_metrics
+                        .entry(metric_name.clone())
+                        .and_modify(|existing| {
+                            match (existing, stat) {
+                                (
+                                    Stat::Duration(existing_duration),
+                                    Stat::Duration(new_duration),
+                                ) => {
+                                    // For duration, take the maximum across all tasks
+                                    if new_duration > existing_duration {
+                                        *existing_duration = *new_duration;
+                                    }
+                                }
+                                (Stat::Count(existing_count), Stat::Count(new_count)) => {
+                                    // For counts, sum across all tasks
+                                    *existing_count += new_count;
+                                }
+                                (Stat::Bytes(existing_bytes), Stat::Bytes(new_bytes)) => {
+                                    // For bytes, sum across all tasks
+                                    *existing_bytes += new_bytes;
+                                }
+                                (Stat::Float(existing_float), Stat::Float(new_float)) => {
+                                    // For floats, sum across all tasks
+                                    *existing_float += new_float;
+                                }
+                                _ => {
+                                    // Types don't match or unsupported combination, keep existing
+                                }
+                            }
+                        })
+                        .or_insert_with(|| stat.clone());
+                }
+            }
+        }
+
+        // Convert to MetricDisplayInformation
+        aggregated_metrics
+            .into_iter()
+            .map(|(name, stat)| Self::stat_to_metric_display_info(&name, &stat))
+            .collect()
+    }
+
+    fn stat_to_metric_display_info(name: &str, stat: &Stat) -> MetricDisplayInformation {
+        match stat {
+            Stat::Count(value) => MetricDisplayInformation {
+                name: name.to_string(),
+                description: String::new(),
+                value: *value as f64,
+                unit: "count".to_string(),
+            },
+            Stat::Bytes(value) => MetricDisplayInformation {
+                name: name.to_string(),
+                description: String::new(),
+                value: *value as f64,
+                unit: "bytes".to_string(),
+            },
+            Stat::Float(value) => MetricDisplayInformation {
+                name: name.to_string(),
+                description: String::new(),
+                value: *value,
+                unit: String::new(),
+            },
+            Stat::Duration(value) => MetricDisplayInformation {
+                name: name.to_string(),
+                description: String::new(),
+                value: value.as_secs_f64(),
+                unit: "seconds".to_string(),
+            },
         }
     }
 
@@ -497,6 +651,48 @@ impl HttpSubscriber {
             (NodeStatus::Completed, _) | (_, NodeStatus::Completed) => NodeStatus::Completed,
             (NodeStatus::Canceled, _) | (_, NodeStatus::Canceled) => NodeStatus::Canceled,
             _ => NodeStatus::Created,
+        }
+    }
+
+    // A logical node ID maps to multiple distributed physical nodes, and each distributed physical node can also
+    // have multiple local physical nodes. This function aggregates metrics from all local physical nodes
+    // belonging to a specific logical node ID, based on the distributed physical node type.
+    fn aggregate_local_physical_node_metrics(
+        distributed_physical_node_type: &str,
+        _local_physical_node_type: &str,
+        snapshot: &StatSnapshot,
+    ) -> Option<HashMap<String, Stat>> {
+        match distributed_physical_node_type {
+            "Project" | "ScanSource" | "Sink" | "Filter" => {
+                // Convert the snapshot to a HashMap<String, Stat>
+                let mut aggregated_metrics: HashMap<String, Stat> = HashMap::new();
+                for (key, stat) in snapshot {
+                    aggregated_metrics
+                        .entry((*key).to_string())
+                        .and_modify(|existing| {
+                            if let Stat::Count(existing_count) = existing {
+                                if let Stat::Count(new_count) = stat {
+                                    *existing_count += new_count;
+                                }
+                            } else if let Stat::Bytes(existing_bytes) = existing {
+                                if let Stat::Bytes(new_bytes) = stat {
+                                    *existing_bytes += new_bytes;
+                                }
+                            } else if let Stat::Duration(existing_duration) = existing {
+                                if let Stat::Duration(new_duration) = stat {
+                                    *existing_duration = *new_duration;
+                                }
+                            } else if let Stat::Float(existing_float) = existing {
+                                if let Stat::Float(new_float) = stat {
+                                    *existing_float += new_float;
+                                }
+                            }
+                        })
+                        .or_insert_with(|| stat.clone());
+                }
+                Some(aggregated_metrics)
+            }
+            _ => None, // Implement aggregations for custom node types
         }
     }
 }

@@ -72,4 +72,8 @@ impl IntermediateOperator for SampleOperator {
     fn name(&self) -> &'static str {
         "Sample"
     }
+
+    fn r#type(&self) -> crate::pipeline::NodeType {
+        "Sample"
+    }
 }

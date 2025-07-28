@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_metrics::{Stat, StatSnapshot};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_logical_plan::stats::StatsState;
@@ -19,10 +20,8 @@ use smallvec::smallvec;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
-    runtime_stats::{
-        CountingSender, RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY,
-    },
+    pipeline::{NodeCategory, NodeInfo, PipelineNode, RuntimeContext},
+    runtime_stats::{CountingSender, RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
 };
 
@@ -43,15 +42,15 @@ impl RuntimeStats for SourceStats {
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         smallvec![
             (
-                CPU_US_KEY,
+                CPU_US_KEY.to_string(),
                 Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
             ),
             (
-                ROWS_EMITTED_KEY,
+                ROWS_EMITTED_KEY.to_string(),
                 Stat::Count(self.rows_emitted.load(ordering))
             ),
             (
-                "bytes read",
+                "bytes read".to_string(),
                 Stat::Bytes(self.io_stats.load_bytes_read() as u64)
             )
         ]
@@ -94,7 +93,7 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name(), NodeType::Source);
+        let info = ctx.next_node_info(source.name(), "Source", NodeCategory::Source);
         let runtime_stats = source.make_runtime_stats();
         Self {
             source,

@@ -285,8 +285,6 @@ impl NativeExecutor {
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
 
-        let stats_manager = Arc::new(RuntimeStatsManager::new(&pipeline));
-
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
@@ -302,6 +300,8 @@ impl NativeExecutor {
                         .expect("Failed to create tokio runtime"),
                 )
             });
+
+            let stats_manager = Arc::new(RuntimeStatsManager::new(&pipeline));
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle = ExecutionRuntimeContext::new(
@@ -329,8 +329,9 @@ impl NativeExecutor {
                 Ok(())
             };
 
+            let sm_clone = stats_manager.clone();
             let local_set = tokio::task::LocalSet::new();
-            local_set.block_on(&runtime, async {
+            let () = local_set.block_on(&runtime, async move {
                 let result = tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
@@ -344,13 +345,25 @@ impl NativeExecutor {
                     result = execution_task => result,
                 };
 
-                // Flush remaining stats events
-                if let Err(e) = stats_manager.flush().await {
+                // Finish stats manager
+                if let Err(e) = sm_clone.flush().await {
                     log::warn!("Failed to flush runtime stats: {}", e);
+                }
+                if let Err(e) = sm_clone.finish() {
+                    log::error!("Failed to finish runtime stats: {}", e);
                 }
 
                 result
             })?;
+
+            // eprintln!("stats_manager pre {}", Arc::strong_count(&stats_manager));
+            // if let Err(e) = Arc::into_inner(stats_manager)
+            //     .expect("Failed to get stats manager")
+            //     .finish()
+            // {
+            //     log::error!("Failed to finish runtime stats: {}", e);
+            // }
+
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -371,6 +384,7 @@ impl NativeExecutor {
             }
             flush_opentelemetry_providers();
             finish_chrome_trace();
+            eprintln!("stats_manager post");
             Ok(())
         });
 

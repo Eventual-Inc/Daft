@@ -144,6 +144,10 @@ impl IntermediateOperator for ProjectOperator {
         "Project"
     }
 
+    fn r#type(&self) -> crate::pipeline::NodeType {
+        "Project"
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!(

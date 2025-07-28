@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::{Stat, StatSnapshot};
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -22,9 +23,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    runtime_stats::{
-        RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
-    },
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -44,19 +43,19 @@ impl RuntimeStats for WriteStats {
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         smallvec![
             (
-                CPU_US_KEY,
+                CPU_US_KEY.to_string(),
                 Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
             ),
             (
-                ROWS_RECEIVED_KEY,
+                ROWS_RECEIVED_KEY.to_string(),
                 Stat::Count(self.rows_received.load(ordering))
             ),
             (
-                ROWS_EMITTED_KEY,
+                ROWS_EMITTED_KEY.to_string(),
                 Stat::Count(self.rows_emitted.load(ordering))
             ),
             (
-                "bytes written",
+                "bytes written".to_string(),
                 Stat::Bytes(self.bytes_written.load(ordering))
             )
         ]

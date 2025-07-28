@@ -25,6 +25,7 @@ use daft_micropartition::{
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
@@ -110,20 +111,23 @@ pub struct RuntimeContext {
     context: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug)]
-pub enum NodeType {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NodeCategory {
     Intermediate,
     Source,
     StreamingSink,
     BlockingSink,
 }
 
+pub type NodeType = &'static str;
+
 /// Contains information about the node such as name, id, and the plan_id
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeInfo {
     pub name: Arc<str>,
-    pub id: usize,
-    pub node_type: NodeType,
+    pub node_type: Arc<str>, // Granular local physical node type
+    pub id: usize,           // Local node ID
+    pub node_category: NodeCategory,
     pub context: HashMap<String, String>,
 }
 
@@ -151,11 +155,17 @@ impl RuntimeContext {
         index
     }
 
-    pub fn next_node_info(&self, name: &str, node_type: NodeType) -> NodeInfo {
+    pub fn next_node_info(
+        &self,
+        name: &str,
+        node_type: NodeType,
+        node_category: NodeCategory,
+    ) -> NodeInfo {
         NodeInfo {
             name: Arc::from(name.to_string()),
+            node_type: Arc::from(node_type.to_string()),
             id: self.next_id(),
-            node_type,
+            node_category,
             context: self.context.clone(),
         }
     }

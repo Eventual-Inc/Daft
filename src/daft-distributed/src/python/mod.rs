@@ -147,6 +147,39 @@ impl PyDistributedPhysicalPlanRunner {
         }
 
         let statistics_manager = StatisticsManager::new(subscribers);
+
+        // Check if RPC server should be started
+        tracing::info!(
+            "Checking DAFT_INSTRUMENT_LOGICAL_PLAN environment variable and URL presence"
+        );
+        if let (Ok(_), Ok(rpc_addr)) = (
+            std::env::var("DAFT_INSTRUMENT_LOGICAL_PLAN"),
+            std::env::var("DAFT_RPC_URL"),
+        ) {
+            tracing::info!("Starting RPC server for statistics collection");
+
+            // Start RPC server in a background task since run_plan is not async
+            let stats_manager_for_rpc = statistics_manager.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to create tokio runtime for RPC server");
+
+                rt.block_on(async move {
+                    if let Err(e) = stats_manager_for_rpc.start_rpc_server(&rpc_addr).await {
+                        tracing::error!("Failed to start RPC server: {}", e);
+                    } else {
+                        tracing::info!("RPC server started successfully on {}", rpc_addr);
+                    }
+                });
+            });
+        } else if std::env::var("DAFT_INSTRUMENT_LOGICAL_PLAN").is_err() {
+            tracing::info!("DAFT_INSTRUMENT_LOGICAL_PLAN not set, skipping RPC server startup");
+        } else {
+            tracing::info!("URL not provided, skipping RPC server startup");
+        }
+
         let plan_result = self
             .runner
             .run_plan(&plan.plan, psets, statistics_manager)?;

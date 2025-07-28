@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
+use common_metrics::StatSnapshot;
+use common_runtime::get_io_runtime;
 use daft_logical_plan::LogicalPlanRef;
 
 use crate::{
@@ -9,7 +11,9 @@ use crate::{
 };
 
 pub mod http_subscriber;
+pub mod rpc_server;
 pub use http_subscriber::HttpSubscriber;
+pub use rpc_server::RpcServer;
 
 const STATISTICS_LOG_TARGET: &str = "DaftStatisticsManager";
 
@@ -62,6 +66,18 @@ pub(crate) enum StatisticsEvent {
     TaskStarted {
         context: TaskContext,
     },
+    LocalPhysicalNodeMetrics {
+        // Task context
+        plan_id: PlanID,
+        stage_id: u16,
+        task_id: u32,
+        logical_node_id: u32,
+
+        // Required for performing node-type aware metrics aggregation
+        local_physical_node_type: String,
+        distributed_physical_node_type: String,
+        snapshot: StatSnapshot,
+    },
     TaskFailed {
         context: TaskContext,
         reason: String,
@@ -90,6 +106,7 @@ impl StatisticsEvent {
             Self::PlanFinished { plan_id } => *plan_id,
             Self::TaskSubmitted { context, .. } => context.plan_id,
             Self::TaskScheduled { context } => context.plan_id,
+            Self::LocalPhysicalNodeMetrics { plan_id, .. } => *plan_id,
             Self::TaskCompleted { context } => context.plan_id,
             Self::TaskStarted { context } => context.plan_id,
             Self::TaskFailed { context, .. } => context.plan_id,
@@ -134,12 +151,14 @@ pub type StatisticsManagerRef = Arc<StatisticsManager>;
 #[derive(Default)]
 pub struct StatisticsManager {
     subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
+    rpc_server: Mutex<Option<RpcServer>>,
 }
 
 impl StatisticsManager {
     pub fn new(subscribers: Vec<Box<dyn StatisticsSubscriber>>) -> StatisticsManagerRef {
         Arc::new(Self {
             subscribers: Mutex::new(subscribers),
+            rpc_server: Mutex::new(None),
         })
     }
 
@@ -150,5 +169,48 @@ impl StatisticsManager {
             subscriber.handle_event(&event)?;
         }
         Ok(())
+    }
+
+    pub async fn start_rpc_server(self: &Arc<Self>, addr: &str) -> DaftResult<()> {
+        // Check if server is already running and create new server
+        let mut rpc_server = {
+            let rpc_server_guard = self.rpc_server.lock().unwrap();
+            if rpc_server_guard.is_some() {
+                return Err(common_error::DaftError::MiscTransient(Box::new(
+                    std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        "RPC server is already running",
+                    ),
+                )));
+            }
+            RpcServer::new(self.clone())
+        }; // MutexGuard is dropped here
+
+        // Start the server (async operation)
+        rpc_server.start(addr).await?;
+
+        // Store the started server
+        {
+            let mut rpc_server_guard = self.rpc_server.lock().unwrap();
+            *rpc_server_guard = Some(rpc_server);
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for StatisticsManager {
+    fn drop(&mut self) {
+        tracing::debug!(target: STATISTICS_LOG_TARGET, "Dropping StatisticsManager, shutting down RPC server if running");
+        if let Ok(mut rpc_server_guard) = self.rpc_server.lock() {
+            if let Some(mut rpc_server) = rpc_server_guard.take() {
+                let runtime = get_io_runtime(true);
+                runtime.block_on_current_thread(async {
+                    let _ = rpc_server.shutdown().await;
+                });
+                drop(rpc_server);
+                tracing::debug!(target: STATISTICS_LOG_TARGET, "StatisticsManager dropped, RPC server shutdown initiated");
+            }
+        }
     }
 }

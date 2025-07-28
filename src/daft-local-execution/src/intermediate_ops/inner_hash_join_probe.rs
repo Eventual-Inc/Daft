@@ -212,6 +212,10 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         "InnerHashJoinProbe"
     }
 
+    fn r#type(&self) -> crate::pipeline::NodeType {
+        "InnerHashJoinProbe"
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("InnerHashJoinProbe:".to_string());

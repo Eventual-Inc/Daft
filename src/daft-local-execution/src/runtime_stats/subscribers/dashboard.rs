@@ -19,7 +19,7 @@ pub struct DashboardSubscriber {
 }
 
 impl DashboardSubscriber {
-    fn new_with_throttle_interval(interval: Duration) -> Arc<Self> {
+    fn new_with_throttle_interval(interval: Duration) -> Self {
         let Ok(url) = env::var("DAFT_DASHBOARD_METRICS_URL") else {
             panic!("DashboardSubscriber::new must only be called after checking if it's enabled via `DashboardSubscriber::is_enabled`")
         };
@@ -85,9 +85,10 @@ impl DashboardSubscriber {
             }
         });
 
-        Arc::new(Self { event_tx, flush_tx })
+        Self { event_tx, flush_tx }
     }
-    pub fn new() -> Arc<Self> {
+
+    pub fn new() -> Self {
         Self::new_with_throttle_interval(Duration::from_secs(1))
     }
 
@@ -160,6 +161,9 @@ impl RuntimeStatsSubscriber for DashboardSubscriber {
         rx.await
             .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
 
+        Ok(())
+    }
+    fn finish(self: Box<Self>) -> DaftResult<()> {
         Ok(())
     }
 }
