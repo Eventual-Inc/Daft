@@ -71,3 +71,23 @@ def test_list_sort_with_groupby():
     result_dict = result.to_pydict()
     expected = {"group_col": [1, 2], "ids_col": [["a", "b", "c"], ["a", "d", "e"]]}
     assert result_dict == expected
+
+
+# Reproduce issue #4862.
+def test_list_sort_groupby_larger_than_morsel_size():
+    # Test that reproduces a bug with large datasets and groupby operations that exceed the default morsel size.This would previously fail with offset mismatch errors.
+    import itertools
+
+    morsel_size = daft.context.get_context().daft_execution_config.default_morsel_size
+
+    daft.from_pydict(
+        {
+            "group_id": list(itertools.chain(*[10 * [f"c-{i}"] for i in range(int(morsel_size * 2))])),
+            "record_id": [f"r-{i}" for i in range(int(morsel_size * 20))],
+        }
+    ).groupby("group_id").agg(daft.col("record_id").agg_list().alias("record_ids")).with_column(
+        "record_ids_key",
+        daft.col("record_ids").list.sort(),
+    ).select(
+        "record_ids_key",
+    ).collect()
