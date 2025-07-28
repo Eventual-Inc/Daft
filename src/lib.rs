@@ -80,21 +80,30 @@ pub mod pylib {
     #[pyfunction]
     pub fn refresh_logger(py: Python) -> PyResult<()> {
         use log::LevelFilter;
-        let logging = py.import(pyo3::intern!(py, "logging"))?;
-        let python_log_level = logging
-            .getattr(pyo3::intern!(py, "getLogger"))?
-            .call0()?
-            .getattr(pyo3::intern!(py, "level"))?
-            .extract::<usize>()
-            .unwrap_or(0);
+        // If the `DAFT_LOG` environment variable is set, it will be used to set the log level.
+        // Otherwise, the log level will be set to the level of the Python logger.
+        let env_level = std::env::var("DAFT_LOG")
+            .ok()
+            .and_then(|v| v.parse::<LevelFilter>().ok());
 
-        // https://docs.python.org/3/library/logging.html#logging-levels
-        let level_filter = match python_log_level {
-            0 => LevelFilter::Off,
-            1..=10 => LevelFilter::Debug,
-            11..=20 => LevelFilter::Info,
-            21..=30 => LevelFilter::Warn,
-            _ => LevelFilter::Error,
+        let level_filter = if let Some(level) = env_level {
+            level
+        } else {
+            let logging = py.import(pyo3::intern!(py, "logging"))?;
+            let python_log_level = logging
+                .getattr(pyo3::intern!(py, "getLogger"))?
+                .call0()?
+                .getattr(pyo3::intern!(py, "level"))?
+                .extract::<usize>()
+                .unwrap_or(0);
+
+            match python_log_level {
+                0 => LevelFilter::Off,
+                1..=10 => LevelFilter::Debug,
+                11..=20 => LevelFilter::Info,
+                21..=30 => LevelFilter::Warn,
+                _ => LevelFilter::Error,
+            }
         };
 
         LOG_RESET_HANDLE.reset();

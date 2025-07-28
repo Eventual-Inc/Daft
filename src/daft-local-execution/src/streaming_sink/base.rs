@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -57,7 +57,7 @@ pub trait StreamingSink: Send + Sync {
     ) -> StreamingSinkFinalizeResult;
 
     /// The name of the StreamingSink operator.
-    fn name(&self) -> Arc<str>;
+    fn name(&self) -> NodeName;
 
     fn multiline_display(&self) -> Vec<String>;
 
@@ -92,7 +92,7 @@ impl StreamingSinkNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name();
+        let name = op.name().into();
         let node_info = ctx.next_node_info(name);
         Self {
             op,

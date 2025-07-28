@@ -185,12 +185,34 @@ def run_udf(
         result_np = np.concatenate(np_results)
         return Series.from_numpy(result_np, name=name, dtype=return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
-        result_pa = pa.concat_arrays(results)
-        return Series.from_arrow(result_pa, name=name, dtype=return_dtype)._series
+        return Series.from_arrow(_safe_concat_arrays(results), name=name, dtype=return_dtype)._series
     else:
         raise NotImplementedError(
             f"Return type {type(results[0])} not supported for UDF {func}, expected daft.Series, list, np.ndarray, or pa.Array containing {return_dtype}"
         )
+
+
+def _safe_concat_arrays(pa_arrays: list[pa.Array | pa.ChunkedArray]) -> pa.ChunkedArray:
+    if len(pa_arrays) == 0:
+        return pa.concat_arrays([])
+
+    data_type = pa_arrays[0].type
+    chunks = []
+    is_chunked = False
+
+    for arr in pa_arrays:
+        if isinstance(arr, pa.Array):
+            chunks.append(arr)
+        elif isinstance(arr, pa.ChunkedArray):
+            is_chunked = True
+            chunks.extend(arr.chunks)
+        else:
+            raise TypeError(f"Unsupported type: {type(arr)}")
+
+    if is_chunked:
+        return pa.chunked_array(chunks, type=data_type)
+    else:
+        return pa.concat_arrays(chunks)
 
 
 # Marker that helps us differentiate whether a user provided the argument or not
@@ -234,7 +256,7 @@ class UDF:
     concurrency: int | None = None
     resource_request: ResourceRequest | None = None
     batch_size: int | None = None
-    run_on_separate_process: bool | None = None
+    use_process: bool | None = None
 
     def __post_init__(self) -> None:
         # Analogous to the @functools.wraps(self.inner) pattern
@@ -264,7 +286,7 @@ class UDF:
             resource_request=self.resource_request,
             batch_size=self.batch_size,
             concurrency=self.concurrency,
-            run_on_separate_process=self.run_on_separate_process,
+            use_process=self.use_process,
         )
 
     def override_options(
@@ -361,7 +383,7 @@ class UDF:
         """
         return dataclasses.replace(self, concurrency=concurrency)
 
-    def with_run_on_separate_process(self, run_on_separate_process: bool) -> UDF:
+    def run_on_process(self, use_process: bool) -> UDF:
         """Override whether this UDF should run on a separate process or not.
 
         Examples:
@@ -376,9 +398,9 @@ class UDF:
             ...         return [x + self.text for x in data]
             >>>
             >>> # New UDF that will run on a separate process
-            >>> MyGpuUdf_separate_process = MyGpuUdf.with_run_on_separate_process(True)
+            >>> MyGpuUdf_separate_process = MyGpuUdf.run_on_process(True)
         """
-        return dataclasses.replace(self, run_on_separate_process=run_on_separate_process)
+        return dataclasses.replace(self, use_process=use_process)
 
     def with_init_args(self, *args: Any, **kwargs: Any) -> UDF:
         """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
@@ -439,7 +461,7 @@ def udf(
     memory_bytes: int | None = None,
     batch_size: int | None = None,
     concurrency: int | None = None,
-    run_on_separate_process: bool | None = None,
+    use_process: bool | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
@@ -458,7 +480,7 @@ def udf(
         concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
             UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
             loading model weights for model batch inference.
-        run_on_separate_process: Run the UDF on a separate process.
+        use_process: Run the UDF on a separate process.
             This is useful for UDFs that run a lot of Python-only code, since it avoids GIL overhead.
             This is not necessary for UDFs that run C-extension code, like NumPy or PyTorch.
             Defaults to `None` where Daft will automatically choose based on runtime performance.
@@ -588,7 +610,7 @@ def udf(
             resource_request=resource_request,
             batch_size=batch_size,
             concurrency=concurrency,
-            run_on_separate_process=run_on_separate_process,
+            use_process=use_process,
         )
 
         daft.attach_function(udf)

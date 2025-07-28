@@ -8,7 +8,7 @@ use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::sources::source::SourceStream;
+use crate::{pipeline::NodeName, sources::source::SourceStream};
 
 pub struct EmptyScanSource {
     schema: SchemaRef,
@@ -34,8 +34,8 @@ impl Source for EmptyScanSource {
         let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
         Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
     }
-    fn name(&self) -> Arc<str> {
-        Arc::from("EmptyScan")
+    fn name(&self) -> NodeName {
+        "EmptyScan".into()
     }
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];

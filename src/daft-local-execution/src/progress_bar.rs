@@ -174,7 +174,7 @@ impl<L: Log> Log for IndicatifLogger<L> {
     }
 
     fn flush(&self) {
-        self.inner.flush()
+        self.inner.flush();
     }
 }
 

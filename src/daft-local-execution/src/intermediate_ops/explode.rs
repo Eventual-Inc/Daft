@@ -10,7 +10,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,
@@ -59,7 +59,7 @@ impl IntermediateOperator for ExplodeOperator {
         )]
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Explode")
+    fn name(&self) -> NodeName {
+        "Explode".into()
     }
 }

@@ -102,10 +102,9 @@ impl WorkerManager for RayWorkerManager {
             .ray_workers
             .lock()
             .expect("Failed to lock RayWorkerManager");
-        workers
-            .get_mut(&worker_id)
-            .expect("Worker should be present in RayWorkerManager")
-            .mark_task_finished(&task_context);
+        if let Some(worker) = workers.get_mut(&worker_id) {
+            worker.mark_task_finished(&task_context);
+        }
     }
 
     fn mark_worker_died(&self, worker_id: WorkerId) {

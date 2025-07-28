@@ -15,7 +15,7 @@ use super::{
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionOnlyParams {
     agg_exprs: Vec<BoundAggExpr>,
@@ -166,8 +166,8 @@ impl BlockingSink for WindowPartitionOnlySink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("WindowPartitionOnly")
+    fn name(&self) -> NodeName {
+        "WindowPartitionOnly".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

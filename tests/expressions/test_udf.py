@@ -135,7 +135,7 @@ def test_class_udf_init_args_bad_args(use_actor_pool):
         RepeatN.with_init_args(wrong=5)
 
 
-@pytest.mark.parametrize("concurrency", [1, 2, 4])
+@pytest.mark.parametrize("concurrency", [1, 2, 3])
 def test_actor_pool_udf_concurrency(concurrency):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
@@ -192,7 +192,7 @@ def test_udf_tuples(batch_size):
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-@pytest.mark.parametrize("container", [Series, list, np.ndarray])
+@pytest.mark.parametrize("container", [Series, list, np.ndarray, pa.Array, pa.ChunkedArray])
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 def test_udf_return_containers(container, batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
@@ -205,6 +205,10 @@ def test_udf_return_containers(container, batch_size):
             return data.to_pylist()
         elif container is np.ndarray:
             return np.array(data.to_arrow())
+        elif container is pa.Array:
+            return data.to_arrow()
+        elif container is pa.ChunkedArray:
+            return pa.chunked_array([data.to_arrow()])
         else:
             raise NotImplementedError(f"Test not implemented for container type: {container}")
 
@@ -717,7 +721,7 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
 def test_run_udf_on_same_process(batch_size):
     df = daft.from_pydict({"a": [None] * 3})
 
-    @udf(return_dtype=int, batch_size=batch_size, run_on_separate_process=False)
+    @udf(return_dtype=int, batch_size=batch_size, use_process=False)
     def udf_1(data):
         return [os.getpid()] * len(data)
 
@@ -733,7 +737,7 @@ def test_run_udf_on_same_process(batch_size):
 def test_run_udf_on_separate_process(batch_size):
     df = daft.from_pydict({"a": [None] * 3})
 
-    @udf(return_dtype=int, batch_size=batch_size, run_on_separate_process=True)
+    @udf(return_dtype=int, batch_size=batch_size, use_process=True)
     def udf_1(data):
         return [os.getpid()] * len(data)
 

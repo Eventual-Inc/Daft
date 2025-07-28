@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -13,7 +13,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum InnerHashJoinProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -208,8 +208,8 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("InnerHashJoinProbe")
+    fn name(&self) -> NodeName {
+        Cow::Borrowed("InnerHashJoinProbe")
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -14,7 +14,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowOrderByOnlyParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -204,8 +204,8 @@ impl BlockingSink for WindowOrderByOnlySink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("WindowOrderByOnly")
+    fn name(&self) -> NodeName {
+        "WindowOrderByOnly".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

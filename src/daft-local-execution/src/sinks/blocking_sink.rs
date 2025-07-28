@@ -11,7 +11,7 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -53,7 +53,7 @@ pub trait BlockingSink: Send + Sync {
         states: Vec<Box<dyn BlockingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult;
-    fn name(&self) -> Arc<str>;
+    fn name(&self) -> NodeName;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
@@ -87,7 +87,7 @@ impl BlockingSinkNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name();
+        let name = op.name().into();
         let node_info = ctx.next_node_info(name);
 
         let runtime_stats = RuntimeStatsContext::new_with_builder(

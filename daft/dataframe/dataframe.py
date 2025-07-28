@@ -1127,7 +1127,7 @@ class DataFrame:
             storage_options.update(new_storage_options or {})
         else:
             if isinstance(table, str):
-                table_uri = table
+                table_uri = os.path.expanduser(table)
             elif isinstance(table, pathlib.Path):
                 table_uri = str(table)
             elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
@@ -1388,17 +1388,19 @@ class DataFrame:
     @DataframePublicAPI
     def write_turbopuffer(
         self,
-        namespace: str,
+        namespace: Union[str, Expression],
         api_key: Optional[str] = None,
-        region: str = "aws-us-west-2",
+        region: Optional[str] = None,
         distance_metric: Optional[Literal["cosine_distance", "euclidean_squared"]] = None,
         schema: Optional[dict[str, Any]] = None,
         id_column: Optional[str] = None,
         vector_column: Optional[str] = None,
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a Turbopuffer namespace.
 
-        This method transforms each row of the dataframe into a turbopuffer document and writes it to the given namespace.
+        This method transforms each row of the dataframe into a turbopuffer document.
         This means that an `id` column is always required. Optionally, the `id_column` parameter can be used to specify the column name to used for the id column.
         Note that the column with the name specified by `id_column` will be renamed to "id" when written to turbopuffer.
 
@@ -1407,20 +1409,29 @@ class DataFrame:
 
         All other columns become attributes.
 
+        The namespace parameter can be either a string (for a single namespace) or an expression (for multiple namespaces).
+        When using an expression, the data will be partitioned by the computed namespace values and written to each namespace separately.
+
         For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
 
         Args:
-            namespace: The namespace to write to.
-            api_key: Turbopuffer API key (defaults to TURBOPUFFER_API_KEY env var).
-            region: Turbopuffer region (defaults to "aws-us-west-2").
+            namespace: The namespace to write to. Can be a string for a single namespace or an expression for multiple namespaces.
+            api_key: Turbopuffer API key.
+            region: Turbopuffer region.
             distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
             schema: Optional manual schema specification.
             id_column: Optional column name for the id column. The data sink will automatically rename the column to "id" for the id column.
             vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.
+            client_kwargs: Optional dictionary of arguments to pass to the Turbopuffer client constructor.
+                Explicit arguments (api_key, region) will be merged into client_kwargs.
+            write_kwargs: Optional dictionary of arguments to pass to the namespace.write() method.
+                Explicit arguments (distance_metric, schema) will be merged into write_kwargs.
         """
         from daft.io.turbopuffer.turbopuffer_data_sink import TurbopufferDataSink
 
-        sink = TurbopufferDataSink(namespace, api_key, region, distance_metric, schema, id_column, vector_column)
+        sink = TurbopufferDataSink(
+            namespace, api_key, region, distance_metric, schema, id_column, vector_column, client_kwargs, write_kwargs
+        )
         return self.write_sink(sink)
 
     ###

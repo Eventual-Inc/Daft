@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -64,6 +64,8 @@ use crate::{
     },
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
+
+pub type NodeName = Cow<'static, str>;
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
@@ -399,12 +401,14 @@ pub fn physical_plan_to_pipeline(
             project,
             passthrough_columns,
             stats_state,
+            schema,
             ..
         }) => {
-            let proj_op = UdfOperator::try_new(project.clone(), passthrough_columns.clone())
-                .with_context(|_| PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                })?;
+            let proj_op =
+                UdfOperator::try_new(project.clone(), passthrough_columns.clone(), schema)
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),

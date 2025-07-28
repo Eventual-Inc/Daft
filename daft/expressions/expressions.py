@@ -398,7 +398,7 @@ class Expression:
         resource_request: ResourceRequest | None,
         batch_size: int | None,
         concurrency: int | None,
-        run_on_separate_process: bool | None,
+        use_process: bool | None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _udf(
@@ -411,7 +411,7 @@ class Expression:
                 resource_request,
                 batch_size,
                 concurrency,
-                run_on_separate_process,
+                use_process,
             )
         )
 
@@ -426,6 +426,38 @@ class Expression:
             category=DeprecationWarning,
         )
         return struct(*fields)
+
+    def unnest(self) -> Expression:
+        """Flatten the fields of a struct expression into columns in a DataFrame.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "struct": [
+            ...             {"x": 1, "y": 2},
+            ...             {"x": 3, "y": 4},
+            ...         ]
+            ...     }
+            ... )
+            >>> unnested_df = df.select(df["struct"].unnest())
+            >>> unnested_df.show()
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 2     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 4     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+            >>> # These are also equivalent syntactic sugars for above
+            >>> unnested_df = df.select(df["struct"].struct.get("*"))
+            >>> unnested_df = df.select(df["struct"]["*"])
+        """
+        return self.struct.get("*")
 
     def __bool__(self) -> bool:
         raise ValueError(

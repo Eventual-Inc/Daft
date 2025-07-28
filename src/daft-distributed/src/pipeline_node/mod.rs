@@ -293,22 +293,13 @@ where
     let mut total_size_bytes = 0;
     let mut total_num_rows = 0;
     let mut partition_refs = vec![];
-    let mut worker_id_counts: HashMap<WorkerId, usize> = HashMap::new();
 
     for materialized_output in materialized_outputs {
         total_size_bytes += materialized_output.size_bytes()?;
         total_num_rows += materialized_output.num_rows()?;
-        let (output_refs, worker_id) = materialized_output.into_inner();
+        let (output_refs, _) = materialized_output.into_inner();
         partition_refs.extend(output_refs);
-        let count = worker_id_counts.entry(worker_id.clone()).or_insert(0);
-        *count += 1;
     }
-
-    let worker_id = worker_id_counts
-        .iter()
-        .max_by_key(|(_, count)| *count)
-        .map(|(worker_id, _)| worker_id.clone())
-        .unwrap_or_default();
 
     let info = InMemoryInfo::new(
         node.config().schema.clone(),
@@ -330,10 +321,7 @@ where
         plan,
         node.config().execution_config.clone(),
         psets,
-        SchedulingStrategy::WorkerAffinity {
-            worker_id,
-            soft: true,
-        },
+        SchedulingStrategy::Spread,
         node.context().to_hashmap(),
     );
     Ok(SubmittableTask::new(task))

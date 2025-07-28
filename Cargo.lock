@@ -2794,6 +2794,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "uuid 1.17.0",
 ]
 
 [[package]]
@@ -2891,6 +2892,7 @@ dependencies = [
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
+ "rand 0.8.5",
  "reqwest",
  "snafu",
  "tokio",

@@ -44,10 +44,10 @@ impl AsyncFileWriter for DataSinkWriter {
             let py_list = pyo3::types::PyList::new(py, &[py_micropartition])?;
             let py_iter = py_list.try_iter()?;
 
-            let result = self
-                .data_sink_info
-                .sink
-                .call_method(py, "write", (py_iter,), None)?;
+            let result =
+                self.data_sink_info
+                    .sink
+                    .call_method(py, "safe_write", (py_iter,), None)?;
             let result_list = py
                 .import(pyo3::intern!(py, "builtins"))?
                 .call_method1("list", (result,))?;

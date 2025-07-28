@@ -18,7 +18,7 @@ use super::{
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionAndOrderByParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -253,8 +253,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("WindowPartitionAndOrderBy")
+    fn name(&self) -> NodeName {
+        "WindowPartitionAndOrderBy".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

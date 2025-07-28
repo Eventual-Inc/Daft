@@ -5,7 +5,7 @@ use common_resource_request::ResourceRequest;
 use daft_core::prelude::Schema;
 use daft_dsl::{
     expr::count_udfs,
-    functions::python::{get_resource_request, get_udf_name, try_get_concurrency},
+    functions::python::{get_udf_properties, UDFProperties},
     ExprRef,
 };
 use daft_schema::schema::SchemaRef;
@@ -28,6 +28,8 @@ pub struct UDFProject {
     pub project: ExprRef,
     // Additional columns to pass through
     pub passthrough_columns: Vec<ExprRef>,
+    // UDF properties
+    pub udf_properties: UDFProperties,
 
     pub projected_schema: SchemaRef,
     pub stats_state: StatsState,
@@ -64,12 +66,15 @@ impl UDFProject {
             .collect::<DaftResult<Vec<_>>>()?;
         let projected_schema = Arc::new(Schema::new(fields));
 
+        let udf_properties = get_udf_properties(&project);
+
         Ok(Self {
             plan_id: None,
             node_id: None,
             input,
             project,
             passthrough_columns,
+            udf_properties,
             projected_schema,
             stats_state: StatsState::NotMaterialized,
         })
@@ -93,11 +98,15 @@ impl UDFProject {
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
-        get_resource_request(&[self.project.clone()])
+        self.udf_properties.resource_request.clone()
     }
 
     pub fn concurrency(&self) -> Option<usize> {
-        try_get_concurrency(&self.project)
+        self.udf_properties.concurrency
+    }
+
+    pub fn is_actor_pool_udf(&self) -> bool {
+        self.udf_properties.concurrency.is_some()
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -105,8 +114,7 @@ impl UDFProject {
         res.push("UDFProject:".to_string());
         res.push(format!(
             "UDF {} = {}",
-            get_udf_name(&self.project),
-            self.project
+            self.udf_properties.name, self.project
         ));
         res.push(format!(
             "Passthrough columns = {}",

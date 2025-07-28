@@ -17,7 +17,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -140,18 +140,8 @@ impl IntermediateOperator for ProjectOperator {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        if self.projection.iter().any(|e| e.inner().has_compute()) {
-            Arc::from("Project")
-        } else if self
-            .projection
-            .iter()
-            .any(|e| e.inner().unwrap_alias().1.is_some())
-        {
-            Arc::from("Rename Columns")
-        } else {
-            Arc::from("Reorder Columns")
-        }
+    fn name(&self) -> NodeName {
+        "Project".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

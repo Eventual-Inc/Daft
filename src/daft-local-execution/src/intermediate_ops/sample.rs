@@ -7,7 +7,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct SampleParams {
     fraction: f64,
@@ -69,7 +69,7 @@ impl IntermediateOperator for SampleOperator {
         res
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("Sample")
+    fn name(&self) -> NodeName {
+        "Sample".into()
     }
 }

@@ -14,7 +14,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct CommitWriteState {
     written_file_path_record_batches: Vec<RecordBatch>,
@@ -162,8 +162,8 @@ impl BlockingSink for CommitWriteSink {
             .into()
     }
 
-    fn name(&self) -> Arc<str> {
-        Arc::from("CommitWriteSink")
+    fn name(&self) -> NodeName {
+        "CommitWriteSink".into()
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

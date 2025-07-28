@@ -9,7 +9,7 @@ import sys
 import tempfile
 from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Listener
-from typing import TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, cast
 
 from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
@@ -20,6 +20,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ENTER = "__ENTER__"
+_READY = "ready"
+_SUCCESS = "success"
+_UDF_ERROR = "udf_error"
+_ERROR = "error"
+_OUTPUT_DIVIDER = b"_DAFT_OUTPUT_DIVIDER_\n"
 _SENTINEL = ("__EXIT__", 0)
 
 
@@ -77,25 +83,21 @@ class UdfHandle:
             [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
         )
         expr_projection_bytes = pickle.dumps(expr_projection)
-        self.handle_conn.send(("__ENTER__", expr_projection_bytes))
-        # print("sent expr projection", file=sys.stderr)
+        self.handle_conn.send((_ENTER, expr_projection_bytes))
         response = self.handle_conn.recv()
-        # print("received response", response, file=sys.stderr)
-        if response != "ready":
-            print("bad response", response, file=sys.stderr)
-            raise RuntimeError(f"Expected 'ready' but got {response}")
-        # print("good to go", file=sys.stderr)
+        if response != _READY:
+            raise RuntimeError(f"Expected '{_READY}' but got {response}")
 
-    def trace_output(self) -> str:
+    def trace_output(self) -> list[str]:
         lines = []
         while True:
-            line = self.process.stdout.readline()
-            if line == b"" or line == b"DAFTDAFTDAFTDAFT\n" or self.process.poll() is not None:
+            line = cast("IO[bytes]", self.process.stdout).readline()
+            if line == b"" or line == _OUTPUT_DIVIDER or self.process.poll() is not None:
                 break
             lines.append(line.decode().rstrip())
         return lines
 
-    def eval_input(self, input: PyMicroPartition) -> tuple[PyMicroPartition, str]:
+    def eval_input(self, input: PyMicroPartition) -> tuple[PyMicroPartition, list[str]]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
@@ -105,16 +107,14 @@ class UdfHandle:
 
         response = self.handle_conn.recv()
         outs = self.trace_output()
-        if response[0] == "udf_error":
+        if response[0] == _UDF_ERROR:
             base_exc: Exception = pickle.loads(response[3])
             if sys.version_info >= (3, 11):
                 base_exc.add_note("\n".join(response[2].format()))
-            print(outs)
             raise UDFException(response[1]) from base_exc
-        elif response[0] == "error":
-            print(outs)
+        elif response[0] == _ERROR:
             raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
-        elif response[0] == "success":
+        elif response[0] == _SUCCESS:
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = MicroPartition.from_ipc_stream(output_bytes)

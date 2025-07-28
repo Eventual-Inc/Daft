@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::{
-    expr::bound_expr::BoundExpr,
-    functions::python::{get_concurrency, get_resource_request},
-    pyobj_serde::PyObjectWrapper,
+    expr::bound_expr::BoundExpr, functions::python::UDFProperties, pyobj_serde::PyObjectWrapper,
     python::PyExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
@@ -20,8 +18,7 @@ use super::{
 use crate::{
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, Task},
-        worker::WorkerId,
+        task::{SwordfishTask, Task},
     },
     stage::{StageConfig, StageExecutionContext},
     utils::{
@@ -33,27 +30,28 @@ use crate::{
 #[derive(Debug)]
 
 enum UDFActors {
-    Uninitialized(Vec<BoundExpr>),
-    Initialized {
-        actors: Vec<(WorkerId, Vec<PyObjectWrapper>)>,
-        round_robin_counter: usize,
-    },
+    Uninitialized(Vec<BoundExpr>, UDFProperties),
+    Initialized { actors: Vec<PyObjectWrapper> },
 }
 
 impl UDFActors {
     // TODO: This is a blocking call, and should be done asynchronously.
     fn initialize_actors(
         projection: &[BoundExpr],
-    ) -> DaftResult<Vec<(WorkerId, Vec<PyObjectWrapper>)>> {
-        let num_actors = get_concurrency(projection);
-        let (gpu_request, cpu_request, memory_request) = match get_resource_request(projection) {
-            Some(resource_request) => (
-                resource_request.num_gpus().unwrap_or(0.0),
-                resource_request.num_cpus().unwrap_or(1.0),
-                resource_request.memory_bytes().unwrap_or(0),
-            ),
-            None => (0.0, 1.0, 0),
-        };
+        udf_properties: &UDFProperties,
+    ) -> DaftResult<Vec<PyObjectWrapper>> {
+        let num_actors = udf_properties
+            .concurrency
+            .expect("ActorUDF should have concurrency specified");
+        let (gpu_request, cpu_request, memory_request) =
+            match udf_properties.resource_request.clone() {
+                Some(resource_request) => (
+                    resource_request.num_gpus().unwrap_or(0.0),
+                    resource_request.num_cpus().unwrap_or(0.0),
+                    resource_request.memory_bytes().unwrap_or(0),
+                ),
+                None => (0.0, 0.0, 0),
+            };
 
         let actors = Python::with_gil(|py| {
             let ray_actor_pool_udf_module =
@@ -76,73 +74,34 @@ impl UDFActors {
             )?;
             DaftResult::Ok(
                 actors
-                    .extract::<Vec<(String, Vec<PyObject>)>>()?
+                    .extract::<Vec<PyObject>>()?
                     .into_iter()
-                    .map(|(worker_id, py_objects)| {
-                        (
-                            worker_id.into(),
-                            py_objects
-                                .into_iter()
-                                .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
-                                .collect(),
-                        )
-                    })
+                    .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
                     .collect::<Vec<_>>(),
             )
         })?;
         Ok(actors)
     }
 
-    fn get_actors_for_worker(&mut self, worker_id: &WorkerId) -> DaftResult<Vec<PyObjectWrapper>> {
-        if let Self::Uninitialized(projection) = self {
-            let actors = Self::initialize_actors(projection)?;
-            *self = Self::Initialized {
-                actors,
-                round_robin_counter: 0,
-            };
+    fn get_actors(&mut self) -> DaftResult<Vec<PyObjectWrapper>> {
+        match self {
+            Self::Uninitialized(projection, udf_properties) => {
+                let actors = Self::initialize_actors(projection, udf_properties)?;
+                *self = Self::Initialized {
+                    actors: actors.clone(),
+                };
+                Ok(actors)
+            }
+            Self::Initialized { actors } => Ok(actors.clone()),
         }
-        let Self::Initialized { actors, .. } = self else {
-            panic!("ActorUDF::get_actors_for_worker: ActorUDF must be initialized");
-        };
-
-        let actors_for_worker = actors
-            .iter()
-            .find(|(id, _)| id == worker_id)
-            .map(|(_, actors_for_worker)| actors_for_worker.clone())
-            .unwrap_or_default();
-        Ok(actors_for_worker)
-    }
-
-    fn get_round_robin_actors(&mut self) -> DaftResult<(WorkerId, Vec<PyObjectWrapper>)> {
-        if let Self::Uninitialized(projection) = self {
-            let actors = Self::initialize_actors(projection)?;
-            *self = Self::Initialized {
-                actors,
-                round_robin_counter: 0,
-            };
-        }
-        let Self::Initialized {
-            actors,
-            round_robin_counter,
-        } = self
-        else {
-            panic!("ActorUDF::get_round_robin_actors: ActorUDF must be initialized");
-        };
-
-        let (next_worker_id, next_actors) = actors[*round_robin_counter].clone();
-        *round_robin_counter = (*round_robin_counter + 1) % actors.len();
-        Ok((next_worker_id, next_actors))
     }
 
     fn teardown(&mut self) {
         Python::with_gil(|py| {
             if let Self::Initialized { actors, .. } = self {
-                for (_, actors) in actors {
-                    for actor in actors {
-                        if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ())
-                        {
-                            eprintln!("Error tearing down actor: {:?}", e);
-                        }
+                for actor in actors {
+                    if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ()) {
+                        eprintln!("Error tearing down actor: {:?}", e);
                     }
                 }
             }
@@ -155,8 +114,7 @@ pub(crate) struct ActorUDF {
     context: PipelineNodeContext,
     child: Arc<dyn DistributedPipelineNode>,
     projection: Vec<BoundExpr>,
-    batch_size: Option<usize>,
-    memory_request: u64,
+    udf_properties: UDFProperties,
 }
 
 impl ActorUDF {
@@ -168,8 +126,7 @@ impl ActorUDF {
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
         projection: Vec<BoundExpr>,
-        batch_size: Option<usize>,
-        memory_request: u64,
+        udf_properties: UDFProperties,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> DaftResult<Self> {
@@ -191,8 +148,7 @@ impl ActorUDF {
             context,
             child,
             projection,
-            batch_size,
-            memory_request,
+            udf_properties,
         })
     }
 
@@ -205,21 +161,14 @@ impl ActorUDF {
         mut input_task_stream: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
-        let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
+        let mut udf_actors =
+            UDFActors::Uninitialized(self.projection.clone(), self.udf_properties.clone());
 
         let mut running_tasks = JoinSet::new();
         while let Some(task) = input_task_stream.next().await {
-            let (worker_id, actors) = match task.task().strategy() {
-                // If the task has a specific worker ID, get the actors for that worker.
-                SchedulingStrategy::WorkerAffinity { worker_id, .. } => (
-                    worker_id.clone(),
-                    udf_actors.get_actors_for_worker(worker_id)?,
-                ),
-                // If the task has a spread strategy, pick round robin actors.
-                SchedulingStrategy::Spread => udf_actors.get_round_robin_actors()?,
-            };
+            let actors = udf_actors.get_actors()?;
 
-            let modified_task = self.append_actor_udf_to_task(worker_id, task, actors)?;
+            let modified_task = self.append_actor_udf_to_task(task, actors)?;
             let (submittable_task, notify_token) = modified_task.add_notify_token();
             running_tasks.spawn(notify_token);
             if result_tx.send(submittable_task).await.is_err() {
@@ -239,10 +188,17 @@ impl ActorUDF {
 
     fn append_actor_udf_to_task(
         &self,
-        worker_id: WorkerId,
         submittable_task: SubmittableTask<SwordfishTask>,
         actors: Vec<PyObjectWrapper>,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+        let memory_request = self
+            .udf_properties
+            .resource_request
+            .clone()
+            .and_then(|req| req.memory_bytes())
+            .map(|m| m as u64)
+            .unwrap_or(0);
+
         let mut task_context = submittable_task.task().task_context();
         if let Some(logical_node_id) = self.context.logical_node_id {
             task_context.add_logical_node_id(logical_node_id);
@@ -251,17 +207,14 @@ impl ActorUDF {
         let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
             task_plan,
             actors,
-            self.batch_size,
-            self.memory_request,
+            self.udf_properties.batch_size,
+            memory_request,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
         );
 
         // Set scheduling strategy based on whether we have a valid worker ID
-        let scheduling_strategy = SchedulingStrategy::WorkerAffinity {
-            worker_id,
-            soft: false,
-        };
+        let scheduling_strategy = submittable_task.task().strategy().clone();
         let psets = submittable_task.task().psets().clone();
 
         let task = submittable_task.with_new_task(SwordfishTask::new(
@@ -276,7 +229,6 @@ impl ActorUDF {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use daft_dsl::functions::python::{get_concurrency, get_resource_request, get_udf_name};
         use itertools::Itertools;
         let mut res = vec![];
         res.push("ActorUDF:".to_string());
@@ -284,30 +236,14 @@ impl ActorUDF {
             "Projection = [{}]",
             self.projection.iter().map(|e| e.to_string()).join(", ")
         ));
-        res.push(format!(
-            "UDFs = [{}]",
-            self.projection
-                .iter()
-                .map(|expr| get_udf_name(expr.inner()))
-                .join(", ")
-        ));
+        res.push(format!("UDF = {}", self.udf_properties.name));
         res.push(format!(
             "Concurrency = {}",
-            get_concurrency(
-                &self
-                    .projection
-                    .iter()
-                    .map(|e| e.inner().clone())
-                    .collect::<Vec<_>>()
-            )
+            self.udf_properties
+                .concurrency
+                .expect("ActorUDF should have concurrency specified")
         ));
-        if let Some(resource_request) = get_resource_request(
-            &self
-                .projection
-                .iter()
-                .map(|e| e.inner().clone())
-                .collect::<Vec<_>>(),
-        ) {
+        if let Some(resource_request) = self.udf_properties.resource_request.clone() {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",

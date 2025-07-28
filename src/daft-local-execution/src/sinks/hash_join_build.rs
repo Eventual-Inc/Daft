@@ -12,7 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum ProbeTableState {
     Building {
@@ -117,8 +117,8 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
-    fn name(&self) -> Arc<str> {
-        Arc::from("HashJoinBuild")
+    fn name(&self) -> NodeName {
+        "HashJoinBuild".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

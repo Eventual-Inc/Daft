@@ -143,10 +143,11 @@ impl<T: Task> std::fmt::Debug for ScheduledTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ScheduledTask(worker_id = {}, {:?}, {:?})",
+            "ScheduledTask(worker_id = {}, {:?}, {:?}, {:?})",
             self.worker_id,
             self.task.task_context(),
-            TaskDetails::from(&self.task)
+            TaskDetails::from(&self.task),
+            self.task.strategy()
         )
     }
 }
