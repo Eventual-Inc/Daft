@@ -4,5 +4,5 @@ pub mod concat;
 pub mod limit;
 pub mod monotonically_increasing_id;
 pub mod outer_hash_join_probe;
-pub mod uri_download;
-pub mod uri_upload;
+pub mod url_download;
+pub mod url_upload;

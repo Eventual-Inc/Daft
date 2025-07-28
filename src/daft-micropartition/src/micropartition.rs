@@ -634,8 +634,10 @@ impl MicroPartition {
 
     pub fn concat_or_get_option(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
         let tables = self.tables_or_read(io_stats)?;
-        if tables.len() <= 1 {
+        if tables.len() == 0 {
             return Ok(None);
+        } else if tables.len() == 1 {
+            return Ok(Some(tables[0].clone()));
         }
 
         let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())

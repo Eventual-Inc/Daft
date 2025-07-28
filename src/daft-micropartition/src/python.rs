@@ -241,7 +241,15 @@ impl PyMicroPartition {
     }
 
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.take(&idx.series)?.into()))
+        py.allow_threads(|| {
+            let taken = self.inner.take(&idx.series)?;
+            let mp = MicroPartition::new_loaded(
+                taken.schema.clone(),
+                Arc::new(vec![taken]),
+                self.inner.statistics.clone(),
+            );
+            Ok(mp.into())
+        })
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {

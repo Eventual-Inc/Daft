@@ -486,7 +486,7 @@ impl PyRecordBatch {
     pub fn from_pyseries_list(pycolumns: Vec<PySeries>) -> PyResult<Self> {
         if pycolumns.is_empty() {
             return Ok(Self {
-                record_batch: RecordBatch::empty(None)?,
+                record_batch: RecordBatch::empty(None),
             });
         }
 
@@ -501,7 +501,7 @@ impl PyRecordBatch {
 
         if first == 0 {
             return Ok(Self {
-                record_batch: RecordBatch::empty(Some(Arc::new(Schema::new(fields)))).unwrap(),
+                record_batch: RecordBatch::empty(Some(Arc::new(Schema::new(fields)))),
             });
         }
 
@@ -523,7 +523,7 @@ impl PyRecordBatch {
         Ok(RecordBatch::empty(match schema {
             Some(s) => Some(s.schema),
             None => None,
-        })?
+        })
         .into())
     }
 

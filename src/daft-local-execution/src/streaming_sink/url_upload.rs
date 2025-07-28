@@ -3,11 +3,11 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
-    prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef, UInt64Array},
+    prelude::{AsArrow, DataType, Field, SchemaRef, UInt64Array, Utf8Array},
     series::IntoSeries,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_functions_uri::UrlDownloadArgs;
+use daft_functions_uri::UrlUploadArgs;
 use daft_io::{get_io_client, IOClient, IOStatsContext};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -24,39 +24,39 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-const INPUT_SCALE_FACTOR: usize = 64;
-const OUTPUT_SCALE_FACTOR: usize = 2;
-
-struct UriDownloadSinkState {
-    in_flight_downloads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
+struct UrlUploadSinkState {
+    in_flight_uploads: JoinSet<DaftResult<(usize, Option<String>)>>,
     all_inputs: Arc<MicroPartition>,
     io_client: Arc<IOClient>,
-    submitted_downloads: usize,
+    submitted_uploads: usize,
     io_runtime_handle: RuntimeRef,
+
     input_schema: SchemaRef,
-    max_in_flight: usize,
-    uri_col: BoundExpr,
+    // max_in_flight: usize,
+    data_col: BoundExpr,
+    location_col: BoundExpr,
+    _is_single_folder: bool,
     raise_error_on_failure: bool,
     output_column: String,
 }
 
-impl UriDownloadSinkState {
-    fn new(
-        args: UrlDownloadArgs<BoundExpr>,
-        output_column: String,
-        input_schema: SchemaRef,
-    ) -> Self {
-        let UrlDownloadArgs {
+impl UrlUploadSinkState {
+    fn new(args: UrlUploadArgs<BoundExpr>, output_column: String, input_schema: SchemaRef) -> Self {
+        let UrlUploadArgs {
             input,
             on_error,
             io_config,
             multi_thread,
-            max_connections,
+            // max_connections,
+            location,
+            is_single_folder,
+            ..
         } = args;
 
         let multi_thread = multi_thread.unwrap_or(true);
         let io_config = io_config.unwrap_or_default();
-        let max_connections = max_connections.unwrap_or(32);
+        // let max_connections = max_connections.unwrap_or(32);
+        let _is_single_folder = is_single_folder.unwrap_or(false);
 
         let on_error = on_error.unwrap_or_else(|| "raise".to_string());
         let raise_error_on_failure = match on_error.as_str() {
@@ -68,25 +68,23 @@ impl UriDownloadSinkState {
         };
 
         Self {
-            in_flight_downloads: JoinSet::new(),
+            in_flight_uploads: JoinSet::new(),
             all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
+            io_client: get_io_client(multi_thread, Arc::new(io_config)).expect("Failed to get IO client"),
+            submitted_uploads: 0,
             input_schema,
-            io_runtime_handle: get_io_runtime(true),
-            io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
-            submitted_downloads: 0,
 
-            max_in_flight: max_connections * INPUT_SCALE_FACTOR,
-            uri_col: input,
+            io_runtime_handle: get_io_runtime(true),
+            // max_in_flight: max_connections * 4,
+            data_col: input,
+            location_col: location,
+            _is_single_folder,
             raise_error_on_failure,
             output_column,
         }
     }
 
-    pub fn get_in_flight(&self) -> usize {
-        self.in_flight_downloads.len()
-    }
-
-    fn start_download(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn upload(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
         if input.is_empty() {
             return Ok(());
         }
@@ -94,42 +92,52 @@ impl UriDownloadSinkState {
         let raise_error_on_failure = self.raise_error_on_failure;
 
         for input in input.get_tables()?.iter() {
-            let uri_col = input.eval_expression(&self.uri_col)?;
-            let uri_col = uri_col.utf8()?;
-            let uri_col = uri_col.as_arrow();
+            let data_col = input.eval_expression(&self.data_col)?;
+            let data_col = data_col.binary()?;
+            let data_col = data_col.as_arrow();
 
-            for uri_val in uri_col {
-                let submitted_downloads = self.submitted_downloads;
-                let uri_val = uri_val.map(ToString::to_string);
+            let location_col = input.eval_expression(&self.location_col)?;
+            let location_col = location_col.utf8()?;
+            let location_col = location_col.as_arrow();
+
+            for (data_val, location_val) in data_col.iter().zip(location_col.iter()) {
+                let submitted_uploads = self.submitted_uploads;
+                let data_val = data_val.map(Bytes::copy_from_slice);
+                let Some(location_val) = location_val.map(ToString::to_string) else {
+                    continue;
+                };
                 let io_client = self.io_client.clone();
 
-                // self.in_flight_downloads.spawn(async move {
-                //     let contents = io_client
-                //         .single_url_download(
-                //             submitted_downloads,
-                //             uri_val,
+                // self.in_flight_uploads.spawn(async move {
+                //     let url = io_client
+                //         .single_url_upload(
+                //             submitted_uploads,
+                //             location_val,
+                //             data_val,
                 //             raise_error_on_failure,
                 //             None,
                 //         )
                 //         .await?;
-                //     Ok((submitted_downloads, contents))
+
+                //     Ok((submitted_uploads, url))
                 // });
 
                 let handle = self.io_runtime_handle.spawn(async move {
-                    let contents = io_client
-                        .single_url_download(
-                            submitted_downloads,
-                            uri_val,
+                    let url = io_client
+                        .single_url_upload(
+                            submitted_uploads,
+                            location_val,
+                            data_val,
                             raise_error_on_failure,
                             None,
                         )
                         .await?;
 
-                    Ok((submitted_downloads, contents))
+                    Ok((submitted_uploads, url))
                 });
 
-                self.in_flight_downloads.spawn(async move { handle.await? });
-                self.submitted_downloads += 1;
+                self.in_flight_uploads.spawn(async move { handle.await? });
+                self.submitted_uploads += 1;
             }
         }
 
@@ -139,47 +147,43 @@ impl UriDownloadSinkState {
 
     fn build_output(
         &self,
-        completed_downloads: Vec<u64>,
-        completed_contents: Vec<Option<Bytes>>,
+        completed_uploads: Vec<u64>,
+        completed_urls: Vec<Option<String>>,
     ) -> DaftResult<RecordBatch> {
-        if completed_downloads.is_empty() {
+        if completed_uploads.is_empty() {
             let mut schema = self.input_schema.as_ref().clone();
-            schema.append(Field::new(self.output_column.as_str(), DataType::Binary));
+            schema.append(Field::new(self.output_column.as_str(), DataType::Utf8));
 
             return RecordBatch::empty(Some(Arc::new(schema)));
         }
 
-        let idxs = UInt64Array::from(("idxs", completed_downloads)).into_series();
-        let io_stats = IOStatsContext::new("UriDownloadSink::build_output");
+        let idxs = UInt64Array::from(("idxs", completed_uploads)).into_series();
+        let io_stats = IOStatsContext::new("UrlUploadSink::build_output");
         let original_rows = self
             .all_inputs
             .take(&idxs)?
             .concat_or_get_option(io_stats)?
-            .unwrap();
+            .expect("Failed to get original rows");
 
-        let mut offsets: Vec<i64> = Vec::with_capacity(completed_contents.len() + 1);
-        offsets.push(0);
-        let mut valid = Vec::with_capacity(completed_contents.len());
-        valid.reserve(completed_contents.len());
+        let mut valid = Vec::with_capacity(completed_urls.len());
+        valid.reserve(completed_urls.len());
 
-        let cap_needed: usize = completed_contents
+        let cap_needed: usize = completed_urls
             .iter()
-            .filter_map(|f| f.as_ref().map(Bytes::len))
+            .filter_map(|f| f.as_ref().map(String::len))
             .sum();
         let mut data = Vec::with_capacity(cap_needed);
-        for b in completed_contents {
+        for b in completed_urls {
             if let Some(b) = b {
-                data.extend(b.as_ref());
-                offsets.push(b.len() as i64 + offsets.last().unwrap());
+                data.push(b);
                 valid.push(true);
             } else {
-                offsets.push(*offsets.last().unwrap());
                 valid.push(false);
             }
         }
-        let contents = BinaryArray::try_from((self.output_column.as_str(), data, offsets))?
+        let contents = Utf8Array::from((self.output_column.as_str(), data.as_slice()))
             .with_validity_slice(valid.as_slice())
-            .unwrap()
+            .expect("Failed to create Utf8Array")
             .into_series()
             .rename(self.output_column.as_str());
 
@@ -187,50 +191,52 @@ impl UriDownloadSinkState {
     }
 
     async fn poll_finished(&mut self, finished: bool) -> DaftResult<RecordBatch> {
-        let exp_capacity = if self.in_flight_downloads.len() > self.max_in_flight {
-            std::cmp::min(
-                self.in_flight_downloads.len() - self.max_in_flight,
-                32 * OUTPUT_SCALE_FACTOR,
-            )
-        } else if finished {
-            32
+        let exp_capacity = if finished {
+            std::cmp::min(self.in_flight_uploads.len(), 32)
         } else {
             0
         };
 
         let mut completed_idxs = Vec::with_capacity(exp_capacity);
-        let mut completed_contents = Vec::with_capacity(exp_capacity);
+        let mut completed_urls = Vec::with_capacity(exp_capacity);
 
-        // Wait for downloads to complete until we are under the active limit
+        // Wait for uploads to complete until we are under the active limit
         while completed_idxs.len() < exp_capacity {
-            let Some(result) = self.in_flight_downloads.join_next().await else {
-                unreachable!("There should always be at least one download in flight");
+            let Some(result) = self.in_flight_uploads.join_next().await else {
+                unreachable!("There should always be at least one upload in flight");
             };
 
-            let (idx, contents) = result.unwrap().unwrap();
+            let (idx, contents) = result.expect("Failed to join upload").expect("Failed to get upload result");
             completed_idxs.push(idx as u64);
-            completed_contents.push(contents);
+            completed_urls.push(contents);
         }
 
-        self.build_output(completed_idxs, completed_contents)
+        // If any additional uploads are completed, pop them off the join set
+        while let Some(result) = self.in_flight_uploads.try_join_next() {
+            let (idx, contents) = result.expect("Failed to join upload").expect("Failed to get upload result");
+            completed_idxs.push(idx as u64);
+            completed_urls.push(contents);
+        }
+
+        self.build_output(completed_idxs, completed_urls)
     }
 }
 
-impl StreamingSinkState for UriDownloadSinkState {
+impl StreamingSinkState for UrlUploadSinkState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 }
 
-pub struct UriDownloadSink {
-    args: UrlDownloadArgs<BoundExpr>,
+pub struct UrlUploadSink {
+    args: UrlUploadArgs<BoundExpr>,
     output_column: String,
     input_schema: SchemaRef,
 }
 
-impl UriDownloadSink {
+impl UrlUploadSink {
     pub fn new(
-        args: UrlDownloadArgs<BoundExpr>,
+        args: UrlUploadArgs<BoundExpr>,
         output_column: String,
         input_schema: SchemaRef,
     ) -> Self {
@@ -242,50 +248,39 @@ impl UriDownloadSink {
     }
 }
 
-impl StreamingSink for UriDownloadSink {
-    #[instrument(skip_all, name = "UriDownloadSink::sink")]
+impl StreamingSink for UrlUploadSink {
+    #[instrument(skip_all, name = "UrlUploadSink::sink")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
-        let input_schema = self.input_schema.clone();
-
         spawner
             .spawn(
                 async move {
                     let url_state = state
                         .as_any_mut()
-                        .downcast_mut::<UriDownloadSinkState>()
-                        .expect("UriDownload sink should have UriDownloadSinkState");
+                        .downcast_mut::<UrlUploadSinkState>()
+                        .expect("UrlUpload sink should have UrlUploadSinkState");
 
-                    url_state.start_download(input)?;
+                    url_state.upload(input)?;
                     let output = url_state.poll_finished(false).await?;
 
                     let schema = output.schema.clone();
-                    let output = Arc::new(MicroPartition::new_loaded(
-                        schema,
-                        Arc::new(vec![output]),
-                        None,
-                    ));
+                    let output = MicroPartition::new_loaded(schema, Arc::new(vec![output]), None);
 
-                    if url_state.get_in_flight() <= url_state.max_in_flight {
-                        Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
-                    } else {
-                        let next_input = Arc::new(MicroPartition::empty(Some(input_schema)));
-                        Ok((
-                            state,
-                            StreamingSinkOutput::HasMoreOutput { next_input, output },
-                        ))
-                    }
+                    Ok((
+                        state,
+                        StreamingSinkOutput::NeedMoreInput(Some(Arc::new(output))),
+                    ))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    #[instrument(skip_all, name = "UriDownloadSink::finalize")]
+    #[instrument(skip_all, name = "UrlUploadSink::finalize")]
     fn finalize(
         &self,
         mut states: Vec<Box<dyn StreamingSinkState>>,
@@ -297,10 +292,10 @@ impl StreamingSink for UriDownloadSink {
                     assert!(states.len() == 1);
                     let state = states
                         .get_mut(0)
-                        .unwrap()
+                        .expect("UrlUpload should have exactly one state")
                         .as_any_mut()
-                        .downcast_mut::<UriDownloadSinkState>()
-                        .expect("UriDownload sink should have UriDownloadSinkState");
+                        .downcast_mut::<UrlUploadSinkState>()
+                        .expect("UrlUpload sink state should be UrlUploadSinkState");
 
                     let output = state.poll_finished(true).await?;
                     let schema = output.schema.clone();
@@ -310,7 +305,7 @@ impl StreamingSink for UriDownloadSink {
                         None,
                     ));
 
-                    if state.get_in_flight() > 0 {
+                    if !state.in_flight_uploads.is_empty() {
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
                             output: Some(output),
@@ -331,19 +326,19 @@ impl StreamingSink for UriDownloadSink {
     }
 
     fn name(&self) -> &'static str {
-        "UriDownload"
+        "UrlUpload"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         vec![
-            "URL Download".to_string(),
-            format!("Input URL Column: {}", self.args.input),
+            "URL Upload".to_string(),
+            format!("Input DataColumn: {}", self.args.input),
             format!("Output DataColumn: {}", self.output_column),
         ]
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(UriDownloadSinkState::new(
+        Box::new(UrlUploadSinkState::new(
             self.args.clone(),
             self.output_column.clone(),
             self.input_schema.clone(),
@@ -359,6 +354,8 @@ impl StreamingSink for UriDownloadSink {
         _runtime_handle: &ExecutionRuntimeContext,
         _maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(0, 32 * INPUT_SCALE_FACTOR))
+        // Limits are greedy, so we don't need to buffer any input.
+        // They are also not concurrent, so we don't need to worry about ordering.
+        Arc::new(UnorderedDispatcher::unbounded())
     }
 }

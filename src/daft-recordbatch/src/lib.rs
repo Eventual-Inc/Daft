@@ -182,14 +182,14 @@ impl RecordBatch {
         }
     }
 
-    pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
+    pub fn empty(schema: Option<SchemaRef>) -> Self {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.len());
         for field in schema.as_ref() {
             let series = Series::empty(&field.name, &field.dtype);
             columns.push(series);
         }
-        Ok(Self::new_unchecked(schema, columns, 0))
+        Self::new_unchecked(schema, columns, 0)
     }
 
     /// Create a RecordBatch from a set of columns.
@@ -443,7 +443,7 @@ impl RecordBatch {
         schema: Option<SchemaRef>,
     ) -> DaftResult<Self> {
         if tables.is_empty() {
-            return Self::empty(schema);
+            return Ok(Self::empty(schema));
         }
         Self::concat(tables)
     }

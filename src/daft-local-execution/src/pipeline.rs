@@ -61,8 +61,8 @@ use crate::{
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
         limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink, uri_download::UriDownloadSink,
-        uri_upload::UriUploadSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, url_download::UrlDownloadSink,
+        url_upload::UrlUploadSink,
     },
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
@@ -456,7 +456,10 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
 
             let url_download_op =
-                UriDownloadSink::new(args.clone(), output_column.clone(), input.schema().clone());
+                UrlDownloadSink::new(args.clone(), output_column.clone(), input.schema().clone())
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
             StreamingSinkNode::new(
                 Arc::new(url_download_op),
                 vec![child_node],
@@ -475,7 +478,7 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
 
             let url_upload_op =
-                UriUploadSink::new(args.clone(), output_column.clone(), input.schema().clone());
+                UrlUploadSink::new(args.clone(), output_column.clone(), input.schema().clone());
             StreamingSinkNode::new(
                 Arc::new(url_upload_op),
                 vec![child_node],

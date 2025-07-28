@@ -1,5 +1,6 @@
 [dependencies]
 async-trait = {workspace = true}
+arrow-array = {version = "=54.2.1"}
 capitalize = "*"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}

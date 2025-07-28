@@ -36,25 +36,30 @@ pub struct UrlDownloadArgs<T> {
     pub on_error: Option<String>,
 }
 
-#[typetag::serde]
-impl ScalarUDF for UrlDownload {
-    fn name(&self) -> &'static str {
-        "url_download"
-    }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+#[derive(Debug, Clone)]
+pub struct UrlDownloadArgsDefault<T> {
+    pub input: T,
+    pub multi_thread: bool,
+    pub io_config: Arc<IOConfig>,
+    pub max_connections: usize,
+    pub raise_error_on_failure: bool,
+}
+
+impl<T> UrlDownloadArgs<T> {
+    pub fn unwrap_or_default(self) -> DaftResult<UrlDownloadArgsDefault<T>> {
         let UrlDownloadArgs {
             input,
             multi_thread,
             io_config,
             max_connections,
             on_error,
-        } = inputs.try_into()?;
+        } = self;
 
-        let max_connections = max_connections.unwrap_or(32);
-        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
         let multi_thread = multi_thread.unwrap_or(true);
-        let io_config = io_config.unwrap_or_default();
+        let io_config = Arc::new(io_config.unwrap_or_default());
+        let max_connections = max_connections.unwrap_or(32);
 
+        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
         let raise_error_on_failure = match on_error.as_str() {
             "raise" => true,
             "null" => false,
@@ -66,6 +71,31 @@ impl ScalarUDF for UrlDownload {
             }
         };
 
+        Ok(UrlDownloadArgsDefault {
+            input,
+            multi_thread,
+            io_config,
+            max_connections,
+            raise_error_on_failure,
+        })
+    }
+}
+
+#[typetag::serde]
+impl ScalarUDF for UrlDownload {
+    fn name(&self) -> &'static str {
+        "url_download"
+    }
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let args: UrlDownloadArgs<Series> = inputs.try_into()?;
+        let UrlDownloadArgsDefault {
+            input,
+            multi_thread,
+            io_config,
+            max_connections,
+            raise_error_on_failure,
+        } = args.unwrap_or_default()?;
+
         let array = input.utf8()?;
         let io_stats = IOStatsContext::new("download");
         let result = url_download(
@@ -73,7 +103,7 @@ impl ScalarUDF for UrlDownload {
             max_connections,
             raise_error_on_failure,
             multi_thread,
-            Arc::new(io_config),
+            io_config,
             Some(io_stats),
         )?;
         Ok(result.into_series())
