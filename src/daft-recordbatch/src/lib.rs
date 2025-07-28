@@ -747,7 +747,7 @@ impl RecordBatch {
                 }
             },
             Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
-                let args = python_udf.children().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
+                let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
                 python_udf.call(args)
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(

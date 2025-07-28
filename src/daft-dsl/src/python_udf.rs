@@ -26,15 +26,9 @@ impl PyScalarFn {
         }
     }
 
-    pub fn children(&self) -> Vec<ExprRef> {
+    pub fn args(&self) -> Vec<ExprRef> {
         match self {
             Self::RowWise(RowWisePyFn { args, .. }) => args.clone(),
-        }
-    }
-
-    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
-        match self {
-            Self::RowWise(func) => Self::RowWise(func.with_new_children(children)),
         }
     }
 
@@ -110,7 +104,7 @@ impl RowWisePyFn {
 
     #[cfg(not(feature = "python"))]
     pub fn call(&self, _args: Vec<Series>) -> DaftResult<Series> {
-        panic!("Cannot evaluate a PythonUDF without compiling for Python");
+        panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
@@ -122,7 +116,7 @@ impl RowWisePyFn {
             .iter()
             .map(Series::len)
             .max()
-            .expect("ScalarPythonUDF should have at least one argument");
+            .expect("RowWisePyFn should have at least one argument");
         for a in &args {
             assert!(
                 a.len() == num_rows || a.len() == 1,
@@ -133,6 +127,14 @@ impl RowWisePyFn {
         }
 
         let py_return_type = PyDataType::from(self.return_dtype.clone());
+
+        let call_func_with_evaluated_exprs = Python::with_gil(|py| {
+            Ok::<_, PyErr>(
+                py.import(pyo3::intern!(py, "daft.udf.row_wise"))?
+                    .getattr(pyo3::intern!(py, "call_func_with_evaluated_exprs"))?
+                    .unbind(),
+            )
+        })?;
 
         let outputs = (0..num_rows)
             .map(|i| {
@@ -151,15 +153,12 @@ impl RowWisePyFn {
                         .map(|a| a.into_pyobject(py))
                         .collect::<PyResult<Vec<_>>>()?;
 
-                    let result = py
-                        .import(pyo3::intern!(py, "daft.udf.row_wise"))?
-                        .getattr(pyo3::intern!(py, "call_func_with_evaluated_exprs"))?
-                        .call1((
-                            self.inner.clone().unwrap().as_ref(),
-                            py_return_type.clone(),
-                            self.original_args.clone().unwrap().as_ref(),
-                            py_args,
-                        ))?;
+                    let result = call_func_with_evaluated_exprs.bind(py).call1((
+                        self.inner.clone().unwrap().as_ref(),
+                        py_return_type.clone(),
+                        self.original_args.clone().unwrap().as_ref(),
+                        py_args,
+                    ))?;
 
                     let result_series = result.extract::<PySeries>()?.series;
 
