@@ -142,7 +142,6 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
 def test_with_column_rayrunner():
-    print("test_with_column_rayrunner")
     df = daft.from_pydict(DATA).repartition(2)
 
     assert_resources_parametrized = assert_resources.override_options(num_cpus=1, memory_bytes=1_000_000, num_gpus=None)

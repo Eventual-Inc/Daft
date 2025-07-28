@@ -50,7 +50,12 @@ impl LoggingStdout {
 }
 
 /// Helper function to register a Python stdout & stderr writer for thread logging
-pub fn with_py_thread_logger<T>(f: impl FnOnce() -> DaftResult<T>) -> DaftResult<T> {
+pub fn with_py_thread_logger<T>(f: impl FnOnce() -> DaftResult<T>, is_ray: bool) -> DaftResult<T> {
+    eprintln!("is_ray: {}", is_ray);
+    if is_ray {
+        return f();
+    }
+
     let output = Python::with_gil(|py| {
         let std_log = LoggingStdout::new();
 

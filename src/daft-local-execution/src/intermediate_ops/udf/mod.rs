@@ -201,7 +201,7 @@ impl UdfHandle {
                 let (result, gil_contention_time) = func.call_udf(func_input.columns())?;
                 let end_time = Instant::now();
                 Ok((end_time - start_time, gil_contention_time, result))
-            })?;
+            }, true)?;
 
             // Rename if necessary
             if let Some(out_name) = out_name.as_ref() {

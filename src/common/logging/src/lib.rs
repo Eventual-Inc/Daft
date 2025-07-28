@@ -41,7 +41,7 @@ impl Log for SwappableLogger {
 }
 
 /// A Noop logger that does nothing.
-/// Used for initialization
+/// Used for initialization purposes only, should never actually be used.
 struct NoopLogger;
 
 impl Log for NoopLogger {
