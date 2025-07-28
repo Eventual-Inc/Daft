@@ -1,16 +1,12 @@
 use std::io::ErrorKind;
 
-use parking_lot::Mutex;
-use pyo3::{exceptions, pyclass, pyfunction, pymethods, PyErr, PyResult, Python};
+use pyo3::{exceptions, pyclass, pyfunction, pymethods, PyErr, PyResult};
 use tokio::{
     runtime::{Builder, Runtime},
     sync::oneshot,
 };
 
-use crate::DashboardState;
-
-// Global shared state
-static GLOBAL_DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
+use crate::{DashboardState, GLOBAL_DASHBOARD_STATE};
 
 #[pyclass]
 pub struct ConnectionHandle {
@@ -79,8 +75,8 @@ pub fn get_dashboard_queries_url() -> Option<String> {
 pub fn register_dataframe_for_display(
     record_batch: daft_recordbatch::python::PyRecordBatch,
 ) -> PyResult<String> {
-    let state = GLOBAL_DASHBOARD_STATE.lock();
-    if let Some(state) = state.as_ref() {
+    let mut state = GLOBAL_DASHBOARD_STATE.lock();
+    if let Some(state) = state.as_mut() {
         let df_id = state.register_dataframe_preview(record_batch.record_batch);
         Ok(df_id)
     } else {
@@ -92,25 +88,33 @@ pub fn register_dataframe_for_display(
 
 #[pyfunction]
 pub fn generate_interactive_html(df_id: String) -> PyResult<String> {
-    let state = GLOBAL_DASHBOARD_STATE.lock();
-    if let Some(state) = state.as_ref() {
-        let record_batch = state.get_dataframe_preview(&df_id);
-        let html = super::generate_interactive_html(
-            record_batch.as_ref().unwrap(),
-            &df_id,
-            &super::DEFAULT_SERVER_ADDR.to_string(),
-            state.get_port(),
-        );
-        Ok(html)
-    } else {
-        Err(PyErr::new::<exceptions::PyRuntimeError, _>(
-            "Dashboard is not running",
-        ))
-    }
+    let (record_batch, port) = {
+        let state_guard = GLOBAL_DASHBOARD_STATE.lock();
+        let state = state_guard.as_ref().ok_or_else(|| {
+            PyErr::new::<exceptions::PyRuntimeError, _>("Dashboard is not running")
+        })?;
+
+        let record_batch = state.get_dataframe_preview(&df_id).ok_or_else(|| {
+            PyErr::new::<exceptions::PyRuntimeError, _>(format!(
+                "DataFrame with id '{}' does not exist",
+                df_id
+            ))
+        })?;
+
+        (record_batch, state.get_port())
+    };
+
+    let html = super::generate_interactive_html(
+        &record_batch,
+        &df_id,
+        &super::DEFAULT_SERVER_ADDR.to_string(),
+        port,
+    );
+    Ok(html)
 }
 
 #[pyfunction]
-pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandle> {
+pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     // Check if server is already running
     let mut dashboard_state = GLOBAL_DASHBOARD_STATE.lock();
     if let Some(dashboard_state) = dashboard_state.as_ref() {
@@ -135,20 +139,16 @@ pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandl
     };
 
     let new_dashboard_state = DashboardState::new(super::DEFAULT_SERVER_ADDR.to_string(), port);
-    *dashboard_state = Some(new_dashboard_state.clone());
+    *dashboard_state = Some(new_dashboard_state);
 
-    py.allow_threads(move || {
-        std::thread::spawn(move || {
-            tokio_runtime().block_on(async { run(listener, recv, new_dashboard_state).await })
-        });
-    });
+    std::thread::spawn(move || tokio_runtime().block_on(async { run(listener, recv).await }));
+
     Ok(handle)
 }
 
 async fn run(
     listener: std::net::TcpListener,
     mut recv: oneshot::Receiver<()>,
-    state: DashboardState,
 ) -> anyhow::Result<()> {
     listener.set_nonblocking(true).map_err(anyhow::Error::new)?;
 
@@ -158,7 +158,7 @@ async fn run(
         tokio::select! {
             stream = listener.accept() => match stream {
                 Ok((stream, _)) => {
-                    super::handle_stream(stream, state.clone());
+                    super::handle_stream(stream);
                 },
                 Err(error) => {
                     log::warn!("Unable to accept incoming connection: {error}");

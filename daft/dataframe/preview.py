@@ -54,7 +54,6 @@ class PreviewOptions:
         max_width   (int)                       : global max column width
         align       (PreviewAlign)              : global column align
         columns     (list[PreviewColumn]|None)  : column overrides
-        interactive (bool)                      : enable interactive mode with background server
 
     """
 
@@ -67,7 +66,6 @@ class PreviewOptions:
             "max_width": options.get("max_width", 30),
             "align": options.get("align", "left"),
             "columns": options.get("columns"),
-            "interactive": options.get("interactive", True),  # Enable by default
         }
 
     def __repr__(self) -> str:

@@ -924,16 +924,17 @@ impl RecordBatch {
 
         let num_columns = self.columns.len();
 
-        // Pure CSS approach: use viewport units and calc() for dynamic sizing
-        let table_style = "table-layout: fixed; min-width: 100%";
-
-        let mut res = format!("<table class=\"dataframe\" style=\"{}\">\n", table_style);
+        let mut res =
+            "<table class=\"dataframe\" style=\"table-layout: fixed; min-width: 100%\">\n"
+                .to_string();
 
         // Begin the header.
         res.push_str("<thead><tr>");
 
+        let header_style = format!("text-wrap: nowrap; width: calc(100vw / {}); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left", num_columns);
+
         for field in self.schema.as_ref() {
-            res.push_str(&format!("<th style=\"text-wrap: nowrap; width: calc(100vw / {}); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left\">", num_columns));
+            res.push_str(&format!("<th style=\"{}\">", header_style));
             res.push_str(&html_escape::encode_text(&field.name));
             res.push_str("<br />");
             res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
@@ -945,6 +946,8 @@ impl RecordBatch {
 
         // Begin the body.
         res.push_str("<tbody>\n");
+
+        let body_style = format!("text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto", num_columns);
 
         let (head_rows, tail_rows) = if self.len() > 10 {
             (5, 5)
@@ -958,8 +961,8 @@ impl RecordBatch {
 
             for (col_idx, col) in self.columns.iter().enumerate() {
                 res.push_str(&format!(
-                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto\">",
-                    i, col_idx, num_columns
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
+                    i, col_idx, body_style
                 ));
                 res.push_str(&html_value(col, i, true));
                 res.push_str("</div></td>");
@@ -983,8 +986,8 @@ impl RecordBatch {
 
             for (col_idx, col) in self.columns.iter().enumerate() {
                 res.push_str(&format!(
-                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto\">",
-                    i, col_idx, num_columns
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
+                    i, col_idx, body_style
                 ));
                 res.push_str(&html_value(col, i, true));
                 res.push_str("</div></td>");

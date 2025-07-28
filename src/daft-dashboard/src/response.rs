@@ -20,7 +20,7 @@ fn response_builder(status: StatusCode, body: Option<impl Serialize>) -> Res {
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, cors())
-        .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS")
+        .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, POST")
         .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type")
         .body(body.map_or_else(
             || {

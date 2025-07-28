@@ -21,7 +21,7 @@ pub fn cli(py: Python, args: Vec<String>) {
         Commands::Dashboard => {
             println!("🚀 Launching Daft Dashboard!");
             let mut handle =
-                daft_dashboard::python::launch(false, py).expect("Failed to launch Daft Dashboard");
+                daft_dashboard::python::launch(false).expect("Failed to launch Daft Dashboard");
             println!(
                 "✨ View the Daft Dashboard at http://{}:{}",
                 daft_dashboard::DEFAULT_SERVER_ADDR,
