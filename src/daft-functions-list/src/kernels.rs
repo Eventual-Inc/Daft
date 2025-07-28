@@ -383,10 +383,15 @@ impl ListArrayExtension for ListArray {
         } else {
             Series::concat(&child_refs)?
         };
+
+        // Calculate new offsets based on the lengths of the sorted series.
+        let lengths = child_series.iter().map(|s| s.len());
+        let new_offsets = Offsets::try_from_lengths(lengths)?;
+
         Ok(Self::new(
             self.field.clone(),
             child,
-            self.offsets().clone(),
+            new_offsets.into(),
             self.validity().cloned(),
         ))
     }
