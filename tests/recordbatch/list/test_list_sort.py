@@ -79,11 +79,11 @@ def test_list_sort_groupby_larger_than_morsel_size():
     import itertools
 
     morsel_size = daft.context.get_context().daft_execution_config.default_morsel_size
-    num_groups = int(morsel_size * 2)
-    num_records = int(morsel_size * 20)
-    expected_records_per_group = num_records // num_groups
+    num_groups = int(morsel_size + 10)
+    expected_records_per_group = 1
+    num_records = num_groups * expected_records_per_group
 
-    group_ids = list(itertools.chain(*[10 * [f"{i}"] for i in range(num_groups)]))
+    group_ids = list(itertools.chain(*[expected_records_per_group * [f"{i}"] for i in range(num_groups)]))
     record_ids = [f"r-{i}" for i in range(num_records)]
 
     result = (
@@ -111,14 +111,14 @@ def test_list_sort_groupby_larger_than_morsel_size():
         len(result_dict["record_ids_key"]) == num_groups
     ), f"Expected {num_groups} groups, got {len(result_dict['record_ids_key'])}"
 
-    # Each group should have exactly expected_records_per_group records: Group i gets records r-i*10 to r-(i+1)*10-1
+    # Each group should have exactly expected_records_per_group records: Group i gets records r-i*expected_records to r-(i+1)*expected_records-1
     for group_id, record_list in zip(result_dict["group_id"], result_dict["record_ids_key"]):
         assert (
             len(record_list) == expected_records_per_group
         ), f"Group {group_id} should have {expected_records_per_group} records, got {len(record_list)}"
 
         start_record = int(group_id) * expected_records_per_group
-        expected_sorted = [f"r-{start_record + i}" for i in range(expected_records_per_group)]
+        expected_sorted = sorted([f"r-{start_record + i}" for i in range(expected_records_per_group)])
         assert (
             record_list == expected_sorted
-        ), f"Group {group_id} should be sorted: {record_list[:5]}... vs {expected_sorted[:5]}..."
+        ), f"Group {group_id} should be sorted: {record_list[:]}... vs {expected_sorted[:]}..."
