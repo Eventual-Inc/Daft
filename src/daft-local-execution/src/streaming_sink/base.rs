@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -57,7 +57,7 @@ pub trait StreamingSink: Send + Sync {
     ) -> StreamingSinkFinalizeResult;
 
     /// The name of the StreamingSink operator.
-    fn name(&self) -> Cow<'static, str>;
+    fn name(&self) -> NodeName;
 
     fn multiline_display(&self) -> Vec<String>;
 

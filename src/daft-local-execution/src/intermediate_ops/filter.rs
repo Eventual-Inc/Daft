@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -11,6 +11,7 @@ use super::intermediate_op::{
     IntermediateOperatorResult,
 };
 use crate::{
+    pipeline::NodeName,
     runtime_stats::{RuntimeStatsBuilder, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionTaskSpawner,
 };
@@ -74,7 +75,7 @@ impl IntermediateOperator for FilterOperator {
         vec![format!("Filter: {}", self.predicate)]
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "Filter".into()
     }
 

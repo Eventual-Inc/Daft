@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
@@ -10,6 +10,7 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    pipeline::NodeName,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -99,7 +100,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "MonotonicallyIncreasingId".into()
     }
 

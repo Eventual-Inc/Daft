@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use capitalize::Capitalize;
@@ -14,7 +14,7 @@ use indicatif::HumanCount;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
@@ -41,7 +41,7 @@ impl RuntimeStatsBuilder for SourceStatsBuilder {
 
 #[async_trait]
 pub trait Source: Send + Sync {
-    fn name(&self) -> Cow<'static, str>;
+    fn name(&self) -> NodeName;
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
         Arc::new(SourceStatsBuilder {})
     }

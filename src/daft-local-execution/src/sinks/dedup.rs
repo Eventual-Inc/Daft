@@ -14,7 +14,7 @@
 //! TODO: Better support for low-cardinality by avoiding partitioning
 //! TODO: Store Hash Table as state per partition and reuse across micro-partitions
 
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -27,7 +27,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 #[derive(Default)]
 struct SinglePartitionDedupState {
@@ -189,7 +189,7 @@ impl BlockingSink for DedupSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "Dedup".into()
     }
 

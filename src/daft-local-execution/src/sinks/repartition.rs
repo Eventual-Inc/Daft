@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -13,7 +13,9 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner};
+use crate::{
+    pipeline::NodeName, sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner,
+};
 
 struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
@@ -131,7 +133,7 @@ impl BlockingSink for RepartitionSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "Repartition".into()
     }
 

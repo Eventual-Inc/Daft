@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::RangeInclusive, sync::Arc, time::Duration, vec};
+use std::{ops::RangeInclusive, sync::Arc, time::Duration, vec};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -27,7 +27,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
 const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
@@ -346,7 +346,7 @@ impl IntermediateOperator for UdfOperator {
         fut.into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         let full_name = &self.udf_properties.name;
         let udf_name = if let Some((_, udf_name)) = full_name.rsplit_once('.') {
             udf_name

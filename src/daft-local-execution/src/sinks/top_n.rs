@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -147,7 +147,7 @@ impl BlockingSink for TopNSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         format!("TopN {}", self.params.limit).into()
     }
 

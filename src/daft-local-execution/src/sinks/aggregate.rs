@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -12,7 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -132,7 +132,7 @@ impl BlockingSink for AggregateSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         self.aggregate_name.into()
     }
 

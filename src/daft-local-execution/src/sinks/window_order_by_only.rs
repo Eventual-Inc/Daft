@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
@@ -14,7 +14,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowOrderByOnlyParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -204,7 +204,7 @@ impl BlockingSink for WindowOrderByOnlySink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "WindowOrderByOnly".into()
     }
 

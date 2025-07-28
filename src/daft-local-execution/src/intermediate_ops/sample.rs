@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
@@ -7,7 +7,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct SampleParams {
     fraction: f64,
@@ -69,7 +69,7 @@ impl IntermediateOperator for SampleOperator {
         res
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "Sample".into()
     }
 }

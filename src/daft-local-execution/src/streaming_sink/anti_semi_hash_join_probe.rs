@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{prelude::SchemaRef, series::IntoSeries};
@@ -16,6 +16,7 @@ use super::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
@@ -269,7 +270,7 @@ impl StreamingSink for AntiSemiProbeSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "AntiSemiHashJoinProbe".into()
     }
 

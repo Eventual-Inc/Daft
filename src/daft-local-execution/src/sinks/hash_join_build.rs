@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -12,7 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum ProbeTableState {
     Building {
@@ -117,7 +117,7 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "HashJoinBuild".into()
     }
 

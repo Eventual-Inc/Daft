@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -15,7 +15,7 @@ use super::{
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionOnlyParams {
     agg_exprs: Vec<BoundAggExpr>,
@@ -166,7 +166,7 @@ impl BlockingSink for WindowPartitionOnlySink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "WindowPartitionOnly".into()
     }
 

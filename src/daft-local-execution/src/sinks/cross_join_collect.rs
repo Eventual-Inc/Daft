@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -9,7 +9,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
 
@@ -30,7 +30,7 @@ impl CrossJoinCollectSink {
 }
 
 impl BlockingSink for CrossJoinCollectSink {
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "CrossJoinCollect".into()
     }
 

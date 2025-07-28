@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -64,6 +64,8 @@ use crate::{
     },
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
+
+pub type NodeName = Cow<'static, str>;
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;

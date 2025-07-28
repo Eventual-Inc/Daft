@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use bitmap::{and, Bitmap, MutableBitmap};
 use common_error::DaftResult;
@@ -22,6 +22,7 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
@@ -645,7 +646,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "OuterHashJoinProbe".into()
     }
 

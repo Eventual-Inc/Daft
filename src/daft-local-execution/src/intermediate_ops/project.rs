@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cmp::max, sync::Arc};
+use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -17,7 +17,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -140,7 +140,7 @@ impl IntermediateOperator for ProjectOperator {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "Project".into()
     }
 

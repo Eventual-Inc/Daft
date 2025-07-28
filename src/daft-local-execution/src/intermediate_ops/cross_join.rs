@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
@@ -10,7 +10,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
@@ -138,7 +138,7 @@ impl IntermediateOperator for CrossJoinOperator {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "CrossJoin".into()
     }
 

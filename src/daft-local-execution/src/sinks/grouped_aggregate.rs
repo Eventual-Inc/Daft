@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::HashSet,
     sync::{Arc, Mutex},
 };
@@ -20,7 +19,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 #[derive(Clone)]
 enum AggStrategy {
@@ -422,7 +421,7 @@ impl BlockingSink for GroupedAggregateSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "GroupedAggregate".into()
     }
 

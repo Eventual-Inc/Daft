@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    sync::{atomic::AtomicU64, Arc},
-};
+use std::sync::{atomic::AtomicU64, Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -20,6 +17,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    pipeline::NodeName,
     runtime_stats::{RuntimeStatsBuilder, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
@@ -176,7 +174,7 @@ impl BlockingSink for WriteSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         match &self.write_format {
             WriteFormat::Parquet => "Parquet Write".into(),
             WriteFormat::PartitionedParquet => "PartitionedParquet Write".into(),

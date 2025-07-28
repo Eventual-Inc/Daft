@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -15,7 +15,7 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -50,7 +50,7 @@ pub trait IntermediateOperator: Send + Sync {
         state: Box<dyn IntermediateOpState>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult;
-    fn name(&self) -> Cow<'static, str>;
+    fn name(&self) -> NodeName;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))

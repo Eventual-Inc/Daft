@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -8,7 +8,7 @@ use daft_micropartition::{partitioning::PartitionSetRef, MicroPartitionRef};
 use tracing::instrument;
 
 use super::source::Source;
-use crate::sources::source::SourceStream;
+use crate::{pipeline::NodeName, sources::source::SourceStream};
 
 pub struct InMemorySource {
     data: Option<PartitionSetRef<MicroPartitionRef>>,
@@ -48,7 +48,7 @@ impl Source for InMemorySource {
             .clone()
             .to_partition_stream())
     }
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "InMemorySource".into()
     }
 

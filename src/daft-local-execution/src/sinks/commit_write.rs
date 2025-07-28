@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
@@ -14,7 +14,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct CommitWriteState {
     written_file_path_record_batches: Vec<RecordBatch>,
@@ -162,7 +162,7 @@ impl BlockingSink for CommitWriteSink {
             .into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "CommitWriteSink".into()
     }
 

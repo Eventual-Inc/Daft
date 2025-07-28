@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
@@ -10,6 +10,7 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    pipeline::NodeName,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -36,7 +37,7 @@ impl StreamingSink for ConcatSink {
         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "Concat".into()
     }
 

@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -20,7 +19,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ActorHandle {
@@ -151,7 +150,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         fut.into()
     }
 
-    fn name(&self) -> Cow<'static, str> {
+    fn name(&self) -> NodeName {
         "DistributedActorPoolProject".into()
     }
 
