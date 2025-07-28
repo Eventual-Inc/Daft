@@ -132,6 +132,9 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
         self._result_schema = Schema._from_field_name_and_types([("write_responses", DataType.python())])
 
+    def name(self) -> str:
+        return "Turbopuffer Write"
+
     def schema(self) -> Schema:
         return self._result_schema
 

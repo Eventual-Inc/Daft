@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -110,8 +110,8 @@ impl BlockingSink for SortSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Sort"
+    fn name(&self) -> NodeName {
+        "Sort".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

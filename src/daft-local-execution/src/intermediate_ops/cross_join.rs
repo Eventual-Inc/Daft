@@ -10,7 +10,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
@@ -138,8 +138,8 @@ impl IntermediateOperator for CrossJoinOperator {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "CrossJoin"
+    fn name(&self) -> NodeName {
+        "CrossJoin".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
