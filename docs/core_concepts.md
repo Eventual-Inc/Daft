@@ -2379,7 +2379,7 @@ UDFs can also be created on Python classes. With a class UDF, you can set the `c
             return self._model(features_col)
     ```
 
-Class UDFs are can be used the exact same way as function UDFs:
+Class UDFs can be used the exact same way as function UDFs:
 
 === "🐍 Python"
     ``` python
@@ -2388,7 +2388,7 @@ Class UDFs are can be used the exact same way as function UDFs:
 
 In addition, you can pass in arguments to the `__init__` method using `.with_init_args`:
 
-==="🐍 Python"
+=== "🐍 Python"
     ``` python
     RunMistral = RunModel.with_init_args(model_name="mistralai/Mistral-7B-Instruct-v0.1")
     df = df.with_column("image_classifications", RunMistral(df["images"]))
