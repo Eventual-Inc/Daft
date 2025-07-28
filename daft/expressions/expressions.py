@@ -1398,7 +1398,12 @@ class Expression:
         name = getattr(func, "__module__", "")
         if name:
             name = name + "."
-        name = name + getattr(func, "__qualname__")
+        if hasattr(func, "__qualname__"):
+            name = name + getattr(func, "__qualname__")
+        elif hasattr(func, "__class__"):
+            name = name + func.__class__.__name__
+        else:
+            name = name + func.__name__
 
         return UDF(
             inner=batch_func,
