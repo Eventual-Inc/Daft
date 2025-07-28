@@ -42,19 +42,19 @@ class RowWiseUdf(Generic[P, T]):
     def __call__(self, *args: Any, **kwargs: Any) -> Expression: ...
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
-        children_exprs = []
+        expr_args = []
         for arg in args:
             if isinstance(arg, Expression):
-                children_exprs.append(arg)
+                expr_args.append(arg)
         for arg in kwargs.values():
             if isinstance(arg, Expression):
-                children_exprs.append(arg)
+                expr_args.append(arg)
 
-        if len(children_exprs) == 0:
+        if len(expr_args) == 0:
             # all inputs are Python literals, evaluate immediately
             return self._inner(*args, **kwargs)
         else:
-            return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), children_exprs)
+            return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), expr_args)
 
 
 def call_func_with_evaluated_exprs(

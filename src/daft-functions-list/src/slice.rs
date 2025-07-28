@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -67,5 +67,5 @@ impl ScalarUDF for ListSlice {
 
 #[must_use]
 pub fn list_slice(expr: ExprRef, start: ExprRef, end: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(ListSlice {}, vec![expr, start, end]).into()
+    ScalarFn::builtin(ListSlice {}, vec![expr, start, end]).into()
 }

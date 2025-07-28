@@ -6,7 +6,7 @@ use daft_core::{
     with_match_float_and_null_daft_types,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -54,5 +54,5 @@ impl ScalarUDF for IsNan {
 
 #[must_use]
 pub fn is_nan(input: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(IsNan {}, vec![input]).into()
+    ScalarFn::builtin(IsNan {}, vec![input]).into()
 }

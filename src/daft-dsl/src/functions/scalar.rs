@@ -25,6 +25,10 @@ impl ScalarFn {
             Self::Python(python_scalar_func) => python_scalar_func.to_field(schema),
         }
     }
+
+    pub fn builtin<UDF: ScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
+        Self::Builtin(BuiltinScalarFn::new(udf, inputs))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +57,12 @@ impl BuiltinScalarFn {
     /// Returns true if `self.udf` is of type `F`
     pub fn is_function_type<F: ScalarUDF>(&self) -> bool {
         self.udf.as_ref().type_id() == TypeId::of::<F>()
+    }
+}
+
+impl From<ScalarFn> for ExprRef {
+    fn from(func: ScalarFn) -> Self {
+        Self::new(Expr::ScalarFn(func))
     }
 }
 

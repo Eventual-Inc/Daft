@@ -171,7 +171,7 @@ impl<'py> PyVisitor<'py> {
         match udf {
             PyScalarFn::RowWise(RowWisePyFn {
                 function_name: name,
-                children,
+                args: children,
                 ..
             }) => {
                 let args = children

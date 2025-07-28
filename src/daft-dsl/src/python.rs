@@ -278,14 +278,11 @@ pub fn row_wise_udf(
     inner: PyObject,
     return_dtype: PyDataType,
     original_args: PyObject,
-    children_exprs: Vec<PyExpr>,
+    expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     use crate::python_udf::row_wise_udf;
 
-    let children = children_exprs
-        .into_iter()
-        .map(|pyexpr| pyexpr.expr)
-        .collect();
+    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
     PyExpr {
         expr: row_wise_udf(
@@ -293,7 +290,7 @@ pub fn row_wise_udf(
             inner.into(),
             return_dtype.into(),
             original_args.into(),
-            children,
+            args,
         )
         .into(),
     }

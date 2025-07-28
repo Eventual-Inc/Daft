@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::functions::{prelude::*, BuiltinScalarFn};
+use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -94,5 +94,5 @@ pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
         None => vec![input],
     };
 
-    BuiltinScalarFn::new(HashFunction, inputs).into()
+    ScalarFn::builtin(HashFunction, inputs).into()
 }

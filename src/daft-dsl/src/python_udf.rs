@@ -28,7 +28,7 @@ impl PyScalarFn {
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
-            Self::RowWise(RowWisePyFn { children, .. }) => children.clone(),
+            Self::RowWise(RowWisePyFn { args, .. }) => args.clone(),
         }
     }
 
@@ -42,11 +42,11 @@ impl PyScalarFn {
         match self {
             Self::RowWise(RowWisePyFn {
                 function_name: name,
-                children,
+                args,
                 return_dtype,
                 ..
             }) => {
-                let field_name = if let Some(first_child) = children.first() {
+                let field_name = if let Some(first_child) = args.first() {
                     first_child.get_name(schema)?
                 } else {
                     name.to_string()
@@ -63,14 +63,14 @@ pub fn row_wise_udf(
     inner: RuntimePyObject,
     return_dtype: DataType,
     original_args: RuntimePyObject,
-    children: Vec<ExprRef>,
+    args: Vec<ExprRef>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
         function_name: Arc::from(name),
         inner,
         return_dtype,
         original_args,
-        children,
+        args,
     })))
 }
 
@@ -80,12 +80,12 @@ pub struct RowWisePyFn {
     pub inner: RuntimePyObject,
     pub return_dtype: DataType,
     pub original_args: RuntimePyObject,
-    pub children: Vec<ExprRef>,
+    pub args: Vec<ExprRef>,
 }
 
 impl Display for RowWisePyFn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let children_str = self.children.iter().map(|expr| expr.to_string()).join(", ");
+        let children_str = self.args.iter().map(|expr| expr.to_string()).join(", ");
 
         write!(f, "{}({})", self.function_name, children_str)
     }
@@ -95,7 +95,7 @@ impl RowWisePyFn {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         assert_eq!(
             children.len(),
-            self.children.len(),
+            self.args.len(),
             "There must be the same amount of new children as original."
         );
 
@@ -104,7 +104,7 @@ impl RowWisePyFn {
             inner: self.inner.clone(),
             return_dtype: self.return_dtype.clone(),
             original_args: self.original_args.clone(),
-            children,
+            args: children,
         }
     }
 

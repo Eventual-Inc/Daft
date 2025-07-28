@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -40,5 +40,5 @@ impl ScalarUDF for ListSum {
 
 #[must_use]
 pub fn list_sum(expr: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(ListSum {}, vec![expr]).into()
+    ScalarFn::builtin(ListSum {}, vec![expr]).into()
 }

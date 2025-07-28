@@ -5,7 +5,7 @@ use daft_core::{
     utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
-    functions::{prelude::*, BuiltinScalarFn},
+    functions::{prelude::*, scalar::ScalarFn},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -86,5 +86,5 @@ impl ScalarUDF for FillNan {
 
 #[must_use]
 pub fn fill_nan(input: ExprRef, fill_value: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(FillNan {}, vec![input, fill_value]).into()
+    ScalarFn::builtin(FillNan {}, vec![input, fill_value]).into()
 }

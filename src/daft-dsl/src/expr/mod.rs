@@ -1289,7 +1289,7 @@ impl Expr {
             }
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
                 function_name: name,
-                children,
+                args: children,
                 ..
             }))) => {
                 let children_ids = children
@@ -1339,7 +1339,8 @@ impl Expr {
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
             Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                children, ..
+                args: children,
+                ..
             }))) => children.clone(),
         }
     }
@@ -1463,7 +1464,7 @@ impl Expr {
                 inner: func,
                 return_dtype,
                 original_args,
-                children: old_children,
+                args: old_children,
             }))) => {
                 assert!(
                     children.len() == old_children.len(),
@@ -1475,7 +1476,7 @@ impl Expr {
                     inner: func.clone(),
                     return_dtype: return_dtype.clone(),
                     original_args: original_args.clone(),
-                    children,
+                    args: children,
                 })))
             }
         }
@@ -1729,7 +1730,7 @@ impl Expr {
             Self::WindowFunction(expr) => expr.name(),
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
                 function_name: name,
-                children,
+                args: children,
                 ..
             }))) => {
                 if let Some(first_child) = children.first() {

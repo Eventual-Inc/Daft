@@ -185,7 +185,7 @@ impl ToFromProto for ir::functions::RowWisePyFn {
             inner: from_proto(message.inner)?,
             return_dtype: from_proto(message.return_dtype)?,
             original_args: from_proto(message.original_args)?,
-            children: args,
+            args,
         })
     }
 
@@ -195,7 +195,7 @@ impl ToFromProto for ir::functions::RowWisePyFn {
             return_dtype: Some(self.return_dtype.to_proto()?),
             inner: Some(self.inner.to_proto()?),
             original_args: Some(self.original_args.to_proto()?),
-            args: to_proto_vec(&self.children)?,
+            args: to_proto_vec(&self.args)?,
         })
     }
 }

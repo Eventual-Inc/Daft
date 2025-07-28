@@ -422,10 +422,10 @@ class Expression:
         inner: Callable[..., Any],
         return_dtype: DataType,
         original_args: tuple[tuple[Any, ...], dict[builtins.str, Any]],
-        children_exprs: builtins.list[Expression],
+        expr_args: builtins.list[Expression],
     ) -> Expression:
         return Expression._from_pyexpr(
-            _row_wise_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in children_exprs])
+            _row_wise_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in expr_args])
         )
 
     @staticmethod

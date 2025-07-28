@@ -5,7 +5,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ macro_rules! trigonometry {
 
         #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
-            BuiltinScalarFn::new($variant, vec![input]).into()
+            ScalarFn::builtin($variant, vec![input]).into()
         }
     };
 }
@@ -176,7 +176,7 @@ impl ScalarUDF for Atan2 {
 
 #[must_use]
 pub fn atan2(x: ExprRef, y: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(Atan2 {}, vec![x, y]).into()
+    ScalarFn::builtin(Atan2 {}, vec![x, y]).into()
 }
 
 fn trigonometry(s: Series, trig_function: &TrigonometricFunction) -> DaftResult<Series> {

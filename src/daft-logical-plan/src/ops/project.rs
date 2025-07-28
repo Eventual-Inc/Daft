@@ -484,7 +484,7 @@ fn replace_column_with_semantic_id(
                 inner: func,
                 return_dtype,
                 original_args,
-                children,
+                args: children,
             }))) => {
                 let transforms = children
                     .iter()
@@ -506,7 +506,7 @@ fn replace_column_with_semantic_id(
                             inner: func.clone(),
                             return_dtype: return_dtype.clone(),
                             original_args: original_args.clone(),
-                            children: new_children,
+                            args: new_children,
                         }),
                     ))))
                 }

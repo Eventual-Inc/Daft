@@ -3,7 +3,8 @@ use std::sync::Arc;
 use daft_core::prelude::Schema;
 use daft_dsl::{
     functions::{
-        BuiltinScalarFn, FunctionArg, FunctionArgs, ScalarFunctionFactory, FUNCTION_REGISTRY,
+        scalar::ScalarFn, BuiltinScalarFn, FunctionArg, FunctionArgs, ScalarFunctionFactory,
+        FUNCTION_REGISTRY,
     },
     python::PyExpr,
     ExprRef,
@@ -54,7 +55,7 @@ impl PyScalarFunction {
         let inputs = FunctionArgs::try_new(inputs)?;
         let udf = self.inner.get_function(inputs.clone(), &schema)?;
 
-        let expr: ExprRef = BuiltinScalarFn { udf, inputs }.into();
+        let expr: ExprRef = ScalarFn::Builtin(BuiltinScalarFn { udf, inputs }).into();
         Ok(expr.into())
     }
 }

@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -42,5 +42,5 @@ impl ScalarUDF for ListDistinct {
 
 /// Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
 pub fn list_distinct(expr: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(ListDistinct {}, vec![expr]).into()
+    ScalarFn::builtin(ListDistinct {}, vec![expr]).into()
 }

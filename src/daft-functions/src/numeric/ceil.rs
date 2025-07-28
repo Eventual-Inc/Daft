@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -56,5 +56,5 @@ impl ScalarUDF for Ceil {
 
 #[must_use]
 pub fn ceil(input: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(Ceil {}, vec![input]).into()
+    ScalarFn::builtin(Ceil {}, vec![input]).into()
 }

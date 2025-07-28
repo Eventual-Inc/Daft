@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -50,5 +50,5 @@ impl ScalarUDF for Sqrt {
 
 #[must_use]
 pub fn sqrt(input: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(Sqrt {}, vec![input]).into()
+    ScalarFn::builtin(Sqrt {}, vec![input]).into()
 }

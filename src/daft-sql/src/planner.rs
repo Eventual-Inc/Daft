@@ -10,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{BuiltinScalarFn, ScalarUDF},
+    functions::{scalar::ScalarFn, ScalarUDF},
     has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
     ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
@@ -1320,7 +1320,7 @@ impl SQLPlanner<'_> {
                 let expr = self.plan_expr(expr)?;
 
                 fn scalar<UDF: ScalarUDF + 'static>(udf: UDF, input: ExprRef) -> ExprRef {
-                    BuiltinScalarFn::new(udf, vec![input]).into()
+                    ScalarFn::builtin(udf, vec![input]).into()
                 }
 
                 match field {

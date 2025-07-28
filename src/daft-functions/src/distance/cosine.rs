@@ -1,6 +1,6 @@
 use common_error::{value_err, DaftError, DaftResult};
 use daft_core::{datatypes::NumericNative, prelude::*};
-use daft_dsl::functions::{prelude::*, BuiltinScalarFn};
+use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use serde::{Deserialize, Serialize};
 
 #[derive(FunctionArgs)]
@@ -95,7 +95,7 @@ impl ScalarUDF for CosineDistanceFunction {
 
 #[must_use]
 pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(CosineDistanceFunction {}, vec![a, b]).into()
+    ScalarFn::builtin(CosineDistanceFunction {}, vec![a, b]).into()
 }
 
 trait SpatialSimilarity {

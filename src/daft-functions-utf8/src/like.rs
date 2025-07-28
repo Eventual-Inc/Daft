@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ impl ScalarUDF for Like {
 
 #[must_use]
 pub fn like(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(Like {}, vec![input, pattern]).into()
+    ScalarFn::builtin(Like {}, vec![input, pattern]).into()
 }
 
 fn like_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {

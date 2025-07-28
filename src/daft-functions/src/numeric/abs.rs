@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -41,5 +41,5 @@ impl ScalarUDF for Abs {
 
 #[must_use]
 pub fn abs(input: ExprRef) -> ExprRef {
-    BuiltinScalarFn::new(Abs {}, vec![input]).into()
+    ScalarFn::builtin(Abs {}, vec![input]).into()
 }
