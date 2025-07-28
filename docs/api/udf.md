@@ -16,6 +16,6 @@ Learn more about [UDFs](../core_concepts.md#user-defined-functions-udf) in Daft 
 
 ## Using UDFs
 
-::: daft.udf.legacy.UDF
+::: daft.udf.UDF
     options:
         filters: ["!^_", "__call__"]
