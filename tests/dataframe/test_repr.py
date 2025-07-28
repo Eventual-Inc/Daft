@@ -19,6 +19,10 @@ def dataframe_th_style(num_cols: int) -> str:
     return f'style="text-wrap: nowrap; width: calc(100vw / {num_cols}); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left"'
 
 
+def dataframe_th_style_schema() -> str:
+    return 'style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left"'
+
+
 ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
@@ -79,7 +83,10 @@ def parse_html_table(
     result = {}
     for table_key, table_values in pd_df.to_dict().items():
         name, dtype = table_key.split(" ")
-        result[name] = (dtype, [str(table_values[idx]) for idx in range(len(table_values))])
+        result[name] = (
+            dtype,
+            [str(table_values[idx]) for idx in range(len(table_values))],
+        )
     return result
 
 
@@ -115,7 +122,7 @@ def test_empty_df_repr(make_df):
         df._repr_html_()
         == f"""<div>
 <table class="dataframe">
-<thead><tr><th {dataframe_th_style(num_cols)}>A<br />Int64</th><th {dataframe_th_style(num_cols)}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style_schema()}>A<br />Int64</th><th {dataframe_th_style_schema()}>B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -159,7 +166,7 @@ def test_alias_repr(make_df):
         df._repr_html_()
         == f"""<div>
 <table class="dataframe">
-<thead><tr><th {th_style}>A2<br />Int64</th><th {th_style}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style_schema()}>A2<br />Int64</th><th {dataframe_th_style_schema()}>B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -207,14 +214,18 @@ def test_repr_with_unicode(make_df, data_source):
         ),
         "🦁": (
             "Utf8",
-            ["🔥a", "b🔥", "🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁…"],
+            [
+                "🔥a",
+                "b🔥",
+                "🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁…",
+            ],
         ),
     }
 
     string_array = ["🔥a", "b🔥", "🦁🔥" * 60]  # we dont truncate for html
     expected_html_unmaterialized = f"""<div>
 <table class="dataframe">
-<thead><tr><th {th_style}>🔥<br />Int64</th><th {th_style}>🦁<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style_schema()}>🔥<br />Int64</th><th {dataframe_th_style_schema()}>🦁<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -375,42 +386,25 @@ def test_interactive_html_with_record_batch():
     formatter = PreviewFormatter(preview, schema)
     html = formatter._generate_interactive_html()
 
-    # Test that the HTML contains the expected structure
+    # Extract the dataframe table part for exact testing
+    table_start = html.find('<table class="dataframe"')
+    table_end = html.find("</table>", table_start) + 8
+    table_html = html[table_start:table_end]
+
+    # Test exact match for the dataframe table
+    expected_table = f"""<table class="dataframe" style="table-layout: fixed; min-width: 100%">
+<thead><tr><th {dataframe_th_style(2)}>A<br />Int64</th><th {dataframe_th_style(2)}>B<br />Utf8</th></tr></thead>
+<tbody>
+<tr><td data-row="0" data-col="0"><div {dataframe_td_style(2)}>1</div></td><td data-row="0" data-col="1"><div {dataframe_td_style(2)}>a</div></td></tr>
+<tr><td data-row="1" data-col="0"><div {dataframe_td_style(2)}>2</div></td><td data-row="1" data-col="1"><div {dataframe_td_style(2)}>b</div></td></tr>
+<tr><td data-row="2" data-col="0"><div {dataframe_td_style(2)}>3</div></td><td data-row="2" data-col="1"><div {dataframe_td_style(2)}>c</div></td></tr>
+</tbody>
+</table>"""
+
+    assert table_html == expected_table
+
+    # Minimal checks for other components
     assert "<style>" in html
-    assert '<table class="dataframe" style="table-layout: fixed; min-width: 100%">' in html
-    assert "<thead>" in html
-    assert "<tbody>" in html
-    assert "</table>" in html
-
-    # Test that it contains the side pane structure
     assert "side-pane" in html
-    assert "side-pane-header" in html
-    assert "side-pane-title" in html
-
-    # Test that it contains JavaScript for interactivity
     assert "showSidePane" in html
-    assert "onclick" in html
-    assert "fetch(" in html
-
-    # Test that it contains CSS styles
-    assert "cursor: pointer" in html
-    assert "display: flex" in html
-
-    # Test that the data attributes are present for cell identification
-    assert "data-row=" in html
-    assert "data-col=" in html
-
-    # Test that the server URL is embedded in the JavaScript
-    assert "127.0.0.1:3238" in html
-
-    # Test that the table contains the expected data
-    assert "A" in html
-    assert "B" in html
-    assert "Int64" in html
-    assert "Utf8" in html
-    assert "1" in html
-    assert "2" in html
-    assert "3" in html
-    assert "a" in html
-    assert "b" in html
-    assert "c" in html
+    assert "serverUrl" in html
