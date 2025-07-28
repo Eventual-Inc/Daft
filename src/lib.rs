@@ -59,8 +59,6 @@ pub mod pylib {
 
         GLOBAL_LOGGER.set_inner_logger(py_logger);
         log::set_boxed_logger(Box::new(GLOBAL_LOGGER.clone())).unwrap();
-        eprintln!("Setting up pyo3_log logger");
-        log::warn!("Testing that this works");
         handle
     });
 
@@ -108,10 +106,8 @@ pub mod pylib {
             }
         };
 
-        eprintln!("Resetting logger (but should initialize it)");
         LOG_RESET_HANDLE.reset();
         log::set_max_level(level_filter);
-        log::warn!("Testing that this works 2");
         Ok(())
     }
 

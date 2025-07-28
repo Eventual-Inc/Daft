@@ -54,7 +54,6 @@ class SharedMemoryTransport:
 
 class UdfHandle:
     def __init__(self, project_expr: PyExpr, passthrough_exprs: list[PyExpr]) -> None:
-        print("UDFHandle init", flush=True, file=sys.stderr)
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name

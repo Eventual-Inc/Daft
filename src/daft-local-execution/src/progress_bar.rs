@@ -189,7 +189,6 @@ struct IndicatifProgressBarManager {
 
 impl IndicatifProgressBarManager {
     fn new(total: usize) -> Self {
-        eprintln!("Creating IndicatifProgressBarManager");
         let multi_progress = indicatif::MultiProgress::new();
         GLOBAL_LOGGER.set_inner_logger(Box::new(IndicatifLogger::new(
             multi_progress.clone(),
@@ -260,7 +259,6 @@ impl ProgressBarManager for IndicatifProgressBarManager {
 pub fn make_progress_bar_manager(total: usize) -> Arc<dyn ProgressBarManager> {
     #[cfg(feature = "python")]
     {
-        eprintln!("Creating IndicatifProgressBarManager");
         if python::in_notebook() {
             Arc::new(python::TqdmProgressBarManager::new())
         } else {

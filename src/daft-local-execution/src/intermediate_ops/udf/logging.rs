@@ -50,9 +50,13 @@ impl LoggingStdout {
 }
 
 /// Helper function to register a Python stdout & stderr writer for thread logging
-pub fn with_py_thread_logger<T>(f: impl FnOnce() -> DaftResult<T>, is_ray: bool) -> DaftResult<T> {
-    eprintln!("is_ray: {}", is_ray);
-    if is_ray {
+pub fn with_py_thread_logger<T>(
+    f: impl FnOnce() -> DaftResult<T>,
+    in_ray_runner: bool,
+) -> DaftResult<T> {
+    // Ray already messes with Python's prints w/ progress bars, so we shouldn't do so on top of it.
+    // https://docs.ray.io/en/latest/ray-observability/user-guides/configure-logging.html#distributed-progress-bars-with-tqdm
+    if in_ray_runner {
         return f();
     }
 
