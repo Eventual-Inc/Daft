@@ -19,9 +19,9 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let sorted = single.sort(sort_keys, descending, nulls_first)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -29,7 +29,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 
@@ -43,13 +42,12 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => {
-                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
+        match tables {
+            None => {
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 empty_table.argsort(sort_keys, descending, nulls_first)
             }
-            [single] => single.argsort(sort_keys, descending, nulls_first),
-            _ => unreachable!(),
+            Some(single) => single.argsort(sort_keys, descending, nulls_first),
         }
     }
 
@@ -64,9 +62,9 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let sorted = single.top_n(sort_keys, descending, nulls_first, limit)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -74,7 +72,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 }
