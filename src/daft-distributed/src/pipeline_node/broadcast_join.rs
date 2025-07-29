@@ -34,6 +34,7 @@ pub(crate) struct BroadcastJoinNode {
     is_swapped: bool,
 
     broadcaster: Arc<dyn DistributedPipelineNode>,
+    broadcaster_schema: SchemaRef,
     receiver: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -71,6 +72,7 @@ impl BroadcastJoinNode {
             receiver.config().clustering_spec.clone(),
         );
 
+        let broadcaster_schema = broadcaster.config().schema.clone();
         Self {
             config,
             context,
@@ -80,6 +82,7 @@ impl BroadcastJoinNode {
             join_type,
             is_swapped,
             broadcaster,
+            broadcaster_schema,
             receiver,
         }
     }
@@ -124,7 +127,8 @@ impl BroadcastJoinNode {
             .await?;
         let materialized_broadcast_data_plan = make_in_memory_scan_from_materialized_outputs(
             &materialized_broadcast_data,
-            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+            self.broadcaster_schema.clone(),
+            self.node_id(),
         )?;
         let broadcast_psets = HashMap::from([(
             self.node_id().to_string(),
@@ -135,9 +139,14 @@ impl BroadcastJoinNode {
         )]);
         while let Some(task) = receiver_input.next().await {
             let input_plan = task.task().plan();
+            let (left_plan, right_plan) = if self.is_swapped {
+                (input_plan, materialized_broadcast_data_plan.clone())
+            } else {
+                (materialized_broadcast_data_plan.clone(), input_plan)
+            };
             let join_plan = LocalPhysicalPlan::hash_join(
-                materialized_broadcast_data_plan.clone(),
-                input_plan,
+                left_plan,
+                right_plan,
                 self.left_on.clone(),
                 self.right_on.clone(),
                 self.null_equals_nulls.clone(),

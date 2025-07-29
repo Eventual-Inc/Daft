@@ -283,7 +283,8 @@ impl Stream for SubmittableTaskStream {
 
 fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: &[MaterializedOutput],
-    node: &Arc<dyn DistributedPipelineNode>,
+    schema: SchemaRef,
+    node_id: NodeID,
 ) -> DaftResult<LocalPhysicalPlanRef> {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
@@ -295,8 +296,8 @@ fn make_in_memory_scan_from_materialized_outputs(
     }
 
     let info = InMemoryInfo::new(
-        node.config().schema.clone(),
-        node.context().node_id.to_string(),
+        schema,
+        node_id.to_string(),
         None,
         num_partitions,
         total_size_bytes,
@@ -318,8 +319,11 @@ fn make_new_task_from_materialized_outputs<F>(
 where
     F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
 {
-    let in_memory_source_plan =
-        make_in_memory_scan_from_materialized_outputs(&materialized_outputs, node)?;
+    let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
+        &materialized_outputs,
+        node.config().schema.clone(),
+        node.node_id(),
+    )?;
     let partition_refs = materialized_outputs
         .into_iter()
         .flat_map(|output| output.into_inner().0)
