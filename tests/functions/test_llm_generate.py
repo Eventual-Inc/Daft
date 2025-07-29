@@ -25,12 +25,18 @@ def test_llm_generate_init_error(mock_llm: MagicMock):
 
 
 def test_unsupported_provider_error():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unsupported provider: unsupported"):
         llm_generate(lit("foo"), provider="unsupported")
 
 
 def test_returns_expression():
     out = llm_generate(lit("foo"), provider="vllm")
+    assert isinstance(out, Expression)
+    assert repr(out) == 'py_udf(lit("foo"))'
+
+
+def test_returns_expression_openai():
+    out = llm_generate(lit("foo"), provider="openai")
     assert isinstance(out, Expression)
     assert repr(out) == 'py_udf(lit("foo"))'
 
@@ -47,6 +53,17 @@ def test_llm_generate_generate(mock_sampling_params: MagicMock, mock_llm: MagicM
     assert res == ["This is a mocked response"]
     assert mock_sampling_params.call_count == 1
     assert mock_llm.call_count == 1
+
+
+@patch("openai.OpenAI")
+def test_init_with_client_params_openai(mock_llm: MagicMock):
+    """Test that _OpenAIGenerator initializes with client parameters correctly."""
+    config = {"api_key": "test_key", "base_url": "http://test.url", "timeout": 30, "max_retries": 3, "temperature": 0.5}
+
+    generator = _OpenAIGenerator(generation_config=config)
+
+    mock_llm.assert_called_once_with(api_key="test_key", base_url="http://test.url", timeout=30, max_retries=3)
+    assert generator.generation_config == {"temperature": 0.5}
 
 
 @patch("openai.OpenAI")
