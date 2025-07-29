@@ -322,8 +322,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         output_schema: SchemaRef,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         let input_clustering_spec = &input_node.config().clustering_spec;
+        // If there is only one partition, or the input is already partitioned by the group_by columns,
+        // then we can just do a single stage aggregation and skip the shuffle.
         if input_clustering_spec.num_partitions() == 1
-            && is_partition_compatible(
+            || is_partition_compatible(
                 &input_clustering_spec.partition_by(),
                 group_by.iter().map(|e| e.inner()),
             )
