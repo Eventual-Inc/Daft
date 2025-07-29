@@ -24,7 +24,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
         BoundColumn,
     },
-    functions::{FunctionArgs, FunctionEvaluator},
+    functions::{scalar::ScalarFn, FunctionArgs, FunctionEvaluator},
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
     SketchType,
 };
@@ -717,7 +717,7 @@ impl RecordBatch {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            Expr::ScalarFunction(func) => {
+            Expr::ScalarFn(ScalarFn::Builtin(func)) => {
                 let args = func.inputs
                     .iter()
                     .map(|e| {
@@ -746,6 +746,10 @@ impl RecordBatch {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
+            Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
+                let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
+                python_udf.call(args)
+            }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),

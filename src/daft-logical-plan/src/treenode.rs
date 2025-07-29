@@ -119,6 +119,7 @@ impl LogicalPlan {
                 project,
                 passthrough_columns,
                 projected_schema,
+                udf_properties,
                 stats_state,
             }) => f(project.clone(), &input.schema())?.update_data(|new_project| {
                 Self::UDFProject(UDFProject {
@@ -128,6 +129,7 @@ impl LogicalPlan {
                     project: new_project,
                     passthrough_columns: passthrough_columns.clone(),
                     projected_schema: projected_schema.clone(),
+                    udf_properties: udf_properties.clone(),
                     stats_state: stats_state.clone(),
                 })
                 .into()

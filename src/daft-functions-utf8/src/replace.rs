@@ -1,7 +1,4 @@
-use std::{
-    borrow::Borrow,
-    sync::{Arc, LazyLock},
-};
+use std::{borrow::Borrow, sync::LazyLock};
 
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
@@ -9,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -74,19 +71,13 @@ impl ScalarUDF for Replace {
 
 #[must_use]
 pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bool) -> ExprRef {
-    ScalarFunction {
-        udf: if regex {
-            Arc::new(RegexpReplace) as _
-        } else {
-            Arc::new(Replace) as _
-        },
-        inputs: FunctionArgs::new_unchecked(vec![
-            FunctionArg::unnamed(input),
-            FunctionArg::unnamed(pattern),
-            FunctionArg::unnamed(replacement),
-        ]),
+    let inputs = vec![input, pattern, replacement];
+
+    if regex {
+        ScalarFn::builtin(RegexpReplace, inputs).into()
+    } else {
+        ScalarFn::builtin(Replace, inputs).into()
     }
-    .into()
 }
 
 fn get_return_field_impl(inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {

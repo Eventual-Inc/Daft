@@ -1,7 +1,7 @@
 use common_error::{ensure, DaftResult};
 use daft_core::prelude::{DataType, Field, Schema, Series};
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -44,5 +44,5 @@ impl ScalarUDF for ListValueCounts {
 }
 
 pub fn list_value_counts(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListValueCounts, vec![expr]).into()
+    ScalarFn::builtin(ListValueCounts, vec![expr]).into()
 }
