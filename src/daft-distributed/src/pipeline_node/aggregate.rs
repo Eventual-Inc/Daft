@@ -10,7 +10,7 @@ use daft_dsl::{
     is_partition_compatible, AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::{Schema, SchemaRef};
 
 use super::DistributedPipelineNode;
@@ -324,12 +324,14 @@ impl LogicalPlanToPipelineNodeTranslator {
         let input_clustering_spec = &input_node.config().clustering_spec;
         // If there is only one partition, or the input is already partitioned by the group_by columns,
         // then we can just do a single stage aggregation and skip the shuffle.
-        if input_clustering_spec.num_partitions() == 1
-            || is_partition_compatible(
-                &input_clustering_spec.partition_by(),
-                group_by.iter().map(|e| e.inner()),
-            )
-        {
+        let is_hash_partitioned_by_group_by =
+            matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
+                || (!group_by.is_empty()
+                    && is_partition_compatible(
+                        &input_clustering_spec.partition_by(),
+                        group_by.iter().map(|e| e.inner()),
+                    ));
+        if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_group_by {
             return Ok(AggregateNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
