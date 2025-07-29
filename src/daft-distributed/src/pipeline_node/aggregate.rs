@@ -326,11 +326,11 @@ impl LogicalPlanToPipelineNodeTranslator {
         // then we can just do a single stage aggregation and skip the shuffle.
         let is_hash_partitioned_by_group_by =
             matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
-                || (!group_by.is_empty()
-                    && is_partition_compatible(
-                        &input_clustering_spec.partition_by(),
-                        group_by.iter().map(|e| e.inner()),
-                    ));
+                && !group_by.is_empty()
+                && is_partition_compatible(
+                    &input_clustering_spec.partition_by(),
+                    group_by.iter().map(|e| e.inner()),
+                );
         if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_group_by {
             return Ok(AggregateNode::new(
                 self.get_next_pipeline_node_id(),
