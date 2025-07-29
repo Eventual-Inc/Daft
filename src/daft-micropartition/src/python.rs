@@ -1229,7 +1229,7 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
 }
 
 /// TODO chore: cutover LocalPartitionSet to use this pyclass.
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
@@ -1239,11 +1239,11 @@ impl PyMicroPartitionSet {
         Ok(self.0.get_partition(&idx)?.into())
     }
 
-    fn set_partition(&mut self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
+    fn set_partition(&self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
         Ok(self.0.set_partition(idx, &part.inner)?)
     }
 
-    fn delete_partition(&mut self, idx: PartitionId) -> PyResult<()> {
+    fn delete_partition(&self, idx: PartitionId) -> PyResult<()> {
         Ok(self.0.delete_partition(&idx)?)
     }
 
