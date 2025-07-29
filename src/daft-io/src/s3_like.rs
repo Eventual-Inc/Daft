@@ -479,12 +479,10 @@ async fn provide_credentials_with_retry(
 async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
-    let region = if let Some(region_name) = &config.region_name {
-        Region::new(region_name.clone())
-    } else {
-        let region_provider = aws_config::default_provider::region::default_provider();
-        region_provider.region().await.unwrap_or(DEFAULT_REGION)
-    };
+    let region = config
+        .region_name
+        .as_ref()
+        .map(|region_name| Region::new(region_name.clone()));
 
     let credentials_provider = if config.anonymous {
         None
@@ -506,12 +504,15 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
             msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
         });
     } else {
+        let mut provider_builder =
+            aws_config::default_provider::credentials::DefaultCredentialsChain::builder();
+
         // Set region now to avoid imds
-        let default_provider =
-            aws_config::default_provider::credentials::DefaultCredentialsChain::builder()
-                .region(region.clone())
-                .build()
-                .await;
+        if let Some(region) = &region {
+            provider_builder = provider_builder.region(region.clone());
+        }
+
+        let default_provider = provider_builder.build().await;
 
         // test if there are default credentials. If not, use anonymous mode
         if provide_credentials_with_retry(&default_provider)
@@ -609,8 +610,8 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
         maybe_set_loader_value!(profile_name, &config.profile_name);
         maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
         maybe_set_loader_value!(identity_cache, identity_cache);
+        maybe_set_loader_value!(region, region);
 
-        loader = loader.region(region);
         loader = loader.retry_config(retry_config);
         loader = loader.http_client(http_client);
         loader = loader.timeout_config(timeout_config);
@@ -623,7 +624,12 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
     builder = builder.force_path_style(force_path_style);
 
-    let s3_conf = builder.build();
+    let builder_copy = builder.clone();
+    let mut s3_conf = builder.build();
+
+    if s3_conf.region().is_none() {
+        s3_conf = builder_copy.region(DEFAULT_REGION).build();
+    }
 
     Ok(s3_conf)
 }
