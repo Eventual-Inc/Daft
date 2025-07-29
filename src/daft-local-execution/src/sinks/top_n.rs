@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -147,8 +147,8 @@ impl BlockingSink for TopNSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "TopN"
+    fn name(&self) -> NodeName {
+        format!("TopN {}", self.params.limit).into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

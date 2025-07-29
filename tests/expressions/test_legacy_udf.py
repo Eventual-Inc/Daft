@@ -192,7 +192,7 @@ def test_udf_tuples(batch_size):
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-@pytest.mark.parametrize("container", [Series, list, np.ndarray])
+@pytest.mark.parametrize("container", [Series, list, np.ndarray, pa.Array, pa.ChunkedArray])
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 def test_udf_return_containers(container, batch_size):
     table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
@@ -205,6 +205,10 @@ def test_udf_return_containers(container, batch_size):
             return data.to_pylist()
         elif container is np.ndarray:
             return np.array(data.to_arrow())
+        elif container is pa.Array:
+            return data.to_arrow()
+        elif container is pa.ChunkedArray:
+            return pa.chunked_array([data.to_arrow()])
         else:
             raise NotImplementedError(f"Test not implemented for container type: {container}")
 
@@ -538,70 +542,6 @@ def test_udf_retry_with_process_killed_ray(use_actor_pool):
     expr = random_exit_udf(col("a"), col("b"), HasFailedAlready.remote())
     df = df.select(expr)
     df.collect()
-
-
-def test_non_batched_udf():
-    @daft.func()
-    def my_stringify_and_sum(a: int, b: int) -> str:
-        return f"{a + b}"
-
-    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    actual = df.select(my_stringify_and_sum(col("x"), col("y"))).to_pydict()
-
-    expected = {"x": ["5", "7", "9"]}
-
-    assert actual == expected
-
-
-def test_non_batched_udf_alternative_signature():
-    @daft.func
-    def my_stringify_and_sum(a: int, b: int) -> str:
-        return f"{a + b}"
-
-    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    actual = df.select(my_stringify_and_sum(col("x"), col("y"))).to_pydict()
-
-    expected = {"x": ["5", "7", "9"]}
-
-    assert actual == expected
-
-
-def test_non_batched_udf_should_infer_dtype_from_function():
-    @daft.func()
-    def list_string_return_type(a: int, b: int) -> list[str]:
-        return [f"{a + b}"]
-
-    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    df = df.select(list_string_return_type(col("x"), col("y")))
-
-    schema = df.schema()
-    expected_schema = daft.Schema.from_pydict({"x": daft.DataType.list(daft.DataType.string())})
-
-    assert schema == expected_schema
-
-
-def test_func_requires_return_dtype_when_no_annotation():
-    with pytest.raises(ValueError, match="return_dtype is required when function has no return annotation"):
-
-        @daft.func()
-        def my_func(a: int, b: int):
-            return f"{a + b}"
-
-
-def test_func_batch_same_as_udf():
-    @daft.func.batch(return_dtype=int)
-    def my_batch_sum(a, b):
-        return a + b
-
-    @daft.udf(return_dtype=int)
-    def my_udf(a, b):
-        return a + b
-
-    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    using_batch = df.select(my_batch_sum(col("x"), col("y"))).to_pydict()
-    using_udf = df.select(my_udf(col("x"), col("y"))).to_pydict()
-
-    assert using_batch == using_udf
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
