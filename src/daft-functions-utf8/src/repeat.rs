@@ -8,7 +8,7 @@ use daft_core::{
     with_match_integer_daft_types,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use num_traits::NumCast;
@@ -73,7 +73,7 @@ impl ScalarUDF for Repeat {
 
 #[must_use]
 pub fn utf8_repeat(input: ExprRef, ntimes: ExprRef) -> ExprRef {
-    ScalarFunction::new(Repeat {}, vec![input, ntimes]).into()
+    ScalarFn::builtin(Repeat {}, vec![input, ntimes]).into()
 }
 
 fn repeat_impl<I>(arr: &Utf8Array, n: &DataArray<I>) -> DaftResult<Utf8Array>

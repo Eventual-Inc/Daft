@@ -2361,27 +2361,40 @@ Note that if the data you have returned is not castable to the return_dtype that
 
 ### Class UDFs
 
-UDFs can also be created on Classes, which allow for initialization on some expensive state that can be shared between invocations of the class, for example downloading data or creating a model.
+UDFs can also be created on Python classes. With a class UDF, you can set the `concurrency` argument to share the initialization on expensive state between invocations of the UDF, for example downloading data or creating a model.
 
 === "🐍 Python"
     ``` python
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.udf(
+        return_dtype=daft.DataType.int64(),
+        concurrency=4,  # initialize 4 instances of the UDF to run across your data
+    )
     class RunModel:
 
-        def __init__(self):
+        def __init__(self, model_name = "meta-llama/Llama-4-Scout-17B-16E-Instruct"):
             # Perform expensive initializations
-            self._model = create_model()
+            self._model = create_model(model_name)
 
         def __call__(self, features_col):
             return self._model(features_col)
     ```
 
-Running Class UDFs are exactly the same as running their functional cousins.
+Class UDFs can be used the exact same way as function UDFs:
 
 === "🐍 Python"
     ``` python
     df = df.with_column("image_classifications", RunModel(df["images"]))
     ```
+
+In addition, you can pass in arguments to the `__init__` method using `.with_init_args`:
+
+=== "🐍 Python"
+    ``` python
+    RunMistral = RunModel.with_init_args(model_name="mistralai/Mistral-7B-Instruct-v0.1")
+    df = df.with_column("image_classifications", RunMistral(df["images"]))
+    ```
+
+See the `TextEmbedder` UDF in our [document processing tutorial](resources/tutorials.md#document-processing) for a complete example of using a class UDF with concurrency.
 
 ### Resource Requests
 
