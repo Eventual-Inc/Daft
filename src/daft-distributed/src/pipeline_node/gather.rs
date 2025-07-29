@@ -9,7 +9,7 @@ use futures::TryStreamExt;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
+        make_in_memory_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext,
     },
     scheduling::{
@@ -80,7 +80,7 @@ impl GatherNode {
             .await?;
 
         let self_clone = self.clone();
-        let task = make_in_memory_scan_from_materialized_outputs(
+        let task = make_in_memory_task_from_materialized_outputs(
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
             &(self_clone as Arc<dyn DistributedPipelineNode>),

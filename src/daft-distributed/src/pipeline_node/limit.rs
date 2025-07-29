@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
+        make_in_memory_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext,
     },
     scheduling::{
@@ -81,7 +81,7 @@ impl LimitNode {
                 let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
                     Ordering::Less => {
                         remaining_limit -= num_rows;
-                        let task = make_in_memory_scan_from_materialized_outputs(
+                        let task = make_in_memory_task_from_materialized_outputs(
                             TaskContext::from((&self.context, task_id_counter.next())),
                             vec![next_input],
                             &(self.clone() as Arc<dyn DistributedPipelineNode>),
@@ -89,7 +89,7 @@ impl LimitNode {
                         (task, false)
                     }
                     Ordering::Equal => {
-                        let task = make_in_memory_scan_from_materialized_outputs(
+                        let task = make_in_memory_task_from_materialized_outputs(
                             TaskContext::from((&self.context, task_id_counter.next())),
                             vec![next_input],
                             &(self.clone() as Arc<dyn DistributedPipelineNode>),
