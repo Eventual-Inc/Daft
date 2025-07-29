@@ -146,7 +146,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             if input_data.is_empty() {
-                                return RecordBatch::empty(Some(params.original_schema.clone()));
+                                return Ok(RecordBatch::empty(Some(
+                                    params.original_schema.clone(),
+                                )));
                             }
 
                             let groupby_table =
