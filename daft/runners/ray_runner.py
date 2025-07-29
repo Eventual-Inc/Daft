@@ -145,11 +145,15 @@ def _glob_path_into_file_infos(
 ) -> FileInfos:
     file_infos = FileInfos()
     file_format = file_format_config.file_format() if file_format_config is not None else None
-    for path in paths:
-        path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
-        if len(path_file_infos) == 0:
-            raise FileNotFoundError(f"No files found at {path}")
-        file_infos.extend(path_file_infos)
+    for path in set(paths):
+        try:
+            path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
+            file_infos.merge(path_file_infos)
+        except FileNotFoundError:
+            logger.debug("%s is not found.", path)
+
+    if len(file_infos) == 0:
+        raise FileNotFoundError(f"No files found at {','.join(paths)}")
 
     return file_infos
 

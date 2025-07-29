@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
@@ -14,7 +14,7 @@ from daft.runners.partitioning import LocalPartitionSet
 
 
 @PublicAPI
-def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame:
+def from_glob_path(path: Union[str, list[str]], io_config: Optional[IOConfig] = None) -> DataFrame:
     """Creates a DataFrame of file paths and other metadata from a glob path.
 
     This method supports wildcards:
@@ -28,24 +28,31 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
 
     1. path: the path to the file/directory
     2. size: size of the object in bytes
-    3. type: either "file" or "directory"
+    3. rows: the total rows of parquet object, it's None for other formats.
 
     Args:
-        path (str): Path to files on disk (allows wildcards).
+        path (str|list): Path to files on disk (allows wildcards).
         io_config (IOConfig): Configuration to use when running IO with remote services
 
     Returns:
         DataFrame: DataFrame containing the path to each file as a row, along with other metadata parsed from the provided filesystem.
 
+    Raises:
+        FileNotFoundError: If none of files found with the glob paths.
+
     Examples:
         >>> df = daft.from_glob_path("/path/to/files/*.jpeg")
         >>> df = daft.from_glob_path("/path/to/files/**/*.jpeg")
         >>> df = daft.from_glob_path("/path/to/files/**/image-?.jpeg")
+        >>> df = daft.from_glob_path(["/path/to/files/*.jpeg", "/path/to/others/*.jpeg"])
     """
+    if isinstance(path, str):
+        path = [path]
+
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
     runner_io = context.get_or_create_runner().runner_io()
-    file_infos = runner_io.glob_paths_details([path], io_config=io_config)
+    file_infos = runner_io.glob_paths_details(path, io_config=io_config)
     file_infos_table = MicroPartition._from_pyrecordbatch(_PyRecordBatch.from_file_infos(file_infos))
     partition = LocalPartitionSet()
     partition.set_partition_from_table(0, file_infos_table)
