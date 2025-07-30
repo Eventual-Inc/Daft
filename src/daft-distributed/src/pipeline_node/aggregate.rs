@@ -238,10 +238,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
-    ) -> Arc<dyn DistributedPipelineNode> {
-        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone());
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone())?;
 
-        AggregateNode::new(
+        Ok(AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
@@ -250,7 +250,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             output_schema,
             shuffle,
         )
-        .arced()
+        .arced())
     }
 
     /// Generate PipelineNodes for aggregates with some pre-aggregation.
@@ -261,7 +261,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
-    ) -> Arc<dyn DistributedPipelineNode> {
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
@@ -278,7 +278,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             logical_node_id,
             initial_agg,
             split_details.second_stage_group_by.clone(),
-        );
+        )?;
 
         // Third stage re-agg to compute the final result
         let final_aggregation = AggregateNode::new(
@@ -293,7 +293,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         .arced();
 
         // Last stage project to get the final result
-        ProjectNode::new(
+        Ok(ProjectNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
@@ -301,7 +301,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             output_schema,
             final_aggregation,
         )
-        .arced()
+        .arced())
     }
 
     /// Generate PipelineNodes for aggregates
@@ -324,15 +324,15 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .iter()
                 .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
         {
-            Ok(self.gen_without_pre_agg(
+            self.gen_without_pre_agg(
                 input_node,
                 logical_node_id,
                 group_by,
                 aggregations,
                 output_schema,
-            ))
+            )
         } else {
-            Ok(self.gen_with_pre_agg(input_node, logical_node_id, split_details, output_schema))
+            self.gen_with_pre_agg(input_node, logical_node_id, split_details, output_schema)
         }
     }
 }
