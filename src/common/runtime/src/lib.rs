@@ -183,7 +183,7 @@ fn init_compute_runtime(num_worker_threads: usize) -> RuntimeRef {
             .thread_name_fn(move || {
                 static COMPUTE_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = COMPUTE_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("Compute-Thread-{}", id)
+                format!("DAFTCPU-{}", id)
             })
             .max_blocking_threads(1);
         Runtime::new(builder.build().unwrap(), PoolType::Compute)
@@ -205,7 +205,7 @@ fn init_io_runtime(multi_thread: bool) -> RuntimeRef {
             .thread_name_fn(move || {
                 static COMPUTE_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = COMPUTE_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("IO-Thread-{}", id)
+                format!("DAFTIO-{}", id)
             });
         Runtime::new(builder.build().unwrap(), PoolType::IO)
     })
