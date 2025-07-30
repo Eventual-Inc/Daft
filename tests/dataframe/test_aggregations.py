@@ -543,7 +543,13 @@ def test_agg_pyobjects_list():
 
 
 def test_groupby_agg_pyobjects_list():
-    objects = [CustomObject(val=0), CustomObject(val=1), None, None, CustomObject(val=2)]
+    objects = [
+        CustomObject(val=0),
+        CustomObject(val=1),
+        None,
+        None,
+        CustomObject(val=2),
+    ]
     df = daft.from_pydict({"objects": objects, "groups": [1, 2, 1, 2, 1]})
     df = df.into_partitions(2)
     df = (
@@ -575,7 +581,10 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
     with daft.execution_config_ctx(shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions):
         for partition_size in [1, min_partitions, min_partitions + 1]:
             df = daft.from_pydict(
-                {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}
+                {
+                    "group": [i for i in range(min_partitions + 1)],
+                    "value": [i for i in range(min_partitions + 1)],
+                }
             )
             df = df.into_partitions(partition_size)
 
@@ -690,7 +699,12 @@ def test_agg_with_non_agg_expr_groupby(make_df, repartition_nparts, with_morsel_
     )
 
     res = daft_df.to_pydict()
-    assert res == {"group": [1, 2, 3], "id": [6, 9, 12], "values_mean": [5, 6, 7], "sum_of_means": [7, 9, 11]}
+    assert res == {
+        "group": [1, 2, 3],
+        "id": [6, 9, 12],
+        "values_mean": [5, 6, 7],
+        "sum_of_means": [7, 9, 11],
+    }
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -789,7 +803,13 @@ def test_agg_set_duplicates_across_partitions(make_df, repartition_nparts, with_
     daft_df = make_df(
         {
             "group": [1, 1, 1, 1, 1],
-            "values": [1, 1, 1, 1, 2],  # Multiple 1s to ensure duplicates across partitions
+            "values": [
+                1,
+                1,
+                1,
+                1,
+                2,
+            ],  # Multiple 1s to ensure duplicates across partitions
         },
         repartition=repartition_nparts,
     )
@@ -803,7 +823,10 @@ def test_agg_set_duplicates_across_partitions(make_df, repartition_nparts, with_
     # The result should be [1, 2] or [2, 1], order doesn't matter
     _assert_all_hashable(global_set, "test_agg_set_duplicates_across_partitions (global)")
     assert len(global_set) == 2, f"Expected 2 unique values, got {len(global_set)} values: {global_set}"
-    assert set(global_set) == {1, 2}, f"Expected set {{1, 2}}, got set {set(global_set)}"
+    assert set(global_set) == {
+        1,
+        2,
+    }, f"Expected set {{1, 2}}, got set {set(global_set)}"
 
     # Groupby aggregation
     group_result = daft_df.groupby("group").agg([col("values").agg_set().alias("set")])
@@ -838,7 +861,14 @@ def test_agg_set_duplicates_across_partitions(make_df, repartition_nparts, with_
         "empty",
     ],
 )
-def test_bool_agg_global(make_df, repartition_nparts, with_morsel_size, input_values, expected_and, expected_or):
+def test_bool_agg_global(
+    make_df,
+    repartition_nparts,
+    with_morsel_size,
+    input_values,
+    expected_and,
+    expected_or,
+):
     df = make_df({"bool_col": input_values}, repartition=repartition_nparts)
 
     res = df.agg(col("bool_col").bool_and())
@@ -871,11 +901,17 @@ def test_bool_agg_groupby(make_df, repartition_nparts, with_morsel_size):
 
     # Test bool_and with groups
     res = df.groupby("group").agg(col("bool_col").bool_and()).sort("group")
-    assert res.to_pydict() == {"group": [1, 2, 3, 4], "bool_col": [True, False, None, True]}
+    assert res.to_pydict() == {
+        "group": [1, 2, 3, 4],
+        "bool_col": [True, False, None, True],
+    }
 
     # Test bool_or with groups
     res = df.groupby("group").agg(col("bool_col").bool_or()).sort("group")
-    assert res.to_pydict() == {"group": [1, 2, 3, 4], "bool_col": [True, False, None, True]}
+    assert res.to_pydict() == {
+        "group": [1, 2, 3, 4],
+        "bool_col": [True, False, None, True],
+    }
 
 
 def test_bool_agg_type_error(make_df):
@@ -898,7 +934,18 @@ def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size)
         {
             "group1": ["A", "A", "A", "B", "B", "C", "C", "C", "D", "D"],
             "group2": ["X", "X", "Y", "X", "Y", "X", "Y", "Y", "X", "Y"],
-            "name": ["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack"],
+            "name": [
+                "Alice",
+                "Bob",
+                "Charlie",
+                "David",
+                "Eve",
+                "Frank",
+                "Grace",
+                "Henry",
+                "Ivy",
+                "Jack",
+            ],
         },
         repartition=repartition_nparts,
     )
@@ -930,8 +977,35 @@ def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size)
     expected = {
         "group2": ["X", "X", "X", "X", "Y", "Y", "Y", "Y"],
         "group1": ["A", "B", "C", "D", "A", "B", "C", "D"],
-        "total_value": [500, 125, 225, 180, 200, 175, 1100, 220],  # Sum of values per combination
+        "total_value": [
+            500,
+            125,
+            225,
+            180,
+            200,
+            175,
+            1100,
+            220,
+        ],  # Sum of values per combination
         "count": [4, 1, 1, 1, 1, 1, 4, 1],  # Count of names per combination
     }
 
     assert sorted_result == expected
+
+
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    reason="Legacy ray runner does not support skipping shuffles on already partitioned data",
+)
+def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df = df.repartition(2, "a")
+    df = df.groupby("a").agg(col("b").sum())
+
+    df.explain(True)
+    captured = capsys.readouterr()
+
+    # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + final
+    assert (
+        captured.out.count("Repartition") == 3
+    ), f"Expected 'Repartition' to appear 3 times, got {captured.out.count('Repartition')}\n{captured.out}"
