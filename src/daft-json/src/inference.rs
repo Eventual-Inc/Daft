@@ -14,6 +14,23 @@ const ITEM_NAME: &str = "item";
 /// Infer Arrow2 schema from JSON Value record.
 pub fn infer_records_schema(record: &BorrowedValue) -> Result<Schema> {
     let fields = match record {
+        BorrowedValue::Array(array) => {
+            let dtype = infer_array(array.as_slice())?;
+
+            if let DataType::List(f) = dtype {
+                if let DataType::Struct(fields) = f.data_type {
+                    Ok(fields.into())
+                } else {
+                    Err(Error::ExternalFormat(
+                        "Deserialized JSON value is not a Struct record".to_string(),
+                    ))
+                }
+            } else {
+                Err(Error::ExternalFormat(
+                    "Deserialized JSON value is not an Array record".to_string(),
+                ))
+            }
+        }
         BorrowedValue::Object(record) => record
             .iter()
             .map(|(name, value)| {

@@ -55,52 +55,48 @@ impl PyMicroPartition {
         let tables = py.allow_threads(|| {
             let io_stats =
                 IOStatsContext::new(format!("PyMicroPartition::get_column_by_name: {name}"));
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
-        let columns = tables
-            .iter()
-            .map(|t| t.get_column(index))
-            .collect::<Vec<_>>();
-        match columns.as_slice() {
-            [] => Ok(Series::empty(name, &self.inner.schema.get_field(name)?.dtype).into()),
-            columns => Ok(Series::concat(columns)?.into()),
+        match tables {
+            None => Ok(Series::empty(name, &self.inner.schema.get_field(name)?.dtype).into()),
+            Some(t) => Ok(t.get_column(index).clone().into()),
         }
     }
 
     pub fn get_column(&self, idx: usize, py: Python) -> PyResult<PySeries> {
         let tables = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("PyMicroPartition::get_column: {idx}"));
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
 
-        if tables.is_empty() {
-            let field = &self.inner.schema()[idx];
-            Ok(Series::empty(&field.name, &field.dtype).into())
-        } else {
-            let columns = tables.iter().map(|t| t.get_column(idx)).collect::<Vec<_>>();
-
-            Ok(Series::concat(&columns)?.into())
+        match tables {
+            None => {
+                let field = &self.inner.schema()[idx];
+                Ok(Series::empty(&field.name, &field.dtype).into())
+            }
+            Some(t) => Ok(t.get_column(idx).clone().into()),
         }
     }
 
     pub fn columns(&self, py: Python) -> PyResult<Vec<PySeries>> {
         let tables = py.allow_threads(|| {
             let io_stats = IOStatsContext::new("PyMicroPartition::columns");
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
 
-        (0..self.inner.schema().len())
-            .map(|idx| {
-                if tables.is_empty() {
-                    let field = &self.inner.schema()[idx];
-                    Ok(Series::empty(&field.name, &field.dtype).into())
-                } else {
-                    let columns = tables.iter().map(|t| t.get_column(idx)).collect::<Vec<_>>();
-
-                    Ok(Series::concat(&columns)?.into())
-                }
-            })
-            .collect()
+        match tables {
+            None => {
+                let series = self
+                    .inner
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|f| Series::empty(&f.name, &f.dtype).into())
+                    .collect::<Vec<_>>();
+                Ok(series)
+            }
+            Some(t) => Ok(t.columns().iter().map(|s| s.clone().into()).collect()),
+        }
     }
 
     pub fn get_record_batches(&self, py: Python) -> PyResult<Vec<PyRecordBatch>> {
@@ -196,14 +192,11 @@ impl PyMicroPartition {
     pub fn to_record_batch(&self, py: Python) -> PyResult<PyRecordBatch> {
         let concatted = py.allow_threads(|| {
             let io_stats = IOStatsContext::new("PyMicroPartition::to_record_batch");
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
-        match &concatted.as_ref()[..] {
-            [] => PyRecordBatch::empty(Some(self.schema()?)),
-            [batch] => Ok(PyRecordBatch {
-                record_batch: batch.clone(),
-            }),
-            [..] => unreachable!("concat_or_get should return one or none"),
+        match concatted {
+            None => Ok(PyRecordBatch::empty(Some(self.schema()?))),
+            Some(record_batch) => Ok(PyRecordBatch { record_batch }),
         }
     }
 

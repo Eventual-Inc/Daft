@@ -398,8 +398,7 @@ pub mod pylib {
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
 
             let pspec = PartitionSpec {
-                keys: partition_values
-                    .map_or_else(|| RecordBatch::empty(None), |p| p.record_batch),
+                keys: partition_values.map_or_else(|| RecordBatch::empty(None), |p| p.record_batch),
             };
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))

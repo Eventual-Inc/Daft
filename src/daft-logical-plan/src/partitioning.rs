@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use daft_dsl::{functions::FunctionArgs, Column, ExprRef, ResolvedColumn};
+use daft_dsl::{
+    functions::{scalar::ScalarFn, FunctionArgs},
+    python_udf::{PyScalarFn, RowWisePyFn},
+    Column, ExprRef, ResolvedColumn,
+};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -268,7 +272,7 @@ fn translate_clustering_spec_expr(
             }
             .into())
         }
-        Expr::ScalarFunction(func) => {
+        Expr::ScalarFn(ScalarFn::Builtin(func)) => {
             let mut func = func.clone();
             let new_inputs = func
                 .inputs
@@ -279,7 +283,7 @@ fn translate_clustering_spec_expr(
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             func.inputs = FunctionArgs::new_unchecked(new_inputs);
-            Ok(Expr::ScalarFunction(func).into())
+            Ok(func.into())
         }
         Expr::Not(child) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
@@ -334,6 +338,27 @@ fn translate_clustering_spec_expr(
             let expr = translate_clustering_spec_expr(expr, old_colname_to_new_colname)?;
 
             Ok(expr.in_subquery(subquery.clone()))
+        }
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+            function_name: name,
+            inner: func,
+            return_dtype,
+            original_args,
+            args: children,
+        }))) => {
+            let new_children = children
+                .iter()
+                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
+                PyScalarFn::RowWise(RowWisePyFn {
+                    function_name: name.clone(),
+                    inner: func.clone(),
+                    return_dtype: return_dtype.clone(),
+                    original_args: original_args.clone(),
+                    args: new_children,
+                }),
+            ))))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
         Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),

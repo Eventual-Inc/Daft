@@ -439,7 +439,15 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 
     let scheme = url.scheme().to_lowercase();
     match scheme.as_ref() {
-        "file" => Ok((SourceType::File, fixed_input)),
+        "file" => {
+            // Normalize file:/ to file:/// format for consistency
+            if input.starts_with("file:/") && !input.starts_with("file://") {
+                let normalized = input.replacen("file:/", "file:///", 1);
+                Ok((SourceType::File, Cow::Owned(normalized)))
+            } else {
+                Ok((SourceType::File, fixed_input))
+            }
+        }
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
         "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),

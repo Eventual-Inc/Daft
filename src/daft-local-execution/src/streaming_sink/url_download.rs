@@ -1,27 +1,30 @@
 use std::sync::Arc;
 
+use arrow_array::builder::LargeBinaryBuilder;
 use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
-    prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef, UInt64Array},
+    prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef},
     series::IntoSeries,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_uri::{download::UrlDownloadArgsDefault, UrlDownloadArgs};
-use daft_io::{get_io_client, IOClient, IOStatsContext};
+use daft_io::{get_io_client, IOClient};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use tokio::task::JoinSet;
 use tokio_util::bytes::Bytes;
 use tracing::{instrument, Span};
-use arrow_array::builder::{ArrayBuilder, LargeBinaryBuilder, LargeStringBuilder};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
     StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState,
 };
 use crate::{
-    dispatcher::{DispatchSpawner, UnorderedDispatcher}, streaming_sink::base::build_output, ExecutionRuntimeContext, ExecutionTaskSpawner
+    dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    pipeline::NodeName,
+    streaming_sink::base::build_output,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 const IN_FLIGHT_SCALE_FACTOR: usize = 32;
@@ -54,7 +57,6 @@ impl UrlDownloadSinkState {
         // Generate output schema initially
         let mut output_schema = input_schema.as_ref().clone();
         output_schema.append(Field::new(output_column.as_str(), DataType::Binary));
-        
 
         Self {
             args,
@@ -65,7 +67,7 @@ impl UrlDownloadSinkState {
             io_client: get_io_client(multi_thread, io_config).expect("Failed to get IO client"),
 
             in_flight_downloads: JoinSet::new(),
-            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
+            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema))),
             submitted_downloads: 0,
         }
     }
@@ -98,12 +100,7 @@ impl UrlDownloadSinkState {
 
                 let handle = self.io_runtime_handle.spawn(async move {
                     let contents = io_client
-                        .single_url_download(
-                            row_idx,
-                            url_val,
-                            raise_error_on_failure,
-                            None,
-                        )
+                        .single_url_download(row_idx, url_val, raise_error_on_failure, None)
                         .await?;
 
                     Ok((row_idx, contents))
@@ -144,7 +141,9 @@ impl UrlDownloadSinkState {
             completed_contents.append_option(contents);
         }
 
-        let completed_contents = Arc::new(completed_contents.finish());
+        let completed_contents =
+            BinaryArray::from((self.output_column.as_str(), completed_contents.finish()))
+                .into_series();
 
         build_output(
             self.all_inputs.clone(),
@@ -270,16 +269,26 @@ impl StreamingSink for UrlDownloadSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "URL Download"
+    fn name(&self) -> NodeName {
+        "URL Download".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
         vec![
-            format!("URL Download: {} -> {}", self.args.input, self.output_column),
+            format!(
+                "URL Download: {} -> {}",
+                self.args.input, self.output_column
+            ),
             format!("Multi-thread: {}", self.args.multi_thread),
             format!("Max Connections: {}", self.args.max_connections),
-            format!("On Failure: {}", if self.args.raise_error_on_failure { "raise" } else { "null" }),
+            format!(
+                "On Failure: {}",
+                if self.args.raise_error_on_failure {
+                    "raise"
+                } else {
+                    "null"
+                }
+            ),
         ]
     }
 

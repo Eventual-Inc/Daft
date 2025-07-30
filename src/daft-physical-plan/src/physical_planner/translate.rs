@@ -15,7 +15,7 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::{agg::merge_mean, python::try_get_concurrency},
+    functions::agg::merge_mean,
     is_partition_compatible,
     join::normalize_join_keys,
     lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
@@ -126,6 +126,7 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::UDFProject(LogicalUDFProject {
             project,
             passthrough_columns,
+            udf_properties,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -134,10 +135,11 @@ pub(super) fn translate_single_logical_node(
                 .chain(std::iter::once(&project.clone()))
                 .cloned()
                 .collect();
-            if try_get_concurrency(project).is_some() {
+            if udf_properties.is_actor_pool_udf() {
                 Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                     input_physical,
                     projection,
+                    udf_properties.clone(),
                 )?)
                 .arced())
             } else {

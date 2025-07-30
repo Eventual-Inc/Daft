@@ -47,7 +47,7 @@ pub struct UrlDownloadArgsDefault<T> {
 
 impl<T> UrlDownloadArgs<T> {
     pub fn unwrap_or_default(self) -> DaftResult<UrlDownloadArgsDefault<T>> {
-        let UrlDownloadArgs {
+        let Self {
             input,
             multi_thread,
             io_config,

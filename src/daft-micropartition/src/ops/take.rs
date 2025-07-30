@@ -15,17 +15,13 @@ impl MicroPartition {
             return Ok(RecordBatch::empty(Some(self.schema.clone())));
         }
 
-        let tables = self.concat_or_get(io_stats)?;
-        match tables.as_slice() {
-            // Fallback onto `[empty_table]` behavior
-            [] => {
+        let tables = self.concat_or_get_update(io_stats)?;
+        match tables {
+            None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 empty_table.take(idx)
             }
-            [single] => {
-                single.take(idx)
-            }
-            _ => unreachable!(),
+            Some(single) => single.take(idx),
         }
     }
 
@@ -43,9 +39,9 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let taken = single.sample_by_fraction(fraction, with_replacement, seed)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -53,7 +49,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 
@@ -71,9 +66,9 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let taken = single.sample(size, with_replacement, seed)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -81,7 +76,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 
@@ -93,9 +87,9 @@ impl MicroPartition {
         }
 
         let tables = self.concat_or_get(io_stats)?;
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let taken = single.quantiles(num)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -103,7 +97,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 }

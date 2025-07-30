@@ -10,6 +10,7 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    pipeline::NodeName,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -99,8 +100,8 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "MonotonicallyIncreasingId"
+    fn name(&self) -> NodeName {
+        "MonotonicallyIncreasingId".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

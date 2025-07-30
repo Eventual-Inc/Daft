@@ -30,18 +30,28 @@ pub struct UrlUploadArgs<T> {
     pub io_config: Option<IOConfig>,
 }
 
-#[typetag::serde]
-impl ScalarUDF for UrlUpload {
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let UrlUploadArgs {
+#[derive(Debug, Clone)]
+pub struct UrlUploadArgsDefault<T> {
+    pub input: T,
+    pub location: T,
+    pub max_connections: usize,
+    pub raise_error_on_failure: bool,
+    pub multi_thread: bool,
+    pub is_single_folder: bool,
+    pub io_config: Arc<IOConfig>,
+}
+
+impl<T> UrlUploadArgs<T> {
+    pub fn unwrap_or_default(self) -> DaftResult<UrlUploadArgsDefault<T>> {
+        let Self {
             input,
             location,
+            is_single_folder,
+            multi_thread,
+            io_config,
             max_connections,
             on_error,
-            multi_thread,
-            is_single_folder,
-            io_config,
-        } = inputs.try_into()?;
+        } = self;
 
         let max_connections = max_connections.unwrap_or(32);
         let on_error = on_error.unwrap_or_else(|| "raise".to_string());
@@ -60,6 +70,32 @@ impl ScalarUDF for UrlUpload {
             }
         };
 
+        Ok(UrlUploadArgsDefault {
+            input,
+            location,
+            is_single_folder,
+            multi_thread,
+            io_config: Arc::new(io_config),
+            max_connections,
+            raise_error_on_failure,
+        })
+    }
+}
+
+#[typetag::serde]
+impl ScalarUDF for UrlUpload {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let args: UrlUploadArgs<Series> = inputs.try_into()?;
+        let UrlUploadArgsDefault {
+            input,
+            location,
+            max_connections,
+            raise_error_on_failure,
+            multi_thread,
+            is_single_folder,
+            io_config,
+        } = args.unwrap_or_default()?;
+
         url_upload(
             &input,
             &location,
@@ -67,7 +103,7 @@ impl ScalarUDF for UrlUpload {
             raise_error_on_failure,
             multi_thread,
             is_single_folder,
-            Arc::new(io_config),
+            io_config,
             None,
         )
     }

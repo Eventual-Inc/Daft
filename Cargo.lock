@@ -2427,6 +2427,7 @@ dependencies = [
 name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "arrow2",
  "bincode",
  "chrono",
@@ -2786,6 +2787,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "uuid 1.17.0",
 ]
 
 [[package]]

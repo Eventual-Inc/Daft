@@ -11,8 +11,8 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => {
+        match tables {
+            None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 let agged = empty_table.agg(to_agg, group_by)?;
                 Ok(Self::new_loaded(
@@ -21,7 +21,7 @@ impl MicroPartition {
                     None,
                 ))
             }
-            [t] => {
+            Some(t) => {
                 let agged = t.agg(to_agg, group_by)?;
                 Ok(Self::new_loaded(
                     agged.schema.clone(),
@@ -29,7 +29,6 @@ impl MicroPartition {
                     None,
                 ))
             }
-            _ => unreachable!(),
         }
     }
 
@@ -43,8 +42,8 @@ impl MicroPartition {
         let io_stats = IOStatsContext::new("MicroPartition::dedup");
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => {
+        match tables {
+            None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 Ok(Self::new_loaded(
                     empty_table.schema.clone(),
@@ -52,7 +51,7 @@ impl MicroPartition {
                     None,
                 ))
             }
-            [t] => {
+            Some(t) => {
                 let deduped = t.dedup(columns)?;
                 Ok(Self::new_loaded(
                     deduped.schema.clone(),
@@ -60,7 +59,6 @@ impl MicroPartition {
                     None,
                 ))
             }
-            _ => unreachable!(),
         }
     }
 }

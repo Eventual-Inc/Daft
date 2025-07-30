@@ -68,7 +68,7 @@ impl WrappedUDFClass {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct PythonUDF {
+pub struct LegacyPythonUDF {
     pub name: Arc<String>,
     pub func: MaybeInitializedUDF,
     pub bound_args: RuntimePyObject,
@@ -80,7 +80,7 @@ pub struct PythonUDF {
     pub use_process: Option<bool>,
 }
 
-impl PythonUDF {
+impl LegacyPythonUDF {
     #[cfg(feature = "test-utils")]
     pub fn new_testing_udf() -> Self {
         Self {
@@ -114,7 +114,7 @@ pub fn udf(
     use_process: Option<bool>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
-        func: super::FunctionExpr::Python(PythonUDF {
+        func: super::FunctionExpr::Python(LegacyPythonUDF {
             name: name.to_string().into(),
             func: MaybeInitializedUDF::Uninitialized { inner, init_args },
             bound_args,
@@ -142,7 +142,7 @@ pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
                 .apply(|e| match e.as_ref() {
                     Expr::Function {
                         func:
-                            FunctionExpr::Python(PythonUDF {
+                            FunctionExpr::Python(LegacyPythonUDF {
                                 resource_request, ..
                             }),
                         ..
@@ -181,7 +181,7 @@ pub fn get_concurrency<'a, E: Into<&'a ExprRef>>(exprs: impl IntoIterator<Item =
         expr.into()
             .apply(|e| match e.as_ref() {
                 Expr::Function {
-                    func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
+                    func: FunctionExpr::Python(LegacyPythonUDF { concurrency, .. }),
                     ..
                 } => {
                     found_actor_pool_udf = true;
@@ -203,7 +203,7 @@ pub fn try_get_concurrency(expr: &ExprRef) -> Option<usize> {
     let mut projection_concurrency = None;
     expr.apply(|e| match e.as_ref() {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
+            func: FunctionExpr::Python(LegacyPythonUDF { concurrency, .. }),
             ..
         } => {
             projection_concurrency = *concurrency;
@@ -222,7 +222,7 @@ pub fn try_get_batch_size_from_udf(expr: &ExprRef) -> DaftResult<Option<usize>> 
     let mut projection_batch_size = None;
     expr.apply(|e| match e.as_ref() {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+            func: FunctionExpr::Python(LegacyPythonUDF { batch_size, .. }),
             ..
         } => {
             projection_batch_size = Some(*batch_size);
@@ -246,7 +246,7 @@ pub fn get_use_process(expr: &ExprRef) -> DaftResult<Option<bool>> {
     let mut finder = None;
     expr.apply(|e| match e.as_ref() {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF { use_process, .. }),
+            func: FunctionExpr::Python(LegacyPythonUDF { use_process, .. }),
             ..
         } => {
             finder = Some(*use_process);
@@ -288,7 +288,7 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
         Expr::Function {
             func:
                 FunctionExpr::Python(
-                    python_udf @ PythonUDF {
+                    python_udf @ LegacyPythonUDF {
                         func: MaybeInitializedUDF::Uninitialized { inner, init_args },
                         ..
                     },
@@ -300,7 +300,7 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
             })?;
 
             let initialized_expr = Expr::Function {
-                func: FunctionExpr::Python(PythonUDF {
+                func: FunctionExpr::Python(LegacyPythonUDF {
                     func: MaybeInitializedUDF::Initialized(initialized_func.into()),
                     ..python_udf.clone()
                 }),
@@ -315,21 +315,70 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
 }
 
 /// Get the names of all UDFs in expression
-pub fn get_udf_names(expr: &ExprRef) -> Vec<String> {
-    let mut names = Vec::new();
+pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
+    let mut udf_name = None;
 
     expr.apply(|e| {
         if let Expr::Function {
-            func: FunctionExpr::Python(PythonUDF { name, .. }),
+            func: FunctionExpr::Python(LegacyPythonUDF { name, .. }),
             ..
         } = e.as_ref()
         {
-            names.push(name.to_string());
+            udf_name = Some(name.as_ref().clone());
+            return Ok(TreeNodeRecursion::Stop);
         }
 
         Ok(TreeNodeRecursion::Continue)
     })
     .unwrap();
 
-    names
+    udf_name
+}
+
+/// UDF name and settings
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct UDFProperties {
+    pub name: String,
+    pub resource_request: Option<ResourceRequest>,
+    pub batch_size: Option<usize>,
+    pub concurrency: Option<usize>,
+    pub use_process: Option<bool>,
+}
+
+impl UDFProperties {
+    pub fn is_actor_pool_udf(&self) -> bool {
+        self.concurrency.is_some()
+    }
+}
+
+pub fn get_udf_properties(expr: &ExprRef) -> UDFProperties {
+    let mut udf_properties = None;
+
+    expr.apply(|e| {
+        if let Expr::Function {
+            func:
+                FunctionExpr::Python(LegacyPythonUDF {
+                    name,
+                    resource_request,
+                    batch_size,
+                    concurrency,
+                    use_process,
+                    ..
+                }),
+            ..
+        } = e.as_ref()
+        {
+            udf_properties = Some(UDFProperties {
+                name: name.as_ref().clone(),
+                resource_request: resource_request.clone(),
+                batch_size: *batch_size,
+                concurrency: *concurrency,
+                use_process: *use_process,
+            });
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })
+    .unwrap();
+
+    udf_properties.expect("get_udf_properties expects exactly one UDF in expression")
 }

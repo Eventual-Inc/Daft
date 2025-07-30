@@ -4,8 +4,10 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
-use daft_core::{prelude::{SchemaRef, UInt64Array}, series::{IntoSeries, Series}};
-use daft_io::IOStatsContext;
+use daft_core::{
+    prelude::{SchemaRef, UInt64Array},
+    series::{IntoSeries, Series},
+};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -17,10 +19,12 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler},
+    runtime_stats::{
+        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 
@@ -33,14 +37,11 @@ pub fn build_output(
     output_schema: SchemaRef,
 ) -> DaftResult<RecordBatch> {
     if output_row_idxs.is_empty() {
-        return RecordBatch::empty(Some(output_schema.clone()));
+        return Ok(RecordBatch::empty(Some(output_schema)));
     }
 
     let output_row_idxs = UInt64Array::from(("idxs", output_row_idxs)).into_series();
-    let io_stats = IOStatsContext::new("StreamingSinkState::build_output");
-    let original_rows = all_inputs.take(&output_row_idxs)?.concat_or_get(io_stats)?;
-    let original_rows = &original_rows[0];
-
+    let original_rows = all_inputs.take(&output_row_idxs)?;
     let output = original_rows.append_column(output_values)?;
     Ok(output)
 }
@@ -89,7 +90,7 @@ pub trait StreamingSink: Send + Sync {
     ) -> StreamingSinkFinalizeResult;
 
     /// The name of the StreamingSink operator.
-    fn name(&self) -> &'static str;
+    fn name(&self) -> NodeName;
 
     fn multiline_display(&self) -> Vec<String>;
 
@@ -111,7 +112,6 @@ pub trait StreamingSink: Send + Sync {
 
 pub struct StreamingSinkNode {
     op: Arc<dyn StreamingSink>,
-    name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
@@ -125,11 +125,10 @@ impl StreamingSinkNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name();
+        let name = op.name().into();
         let node_info = ctx.next_node_info(name);
         Self {
             op,
-            name,
             children,
             runtime_stats: RuntimeStatsContext::new(node_info.clone()),
             plan_stats,
@@ -259,8 +258,8 @@ impl PipelineNode for StreamingSinkNode {
             .collect()
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -269,8 +268,8 @@ impl PipelineNode for StreamingSinkNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let progress_bar = runtime_handle.make_progress_bar(
-            self.name(),
-            ProgressBarColor::Red,
+            &self.name(),
+            ProgressBarColor::Yellow,
             self.node_id(),
             self.runtime_stats.clone(),
         );
@@ -305,7 +304,7 @@ impl PipelineNode for StreamingSinkNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
@@ -362,7 +361,7 @@ impl PipelineNode for StreamingSinkNode {
                 }
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }

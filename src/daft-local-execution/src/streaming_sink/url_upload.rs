@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
+use arrow_array::builder::LargeStringBuilder;
 use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
-    prelude::{AsArrow, DataType, Field, SchemaRef, UInt64Array, Utf8Array},
+    prelude::{AsArrow, DataType, Field, SchemaRef, Utf8Array},
     series::IntoSeries,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_functions_uri::UrlUploadArgs;
-use daft_io::{get_io_client, IOClient, IOStatsContext};
+use daft_functions_uri::{upload::UrlUploadArgsDefault, UrlUploadArgs};
+use daft_io::{get_io_client, IOClient};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use tokio::task::JoinSet;
@@ -21,66 +22,51 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    pipeline::NodeName,
+    streaming_sink::base::build_output,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 struct UrlUploadSinkState {
-    in_flight_uploads: JoinSet<DaftResult<(usize, Option<String>)>>,
-    all_inputs: Arc<MicroPartition>,
+    // Arguments
+    args: Arc<UrlUploadArgsDefault<BoundExpr>>,
+    output_schema: SchemaRef,
+    output_column: String,
+
+    // Fixed state
     io_client: Arc<IOClient>,
-    submitted_uploads: usize,
     io_runtime_handle: RuntimeRef,
 
-    input_schema: SchemaRef,
-    // max_in_flight: usize,
-    data_col: BoundExpr,
-    location_col: BoundExpr,
-    _is_single_folder: bool,
-    raise_error_on_failure: bool,
-    output_column: String,
+    // Updatable state
+    in_flight_uploads: JoinSet<DaftResult<(usize, Option<String>)>>,
+    all_inputs: Arc<MicroPartition>,
+    submitted_uploads: usize,
 }
 
 impl UrlUploadSinkState {
-    fn new(args: UrlUploadArgs<BoundExpr>, output_column: String, input_schema: SchemaRef) -> Self {
-        let UrlUploadArgs {
-            input,
-            on_error,
-            io_config,
-            multi_thread,
-            // max_connections,
-            location,
-            is_single_folder,
-            ..
-        } = args;
+    fn new(
+        args: Arc<UrlUploadArgsDefault<BoundExpr>>,
+        output_column: String,
+        input_schema: SchemaRef,
+    ) -> Self {
+        let multi_thread = args.multi_thread;
+        let io_config = args.io_config.clone();
 
-        let multi_thread = multi_thread.unwrap_or(true);
-        let io_config = io_config.unwrap_or_default();
-        // let max_connections = max_connections.unwrap_or(32);
-        let _is_single_folder = is_single_folder.unwrap_or(false);
-
-        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
-        let raise_error_on_failure = match on_error.as_str() {
-            "raise" => true,
-            "null" => false,
-            _ => {
-                panic!("Invalid value for 'on_error': {}", on_error)
-            }
-        };
+        // Generate output schema initially
+        let mut output_schema = input_schema.as_ref().clone();
+        output_schema.append(Field::new(output_column.as_str(), DataType::Utf8));
 
         Self {
-            in_flight_uploads: JoinSet::new(),
-            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
-            io_client: get_io_client(multi_thread, Arc::new(io_config)).expect("Failed to get IO client"),
-            submitted_uploads: 0,
-            input_schema,
-
-            io_runtime_handle: get_io_runtime(true),
-            // max_in_flight: max_connections * 4,
-            data_col: input,
-            location_col: location,
-            _is_single_folder,
-            raise_error_on_failure,
+            args,
+            output_schema: Arc::new(output_schema),
             output_column,
+
+            io_runtime_handle: get_io_runtime(multi_thread),
+            io_client: get_io_client(multi_thread, io_config).expect("Failed to get IO client"),
+
+            in_flight_uploads: JoinSet::new(),
+            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema))),
+            submitted_uploads: 0,
         }
     }
 
@@ -89,16 +75,14 @@ impl UrlUploadSinkState {
             return Ok(());
         }
 
-        let raise_error_on_failure = self.raise_error_on_failure;
+        let raise_error_on_failure = self.args.raise_error_on_failure;
 
         for input in input.get_tables()?.iter() {
-            let data_col = input.eval_expression(&self.data_col)?;
-            let data_col = data_col.binary()?;
-            let data_col = data_col.as_arrow();
+            let data_col = input.eval_expression(&self.args.input)?;
+            let data_col = data_col.binary()?.as_arrow();
 
-            let location_col = input.eval_expression(&self.location_col)?;
-            let location_col = location_col.utf8()?;
-            let location_col = location_col.as_arrow();
+            let location_col = input.eval_expression(&self.args.location)?;
+            let location_col = location_col.utf8()?.as_arrow();
 
             for (data_val, location_val) in data_col.iter().zip(location_col.iter()) {
                 let submitted_uploads = self.submitted_uploads;
@@ -107,21 +91,6 @@ impl UrlUploadSinkState {
                     continue;
                 };
                 let io_client = self.io_client.clone();
-
-                // self.in_flight_uploads.spawn(async move {
-                //     let url = io_client
-                //         .single_url_upload(
-                //             submitted_uploads,
-                //             location_val,
-                //             data_val,
-                //             raise_error_on_failure,
-                //             None,
-                //         )
-                //         .await?;
-
-                //     Ok((submitted_uploads, url))
-                // });
-
                 let handle = self.io_runtime_handle.spawn(async move {
                     let url = io_client
                         .single_url_upload(
@@ -145,51 +114,6 @@ impl UrlUploadSinkState {
         Ok(())
     }
 
-    fn build_output(
-        &self,
-        completed_uploads: Vec<u64>,
-        completed_urls: Vec<Option<String>>,
-    ) -> DaftResult<RecordBatch> {
-        if completed_uploads.is_empty() {
-            let mut schema = self.input_schema.as_ref().clone();
-            schema.append(Field::new(self.output_column.as_str(), DataType::Utf8));
-
-            return RecordBatch::empty(Some(Arc::new(schema)));
-        }
-
-        let idxs = UInt64Array::from(("idxs", completed_uploads)).into_series();
-        let io_stats = IOStatsContext::new("UrlUploadSink::build_output");
-        let original_rows = self
-            .all_inputs
-            .take(&idxs)?
-            .concat_or_get_option(io_stats)?
-            .expect("Failed to get original rows");
-
-        let mut valid = Vec::with_capacity(completed_urls.len());
-        valid.reserve(completed_urls.len());
-
-        let cap_needed: usize = completed_urls
-            .iter()
-            .filter_map(|f| f.as_ref().map(String::len))
-            .sum();
-        let mut data = Vec::with_capacity(cap_needed);
-        for b in completed_urls {
-            if let Some(b) = b {
-                data.push(b);
-                valid.push(true);
-            } else {
-                valid.push(false);
-            }
-        }
-        let contents = Utf8Array::from((self.output_column.as_str(), data.as_slice()))
-            .with_validity_slice(valid.as_slice())
-            .expect("Failed to create Utf8Array")
-            .into_series()
-            .rename(self.output_column.as_str());
-
-        original_rows.append_column(contents)
-    }
-
     async fn poll_finished(&mut self, finished: bool) -> DaftResult<RecordBatch> {
         let exp_capacity = if finished {
             std::cmp::min(self.in_flight_uploads.len(), 32)
@@ -198,7 +122,7 @@ impl UrlUploadSinkState {
         };
 
         let mut completed_idxs = Vec::with_capacity(exp_capacity);
-        let mut completed_urls = Vec::with_capacity(exp_capacity);
+        let mut completed_urls = LargeStringBuilder::with_capacity(exp_capacity, exp_capacity);
 
         // Wait for uploads to complete until we are under the active limit
         while completed_idxs.len() < exp_capacity {
@@ -206,19 +130,31 @@ impl UrlUploadSinkState {
                 unreachable!("There should always be at least one upload in flight");
             };
 
-            let (idx, contents) = result.expect("Failed to join upload").expect("Failed to get upload result");
+            let (idx, contents) = result
+                .expect("Failed to join upload")
+                .expect("Failed to get upload result");
             completed_idxs.push(idx as u64);
-            completed_urls.push(contents);
+            completed_urls.append_option(contents);
         }
 
         // If any additional uploads are completed, pop them off the join set
         while let Some(result) = self.in_flight_uploads.try_join_next() {
-            let (idx, contents) = result.expect("Failed to join upload").expect("Failed to get upload result");
+            let (idx, contents) = result
+                .expect("Failed to join upload")
+                .expect("Failed to get upload result");
             completed_idxs.push(idx as u64);
-            completed_urls.push(contents);
+            completed_urls.append_option(contents);
         }
 
-        self.build_output(completed_idxs, completed_urls)
+        let completed_urls =
+            Utf8Array::from((self.output_column.as_str(), completed_urls.finish())).into_series();
+
+        build_output(
+            self.all_inputs.clone(),
+            completed_idxs,
+            completed_urls,
+            self.output_schema.clone(),
+        )
     }
 }
 
@@ -229,7 +165,7 @@ impl StreamingSinkState for UrlUploadSinkState {
 }
 
 pub struct UrlUploadSink {
-    args: UrlUploadArgs<BoundExpr>,
+    args: Arc<UrlUploadArgsDefault<BoundExpr>>,
     output_column: String,
     input_schema: SchemaRef,
 }
@@ -239,12 +175,12 @@ impl UrlUploadSink {
         args: UrlUploadArgs<BoundExpr>,
         output_column: String,
         input_schema: SchemaRef,
-    ) -> Self {
-        Self {
-            args,
+    ) -> DaftResult<Self> {
+        Ok(Self {
+            args: Arc::new(args.unwrap_or_default()?),
             output_column,
             input_schema,
-        }
+        })
     }
 }
 
@@ -325,8 +261,8 @@ impl StreamingSink for UrlUploadSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "UrlUpload"
+    fn name(&self) -> NodeName {
+        "Url Upload".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

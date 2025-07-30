@@ -519,12 +519,12 @@ impl PyRecordBatch {
 
     #[staticmethod]
     #[pyo3(signature = (schema=None))]
-    pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
-        Ok(RecordBatch::empty(match schema {
+    pub fn empty(schema: Option<PySchema>) -> Self {
+        RecordBatch::empty(match schema {
             Some(s) => Some(s.schema),
             None => None,
         })
-        .into())
+        .into()
     }
 
     pub fn to_file_infos(&self) -> PyResult<FileInfos> {

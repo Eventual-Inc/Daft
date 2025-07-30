@@ -5,7 +5,10 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     expr::window::WindowSpec,
-    functions::{struct_::StructExpr, FunctionArg, FunctionArgs, FunctionExpr, ScalarFunction},
+    functions::{
+        scalar::ScalarFn, struct_::StructExpr, BuiltinScalarFn, FunctionArg, FunctionArgs,
+        FunctionExpr,
+    },
     has_agg, is_actor_pool_udf, left_col, resolved_col, right_col, AggExpr, Column, Expr, ExprRef,
     PlanRef, ResolvedColumn, UnresolvedColumn,
 };
@@ -176,7 +179,7 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
 
     expr.transform_down(|e| {
         let expr_ref = e.as_ref();
-        if let Expr::ScalarFunction(sf) = expr_ref
+        if let Expr::ScalarFn(ScalarFn::Builtin(sf)) = expr_ref
             && eval_functions.contains(&sf.udf.type_id())
         {
             // the `list` type should always be the first element
@@ -213,11 +216,11 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
                 };
                 new_inputs.push(replaced);
             }
-            let sf = ScalarFunction {
+            let sf = BuiltinScalarFn {
                 udf: sf.udf.clone(),
                 inputs: FunctionArgs::new_unchecked(new_inputs),
             };
-            Ok(Transformed::yes(Expr::ScalarFunction(sf).arced()))
+            Ok(Transformed::yes(sf.into()))
         } else {
             Ok(Transformed::no(e.clone()))
         }
@@ -299,7 +302,9 @@ impl ExprResolver<'_> {
 
         if !self.allow_monotonic_id
             && expr.exists(|e| match e.as_ref() {
-                Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+                Expr::ScalarFn(ScalarFn::Builtin(func)) => {
+                    func.name() == "monotonically_increasing_id"
+                }
                 _ => false,
             })
         {
@@ -308,7 +313,7 @@ impl ExprResolver<'_> {
             ));
         }
 
-        if !self.allow_explode && expr.exists(|e| matches!(e.as_ref(), Expr::ScalarFunction(sf) if sf.is_function_type::<daft_functions_list::Explode>())) {
+        if !self.allow_explode && expr.exists(|e| matches!(e.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(sf)) if sf.is_function_type::<daft_functions_list::Explode>())) {
             return Err(DaftError::ValueError(
                 "explode() is only allowed in projections".to_string(),
             ));

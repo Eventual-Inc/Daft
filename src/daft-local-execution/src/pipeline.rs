@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -67,9 +67,11 @@ use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
+pub type NodeName = Cow<'static, str>;
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> Arc<str>;
     fn start(
         &self,
         maintain_order: bool,
@@ -123,9 +125,9 @@ impl RuntimeContext {
         index
     }
 
-    pub fn next_node_info(&self, name: &str) -> NodeInfo {
+    pub fn next_node_info(&self, name: Arc<str>) -> NodeInfo {
         NodeInfo {
-            name: Arc::from(name.to_string()),
+            name,
             id: self.next_id(),
             context: self.context.clone(),
         }
@@ -457,7 +459,7 @@ pub fn physical_plan_to_pipeline(
 
             let url_download_op =
                 UrlDownloadSink::new(args.clone(), output_column.clone(), input.schema().clone())
-                .with_context(|_| PipelineCreationSnafu {
+                    .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
             StreamingSinkNode::new(
@@ -478,7 +480,10 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
 
             let url_upload_op =
-                UrlUploadSink::new(args.clone(), output_column.clone(), input.schema().clone());
+                UrlUploadSink::new(args.clone(), output_column.clone(), input.schema().clone())
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
             StreamingSinkNode::new(
                 Arc::new(url_upload_op),
                 vec![child_node],
@@ -1087,7 +1092,7 @@ pub fn physical_plan_to_pipeline(
             let writer_factory =
                 daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
             let write_sink = WriteSink::new(
-                WriteFormat::DataSink,
+                WriteFormat::DataSink(data_sink_info.name.clone()),
                 writer_factory,
                 None,
                 file_schema.clone(),

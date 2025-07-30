@@ -1,4 +1,5 @@
 [dependencies]
+arrow-array = {workspace = true}
 arrow2 = {workspace = true, features = [
   "chrono-tz",
   "compute_take",

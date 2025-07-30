@@ -466,11 +466,9 @@ impl PhysicalPlan {
                     Self::Project(Project::new_with_clustering_spec(
                     input.clone(), projection.clone(), clustering_spec.clone(),
                 ).unwrap()),
-
-                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject {projection, udf_properties, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), udf_properties.clone()).unwrap()),
                 Self::UrlDownload(UrlDownload { args, output_column, .. }) => Self::UrlDownload(UrlDownload::new(input.clone(), args.clone(), output_column.clone())),
                 Self::UrlUpload(UrlUpload { args, output_column, .. }) => Self::UrlUpload(UrlUpload::new(input.clone(), args.clone(), output_column.clone())),
-
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::TopN(TopN { sort_by, descending, nulls_first, limit, num_partitions, .. }) => Self::TopN(TopN::new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *num_partitions)),

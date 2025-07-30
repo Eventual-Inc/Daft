@@ -7,7 +7,10 @@ use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{
+    stream::{once, BoxStream},
+    Stream, StreamExt, TryStreamExt,
+};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{
     futures::{try_future::Context, TryFutureExt, TryStreamExt as _},
@@ -21,8 +24,10 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::{
-    decoding::deserialize_records, local::read_json_local, schema::read_json_schema_single,
-    ArrowSnafu, ChunkSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
+    decoding::deserialize_records,
+    local::{read_json_array_impl, read_json_local},
+    schema::read_json_schema_single,
+    ArrowSnafu, ChunkSnafu, JoinSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
 };
 
 type TableChunkResult =
@@ -215,7 +220,7 @@ async fn read_json_single_into_table(
     };
 
     let (table_stream, schema) = read_json_single_into_stream(
-        uri,
+        uri.to_string(),
         convert_options_with_predicate_columns.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
@@ -307,6 +312,20 @@ pub async fn stream_json(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let (source_type, fixed_uri) = parse_url(&uri)?;
+    let is_compressed = CompressionCodec::from_uri(&uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        let fixed_uri = fixed_uri.to_string();
+        return Ok(Box::pin(once(async move {
+            read_json_local(
+                fixed_uri.as_ref(),
+                convert_options,
+                parse_options,
+                read_options,
+                max_chunks_in_flight,
+            )
+        })));
+    }
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -335,7 +354,7 @@ pub async fn stream_json(
     };
 
     let (chunk_stream, _fields) = read_json_single_into_stream(
-        &uri,
+        uri.clone(),
         convert_options_with_predicate_columns.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
@@ -398,17 +417,20 @@ pub async fn stream_json(
 }
 
 async fn read_json_single_into_stream(
-    uri: &str,
+    uri: String,
     convert_options: JsonConvertOptions,
     parse_options: JsonParseOptions,
     read_options: Option<JsonReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(impl TableChunkStream + Send, arrow2::datatypes::Schema)> {
+) -> DaftResult<(
+    BoxStream<'static, TableChunkResult>,
+    arrow2::datatypes::Schema,
+)> {
     let schema = match convert_options.schema {
         Some(schema) => schema.to_arrow()?,
         None => read_json_schema_single(
-            uri,
+            &uri,
             parse_options.clone(),
             // Read at most 1 MiB when doing schema inference.
             Some(1024 * 1024),
@@ -468,37 +490,72 @@ async fn read_json_single_into_stream(
             ),
         };
     // If file is compressed, wrap stream in decoding stream.
-    let reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(uri) {
+    let mut reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(&uri) {
         Some(compression) => Box::new(tokio::io::BufReader::with_capacity(
             buffer_size,
             compression.to_decoder(reader),
         )),
         None => reader,
     };
-    let read_stream = read_into_line_chunk_stream(reader, convert_options.limit, chunk_size);
-    let (projected_schema, schema_is_projection) = match convert_options.include_columns {
-        Some(projection) => {
-            let mut field_map = schema
-                .fields
-                .into_iter()
-                .map(|f| (f.name.clone(), f))
-                .collect::<HashMap<_, _>>();
-            let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
-            (
-                arrow2::datatypes::Schema::from(projected_fields).with_metadata(schema.metadata),
-                true,
-            )
+
+    use tokio::io::AsyncReadExt;
+    let buf = reader.fill_buf().await?;
+
+    if buf.is_empty() {
+        return Err(super::Error::JsonDeserializationError {
+            string: "Empty JSON file".to_string(),
         }
-        None => (schema, false),
-    };
-    Ok((
-        parse_into_column_array_chunk_stream(
-            read_stream,
-            projected_schema.clone().into(),
-            schema_is_projection,
-        )?,
-        projected_schema,
-    ))
+        .into());
+    }
+    match buf[0] {
+        b'[' => {
+            let schema_clone = schema.clone();
+            let inner: Context<JoinHandle<Result<RecordBatch, DaftError>>, JoinSnafu, _> =
+                tokio::spawn(async move {
+                    let (send, recv) = tokio::sync::oneshot::channel();
+                    let mut buf = Vec::new();
+                    reader.read_to_end(&mut buf).await?;
+                    let chunk = read_json_array_impl(&buf, schema_clone.into(), None);
+                    let _ = send.send(chunk);
+
+                    recv.await.context(super::OneShotRecvSnafu {})?
+                })
+                .context(super::JoinSnafu {});
+            Ok((Box::pin(once(async move { Ok(inner) })), schema.into()))
+        }
+        b'{' => {
+            let read_stream =
+                read_into_line_chunk_stream(reader, convert_options.limit, chunk_size);
+            let (projected_schema, schema_is_projection) = match convert_options.include_columns {
+                Some(projection) => {
+                    let mut field_map = schema
+                        .fields
+                        .into_iter()
+                        .map(|f| (f.name.clone(), f))
+                        .collect::<HashMap<_, _>>();
+                    let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
+                    (
+                        arrow2::datatypes::Schema::from(projected_fields)
+                            .with_metadata(schema.metadata),
+                        true,
+                    )
+                }
+                None => (schema, false),
+            };
+
+            Ok((
+                Box::pin(parse_into_column_array_chunk_stream(
+                    read_stream,
+                    projected_schema.clone().into(),
+                    schema_is_projection,
+                )?),
+                projected_schema,
+            ))
+        }
+        _ => Err(DaftError::ValueError(
+            "Invalid JSON file format".to_string(),
+        )),
+    }
 }
 
 fn read_into_line_chunk_stream<R>(
