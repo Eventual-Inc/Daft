@@ -17,7 +17,7 @@ use crate::{
         concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
         gather::GatherNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
-        repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
+        sample::SampleNode, scan_source::ScanSourceNode, shuffle_exchange::ShuffleExchangeNode,
         sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode,
         window::WindowNode, DistributedPipelineNode, NodeID,
     },
@@ -84,7 +84,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         if partition_cols.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
         } else {
-            RepartitionNode::new(
+            ShuffleExchangeNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
@@ -292,7 +292,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
 
                 assert!(!columns.is_empty());
-                RepartitionNode::new(
+                ShuffleExchangeNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
@@ -347,7 +347,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced();
 
                 // Second stage: Repartition to distribute the dataset
-                let repartition = RepartitionNode::new(
+                let repartition = ShuffleExchangeNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
