@@ -52,3 +52,22 @@ def test_lancedb_read_limit(lance_dataset_path):
 def test_lancedb_with_version(lance_dataset_path):
     df = daft.read_lance(lance_dataset_path, version=1)
     assert df.to_pydict() == data
+
+
+# test pushdown filters with limit and projection
+def test_lancedb_read_pushdown(lance_dataset_path, capsys):
+    df = daft.read_lance(lance_dataset_path)
+    df = daft.sql("SELECT vector, lat + 1 as lat_plus_1 FROM df where  long < 3 limit 1")
+    df.explain(show_all=True)
+    captured = capsys.readouterr()
+    explain_output = captured.out
+
+    assert "Pushdowns: {projection: [vector, lat], filter: col(long) < lit(3), limit: 1}" in explain_output
+    assert "Limit: 1" in explain_output
+
+    result = df.to_pydict()
+    assert len(result["vector"]) == 1
+
+    df = daft.read_lance(lance_dataset_path)
+    df = df.select("vector", "lat")
+    assert df.to_pydict() == {"vector": data["vector"], "lat": data["lat"]}
