@@ -1,6 +1,6 @@
-# S3 Tables
+# Reading from and Writing to AWS S3 Tables
 
-Daft integrates with [S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables.html) using its [Catalog](index.md) interface which supports both reading and writing S3 Tables via Iceberg.
+Daft integrates with [S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables.html) using its [Catalog](../api/catalogs_tables.md) interface which supports both reading and writing S3 Tables via Iceberg.
 
 ## Example
 

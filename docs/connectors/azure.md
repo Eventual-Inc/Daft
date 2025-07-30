@@ -1,4 +1,4 @@
-# Microsoft Azure
+# Reading from and Writing to Azure Blob Store
 
 Daft is able to read/write data to/from Azure Blob Store, and understands natively the URL protocols `az://` and `abfs://` as referring to data that resides in Azure Blob Store.
 
