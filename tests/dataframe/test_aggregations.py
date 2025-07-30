@@ -888,3 +888,50 @@ def test_bool_agg_type_error(make_df):
     with pytest.raises(Exception) as exc_info:
         df.agg(col("int_col").bool_or()).collect()
     assert "bool_or is not implemented for type Int64" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size):
+    """Test join followed by groupby with simple aggregations."""
+    # Create two dataframes with common join key
+    df1 = make_df(
+        {
+            "group1": ["A", "A", "A", "B", "B", "C", "C", "C", "D", "D"],
+            "group2": ["X", "X", "Y", "X", "Y", "X", "Y", "Y", "X", "Y"],
+            "name": ["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack"],
+        },
+        repartition=repartition_nparts,
+    )
+
+    df2 = make_df(
+        {
+            "group1": ["A", "A", "A", "B", "B", "C", "C", "C", "D", "D"],
+            "group2": ["X", "X", "Y", "X", "Y", "X", "Y", "Y", "X", "Y"],
+            "value": [100, 150, 200, 125, 175, 225, 300, 250, 180, 220],
+        },
+        repartition=repartition_nparts,
+    )
+
+    # Join and then groupby by the same keys but different order
+    result = (
+        df1.join(df2, on=["group1", "group2"], how="inner")
+        .groupby(["group2", "group1"])
+        .agg(
+            [
+                col("value").sum().alias("total_value"),
+                col("name").count().alias("count"),
+            ]
+        )
+    )
+
+    result = result.collect()
+    sorted_result = result.sort(["group2", "group1"]).to_pydict()
+
+    expected = {
+        "group2": ["X", "X", "X", "X", "Y", "Y", "Y", "Y"],
+        "group1": ["A", "B", "C", "D", "A", "B", "C", "D"],
+        "total_value": [500, 125, 225, 180, 200, 175, 1100, 220],  # Sum of values per combination
+        "count": [4, 1, 1, 1, 1, 1, 4, 1],  # Count of names per combination
+    }
+
+    assert sorted_result == expected
