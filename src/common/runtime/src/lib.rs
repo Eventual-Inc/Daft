@@ -203,7 +203,7 @@ fn init_io_runtime(multi_thread: bool) -> RuntimeRef {
             })
             .enable_all()
             .thread_name_fn(move || {
-                static COMPUTE_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                static IO_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = COMPUTE_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
                 format!("DAFTIO-{}", id)
             });
