@@ -80,6 +80,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         input_node: Arc<dyn DistributedPipelineNode>,
         partition_cols: Vec<BoundExpr>,
+        num_partitions: Option<usize>,
     ) -> Arc<dyn DistributedPipelineNode> {
         if partition_cols.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
@@ -89,7 +90,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 &self.stage_config,
                 partition_cols,
-                None,
+                num_partitions,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -380,7 +381,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition =
-                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone());
+                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone(), None);
 
                 // Final stage: The actual window op
                 WindowNode::new(
