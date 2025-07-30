@@ -116,7 +116,15 @@ impl BlockingSink for RepartitionSink {
                             let together = MicroPartition::concat(&data)?;
                             let concated =
                                 together.concat_or_get(IOStatsContext::new("get tables"))?;
-                            let mp = MicroPartition::new_loaded(schema, concated, None);
+                            let mp = MicroPartition::new_loaded(
+                                schema,
+                                Arc::new(if let Some(t) = concated {
+                                    vec![t]
+                                } else {
+                                    vec![]
+                                }),
+                                None,
+                            );
                             Ok(Arc::new(mp))
                         });
                         outputs.push(fut);
