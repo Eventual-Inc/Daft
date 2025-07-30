@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::HashClusteringConfig;
 use daft_schema::schema::SchemaRef;
@@ -45,11 +45,11 @@ impl ShuffleExchangeNode {
         num_partitions: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
-    ) -> Self {
+    ) -> DaftResult<Self> {
         let num_partitions =
             num_partitions.unwrap_or_else(|| child.config().clustering_spec.num_partitions());
 
-        let strategy = Self::determine_strategy(&stage_config.config, &child, num_partitions);
+        let strategy = Self::determine_strategy(&stage_config.config, &child, num_partitions)?;
 
         let context = PipelineNodeContext::new(
             stage_config,
@@ -71,49 +71,51 @@ impl ShuffleExchangeNode {
             ),
         );
 
-        Self {
+        Ok(Self {
             config,
             context,
             columns,
             num_partitions,
             strategy,
             child,
-        }
+        })
     }
 
     fn determine_strategy(
         execution_config: &Arc<common_daft_config::DaftExecutionConfig>,
         child: &Arc<dyn DistributedPipelineNode>,
         target_num_partitions: usize,
-    ) -> ShuffleExchangeStrategy {
+    ) -> DaftResult<ShuffleExchangeStrategy> {
         let input_num_partitions = child.config().clustering_spec.num_partitions();
 
         match execution_config.shuffle_algorithm.as_str() {
-            "pre_shuffle_merge" => ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge(
+            "pre_shuffle_merge" => Ok(ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge(
                 shuffles::pre_shuffle_merge::MapReduceWithPreShuffleMerge::new(
                     execution_config.pre_shuffle_merge_threshold,
                 ),
-            ),
-            "map_reduce" => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce(
+            )),
+            "map_reduce" => Ok(ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce(
                 shuffles::map_reduce::NaiveFullyMaterializingMapReduce,
-            ),
-            "flight_shuffle" => todo!("Flight shuffle not yet implemented for flotilla"),
+            )),
+            "flight_shuffle" => Err(DaftError::ValueError(
+                "Flight shuffle not yet implemented for flotilla".to_string(),
+            )),
             "auto" => {
                 if Self::should_use_pre_shuffle_merge(input_num_partitions, target_num_partitions) {
-                    ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge(
+                    Ok(ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge(
                         shuffles::pre_shuffle_merge::MapReduceWithPreShuffleMerge::new(
                             execution_config.pre_shuffle_merge_threshold,
                         ),
-                    )
+                    ))
                 } else {
-                    ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce(
+                    Ok(ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce(
                         shuffles::map_reduce::NaiveFullyMaterializingMapReduce,
-                    )
+                    ))
                 }
             }
-            _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce(
+            _ => Ok(ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce(
                 shuffles::map_reduce::NaiveFullyMaterializingMapReduce,
-            ),
+            )),
         }
     }
 

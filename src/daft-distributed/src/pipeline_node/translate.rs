@@ -80,11 +80,11 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         input_node: Arc<dyn DistributedPipelineNode>,
         partition_cols: Vec<BoundExpr>,
-    ) -> Arc<dyn DistributedPipelineNode> {
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         if partition_cols.is_empty() {
-            self.gen_gather_node(logical_node_id, input_node)
+            Ok(self.gen_gather_node(logical_node_id, input_node))
         } else {
-            ShuffleExchangeNode::new(
+            Ok(ShuffleExchangeNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
@@ -92,8 +92,8 @@ impl LogicalPlanToPipelineNodeTranslator {
                 None,
                 input_node.config().schema.clone(),
                 input_node,
-            )
-            .arced()
+            )?
+            .arced())
         }
     }
 }
@@ -300,7 +300,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     repart_spec.num_partitions,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
-                )
+                )?
                 .arced()
             }
             LogicalPlan::Aggregate(aggregate) => {
@@ -355,7 +355,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     None,
                     distinct.input.schema(),
                     initial_distinct,
-                )
+                )?
                 .arced();
 
                 // Last stage: Redo the distinct to get the final result
@@ -380,7 +380,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition =
-                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone());
+                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone())?;
 
                 // Final stage: The actual window op
                 WindowNode::new(

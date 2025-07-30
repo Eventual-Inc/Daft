@@ -266,7 +266,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             Some(num_partitions),
             left.config().schema.clone(),
             left,
-        )
+        )?
         .arced();
 
         let right = ShuffleExchangeNode::new(
@@ -277,7 +277,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             Some(num_partitions),
             right.config().schema.clone(),
             right,
-        )
+        )?
         .arced();
 
         Ok(HashJoinNode::new(
