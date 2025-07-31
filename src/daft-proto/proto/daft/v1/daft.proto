@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package daft.v1;
 
+option go_package = "github.com/Eventual-Inc/Daft/proto/daft/v1;daft";
+
+
 // https://en.wikipedia.org/wiki/Unit_type
 message Unit {};
 
