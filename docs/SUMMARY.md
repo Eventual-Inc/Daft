@@ -1,6 +1,14 @@
 * Guide
     * [Overview](index.md)
+    * [Installation](installation.md)
     * [Quickstart](quickstart.md)
+    * Modalities
+        * [Overview](modalities/index.md)
+        * [Custom Modalities](modalities/custom.md)
+        * [URLs and Files](modalities/urls.md)
+        * [Text](modalities/text.md)
+        * [Images](modalities/images.md)
+        * [JSON and Nested Data](modalities/json.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
@@ -14,13 +22,6 @@
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
-    * Modalities
-        * [Overview](modalities/index.md)
-        * [Custom Modalities](modalities/custom.md)
-        * [URLs and Files](modalities/urls.md)
-        * [Text](modalities/text.md)
-        * [Images](modalities/images.md)
-        * [JSON and Nested Data](modalities/json.md)
     * Running Custom Python Code
         * [Overview](custom-code/index.md)
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
