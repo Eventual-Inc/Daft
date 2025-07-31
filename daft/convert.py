@@ -201,6 +201,9 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     Note:
         This function can only work if Daft is running using the RayRunner
 
+    Note:
+        This function can only work if Daft is running using the RayRunner
+
     Returns:
         DataFrame: Daft DataFrame created from the provided Dask DataFrame.
 
