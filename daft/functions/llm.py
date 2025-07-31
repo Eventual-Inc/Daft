@@ -104,7 +104,7 @@ class _OpenAIGenerator:
         generation_config: dict[str, Any] = {},
     ) -> None:
         try:
-            from openai import OpenAI
+            from openai import AsyncOpenAI
         except ImportError:
             raise ImportError("Please install the openai package to use this provider.")
         self.model = model
@@ -113,17 +113,32 @@ class _OpenAIGenerator:
 
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
 
-        self.llm = OpenAI(**client_params_opts)
+        self.llm = AsyncOpenAI(**client_params_opts)
 
     def __call__(self, input_prompt_column: Series) -> list[str]:
+        import asyncio
+
         prompts = input_prompt_column.to_pylist()
-        outputs = []
-        for prompt in prompts:
+
+        async def get_completion(prompt: str) -> str:
             messages = [{"role": "user", "content": prompt}]
-            completion = self.llm.chat.completions.create(
+            completion = await self.llm.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 **self.generation_config,
             )
-            outputs.append(completion.choices[0].message.content)
+            return completion.choices[0].message.content
+
+        async def gather_completions() -> list[str]:
+            tasks = [get_completion(prompt) for prompt in prompts]
+            return await asyncio.gather(*tasks)
+
+        # Use existing event loop if available, otherwise create new one
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, use the existing loop
+            outputs = loop.run_until_complete(gather_completions())
+        except RuntimeError:
+            # No running event loop, create one
+            outputs = asyncio.run(gather_completions())
         return outputs
