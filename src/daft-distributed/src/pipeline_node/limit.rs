@@ -130,13 +130,14 @@ impl LimitNode {
     ) -> DaftResult<()> {
         let mut remaining_limit = self.limit;
         while let Some(task) = input.next().await {
+            let limit_for_task = remaining_limit;
             let task_with_limit = append_plan_to_existing_task(
                 task,
                 &(self.clone() as Arc<dyn DistributedPipelineNode>),
                 &move |input| {
                     LocalPhysicalPlan::limit(
                         input,
-                        remaining_limit as u64,
+                        limit_for_task as u64,
                         StatsState::NotMaterialized,
                     )
                 },
