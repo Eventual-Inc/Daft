@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from daft import col
 
 
@@ -65,22 +66,21 @@ def test_select_with_dict_and_expression_error(make_df, valid_data: list[dict[st
 def test_select_with_dict_complex_expressions(make_df, valid_data: list[dict[str, float]]):
     """Test that select works with complex expressions in the dictionary."""
     df = make_df(valid_data)
-    df = df.select({
-        "length_sum": col("sepal_length") + col("petal_length"),
-        "width_ratio": col("sepal_width") / col("petal_width"),
-        "original_col": col("variety")
-    })
+    df = df.select(
+        {
+            "length_sum": col("sepal_length") + col("petal_length"),
+            "width_ratio": col("sepal_width") / col("petal_width"),
+            "original_col": col("variety"),
+        }
+    )
     assert df.column_names == ["length_sum", "width_ratio", "original_col"]
 
 
 def test_select_with_dict_alias_behavior(make_df, valid_data: list[dict[str, float]]):
     """Test that select with dictionary properly handles aliases."""
     df = make_df(valid_data)
-    df = df.select({
-        "renamed_length": col("sepal_length").alias("should_be_ignored"),
-        "renamed_width": col("sepal_width")
-    })
+    df = df.select(
+        {"renamed_length": col("sepal_length").alias("should_be_ignored"), "renamed_width": col("sepal_width")}
+    )
     # The dictionary key should override any alias in the expression
     assert df.column_names == ["renamed_length", "renamed_width"]
-
-
