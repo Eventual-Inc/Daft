@@ -6,7 +6,7 @@ Daft offers a variety of approaches to reading from and writing to various data 
 
 | Function                                          | Description                                             |
 |---------------------------------------------------|---------------------------------------------------------|
-| [`from_arrow`][daft.from_arrow]                   | Create a DataFrames from PyArrow Tables or RecordBatches |
+| [`from_arrow`][daft.from_arrow]                   | Create a DataFrame from PyArrow Tables or RecordBatches |
 | [`from_dask_dataframe`][daft.from_dask_dataframe] | Create a DataFrame from a Dask DataFrame                |
 | [`from_glob_path`][daft.from_glob_path]           | Create a DataFrame from files matching a glob pattern   |
 | [`from_pandas`][daft.from_pandas]                 | Create a DataFrame from a Pandas DataFrame              |
@@ -98,17 +98,17 @@ See also [Iceberg](iceberg.md) for detailed integration.
 | [`WriteResult`][daft.io.sink.WriteResult]                   | Wrapper for intermediate results written by a DataSink             |
 | [`write_sink`][daft.dataframe.DataFrame.write_sink]         | Write a DataFrame to the given DataSink                            |
 
-# Daft Catalogs
+## Daft Catalogs
 
 !!! warning "Warning"
 
-    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear what you would like, thank you! 🤘
+    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love to hear what you would like, thank you! 🤘
 
-Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
+Daft also provides APIs to work with catalogs. Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
 
 Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs to manage catalog objects (tables and namespaces), while also making it easy to leverage Daft's existing `daft.read_` and `df.write_` APIs for open table formats like [Iceberg](iceberg.md) and [Delta Lake](delta_lake.md).
 
-## Example
+### Example
 
 !!! note "Note"
 
@@ -161,11 +161,11 @@ Table('tbl')
 """
 ```
 
-## Usage
+### Usage
 
 This section covers detailed usage of the current APIs with some code snippets.
 
-### Working with Catalogs
+#### Working with Catalogs
 
 The `Catalog` interface allows you to perform catalog actions like `get_table` and `list_tables`.
 
@@ -222,7 +222,7 @@ table_t.show()
 """
 ```
 
-### Working with Tables
+#### Working with Tables
 
 The `Table` interface is a bridge from catalogs to dataframes. We can read tables into dataframes, and we can write dataframes to tables. You can work with a table independently of a catalog by using one of the factory methods, but it might not appear to provide that much utility over the existing `daft.read_` and `daft.write_` APIs. You would be correct in assuming that this is what is happening under the hood! The `Table` interface provides indirection over the table format itself and serves as a single abstraction for reading and writing that our catalogs can work with.
 
@@ -242,7 +242,7 @@ table = Table.from_iceberg(pyiceberg_table)
 df = table.read()
 
 # you can also create temporary tables from dataframes
-daft.create_temp_table("my_temp_table", df.from_pydict({ ... }))
+daft.create_temp_table("my_temp_table", daft.from_pydict({ ... }))
 
 # these will be resolved just like other tables
 df = daft.read_table("my_temp_table")
@@ -253,7 +253,7 @@ df = daft.read_table("my_temp_table")
     Today you can read from `pyiceberg` and `daft.unity` table objects.
 
 
-## Reference
+### Reference
 
 !!! note "Note"
 

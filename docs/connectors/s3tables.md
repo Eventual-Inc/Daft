@@ -5,9 +5,10 @@ Daft integrates with [S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/use
 ## Example
 
 ```python
+import daft
 from daft import Catalog
 
-# ensure your aws credentials are configure, for example:
+# ensure your aws credentials are configured, for example:
 # import os
 # os.environ["AWS_ACCESS_KEY_ID"] = "<access-id>"
 # os.environ["AWS_SECRET_ACCESS_KEY"] = "<access-key>"

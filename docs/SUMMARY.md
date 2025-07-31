@@ -1,8 +1,9 @@
 * Guide
     * [Overview](index.md)
     * [Quickstart](quickstart.md)
-    * Connectors
+    * Data Connectors
         * [Overview](connectors/index.md)
+        * [Custom Connectors](connectors/custom.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
         * [Apache Hudi](connectors/hudi.md)
@@ -15,6 +16,7 @@
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Modalities
         * [Overview](modalities/index.md)
+        * [Custom Modalities](modalities/custom.md)
         * [URLs and Files](modalities/urls.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
@@ -31,9 +33,12 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
+    * [Benchmarks](benchmarks/index.md)
+    * [Community <sup>↗</sup>](http://www.daft.ai/slack)
     * [Contributing](contributing-to-daft.md)
     * [Roadmap](roadmap.md)
-    * [Usage Telemetry](resources/telemetry.md)
+    * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
+    * [Usage Telemetry](telemetry.md)
 * Python API
     * [Overview](api/index.md)
     * [I/O](api/io.md)
@@ -48,6 +53,7 @@
     * [Data Types](api/datatypes.md)
     * [Aggregations](api/aggregations.md)
     * [Series](api/series.md)
+    * [Spark Connect](api/spark_connect.md)
     * [Configuration](api/config.md)
     * [Miscellaneous](api/misc.md)
 * SQL Reference
@@ -61,13 +67,13 @@
 
 <!--
 TODO
-        * [Custom Connectors](quickstart.md)
-        * [CSV](quickstart.md)
-        * [Google Cloud Storage (GCS)](quickstart.md)
-        * [HTTP](quickstart.md)
-        * [JSON](quickstart.md)
-        * [Lance](quickstart.md)
-        * [Parquet](quickstart.md)
-        * [Turbopuffer](quickstart.md)
-        * [WARC (Web ARChive)](quickstart.md)
+        * [Custom Connectors](connectors/custom.md)
+        * [CSV](connectors/csv.md)
+        * [Google Cloud Storage (GCS)](connectors/gcs.md)
+        * [HTTP](connectors/http.md)
+        * [JSON](connectors/json.md)
+        * [Lance](connectors/lance.md)
+        * [Parquet](connectors/parquet.md)
+        * [Turbopuffer](connectors/turbopuffer.md)
+        * [WARC (Web ARChive)](connectors/warc.md)
 -->

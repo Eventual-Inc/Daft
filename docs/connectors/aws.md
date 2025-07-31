@@ -1,7 +1,6 @@
 # Reading from and Writing to AWS S3
 
-Daft is able to read/write data to/from AWS S3, and understands natively the URL protocol `s3://` as referring to data that resides
-in S3.
+Daft has [record-setting](https://www.daft.ai/blog/announcing-daft-02) performance when reading from and writing to AWS S3, and understands natively the URL protocol `s3://` as referring to data that resides in S3.
 
 ## Authorization/Authentication
 

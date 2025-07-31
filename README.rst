@@ -15,7 +15,7 @@ Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 * **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
 * **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
 * **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
-* **Built for the cloud:** `Record-setting <https://blog.getdaft.io/p/announcing-daft-02-10x-faster-io>`_ I/O performance for integrations with S3 cloud storage
+* **Built for the cloud:** `Record-setting <https://www.daft.ai/blog/announcing-daft-02>`_ I/O performance for integrations with S3 cloud storage
 
 **Table of Contents**
 

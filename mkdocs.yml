@@ -157,7 +157,8 @@ plugins:
       catalogs/s3tables.md: connectors/s3tables.md
       integrations/unity_catalog.md: connectors/unity_catalog.md
       catalogs/unity_catalog.md: connectors/unity_catalog.md
-      integrations/index.md: connectors/index.md
+      integrations.md: connectors/index.md
+      io/index.md: connectors/index.md
       install.md: quickstart.md
       sql_overview.md: sql/index.md
       sessions.md: api/sessions.md
@@ -165,6 +166,13 @@ plugins:
       advanced/memory.md: optimization/memory.md
       advanced/partitioning.md: optimization/partitioning.md
       advanced/observability.md: optimization/observability.md
+      resources/telemetry.md: telemetry.md
+      resources/engine_comparison.md: index.md
+      resources/tutorials.md: examples/index.md
+      migration/dask_migration.md: index.md
+      resources/benchmarks/tpch.md: benchmarks/index.md
+      spark_connect.md: api/spark_connect.md
+      core_concepts.md: index.md
 - mkdocstrings:
     handlers:
       python:
