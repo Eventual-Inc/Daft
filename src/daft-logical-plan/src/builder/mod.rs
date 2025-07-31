@@ -41,7 +41,7 @@ use crate::{
         join::{JoinOptions, JoinPredicate},
         SetQuantifier, UnionStrategy,
     },
-    optimization::OptimizerBuilder,
+    optimization::{OptimizerBuilder, OptimizerConfig},
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
@@ -806,6 +806,18 @@ impl LogicalPlanBuilder {
         std::thread::spawn(move || {
             let optimizer = OptimizerBuilder::default()
                 .when(
+                    cfg.as_ref()
+                        .map(|conf| conf.enable_strict_filter_pushdown)
+                        .unwrap_or(false),
+                    |builder| {
+                        builder.with_optimizer_config(OptimizerConfig {
+                            strict_pushdown: true,
+                            ..Default::default()
+                        })
+                    },
+                )
+                .with_default_optimizations()
+                .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
                     |builder| builder.reorder_joins(),
@@ -860,6 +872,18 @@ impl LogicalPlanBuilder {
         let unoptimized_plan = self.build();
 
         let optimizer = OptimizerBuilder::default()
+            .when(
+                cfg.as_ref()
+                    .map(|conf| conf.enable_strict_filter_pushdown)
+                    .unwrap_or(false),
+                |builder| {
+                    builder.with_optimizer_config(OptimizerConfig {
+                        strict_pushdown: true,
+                        ..Default::default()
+                    })
+                },
+            )
+            .with_default_optimizations()
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
