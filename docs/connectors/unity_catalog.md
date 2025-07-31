@@ -58,7 +58,7 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
     df.show()
     ```
 
-See also [Delta Lake](../io/delta_lake.md) for more information about how to work with the Delta Lake tables provided by the Unity Catalog.
+See also [Delta Lake](../connectors/delta_lake.md) for more information about how to work with the Delta Lake tables provided by the Unity Catalog.
 
 ## Downloading files in Unity Catalog volumes
 

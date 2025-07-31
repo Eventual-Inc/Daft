@@ -4,7 +4,7 @@ Daft provides powerful capabilities for working with JSON data and nested data s
 
 ## JSON
 
-If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressions.md#daft.expressions.expressions.ExpressionJsonNamespace) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
+If you have a column of JSON strings, Daft provides the [`.json.*`](../api/expressions.md#daft.expressions.expressions.ExpressionJsonNamespace) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
 
 <!-- todo(docs - cc): add relative path to .json after figure out json namespace-->
 
@@ -54,11 +54,11 @@ If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressi
 
 Daft uses [jaq](https://github.com/01mf02/jaq/tree/main) as the underlying executor, so you can find the full list of supported filters in the [jaq documentation](https://github.com/01mf02/jaq/tree/main).
 
-### Deserializing JSON and extracting multiple fields
+<!-- ### Deserializing JSON and extracting multiple fields -->
 
 ## Extracting and Flattening Nested Data
 
-When working with nested data---like log files, metadata, desrialized JSON---we often need to extract specific fields or flatten the entire structure into individual columns. Daft provides two main approaches for this:
+When working with nested data---like log files, metadata, deserialized JSON---we often need to extract specific fields or flatten the entire structure into individual columns. Daft provides two main approaches for this:
 
 1. **Extracting specific fields**: Using the `[]` operator to access nested fields
 2. **Flattening all fields**: Using `.unnest()` or the `*` wildcard to expand all nested fields into separate columns

@@ -47,14 +47,14 @@ For example, the following example creates a new `flattened_image` column by cal
 
 Note here that we use the `return_dtype` keyword argument to specify that our returned column type is a Python column!
 
-### Multi-column per-partition functions using [`@udf`](api/udf.md#creating-udfs)
+### Multi-column per-partition functions using [`@udf`](../api/udf.md#creating-udfs)
 
 [`.apply()`][daft.expressions.Expression.apply] is great for convenience, but has two main limitations:
 
 1. It can only run on single columns
 2. It can only run on single items at a time
 
-Daft provides the [`@udf`](api/udf.md#creating-udfs) decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
+Daft provides the [`@udf`](../api/udf.md#creating-udfs) decorator for defining your own UDFs that process multiple columns or multiple rows at a time.
 
 For example, let's try writing a function that will crop all our images in the `image` column by its corresponding value in the `crop` column:
 
@@ -103,7 +103,7 @@ There's a few things happening here, let's break it down:
 
     c. An integer indicating how much padding to apply to the right and bottom of the cropping: `padding`
 
-2. To allow Daft to pass column data into the `images` and `crops` arguments, we decorate the function with [`@udf`](api/udf.md#creating-udfs)
+2. To allow Daft to pass column data into the `images` and `crops` arguments, we decorate the function with [`@udf`](../api/udf.md#creating-udfs)
 
     a. `return_dtype` defines the returned data type. In this case, we return a column containing Python objects of numpy arrays
 
@@ -168,7 +168,7 @@ Class UDFs can be used the exact same way as function UDFs:
 
 === "🐍 Python"
     ``` python
-    df = df.with_column("image_classifications", RunModel(df["images"]))
+    df = df.with_column("image_classifications", RunModel(df["image"]))
     ```
 
 In addition, you can pass in arguments to the `__init__` method using `.with_init_args`:
@@ -176,10 +176,10 @@ In addition, you can pass in arguments to the `__init__` method using `.with_ini
 === "🐍 Python"
     ``` python
     RunMistral = RunModel.with_init_args(model_name="mistralai/Mistral-7B-Instruct-v0.1")
-    df = df.with_column("image_classifications", RunMistral(df["images"]))
+    df = df.with_column("image_classifications", RunMistral(df["image"]))
     ```
 
-See the `TextEmbedder` UDF in our [document processing tutorial](resources/tutorials.md#document-processing) for a complete example of using a class UDF with concurrency.
+See the `TextEmbedder` UDF in our [document processing tutorial](../resources/tutorials.md#document-processing) for a complete example of using a class UDF with concurrency.
 
 ### Resource Requests
 
@@ -203,7 +203,7 @@ To do so, you can create your UDF and assign it a resource request:
     ``` python
     df = df.with_column(
         "image_classifications",
-        RunModelWithOneGPU(df["images"]),
+        RunModelWithOneGPU(df["image"]),
     )
     ```
 
@@ -216,7 +216,7 @@ UDFs can also be parametrized with new resource requests after being initialized
     RunModelWithTwoGPUs = RunModelWithOneGPU.override_options(num_gpus=2)
     df = df.with_column(
         "image_classifications",
-        RunModelWithTwoGPUs(df["images"]),
+        RunModelWithTwoGPUs(df["image"]),
     )
     ```
 

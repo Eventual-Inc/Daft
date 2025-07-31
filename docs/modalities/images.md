@@ -8,11 +8,14 @@ To setup this example, let's read a Parquet file from a public S3 bucket contain
 === "🐍 Python"
 
     ```python
+    import daft
+    from daft import col
+
     # Read parquet file containing sample dog owners
     df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
 
     # Combine "first_name" and "last_name" to create new column "full_name"
-    df = df.with_column("full_name", daft.col("first_name") + " " + daft.col("last_name"))
+    df = df.with_column("full_name", col("first_name") + " " + col("last_name"))
     df.select("full_name", "age", "country", "has_dog").show()
 
     # Create dataframe of dogs
@@ -68,7 +71,7 @@ You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNam
 === "🐍 Python"
 
     ```python
-    df_family = df_family.with_column("image_bytes", df_dogs["urls"].url.download(on_error="null"))
+    df_family = df_family.with_column("image_bytes", col("urls").url.download(on_error="null"))
     df_family.show()
     ```
 
@@ -118,7 +121,7 @@ This is necessary because multimodal data such as images, videos, and audio file
     ```python
     # Each operation uses different batch sizes automatically
     df = daft.read_parquet("metadata.parquet") # Large batches
-          .with_column("image_data", col("image_url").url.download())  # Small batches
+          .with_column("image_data", col("urls").url.download())  # Small batches
           .with_column("resized", col("image_data").image.resize(224, 224))  # Medium batches
     ```
 

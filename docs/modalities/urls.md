@@ -12,7 +12,7 @@ Daft supports working with:
 - **Hugging Face datasets**: `hf://dataset/name`
 - **Unity Catalog volumes**: `vol+dbfs:/Volumes/unity/path`
 
-URLs in Daft are simply a special case of String columns. Daft provides the [`.url.*`](api/expressions.md#daft.expressions.expressions.ExpressionUrlNamespace) method namespace with functionality for working with URL strings. For example, to download data from URLs:
+URLs in Daft are simply a special case of String columns. Daft provides the [`.url.*`](../api/expressions.md#daft.expressions.expressions.ExpressionUrlNamespace) method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
 <!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
 

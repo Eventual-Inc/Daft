@@ -35,7 +35,7 @@ Once your data is in the pipeline, use Daft’s support for custom Python transf
 
 See the guide on [Running Custom Python Code](../custom-code/index.md).
 
-### A Concrete Example (coming soon)
+<!-- ### A Concrete Example (coming soon) -->
 
 ### Real-World Example: Storing Sparse Image Tensors
 
