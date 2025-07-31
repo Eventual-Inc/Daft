@@ -850,7 +850,7 @@ class DataFrame:
             ...     "s3://my-bucket/my-data",
             ...     write_mode="overwrite",
             ...     partition_cols=["x"],
-            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret)
+            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret")
             ... )
             <BLANKLINE>
             (Writes the DataFrame to S3 in Parquet format, partitioned by column "x" and overwriting existing data)
