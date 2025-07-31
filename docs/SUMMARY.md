@@ -1,6 +1,6 @@
 * Guide
     * [Overview](index.md)
-    * [Installation](installation.md)
+    * [Installation](install.md)
     * [Quickstart](quickstart.md)
     * Modalities
         * [Overview](modalities/index.md)
