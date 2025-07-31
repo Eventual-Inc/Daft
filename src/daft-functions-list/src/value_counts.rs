@@ -1,7 +1,7 @@
 use common_error::{ensure, DaftResult};
 use daft_core::prelude::{DataType, Field, Schema, Series};
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -17,13 +17,13 @@ impl ScalarUDF for ListValueCounts {
         "list_value_counts"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         input.list_value_counts()
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -44,5 +44,5 @@ impl ScalarUDF for ListValueCounts {
 }
 
 pub fn list_value_counts(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListValueCounts, vec![expr]).into()
+    ScalarFn::builtin(ListValueCounts, vec![expr]).into()
 }

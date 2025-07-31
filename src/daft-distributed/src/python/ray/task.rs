@@ -74,7 +74,7 @@ impl RayTaskResultHandle {
 
 impl TaskResultHandle for RayTaskResultHandle {
     fn task_context(&self) -> TaskContext {
-        self.task_context
+        self.task_context.clone()
     }
 
     /// Get the result of the task, awaiting if necessary
@@ -101,17 +101,16 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs)) => {
-                    let materialized_outputs = ray_part_refs
-                        .into_iter()
-                        .map(|ray_part_ref| {
-                            MaterializedOutput::new(
-                                Arc::new(ray_part_ref) as PartitionRef,
-                                worker_id.clone(),
-                            )
-                        })
-                        .collect();
+                    let materialized_output = MaterializedOutput::new(
+                        ray_part_refs
+                            .into_iter()
+                            .map(|ray_part_ref| Arc::new(ray_part_ref) as PartitionRef)
+                            .collect(),
+                        worker_id.clone(),
+                    );
+
                     TaskStatus::Success {
-                        result: materialized_outputs,
+                        result: materialized_output,
                     }
                 }
                 Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,

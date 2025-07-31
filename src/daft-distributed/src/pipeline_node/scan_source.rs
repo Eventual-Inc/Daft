@@ -5,12 +5,12 @@ use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::SchemaRef;
 
 use super::{
-    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineOutput,
-    RunningPipelineNode,
+    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    SubmittableTaskStream,
 };
 use crate::{
     pipeline_node::NodeID,
@@ -33,15 +33,28 @@ impl ScanSourceNode {
     const NODE_NAME: NodeName = "ScanSource";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        stage_config: &StageConfig,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
+        logical_node_id: Option<NodeID>,
     ) -> Self {
-        let context =
-            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![],
+            vec![],
+            logical_node_id,
+        );
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(
+                scan_tasks.len(),
+            )),
+        );
         Self {
             config,
             context,
@@ -56,15 +69,13 @@ impl ScanSourceNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
             let empty_scan_task = self
                 .make_empty_scan_task(TaskContext::from((&self.context, task_id_counter.next())))?;
-            let _ = result_tx
-                .send(PipelineOutput::Task(SubmittableTask::new(empty_scan_task)))
-                .await;
+            let _ = result_tx.send(SubmittableTask::new(empty_scan_task)).await;
             return Ok(());
         }
 
@@ -73,11 +84,7 @@ impl ScanSourceNode {
                 vec![scan_task.clone()].into(),
                 TaskContext::from((&self.context, task_id_counter.next())),
             )?;
-            if result_tx
-                .send(PipelineOutput::Task(SubmittableTask::new(task)))
-                .await
-                .is_err()
-            {
+            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
                 break;
             }
         }
@@ -136,12 +143,15 @@ impl DistributedPipelineNode for ScanSourceNode {
         vec![]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
         stage_context.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        SubmittableTaskStream::from(result_rx)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

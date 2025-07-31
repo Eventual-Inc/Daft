@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,13 +19,13 @@ impl ScalarUDF for ListMax {
     fn name(&self) -> &'static str {
         "list_max"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         input.list_max()
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -40,5 +40,5 @@ impl ScalarUDF for ListMax {
 
 #[must_use]
 pub fn list_max(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListMax {}, vec![expr]).into()
+    ScalarFn::builtin(ListMax {}, vec![expr]).into()
 }

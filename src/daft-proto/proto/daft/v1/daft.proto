@@ -179,7 +179,7 @@ message Expr {
     Agg agg = 3;
     BinaryOp binary_op = 4;
     Cast cast = 5;
-    Function function = 6;
+    ScalarFn function = 6;
     Over over = 7;
     WindowFunction window_function = 8;
     Not not = 9;
@@ -321,15 +321,15 @@ message IfElse {
   Expr predicate = 3;
 }
 
-message Function {
+message ScalarFn {
   oneof descriptor {
-    RsFunction rs = 1;
-    PyFunction py = 2;
+    BuiltinFn builtin = 1;
+    PyFn py = 2;
   }
   Args args = 3;
 
   // For rust functions (builtins), we only have simple names.
-  message RsFunction {
+  message BuiltinFn {
     string name = 1;
   }
 
@@ -345,20 +345,35 @@ message Function {
   }
 
   // For python functions (UDF), we need the pickled object and bound args.
-  message PyFunction {
-    string name = 1;
-    uint64 arity = 2;
-    DataType return_type = 3;
-    //--
-    PyObject callable = 4;
-    PyObject callable_init_args = 5; // the __init__ args for runtime initialization
-    PyObject callable_call_args = 6; // the (possibly) closed args from decoration
-    //--
-    optional uint64 concurrency = 7;
-    optional uint64 batch_size = 8;
-    optional uint64 num_cpus = 9;
-    optional uint64 num_gpus = 10;
-    optional uint64 max_memory_bytes = 11;
+  message PyFn {
+    oneof variant {
+      LegacyFn legacy = 1;
+      RowWiseFn row_wise = 2;
+    }
+
+    message LegacyFn {
+      string name = 1;
+      uint64 arity = 2;
+      DataType return_type = 3;
+      //--
+      PyObject callable = 4;
+      PyObject callable_init_args = 5; // the __init__ args for runtime initialization
+      PyObject callable_call_args = 6; // the (possibly) closed args from decoration
+      //--
+      optional uint64 concurrency = 7;
+      optional uint64 batch_size = 8;
+      optional uint64 num_cpus = 9;
+      optional uint64 num_gpus = 10;
+      optional uint64 max_memory_bytes = 11;
+      optional bool use_process = 12;
+    }
+
+    message RowWiseFn {
+      string name = 1;
+      DataType return_dtype = 2;
+      PyObject inner = 3;
+      PyObject original_args = 4;
+    }
   }
 }
 
@@ -516,7 +531,7 @@ message Rel {
     RelUnion union = 13;
     RelWindow window = 14;
     //--
-    RelActorPoolProject actor_pool_project = 15;
+    RelUDFProject udf_project = 15;
     RelExplode explode = 16;
     RelMonotonicallyIncreasingId monotonically_increasing_id = 17;
     RelPivot pivot = 18;
@@ -538,10 +553,10 @@ message RelProject {
   repeated Expr projections = 2;
 }
 
-// This does not need to be separate, but it reduces impedance mismatch across the type definitions.
-message RelActorPoolProject {
+message RelUDFProject {
   Rel input = 1;
-  repeated Expr projections = 2;
+  Expr project = 2;
+  repeated Expr passthrough_columns = 3;
 }
 
 message RelFilter {

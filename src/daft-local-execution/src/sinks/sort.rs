@@ -7,10 +7,10 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -103,15 +103,15 @@ impl BlockingSink for SortSink {
                         &params.descending,
                         &params.nulls_first,
                     )?);
-                    Ok(Some(sorted))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Sort"
+    fn name(&self) -> NodeName {
+        "Sort".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

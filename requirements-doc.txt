@@ -8,3 +8,9 @@ mkdocstrings-python
 ruff
 mkdocs-minify-plugin
 mkdocs-redirects
+yamllint
+yamlfix
+mkdocs-gen-files
+griffe
+mkdocs-literate-nav
+Jinja2

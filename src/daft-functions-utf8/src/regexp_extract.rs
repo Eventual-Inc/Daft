@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ impl ScalarUDF for RegexpExtract {
     fn aliases(&self) -> &'static [&'static str] {
         &["regexp_extract"]
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(
             inputs.len() == 2 || inputs.len() == 3,
             ComputeError: "Expected 2 or 3 input args, got {}",
@@ -46,7 +46,7 @@ impl ScalarUDF for RegexpExtract {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -73,7 +73,7 @@ impl ScalarUDF for RegexpExtract {
 
 #[must_use]
 pub fn regexp_extract(input: ExprRef, pattern: ExprRef, index: ExprRef) -> ExprRef {
-    ScalarFunction::new(RegexpExtract, vec![input, pattern, index]).into()
+    ScalarFn::builtin(RegexpExtract, vec![input, pattern, index]).into()
 }
 
 fn extract_impl(s: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {

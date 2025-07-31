@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ impl ScalarUDF for ILike {
     fn name(&self) -> &'static str {
         "ilike"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
             s.with_utf8_array(|arr| {
                 pattern
@@ -30,7 +30,7 @@ impl ScalarUDF for ILike {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -52,7 +52,7 @@ impl ScalarUDF for ILike {
 
 #[must_use]
 pub fn ilike(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    ScalarFunction::new(ILike {}, vec![input, pattern]).into()
+    ScalarFn::builtin(ILike {}, vec![input, pattern]).into()
 }
 
 fn ilike_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {

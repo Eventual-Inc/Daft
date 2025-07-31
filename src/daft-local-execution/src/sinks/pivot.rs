@@ -7,10 +7,10 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -123,15 +123,15 @@ impl BlockingSink for PivotSink {
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
                     )?);
-                    Ok(Some(pivoted))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![pivoted]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Pivot"
+    fn name(&self) -> NodeName {
+        "Pivot".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

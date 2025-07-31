@@ -145,11 +145,15 @@ def _glob_path_into_file_infos(
 ) -> FileInfos:
     file_infos = FileInfos()
     file_format = file_format_config.file_format() if file_format_config is not None else None
-    for path in paths:
-        path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
-        if len(path_file_infos) == 0:
-            raise FileNotFoundError(f"No files found at {path}")
-        file_infos.extend(path_file_infos)
+    for path in set(paths):
+        try:
+            path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
+            file_infos.merge(path_file_infos)
+        except FileNotFoundError:
+            logger.debug("%s is not found.", path)
+
+    if len(file_infos) == 0:
+        raise FileNotFoundError(f"No files found at {','.join(paths)}")
 
     return file_infos
 
@@ -277,12 +281,13 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def items(self) -> list[tuple[PartID, MaterializedResult[ray.ObjectRef]]]:
         return [(pid, result) for pid, result in sorted(self._results.items())]
 
-    def _get_merged_micropartition(self) -> MicroPartition:
+    def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
         ids_and_partitions = self.items()
-        assert ids_and_partitions[0][0] == 0
-        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+        if len(ids_and_partitions) > 0:
+            assert ids_and_partitions[0][0] == 0
+            assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
-        return MicroPartition.concat(all_partitions)
+        return MicroPartition.concat_or_empty(all_partitions, schema)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
@@ -887,16 +892,16 @@ class Scheduler(ActorPoolManager):
         )
 
         with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
-            raw_tasks = plan_scheduler.to_partition_tasks(
-                psets,
-                self,
-                # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
-                # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
-                # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
-                None if results_buffer_size is None else max(results_buffer_size - 1, 1),
-            )
-            tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
             try:
+                raw_tasks = plan_scheduler.to_partition_tasks(
+                    psets,
+                    self,
+                    # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
+                    # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
+                    # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
+                    None if results_buffer_size is None else max(results_buffer_size - 1, 1),
+                )
+                tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
                 ###
                 # Scheduling Loop:
                 #
@@ -1127,13 +1132,13 @@ class DaftRayActor:
     def __init__(
         self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection
     ) -> None:
-        from daft.daft import get_udf_names
+        from daft.daft import try_get_udf_name
 
         self.daft_execution_config = daft_execution_config
 
         logger.info(
             "Initializing stateful UDFs: %s",
-            ", ".join(name for expr in uninitialized_projection for name in get_udf_names(expr._expr)),
+            ", ".join(name for expr in uninitialized_projection if (name := try_get_udf_name(expr._expr)) is not None),
         )
         self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 

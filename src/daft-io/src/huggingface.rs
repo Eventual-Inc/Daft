@@ -1,6 +1,6 @@
 use std::{
-    any::Any, collections::HashMap, num::ParseIntError, ops::Range, str::FromStr,
-    string::FromUtf8Error, sync::Arc,
+    any::Any, collections::HashMap, num::ParseIntError, str::FromStr, string::FromUtf8Error,
+    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -9,20 +9,23 @@ use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
 };
+use reqwest::StatusCode;
 use reqwest_middleware::{
     reqwest::header::{CONTENT_LENGTH, RANGE},
     ClientWithMiddleware,
 };
 use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt, Snafu};
+use uuid::Uuid;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat,
+    FileFormat, InvalidRangeRequestSnafu,
 };
 
 #[derive(Debug, Snafu)]
@@ -170,14 +173,25 @@ impl std::fmt::Display for HFPathParts {
 }
 
 impl HFPathParts {
-    fn get_file_uri(&self) -> String {
-        format!(
+    // There is a bug within huggingface apis that is incorrectly caching files
+    // https://github.com/huggingface/datasets/issues/7685
+    //
+    // So to bypass this, we add a unique parameter to the url to prevent CDN caching.
+    fn get_file_uri(&self, cache_bust: bool) -> String {
+        let base = format!(
             "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
             REVISION = self.revision,
-            PATH = self.path
-        )
+            PATH = self.path,
+        );
+        if cache_bust {
+            let cachebuster = Uuid::new_v4();
+            let cachebuster = cachebuster.to_string();
+            format!("{base}?cachebust={cachebuster}")
+        } else {
+            base
+        }
     }
 
     fn get_api_uri(&self) -> String {
@@ -187,7 +201,7 @@ impl HFPathParts {
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
             REVISION = self.revision,
-            PATH = self.path
+            PATH = self.path,
         )
     }
 
@@ -250,35 +264,73 @@ impl ObjectSource for HFSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let path_parts = uri.parse::<HFPathParts>()?;
-        let uri = &path_parts.get_file_uri();
-        let request = self.http_source.client.get(uri);
-        let request = match range {
-            None => request,
-            Some(range) => request.header(
-                RANGE,
-                format!("bytes={}-{}", range.start, range.end.saturating_sub(1)),
-            ),
-        };
+        fn make_request(
+            uri: &str,
+            cache_bust: bool,
+            client: &reqwest_middleware::ClientWithMiddleware,
+            range: Option<&GetRange>,
+        ) -> super::Result<reqwest_middleware::RequestBuilder> {
+            let path_parts = uri.parse::<HFPathParts>()?;
+            let uri = &path_parts.get_file_uri(cache_bust);
+
+            let req = client.get(uri);
+            Ok(match range {
+                None => req,
+                Some(range) => {
+                    range.validate().context(InvalidRangeRequestSnafu)?;
+                    req.header(RANGE, range.to_string())
+                }
+            })
+        }
+        let request = make_request(uri, false, &self.http_source.client, range.as_ref())?;
 
         let response = request
             .send()
             .await
-            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
+            .context(UnableToConnectSnafu::<String> {
+                path: uri.to_string(),
+            })?;
 
-        let response = response.error_for_status().map_err(|e| {
-            if e.status().map(|s| s.as_u16()) == Some(401) {
-                Error::Unauthorized
-            } else {
-                Error::UnableToOpenFile {
-                    path: uri.clone(),
-                    source: e,
+        let response = match response.error_for_status() {
+            Err(e) => {
+                let status_code = e.status();
+                match status_code {
+                    Some(StatusCode::UNAUTHORIZED) => Err(Error::Unauthorized),
+                    // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
+                    // Retry once with cache busting to bypass the improperly cached response and get correct file metadata.
+                    // If it fails again, we'll return the error.
+                    Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
+                        let request =
+                            make_request(uri, true, &self.http_source.client, range.as_ref())?;
+
+                        let response = request.send().await.context(UnableToConnectSnafu::<
+                            String,
+                        > {
+                            path: uri.into(),
+                        })?;
+                        let res = response.error_for_status().map_err(|e| {
+                            if e.status() == Some(StatusCode::UNAUTHORIZED) {
+                                Error::Unauthorized
+                            } else {
+                                Error::UnableToOpenFile {
+                                    path: uri.to_string(),
+                                    source: e,
+                                }
+                            }
+                        })?;
+                        Ok(res)
+                    }
+                    _ => Err(Error::UnableToOpenFile {
+                        path: uri.to_string(),
+                        source: e,
+                    }),
                 }
             }
-        })?;
+            Ok(res) => Ok(res),
+        }?;
 
         if let Some(is) = io_stats.as_ref() {
             is.mark_get_requests(1);
@@ -312,7 +364,7 @@ impl ObjectSource for HFSource {
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let path_parts = uri.parse::<HFPathParts>()?;
-        let uri = &path_parts.get_file_uri();
+        let uri = &path_parts.get_file_uri(false);
 
         let request = self.http_source.client.head(uri);
         let response = request
@@ -543,8 +595,28 @@ async fn try_parquet_api(
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
+    use common_io_config::HTTPConfig;
 
-    use crate::huggingface::HFPathParts;
+    use crate::{
+        huggingface::{HFPathParts, HFSource},
+        integrations::test_full_get,
+        object_io::ObjectSource,
+    };
+
+    #[tokio::test]
+    async fn test_full_get_from_hf() -> crate::Result<()> {
+        let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
+        let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
+
+        let client = HFSource::get_client(&HTTPConfig::default()).await?;
+        let parquet_file = client.get(test_file_path, None, None).await?;
+        let bytes = parquet_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, expected_md5);
+
+        test_full_get(client, &test_file_path, &bytes).await
+    }
 
     #[test]
     fn test_parse_hf_parts() -> DaftResult<()> {

@@ -16,10 +16,10 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 #[derive(Clone)]
 enum AggStrategy {
@@ -412,15 +412,17 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(Some(Arc::new(concated)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        concated,
+                    )]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "GroupedAggregate"
+    fn name(&self) -> NodeName {
+        "GroupedAggregate".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

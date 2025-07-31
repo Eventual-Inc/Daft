@@ -16,7 +16,7 @@ Built for modern AI/ML workflows with Python at its core and Rust under the hood
 
 **:fontawesome-solid-laptop: Seamless scaling, from laptop to cluster**
 
-Start local, scale global—without changing a line of code. Daft's Rust-powered engine delivers blazing performance on a single machine and effortlessly extends to distributed clusters with when you need more horsepower.
+Start local, scale global—without changing a line of code. Daft's Rust-powered engine delivers blazing performance on a single machine and effortlessly extends to distributed clusters when you need more horsepower.
 
 ## Key Features
 
@@ -48,15 +48,11 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
 <div class="grid cards" markdown>
 
-- [:material-download: **Installing Daft**](install.md)
-
-    Install Daft from your terminal and discover more advanced installation options.
-
 - [:material-clock-fast: **Quickstart**](quickstart.md)
 
     Install Daft, create your first DataFrame, and get started with common DataFrame operations.
 
-- [:simple-elasticstack: **Architecture**](resources/architecture.md)
+- [:simple-elasticstack: **Architecture**](optimization/architecture.md)
 
     Understand the different components to Daft under-the-hood.
 
@@ -116,10 +112,9 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
 <div class="grid cards" markdown>
 
-- [:material-star-shooting: **Advanced Daft**](advanced/memory.md)
-- [:material-file-compare: **Engine Comparison**](resources/engine_comparison.md)
+- [:material-star-shooting: **Managing Memory in Daft**](optimization/memory.md)
 - [:material-file-document: **Tutorials**](resources/tutorials.md)
-- [:material-chart-bar: **Benchmarks**](resources/benchmarks/tpch.md)
+- [:material-chart-bar: **Benchmarks**](benchmarks/index.md)
 
 </div>
 

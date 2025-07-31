@@ -16,7 +16,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 use daft_schema::schema::SchemaRef;
 pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
 pub use partitioning::{PartitionField, PartitionTransform};
-pub use pushdowns::Pushdowns;
+pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};

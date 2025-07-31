@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -20,10 +20,10 @@ impl ScalarUDF for EndsWith {
         "ends_with"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", endswith_impl)
     }
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -43,7 +43,7 @@ impl ScalarUDF for EndsWith {
 }
 
 pub fn endswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    ScalarFunction::new(EndsWith, vec![input, pattern]).into()
+    ScalarFn::builtin(EndsWith, vec![input, pattern]).into()
 }
 
 fn endswith_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {

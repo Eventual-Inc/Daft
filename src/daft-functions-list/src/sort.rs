@@ -1,7 +1,7 @@
 use common_error::{ensure, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     lit, literals_to_series, ExprRef, Literal,
 };
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ impl ScalarUDF for ListSort {
         "list_sort"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
 
         let desc = inputs
@@ -33,7 +33,7 @@ impl ScalarUDF for ListSort {
         data.list_sort(&desc, &nulls_first)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -64,5 +64,5 @@ impl ScalarUDF for ListSort {
 pub fn list_sort(input: ExprRef, desc: Option<ExprRef>, nulls_first: Option<ExprRef>) -> ExprRef {
     let desc = desc.unwrap_or_else(|| lit(false));
     let nulls_first = nulls_first.unwrap_or_else(|| desc.clone());
-    ScalarFunction::new(ListSort {}, vec![input, desc, nulls_first]).into()
+    ScalarFn::builtin(ListSort {}, vec![input, desc, nulls_first]).into()
 }

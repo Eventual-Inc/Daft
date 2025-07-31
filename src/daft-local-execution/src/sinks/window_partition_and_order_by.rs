@@ -13,11 +13,12 @@ use tracing::{instrument, Span};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
+        BlockingSinkSinkResult, BlockingSinkState,
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionAndOrderByParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -145,7 +146,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             if input_data.is_empty() {
-                                return RecordBatch::empty(Some(params.original_schema.clone()));
+                                return Ok(RecordBatch::empty(Some(
+                                    params.original_schema.clone(),
+                                )));
                             }
 
                             let groupby_table =
@@ -233,7 +236,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                            empty_result,
+                        )]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -241,15 +246,17 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         results.into(),
                         None,
                     );
-                    Ok(Some(Arc::new(final_result)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        final_result,
+                    )]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowPartitionAndOrderBy"
+    fn name(&self) -> NodeName {
+        "WindowPartitionAndOrderBy".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     stage::{StageConfig, StageExecutionContext},
@@ -24,8 +23,9 @@ impl ProjectNode {
     const NODE_NAME: NodeName = "Project";
 
     pub fn new(
-        stage_config: &StageConfig,
         node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
         projection: Vec<BoundExpr>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -36,8 +36,19 @@ impl ProjectNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
+            logical_node_id,
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            translate_clustering_spec(
+                child.config().clustering_spec.clone(),
+                &projection
+                    .iter()
+                    .map(|e| e.inner().clone())
+                    .collect::<Vec<_>>(),
+            ),
+        );
         Self {
             config,
             context,
@@ -109,21 +120,24 @@ impl DistributedPipelineNode for ProjectNode {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
-        let input_node = self.child.clone().start(stage_context);
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
 
         let projection = self.projection.clone();
         let schema = self.config.schema.clone();
-        let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            Ok(LocalPhysicalPlan::project(
+        let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
+            LocalPhysicalPlan::project(
                 input,
                 projection.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-            ))
+            )
         };
 
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        input_node.pipeline_instruction(self.clone(), plan_builder)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

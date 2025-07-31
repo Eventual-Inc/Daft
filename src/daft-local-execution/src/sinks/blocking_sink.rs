@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -10,11 +11,12 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
-        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
+        RuntimeStatsContext, RuntimeStatsEventHandler,
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
@@ -28,9 +30,17 @@ pub enum BlockingSinkStatus {
     Finished(Box<dyn BlockingSinkState>),
 }
 
+pub enum BlockingSinkFinalizeOutput {
+    #[allow(dead_code)]
+    HasMoreOutput {
+        states: Vec<Box<dyn BlockingSinkState>>,
+        output: Vec<Arc<MicroPartition>>,
+    },
+    Finished(Vec<Arc<MicroPartition>>),
+}
+
 pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<BlockingSinkStatus>>;
-pub(crate) type BlockingSinkFinalizeResult =
-    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkFinalizeOutput>>;
 pub trait BlockingSink: Send + Sync {
     fn sink(
         &self,
@@ -43,9 +53,12 @@ pub trait BlockingSink: Send + Sync {
         states: Vec<Box<dyn BlockingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> NodeName;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(BaseStatsBuilder {})
+    }
     fn dispatch_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeContext,
@@ -61,7 +74,6 @@ pub trait BlockingSink: Send + Sync {
 
 pub struct BlockingSinkNode {
     op: Arc<dyn BlockingSink>,
-    name: &'static str,
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
@@ -75,14 +87,17 @@ impl BlockingSinkNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name();
+        let name = op.name().into();
         let node_info = ctx.next_node_info(name);
 
+        let runtime_stats = RuntimeStatsContext::new_with_builder(
+            node_info.clone(),
+            op.make_runtime_stats_builder(),
+        );
         Self {
             op,
-            name,
             child,
-            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
+            runtime_stats,
             plan_stats,
             node_info,
         }
@@ -161,8 +176,10 @@ impl TreeDisplay for BlockingSinkNode {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display, true, true, true).unwrap();
+                    let rt_result = self.runtime_stats.render();
+                    for (name, value) in rt_result {
+                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                    }
                 }
             }
         }
@@ -179,8 +196,8 @@ impl PipelineNode for BlockingSinkNode {
         vec![self.child.as_ref()]
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -189,9 +206,9 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let progress_bar = runtime_handle.make_progress_bar(
-            self.name(),
+            &self.name(),
             ProgressBarColor::Cyan,
-            true,
+            self.node_id(),
             self.runtime_stats.clone(),
         );
         let child_results_receiver = self.child.start(false, runtime_handle)?;
@@ -222,7 +239,7 @@ impl PipelineNode for BlockingSinkNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
@@ -253,13 +270,26 @@ impl PipelineNode for BlockingSinkNode {
                     rt_stats_handler,
                     info_span!("BlockingSink::Finalize"),
                 );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                loop {
+                    let finalized_result = op.finalize(finished_states, &spawner).await??;
+                    match finalized_result {
+                        BlockingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                            for output in output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                            finished_states = states;
+                        }
+                        BlockingSinkFinalizeOutput::Finished(output) => {
+                            for output in output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                            break;
+                        }
+                    }
                 }
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }

@@ -2361,27 +2361,40 @@ Note that if the data you have returned is not castable to the return_dtype that
 
 ### Class UDFs
 
-UDFs can also be created on Classes, which allow for initialization on some expensive state that can be shared between invocations of the class, for example downloading data or creating a model.
+UDFs can also be created on Python classes. With a class UDF, you can set the `concurrency` argument to share the initialization on expensive state between invocations of the UDF, for example downloading data or creating a model.
 
 === "🐍 Python"
     ``` python
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.udf(
+        return_dtype=daft.DataType.int64(),
+        concurrency=4,  # initialize 4 instances of the UDF to run across your data
+    )
     class RunModel:
 
-        def __init__(self):
+        def __init__(self, model_name = "meta-llama/Llama-4-Scout-17B-16E-Instruct"):
             # Perform expensive initializations
-            self._model = create_model()
+            self._model = create_model(model_name)
 
         def __call__(self, features_col):
             return self._model(features_col)
     ```
 
-Running Class UDFs are exactly the same as running their functional cousins.
+Class UDFs can be used the exact same way as function UDFs:
 
 === "🐍 Python"
     ``` python
     df = df.with_column("image_classifications", RunModel(df["images"]))
     ```
+
+In addition, you can pass in arguments to the `__init__` method using `.with_init_args`:
+
+=== "🐍 Python"
+    ``` python
+    RunMistral = RunModel.with_init_args(model_name="mistralai/Mistral-7B-Instruct-v0.1")
+    df = df.with_column("image_classifications", RunMistral(df["images"]))
+    ```
+
+See the `TextEmbedder` UDF in our [document processing tutorial](resources/tutorials.md#document-processing) for a complete example of using a class UDF with concurrency.
 
 ### Resource Requests
 
@@ -2421,6 +2434,32 @@ UDFs can also be parametrized with new resource requests after being initialized
         RunModelWithTwoGPUs(df["images"]),
     )
     ```
+
+### Debugging UDFs
+
+When running Daft locally, UDFs can be debugged using python's built-in debugger, [pdb](https://docs.python.org/3/library/pdb.html), by setting breakpoints in your UDF.
+
+=== "🐍 Python"
+    ``` python
+    @daft.udf(return_dtype=daft.DataType.python())
+    def my_udf(*cols):
+        breakpoint()
+        ...
+    ```
+
+If you are setting breakpoints via IDEs like VS Code, Cursor, or others that use [debugpy](https://github.com/microsoft/debugpy), you need to set `debugpy.debug_this_thread()` in the UDF. This is because `debugpy` does not automatically detect native threads.
+
+=== "🐍 Python"
+    ``` python
+    import debugpy
+
+    @daft.udf(return_dtype=daft.DataType.python())
+    def my_udf(*cols):
+        debugpy.debug_this_thread()
+        ...
+    ```
+
+
 
 ## Multimodal Data
 
@@ -2681,6 +2720,7 @@ Now you're ready to call this function on the `urls` column and store the output
 - [:material-image-search: **Querying Images with UDFs**](resources/tutorials.md#querying-images-with-udfs)
 - [:material-image-sync: **Image Generation on GPUs**](resources/tutorials.md#image-generation-on-gpus)
 - [:material-window-closed-variant: **Window Functions in Daft**](resources/tutorials.md#window-functions)
+- [:material-file-document: **Document Processing**](resources/tutorials.md#document-processing)
 
 </div>
 

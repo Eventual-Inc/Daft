@@ -219,6 +219,7 @@ def _infer_filesystem(
             _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
             _set_if_not_none(translated_kwargs, "region", s3_config.region_name)
             _set_if_not_none(translated_kwargs, "anonymous", s3_config.anonymous)
+            _set_if_not_none(translated_kwargs, "force_virtual_addressing", s3_config.force_virtual_addressing)
             if s3_config.num_tries is not None:
                 try:
                     from pyarrow.fs import AwsStandardS3RetryStrategy

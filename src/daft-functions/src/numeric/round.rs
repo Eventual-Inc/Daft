@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use num_traits::Pow;
@@ -22,7 +22,7 @@ struct RoundArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Round {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let RoundArgs { input, decimals } = inputs.try_into()?;
 
         let decimals = decimals.unwrap_or(0);
@@ -34,7 +34,7 @@ impl ScalarUDF for Round {
         "round"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -58,7 +58,7 @@ pub fn round(input: ExprRef, decimal: Option<ExprRef>) -> ExprRef {
     if let Some(decimal) = decimal {
         inputs.push(decimal);
     }
-    ScalarFunction::new(Round {}, inputs).into()
+    ScalarFn::builtin(Round {}, inputs).into()
 }
 
 pub fn series_round(s: &Series, decimal: i32) -> DaftResult<Series> {

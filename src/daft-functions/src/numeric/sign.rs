@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub struct Sign;
 
 #[typetag::serde]
 impl ScalarUDF for Sign {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         match input.data_type() {
@@ -40,7 +40,7 @@ impl ScalarUDF for Sign {
         stringify!(sign)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -55,7 +55,7 @@ impl ScalarUDF for Sign {
 }
 #[must_use]
 pub fn sign(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Sign, vec![input]).into()
+    ScalarFn::builtin(Sign, vec![input]).into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -63,7 +63,7 @@ pub struct Negative;
 
 #[typetag::serde]
 impl ScalarUDF for Negative {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         match input.data_type() {
@@ -108,7 +108,7 @@ impl ScalarUDF for Negative {
         stringify!(negative)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -123,5 +123,5 @@ impl ScalarUDF for Negative {
 }
 #[must_use]
 pub fn negative(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Negative, vec![input]).into()
+    ScalarFn::builtin(Negative, vec![input]).into()
 }

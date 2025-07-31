@@ -9,10 +9,10 @@ use itertools::Itertools;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum ProbeTableState {
     Building {
@@ -51,7 +51,7 @@ impl ProbeTableState {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
             let input_tables = input.get_tables()?;
             if input_tables.is_empty() {
-                tables.push(RecordBatch::empty(Some(input.schema()))?);
+                tables.push(RecordBatch::empty(Some(input.schema())));
                 return Ok(());
             }
             for table in input_tables.iter() {
@@ -117,8 +117,8 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
-    fn name(&self) -> &'static str {
-        "HashJoinBuild"
+    fn name(&self) -> NodeName {
+        "HashJoinBuild".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -171,7 +171,7 @@ impl BlockingSink for HashJoinBuildSink {
         let finalized_probe_state = probe_table_state.finalize();
         self.probe_state_bridge
             .set_state(finalized_probe_state.into());
-        Ok(None).into()
+        Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
     }
 
     fn max_concurrency(&self) -> usize {

@@ -583,6 +583,8 @@ impl DurationArray {
 macro_rules! pycast_then_arrowcast {
     ($self:expr, $daft_type:expr, $pytype_str:expr) => {
         {
+            use daft_schema::python::PyDataType;
+
             let old_pyseries = PySeries::from($self.clone().into_series());
 
             let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
@@ -598,10 +600,12 @@ macro_rules! pycast_then_arrowcast {
                         .getattr(pyo3::intern!(py, $pytype_str))?
                 };
 
+                let py_dtype = PyDataType { dtype: $daft_type.clone() };
+
                 old_daft_series
                     .call_method1(
                         (pyo3::intern!(py, "_pycast_to_pynative")),
-                        (py_type_fn,),
+                        (py_type_fn, py_dtype),
                     )?
                     .getattr(pyo3::intern!(py, "_series"))?
                     .extract()
@@ -1133,7 +1137,7 @@ impl PythonArray {
             DataType::Python => Ok(self.clone().into_series()),
 
             DataType::Null => {
-                // (Follow Arrow cast behaviour: turn all elements into Null.)
+                // (Follow Arrow cast behavior: turn all elements into Null.)
                 let null_array = crate::datatypes::NullArray::full_null(
                     self.name(),
                     &DataType::Null,
@@ -1147,16 +1151,18 @@ impl PythonArray {
                 pycast_then_arrowcast!(self, DataType::FixedSizeBinary(*size), "fixed_size_bytes")
             }
             DataType::Utf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
-            dt @ DataType::UInt8
-            | dt @ DataType::UInt16
-            | dt @ DataType::UInt32
-            | dt @ DataType::UInt64
-            | dt @ DataType::Int8
-            | dt @ DataType::Int16
-            | dt @ DataType::Int32
-            | dt @ DataType::Int64 => pycast_then_arrowcast!(self, dt, "int"),
+            dt @ (DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64) => {
+                pycast_then_arrowcast!(self, dt, "int")
+            }
             // DataType::Float16 => todo!(),
-            dt @ DataType::Float32 | dt @ DataType::Float64 => {
+            dt @ (DataType::Float32 | DataType::Float64) => {
                 pycast_then_arrowcast!(self, dt, "float")
             }
             DataType::List(child_dtype) => {
@@ -2258,6 +2264,14 @@ impl FixedSizeListArray {
                         dtype
                     )));
                 }
+                // TODO [mg]: I recall in testing that this shape is wrong. It flattens everything.
+                //            It needs to preserve the shape! Otherwise it is *strictly wrong*.
+                //            Why is this occurring when it deserializes??
+                //            Need to figure out how to trace the data flow / debug so I can
+                //            see where this incorrect decision occurs. Maybe because Parquet
+                //            saves it as a big ol' fixed list? We need to recognize this
+                //            by saving the type + shape in the Arrow schema, recognizing this, and
+                //            deserializing into a real n-dimensional tensor!
                 Ok(FixedShapeTensorArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     self.clone(),
@@ -2273,6 +2287,31 @@ impl FixedSizeListArray {
                     )));
                 }
                 Ok(FixedShapeImageArray::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    self.clone(),
+                )
+                .into_series())
+            }
+            DataType::Embedding(child_dtype, dimensionality) => {
+                if **child_dtype != *self.child_data_type() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatched child type. Found {} but expected {}",
+                        self.data_type(),
+                        dtype,
+                        child_dtype.as_ref(),
+                        self.child_data_type(),
+                    )));
+                }
+                if *dimensionality != self.fixed_element_len() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatched sizes. Found {} but expected {}",
+                        self.data_type(),
+                        dtype,
+                        dimensionality,
+                        self.fixed_element_len(),
+                    )));
+                }
+                Ok(EmbeddingArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     self.clone(),
                 )
@@ -2494,7 +2533,7 @@ where
 #[cfg(test)]
 mod tests {
     use arrow2::array::PrimitiveArray;
-    use rand::{thread_rng, Rng};
+    use rand::{rng, Rng};
 
     use super::*;
     use crate::{
@@ -2541,12 +2580,15 @@ mod tests {
     const MIN_DIFF_FOR_PRECISION: usize = 12;
     #[test]
     fn test_decimal_to_decimal_cast() {
-        let mut rng = thread_rng();
-        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        let mut rng = rng();
+        let mut values: Vec<f64> = (0..100)
+            .map(|_| rng.random_range(-MAX_VAL..MAX_VAL))
+            .collect();
         values.extend_from_slice(&[0.0, -0.0]);
 
-        let initial_scale: usize = rng.gen_range(0..=MAX_SCALE);
-        let initial_precision: usize = rng.gen_range(initial_scale + MIN_DIFF_FOR_PRECISION..=32);
+        let initial_scale: usize = rng.random_range(0..=MAX_SCALE);
+        let initial_precision: usize =
+            rng.random_range(initial_scale + MIN_DIFF_FOR_PRECISION..=32);
         let min_integral_comp = initial_precision - initial_scale;
         let i128_values: Vec<i128> = values
             .iter()
@@ -2555,9 +2597,9 @@ mod tests {
         let original = create_test_decimal_array(i128_values, initial_precision, initial_scale);
 
         // We always widen the Decimal, otherwise we lose information and can no longer compare with the original Decimal values.
-        let intermediate_scale: usize = rng.gen_range(initial_scale..=32 - min_integral_comp);
+        let intermediate_scale: usize = rng.random_range(initial_scale..=32 - min_integral_comp);
         let intermediate_precision: usize =
-            rng.gen_range(intermediate_scale + min_integral_comp..=32);
+            rng.random_range(intermediate_scale + min_integral_comp..=32);
 
         let result = original
             .cast(&DataType::Decimal128(
@@ -2581,13 +2623,15 @@ mod tests {
     // of floats during casting, while avoiding flakiness due small differences in floats.
     #[test]
     fn test_decimal_to_float() {
-        let mut rng = thread_rng();
-        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        let mut rng = rng();
+        let mut values: Vec<f64> = (0..100)
+            .map(|_| rng.random_range(-MAX_VAL..MAX_VAL))
+            .collect();
         values.extend_from_slice(&[0.0, -0.0]);
         let num_values = values.len();
 
-        let scale: usize = rng.gen_range(0..=MAX_SCALE);
-        let precision: usize = rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=32);
+        let scale: usize = rng.random_range(0..=MAX_SCALE);
+        let precision: usize = rng.random_range(scale + MIN_DIFF_FOR_PRECISION..=32);
         // when the scale is 0, the created decimal values are integers, the epsilon should be 1
         let epsilon = if scale == 0 { 1f64 } else { 0.1f64 };
 
@@ -2616,13 +2660,15 @@ mod tests {
     const MAX_DIFF_FOR_PRECISION: usize = 18;
     #[test]
     fn test_decimal_to_int() {
-        let mut rng = thread_rng();
-        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        let mut rng = rng();
+        let mut values: Vec<f64> = (0..100)
+            .map(|_| rng.random_range(-MAX_VAL..MAX_VAL))
+            .collect();
         values.extend_from_slice(&[0.0, -0.0]);
 
-        let scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let scale: usize = rng.random_range(0..=MAX_SCALE);
         let precision: usize =
-            rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=scale + MAX_DIFF_FOR_PRECISION);
+            rng.random_range(scale + MIN_DIFF_FOR_PRECISION..=scale + MAX_DIFF_FOR_PRECISION);
         let i128_values: Vec<i128> = values
             .iter()
             .map(|&x| (x * 10_f64.powi(scale as i32) as f64) as i128)
@@ -2642,6 +2688,34 @@ mod tests {
             "Failed with decimal({}, {})",
             precision,
             scale,
+        );
+    }
+
+    #[test]
+    fn cast_fsl_into_embedding() {
+        let fsl = FixedSizeListArray::new(
+            Arc::new(Field::new(
+                "item",
+                DataType::FixedSizeList(Box::new(DataType::Int64), 0),
+            )),
+            Series::empty("item", &DataType::Int64),
+            None,
+        );
+
+        assert!(
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Int64), 0))
+                .is_ok(),
+            "Expected to be able to cast FixedSizeList into Embedding of same datatype & size."
+        );
+        assert!(
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Int64), 1))
+                .is_err(),
+            "Not expected to be able to cast FixedSizeList into Embedding with different size."
+        );
+
+        assert!(
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0)).is_err(),
+            "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
     }
 }

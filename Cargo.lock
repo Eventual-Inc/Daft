@@ -290,6 +290,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-json"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d03b9340013413eb84868682ace00a1098c81a5ebc96d279f7ebf9a4cac3c0fd"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-cast",
+ "arrow-data",
+ "arrow-schema",
+ "chrono",
+ "half",
+ "indexmap 2.9.0",
+ "lexical-core 1.0.5",
+ "num",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "arrow-schema"
 version = "54.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1496,6 +1516,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "capitalize"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b5271031022835ee8c7582fe67403bd6cb3d962095787af7921027234bab5bf"
+
+[[package]]
 name = "casey"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2510,17 +2536,21 @@ dependencies = [
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-physical-plan",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
+ "reqwest",
  "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "uuid 1.17.0",
 ]
 
 [[package]]
@@ -2750,10 +2780,12 @@ dependencies = [
  "serde",
  "snafu",
  "tempfile",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tracing",
  "url",
+ "uuid 1.17.0",
 ]
 
 [[package]]
@@ -2811,10 +2843,12 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
+ "capitalize",
  "common-daft-config",
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-resource-request",
  "common-runtime",
  "common-scan-info",
  "common-system-info",
@@ -2841,12 +2875,12 @@ dependencies = [
  "itertools 0.14.0",
  "kanal",
  "log",
- "num-format",
  "opentelemetry",
  "parking_lot 0.12.4",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
+ "rand 0.8.5",
  "reqwest",
  "snafu",
  "tokio",
@@ -3258,6 +3292,8 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-json",
  "arrow-schema",
  "arrow2",
  "async-trait",

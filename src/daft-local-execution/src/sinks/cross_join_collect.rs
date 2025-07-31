@@ -6,10 +6,10 @@ use daft_recordbatch::RecordBatch;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
 
@@ -30,8 +30,8 @@ impl CrossJoinCollectSink {
 }
 
 impl BlockingSink for CrossJoinCollectSink {
-    fn name(&self) -> &'static str {
-        "CrossJoinCollect"
+    fn name(&self) -> NodeName {
+        "CrossJoinCollect".into()
     }
 
     fn sink(
@@ -83,7 +83,7 @@ impl BlockingSink for CrossJoinCollectSink {
             .expect("Cross join collect state should have tables before finalize is called");
 
         self.state_bridge.set_state(Arc::new(tables));
-        Ok(None).into()
+        Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

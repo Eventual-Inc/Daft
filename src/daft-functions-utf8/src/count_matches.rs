@@ -4,7 +4,7 @@ use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ impl ScalarUDF for CountMatches {
     fn name(&self) -> &'static str {
         "count_matches"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let patterns = inputs.required((1, "patterns"))?;
 
@@ -42,7 +42,7 @@ impl ScalarUDF for CountMatches {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -84,7 +84,7 @@ pub fn count_matches(
     whole_words: bool,
     case_sensitive: bool,
 ) -> ExprRef {
-    ScalarFunction::new(
+    ScalarFn::builtin(
         CountMatches,
         vec![input, patterns, lit(whole_words), lit(case_sensitive)],
     )

@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,11 +16,11 @@ pub struct Contains;
 
 #[typetag::serde]
 impl ScalarUDF for Contains {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", contains_impl)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -49,7 +49,7 @@ impl ScalarUDF for Contains {
 }
 
 pub fn contains(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    ScalarFunction::new(Contains, vec![input, pattern]).into()
+    ScalarFn::builtin(Contains, vec![input, pattern]).into()
 }
 
 fn contains_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {

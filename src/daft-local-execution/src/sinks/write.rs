@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc};
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
@@ -7,16 +7,48 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriterFactory};
+use indexmap::IndexMap;
+use indicatif::{HumanBytes, HumanCount};
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    pipeline::NodeName,
+    runtime_stats::{RuntimeStatsBuilder, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
+
+struct WriteStatsBuilder {
+    bytes_written: AtomicU64,
+}
+
+impl RuntimeStatsBuilder for WriteStatsBuilder {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn build(
+        &self,
+        stats: &mut IndexMap<&'static str, String>,
+        rows_received: u64,
+        rows_emitted: u64,
+    ) {
+        stats.insert(ROWS_RECEIVED_KEY, HumanCount(rows_received).to_string());
+        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
+        stats.insert(
+            "bytes written",
+            HumanBytes(
+                self.bytes_written
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .to_string(),
+        );
+    }
+}
 
 #[derive(Debug)]
 pub enum WriteFormat {
@@ -24,12 +56,14 @@ pub enum WriteFormat {
     PartitionedParquet,
     Csv,
     PartitionedCsv,
+    Json,
+    PartitionedJson,
     Iceberg,
     PartitionedIceberg,
     Deltalake,
     PartitionedDeltalake,
     Lance,
-    DataSink,
+    DataSink(String),
 }
 
 struct WriteState {
@@ -83,16 +117,26 @@ impl BlockingSink for WriteSink {
         mut state: Box<dyn BlockingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
+        let builder = spawner.runtime_context.builder.clone();
+
         spawner
             .spawn(
                 async move {
-                    state
+                    let bytes_written = state
                         .as_any_mut()
                         .downcast_mut::<WriteState>()
                         .expect("WriteSink should have WriteState")
                         .writer
                         .write(input)
                         .await?;
+
+                    builder
+                        .as_any_arc()
+                        .downcast_ref::<WriteStatsBuilder>()
+                        .expect("WriteStatsBuilder should be the additional stats builder")
+                        .bytes_written
+                        .fetch_add(bytes_written as u64, std::sync::atomic::Ordering::Relaxed);
+
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -123,31 +167,39 @@ impl BlockingSink for WriteSink {
                         results.into(),
                         None,
                     ));
-                    Ok(Some(mp))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![mp]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        match self.write_format {
-            WriteFormat::Parquet => "ParquetSink",
-            WriteFormat::PartitionedParquet => "PartitionedParquetSink",
-            WriteFormat::Csv => "CsvSink",
-            WriteFormat::PartitionedCsv => "PartitionedCsvSink",
-            WriteFormat::Iceberg => "IcebergSink",
-            WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
-            WriteFormat::Deltalake => "DeltalakeSink",
-            WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
-            WriteFormat::Lance => "LanceSink",
-            WriteFormat::DataSink => "DataSink",
+    fn name(&self) -> NodeName {
+        match &self.write_format {
+            WriteFormat::Parquet => "Parquet Write".into(),
+            WriteFormat::PartitionedParquet => "PartitionedParquet Write".into(),
+            WriteFormat::Csv => "Csv Write".into(),
+            WriteFormat::PartitionedCsv => "PartitionedCsv Write".into(),
+            WriteFormat::Json => "Json Write".into(),
+            WriteFormat::PartitionedJson => "PartitionedJson Write".into(),
+            WriteFormat::Iceberg => "Iceberg Write".into(),
+            WriteFormat::PartitionedIceberg => "PartitionedIceberg Write".into(),
+            WriteFormat::Deltalake => "Deltalake Write".into(),
+            WriteFormat::PartitionedDeltalake => "PartitionedDeltalake Write".into(),
+            WriteFormat::Lance => "Lance Write".into(),
+            WriteFormat::DataSink(name) => name.clone().into(),
         }
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         let writer = self.writer_factory.create_writer(0, None)?;
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
+    }
+
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(WriteStatsBuilder {
+            bytes_written: AtomicU64::new(0),
+        })
     }
 
     fn dispatch_spawner(

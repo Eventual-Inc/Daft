@@ -19,8 +19,8 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => {
+        match tables {
+            None => {
                 if values.is_empty() {
                     return Err(DaftError::ValueError(
                         "Unpivot requires at least one value column".to_string(),
@@ -44,7 +44,7 @@ impl MicroPartition {
 
                 Ok(Self::empty(Some(Arc::new(Schema::new(fields)))))
             }
-            [t] => {
+            Some(t) => {
                 let unpivoted = t.unpivot(ids, values, variable_name, value_name)?;
                 Ok(Self::new_loaded(
                     unpivoted.schema.clone(),
@@ -52,7 +52,6 @@ impl MicroPartition {
                     None,
                 ))
             }
-            _ => unreachable!(),
         }
     }
 }

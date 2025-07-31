@@ -2,7 +2,6 @@ use std::{collections::VecDeque, future::Future, path::PathBuf, pin::Pin, sync::
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
 use daft_io::{parse_url, IOConfig, SourceType};
@@ -31,14 +30,9 @@ type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Se
 
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_parquet_writer_supported(
-    file_format: FileFormat,
     root_dir: &str,
     file_schema: &SchemaRef,
 ) -> DaftResult<bool> {
-    // TODO(desmond): Currently we only support native parquet writes.
-    if !matches!(file_format, FileFormat::Parquet) {
-        return Ok(false);
-    }
     let (source_type, _) = parse_url(root_dir)?;
     match source_type {
         SourceType::File => {}
@@ -144,6 +138,7 @@ struct ParquetWriter<B: StorageBackend> {
     partition_values: Option<RecordBatch>,
     storage_backend: B,
     file_writer: Option<SerializedFileWriter<B::Writer>>,
+    total_bytes_written: usize,
 }
 
 impl<B: StorageBackend> ParquetWriter<B> {
@@ -165,6 +160,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             partition_values,
             storage_backend,
             file_writer: None,
+            total_bytes_written: 0,
         }
     }
 
@@ -266,7 +262,6 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
-        let starting_bytes_written = self.bytes_written();
         let record_batches = data.get_tables()?;
 
         let row_group_writer_thread_handle = {
@@ -335,9 +330,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             .await
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
+        let bytes_written = file_writer.bytes_written() - self.total_bytes_written;
+        self.total_bytes_written = file_writer.bytes_written();
         self.file_writer.replace(file_writer);
 
-        Ok(self.bytes_written() - starting_bytes_written)
+        Ok(bytes_written)
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
@@ -385,13 +382,10 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     }
 
     fn bytes_written(&self) -> usize {
-        match &self.file_writer {
-            None => unreachable!("File writer must be created before bytes_written can be called"),
-            Some(writer) => writer.bytes_written(),
-        }
+        self.total_bytes_written
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        vec![self.bytes_written()]
+        vec![self.total_bytes_written]
     }
 }

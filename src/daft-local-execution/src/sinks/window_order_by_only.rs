@@ -11,9 +11,10 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowOrderByOnlyParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -138,7 +139,9 @@ impl BlockingSink for WindowOrderByOnlySink {
                     if sorted.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                            empty_result,
+                        )]));
                     }
 
                     // Convert to RecordBatch for window operations
@@ -194,15 +197,15 @@ impl BlockingSink for WindowOrderByOnlySink {
                         )
                     };
 
-                    Ok(Some(Arc::new(output)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(output)]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowOrderByOnly"
+    fn name(&self) -> NodeName {
+        "WindowOrderByOnly".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

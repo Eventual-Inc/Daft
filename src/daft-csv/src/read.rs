@@ -362,7 +362,7 @@ async fn read_csv_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        return RecordBatch::empty(Some(schema));
+        return Ok(RecordBatch::empty(Some(schema)));
     }
 
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.

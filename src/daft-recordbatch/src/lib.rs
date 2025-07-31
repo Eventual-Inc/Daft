@@ -24,7 +24,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
         BoundColumn,
     },
-    functions::{FunctionArgs, FunctionEvaluator},
+    functions::{scalar::ScalarFn, FunctionArgs, FunctionEvaluator},
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
     SketchType,
 };
@@ -182,14 +182,14 @@ impl RecordBatch {
         }
     }
 
-    pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
+    pub fn empty(schema: Option<SchemaRef>) -> Self {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.len());
         for field in schema.as_ref() {
             let series = Series::empty(&field.name, &field.dtype);
             columns.push(series);
         }
-        Ok(Self::new_unchecked(schema, columns, 0))
+        Self::new_unchecked(schema, columns, 0)
     }
 
     /// Create a RecordBatch from a set of columns.
@@ -438,6 +438,16 @@ impl RecordBatch {
         Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
 
+    pub fn concat_or_empty<T: AsRef<Self>>(
+        tables: &[T],
+        schema: Option<SchemaRef>,
+    ) -> DaftResult<Self> {
+        if tables.is_empty() {
+            return Ok(Self::empty(schema));
+        }
+        Self::concat(tables)
+    }
+
     pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(
@@ -506,6 +516,24 @@ impl RecordBatch {
 
     pub fn columns(&self) -> &[Series] {
         &self.columns
+    }
+
+    pub fn append_column(&self, series: Series) -> DaftResult<Self> {
+        if self.num_rows != series.len() {
+            return Err(DaftError::ValueError(format!(
+                "Cannot append column to RecordBatch of length {} with column of length {}",
+                self.num_rows,
+                series.len()
+            )));
+        }
+
+        let mut new_schema = self.schema.as_ref().clone();
+        new_schema.append(Field::new(series.name(), series.data_type().clone()));
+
+        let mut new_columns = self.columns.as_ref().clone();
+        new_columns.push(series);
+
+        Ok(Self::new_unchecked(new_schema, new_columns, self.num_rows))
     }
 
     fn eval_agg_expression(
@@ -689,7 +717,7 @@ impl RecordBatch {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            Expr::ScalarFunction(func) => {
+            Expr::ScalarFn(ScalarFn::Builtin(func)) => {
                 let args = func.inputs
                     .iter()
                     .map(|e| {
@@ -698,7 +726,7 @@ impl RecordBatch {
                     .collect::<DaftResult<FunctionArgs<Series>>>()?;
 
 
-                func.udf.evaluate(args)
+                func.udf.call(args)
             }
             Expr::Literal(lit_value) => Ok(lit_value.to_series()),
             Expr::IfElse {
@@ -718,6 +746,10 @@ impl RecordBatch {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
+            Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
+                let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
+                python_udf.call(args)
+            }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),

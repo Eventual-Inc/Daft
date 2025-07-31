@@ -229,7 +229,8 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     init_args,
     resource_request=None,
     batch_size=None,
-    concurrency=None
+    concurrency=None,
+    use_process=None
 ))]
 pub fn udf(
     name: &str,
@@ -241,6 +242,7 @@ pub fn udf(
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
+    use_process: Option<bool>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -264,9 +266,34 @@ pub fn udf(
             resource_request,
             batch_size,
             concurrency,
+            use_process,
         )?
         .into(),
     })
+}
+
+#[pyfunction]
+pub fn row_wise_udf(
+    name: &str,
+    inner: PyObject,
+    return_dtype: PyDataType,
+    original_args: PyObject,
+    expr_args: Vec<PyExpr>,
+) -> PyExpr {
+    use crate::python_udf::row_wise_udf;
+
+    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
+    PyExpr {
+        expr: row_wise_udf(
+            name,
+            inner.into(),
+            return_dtype.into(),
+            original_args.into(),
+            args,
+        )
+        .into(),
+    }
 }
 
 /// Initializes all uninitialized UDFs in the expression
@@ -278,9 +305,9 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
 
 /// Get the names of all UDFs in expression
 #[pyfunction]
-pub fn get_udf_names(expr: PyExpr) -> Vec<String> {
-    use crate::functions::python::get_udf_names;
-    get_udf_names(&expr.expr)
+pub fn try_get_udf_name(expr: PyExpr) -> Option<String> {
+    use crate::functions::python::try_get_udf_name;
+    try_get_udf_name(&expr.expr)
 }
 
 #[pyclass(module = "daft.daft")]

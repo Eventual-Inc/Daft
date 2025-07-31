@@ -7,10 +7,10 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -140,15 +140,15 @@ impl BlockingSink for TopNSink {
                         &params.nulls_first,
                         params.limit,
                     )?);
-                    Ok(Some(final_output))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "TopN"
+    fn name(&self) -> NodeName {
+        format!("TopN {}", self.params.limit).into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

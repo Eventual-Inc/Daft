@@ -115,7 +115,7 @@ code.doc-symbol-method::after {
 
 /* sidebar spacing */
 .md-sidebar {
-  width: 10rem;
+  width: 12rem;
 }
 
 [dir=ltr] .md-nav--primary .md-nav__item>.md-nav__link {

@@ -8,7 +8,7 @@ use daft_core::{
     with_match_integer_daft_types,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use num_traits::NumCast;
@@ -27,7 +27,7 @@ impl ScalarUDF for Right {
         "right"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "n", |s, nchars| {
             s.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {
@@ -46,7 +46,7 @@ impl ScalarUDF for Right {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -68,7 +68,7 @@ impl ScalarUDF for Right {
 
 #[must_use]
 pub fn right(input: ExprRef, nchars: ExprRef) -> ExprRef {
-    ScalarFunction::new(Right {}, vec![input, nchars]).into()
+    ScalarFn::builtin(Right {}, vec![input, nchars]).into()
 }
 
 fn right_impl<I>(arr: &Utf8Array, nchars: &DataArray<I>) -> DaftResult<Utf8Array>

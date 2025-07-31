@@ -111,6 +111,17 @@ impl DaftContext {
         })
     }
 
+    /// Reset/clear the current runner.
+    /// Note: This clears all in-memory state, including the partition cache.
+    pub fn reset_runner(&self) {
+        log::warn!(
+            "Resetting the runner will clear all in-memory state, including the partition cache."
+        );
+        self.with_state_mut(|state| {
+            state.runner = None;
+        });
+    }
+
     fn with_state<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&ContextState) -> R,
@@ -172,6 +183,12 @@ impl DaftContext {
         unimplemented!()
     }
 
+    /// Reset/clear the current runner.
+    /// Note: This clears all in-memory state, including the partition cache.
+    pub fn reset_runner(&self) {
+        unimplemented!()
+    }
+
     /// Execute a callback with read access to the state.
     /// The guard is automatically released when the callback returns.
     pub fn with_state<F, R>(&self, f: F) -> R
@@ -227,6 +244,14 @@ pub fn set_runner_ray(
 ) -> DaftResult<DaftContext> {
     let ctx = get_context();
 
+    let runner_type = get_runner_type_from_env();
+    if !runner_type.is_empty() && runner_type != RayRunner::NAME {
+        log::warn!(
+            "Ignore inconsistent $DAFT_RUNNER='{}' env when setting runner as ray",
+            runner_type
+        );
+    }
+
     let runner = Runner::Ray(RayRunner::try_new(
         address,
         max_task_backlog,
@@ -250,6 +275,14 @@ pub fn set_runner_ray(
 #[cfg(feature = "python")]
 pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> {
     let ctx = get_context();
+
+    let runner_type = get_runner_type_from_env();
+    if !runner_type.is_empty() && runner_type != NativeRunner::NAME {
+        log::warn!(
+            "Ignore inconsistent $DAFT_RUNNER='{}' env when setting runner as native",
+            runner_type
+        );
+    }
 
     let runner = Runner::Native(NativeRunner::try_new(num_threads)?);
     let runner = Arc::new(runner);
@@ -305,30 +338,45 @@ fn get_ray_runner_config_from_env() -> RunnerConfig {
 
 /// Helper function to automatically detect whether to use the ray runner.
 #[cfg(feature = "python")]
-fn detect_ray_state() -> bool {
+fn detect_ray_state() -> (bool, bool) {
     Python::with_gil(|py| {
         py.import(pyo3::intern!(py, "daft.utils"))
             .and_then(|m| m.getattr(pyo3::intern!(py, "detect_ray_state")))
             .and_then(|m| m.call0())
             .and_then(|m| m.extract())
-            .unwrap_or(false)
+            .unwrap_or((false, false))
     })
 }
 
 #[cfg(feature = "python")]
-fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
+fn get_runner_type_from_env() -> String {
     const DAFT_RUNNER: &str = "DAFT_RUNNER";
 
-    let runner_from_envvar = std::env::var(DAFT_RUNNER)
+    std::env::var(DAFT_RUNNER)
         .unwrap_or_default()
-        .to_lowercase();
+        .to_lowercase()
+}
 
-    match runner_from_envvar.as_str() {
-        "native" => Ok(RunnerConfig::Native { num_threads: None }),
-        "ray" => Ok(get_ray_runner_config_from_env()),
-        "py" => Err(DaftError::ValueError("The PyRunner was removed from Daft from v0.5.0 onwards. Please set the env to `DAFT_RUNNER=native` instead.".to_string())),
-        "" => Ok(if detect_ray_state() { get_ray_runner_config_from_env() } else { RunnerConfig::Native { num_threads: None }}),
-        other => Err(DaftError::ValueError(format!("Invalid runner type `DAFT_RUNNER={other}` specified through the env. Please use either `native` or `ray` instead.")))
+#[cfg(feature = "python")]
+fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
+    match get_runner_type_from_env().as_str() {
+        NativeRunner::NAME => Ok(RunnerConfig::Native { num_threads: None }),
+        RayRunner::NAME => Ok(get_ray_runner_config_from_env()),
+        "py" => Err(DaftError::ValueError(
+            "The PyRunner was removed from Daft from v0.5.0 onwards. \
+            Please set the env to `DAFT_RUNNER=native` instead."
+                .to_string(),
+        )),
+        "" => Ok(if detect_ray_state() == (true, false) {
+            // on ray but not in ray worker
+            get_ray_runner_config_from_env()
+        } else {
+            RunnerConfig::Native { num_threads: None }
+        }),
+        other => Err(DaftError::ValueError(format!(
+            "Invalid runner type `DAFT_RUNNER={other}` specified through the env. \
+            Please use either `native` or `ray` instead."
+        ))),
     }
 }
 
@@ -338,7 +386,18 @@ fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
 }
 
 #[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> pyo3::PyResult<()> {
+pub fn reset_runner() {
+    let ctx = get_context();
+    ctx.reset_runner();
+}
+
+#[cfg(not(feature = "python"))]
+pub fn reset_runner() {
+    unimplemented!()
+}
+
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(
         python::get_runner_config_from_env,
         parent
@@ -346,6 +405,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::set_runner_ray, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::set_runner_native, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::reset_runner, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     Ok(())
 }

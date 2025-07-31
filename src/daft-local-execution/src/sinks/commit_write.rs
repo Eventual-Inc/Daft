@@ -11,10 +11,10 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct CommitWriteState {
     written_file_path_record_batches: Vec<RecordBatch>,
@@ -153,15 +153,17 @@ impl BlockingSink for CommitWriteSink {
                         written_file_path_record_batches.into(),
                         None,
                     );
-                    Ok(Some(written_file_paths_mp.into()))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        written_file_paths_mp,
+                    )]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "CommitWriteSink"
+    fn name(&self) -> NodeName {
+        "CommitWriteSink".into()
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

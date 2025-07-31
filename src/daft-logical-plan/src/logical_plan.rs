@@ -26,7 +26,7 @@ pub enum LogicalPlan {
     Source(Source),
     Shard(Shard),
     Project(Project),
-    ActorPoolProject(ActorPoolProject),
+    UDFProject(UDFProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -53,6 +53,7 @@ pub type LogicalPlanRef = Arc<LogicalPlan>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubqueryAlias {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     pub input: LogicalPlanRef,
     pub name: Arc<str>,
 }
@@ -61,6 +62,7 @@ impl SubqueryAlias {
     pub fn new(input: LogicalPlanRef, name: impl Into<Arc<str>>) -> Self {
         Self {
             plan_id: None,
+            node_id: None,
             input,
             name: name.into(),
         }
@@ -68,6 +70,11 @@ impl SubqueryAlias {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -88,7 +95,7 @@ impl LogicalPlan {
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
-            Self::ActorPoolProject(ActorPoolProject {
+            Self::UDFProject(UDFProject {
                 projected_schema, ..
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
@@ -133,8 +140,17 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
-            Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
-                let res = projection.iter().flat_map(get_required_columns).collect();
+            Self::UDFProject(UDFProject {
+                project,
+                passthrough_columns,
+                ..
+            }) => {
+                let mut res = passthrough_columns
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect::<IndexSet<_>>();
+
+                res.extend(get_required_columns(project).into_iter());
                 vec![res]
             }
             Self::Filter(filter) => {
@@ -266,7 +282,7 @@ impl LogicalPlan {
             Self::Source(..) => "Source",
             Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
-            Self::ActorPoolProject(..) => "ActorPoolProject",
+            Self::UDFProject(..) => "UDFProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
@@ -294,7 +310,7 @@ impl LogicalPlan {
             Self::Source(Source { stats_state, .. })
             | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
-            | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -334,7 +350,7 @@ impl LogicalPlan {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
             Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
-            Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
+            Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
@@ -370,7 +386,7 @@ impl LogicalPlan {
             Self::Source(source) => source.multiline_display(),
             Self::Shard(shard) => shard.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
-            Self::ActorPoolProject(projection) => projection.multiline_display(),
+            Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
@@ -400,7 +416,7 @@ impl LogicalPlan {
             Self::Source(..) => vec![],
             Self::Shard(Shard { input, .. }) => vec![input],
             Self::Project(Project { input, .. }) => vec![input],
-            Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
+            Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
@@ -433,7 +449,7 @@ impl LogicalPlan {
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
                         input.clone(), projection.clone(),
                     ).unwrap()),
-                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
+                Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
@@ -443,7 +459,7 @@ impl LogicalPlan {
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name)).unwrap()),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, starting_offset, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name), *starting_offset).unwrap()),
                 Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) =>
                     Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
@@ -585,7 +601,7 @@ impl LogicalPlan {
             Self::Source(Source { plan_id, .. })
             | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
-            | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
+            | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
@@ -608,39 +624,93 @@ impl LogicalPlan {
         }
     }
 
+    pub fn node_id(&self) -> &Option<usize> {
+        match self {
+            Self::Source(Source { node_id, .. })
+            | Self::Shard(Shard { node_id, .. })
+            | Self::Project(Project { node_id, .. })
+            | Self::UDFProject(UDFProject { node_id, .. })
+            | Self::Filter(Filter { node_id, .. })
+            | Self::Limit(Limit { node_id, .. })
+            | Self::Explode(Explode { node_id, .. })
+            | Self::Unpivot(Unpivot { node_id, .. })
+            | Self::Sort(Sort { node_id, .. })
+            | Self::Repartition(Repartition { node_id, .. })
+            | Self::Distinct(Distinct { node_id, .. })
+            | Self::Aggregate(Aggregate { node_id, .. })
+            | Self::Pivot(Pivot { node_id, .. })
+            | Self::Concat(Concat { node_id, .. })
+            | Self::Intersect(Intersect { node_id, .. })
+            | Self::Union(Union { node_id, .. })
+            | Self::Join(Join { node_id, .. })
+            | Self::Sink(Sink { node_id, .. })
+            | Self::Sample(Sample { node_id, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
+            | Self::SubqueryAlias(SubqueryAlias { node_id, .. })
+            | Self::Window(Window { node_id, .. })
+            | Self::TopN(TopN { node_id, .. }) => node_id,
+        }
+    }
+
     pub fn with_plan_id(self: Arc<Self>, plan_id: usize) -> Self {
-        match self.as_ref() {
-            Self::Source(source) => Self::Source(source.clone().with_plan_id(plan_id)),
-            Self::Shard(shard) => Self::Shard(shard.clone().with_plan_id(plan_id)),
-            Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
-            Self::ActorPoolProject(project) => {
-                Self::ActorPoolProject(project.clone().with_plan_id(plan_id))
-            }
-            Self::Filter(filter) => Self::Filter(filter.clone().with_plan_id(plan_id)),
-            Self::Limit(limit) => Self::Limit(limit.clone().with_plan_id(plan_id)),
-            Self::Explode(explode) => Self::Explode(explode.clone().with_plan_id(plan_id)),
-            Self::Unpivot(unpivot) => Self::Unpivot(unpivot.clone().with_plan_id(plan_id)),
-            Self::Sort(sort) => Self::Sort(sort.clone().with_plan_id(plan_id)),
-            Self::Repartition(repartition) => {
-                Self::Repartition(repartition.clone().with_plan_id(plan_id))
-            }
-            Self::Distinct(distinct) => Self::Distinct(distinct.clone().with_plan_id(plan_id)),
-            Self::Aggregate(aggregate) => Self::Aggregate(aggregate.clone().with_plan_id(plan_id)),
-            Self::Pivot(pivot) => Self::Pivot(pivot.clone().with_plan_id(plan_id)),
-            Self::Concat(concat) => Self::Concat(concat.clone().with_plan_id(plan_id)),
-            Self::Intersect(intersect) => Self::Intersect(intersect.clone().with_plan_id(plan_id)),
-            Self::Union(union) => Self::Union(union.clone().with_plan_id(plan_id)),
-            Self::Join(join) => Self::Join(join.clone().with_plan_id(plan_id)),
-            Self::Sink(sink) => Self::Sink(sink.clone().with_plan_id(plan_id)),
-            Self::Sample(sample) => Self::Sample(sample.clone().with_plan_id(plan_id)),
+        let this = Arc::unwrap_or_clone(self);
+        match this {
+            Self::Source(source) => Self::Source(source.with_plan_id(plan_id)),
+            Self::Shard(shard) => Self::Shard(shard.with_plan_id(plan_id)),
+            Self::Project(project) => Self::Project(project.with_plan_id(plan_id)),
+            Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
+            Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
+            Self::Limit(limit) => Self::Limit(limit.with_plan_id(plan_id)),
+            Self::Explode(explode) => Self::Explode(explode.with_plan_id(plan_id)),
+            Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_plan_id(plan_id)),
+            Self::Sort(sort) => Self::Sort(sort.with_plan_id(plan_id)),
+            Self::Repartition(repartition) => Self::Repartition(repartition.with_plan_id(plan_id)),
+            Self::Distinct(distinct) => Self::Distinct(distinct.with_plan_id(plan_id)),
+            Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_plan_id(plan_id)),
+            Self::Pivot(pivot) => Self::Pivot(pivot.with_plan_id(plan_id)),
+            Self::Concat(concat) => Self::Concat(concat.with_plan_id(plan_id)),
+            Self::Intersect(intersect) => Self::Intersect(intersect.with_plan_id(plan_id)),
+            Self::Union(union) => Self::Union(union.with_plan_id(plan_id)),
+            Self::Join(join) => Self::Join(join.with_plan_id(plan_id)),
+            Self::Sink(sink) => Self::Sink(sink.with_plan_id(plan_id)),
+            Self::Sample(sample) => Self::Sample(sample.with_plan_id(plan_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-                Self::MonotonicallyIncreasingId(
-                    monotonically_increasing_id.clone().with_plan_id(plan_id),
-                )
+                Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_plan_id(plan_id))
             }
-            Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
-            Self::Window(window) => window.with_plan_id(Some(plan_id)),
-            Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
+            Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_plan_id(plan_id)),
+            Self::Window(window) => Self::Window(window.with_plan_id(plan_id)),
+            Self::TopN(top_n) => Self::TopN(top_n.with_plan_id(plan_id)),
+        }
+    }
+
+    pub fn with_node_id(self: Arc<Self>, node_id: usize) -> Self {
+        let this = Arc::unwrap_or_clone(self);
+        match this {
+            Self::Source(source) => Self::Source(source.with_node_id(node_id)),
+            Self::Shard(shard) => Self::Shard(shard.with_node_id(node_id)),
+            Self::Project(project) => Self::Project(project.with_node_id(node_id)),
+            Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
+            Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
+            Self::Limit(limit) => Self::Limit(limit.with_node_id(node_id)),
+            Self::Explode(explode) => Self::Explode(explode.with_node_id(node_id)),
+            Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_node_id(node_id)),
+            Self::Sort(sort) => Self::Sort(sort.with_node_id(node_id)),
+            Self::Repartition(repartition) => Self::Repartition(repartition.with_node_id(node_id)),
+            Self::Distinct(distinct) => Self::Distinct(distinct.with_node_id(node_id)),
+            Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_node_id(node_id)),
+            Self::Pivot(pivot) => Self::Pivot(pivot.with_node_id(node_id)),
+            Self::Concat(concat) => Self::Concat(concat.with_node_id(node_id)),
+            Self::Intersect(intersect) => Self::Intersect(intersect.with_node_id(node_id)),
+            Self::Union(union) => Self::Union(union.with_node_id(node_id)),
+            Self::Join(join) => Self::Join(join.with_node_id(node_id)),
+            Self::Sink(sink) => Self::Sink(sink.with_node_id(node_id)),
+            Self::Sample(sample) => Self::Sample(sample.with_node_id(node_id)),
+            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_node_id(node_id))
+            }
+            Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_node_id(node_id)),
+            Self::Window(window) => Self::Window(window.with_node_id(node_id)),
+            Self::TopN(top_n) => Self::TopN(top_n.with_node_id(node_id)),
         }
     }
 }

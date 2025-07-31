@@ -143,9 +143,23 @@ class Schema:
         return len(self._schema.names())
 
     def column_names(self) -> list[str]:
+        """Returns a list of the names of the columns in the schema.
+
+        Args:
+            None
+        Returns:
+            list[str]: List of column names in the schema.
+        """
         return list(self._schema.names())
 
     def estimate_row_size_bytes(self) -> float:
+        """Estimates the size of a row in bytes based on the schema.
+
+        Args:
+            None
+        Returns:
+            float: Estimated size of a row in bytes.
+        """
         return self._schema.estimate_row_size_bytes()
 
     def __iter__(self) -> Iterator[Field]:
@@ -156,6 +170,13 @@ class Schema:
         return isinstance(other, Schema) and self._schema == other._schema
 
     def to_name_set(self) -> set[str]:
+        """Returns a set of column names in the schema.
+
+        Args:
+            None
+        Returns:
+            set[str]: Set of column names in the schema.
+        """
         return set(self.column_names())
 
     def __repr__(self) -> str:
@@ -175,10 +196,26 @@ class Schema:
         return self._schema._truncated_table_string()
 
     def apply_hints(self, hints: Schema) -> Schema:
+        """Applies hints from another schema to this schema.
+
+        Args:
+            hints (Schema): Schema containing hints to apply to this schema.
+
+        Returns:
+            Schema: A new Schema with the hints applied.
+        """
         return Schema._from_pyschema(self._schema.apply_hints(hints._schema))
 
     # Takes the unions between two schemas. Throws an error if the schemas contain overlapping keys.
     def union(self, other: Schema) -> Schema:
+        """Creates a new Schema that is the union of this schema and another schema.
+
+        Args:
+            other (Schema): The schema to union with this schema.
+
+        Returns:
+            Schema: A new Schema that is the union of this schema and the other schema.
+        """
         if not isinstance(other, Schema):
             raise ValueError(f"Expected Schema, got other: {type(other)}")
 
@@ -189,6 +226,14 @@ class Schema:
 
     @classmethod
     def from_pydict(cls, fields: dict[str, DataType]) -> Schema:
+        """Creates a Schema from a dictionary of field names and their corresponding DataTypes.
+
+        Args:
+            fields (dict[str, DataType]): Dictionary mapping field names to DataTypes.
+
+        Returns:
+            Schema: A Schema object created from the provided fields.
+        """
         return cls._from_fields([Field.create(k, v) for k, v in fields.items()])
 
     @classmethod
@@ -199,6 +244,17 @@ class Schema:
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> Schema:
+        """Creates a Schema from a Parquet file.
+
+        Args:
+            path (str): Path to the Parquet file.
+            io_config (IOConfig | None): IO configuration for reading the file.
+            multithreaded_io (bool | None): Whether to use multithreaded IO.
+            coerce_int96_timestamp_unit (TimeUnit): The time unit to coerce INT96 timestamps to.
+
+        Returns:
+            Schema: A Schema object representing the Parquet file.
+        """
         return Schema._from_pyschema(
             _read_parquet_schema(
                 uri=path,
@@ -216,6 +272,17 @@ class Schema:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ) -> Schema:
+        """Creates a Schema from a CSV file.
+
+        Args:
+            path (str): Path to the CSV file.
+            parse_options (CsvParseOptions | None): Options for parsing the CSV file.
+            io_config (IOConfig | None): IO configuration for reading the file.
+            multithreaded_io (bool | None): Whether to use multithreaded IO.
+
+        Returns:
+            Schema: A Schema object representing the CSV file.
+        """
         return Schema._from_pyschema(
             _read_csv_schema(
                 uri=path,
@@ -233,6 +300,17 @@ class Schema:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ) -> Schema:
+        """Creates a Schema from a JSON file.
+
+        Args:
+            path (str): Path to the JSON file.
+            parse_options (JsonParseOptions | None): Options for parsing the JSON file.
+            io_config (IOConfig | None): IO configuration for reading the file.
+            multithreaded_io (bool | None): Whether to use multithreaded IO.
+
+        Returns:
+            Schema: A Schema object representing the JSON file.
+        """
         return Schema._from_pyschema(
             _read_json_schema(
                 uri=path,

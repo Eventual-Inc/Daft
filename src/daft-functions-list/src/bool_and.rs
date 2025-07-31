@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,12 +19,12 @@ impl ScalarUDF for ListBoolAnd {
     fn name(&self) -> &'static str {
         "list_bool_and"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         input.list_bool_and()
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -39,5 +39,5 @@ impl ScalarUDF for ListBoolAnd {
 
 #[must_use]
 pub fn list_bool_and(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListBoolAnd, vec![expr]).into()
+    ScalarFn::builtin(ListBoolAnd, vec![expr]).into()
 }

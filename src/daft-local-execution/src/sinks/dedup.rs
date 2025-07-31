@@ -24,10 +24,10 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 #[derive(Default)]
 struct SinglePartitionDedupState {
@@ -180,15 +180,17 @@ impl BlockingSink for DedupSink {
 
                     // Concatenate the results and return
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(Some(Arc::new(concated)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        concated,
+                    )]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Dedup"
+    fn name(&self) -> NodeName {
+        "Dedup".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

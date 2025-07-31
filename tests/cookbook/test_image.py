@@ -27,7 +27,7 @@ def test_image_resize_mixed_modes(with_morsel_size) -> None:
         None,
     ]
 
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
     df = daft.from_pydict({"img": s})
 
     target_dtype = DataType.image()
@@ -83,7 +83,7 @@ def test_image_encode(with_morsel_size) -> None:
     arr = np.arange(np.prod(shape)).reshape(shape).astype(np_dtype)
     arrs = [arr, arr, arr]
 
-    s = Series.from_pylist(arrs, pyobj="force")
+    s = Series.from_pylist(arrs, dtype=DataType.python())
 
     df = daft.from_pydict({"img": s}).into_partitions(2)
     target_dtype = DataType.image(mode)

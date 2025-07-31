@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ impl ScalarUDF for RPad {
     fn name(&self) -> &'static str {
         "rpad"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 3, SchemaMismatch: "Expected 3 inputs, but received {}", inputs.len());
         let data = inputs.required((0, "input"))?;
         let length = inputs.required((1, "length"))?;
@@ -28,7 +28,7 @@ impl ScalarUDF for RPad {
         series_pad(data, length, pad, PadPlacement::Right)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -53,5 +53,5 @@ impl ScalarUDF for RPad {
 
 #[must_use]
 pub fn rpad(input: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
-    ScalarFunction::new(RPad {}, vec![input, length, pad]).into()
+    ScalarFn::builtin(RPad {}, vec![input, length, pad]).into()
 }

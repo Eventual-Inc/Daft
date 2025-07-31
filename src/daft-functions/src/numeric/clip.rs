@@ -6,7 +6,7 @@ use daft_core::{
     with_match_numeric_daft_types,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ struct ClipArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Clip {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let ClipArgs { input, min, max } = inputs.try_into()?;
 
         let input_dtype = input.data_type();
@@ -63,7 +63,7 @@ impl ScalarUDF for Clip {
         "clip"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -93,5 +93,5 @@ impl ScalarUDF for Clip {
 
 #[must_use]
 pub fn clip(array: ExprRef, min: ExprRef, max: ExprRef) -> ExprRef {
-    ScalarFunction::new(Clip, vec![array, min, max]).into()
+    ScalarFn::builtin(Clip, vec![array, min, max]).into()
 }

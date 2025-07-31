@@ -316,7 +316,27 @@ def test_cast_image():
         None,
     ]
 
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
     df = daft.from_pydict({"img": s})
     actual = daft.sql("select cast(img as image(RGB)) from df", **{"df": df}).collect()
     assert actual.schema()["img"].dtype == DataType.image("RGB")
+
+
+def test_count_pushdown(capsys):
+    data = [
+        {"id_spec": 1, "age": "2020-01-15", "tags": ["a", "b"]},
+        {"id_spec": 2, "age": "2020-01-16", "tags": ["c"]},
+        {"id_spec": 3, "age": None, "tags": None},
+    ]
+
+    df = daft.from_pylist(data)
+
+    result_df = daft.sql("SELECT count(1) as total FROM df", **{"df": df})
+    result = result_df.collect().to_pydict()
+
+    assert result == {"total": [3]}, "count(1) return 3 rows"
+
+    result_df.explain(show_all=True)
+    captured = capsys.readouterr()
+
+    assert "count(col(id_spec)" in captured.out.lower(), "Should show optimized count expression"

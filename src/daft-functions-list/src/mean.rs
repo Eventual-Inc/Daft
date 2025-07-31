@@ -5,7 +5,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -20,13 +20,13 @@ impl ScalarUDF for ListMean {
     fn name(&self) -> &'static str {
         "list_mean"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         input.list_mean()
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -43,5 +43,5 @@ impl ScalarUDF for ListMean {
 
 #[must_use]
 pub fn list_mean(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListMean {}, vec![expr]).into()
+    ScalarFn::builtin(ListMean {}, vec![expr]).into()
 }
