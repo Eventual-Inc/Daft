@@ -40,14 +40,35 @@ def llm_generate(
         Use vLLM provider:
         >>> import daft
         >>> from daft import col
-        >>> from daft.functions import llm_generate
-        >>> df = daft.read_csv("prompts.csv")
-        >>> df = df.with_column("response", llm_generate(col("prompt"), model="facebook/opt-125m"))
+        >>> from daft.functions import llm_generate, format
+        >>>
+        >>> df = daft.from_pydict({"city": ["Paris", "Tokyo", "New York"]})
+        >>> df = df.with_column(
+        ...     "description",
+        ...     llm_generate(
+        ...         format(
+        ...             "Describe the main attractions and unique features of this city: {}.",
+        ...             col("city"),
+        ...         ),
+        ...         model="facebook/opt-125m",
+        ...     ),
+        ... )
         >>> df.collect()
 
         Use OpenAI provider:
-        >>> df = daft.read_csv("prompts.csv")
-        >>> df = df.with_column("response", llm_generate(col("prompt"), model="gpt-4o", api_key="xxx", provider="openai"))
+        >>> df = daft.from_pydict({"city": ["Paris", "Tokyo", "New York"]})
+        >>> df = df.with_column(
+        ...     "description",
+        ...     llm_generate(
+        ...         format(
+        ...             "Describe the main attractions and unique features of this city: {}.",
+        ...             col("city"),
+        ...         ),
+        ...         model="gpt-4o",
+        ...         api_key="xxx",
+        ...         provider="openai",
+        ...     ),
+        ... )
         >>> df.collect()
 
     Note:
