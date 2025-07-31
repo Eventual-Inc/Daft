@@ -7,7 +7,6 @@ use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    functions::python::{get_resource_request, try_get_batch_size_from_udf, try_get_concurrency},
     resolved_col,
 };
 use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
@@ -81,6 +80,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         input_node: Arc<dyn DistributedPipelineNode>,
         partition_cols: Vec<BoundExpr>,
+        num_partitions: Option<usize>,
     ) -> Arc<dyn DistributedPipelineNode> {
         if partition_cols.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
@@ -90,7 +90,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 &self.stage_config,
                 partition_cols,
-                None,
+                num_partitions,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -136,14 +136,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),
                 }
             }
-            LogicalPlan::UDFProject(udf) if try_get_concurrency(&udf.project).is_some() => {
+            LogicalPlan::UDFProject(udf) if udf.is_actor_pool_udf() => {
                 #[cfg(feature = "python")]
                 {
-                    let batch_size = try_get_batch_size_from_udf(&udf.project)?;
-                    let memory_request = get_resource_request(&[udf.project.clone()])
-                        .and_then(|req| req.memory_bytes())
-                        .map(|m| m as u64)
-                        .unwrap_or(0);
                     let projection = udf
                         .passthrough_columns
                         .iter()
@@ -157,8 +152,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         logical_node_id,
                         &self.stage_config,
                         projection,
-                        batch_size,
-                        memory_request,
+                        udf.udf_properties.clone(),
                         udf.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
                     )?
@@ -180,6 +174,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.stage_config,
                     project,
                     passthrough_columns,
+                    udf.udf_properties.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -386,7 +381,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition =
-                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone());
+                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone(), None);
 
                 // Final stage: The actual window op
                 WindowNode::new(

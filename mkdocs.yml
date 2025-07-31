@@ -11,77 +11,7 @@ copyright: '&copy; Copyright 2025, Eventual <img referrerpolicy="no-referrer-whe
 # Repository
 repo_name: Daft
 repo_url: https://github.com/Eventual-Inc/Daft
-# Sitemap
-nav:
-- Daft User Guide:
-  - Overview: index.md
-  - Installation: install.md
-  - Quickstart: quickstart.md
-  - Core Concepts: core_concepts.md
-  - I/O:
-    - Overview: io/index.md
-    - Amazon Web Services: io/aws.md
-    - Apache Hudi: io/hudi.md
-    - Apache Iceberg: io/iceberg.md
-    - Delta Lake: io/delta_lake.md
-    - Hugging Face Datasets: io/huggingface.md
-    # - LanceDB: io/lance.md (wip)
-    - Microsoft Azure: io/azure.md
-    - SQL: io/sql.md
-  - SQL: sql_overview.md
-  - Sessions: sessions.md
-  - Catalogs:
-    - Overview: catalogs/index.md
-    - AWS Glue: catalogs/glue.md
-    - AWS S3 Tables: catalogs/s3tables.md
-    - Unity Catalog: catalogs/unity_catalog.md
-  - Spark Connect: spark_connect.md
-  - Distributed Computing: distributed.md
-  - Integrations: integrations.md
-  - Advanced:
-    - Managing Memory Usage: advanced/memory.md
-    - Partitioning: advanced/partitioning.md
-    - Observability: advanced/observability.md
-  - Resources:
-    - Architecture: resources/architecture.md
-    - Engine Comparison: resources/engine_comparison.md
-    # - Feature of the Week:
-    #   - 00 - Data Access: fotw/00-data-access.ipynb
-    #   - 01 - Multimodal (Images): fotw/01-images.ipynb
-    - Tutorials: resources/tutorials.md
-    - Benchmarks: resources/benchmarks/tpch.md        # Benchmarks can expand into a folder once we have more
-    - Telemetry: resources/telemetry.md
-  - Migration Guide:
-    - Coming from Dask: migration/dask_migration.md
-  - Roadmap: roadmap.md
-  - Release Notes <sup>↗</sup>: https://github.com/Eventual-Inc/Daft/releases
-- Python API:
-  - Overview: api/index.md
-  - I/O: api/io.md
-  - DataFrame: api/dataframe.md
-  - Expressions: api/expressions.md
-  - Functions:
-    - Scalar Functions: api/functions.md        # column_ are scalar functions
-    - User-Defined Functions: api/udf.md
-    - Window Functions: api/window.md
-  - Sessions: api/sessions.md
-  - Catalogs & Tables: api/catalogs_tables.md
-  - Schema: api/schema.md
-  - Data Types: api/datatypes.md
-  - Aggregations: api/aggregations.md
-  - Series: api/series.md
-  - Configuration: api/config.md
-  - Miscellaneous: api/misc.md
-- SQL Reference:
-  - Overview: sql/index.md
-  - Statements:
-    - SELECT: sql/statements/select.md
-    - SHOW: sql/statements/show.md
-    - USE: sql/statements/use.md
-  - Data Types: sql/datatypes.md
-  - Window Functions: sql/window_functions.md
-  # Disabled until identifier modes are supported.
-  # - Identifiers: sql/identifiers.md
+# Sitemap now managed by mkdocs-literate-nav plugin in docs/SUMMARY.md
 # Configuration
 theme:
   name: material
@@ -103,6 +33,7 @@ theme:
   - navigation.tabs.sticky    # top nav bar remains visible when scrolling down
   - navigation.top    # back-to-top button
   - navigation.instant
+  - navigation.indexes
   palette:
   - media: (prefers-color-scheme)
     toggle:
@@ -242,3 +173,8 @@ plugins:
             functions: true
           extra:
             trim_doctest_flags: true
+- gen-files:
+    scripts:
+    - docs/gen_pages/gen_function_pages.py
+- literate-nav:
+    nav_file: SUMMARY.md

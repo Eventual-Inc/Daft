@@ -18,7 +18,7 @@ use super::{
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<BoundAggExpr>,
@@ -157,7 +157,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             if input_data.is_empty() {
-                                return RecordBatch::empty(Some(params.original_schema.clone()));
+                                return Ok(RecordBatch::empty(Some(params.original_schema.clone())));
                             }
 
                             let partitionby_table = input_data.eval_expression_list(&params.partition_by)?;
@@ -207,8 +207,8 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowPartitionAndDynamicFrame"
+    fn name(&self) -> NodeName {
+        "WindowPartitionAndDynamicFrame".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

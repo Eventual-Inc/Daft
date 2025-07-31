@@ -126,7 +126,7 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
     return [col(c) if isinstance(c, str) else c for c in column_iter]
 
 
-def detect_ray_state() -> bool:
+def detect_ray_state() -> tuple[bool, bool]:
     ray_is_initialized = False
     ray_is_in_job = False
     in_ray_worker = False
@@ -145,4 +145,4 @@ def detect_ray_state() -> bool:
     except ImportError:
         pass
 
-    return not in_ray_worker and (ray_is_initialized or ray_is_in_job)
+    return ray_is_initialized or ray_is_in_job, in_ray_worker

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import pathlib
 import shutil
@@ -14,9 +15,11 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import TypeAlias
 
+import boto3
 import numpy as np
 import pytest
 import s3fs
+from botocore.config import Config
 from PIL import Image
 
 import daft
@@ -39,6 +42,17 @@ def minio_io_config() -> daft.io.IOConfig:
             key_id="minioadmin",
             access_key="minioadmin",
             use_ssl=False,
+        )
+    )
+
+
+@pytest.fixture(scope="session")
+def anonymous_minio_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:9000",
+            use_ssl=False,
+            anonymous=True,
         )
     )
 
@@ -127,6 +141,59 @@ def minio_create_bucket(
         yield fs
     finally:
         fs.rm(bucket_name, recursive=True)
+
+
+@contextlib.contextmanager
+def minio_create_public_bucket(
+    minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-public-bucket"
+) -> YieldFixture[list[str]]:
+    """Creates a public bucket in MinIO.
+
+    Yields the bucket name.
+    """
+    # Create authenticated S3 client to set up the bucket.
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=minio_io_config.s3.endpoint_url,
+        aws_access_key_id=minio_io_config.s3.key_id,
+        aws_secret_access_key=minio_io_config.s3.access_key,
+        config=Config(signature_version="s3v4"),
+        region_name="us-east-1",
+    )
+
+    # Create bucket if it doesn't exist.
+    try:
+        s3_client.create_bucket(Bucket=bucket_name)
+    except s3_client.exceptions.BucketAlreadyOwnedByYou:
+        pass
+
+    # Set bucket policy for anonymous access.
+    bucket_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+                "Resource": [f"arn:aws:s3:::{bucket_name}", f"arn:aws:s3:::{bucket_name}/*"],
+            }
+        ],
+    }
+    s3_client.put_bucket_policy(Bucket=bucket_name, Policy=json.dumps(bucket_policy))
+
+    try:
+        yield bucket_name
+    finally:
+        paginator = s3_client.get_paginator("list_objects_v2")
+        pages = paginator.paginate(Bucket=bucket_name)
+
+        for page in pages:
+            if "Contents" in page:
+                objects_to_delete = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                if objects_to_delete:
+                    s3_client.delete_objects(Bucket=bucket_name, Delete={"Objects": objects_to_delete})
+
+        s3_client.delete_bucket(Bucket=bucket_name)
 
 
 @contextlib.contextmanager

@@ -104,6 +104,10 @@ mkdocstrings-python
 ruff==0.8.2
 mkdocs-minify-plugin
 mkdocs-redirects
+mkdocs-gen-files
+griffe
+mkdocs-literate-nav
+Jinja2
 
 # Daft connect testing
 pyspark==3.5.3
@@ -112,3 +116,4 @@ grpcio-status==1.67.0
 
 # ai
 vllm; platform_system == "Linux" and platform_machine == "x86_64" # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html
+openai

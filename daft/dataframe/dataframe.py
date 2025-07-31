@@ -1388,9 +1388,9 @@ class DataFrame:
     @DataframePublicAPI
     def write_turbopuffer(
         self,
-        namespace: str,
-        api_key: str,
-        region: str = "aws-us-west-2",
+        namespace: Union[str, Expression],
+        api_key: Optional[str] = None,
+        region: Optional[str] = None,
         distance_metric: Optional[Literal["cosine_distance", "euclidean_squared"]] = None,
         schema: Optional[dict[str, Any]] = None,
         id_column: Optional[str] = None,
@@ -1409,13 +1409,16 @@ class DataFrame:
 
         All other columns become attributes.
 
+        The namespace parameter can be either a string (for a single namespace) or an expression (for multiple namespaces).
+        When using an expression, the data will be partitioned by the computed namespace values and written to each namespace separately.
+
         For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
 
         Args:
-            namespace: The namespace to write to.
+            namespace: The namespace to write to. Can be a string for a single namespace or an expression for multiple namespaces.
             api_key: Turbopuffer API key.
             region: Turbopuffer region.
-            distance_metric: Optional distance metric for vector similarity ("cosine_distance", "euclidean_squared").
+            distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
             schema: Optional manual schema specification.
             id_column: Optional column name for the id column. The data sink will automatically rename the column to "id" for the id column.
             vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.

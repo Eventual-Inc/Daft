@@ -29,9 +29,9 @@ use unity::UnitySource;
 mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
-mod range;
+pub mod range;
 
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
@@ -46,7 +46,7 @@ pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
-use crate::range::GetRange;
+pub use crate::range::GetRange;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -284,18 +284,14 @@ impl IOClient {
     pub async fn single_url_get(
         &self,
         input: String,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
 
         let get_result = source
-            .get(
-                path.as_ref(),
-                range.clone().map(GetRange::from),
-                io_stats.clone(),
-            )
+            .get(path.as_ref(), range.clone(), io_stats.clone())
             .await?;
         Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }
@@ -443,7 +439,15 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 
     let scheme = url.scheme().to_lowercase();
     match scheme.as_ref() {
-        "file" => Ok((SourceType::File, fixed_input)),
+        "file" => {
+            // Normalize file:/ to file:/// format for consistency
+            if input.starts_with("file:/") && !input.starts_with("file://") {
+                let normalized = input.replacen("file:/", "file:///", 1);
+                Ok((SourceType::File, Cow::Owned(normalized)))
+            } else {
+                Ok((SourceType::File, fixed_input))
+            }
+        }
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
         "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),

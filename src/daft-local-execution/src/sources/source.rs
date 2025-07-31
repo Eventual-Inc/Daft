@@ -14,7 +14,7 @@ use indicatif::HumanCount;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
@@ -41,7 +41,7 @@ impl RuntimeStatsBuilder for SourceStatsBuilder {
 
 #[async_trait]
 pub trait Source: Send + Sync {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> NodeName;
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
         Arc::new(SourceStatsBuilder {})
     }
@@ -64,12 +64,12 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name());
+        let info = ctx.next_node_info(source.name().into());
         let runtime_stats = RuntimeStatsContext::new_with_builder(
             info.clone(),
             source.make_runtime_stats_builder(),
         );
-        let io_stats = IOStatsContext::new(source.name());
+        let io_stats = IOStatsContext::new(source.name().to_string());
         Self {
             source,
             runtime_stats,
@@ -129,8 +129,8 @@ impl TreeDisplay for SourceNode {
 }
 
 impl PipelineNode for SourceNode {
-    fn name(&self) -> &'static str {
-        self.source.name()
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![]
@@ -141,7 +141,7 @@ impl PipelineNode for SourceNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let progress_bar = runtime_handle.make_progress_bar(
-            self.name(),
+            &self.name(),
             ProgressBarColor::Blue,
             self.node_id(),
             self.runtime_stats.clone(),
@@ -171,7 +171,7 @@ impl PipelineNode for SourceNode {
                 }
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }

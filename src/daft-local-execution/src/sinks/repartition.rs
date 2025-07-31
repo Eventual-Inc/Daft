@@ -13,7 +13,9 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner};
+use crate::{
+    pipeline::NodeName, sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner,
+};
 
 struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
@@ -114,7 +116,15 @@ impl BlockingSink for RepartitionSink {
                             let together = MicroPartition::concat(&data)?;
                             let concated =
                                 together.concat_or_get(IOStatsContext::new("get tables"))?;
-                            let mp = MicroPartition::new_loaded(schema, concated, None);
+                            let mp = MicroPartition::new_loaded(
+                                schema,
+                                Arc::new(if let Some(t) = concated {
+                                    vec![t]
+                                } else {
+                                    vec![]
+                                }),
+                                None,
+                            );
                             Ok(Arc::new(mp))
                         });
                         outputs.push(fut);
@@ -131,8 +141,8 @@ impl BlockingSink for RepartitionSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Repartition"
+    fn name(&self) -> NodeName {
+        "Repartition".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

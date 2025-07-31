@@ -67,7 +67,6 @@ pub struct S3LikeSource {
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
     default_region: Region,
     s3_config: S3Config,
-    anonymous: bool,
 }
 
 #[derive(Debug, Snafu)]
@@ -192,9 +191,6 @@ enum Error {
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
     UnableToParseUtf8 { path: String, source: FromUtf8Error },
-
-    #[snafu(display("Uploads cannot be anonymous. Please disable anonymous S3 access."))]
-    UploadsCannotBeAnonymous {},
 }
 
 /// List of AWS error codes that are due to throttling
@@ -480,7 +476,7 @@ async fn provide_credentials_with_retry(
     Ok(creds)
 }
 
-async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
+async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let region = if let Some(region_name) = &config.region_name {
@@ -527,8 +523,6 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
             None
         }
     };
-
-    let anonymous = credentials_provider.is_none();
 
     let identity_cache = config.buffer_time.map(|buffer_time| {
         IdentityCache::lazy()
@@ -631,16 +625,16 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
 
     let s3_conf = builder.build();
 
-    Ok((anonymous, s3_conf))
+    Ok(s3_conf)
 }
 
-async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
-    let (anonymous, s3_conf) = build_s3_conf(config).await?;
-    Ok((anonymous, s3::Client::from_conf(s3_conf)))
+async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
+    let s3_conf = build_s3_conf(config).await?;
+    Ok(s3::Client::from_conf(s3_conf))
 }
 
 async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let (anonymous, client) = build_s3_client(config).await?;
+    let client = build_s3_client(config).await?;
     let mut client_map = HashMap::new();
     let default_region = client.config().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
@@ -652,7 +646,6 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
         )),
         s3_config: config.clone(),
         default_region,
-        anonymous,
     })
 }
 const REGION_HEADER: &str = "x-amz-bucket-region";
@@ -678,7 +671,7 @@ impl S3LikeSource {
         let mut new_config = self.s3_config.clone();
         new_config.region_name = Some(region.to_string());
 
-        let (_, new_client) = build_s3_client(&new_config).await?;
+        let new_client = build_s3_client(&new_config).await?;
 
         if w_handle.get(region).is_none() {
             w_handle.insert(region.clone(), new_client.into());
@@ -998,13 +991,7 @@ impl S3LikeSource {
                 request
             };
 
-            let response = if self.anonymous {
-                return Err(Error::UploadsCannotBeAnonymous {}.into());
-            } else {
-                request.send().await
-            };
-
-            match response {
+            match request.send().await {
                 Ok(_) => Ok(()),
                 Err(err) => Err(UnableToPutFileSnafu { path: uri }.into_error(err).into()),
             }
@@ -1017,10 +1004,6 @@ impl S3LikeSource {
         bucket: &str,
         key: &str,
     ) -> super::Result<Cow<'static, str>> {
-        if self.anonymous {
-            return Err(Error::UploadsCannotBeAnonymous {}.into());
-        }
-
         let region = &self.default_region;
 
         let _permit = self
@@ -1067,10 +1050,6 @@ impl S3LikeSource {
         upload_id: Cow<'static, str>,
         completed_parts: Vec<CompletedPart>,
     ) -> super::Result<()> {
-        if self.anonymous {
-            return Err(Error::UploadsCannotBeAnonymous {}.into());
-        }
-
         let region = &self.default_region;
 
         let _permit = self
@@ -1119,10 +1098,6 @@ impl S3LikeSource {
         part_number: NonZeroI32,
         data: bytes::Bytes,
     ) -> super::Result<UploadPartOutput> {
-        if self.anonymous {
-            return Err(Error::UploadsCannotBeAnonymous {}.into());
-        }
-
         let region = &self.default_region;
 
         let _permit = self

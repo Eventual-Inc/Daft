@@ -16,6 +16,7 @@ use super::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
@@ -269,8 +270,8 @@ impl StreamingSink for AntiSemiProbeSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "AntiSemiHashJoinProbe"
+    fn name(&self) -> NodeName {
+        "AntiSemiHashJoinProbe".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -334,5 +335,9 @@ impl StreamingSink for AntiSemiProbeSink {
         } else {
             Arc::new(UnorderedDispatcher::with_fixed_threshold(default_size))
         }
+    }
+
+    fn max_concurrency(&self) -> usize {
+        common_runtime::get_compute_pool_num_threads()
     }
 }
