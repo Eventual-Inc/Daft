@@ -1538,7 +1538,7 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def select(self, *columns: ColumnInputType) -> "DataFrame":
+    def select(self, *columns: Union[ColumnInputType, dict[str, Expression]]) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``.
 
         Args:
@@ -1567,7 +1567,19 @@ class DataFrame:
             (Showing first 3 of 3 rows)
         """
         assert len(columns) > 0
-        builder = self._builder.select(self.__column_input_to_expression(columns))
+
+        if any(isinstance(projection, dict) for projection in columns):
+            # validate and convert for the `df.select({ ... })` case
+            if len(columns) != 1:
+                raise ValueError(
+                    'If using a dictionary with select, it must be the only argument. For example: `df.select({ "a": lit("hello") })`.'
+                )
+            # we've asserted that dict exists AND the list has length 1 => so columns[0] is the dict.
+            projections = [expr.alias(alias) for (alias, expr) in columns[0].items()]  # type: ignore
+        else:
+            # we've assert there are no dicts in the columns
+            projections = column_inputs_to_expressions(columns)  # type: ignore
+        builder = self._builder.select(projections)
         return DataFrame(builder)
 
     @DataframePublicAPI
