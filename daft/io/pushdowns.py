@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import abc
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from daft.expressions import Expression
 
 if TYPE_CHECKING:
-    from daft.daft import PyPushdowns
+    from daft.daft import PyExpr, PyPushdowns
 
 
 @dataclass(frozen=True)
@@ -35,3 +36,27 @@ class Pushdowns:
             columns=pushdowns.columns,
             limit=pushdowns.limit,
         )
+
+    @classmethod
+    def empty(cls) -> Pushdowns:
+        return cls()
+
+    # TODO(Check if implementation is needed)
+    def merge(self, other: Pushdowns) -> Pushdowns:
+        return Pushdowns(
+            filters=self.filters or other.filters,
+            limit=min(self.limit, other.limit) if self.limit and other.limit else None,
+            columns=self.columns or other.columns,
+        )
+
+
+class SupportsPushdownFilters(abc.ABC):
+    """Mixin interface for ScanBuilder to enable filter pushdown functionality."""
+
+    @abc.abstractmethod
+    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
+        """Pushes down filters and returns filters that need post-scan evaluation.
+
+        return tuple : (pushed_filters, post_filters)
+        """
+        raise NotImplementedError

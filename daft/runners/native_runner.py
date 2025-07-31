@@ -35,13 +35,15 @@ class NativeRunnerIO(runner_io.RunnerIO):
     ) -> FileInfos:
         file_infos = FileInfos()
         file_format = file_format_config.file_format() if file_format_config is not None else None
-        for source_path in source_paths:
-            path_file_infos = glob_path_with_stats(source_path, file_format, io_config)
+        for source_path in set(source_paths):
+            try:
+                path_file_infos = glob_path_with_stats(source_path, file_format, io_config)
+                file_infos.merge(path_file_infos)
+            except FileNotFoundError:
+                logger.debug("%s is not found.", source_path)
 
-            if len(path_file_infos) == 0:
-                raise FileNotFoundError(f"No files found at {source_path}")
-
-            file_infos.extend(path_file_infos)
+        if len(file_infos) == 0:
+            raise FileNotFoundError(f"No files found at {','.join(source_paths)}")
 
         return file_infos
 

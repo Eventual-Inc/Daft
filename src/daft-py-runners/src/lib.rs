@@ -22,6 +22,8 @@ pub struct RayRunner {
 
 #[cfg(feature = "python")]
 impl RayRunner {
+    pub const NAME: &'static str = "ray";
+
     pub fn try_new(
         address: Option<String>,
         max_task_backlog: Option<usize>,
@@ -53,6 +55,8 @@ pub struct NativeRunner {
 
 #[cfg(feature = "python")]
 impl NativeRunner {
+    pub const NAME: &'static str = "native";
+
     pub fn try_new(num_threads: Option<usize>) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let native_runner_module = py.import(intern!(py, "daft.runners.native_runner"))?;
@@ -84,13 +88,13 @@ impl Runner {
         Python::with_gil(|py| {
             let name = obj.getattr(py, "name")?.extract::<String>(py)?;
             match name.as_ref() {
-                "ray" => {
+                RayRunner::NAME => {
                     let ray_runner = RayRunner {
                         pyobj: Arc::new(obj),
                     };
                     Ok(Self::Ray(ray_runner))
                 }
-                "native" => {
+                NativeRunner::NAME => {
                     let native_runner = NativeRunner {
                         pyobj: Arc::new(obj),
                     };

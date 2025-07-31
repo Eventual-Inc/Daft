@@ -51,7 +51,7 @@ impl ProbeTableState {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
             let input_tables = input.get_tables()?;
             if input_tables.is_empty() {
-                tables.push(RecordBatch::empty(Some(input.schema()))?);
+                tables.push(RecordBatch::empty(Some(input.schema())));
                 return Ok(());
             }
             for table in input_tables.iter() {
