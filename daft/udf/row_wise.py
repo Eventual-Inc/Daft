@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hints, overload
 
-from typing_extensions import ParamSpec
+if sys.version_info < (3, 10):
+    from typing_extensions import ParamSpec
+else:
+    from typing import ParamSpec
 
 from daft.datatype import DataType
 from daft.expressions import Expression

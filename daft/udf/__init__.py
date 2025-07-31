@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from daft.udf.row_wise import RowWiseUdf
 from typing import overload, Callable, TypeVar, TYPE_CHECKING
-from typing_extensions import ParamSpec
+import sys
+
+if sys.version_info < (3, 10):
+    from typing_extensions import ParamSpec
+else:
+    from typing import ParamSpec
+
 import functools
 from daft.udf.legacy import udf, UDF
 
