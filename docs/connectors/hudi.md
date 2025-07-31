@@ -1,4 +1,4 @@
-# Apache Hudi
+# Reading from Apache Hudi
 
 [Apache Hudi](https://hudi.apache.org/) is an open-sourced transactional data lake platform that brings database and data warehouse capabilities to data lakes. Hudi supports transactions, efficient upserts/deletes, advanced indexes, streaming ingestion services, data clustering/compaction optimizations, and concurrency all while keeping your data in open source file formats.
 

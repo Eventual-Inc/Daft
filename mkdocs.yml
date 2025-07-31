@@ -34,6 +34,7 @@ theme:
   - navigation.top    # back-to-top button
   - navigation.instant
   - navigation.indexes
+  - navigation.expand    # expand navigation sections by default
   palette:
   - media: (prefers-color-scheme)
     toggle:
@@ -136,16 +137,42 @@ plugins:
     minify_css: true
 - redirects:
     redirect_maps:
-      integrations/aws.md: io/aws.md
-      integrations/hudi.md: io/hudi.md
-      integrations/iceberg.md: io/iceberg.md
-      integrations/delta_lake.md: io/delta_lake.md
-      integrations/huggingface.md: io/huggingface.md
-      integrations/azure.md: io/azure.md
-      integrations/sql.md: io/sql.md
-      integrations/glue.md: catalogs/glue.md
-      integrations/s3tables.md: catalogs/s3tables.md
-      integrations/unity_catalog.md: catalogs/unity_catalog.md
+      integrations/aws.md: connectors/aws.md
+      io/aws.md: connectors/aws.md
+      integrations/hudi.md: connectors/hudi.md
+      io/hudi.md: connectors/hudi.md
+      integrations/iceberg.md: connectors/iceberg.md
+      io/iceberg.md: connectors/iceberg.md
+      integrations/delta_lake.md: connectors/delta_lake.md
+      io/delta_lake.md: connectors/delta_lake.md
+      integrations/huggingface.md: connectors/huggingface.md
+      io/huggingface.md: connectors/huggingface.md
+      integrations/azure.md: connectors/azure.md
+      io/azure.md: connectors/azure.md
+      integrations/sql.md: connectors/sql.md
+      io/sql.md: connectors/sql.md
+      integrations/glue.md: connectors/glue.md
+      catalogs/glue.md: connectors/glue.md
+      integrations/s3tables.md: connectors/s3tables.md
+      catalogs/s3tables.md: connectors/s3tables.md
+      integrations/unity_catalog.md: connectors/unity_catalog.md
+      catalogs/unity_catalog.md: connectors/unity_catalog.md
+      integrations.md: connectors/index.md
+      io/index.md: connectors/index.md
+      install.md: quickstart.md
+      sql_overview.md: sql/index.md
+      sessions.md: api/sessions.md
+      resources/architecture.md: optimization/architecture.md
+      advanced/memory.md: optimization/memory.md
+      advanced/partitioning.md: optimization/partitioning.md
+      advanced/observability.md: optimization/observability.md
+      resources/telemetry.md: telemetry.md
+      resources/engine_comparison.md: index.md
+      # resources/tutorials.md: examples/index.md
+      migration/dask_migration.md: index.md
+      resources/benchmarks/tpch.md: benchmarks/index.md
+      spark_connect.md: api/spark_connect.md
+      core_concepts.md: index.md
 - mkdocstrings:
     handlers:
       python:

@@ -1,4 +1,4 @@
-# Apache Iceberg
+# Reading from and Writing to Apache Iceberg
 
 [Apache Iceberg](https://iceberg.apache.org/) is an open-source table format originally developed at Netflix for large-scale analytical tables and datasets. It provides a way to manage and organize data files (like Parquet and ORC) as tables, offering benefits like ACID transactions, time travel, and schema evolution.
 
@@ -101,7 +101,7 @@ See also [Iceberg Schemas and Data Types](https://iceberg.apache.org/spec/#schem
 
 ## Reference
 
-Daft has high-level [Session](../sessions.md) and [Catalog](../catalogs/index.md) APIs
+Daft has high-level [Session](../api/sessions.md) and [Catalog](../api/catalogs_tables.md) APIs
 to read and write Iceberg tables; however it is the [`daft.read_iceberg`][daft.read_iceberg] and
 [`df.write_iceberg`][daft.DataFrame.write_iceberg] API which is ultimately the entry-point to Iceberg reads and
 writes respectively. This section gives a short reference on those APIs and how
