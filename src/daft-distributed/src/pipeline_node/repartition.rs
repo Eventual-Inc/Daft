@@ -39,20 +39,13 @@ impl RepartitionNode {
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
         repartition_spec: RepartitionSpec,
-        num_partitions: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let num_partitions = match &repartition_spec {
-            RepartitionSpec::Hash(config) => {
-                num_partitions.unwrap_or_else(|| config.num_partitions.unwrap_or(1))
-            }
-            RepartitionSpec::Random(config) => {
-                num_partitions.unwrap_or_else(|| config.num_partitions.unwrap_or(1))
-            }
-            RepartitionSpec::IntoPartitions(config) => {
-                num_partitions.unwrap_or(config.num_partitions)
-            }
+            RepartitionSpec::Hash(config) => config.num_partitions.unwrap_or(1),
+            RepartitionSpec::Random(config) => config.num_partitions.unwrap_or(1),
+            RepartitionSpec::IntoPartitions(config) => config.num_partitions,
         };
 
         let context = PipelineNodeContext::new(
