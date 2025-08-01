@@ -342,8 +342,25 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Repartition(repartition) => {
-            log::warn!("Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition");
-            translate(&repartition.input)
+            let input = translate(&repartition.input)?;
+            let num_partitions = match &repartition.repartition_spec {
+                daft_logical_plan::partitioning::RepartitionSpec::Hash(config) => {
+                    config.num_partitions.unwrap_or(1)
+                }
+                daft_logical_plan::partitioning::RepartitionSpec::Random(config) => {
+                    config.num_partitions.unwrap_or(1)
+                }
+                daft_logical_plan::partitioning::RepartitionSpec::IntoPartitions(config) => {
+                    config.num_partitions
+                }
+            };
+            Ok(LocalPhysicalPlan::repartition(
+                input,
+                repartition.repartition_spec.clone(),
+                num_partitions,
+                repartition.input.schema(),
+                repartition.stats_state.clone(),
+            ))
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
             let input = translate(&monotonically_increasing_id.input)?;

@@ -262,7 +262,12 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
-            left_on.clone(),
+            daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    left_on.clone().into_iter().map(|e| e.into()).collect(),
+                ),
+            ),
             Some(num_partitions),
             left.config().schema.clone(),
             left,
@@ -273,7 +278,12 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
-            right_on.clone(),
+            daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    right_on.clone().into_iter().map(|e| e.into()).collect(),
+                ),
+            ),
             Some(num_partitions),
             right.config().schema.clone(),
             right,
