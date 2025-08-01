@@ -2135,6 +2135,43 @@ class DataFrame:
         builder = self._builder.limit(num, eager=False)
         return DataFrame(builder)
 
+    @DataframePublicAPI
+    def offset(self, num: int) -> "DataFrame":
+        """Returns a new DataFrame by skipping the first ``N`` rows, similar to a SQL ``Offset``.
+
+        Args:
+            num (int): the number of rows to skip
+
+        Returns:
+            DataFrame: A new DataFrame by skipping the first ``N`` rows
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
+            >>> df = df.offset(1).limit(5)  # skip the first row and return 5 rows
+            >>> df.show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ├╌╌╌╌╌╌╌┤
+            │ 5     │
+            ├╌╌╌╌╌╌╌┤
+            │ 6     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
+        """
+        builder = self._builder.offset(num)
+        return DataFrame(builder)
+
     def _shard(self, strategy: Literal["file"], world_size: int, rank: int) -> "DataFrame":
         """Shards the descendent scan node of the dataframe using the given sharding strategy.
 
