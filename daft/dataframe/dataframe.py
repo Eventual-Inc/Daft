@@ -839,7 +839,8 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
-        !!! Currently only supported with the Native runner!
+        Warning:
+            Currently only supported with the Native runner!
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
