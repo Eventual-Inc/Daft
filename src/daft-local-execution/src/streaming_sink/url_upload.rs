@@ -32,6 +32,9 @@ struct UrlUploadSinkState {
     args: Arc<UrlUploadArgsDefault<BoundExpr>>,
     output_schema: SchemaRef,
     output_column: String,
+    // Max size of saved inputs before we start pruning rows
+    #[allow(dead_code)]
+    input_size_bytes_buffer: usize,
 
     // Fixed state
     io_client: Arc<IOClient>,
@@ -48,6 +51,7 @@ impl UrlUploadSinkState {
         args: Arc<UrlUploadArgsDefault<BoundExpr>>,
         output_column: String,
         input_schema: SchemaRef,
+        input_size_bytes_buffer: usize,
     ) -> Self {
         let multi_thread = args.multi_thread;
         let io_config = args.io_config.clone();
@@ -60,6 +64,7 @@ impl UrlUploadSinkState {
             args,
             output_schema: Arc::new(output_schema),
             output_column,
+            input_size_bytes_buffer,
 
             io_runtime_handle: get_io_runtime(multi_thread),
             io_client: get_io_client(multi_thread, io_config).expect("Failed to get IO client"),
@@ -172,6 +177,7 @@ pub struct UrlUploadSink {
     args: Arc<UrlUploadArgsDefault<BoundExpr>>,
     output_column: String,
     input_schema: SchemaRef,
+    input_size_bytes_buffer: usize,
 }
 
 impl UrlUploadSink {
@@ -179,11 +185,13 @@ impl UrlUploadSink {
         args: UrlUploadArgs<BoundExpr>,
         output_column: String,
         input_schema: SchemaRef,
+        input_size_bytes_buffer: usize,
     ) -> DaftResult<Self> {
         Ok(Self {
             args: Arc::new(args.unwrap_or_default()?),
             output_column,
             input_schema,
+            input_size_bytes_buffer,
         })
     }
 }
@@ -282,6 +290,7 @@ impl StreamingSink for UrlUploadSink {
             self.args.clone(),
             self.output_column.clone(),
             self.input_schema.clone(),
+            self.input_size_bytes_buffer,
         ))
     }
 

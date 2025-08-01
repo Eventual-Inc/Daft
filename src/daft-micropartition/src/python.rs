@@ -109,8 +109,8 @@ impl PyMicroPartition {
             .collect())
     }
 
-    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        self.inner.size_bytes()
+    pub fn size_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.inner.size_bytes()?)
     }
 
     pub fn __len__(&self) -> PyResult<usize> {

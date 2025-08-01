@@ -101,10 +101,6 @@ def test_url_upload():
         assert os.path.exists(os.path.join(tmp_dir, "test2.txt"))
 
 
-# {'uploaded': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt'], 'uploaded_single_conn': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt'], 'uploaded_ignore_errors': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt']}
-# {'uploaded': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt'], 'uploaded_single_conn': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt'], 'uploaded_ignore_errors': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt']}
-
-
 def test_url_parse():
     df = daft.from_pydict(
         {

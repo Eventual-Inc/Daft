@@ -187,6 +187,7 @@ def set_execution_config(
     native_parquet_writer: bool | None = None,
     use_experimental_distributed_engine: bool | None = None,
     min_cpu_per_task: float | None = None,
+    url_ops_bytes_buffer: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -236,6 +237,7 @@ def set_execution_config(
         use_experimental_distributed_engine: Whether to use the experimental distributed engine on the ray runner. Defaults to `True`.
             Note: Not all operations are currently supported, and daft will fallback to the current engine if necessary.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 1.
+        url_ops_bytes_buffer: In-flight buffer size in bytes for URL operations. Defaults to 256MB.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -271,6 +273,7 @@ def set_execution_config(
             native_parquet_writer=native_parquet_writer,
             use_experimental_distributed_engine=use_experimental_distributed_engine,
             min_cpu_per_task=min_cpu_per_task,
+            url_ops_bytes_buffer=url_ops_bytes_buffer,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

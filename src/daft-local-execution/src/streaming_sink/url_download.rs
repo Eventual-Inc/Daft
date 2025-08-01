@@ -28,9 +28,6 @@ use crate::{
 };
 
 const IN_FLIGHT_SCALE_FACTOR: usize = 32;
-// Limit before we start unloading inputs / cleaning up
-const MAX_INPUT_SIZE_BYTES: usize = 256 * 1024 * 1024; // 256MB
-                                                       // const MAX_INPUT_SIZE_BYTES: usize = 8;
 
 struct UrlDownloadSinkState {
     // Arguments
@@ -38,6 +35,8 @@ struct UrlDownloadSinkState {
     passthrough_columns: Vec<BoundColumn>,
     output_schema: SchemaRef,
     output_column: String,
+    // Max size of saved inputs before we start pruning rows
+    input_size_bytes_buffer: usize,
 
     // Fixed state
     io_client: Arc<IOClient>,
@@ -64,6 +63,7 @@ impl UrlDownloadSinkState {
         save_schema: SchemaRef,
         output_schema: SchemaRef,
         output_column: String,
+        input_size_bytes_buffer: usize,
     ) -> Self {
         let multi_thread = args.multi_thread;
         let io_config = args.io_config.clone();
@@ -73,6 +73,7 @@ impl UrlDownloadSinkState {
             passthrough_columns,
             output_schema,
             output_column,
+            input_size_bytes_buffer,
 
             io_runtime_handle: get_io_runtime(true),
             io_client: get_io_client(multi_thread, io_config).expect("Failed to get IO client"),
@@ -182,8 +183,7 @@ impl UrlDownloadSinkState {
         )?;
 
         // Mark finished rows and cleanup
-        let input_size = self.input_size();
-        if input_size > MAX_INPUT_SIZE_BYTES {
+        if self.input_size() > self.input_size_bytes_buffer {
             let unfinished_inputs =
                 BooleanArray::from(("mask", self.unfinished_inputs.as_slice())).into_series();
             self.saved_inputs = Arc::new(self.saved_inputs.mask_filter(&unfinished_inputs)?);
@@ -216,6 +216,7 @@ pub struct UrlDownloadSink {
     output_schema: SchemaRef,
     output_column: String,
     input_schema: SchemaRef,
+    input_size_bytes_buffer: usize,
 }
 
 impl UrlDownloadSink {
@@ -224,6 +225,7 @@ impl UrlDownloadSink {
         passthrough_columns: Vec<BoundColumn>,
         output_column: String,
         input_schema: SchemaRef,
+        input_size_bytes_buffer: usize,
     ) -> DaftResult<Self> {
         // Generate output schema initially
         let mut save_fields = passthrough_columns
@@ -242,6 +244,7 @@ impl UrlDownloadSink {
             output_schema,
             output_column,
             input_schema,
+            input_size_bytes_buffer,
         })
     }
 }
@@ -365,6 +368,7 @@ impl StreamingSink for UrlDownloadSink {
             self.save_schema.clone(),
             self.output_schema.clone(),
             self.output_column.clone(),
+            self.input_size_bytes_buffer,
         ))
     }
 

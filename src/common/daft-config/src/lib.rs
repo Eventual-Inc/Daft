@@ -68,6 +68,7 @@ pub struct DaftExecutionConfig {
     pub native_parquet_writer: bool,
     pub use_experimental_distributed_engine: bool,
     pub min_cpu_per_task: f64,
+    pub url_ops_bytes_buffer: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -103,6 +104,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_experimental_distributed_engine: true,
             min_cpu_per_task: 0.5,
+            url_ops_bytes_buffer: 256 * 1024 * 1024, // 256MB
         }
     }
 }

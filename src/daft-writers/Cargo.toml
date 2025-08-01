@@ -1,5 +1,5 @@
 [dependencies]
-arrow-array = {version = "54.2.1"}
+arrow-array = {workspace = true}
 arrow-json = {version = "54.2.1"}
 arrow-schema = {version = "54.2.1"}
 arrow2 = {workspace = true, features = [

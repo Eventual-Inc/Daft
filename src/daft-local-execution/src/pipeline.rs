@@ -463,6 +463,7 @@ pub fn physical_plan_to_pipeline(
                 passthrough_columns.clone(),
                 output_column.clone(),
                 input.schema().clone(),
+                cfg.url_ops_bytes_buffer,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -484,11 +485,15 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
 
-            let url_upload_op =
-                UrlUploadSink::new(args.clone(), output_column.clone(), input.schema().clone())
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let url_upload_op = UrlUploadSink::new(
+                args.clone(),
+                output_column.clone(),
+                input.schema().clone(),
+                cfg.url_ops_bytes_buffer,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             StreamingSinkNode::new(
                 Arc::new(url_upload_op),
                 vec![child_node],

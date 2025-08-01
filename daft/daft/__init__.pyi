@@ -1896,6 +1896,7 @@ class PyDaftExecutionConfig:
         native_parquet_writer: bool | None = None,
         use_experimental_distributed_engine: bool | None = None,
         min_cpu_per_task: float | None = None,
+        url_ops_bytes_buffer: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1947,6 +1948,8 @@ class PyDaftExecutionConfig:
     def use_experimental_distributed_engine(self) -> bool: ...
     @property
     def min_cpu_per_task(self) -> float: ...
+    @property
+    def url_ops_bytes_buffer(self) -> int: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
