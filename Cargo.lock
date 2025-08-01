@@ -2557,6 +2557,7 @@ dependencies = [
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "bincode",
  "common-error",
  "common-hashable-float-wrapper",

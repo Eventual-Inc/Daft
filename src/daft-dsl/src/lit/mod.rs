@@ -7,14 +7,15 @@ use std::{
     sync::Arc,
 };
 
+use arrow2::offset::OffsetsBuffer;
 use common_error::{ensure, DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
     datatypes::IntervalValue,
     prelude::*,
     utils::display::{
-        display_date32, display_decimal128, display_duration, display_series_literal,
-        display_time64, display_timestamp,
+        display_date32, display_decimal128, display_duration, display_list_literal, display_time64,
+        display_timestamp,
     },
 };
 use indexmap::IndexMap;
@@ -82,7 +83,7 @@ pub enum LiteralValue {
     /// An [`i128`] representing a decimal number with the provided precision and scale.
     Decimal(i128, u8, i8),
     /// A series literal.
-    Series(Series),
+    List(Series),
     /// Python object.
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
@@ -136,7 +137,7 @@ impl Hash for LiteralValue {
                 precision.hash(state);
                 scale.hash(state);
             }
-            Self::Series(series) => {
+            Self::List(series) => {
                 let hash_result = series.hash(None);
                 match hash_result {
                     Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
@@ -183,7 +184,7 @@ impl Display for LiteralValue {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
             }
             Self::Interval(value) => write!(f, "{value}"),
-            Self::Series(series) => write!(f, "{}", display_series_literal(series)),
+            Self::List(series) => write!(f, "{}", display_list_literal(series)),
             #[cfg(feature = "python")]
             Self::Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
@@ -229,7 +230,7 @@ impl LiteralValue {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
             Self::Interval(_) => DataType::Interval,
-            Self::Series(series) => series.data_type().clone(),
+            Self::List(series) => DataType::List(Box::new(series.data_type().clone())),
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
             Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
@@ -328,7 +329,12 @@ impl LiteralValue {
                 let field = Field::new("literal", dtype);
                 Decimal128Array::from_values_iter(field, std::iter::once(*val)).into_series()
             }
-            Self::Series(series) => series.clone().rename("literal"),
+            Self::List(series) => {
+                let field = Field::new("literal", self.get_type());
+                let offsets = OffsetsBuffer::new();
+
+                ListArray::new(field, series.clone(), offsets, None).into_series()
+            }
             #[cfg(feature = "python")]
             Self::Python(val) => PythonArray::from(("literal", vec![val.0.clone()])).into_series(),
             Self::Struct(entries) => {
@@ -371,7 +377,7 @@ impl LiteralValue {
             ),
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Self::Decimal(..)
-            | Self::Series(..)
+            | Self::List(..)
             | Self::Time(..)
             | Self::Binary(..)
             | Self::FixedSizeBinary(..)
@@ -487,14 +493,6 @@ impl LiteralValue {
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             Self::Float64(f) => Some(*f),
-            _ => None,
-        }
-    }
-
-    /// If the literal is a series, return it. Otherwise, return None.
-    pub fn as_series(&self) -> Option<&Series> {
-        match self {
-            Self::Series(series) => Some(series),
             _ => None,
         }
     }

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyExpr, PyRecordBatch, PySeries, series_lit
+from daft.daft import CountMode, ImageFormat, ImageMode, PyExpr, PyRecordBatch, PySeries, list_lit
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -976,7 +976,7 @@ class SeriesStringNamespace(SeriesNamespace):
         whole_words: bool = False,
         case_sensitive: bool = True,
     ) -> Series:
-        pattern_expr = series_lit(patterns._series)
+        pattern_expr = list_lit(patterns._series)
         return self._eval_expressions(
             "count_matches",
             patterns=pattern_expr,
@@ -1104,7 +1104,7 @@ class SeriesListNamespace(SeriesNamespace):
         return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        desc_expr = series_lit(desc._series) if isinstance(desc, Series) else desc
+        desc_expr = list_lit(desc._series) if isinstance(desc, Series) else desc
         return self._eval_expressions("list_sort", desc=desc_expr, nulls_first=nulls_first)
 
 

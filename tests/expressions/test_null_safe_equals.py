@@ -3,7 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft.daft import series_lit
+from daft.daft import list_lit
 from daft.expressions import col, lit
 from daft.expressions.expressions import Expression
 from daft.recordbatch import MicroPartition
@@ -361,7 +361,7 @@ def test_length_mismatch_all_types(type_name, left_data, right_data):
         result = left_table.eval_expression_list(
             [
                 col("value").eq_null_safe(
-                    Expression._from_pyexpr(series_lit(right_table.get_column_by_name("value")._series))
+                    Expression._from_pyexpr(list_lit(right_table.get_column_by_name("value")._series))
                 )
             ]
         )
