@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from daft.catalog import Catalog, Identifier, Table
 from daft.context import get_context
@@ -10,6 +10,9 @@ from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.udf import UDF
+
+if TYPE_CHECKING:
+    from daft.ml import Provider
 
 __all__ = [
     "Session",
@@ -23,7 +26,9 @@ __all__ = [
     "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
+    "current_model",
     "current_namespace",
+    "current_provider",
     "current_session",
     "detach_catalog",
     "detach_function",
@@ -40,7 +45,9 @@ __all__ = [
     "list_tables",
     "read_table",
     "set_catalog",
+    "set_model",
     "set_namespace",
+    "set_provider",
     "set_session",
     "write_table",
 ]
@@ -341,6 +348,23 @@ class Session:
         ident = self._session.current_namespace()
         return Identifier._from_pyidentifier(ident) if ident else None
 
+    def current_provider(self) -> Provider | None:
+        """Get the session's current provider or None.
+        
+        Returns:
+            Provider: the session's default provider identifier
+        """
+        return self._session.current_provider()
+
+    def current_model(self) -> str | None:
+        """Get the session's current model or None.
+
+        Returns:
+            str: the session's default model identifier
+        """
+        return self._session.current_model()
+
+
     ###
     # get_*
     ###
@@ -472,6 +496,22 @@ class Session:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident if identifier else None)
+
+    def set_provider(self, identifier: Provider) -> None:
+        """Set the default model provider.
+        
+        Args:
+            identifier (Provider): provider identifier string.
+        """
+        self._session.set_provider(identifier)
+
+    def set_model(self, identifier: str) -> None:
+        """Set the default model type.
+        
+        Args:
+            identifier (str): model identifier string.
+        """
+        self._session.set_model(identifier)
 
     ###
     # write_*
@@ -611,13 +651,23 @@ def drop_table(identifier: Identifier | str) -> None:
 
 
 def current_catalog() -> Catalog | None:
-    """Returns the session's current catalog or None."""
+    """Returns the active session's current catalog or None."""
     return _session().current_catalog()
 
 
 def current_namespace() -> Identifier | None:
-    """Returns the session's current namespace or None."""
+    """Returns the active session's current namespace or None."""
     return _session().current_namespace()
+
+
+def current_model() -> str | None:
+    """Returns the active session's current model or None."""
+    return _session().current_model()
+
+
+def current_provider() -> str | None:
+    """Returns the active session's current model or None."""
+    return _session().current_provider()
 
 
 def current_session() -> Session:
@@ -716,8 +766,17 @@ def set_catalog(identifier: str | None) -> None:
 
 
 def set_namespace(identifier: Identifier | str | None) -> None:
-    """Set the given namespace as current_namespace for the current session."""
+    """Set the given namespace as current_namespace for the active session."""
     _session().set_namespace(identifier)
+
+def set_provider(identifier: Provider | None) -> None:
+    """Set the given provider as current_provider for the active session."""
+    _session().set_provider(identifier)
+
+
+def set_model(identifier: str | None) -> None:
+    """Set the given model as current_model for the active session."""
+    _session().set_model(identifier)
 
 
 def set_session(session: Session) -> None:
