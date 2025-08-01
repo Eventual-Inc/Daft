@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftPlanningConfig;
 use common_error::DaftResult;
 use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups, ScanState};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
@@ -22,11 +21,13 @@ use crate::{
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
-pub struct PushDownFilter {}
+pub struct PushDownFilter {
+    strict_pushdown: bool,
+}
 
 impl PushDownFilter {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(strict_pushdown: bool) -> Self {
+        Self { strict_pushdown }
     }
 }
 
@@ -151,10 +152,9 @@ impl PushDownFilter {
                         };
 
                         let scan_op = external_info.scan_state.get_scan_op().0.clone();
-                        let env = DaftPlanningConfig::from_env();
                         let remaining_filters = if let Some(supports_pushdown) =
                             scan_op.as_pushdown_filter()
-                            && env.enable_strict_filter_pushdown
+                            && self.strict_pushdown
                         {
                             let filters_to_push = new_pushdowns
                                 .filters
@@ -425,12 +425,13 @@ mod tests {
     fn assert_optimized_plan_eq(
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
+        strict_pushdown: bool,
     ) -> DaftResult<()> {
         assert_optimized_plan_with_rules_eq(
             plan,
             expected,
             vec![RuleBatch::new(
-                vec![Box::new(PushDownFilter::new())],
+                vec![Box::new(PushDownFilter::new(strict_pushdown))],
                 RuleExecutionStrategy::Once,
             )],
         )
@@ -449,7 +450,7 @@ mod tests {
                 .build();
         // Plan should be unchanged after optimization.
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -481,7 +482,7 @@ mod tests {
             // Merged filter should not be pushed into scan.
             scan_plan.filter(merged_filter)?.build()
         };
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -500,7 +501,7 @@ mod tests {
         .filter(pred.is_null())?
         .build();
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -529,7 +530,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_scan_filter.select(proj)?.build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -560,7 +561,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_scan_filter.select(proj)?.build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -577,7 +578,7 @@ mod tests {
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -609,7 +610,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_filter_scan.select(proj)?.build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -640,7 +641,7 @@ mod tests {
         let expected = expected_filter_scan
             .sort(sort_by, descending, nulls_first)?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -672,7 +673,7 @@ mod tests {
         let expected = expected_filter_scan
             .hash_repartition(Some(num_partitions), repartition_by)?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -715,7 +716,7 @@ mod tests {
         let expected = expected_left_filter_scan
             .concat(&expected_right_filter_scan)?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -775,7 +776,7 @@ mod tests {
                 Default::default(),
             )?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -834,7 +835,7 @@ mod tests {
                 Default::default(),
             )?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -909,7 +910,7 @@ mod tests {
                 Default::default(),
             )?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -948,7 +949,7 @@ mod tests {
             .build();
         // should not push down filter
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -988,7 +989,7 @@ mod tests {
             .build();
         // should not push down filter
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -1053,7 +1054,7 @@ mod tests {
         )?
         .build();
 
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
 
         Ok(())
     }
@@ -1069,10 +1070,6 @@ mod tests {
             .filter(pred.clone())?
             .build();
 
-        if enable_strict_pushdown {
-            std::env::set_var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN", "true");
-        }
-
         let expected = if enable_strict_pushdown {
             plan.clone()
         } else {
@@ -1080,7 +1077,8 @@ mod tests {
                 .build()
         };
 
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, enable_strict_pushdown)?;
+
         Ok(())
     }
 
@@ -1088,13 +1086,11 @@ mod tests {
     /// The main reason for not using rstest is that it seems unable to handle the setting of environment variables properly.
     #[test]
     fn filter_pushdown_strict_mode_true() -> DaftResult<()> {
-        std::env::remove_var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN");
         filter_pushdown_strict_mode_scenario(true)
     }
 
     #[test]
     fn filter_pushdown_strict_mode_false() -> DaftResult<()> {
-        std::env::remove_var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN");
         filter_pushdown_strict_mode_scenario(false)
     }
 }
