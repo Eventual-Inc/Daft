@@ -97,7 +97,7 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.physical.len()
             }
 
-            fn size_bytes(&self) -> DaftResult<usize> {
+            fn size_bytes(&self) -> usize {
                 self.0.physical.size_bytes()
             }
 

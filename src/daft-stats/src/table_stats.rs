@@ -196,6 +196,21 @@ impl TableStatistics {
             .context(DaftCoreComputeSnafu)?;
         self.eval_expression_list(&exprs)
     }
+
+    /// Select a subset of columns from the table statistics.
+    pub fn select_columns(&self, columns: &[BoundColumn]) -> crate::Result<Self> {
+        let new_schema = Arc::new(Schema::new(
+            columns.iter().map(|col| self.schema[col.index].clone()),
+        ));
+        let columns = columns
+            .iter()
+            .map(|col| self.columns[col.index].clone())
+            .collect::<Vec<_>>();
+        Ok(Self {
+            columns,
+            schema: new_schema,
+        })
+    }
 }
 
 impl Display for TableStatistics {

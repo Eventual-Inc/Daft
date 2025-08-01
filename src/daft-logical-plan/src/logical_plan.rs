@@ -128,21 +128,21 @@ impl LogicalPlan {
         }
     }
 
-    pub fn required_columns(&self) -> Vec<IndexSet<String>> {
+    pub fn required_columns(&self) -> (IndexSet<String>, Option<IndexSet<String>>) {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
-            Self::Shard(..) => vec![IndexSet::new()],
-            Self::Limit(..) => vec![IndexSet::new()],
-            Self::Sample(..) => vec![IndexSet::new()],
-            Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
-            Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Shard(..) => (IndexSet::new(), None),
+            Self::Limit(..) => (IndexSet::new(), None),
+            Self::Sample(..) => (IndexSet::new(), None),
+            Self::MonotonicallyIncreasingId(..) => (IndexSet::new(), None),
+            Self::Concat(..) => (IndexSet::new(), None),
             Self::Project(projection) => {
                 let res = projection
                     .projection
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::UDFProject(UDFProject {
                 project,
@@ -155,29 +155,32 @@ impl LogicalPlan {
                     .collect::<IndexSet<_>>();
 
                 res.extend(get_required_columns(project).into_iter());
-                vec![res]
+                (res, None)
             }
-            Self::UrlDownload(url_download) => {
-                vec![get_required_columns(url_download.input_column())
+            Self::UrlDownload(url_download) => (
+                get_required_columns(url_download.input_column())
                     .iter()
                     .cloned()
-                    .collect()]
-            }
-            Self::UrlUpload(url_upload) => {
-                vec![get_required_columns(url_upload.input_column())
+                    .collect(),
+                None,
+            ),
+            Self::UrlUpload(url_upload) => (
+                get_required_columns(url_upload.input_column())
                     .iter()
                     .cloned()
-                    .collect()]
-            }
-            Self::Filter(filter) => {
-                vec![get_required_columns(&filter.predicate)
+                    .collect(),
+                None,
+            ),
+            Self::Filter(filter) => (
+                get_required_columns(&filter.predicate)
                     .iter()
                     .cloned()
-                    .collect()]
-            }
+                    .collect(),
+                None,
+            ),
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
-                vec![res]
+                (res, None)
             }
             Self::Repartition(repartition) => {
                 let res = repartition
@@ -186,7 +189,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Explode(explode) => {
                 let res = explode
@@ -194,7 +197,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Unpivot(unpivot) => {
                 let res = unpivot
@@ -203,12 +206,12 @@ impl LogicalPlan {
                     .chain(unpivot.values.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Distinct(distinct) => {
                 if let Some(on) = &distinct.columns {
                     let res = on.iter().flat_map(get_required_columns).collect();
-                    vec![res]
+                    (res, None)
                 } else {
                     let res = distinct
                         .input
@@ -216,7 +219,7 @@ impl LogicalPlan {
                         .field_names()
                         .map(ToString::to_string)
                         .collect();
-                    vec![res]
+                    (res, None)
                 }
             }
             Self::Aggregate(aggregate) => {
@@ -227,7 +230,7 @@ impl LogicalPlan {
                     .flat_map(|e| get_required_columns(&e))
                     .chain(aggregate.groupby.iter().flat_map(get_required_columns))
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Pivot(pivot) => {
                 let res = pivot
@@ -237,7 +240,7 @@ impl LogicalPlan {
                     .chain(std::iter::once(&pivot.value_column))
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Join(join) => {
                 let mut left = IndexSet::new();
@@ -265,10 +268,10 @@ impl LogicalPlan {
                     })
                     .unwrap();
                 }
-                vec![left, right]
+                (left, Some(right))
             }
-            Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
-            Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Intersect(_) => (IndexSet::new(), Some(IndexSet::new())),
+            Self::Union(_) => (IndexSet::new(), Some(IndexSet::new())),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -280,7 +283,7 @@ impl LogicalPlan {
                     .chain(window.window_spec.order_by.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::TopN(top_n) => {
                 let res = top_n
@@ -288,7 +291,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
         }
     }
@@ -476,8 +479,8 @@ impl LogicalPlan {
                         input.clone(), projection.clone(),
                     ).unwrap()),
                 Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
-                Self::UrlDownload(UrlDownload { args, output_column, .. }) => Self::UrlDownload(UrlDownload::new(input.clone(), args.clone(), output_column.clone())),
-                Self::UrlUpload(UrlUpload { args, output_column, .. }) => Self::UrlUpload(UrlUpload::new(input.clone(), args.clone(), output_column.clone())),
+                Self::UrlDownload(UrlDownload { args, output_column, passthrough_columns, .. }) => Self::UrlDownload(UrlDownload::new(input.clone(), args.clone(), output_column.clone(), passthrough_columns.clone())),
+                Self::UrlUpload(UrlUpload { args, output_column, passthrough_columns, .. }) => Self::UrlUpload(UrlUpload::new(input.clone(), args.clone(), output_column.clone(), passthrough_columns.clone())),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
@@ -521,6 +524,19 @@ impl LogicalPlan {
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
             _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())
+        }
+    }
+
+    /// Update passthrough columns for a node.
+    /// This only works for URL nodes.
+    /// TODO(srinu): Add support for UDFProject as well.
+    pub fn with_passthrough_columns(self: Arc<Self>, passthrough_columns: Vec<Column>) -> Self {
+        let this = Arc::unwrap_or_clone(self);
+
+        match this {
+            Self::UrlDownload(url_download) => url_download.with_passthrough_columns(passthrough_columns).into(),
+            Self::UrlUpload(url_upload) => url_upload.with_passthrough_columns(passthrough_columns).into(),
+            _ => panic!("Logical op {} is not a URL node, with_passthrough_columns() should never be called for non-URL ops", this),
         }
     }
 

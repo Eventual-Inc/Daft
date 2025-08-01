@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
-use daft_dsl::ExprRef;
+use daft_dsl::{Column, ExprRef};
 use daft_functions_uri::UrlUploadArgs;
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +27,8 @@ pub struct UrlUpload {
     pub output_schema: Arc<Schema>,
     /// URL upload arguments.
     pub args: UrlUploadArgs<ExprRef>,
+    /// Passthrough columns (for column pruning)
+    pub passthrough_columns: Vec<Column>,
     /// The plan statistics.
     pub stats_state: StatsState,
 }
@@ -36,6 +38,7 @@ impl UrlUpload {
         input: Arc<LogicalPlan>,
         args: UrlUploadArgs<ExprRef>,
         output_column: String,
+        passthrough_columns: Vec<Column>,
     ) -> Self {
         let mut output_schema = input.schema().as_ref().clone();
         output_schema.append(Field::new(output_column.clone(), DataType::Utf8));
@@ -47,6 +50,7 @@ impl UrlUpload {
             output_column,
             output_schema: Arc::new(output_schema),
             args,
+            passthrough_columns,
             stats_state: StatsState::NotMaterialized,
         }
     }
@@ -62,6 +66,11 @@ impl UrlUpload {
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {
         self.node_id = Some(node_id);
+        self
+    }
+
+    pub fn with_passthrough_columns(mut self, passthrough_columns: Vec<Column>) -> Self {
+        self.passthrough_columns = passthrough_columns;
         self
     }
 

@@ -149,6 +149,10 @@ impl UrlUploadSinkState {
         let completed_urls =
             Utf8Array::from((self.output_column.as_str(), completed_urls.finish())).into_series();
 
+        eprintln!(
+            "URL Upload Bytes: {}",
+            self.all_inputs.size_bytes().unwrap_or(0)
+        );
         build_output(
             self.all_inputs.clone(),
             completed_idxs,

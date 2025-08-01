@@ -13,7 +13,7 @@ use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject},
+    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject, UrlDownload, UrlUpload},
     source_info::SourceInfo,
     LogicalPlan, LogicalPlanRef,
 };
@@ -141,9 +141,7 @@ impl PushDownProjection {
         match upstream_plan.as_ref() {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
-                let [required_columns] = &plan.required_columns()[..] else {
-                    unreachable!()
-                };
+                let (required_columns, _) = plan.required_columns();
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
@@ -180,7 +178,7 @@ impl PushDownProjection {
             }
             LogicalPlan::Project(upstream_projection) => {
                 // Prune columns from the child projection that are not used in this projection.
-                let required_columns = &plan.required_columns()[0];
+                let (required_columns, _) = plan.required_columns();
                 if required_columns.len() < upstream_schema.names().len() {
                     let pruned_upstream_projections = upstream_projection
                         .projection
@@ -207,7 +205,7 @@ impl PushDownProjection {
             }
             LogicalPlan::Aggregate(aggregate) => {
                 // Prune unnecessary columns from the child aggregate.
-                let required_columns = &plan.required_columns()[0];
+                let (required_columns, _) = plan.required_columns();
                 let pruned_aggregate_exprs = aggregate
                     .aggregations
                     .iter()
@@ -234,7 +232,7 @@ impl PushDownProjection {
                 }
             }
             LogicalPlan::UDFProject(upstream_actor_pool_projection) => {
-                let required_columns = &plan.required_columns()[0];
+                let (required_columns, _) = plan.required_columns();
                 if !required_columns.contains(upstream_actor_pool_projection.project.name()) {
                     // We don't need the UDFProject, just convert to a regular project
                     let new_plan = LogicalPlan::Project(Project::try_new(
@@ -360,11 +358,9 @@ impl PushDownProjection {
             | LogicalPlan::Sample(..)
             | LogicalPlan::Explode(..) => {
                 // Get required columns from projection and upstream.
-                let combined_dependencies = plan
-                    .required_columns()
-                    .iter()
-                    .flatten()
-                    .chain(upstream_plan.required_columns().iter().flatten())
+                let (plan_req_cols, _) = plan.required_columns();
+                let combined_dependencies = plan_req_cols
+                    .union(&upstream_plan.required_columns().0)
                     .cloned()
                     .collect::<IndexSet<_>>();
 
@@ -396,9 +392,9 @@ impl PushDownProjection {
             LogicalPlan::Unpivot(unpivot) => {
                 let combined_dependencies = plan
                     .required_columns()
+                    .0
                     .iter()
-                    .flatten()
-                    .chain(upstream_plan.required_columns().iter().flatten())
+                    .chain(upstream_plan.required_columns().0.iter())
                     .cloned()
                     .collect::<IndexSet<_>>();
 
@@ -434,9 +430,9 @@ impl PushDownProjection {
                 // Get required columns from projection and upstream.
                 let combined_dependencies = plan
                     .required_columns()
+                    .0
                     .iter()
-                    .flatten()
-                    .chain(upstream_plan.required_columns().iter().flatten())
+                    .chain(upstream_plan.required_columns().0.iter())
                     .cloned()
                     .collect::<IndexSet<_>>();
 
@@ -471,10 +467,9 @@ impl PushDownProjection {
             LogicalPlan::Union(_) => unreachable!("Union should have been optimized away"),
             LogicalPlan::Join(join) => {
                 // Get required columns from projection and both upstreams.
-                let [projection_dependencies] = &plan.required_columns()[..] else {
-                    panic!()
-                };
-                let [left_dependencies, right_dependencies] = &upstream_plan.required_columns()[..]
+                let (projection_dependencies, _) = plan.required_columns();
+                let (left_dependencies, Some(right_dependencies)) =
+                    &upstream_plan.required_columns()
                 else {
                     panic!()
                 };
@@ -515,12 +510,12 @@ impl PushDownProjection {
                 let new_left_upstream = maybe_project_upstream_input(
                     &join.left,
                     left_dependencies,
-                    projection_dependencies,
+                    &projection_dependencies,
                 )?;
                 let new_right_upstream = maybe_project_upstream_input(
                     &join.right,
                     right_dependencies,
-                    projection_dependencies,
+                    &projection_dependencies,
                 )?;
 
                 if !new_left_upstream.transformed && !new_right_upstream.transformed {
@@ -546,15 +541,15 @@ impl PushDownProjection {
                     return Ok(Transformed::no(plan));
                 }
 
-                let plan_req_cols = &plan.required_columns()[0];
-                let distinct_req_cols = &upstream_plan.required_columns()[0];
+                let (plan_req_cols, _) = plan.required_columns();
+                let (distinct_req_cols, _) = upstream_plan.required_columns();
 
                 // Add a new projection underneath the distinct to pass through columns
                 // used by the distinct & current projection node
                 let new_extra_projection = LogicalPlan::Project(Project::try_new(
                     distinct.input.clone(),
                     plan_req_cols
-                        .union(distinct_req_cols)
+                        .union(&distinct_req_cols)
                         .map(|e| resolved_col(e.as_str()))
                         .collect::<Vec<_>>(),
                 )?)
@@ -566,6 +561,56 @@ impl PushDownProjection {
                 let new_plan = plan.with_new_children(&[new_distinct]).arced();
                 Ok(Transformed::yes(new_plan.into()))
             }
+            LogicalPlan::UrlDownload(UrlDownload {
+                passthrough_columns,
+                output_column,
+                ..
+            })
+            | LogicalPlan::UrlUpload(UrlUpload {
+                passthrough_columns,
+                output_column,
+                ..
+            }) => {
+                fn name_to_col(name: &str) -> Column {
+                    Column::Resolved(ResolvedColumn::Basic(name.into()))
+                }
+
+                let (mut required_columns, _) = plan.required_columns();
+                // Assume that previous optimization rule should have removed unused URL ops
+                debug_assert!(required_columns.contains(output_column.as_str()));
+                required_columns.shift_remove(output_column.as_str());
+
+                let passthrough_set = passthrough_columns
+                    .iter()
+                    .map(|c| c.name())
+                    .collect::<IndexSet<_>>();
+
+                // If required_columns ⊂ passthrough_set, then push down the projection
+                let (new_url, transformed) = if required_columns.len() < passthrough_set.len()
+                    && required_columns.is_subset(&passthrough_set)
+                {
+                    // First, update the passthrough columns. Note, the output projected by the op should be appended
+                    let passthrough_columns = required_columns
+                        .iter()
+                        .map(|s| name_to_col(s.as_str()))
+                        .collect::<Vec<_>>();
+
+                    let new_url_op = upstream_plan
+                        .clone()
+                        .with_passthrough_columns(passthrough_columns);
+                    (plan.with_new_children(&[new_url_op.arced()]).arced(), true)
+                } else {
+                    (upstream_plan.clone(), false)
+                };
+
+                // Remove top projection if it is unnecessary
+                // Only when the URL output col is appended at the end
+                if new_url.schema() == plan.schema() || transformed {
+                    Ok(Transformed::yes(new_url))
+                } else {
+                    Ok(Transformed::no(plan))
+                }
+            }
             LogicalPlan::Intersect(_) => {
                 // Cannot push down past an Intersect,
                 // since Intersect implicitly requires all parent columns.
@@ -575,7 +620,7 @@ impl PushDownProjection {
                 // Cannot push down past a Pivot/MonotonicallyIncreasingId because it changes the schema.
                 Ok(Transformed::no(plan))
             }
-            LogicalPlan::Window(_) | LogicalPlan::UrlDownload(_) | LogicalPlan::UrlUpload(_) => {
+            LogicalPlan::Window(_) => {
                 // Cannot push down past a Window because it changes the window calculation results
                 Ok(Transformed::no(plan))
             }
@@ -596,7 +641,7 @@ impl PushDownProjection {
         let upstream_plan = &udf_project.input;
         let upstream_schema = upstream_plan.schema();
 
-        let udf_project_required_cols = &plan.required_columns()[0];
+        let (udf_project_required_cols, _) = plan.required_columns();
         if udf_project_required_cols.len() < upstream_schema.names().len() {
             let new_subprojection: LogicalPlan = {
                 let pushdown_column_exprs = udf_project_required_cols
@@ -624,7 +669,7 @@ impl PushDownProjection {
         let upstream_plan = &aggregation.input;
         let upstream_schema = upstream_plan.schema();
 
-        let aggregation_required_cols = &plan.required_columns()[0];
+        let (aggregation_required_cols, _) = plan.required_columns();
         if aggregation_required_cols.len() < upstream_schema.names().len() {
             let new_subprojection: LogicalPlan = {
                 let pushdown_column_exprs = aggregation_required_cols
@@ -652,10 +697,9 @@ impl PushDownProjection {
         // this is the case for semi and anti joins.
 
         if matches!(join.join_type, JoinType::Anti | JoinType::Semi) {
-            let required_cols = plan.required_columns();
-            let right_required_cols = required_cols
-                .get(1)
-                .expect("we expect 2 set of required columns for join");
+            let (_, right_required_cols) = plan.required_columns();
+            let right_required_cols =
+                right_required_cols.expect("we expect 2 set of required columns for join");
             let right_schema = join.right.schema();
 
             if right_required_cols.len() < right_schema.len() {
@@ -693,7 +737,7 @@ impl PushDownProjection {
         let upstream_plan = &pivot.input;
         let upstream_schema = upstream_plan.schema();
 
-        let pivot_required_cols = &plan.required_columns()[0];
+        let (pivot_required_cols, _) = plan.required_columns();
         if pivot_required_cols.len() < upstream_schema.names().len() {
             let new_subprojection: LogicalPlan = {
                 let pushdown_column_exprs = pivot_required_cols

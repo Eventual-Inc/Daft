@@ -110,7 +110,7 @@ impl AsyncFileWriter for TargetFileSizeWriter {
             return Ok(0);
         }
 
-        let input_size_bytes = input.size_bytes()?.expect(
+        let input_size_bytes = input.size_bytes().expect(
             "Micropartitions should be loaded before writing, so they should have a size in bytes",
         );
         let avg_row_size_bytes = max(input_size_bytes / input.len(), 1);

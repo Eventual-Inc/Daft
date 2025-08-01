@@ -4,13 +4,13 @@ use arrow_array::builder::LargeBinaryBuilder;
 use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
-    prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef},
+    prelude::{AsArrow, BinaryArray, BooleanArray, DataType, Field, Schema, SchemaRef},
     series::IntoSeries,
 };
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_dsl::expr::{bound_expr::BoundExpr, BoundColumn};
 use daft_functions_uri::{download::UrlDownloadArgsDefault, UrlDownloadArgs};
 use daft_io::{get_io_client, IOClient};
-use daft_micropartition::MicroPartition;
+use daft_micropartition::{partitioning::Partition, MicroPartition};
 use daft_recordbatch::RecordBatch;
 use tokio::task::JoinSet;
 use tokio_util::bytes::Bytes;
@@ -28,10 +28,14 @@ use crate::{
 };
 
 const IN_FLIGHT_SCALE_FACTOR: usize = 32;
+// Limit before we start unloading inputs / cleaning up
+const MAX_INPUT_SIZE_BYTES: usize = 256 * 1024 * 1024; // 256MB
+                                                       // const MAX_INPUT_SIZE_BYTES: usize = 8;
 
 struct UrlDownloadSinkState {
     // Arguments
     args: Arc<UrlDownloadArgsDefault<BoundExpr>>,
+    passthrough_columns: Vec<BoundColumn>,
     output_schema: SchemaRef,
     output_column: String,
 
@@ -40,35 +44,44 @@ struct UrlDownloadSinkState {
     io_runtime_handle: RuntimeRef,
 
     // Updatable state
-    in_flight_downloads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
-    all_inputs: Arc<MicroPartition>,
     submitted_downloads: usize,
+    in_flight_downloads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
+    // Save input columns to pass through to output
+    saved_inputs: Arc<MicroPartition>,
+    // True when row is not finished downloading.
+    // Note: unfinished_inputs.len() == all_inputs.num_rows()
+    unfinished_inputs: Vec<bool>,
+    // Map idx from in_flight_downloads to row in all_inputs
+    // Used to filter out finished rows from all_inputs while keeping in_flight_downloads in sync
+    // Note in_flight_inputs_idx.len() == submitted_downloads
+    in_flight_inputs_idx: Vec<usize>,
 }
 
 impl UrlDownloadSinkState {
     fn new(
         args: Arc<UrlDownloadArgsDefault<BoundExpr>>,
+        passthrough_columns: Vec<BoundColumn>,
+        save_schema: SchemaRef,
+        output_schema: SchemaRef,
         output_column: String,
-        input_schema: SchemaRef,
     ) -> Self {
         let multi_thread = args.multi_thread;
         let io_config = args.io_config.clone();
 
-        // Generate output schema initially
-        let mut output_schema = input_schema.as_ref().clone();
-        output_schema.append(Field::new(output_column.as_str(), DataType::Binary));
-
         Self {
             args,
-            output_schema: Arc::new(output_schema),
+            passthrough_columns,
+            output_schema,
             output_column,
 
             io_runtime_handle: get_io_runtime(true),
             io_client: get_io_client(multi_thread, io_config).expect("Failed to get IO client"),
 
-            in_flight_downloads: JoinSet::new(),
-            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema))),
             submitted_downloads: 0,
+            in_flight_downloads: JoinSet::new(),
+            saved_inputs: Arc::new(MicroPartition::empty(Some(save_schema))),
+            unfinished_inputs: Vec::new(),
+            in_flight_inputs_idx: Vec::new(),
         }
     }
 
@@ -80,7 +93,12 @@ impl UrlDownloadSinkState {
         self.args.max_connections * IN_FLIGHT_SCALE_FACTOR
     }
 
-    /// Start downloads for urls in given input
+    fn input_size(&self) -> usize {
+        // Expect that all inputs are loaded
+        self.saved_inputs.size_bytes().unwrap().unwrap_or(0)
+    }
+
+    /// Start downloads for given URLs
     pub fn start_download(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
         if input.is_empty() {
             return Ok(());
@@ -90,8 +108,7 @@ impl UrlDownloadSinkState {
 
         for input in input.get_tables()?.iter() {
             let url_col = input.eval_expression(&self.args.input)?;
-            let url_col = url_col.utf8()?;
-            let url_col = url_col.as_arrow();
+            let url_col = url_col.utf8()?.as_arrow();
 
             for url_val in url_col {
                 let row_idx = self.submitted_downloads;
@@ -111,7 +128,16 @@ impl UrlDownloadSinkState {
             }
         }
 
-        self.all_inputs = Arc::new(MicroPartition::concat([self.all_inputs.clone(), input])?);
+        // Add to row tracking data structures
+        let curr_num_rows = self.saved_inputs.num_rows()?;
+        self.in_flight_inputs_idx
+            .extend(curr_num_rows..(curr_num_rows + input.num_rows()?));
+        self.unfinished_inputs.extend(vec![true; input.num_rows()?]);
+        self.saved_inputs = Arc::new(MicroPartition::concat([
+            self.saved_inputs.clone(),
+            Arc::new(input.select_columns(&self.passthrough_columns)?),
+        ])?);
+
         Ok(())
     }
 
@@ -137,20 +163,43 @@ impl UrlDownloadSinkState {
             };
 
             let (idx, contents) = result.expect("Failed to join download")?;
-            completed_idxs.push(idx as u64);
+            completed_idxs.push(self.in_flight_inputs_idx[idx] as u64);
             completed_contents.append_option(contents);
+        }
+        // Mark finished rows as finished
+        for idx in &completed_idxs {
+            self.unfinished_inputs[*idx as usize] = false;
         }
 
         let completed_contents =
             BinaryArray::from((self.output_column.as_str(), completed_contents.finish()))
                 .into_series();
-
-        build_output(
-            self.all_inputs.clone(),
+        let output = build_output(
+            self.saved_inputs.clone(),
             completed_idxs,
             completed_contents,
             self.output_schema.clone(),
-        )
+        )?;
+
+        // Mark finished rows and cleanup
+        let input_size = self.input_size();
+        if input_size > MAX_INPUT_SIZE_BYTES {
+            let unfinished_inputs =
+                BooleanArray::from(("mask", self.unfinished_inputs.as_slice())).into_series();
+            self.saved_inputs = Arc::new(self.saved_inputs.mask_filter(&unfinished_inputs)?);
+
+            // Update the in_flight_inputs_idx with the new locations in all_inputs
+            let mut cnt = 0;
+            for (idx, val) in self.unfinished_inputs.iter().enumerate() {
+                if *val {
+                    self.in_flight_inputs_idx[idx] = cnt;
+                    cnt += 1;
+                }
+            }
+            self.unfinished_inputs = vec![true; self.saved_inputs.num_rows()?];
+        }
+
+        Ok(output)
     }
 }
 
@@ -162,6 +211,9 @@ impl StreamingSinkState for UrlDownloadSinkState {
 
 pub struct UrlDownloadSink {
     args: Arc<UrlDownloadArgsDefault<BoundExpr>>,
+    passthrough_columns: Vec<BoundColumn>,
+    save_schema: SchemaRef,
+    output_schema: SchemaRef,
     output_column: String,
     input_schema: SchemaRef,
 }
@@ -169,11 +221,25 @@ pub struct UrlDownloadSink {
 impl UrlDownloadSink {
     pub fn new(
         args: UrlDownloadArgs<BoundExpr>,
+        passthrough_columns: Vec<BoundColumn>,
         output_column: String,
         input_schema: SchemaRef,
     ) -> DaftResult<Self> {
+        // Generate output schema initially
+        let mut save_fields = passthrough_columns
+            .iter()
+            .map(|expr| input_schema[expr.index].clone())
+            .collect::<Vec<_>>();
+        let save_schema = Arc::new(Schema::new(save_fields.clone()));
+
+        save_fields.push(Field::new(output_column.as_str(), DataType::Binary));
+        let output_schema = Arc::new(Schema::new(save_fields));
+
         Ok(Self {
             args: Arc::new(args.unwrap_or_default()?),
+            passthrough_columns,
+            save_schema,
+            output_schema,
             output_column,
             input_schema,
         })
@@ -295,8 +361,10 @@ impl StreamingSink for UrlDownloadSink {
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
         Box::new(UrlDownloadSinkState::new(
             self.args.clone(),
+            self.passthrough_columns.clone(),
+            self.save_schema.clone(),
+            self.output_schema.clone(),
             self.output_column.clone(),
-            self.input_schema.clone(),
         ))
     }
 

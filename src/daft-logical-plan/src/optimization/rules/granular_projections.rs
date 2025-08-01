@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{
     functions::{scalar::ScalarFn, BuiltinScalarFn},
-    resolved_col, Expr, ExprRef,
+    resolved_col, Column, Expr, ExprRef, ResolvedColumn,
 };
 use daft_functions_uri::{
     download::UrlDownload, upload::UrlUpload, UrlDownloadArgs, UrlUploadArgs,
@@ -28,6 +28,10 @@ enum SplitExpr {
         child_name: String,
         args: UrlUploadArgs<ExprRef>,
     },
+}
+
+fn name_to_col(name: &str) -> Column {
+    Column::Resolved(ResolvedColumn::Basic(name.into()))
 }
 
 /// This rule will split projections into multiple projections such that expressions that
@@ -234,15 +238,31 @@ impl SplitGranularProjection {
                     SplitExpr::UrlDownload { child_name, args } => {
                         out_names.insert(child_name.clone());
                         out_exprs.push(resolved_col(child_name.clone()));
+                        let passthrough_columns = last_child
+                            .schema()
+                            .field_names()
+                            .map(name_to_col)
+                            .collect::<Vec<_>>();
                         last_child = Arc::new(LogicalPlan::UrlDownload(UrlDownloadOp::new(
-                            last_child, args, child_name,
+                            last_child,
+                            args,
+                            child_name,
+                            passthrough_columns,
                         )));
                     }
                     SplitExpr::UrlUpload { child_name, args } => {
                         out_names.insert(child_name.clone());
                         out_exprs.push(resolved_col(child_name.clone()));
+                        let passthrough_columns = last_child
+                            .schema()
+                            .field_names()
+                            .map(name_to_col)
+                            .collect::<Vec<_>>();
                         last_child = Arc::new(LogicalPlan::UrlUpload(UrlUploadOp::new(
-                            last_child, args, child_name,
+                            last_child,
+                            args,
+                            child_name,
+                            passthrough_columns,
                         )));
                     }
                 }

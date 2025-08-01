@@ -558,25 +558,22 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
+    pub fn size_bytes(&self) -> Option<usize> {
         let guard = self.state.lock().unwrap();
-        let size_bytes = if let TableState::Loaded(tables) = &*guard {
-            let total_size: usize = tables
-                .iter()
-                .map(daft_recordbatch::RecordBatch::size_bytes)
-                .collect::<DaftResult<Vec<_>>>()?
-                .iter()
-                .sum();
-            Some(total_size)
-        } else if let TableState::Unloaded(scan_task) = &*guard {
-            // TODO: pass in the execution config once we have it available
-            scan_task.estimate_in_memory_size_bytes(None)
-        } else {
-            // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.
-            // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
-            None
+        let size_bytes = match &*guard {
+            TableState::Loaded(tables) => {
+                let total_size: usize = tables
+                    .iter()
+                    .map(daft_recordbatch::RecordBatch::size_bytes)
+                    .sum();
+                Some(total_size)
+            }
+            TableState::Unloaded(scan_task) => {
+                // TODO: pass in the execution config once we have it available
+                scan_task.estimate_in_memory_size_bytes(None)
+            }
         };
-        Ok(size_bytes)
+        size_bytes
     }
 
     /// Retrieves tables from the MicroPartition, reading data if not already loaded.
@@ -680,7 +677,7 @@ impl MicroPartition {
     }
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let buffer = Vec::with_capacity(self.size_bytes().unwrap_or(0));
         let schema = self.schema.to_arrow()?;
         let options = arrow2::io::ipc::write::WriteOptions { compression: None };
         let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);

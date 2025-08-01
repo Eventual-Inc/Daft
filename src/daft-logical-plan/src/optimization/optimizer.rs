@@ -159,6 +159,7 @@ impl Default for OptimizerBuilder {
                 RuleBatch::new(
                     vec![
                         Box::new(SplitUDFs::new()),
+                        Box::new(SplitGranularProjection::new()),
                         Box::new(PushDownProjection::new()),
                         Box::new(DetectMonotonicId::new()),
                     ],
@@ -234,14 +235,6 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![Box::new(SimplifyExpressionsRule::new())],
             RuleExecutionStrategy::FixedPoint(None),
-        ));
-        self
-    }
-
-    pub fn split_granular_projections(mut self) -> Self {
-        self.rule_batches.push(RuleBatch::new(
-            vec![Box::new(SplitGranularProjection::new())],
-            RuleExecutionStrategy::Once,
         ));
         self
     }

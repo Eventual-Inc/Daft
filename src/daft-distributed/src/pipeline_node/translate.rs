@@ -6,7 +6,10 @@ use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+        BoundColumn,
+    },
     resolved_col,
 };
 use daft_functions_uri::{UrlDownloadArgs, UrlUploadArgs};
@@ -193,13 +196,17 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     max_connections: url_download.args.max_connections,
                     on_error: url_download.args.on_error.clone(),
                 };
-
+                let passthrough_columns = BoundColumn::bind_all(
+                    &url_download.passthrough_columns,
+                    &url_download.input.schema(),
+                )?;
                 UrlDownloadNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
                     args,
                     url_download.output_column.clone(),
+                    passthrough_columns,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -208,6 +215,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::UrlUpload(url_upload) => {
                 let bound_input =
                     BoundExpr::try_new(url_upload.args.input.clone(), &url_upload.input.schema())?;
+                let passthrough_columns = BoundColumn::bind_all(
+                    &url_upload.passthrough_columns,
+                    &url_upload.input.schema(),
+                )?;
                 let location = BoundExpr::try_new(
                     url_upload.args.location.clone(),
                     &url_upload.input.schema(),
@@ -228,6 +239,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.stage_config,
                     args,
                     url_upload.output_column.clone(),
+                    passthrough_columns,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_dsl::expr::{bound_expr::BoundExpr, BoundColumn};
 use daft_functions_uri::UrlUploadArgs;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
@@ -17,6 +17,7 @@ pub(crate) struct UrlUploadNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     args: UrlUploadArgs<BoundExpr>,
+    passthrough_columns: Vec<BoundColumn>,
     output_column: String,
     child: Arc<dyn DistributedPipelineNode>,
 }
@@ -24,12 +25,14 @@ pub(crate) struct UrlUploadNode {
 impl UrlUploadNode {
     const NODE_NAME: NodeName = "UrlUpload";
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
         args: UrlUploadArgs<BoundExpr>,
         output_column: String,
+        passthrough_columns: Vec<BoundColumn>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -50,6 +53,7 @@ impl UrlUploadNode {
             config,
             context,
             args,
+            passthrough_columns,
             output_column,
             child,
         }
@@ -111,10 +115,12 @@ impl DistributedPipelineNode for UrlUploadNode {
         let args = self.args.clone();
         let output_column = self.output_column.clone();
         let schema = self.config.schema.clone();
+        let passthrough_columns = self.passthrough_columns.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::url_upload(
                 input,
                 args.clone(),
+                passthrough_columns.clone(),
                 output_column.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,

@@ -1472,7 +1472,7 @@ class DataFrame:
         elif isinstance(item, str):
             schema = self._builder.schema()
             if item not in schema.column_names() and item != "*":
-                raise ValueError(f"{item} does not exist in schema {schema}")
+                raise ValueError(f"{item} does not exist in schema:\n{schema}")
 
             return col(item)
         elif isinstance(item, Iterable):
