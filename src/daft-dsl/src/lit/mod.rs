@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::offset::OffsetsBuffer;
+use arrow2::{buffer::Buffer, offset::OffsetsBuffer};
 use common_error::{ensure, DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
@@ -331,7 +331,8 @@ impl LiteralValue {
             }
             Self::List(series) => {
                 let field = Field::new("literal", self.get_type());
-                let offsets = OffsetsBuffer::new();
+                let offsets =
+                    OffsetsBuffer::try_from(Buffer::from(vec![0, series.len() as i64])).unwrap();
 
                 ListArray::new(field, series.clone(), offsets, None).into_series()
             }

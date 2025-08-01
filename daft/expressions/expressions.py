@@ -108,8 +108,10 @@ def lit(value: object) -> Expression:
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
-        agg_listed = value._series.agg_list()
-        lit_value = _list_lit(agg_listed)
+        lit_value = _list_lit(value._series)
+    elif isinstance(value, list):
+        value_series = Series.from_pylist(value)
+        lit_value = _list_lit(value_series._series)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)

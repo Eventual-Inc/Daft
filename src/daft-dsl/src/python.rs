@@ -42,6 +42,11 @@ pub fn resolved_col(name: &str) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn bound_col(index: usize, field: PyField) -> PyExpr {
+    crate::bound_col(index, field.field).into()
+}
+
+#[pyfunction]
 pub fn date_lit(item: i32) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Date(item));
     Ok(expr.into())

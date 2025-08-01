@@ -32,13 +32,19 @@ impl ScalarUDF for CountMatches {
             Ok(s.bool().unwrap().get(0).unwrap())
         }).transpose()?.unwrap_or(CASE_SENSITIVE_DEFAULT_VALUE);
 
+        ensure!(patterns.len() == 1, ValueError: "Cannot set `patterns` in `count_matches` to an Expression. Only string or list of strings are currently supported.");
+
         input.with_utf8_array(|arr| {
-            patterns.with_utf8_array(|pattern_arr| {
-                Ok(
-                    count_matches_impl(arr, pattern_arr, whole_words, case_sensitive)?
-                        .into_series(),
-                )
-            })
+            patterns
+                .list()
+                .expect("patterns should be a list")
+                .flat_child
+                .with_utf8_array(|pattern_arr| {
+                    Ok(
+                        count_matches_impl(arr, pattern_arr, whole_words, case_sensitive)?
+                            .into_series(),
+                    )
+                })
         })
     }
 
@@ -49,7 +55,7 @@ impl ScalarUDF for CountMatches {
     ) -> DaftResult<Field> {
         let input = inputs.required((0, "input"))?.to_field(schema)?;
         let patterns = inputs.required((1, "patterns"))?.to_field(schema)?;
-        ensure!(patterns.dtype.is_string(), ValueError: "expected list for 'patterns', got {}", patterns.dtype);
+        ensure!(matches!(&patterns.dtype, DataType::List(inner_dtype) if matches!(inner_dtype.as_ref(), DataType::Utf8)), ValueError: "expected list of strings for 'patterns', got {}", patterns.dtype);
 
         if let Some(whole_words) = inputs.optional("whole_words")? {
             whole_words

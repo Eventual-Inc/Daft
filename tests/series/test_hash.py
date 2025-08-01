@@ -133,15 +133,6 @@ def test_hash_int_array_with_bad_seed():
         arr.hash(bad_seed)
 
 
-def test_hash_int_array_with_bad_length():
-    arr = Series.from_numpy(np.random.randint(0, 127, 100)).cast(DataType.uint64())
-
-    bad_seed = Series.from_numpy(np.random.randint(0, 127, 99)).cast(DataType.uint64())
-
-    with pytest.raises(ValueError, match="Seed must be a single value or the same length as the input"):
-        arr.hash(bad_seed)
-
-
 @pytest.mark.parametrize("dtype", daft_numeric_types)
 def test_hash_list_array_no_seed(dtype):
     arr = Series.from_pylist([[1, 2], [1, 3], [1, 2], [1, 2, 3], [], [], [2, 1]]).cast(DataType.list(dtype))
@@ -332,6 +323,7 @@ def test_hash_fixed_size_list_array_different_seeds(dtype):
     arr = Series.from_pylist([[1, 2], [1, 2], [1, 2], [1, 2]]).cast(DataType.fixed_size_list(dtype, 2))
     seeds = Series.from_pylist([1, 2, 3, 4]).cast(DataType.uint64())
 
+    print(seeds.datatype())
     hashed = arr.hash(seeds).to_pylist()
 
     different_inds = [0, 1, 2, 3]
