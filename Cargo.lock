@@ -2690,6 +2690,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "futures",
+ "pyo3",
  "serde",
  "tokio",
  "typetag",

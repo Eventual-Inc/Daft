@@ -5,6 +5,7 @@ import tempfile
 
 import daft
 from daft import col, lit
+from tests.utils import sort_pydict
 
 
 def test_url_download():
@@ -75,7 +76,6 @@ def test_url_upload():
                 url_upload(data, paths, max_connections=>1) as uploaded_single_conn,
                 url_upload(data, paths, on_error=>'null') as uploaded_ignore_errors
             FROM df
-            ORDER BY uploaded ASC
             """
             )
             .collect()
@@ -88,11 +88,12 @@ def test_url_upload():
                 col("data").url.upload(daft.col("paths"), max_connections=1).alias("uploaded_single_conn"),
                 col("data").url.upload(daft.col("paths"), on_error="null").alias("uploaded_ignore_errors"),
             )
-            .sort("uploaded")
             .collect()
             .to_pydict()
         )
 
+        actual = sort_pydict(actual, "uploaded")
+        expected = sort_pydict(expected, "uploaded")
         assert actual == expected
 
         # Verify files were created
@@ -100,9 +101,8 @@ def test_url_upload():
         assert os.path.exists(os.path.join(tmp_dir, "test2.txt"))
 
 
-# ACTUAL {'uploaded': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test1.txt'], 'uploaded_single_conn': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test1.txt'], 'uploaded_ignore_errors': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test1.txt']}
-
-# EXPECTED {'uploaded': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test2.txt'], 'uploaded_single_conn': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test2.txt'], 'uploaded_ignore_errors': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmp9h7mm7z8/test2.txt']}
+# {'uploaded': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt'], 'uploaded_single_conn': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt'], 'uploaded_ignore_errors': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt']}
+# {'uploaded': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt'], 'uploaded_single_conn': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt'], 'uploaded_ignore_errors': ['/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test1.txt', '/var/folders/3q/3hl2_qbx5dzcfp26kkyv7y8w0000gn/T/tmpapbkuihp/test2.txt']}
 
 
 def test_url_parse():

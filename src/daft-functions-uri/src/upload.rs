@@ -4,8 +4,8 @@ use common_error::{ensure, DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
-    ExprRef,
+    functions::{FunctionArg, FunctionArgs, ScalarUDF},
+    ExprRef, LiteralValue,
 };
 use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
@@ -28,6 +28,70 @@ pub struct UrlUploadArgs<T> {
     pub is_single_folder: Option<bool>,
     #[arg(optional)]
     pub io_config: Option<IOConfig>,
+}
+
+// TODO: This code is terrible, please remove with Ray runner
+impl<T> UrlUploadArgs<T>
+where
+    T: Into<ExprRef> + Clone,
+{
+    pub fn to_func_args(&self) -> DaftResult<FunctionArgs<ExprRef>> {
+        let mut args = vec![
+            FunctionArg::unnamed(self.input.clone().into()),
+            FunctionArg::unnamed(self.location.clone().into()),
+        ];
+
+        if let Some(max_connections) = self.max_connections {
+            args.push(FunctionArg::named(
+                "max_connections",
+                LiteralValue::Int64(max_connections as i64).into(),
+            ));
+        }
+        if let Some(on_error) = &self.on_error {
+            args.push(FunctionArg::named(
+                "on_error",
+                LiteralValue::Utf8(on_error.clone()).into(),
+            ));
+        }
+        if let Some(multi_thread) = self.multi_thread {
+            args.push(FunctionArg::named(
+                "multi_thread",
+                LiteralValue::Boolean(multi_thread).into(),
+            ));
+        }
+        if let Some(is_single_folder) = self.is_single_folder {
+            args.push(FunctionArg::named(
+                "is_single_folder",
+                LiteralValue::Boolean(is_single_folder).into(),
+            ));
+        }
+        if let Some(io_config) = &self.io_config {
+            #[cfg(feature = "python")]
+            {
+                use daft_io::python::IOConfig as PyIOConfig;
+                use pyo3::{IntoPyObject, Python};
+
+                let io_config = PyIOConfig::from(io_config.clone());
+
+                Python::with_gil(|py| {
+                    let py_lit = io_config.into_pyobject(py).unwrap().unbind().into();
+                    args.push(FunctionArg::named(
+                        "io_config",
+                        LiteralValue::Python(daft_dsl::pyobj_serde::PyObjectWrapper(Arc::new(
+                            py_lit,
+                        )))
+                        .into(),
+                    ));
+                });
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                panic!("Python feature is required for io_config");
+            }
+        }
+
+        FunctionArgs::try_new(args)
+    }
 }
 
 #[derive(Debug, Clone)]

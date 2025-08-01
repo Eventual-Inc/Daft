@@ -4,8 +4,8 @@ use common_error::{ensure, DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
-    ExprRef,
+    functions::{FunctionArg, FunctionArgs, ScalarUDF},
+    ExprRef, LiteralValue,
 };
 use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
@@ -34,6 +34,60 @@ pub struct UrlDownloadArgs<T> {
     pub max_connections: Option<usize>,
     #[arg(optional)]
     pub on_error: Option<String>,
+}
+
+// TODO: This code is terrible, please remove with Ray runner
+impl<T> UrlDownloadArgs<T>
+where
+    T: Into<ExprRef> + Clone,
+{
+    pub fn to_func_args(&self) -> DaftResult<FunctionArgs<ExprRef>> {
+        let mut args = vec![FunctionArg::unnamed(self.input.clone().into())];
+        if let Some(multi_thread) = self.multi_thread {
+            args.push(FunctionArg::named(
+                "multi_thread",
+                LiteralValue::Boolean(multi_thread).into(),
+            ));
+        }
+        if let Some(on_error) = &self.on_error {
+            args.push(FunctionArg::named(
+                "on_error",
+                LiteralValue::Utf8(on_error.clone()).into(),
+            ));
+        }
+        if let Some(max_connections) = self.max_connections {
+            args.push(FunctionArg::named(
+                "max_connections",
+                LiteralValue::Int64(max_connections as i64).into(),
+            ));
+        }
+        if let Some(io_config) = &self.io_config {
+            #[cfg(feature = "python")]
+            {
+                use daft_io::python::IOConfig as PyIOConfig;
+                use pyo3::{IntoPyObject, Python};
+
+                let io_config = PyIOConfig::from(io_config.clone());
+
+                Python::with_gil(|py| {
+                    let py_lit = io_config.into_pyobject(py).unwrap().unbind().into();
+                    args.push(FunctionArg::named(
+                        "io_config",
+                        LiteralValue::Python(daft_dsl::pyobj_serde::PyObjectWrapper(Arc::new(
+                            py_lit,
+                        )))
+                        .into(),
+                    ));
+                });
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                panic!("Python feature is required for io_config");
+            }
+        }
+
+        FunctionArgs::try_new(args)
+    }
 }
 
 #[derive(Debug, Clone)]

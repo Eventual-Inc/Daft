@@ -97,9 +97,6 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::UrlDownload(_) | PhysicalPlan::UrlUpload(_) => {
-                    todo!()
-                }
                 PhysicalPlan::Explode(Explode { input, to_explode, .. }) => {
                     // can't use try_new because we are setting the clustering spec ourselves
                     let new_plan = PhysicalPlan::Explode(Explode {
