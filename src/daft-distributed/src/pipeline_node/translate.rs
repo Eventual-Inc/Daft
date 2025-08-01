@@ -85,11 +85,17 @@ impl LogicalPlanToPipelineNodeTranslator {
         if partition_cols.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
         } else {
+            let repartition_spec = daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                    num_partitions,
+                    partition_cols.into_iter().map(|e| e.into()).collect(),
+                ),
+            );
             RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
-                partition_cols,
+                repartition_spec,
                 num_partitions,
                 input_node.config().schema.clone(),
                 input_node,
@@ -291,19 +297,25 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             )
             .arced(),
             LogicalPlan::Repartition(repartition) => {
-                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
-                    todo!("FLOTILLA_MS3: Support other types of repartition");
+                let num_partitions = match &repartition.repartition_spec {
+                    RepartitionSpec::Hash(repart_spec) => {
+                        let columns =
+                            BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
+                        assert!(!columns.is_empty());
+                        repart_spec.num_partitions
+                    }
+                    RepartitionSpec::Random(repart_spec) => repart_spec.num_partitions,
+                    RepartitionSpec::IntoPartitions(_) => {
+                        todo!("FLOTILLA_MS3: Support other types of repartition");
+                    }
                 };
 
-                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-
-                assert!(!columns.is_empty());
                 RepartitionNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    columns,
-                    repart_spec.num_partitions,
+                    repartition.repartition_spec.clone(),
+                    num_partitions,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -357,7 +369,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    columns.clone(),
+                    daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                        daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                            None,
+                            columns.clone().into_iter().map(|e| e.into()).collect(),
+                        ),
+                    ),
                     None,
                     distinct.input.schema(),
                     initial_distinct,
