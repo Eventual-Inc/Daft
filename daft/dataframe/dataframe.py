@@ -1539,11 +1539,12 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def select(self, *columns: ColumnInputType) -> "DataFrame":
+    def select(self, *columns: ColumnInputType, **projections: Expression) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``.
 
         Args:
             *columns (Union[str, Expression]): columns to select from the current DataFrame
+            **projections (Expression): additional projections in kwarg format.
 
         Returns:
             DataFrame: new DataFrame that will select the passed in columns
@@ -1567,8 +1568,9 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        assert len(columns) > 0
-        builder = self._builder.select(self.__column_input_to_expression(columns))
+        selection = column_inputs_to_expressions(columns)
+        selection += [expr.alias(alias) for (alias, expr) in projections.items()]
+        builder = self._builder.select(selection)
         return DataFrame(builder)
 
     @DataframePublicAPI
