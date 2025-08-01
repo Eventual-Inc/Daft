@@ -168,9 +168,29 @@ impl ExecutionRuntimeContext {
         self.worker_set.shutdown().await;
     }
 
-    #[must_use]
-    pub fn default_morsel_size(&self) -> usize {
-        self.default_morsel_size
+    pub fn determine_morsel_size_range(
+        &self,
+        current_requirement: &MorselSizeRequirement,
+        downstream_requirement: &MorselSizeRequirement,
+    ) -> MorselSizeRange {
+        match (current_requirement, downstream_requirement) {
+            (MorselSizeRequirement::Whatever, MorselSizeRequirement::Whatever) => {
+                (0, self.default_morsel_size)
+            }
+            (MorselSizeRequirement::Whatever, MorselSizeRequirement::Required(range)) => *range,
+            (MorselSizeRequirement::Whatever, MorselSizeRequirement::Flexible(range)) => *range,
+            (MorselSizeRequirement::Required(range), MorselSizeRequirement::Whatever) => *range,
+            (MorselSizeRequirement::Flexible(range), MorselSizeRequirement::Whatever) => *range,
+            (MorselSizeRequirement::Required(range), _) => *range,
+            (
+                MorselSizeRequirement::Flexible(range),
+                MorselSizeRequirement::Required(other_range),
+            ) => (range.0.min(other_range.0), range.1.min(other_range.1)),
+            (
+                MorselSizeRequirement::Flexible(range),
+                MorselSizeRequirement::Flexible(other_range),
+            ) => (range.0.min(other_range.0), range.1.max(other_range.1)),
+        }
     }
 
     pub fn make_progress_bar(
@@ -279,7 +299,10 @@ impl ExecutionTaskSpawner {
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-use crate::runtime_stats::RuntimeStatsEventHandler;
+use crate::{
+    pipeline::{MorselSizeRange, MorselSizeRequirement},
+    runtime_stats::RuntimeStatsEventHandler,
+};
 
 #[derive(Debug, Snafu)]
 pub enum Error {

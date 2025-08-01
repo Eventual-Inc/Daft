@@ -127,12 +127,4 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     fn max_concurrency(&self) -> usize {
         1
     }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        _maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::unbounded())
-    }
 }

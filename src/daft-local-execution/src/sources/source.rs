@@ -14,7 +14,7 @@ use indicatif::HumanCount;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{MorselSizeRequirement, NodeInfo, NodeName, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
@@ -50,6 +50,7 @@ pub trait Source: Send + Sync {
         &self,
         maintain_order: bool,
         io_stats: IOStatsRef,
+        chunk_size: Option<usize>,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
 }
@@ -139,6 +140,7 @@ impl PipelineNode for SourceNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        morsel_size: &MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let progress_bar = runtime_handle.make_progress_bar(
             &self.name(),
@@ -155,10 +157,17 @@ impl PipelineNode for SourceNode {
             progress_bar,
             runtime_handle.rt_stats_handler.clone(),
         );
+        let chunk_size = match morsel_size {
+            MorselSizeRequirement::Whatever => None,
+            MorselSizeRequirement::Required(range) => Some(range.1),
+            MorselSizeRequirement::Flexible(range) => Some(range.1),
+        };
         runtime_handle.spawn_local(
             async move {
                 let mut has_data = false;
-                let mut source_stream = source.get_data(maintain_order, io_stats).await?;
+                let mut source_stream = source
+                    .get_data(maintain_order, io_stats, chunk_size)
+                    .await?;
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
                     if counting_sender.send(part?).await.is_err() {

@@ -13,8 +13,10 @@ use crate::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
-    dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
+    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    pipeline::{
+        MorselSizeRange, MorselSizeRequirement, NodeInfo, NodeName, PipelineNode, RuntimeContext,
+    },
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -70,11 +72,22 @@ pub trait StreamingSink: Send + Sync {
         get_compute_pool_num_threads()
     }
 
+    fn morsel_size_requirement(&self) -> MorselSizeRequirement {
+        MorselSizeRequirement::Whatever
+    }
+
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        morsel_size_range: MorselSizeRange,
         maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner>;
+    ) -> Arc<dyn DispatchSpawner> {
+        let (lower_bound, upper_bound) = morsel_size_range;
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(lower_bound, upper_bound))
+        } else {
+            Arc::new(UnorderedDispatcher::new(lower_bound, upper_bound))
+        }
+    }
 }
 
 pub struct StreamingSinkNode {
@@ -232,7 +245,11 @@ impl PipelineNode for StreamingSinkNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        morsel_size: &MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let morsel_size_requirement = self.op.morsel_size_requirement();
+        let morsel_size_range =
+            runtime_handle.determine_morsel_size_range(&morsel_size_requirement, morsel_size);
         let progress_bar = runtime_handle.make_progress_bar(
             &self.name(),
             ProgressBarColor::Yellow,
@@ -241,7 +258,7 @@ impl PipelineNode for StreamingSinkNode {
         );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
-            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
+            let child_result_receiver = child.start(maintain_order, runtime_handle, &morsel_size_requirement)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
@@ -262,7 +279,7 @@ impl PipelineNode for StreamingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle, maintain_order);
+        let dispatch_spawner = op.dispatch_spawner(morsel_size_range, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,

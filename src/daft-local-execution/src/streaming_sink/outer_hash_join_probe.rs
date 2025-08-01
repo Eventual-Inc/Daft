@@ -727,22 +727,6 @@ impl StreamingSink for OuterHashJoinProbeSink {
         }
     }
 
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::with_fixed_threshold(
-                runtime_handle.default_morsel_size(),
-            ))
-        } else {
-            Arc::new(UnorderedDispatcher::with_fixed_threshold(
-                runtime_handle.default_morsel_size(),
-            ))
-        }
-    }
-
     fn max_concurrency(&self) -> usize {
         common_runtime::get_compute_pool_num_threads()
     }

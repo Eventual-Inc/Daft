@@ -11,7 +11,9 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{
+        MorselSizeRange, MorselSizeRequirement, NodeInfo, NodeName, PipelineNode, RuntimeContext,
+    },
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -59,12 +61,13 @@ pub trait BlockingSink: Send + Sync {
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
         Arc::new(BaseStatsBuilder {})
     }
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-    ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::with_fixed_threshold(
-            runtime_handle.default_morsel_size(),
+    fn morsel_size_requirement(&self) -> MorselSizeRequirement {
+        MorselSizeRequirement::Whatever
+    }
+    fn dispatch_spawner(&self, morsel_size_range: MorselSizeRange) -> Arc<dyn DispatchSpawner> {
+        Arc::new(UnorderedDispatcher::new(
+            morsel_size_range.0,
+            morsel_size_range.1,
         ))
     }
     fn max_concurrency(&self) -> usize {
@@ -204,14 +207,20 @@ impl PipelineNode for BlockingSinkNode {
         &self,
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        morsel_size: &MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let morsel_size_requirement = self.op.morsel_size_requirement();
+        let morsel_size_range =
+            runtime_handle.determine_morsel_size_range(&morsel_size_requirement, morsel_size);
         let progress_bar = runtime_handle.make_progress_bar(
             &self.name(),
             ProgressBarColor::Cyan,
             self.node_id(),
             self.runtime_stats.clone(),
         );
-        let child_results_receiver = self.child.start(false, runtime_handle)?;
+        let child_results_receiver =
+            self.child
+                .start(false, runtime_handle, &morsel_size_requirement)?;
         let counting_receiver = CountingReceiver::new(
             child_results_receiver,
             self.runtime_stats.clone(),
@@ -231,7 +240,7 @@ impl PipelineNode for BlockingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle);
+        let dispatch_spawner = op.dispatch_spawner(morsel_size_range);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,

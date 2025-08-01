@@ -17,7 +17,10 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    pipeline::{MorselSizeRequirement, NodeName},
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
+};
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -157,11 +160,11 @@ impl IntermediateOperator for ProjectOperator {
         Ok(self.max_concurrency)
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+    fn morsel_size_requirement(&self) -> MorselSizeRequirement {
         if let Some(batch_size) = self.batch_size {
-            (batch_size, batch_size)
+            MorselSizeRequirement::Flexible((0, batch_size))
         } else {
-            (0, runtime_handle.default_morsel_size())
+            MorselSizeRequirement::Whatever
         }
     }
 }

@@ -95,6 +95,7 @@ impl ScanTaskSource {
         io_stats: IOStatsRef,
         delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
         maintain_order: bool,
+        chunk_size: Option<usize>,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
         let scan_tasks = self.scan_tasks.clone();
@@ -112,6 +113,7 @@ impl ScanTaskSource {
                         io_stats.clone(),
                         delete_map.clone(),
                         maintain_order,
+                        chunk_size,
                         sender,
                     ));
                 }
@@ -126,6 +128,7 @@ impl ScanTaskSource {
                         io_stats.clone(),
                         delete_map.clone(),
                         maintain_order,
+                        chunk_size,
                         sender,
                     ));
                 }
@@ -143,6 +146,7 @@ impl Source for ScanTaskSource {
         &self,
         maintain_order: bool,
         io_stats: IOStatsRef,
+        chunk_size: Option<usize>,
     ) -> DaftResult<SourceStream<'static>> {
         // Get the delete map for the scan tasks, if any
         let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
@@ -161,7 +165,13 @@ impl Source for ScanTaskSource {
         };
 
         // Spawn the scan task processor
-        let task = self.spawn_scan_task_processor(senders, io_stats, delete_map, maintain_order);
+        let task = self.spawn_scan_task_processor(
+            senders,
+            io_stats,
+            delete_map,
+            maintain_order,
+            chunk_size,
+        );
 
         // Flatten the receivers into a stream
         let result_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
@@ -373,9 +383,11 @@ async fn forward_scan_task_stream(
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
+    chunk_size: Option<usize>,
     sender: Sender<Arc<MicroPartition>>,
 ) -> DaftResult<()> {
-    let mut stream = stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await?;
+    let mut stream =
+        stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
     while let Some(result) = stream.next().await {
         if sender.send(result?).await.is_err() {
             break;
@@ -389,6 +401,7 @@ async fn stream_scan_task(
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
+    chunk_size: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
     let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
         v.iter()
@@ -437,9 +450,10 @@ async fn stream_scan_task(
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,
             field_id_mapping,
-            chunk_size,
+            chunk_size: chunk_size_from_config,
             ..
         }) => {
+            let parquet_chunk_size = chunk_size_from_config.or(chunk_size);
             let inference_options =
                 ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
@@ -466,7 +480,7 @@ async fn stream_scan_task(
                 metadata,
                 maintain_order,
                 delete_rows,
-                *chunk_size,
+                parquet_chunk_size,
             )
             .await?
         }
@@ -497,7 +511,8 @@ async fn stream_scan_task(
                 cfg.escape_char,
                 cfg.comment,
             )?;
-            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+            let csv_chunk_size = chunk_size.or(cfg.chunk_size);
+            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
             daft_csv::stream_csv(
                 url.to_string(),
                 Some(convert_options),
@@ -521,7 +536,8 @@ async fn stream_scan_task(
                 scan_task.pushdowns.filters.clone(),
             );
             let parse_options = JsonParseOptions::new_internal();
-            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+            let json_chunk_size = chunk_size.or(cfg.chunk_size);
+            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
 
             daft_json::read::stream_json(
                 url.to_string(),

@@ -107,14 +107,4 @@ impl StreamingSink for LimitSink {
     fn max_concurrency(&self) -> usize {
         1
     }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        _maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        // Limits are greedy, so we don't need to buffer any input.
-        // They are also not concurrent, so we don't need to worry about ordering.
-        Arc::new(UnorderedDispatcher::unbounded())
-    }
 }
