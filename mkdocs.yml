@@ -159,7 +159,6 @@ plugins:
       catalogs/unity_catalog.md: connectors/unity_catalog.md
       integrations.md: connectors/index.md
       io/index.md: connectors/index.md
-      install.md: quickstart.md
       sql_overview.md: sql/index.md
       sessions.md: api/sessions.md
       resources/architecture.md: optimization/architecture.md
