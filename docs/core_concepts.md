@@ -1006,7 +1006,7 @@ If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressi
             '{"a": 3, "b": 4}',
         ],
     })
-    df = df.with_column("a", df["json"].json.query(".a"))
+    df = df.with_column("a", df["json"].jq(".a"))
     df.collect()
     ```
 

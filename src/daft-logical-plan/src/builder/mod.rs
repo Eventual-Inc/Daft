@@ -39,7 +39,7 @@ use crate::{
     ops::{
         self,
         join::{JoinOptions, JoinPredicate},
-        SetQuantifier, UnionStrategy,
+        Limit, Offset, SetQuantifier, UnionStrategy,
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
     partitioning::{
@@ -325,7 +325,21 @@ impl LogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: u64, eager: bool) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
+        self.limit_with_offset(limit, None, eager)
+    }
+
+    pub(crate) fn limit_with_offset(
+        &self,
+        limit: u64,
+        offset: Option<u64>,
+        eager: bool,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = Limit::new(self.plan.clone(), limit, offset, eager).into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn offset(&self, offset: u64) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = Offset::new(self.plan.clone(), offset).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1071,6 +1085,16 @@ impl PyLogicalPlanBuilder {
             )));
         }
         Ok(self.builder.limit(limit as u64, eager)?.into())
+    }
+
+    pub fn offset(&self, offset: i64) -> PyResult<Self> {
+        if offset < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "OFFSET <n> must be greater than or equal to 0, instead got: {}",
+                offset
+            )));
+        }
+        Ok(self.builder.offset(offset as u64)?.into())
     }
 
     pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {

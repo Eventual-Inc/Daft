@@ -38,7 +38,7 @@ Please note that items on this roadmap are subject to change any time. If there 
 
 ## Out-of-the-box Experience
 
-- Continue expanding feature set and compatibility of [Daft’s PySpark connector](spark_connect.md#show) so that running Spark workloads on Daft is a simple plug-and-play ([issue #3581](https://github.com/Eventual-Inc/Daft/issues/3581))
+- Continue expanding feature set and compatibility of [Daft’s PySpark connector](api/spark_connect.md#show) so that running Spark workloads on Daft is a simple plug-and-play ([issue #3581](https://github.com/Eventual-Inc/Daft/issues/3581))
     - Ordinal column references ([issue #4270](https://github.com/Eventual-Inc/Daft/issues/4270))
     - Window function support ([issue #2108](https://github.com/Eventual-Inc/Daft/issues/2108))
 - Improve catalog and table integrations

@@ -1,13 +1,14 @@
-# S3 Tables
+# Reading from and Writing to AWS S3 Tables
 
-Daft integrates with [S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables.html) using its [Catalog](index.md) interface which supports both reading and writing S3 Tables via Iceberg.
+Daft integrates with [S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables.html) using its [Catalog](../api/catalogs_tables.md) interface which supports both reading and writing S3 Tables via Iceberg.
 
 ## Example
 
 ```python
+import daft
 from daft import Catalog
 
-# ensure your aws credentials are configure, for example:
+# ensure your aws credentials are configured, for example:
 # import os
 # os.environ["AWS_ACCESS_KEY_ID"] = "<access-id>"
 # os.environ["AWS_SECRET_ACCESS_KEY"] = "<access-key>"

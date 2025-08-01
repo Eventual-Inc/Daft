@@ -218,7 +218,7 @@ Since new expressions are a very common feature request, we wanted to make it ea
 #### Step 1: Implement the function in Rust
 
 Add your function to the appropriate crate (`daft-functions-json`, `daft-functions-utf8`, etc.).
-For more advanced use cases, see existing implementations in [daft-functions-utf8](src/daft-functions-utf8/src/lib.rs)
+For more advanced use cases, see existing implementations in [daft-functions-utf8](https://github.com/Eventual-Inc/Daft/blob/main/src/daft-functions-utf8/src/lib.rs)
 
 ```rs
 // This prelude defines all required ScalarUDF dependencies.
