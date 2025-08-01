@@ -268,7 +268,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                     left_on.clone().into_iter().map(|e| e.into()).collect(),
                 ),
             ),
-            Some(num_partitions),
             left.config().schema.clone(),
             left,
         )
@@ -284,7 +283,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                     right_on.clone().into_iter().map(|e| e.into()).collect(),
                 ),
             ),
-            Some(num_partitions),
             right.config().schema.clone(),
             right,
         )

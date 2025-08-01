@@ -96,7 +96,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 &self.stage_config,
                 repartition_spec,
-                num_partitions,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -297,25 +296,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             )
             .arced(),
             LogicalPlan::Repartition(repartition) => {
-                let num_partitions = match &repartition.repartition_spec {
+                match &repartition.repartition_spec {
                     RepartitionSpec::Hash(repart_spec) => {
-                        let columns =
-                            BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-                        assert!(!columns.is_empty());
-                        repart_spec.num_partitions
+                        assert!(!repart_spec.by.is_empty());
                     }
-                    RepartitionSpec::Random(repart_spec) => repart_spec.num_partitions,
+                    RepartitionSpec::Random(_) => {}
                     RepartitionSpec::IntoPartitions(_) => {
                         todo!("FLOTILLA_MS3: Support other types of repartition");
                     }
-                };
-
+                }
                 RepartitionNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
                     repartition.repartition_spec.clone(),
-                    num_partitions,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -375,7 +369,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                             columns.clone().into_iter().map(|e| e.into()).collect(),
                         ),
                     ),
-                    None,
                     distinct.input.schema(),
                     initial_distinct,
                 )
