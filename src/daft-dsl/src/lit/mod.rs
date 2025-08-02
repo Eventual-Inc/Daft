@@ -516,81 +516,82 @@ impl LiteralValue {
     /// this allows you to get any value as a `LiteralValue` from a series
     /// LiteralValue::get_from_series(s, 0) -> LiteralValue
     pub fn get_from_series(s: &Series, idx: usize) -> DaftResult<Self> {
-        let err = || {
-            DaftError::ValueError(format!(
-                "index {} out of bounds for series of length {}",
+        if s.len() <= idx {
+            return Err(DaftError::ValueError(format!(
+                "index {} out of bounds for series of length {}: {}",
                 idx,
-                s.len()
-            ))
-        };
-        match s.data_type() {
-            DataType::Null => Ok(Self::Null),
-            DataType::Boolean => Ok(s.bool()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::Int8 => Ok(s.i8()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::UInt8 => Ok(s.u8()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::Int16 => Ok(s.i16()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::UInt16 => Ok(s.u16()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::Int32 => Ok(s.i32()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::UInt32 => Ok(s.u32()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::Int64 => Ok(s.i64()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::UInt64 => Ok(s.u64()?.get(idx).ok_or_else(err)?.literal_value()),
-            DataType::Float64 => Ok(s.f64()?.get(idx).ok_or_else(err)?.literal_value()),
+                s.len(),
+                s
+            )));
+        }
+
+        fn map_or_null<T, U, F>(o: Option<T>, f: F) -> LiteralValue
+        where
+            F: FnOnce(U) -> LiteralValue,
+            U: From<T>,
+        {
+            match o {
+                Some(v) => f(v.into()),
+                None => LiteralValue::Null,
+            }
+        }
+
+        Ok(match s.data_type() {
+            DataType::Null => Self::Null,
+            DataType::Boolean => s.bool()?.get(idx).literal_value(),
+            DataType::Int8 => s.i8()?.get(idx).literal_value(),
+            DataType::UInt8 => s.u8()?.get(idx).literal_value(),
+            DataType::Int16 => s.i16()?.get(idx).literal_value(),
+            DataType::UInt16 => s.u16()?.get(idx).literal_value(),
+            DataType::Int32 => s.i32()?.get(idx).literal_value(),
+            DataType::UInt32 => s.u32()?.get(idx).literal_value(),
+            DataType::Int64 => s.i64()?.get(idx).literal_value(),
+            DataType::UInt64 => s.u64()?.get(idx).literal_value(),
+            DataType::Float64 => s.f64()?.get(idx).literal_value(),
             DataType::Float32 => todo!(),
-            DataType::Decimal128(precision, scale) => Ok(Self::Decimal(
-                s.decimal128()?.get(idx).ok_or_else(err)?,
-                *precision as _,
-                *scale as _,
-            )),
-            DataType::Timestamp(tu, tz) => Ok(Self::Timestamp(
-                s.timestamp()?.get(idx).ok_or_else(err)?,
-                *tu,
-                tz.clone(),
-            )),
-            DataType::Date => Ok(Self::Date(s.date()?.get(idx).ok_or_else(err)?)),
+            DataType::Decimal128(precision, scale) => map_or_null(s.decimal128()?.get(idx), |v| {
+                Self::Decimal(v, *precision as _, *scale as _)
+            }),
+            DataType::Timestamp(tu, tz) => map_or_null(s.timestamp()?.get(idx), |v| {
+                Self::Timestamp(v, *tu, tz.clone())
+            }),
+            DataType::Date => map_or_null(s.date()?.get(idx), Self::Date),
             DataType::Time(time_unit) => {
-                Ok(Self::Time(s.time()?.get(idx).ok_or_else(err)?, *time_unit))
+                map_or_null(s.time()?.get(idx), |v| Self::Time(v, *time_unit))
             }
-            DataType::Duration(time_unit) => Ok(Self::Duration(
-                s.duration()?.get(idx).ok_or_else(err)?,
-                *time_unit,
-            )),
-            DataType::Interval => Ok(Self::Interval(
-                s.interval()?.get(idx).ok_or_else(err)?.into(),
-            )),
-            DataType::Binary => Ok(Self::Binary(s.binary()?.get(idx).ok_or_else(err)?.into())),
-            DataType::FixedSizeBinary(n) => Ok(Self::FixedSizeBinary(
-                s.fixed_size_binary()?.get(idx).ok_or_else(err)?.into(),
-                *n,
-            )),
-            DataType::Utf8 => Ok(Self::Utf8(s.utf8()?.get(idx).ok_or_else(err)?.into())),
-            DataType::FixedSizeList(_, _) => {
-                let lst = s.fixed_size_list()?.get(idx).ok_or_else(err)?;
-                Ok(lst.literal_value())
+            DataType::Duration(time_unit) => {
+                map_or_null(s.duration()?.get(idx), |v| Self::Duration(v, *time_unit))
             }
-            DataType::List(_) => {
-                let lst = s.list()?.get(idx).ok_or_else(err)?;
-                Ok(lst.literal_value())
-            }
+            DataType::Interval => map_or_null(s.interval()?.get(idx), Self::Interval),
+            DataType::Binary => map_or_null(s.binary()?.get(idx), Self::Binary),
+            DataType::FixedSizeBinary(n) => map_or_null(s.fixed_size_binary()?.get(idx), |v| {
+                Self::FixedSizeBinary(v, *n)
+            }),
+            DataType::Utf8 => map_or_null(s.utf8()?.get(idx), Self::Utf8),
+            DataType::FixedSizeList(_, _) => s.fixed_size_list()?.get(idx).literal_value(),
+            DataType::List(_) => s.list()?.get(idx).literal_value(),
             DataType::Struct(fields) => {
                 let children = &s.struct_()?.children;
                 let mut map = IndexMap::new();
                 for (field, child) in fields.iter().zip(children) {
                     map.insert(field.clone(), Self::try_from_single_value_series(child)?);
                 }
-                Ok(Self::Struct(map))
+                Self::Struct(map)
             }
 
             #[cfg(feature = "python")]
             DataType::Python => {
                 let v = s.python()?.get(idx);
 
-                Ok(Self::Python(PyObjectWrapper(v)))
+                Self::Python(PyObjectWrapper(v))
             }
-            ty => Err(DaftError::ValueError(format!(
-                "Unsupported data type: {}",
-                ty
-            ))),
-        }
+            ty => {
+                return Err(DaftError::ValueError(format!(
+                    "Unsupported data type: {}",
+                    ty
+                )));
+            }
+        })
     }
 
     // =================
