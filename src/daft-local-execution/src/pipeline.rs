@@ -10,7 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::join::get_common_join_cols;
+use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
@@ -37,6 +37,7 @@ use crate::{
         project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
+    runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -69,6 +70,8 @@ pub type NodeName = Cow<'static, str>;
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
+    #[allow(clippy::borrowed_box)]
+    fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>>;
     fn name(&self) -> Arc<str>;
     fn start(
         &self,
@@ -82,6 +85,24 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn plan_id(&self) -> Arc<str>;
     /// Unique id to identify the node.
     fn node_id(&self) -> usize;
+    // General Node Info
+    fn node_info(&self) -> Arc<NodeInfo>;
+    // Runtime Stats
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats>;
+}
+
+impl ConcreteTreeNode for Box<dyn PipelineNode> {
+    fn children(&self) -> Vec<&Self> {
+        self.boxed_children()
+    }
+
+    fn take_children(self) -> (Self, Vec<Self>) {
+        unimplemented!("with_new_children is not supported for Box<dyn PipelineNode>")
+    }
+
+    fn with_new_children(self, _children: Vec<Self>) -> DaftResult<Self> {
+        unimplemented!("with_new_children is not supported for Box<dyn PipelineNode>")
+    }
 }
 
 /// Single use context for translating a physical plan to a Pipeline.
@@ -91,11 +112,20 @@ pub struct RuntimeContext {
     context: HashMap<String, String>,
 }
 
+#[derive(Clone, Debug)]
+pub enum NodeType {
+    Intermediate,
+    Source,
+    StreamingSink,
+    BlockingSink,
+}
+
 /// Contains information about the node such as name, id, and the plan_id
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: usize,
+    pub node_type: NodeType,
     pub context: HashMap<String, String>,
 }
 
@@ -123,10 +153,11 @@ impl RuntimeContext {
         index
     }
 
-    pub fn next_node_info(&self, name: Arc<str>) -> NodeInfo {
+    pub fn next_node_info(&self, name: Arc<str>, node_type: NodeType) -> NodeInfo {
         NodeInfo {
             name,
             id: self.next_id(),
+            node_type,
             context: self.context.clone(),
         }
     }

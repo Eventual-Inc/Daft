@@ -31,7 +31,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::{Arc, LazyLock};
 
-    use common_error::DaftError;
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
     use daft_logical_plan::{
