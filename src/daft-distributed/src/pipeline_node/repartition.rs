@@ -12,7 +12,7 @@ use itertools::Itertools;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, MaterializedOutput, NodeID, NodeName,
+        make_in_memory_task_from_materialized_outputs, MaterializedOutput, NodeID, NodeName,
         PipelineNodeConfig, PipelineNodeContext,
     },
     scheduling::{
@@ -145,7 +145,7 @@ impl RepartitionNode {
         // Make each partition group (partitions equal by (hash % num_partitions)) input to a in-memory scan
         for partition_group in transposed_outputs {
             let self_clone = self.clone();
-            let task = make_in_memory_scan_from_materialized_outputs(
+            let task = make_in_memory_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
                 &(self_clone as Arc<dyn DistributedPipelineNode>),
