@@ -4,6 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_logical_plan::{
+    ops::{Limit as LogicalLimit, TopN as LogicalTopN},
     partitioning::{ClusteringSpecRef, RepartitionSpec},
     JoinStrategy, LogicalPlan, LogicalPlanRef,
 };
@@ -47,9 +48,17 @@ impl StagePlanBuilder {
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
             | LogicalPlan::Window(_)
-            | LogicalPlan::TopN(_)
-            | LogicalPlan::Limit(_)
             | LogicalPlan::Concat(_) => Ok(TreeNodeRecursion::Continue),
+            LogicalPlan::Limit(LogicalLimit { offset, .. })
+            | LogicalPlan::TopN(LogicalTopN { offset, .. }) => {
+                // TODO(zhenchao) support offset
+                if offset.is_some() {
+                    can_translate = false;
+                    Ok(TreeNodeRecursion::Stop)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            }
             LogicalPlan::Repartition(repartition) => {
                 if matches!(repartition.repartition_spec, RepartitionSpec::Hash(_)) {
                     Ok(TreeNodeRecursion::Continue)
@@ -57,7 +66,7 @@ impl StagePlanBuilder {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 }
-            },
+            }
             LogicalPlan::Join(join) => {
                 // TODO: Support broadcast join
                 if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
@@ -91,7 +100,11 @@ impl StagePlanBuilder {
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::SubqueryAlias(_)
-            | LogicalPlan::Shard(_) => panic!("Intersect, Union, SubqueryAlias, and Shard should be optimized away before planning stages")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_) => panic!(
+                "Logical plan operator {} should be optimized away before planning stages",
+                node.name()
+            ),
         });
         can_translate
     }

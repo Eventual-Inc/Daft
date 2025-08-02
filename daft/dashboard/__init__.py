@@ -6,10 +6,7 @@ from urllib.error import URLError
 import uuid
 import json
 import os
-from pathlib import Path
 from daft.daft import dashboard as native
-from importlib import resources
-import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,13 +28,14 @@ def _should_run() -> bool:
 
 
 def launch(noop_if_initialized: bool = False) -> None:
-    """Launches the Daft dashboard server on port 3238.
+    """Launches the Daft dashboard server on an available port.
 
-    The server serves HTML/CSS/JS bundles, so you are able to point your browser towards `http://localhost:3238` and view information regarding your queries.
+    The server will try to start on port 3238, and if that's taken, it will try subsequent ports.
+    The server serves HTML/CSS/JS bundles, so you are able to point your browser towards the returned URL.
 
     # Arguments:
         - noop_if_initialized: bool = False
-            Will not raise an exception a Daft dashboard server process is already launched and running.
+            Will not raise an exception if a Daft dashboard server process is already launched and running.
             Otherwise, an exception will be raised.
     """
     os.environ[native.DAFT_DASHBOARD_ENV_ENABLED] = "1"
@@ -61,10 +59,10 @@ def broadcast_query_information(
         "Content-Type": "application/json",
     }
 
-    if (url := os.environ.get("DAFT_DASHBOARD_URL")) is not None:
-        url = f"{url}/queries"
-    else:
-        url = native.DAFT_DASHBOARD_QUERIES_URL
+    url = native.get_dashboard_queries_url()
+    if url is None:
+        warnings.warn("Dashboard is not running")
+        return
 
     if (auth_token := os.environ.get("DAFT_DASHBOARD_AUTH_TOKEN")) is not None:
         headers["Authorization"] = f"Bearer {auth_token}"

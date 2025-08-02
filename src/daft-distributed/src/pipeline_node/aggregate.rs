@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::min, sync::Arc};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
@@ -7,10 +7,10 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    AggExpr,
+    is_partition_compatible, AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::{Schema, SchemaRef};
 
 use super::DistributedPipelineNode;
@@ -239,7 +239,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
     ) -> Arc<dyn DistributedPipelineNode> {
-        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone());
+        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone(), None);
 
         AggregateNode::new(
             self.get_next_pipeline_node_id(),
@@ -262,6 +262,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
     ) -> Arc<dyn DistributedPipelineNode> {
+        let num_partitions = input_node.config().clustering_spec.num_partitions();
         let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
@@ -274,10 +275,17 @@ impl LogicalPlanToPipelineNodeTranslator {
         .arced();
 
         // Second stage: Shuffle to distribute the dataset
+        let num_partitions = min(
+            num_partitions,
+            self.stage_config
+                .config
+                .shuffle_aggregation_default_partitions,
+        );
         let shuffle = self.gen_shuffle_node(
             logical_node_id,
             initial_agg,
             split_details.second_stage_group_by.clone(),
+            Some(num_partitions),
         );
 
         // Third stage re-agg to compute the final result
@@ -313,6 +321,29 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let input_clustering_spec = &input_node.config().clustering_spec;
+        // If there is only one partition, or the input is already partitioned by the group_by columns,
+        // then we can just do a single stage aggregation and skip the shuffle.
+        let is_hash_partitioned_by_group_by =
+            matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
+                && !group_by.is_empty()
+                && is_partition_compatible(
+                    &input_clustering_spec.partition_by(),
+                    group_by.iter().map(|e| e.inner()),
+                );
+        if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_group_by {
+            return Ok(AggregateNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                group_by,
+                aggregations,
+                output_schema,
+                input_node,
+            )
+            .arced());
+        }
+
         let split_details =
             split_groupby_aggs(&group_by, &aggregations, &input_node.config().schema)?;
 

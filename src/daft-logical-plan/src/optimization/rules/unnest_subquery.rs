@@ -530,6 +530,7 @@ fn pull_up_correlated_cols(
         | LogicalPlan::UrlUpload(..)
         | LogicalPlan::UDFProject(..)
         | LogicalPlan::Limit(..)
+        | LogicalPlan::Offset(..)
         | LogicalPlan::Shard(..)
         | LogicalPlan::TopN(..)
         | LogicalPlan::Sample(..)

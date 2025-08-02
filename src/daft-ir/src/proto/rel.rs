@@ -149,9 +149,6 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let source = source.to_proto()?.into();
                 proto::RelVariant::Source(source)
             }
-            Self::Shard(_) => {
-                not_implemented_err!("shard");
-            }
             Self::Project(project) => {
                 let project = project.to_proto()?.into();
                 proto::RelVariant::Project(project)
@@ -174,26 +171,6 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let limit = limit.to_proto()?.into();
                 proto::RelVariant::Limit(limit)
             }
-            Self::Explode(explode) => {
-                not_implemented_err!("explode");
-                // let explode = explode.to_proto()?.into();
-                // proto::RelVariant::Explode(explode)
-            }
-            Self::Unpivot(unpivot) => {
-                not_implemented_err!("unpivot");
-                // let unpivot = unpivot.to_proto()?.into();
-                // proto::RelVariant::Unpivot(unpivot)
-            }
-            Self::Sort(sort) => {
-                not_implemented_err!("sort");
-                // let sort = sort.to_proto()?.into();
-                // proto::RelVariant::Sort(sort)
-            }
-            Self::Repartition(repartition) => {
-                not_implemented_err!("repartition");
-                // let repartition = repartition.to_proto()?.into();
-                // proto::RelVariant::Repartition(repartition)
-            }
             Self::Distinct(distinct) => {
                 let distinct = distinct.to_proto()?.into();
                 proto::RelVariant::Distinct(distinct)
@@ -201,11 +178,6 @@ impl ToFromProto for ir::rel::LogicalPlan {
             Self::Aggregate(aggregate) => {
                 let aggregate = aggregate.to_proto()?.into();
                 proto::RelVariant::Aggregate(aggregate)
-            }
-            Self::Pivot(pivot) => {
-                not_implemented_err!("pivot");
-                // let pivot = pivot.to_proto()?.into();
-                // proto::RelVariant::Pivot(pivot)
             }
             Self::Concat(concat) => {
                 let concat = concat.to_proto()?.into();
@@ -219,40 +191,21 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let union_ = union_.to_proto()?.into();
                 proto::RelVariant::Union(union_)
             }
-            Self::Join(join) => {
-                not_implemented_err!("join");
-                // let join = join.to_proto()?.into();
-                // proto::RelVariant::Join(join)
-            }
-            Self::Sink(sink) => {
-                not_implemented_err!("sink");
-                // let sink = sink.to_proto()?.into();
-                // proto::RelVariant::Sink(sink)
-            }
-            Self::Sample(sample) => {
-                not_implemented_err!("sample");
-                // let sample = sample.to_proto()?.into();
-                // proto::RelVariant::Sample(sample)
-            }
-            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-                not_implemented_err!("monotonically_increasing_id");
-                // let monotonically_increasing_id = monotonically_increasing_id.to_proto()?.into();
-                // proto::RelVariant::MonotonicallyIncreasingId(monotonically_increasing_id)
-            }
-            Self::SubqueryAlias(subquery_alias) => {
-                not_implemented_err!("subquery_alias");
-                // let subquery_alias = subquery_alias.to_proto()?.into();
-                // proto::RelVariant::SubqueryAlias(subquery_alias)
-            }
-            Self::Window(window) => {
-                not_implemented_err!("window");
-                // let window = window.to_proto()?.into();
-                // proto::RelVariant::Window(window)
-            }
-            Self::TopN(top_n) => {
-                not_implemented_err!("top_n");
-                // let top_n = top_n.to_proto()?.into();
-                // proto::RelVariant::TopN(top_n)
+            Self::Shard(_)
+            | Self::Explode(_)
+            | Self::Unpivot(_)
+            | Self::Sort(_)
+            | Self::Repartition(_)
+            | Self::Pivot(_)
+            | Self::Join(_)
+            | Self::Sink(_)
+            | Self::Sample(_)
+            | Self::MonotonicallyIncreasingId(_)
+            | Self::SubqueryAlias(_)
+            | Self::Window(_)
+            | Self::TopN(_)
+            | Self::Offset(_) => {
+                not_implemented_err!("{}", self.name());
             }
         };
         Ok(Self::Message {
@@ -336,15 +289,18 @@ impl ToFromProto for ir::rel::Limit {
     {
         let input = from_proto_arc(message.input)?;
         let limit = message.limit;
-        Ok(ir::rel::new_limit(input, limit)?)
+        let offset = message.offset;
+        Ok(ir::rel::new_limit(input, limit, offset)?)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let input = self.input.to_proto()?.into();
         let limit = self.limit;
+        let offset = self.offset;
         Ok(Self::Message {
             input: Some(input),
             limit,
+            offset,
         })
     }
 }

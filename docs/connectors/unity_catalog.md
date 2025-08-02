@@ -1,4 +1,4 @@
-# Unity Catalog
+# Reading from and Writing to Unity Catalog
 
 [Unity Catalog](https://github.com/unitycatalog/unitycatalog/) is an open-sourced catalog developed by Databricks. Users of Unity Catalog are able to work with data assets such as tables (Parquet, CSV, Iceberg, Delta), volumes (storing raw files), functions and models.
 
@@ -58,7 +58,7 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
     df.show()
     ```
 
-See also [Delta Lake](../io/delta_lake.md) for more information about how to work with the Delta Lake tables provided by the Unity Catalog.
+See also [Delta Lake](../connectors/delta_lake.md) for more information about how to work with the Delta Lake tables provided by the Unity Catalog.
 
 ## Downloading files in Unity Catalog volumes
 
