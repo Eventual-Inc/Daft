@@ -4,13 +4,8 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
-use daft_core::{
-    prelude::{SchemaRef, UInt64Array},
-    series::{IntoSeries, Series},
-};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::RecordBatch;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -23,28 +18,11 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
-        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
+        RuntimeStatsContext, RuntimeStatsEventHandler,
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
-
-/// Helper function for building the output of an async row-wise streaming sink
-/// given the input, output row idxs, and output value column to append
-pub fn build_output(
-    all_inputs: Arc<MicroPartition>,
-    output_row_idxs: Vec<u64>,
-    output_values: Series,
-    output_schema: SchemaRef,
-) -> DaftResult<RecordBatch> {
-    if output_row_idxs.is_empty() {
-        return Ok(RecordBatch::empty(Some(output_schema)));
-    }
-
-    let output_row_idxs = UInt64Array::from(("idxs", output_row_idxs)).into_series();
-    let original_rows = all_inputs.take(&output_row_idxs)?;
-    let output = original_rows.append_column(output_values)?;
-    Ok(output)
-}
 
 pub trait StreamingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
@@ -97,6 +75,11 @@ pub trait StreamingSink: Send + Sync {
     /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> Box<dyn StreamingSinkState>;
 
+    /// Create a new RuntimeStatsBuilder for this StreamingSink.
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(BaseStatsBuilder {})
+    }
+
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
     fn max_concurrency(&self) -> usize {
@@ -127,10 +110,16 @@ impl StreamingSinkNode {
     ) -> Self {
         let name = op.name().into();
         let node_info = ctx.next_node_info(name);
+
+        let runtime_stats = RuntimeStatsContext::new_with_builder(
+            node_info.clone(),
+            op.make_runtime_stats_builder(),
+        );
+
         Self {
             op,
             children,
-            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
+            runtime_stats,
             plan_stats,
             node_info,
         }

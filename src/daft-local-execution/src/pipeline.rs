@@ -479,6 +479,7 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::UrlUpload(UrlUpload {
             input,
             args,
+            passthrough_columns,
             output_column,
             stats_state,
             ..
@@ -487,6 +488,7 @@ pub fn physical_plan_to_pipeline(
 
             let url_upload_op = UrlUploadSink::new(
                 args.clone(),
+                passthrough_columns.clone(),
                 output_column.clone(),
                 input.schema().clone(),
                 cfg.url_ops_bytes_buffer,

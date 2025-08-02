@@ -4,39 +4,36 @@ use arrow_array::builder::LargeBinaryBuilder;
 use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
-    prelude::{AsArrow, BinaryArray, BooleanArray, DataType, Field, Schema, SchemaRef},
-    series::IntoSeries,
+    prelude::{AsArrow, BinaryArray, DataType, Field, Schema, SchemaRef},
+    series::{IntoSeries, Series},
 };
 use daft_dsl::expr::{bound_expr::BoundExpr, BoundColumn};
 use daft_functions_uri::{download::UrlDownloadArgsDefault, UrlDownloadArgs};
 use daft_io::{get_io_client, IOClient};
-use daft_micropartition::{partitioning::Partition, MicroPartition};
-use daft_recordbatch::RecordBatch;
+use daft_micropartition::MicroPartition;
 use tokio::task::JoinSet;
 use tokio_util::bytes::Bytes;
 use tracing::{instrument, Span};
 
-use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
-    StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState,
-};
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::NodeName,
-    streaming_sink::base::build_output,
+    runtime_stats::RuntimeStatsBuilder,
+    streaming_sink::{
+        async_ops::template::{
+            AsyncOpRuntimeStatsBuilder, AsyncOpState, AsyncSinkState, IN_FLIGHT_SCALE_FACTOR,
+        },
+        base::{
+            StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+            StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState,
+        },
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-const IN_FLIGHT_SCALE_FACTOR: usize = 32;
-
-struct UrlDownloadSinkState {
+struct UrlDownloadOpState {
     // Arguments
     args: Arc<UrlDownloadArgsDefault<BoundExpr>>,
-    passthrough_columns: Vec<BoundColumn>,
-    output_schema: SchemaRef,
-    output_column: String,
-    // Max size of saved inputs before we start pruning rows
-    input_size_bytes_buffer: usize,
 
     // Fixed state
     io_client: Arc<IOClient>,
@@ -45,66 +42,50 @@ struct UrlDownloadSinkState {
     // Updatable state
     submitted_downloads: usize,
     in_flight_downloads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
-    // Save input columns to pass through to output
-    saved_inputs: Arc<MicroPartition>,
-    // True when row is not finished downloading.
-    // Note: unfinished_inputs.len() == all_inputs.num_rows()
-    unfinished_inputs: Vec<bool>,
-    // Map idx from in_flight_downloads to row in all_inputs
-    // Used to filter out finished rows from all_inputs while keeping in_flight_downloads in sync
-    // Note in_flight_inputs_idx.len() == submitted_downloads
-    in_flight_inputs_idx: Vec<usize>,
 }
 
-impl UrlDownloadSinkState {
-    fn new(
-        args: Arc<UrlDownloadArgsDefault<BoundExpr>>,
-        passthrough_columns: Vec<BoundColumn>,
-        save_schema: SchemaRef,
-        output_schema: SchemaRef,
-        output_column: String,
-        input_size_bytes_buffer: usize,
-    ) -> Self {
+impl UrlDownloadOpState {
+    fn new(args: Arc<UrlDownloadArgsDefault<BoundExpr>>) -> Self {
         let multi_thread = args.multi_thread;
         let io_config = args.io_config.clone();
 
         Self {
             args,
-            passthrough_columns,
-            output_schema,
-            output_column,
-            input_size_bytes_buffer,
 
             io_runtime_handle: get_io_runtime(true),
             io_client: get_io_client(multi_thread, io_config).expect("Failed to get IO client"),
 
             submitted_downloads: 0,
             in_flight_downloads: JoinSet::new(),
-            saved_inputs: Arc::new(MicroPartition::empty(Some(save_schema))),
-            unfinished_inputs: Vec::new(),
-            in_flight_inputs_idx: Vec::new(),
         }
     }
+}
 
-    pub fn get_in_flight(&self) -> usize {
+impl AsyncOpState for UrlDownloadOpState {
+    fn num_active_tasks(&self) -> usize {
         self.in_flight_downloads.len()
     }
 
-    fn max_in_flight(&self) -> usize {
-        self.args.max_connections * IN_FLIGHT_SCALE_FACTOR
-    }
-
-    fn input_size(&self) -> usize {
-        // Expect that all inputs are loaded
-        self.saved_inputs.size_bytes().unwrap().unwrap_or(0)
-    }
-
-    /// Start downloads for given URLs
-    pub fn start_download(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
-        if input.is_empty() {
-            return Ok(());
+    fn execute_batch_size(&self) -> usize {
+        if self.num_active_tasks() < self.args.max_connections {
+            0
+        } else {
+            std::cmp::min(
+                self.num_active_tasks() - self.args.max_connections,
+                self.args.max_connections,
+            )
         }
+    }
 
+    fn finalize_batch_size(&self) -> usize {
+        std::cmp::min(self.num_active_tasks(), self.args.max_connections)
+    }
+
+    fn accept_more_input(&self) -> bool {
+        self.num_active_tasks() < (self.args.max_connections * *IN_FLIGHT_SCALE_FACTOR)
+    }
+
+    fn process_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
         let raise_error_on_failure = self.args.raise_error_on_failure;
 
         for input in input.get_tables()?.iter() {
@@ -129,85 +110,39 @@ impl UrlDownloadSinkState {
             }
         }
 
-        // Add to row tracking data structures
-        let curr_num_rows = self.saved_inputs.num_rows()?;
-        self.in_flight_inputs_idx
-            .extend(curr_num_rows..(curr_num_rows + input.num_rows()?));
-        self.unfinished_inputs.extend(vec![true; input.num_rows()?]);
-        self.saved_inputs = Arc::new(MicroPartition::concat([
-            self.saved_inputs.clone(),
-            Arc::new(input.select_columns(&self.passthrough_columns)?),
-        ])?);
-
         Ok(())
     }
 
-    pub async fn poll_finished(&mut self, finished: bool) -> DaftResult<RecordBatch> {
-        let exp_capacity = if finished {
-            self.in_flight_downloads.len()
-        } else if self.in_flight_downloads.len() > self.max_in_flight() {
-            std::cmp::min(
-                self.in_flight_downloads.len() - self.max_in_flight(),
-                self.args.max_connections,
-            )
-        } else {
-            0
-        };
+    async fn poll_finished(
+        &mut self,
+        num_rows: usize,
+        stats: &AsyncOpRuntimeStatsBuilder,
+    ) -> DaftResult<(Vec<u64>, Series)> {
+        let mut completed_idxs = Vec::with_capacity(num_rows);
+        let mut completed_contents = LargeBinaryBuilder::with_capacity(num_rows, num_rows);
 
-        let mut completed_idxs = Vec::with_capacity(exp_capacity);
-        let mut completed_contents = LargeBinaryBuilder::with_capacity(exp_capacity, exp_capacity);
-
-        // Wait for downloads to complete until we are under the active limit
-        while completed_idxs.len() < exp_capacity {
+        // Wait for enough downloads to complete
+        while completed_idxs.len() < num_rows {
             let Some(result) = self.in_flight_downloads.join_next().await else {
                 unreachable!("There should always be at least one download in flight");
             };
 
             let (idx, contents) = result.expect("Failed to join download")?;
-            completed_idxs.push(self.in_flight_inputs_idx[idx] as u64);
+            if contents.is_none() {
+                stats.inc_num_failed();
+            }
+
+            completed_idxs.push(idx as u64);
             completed_contents.append_option(contents);
         }
-        // Mark finished rows as finished
-        for idx in &completed_idxs {
-            self.unfinished_inputs[*idx as usize] = false;
-        }
 
-        let completed_contents =
-            BinaryArray::from((self.output_column.as_str(), completed_contents.finish()))
-                .into_series();
-        let output = build_output(
-            self.saved_inputs.clone(),
-            completed_idxs,
-            completed_contents,
-            self.output_schema.clone(),
-        )?;
+        let completed_contents = BinaryArray::from(("", completed_contents.finish())).into_series();
 
-        // Mark finished rows and cleanup
-        if self.input_size() > self.input_size_bytes_buffer {
-            let unfinished_inputs =
-                BooleanArray::from(("mask", self.unfinished_inputs.as_slice())).into_series();
-            self.saved_inputs = Arc::new(self.saved_inputs.mask_filter(&unfinished_inputs)?);
-
-            // Update the in_flight_inputs_idx with the new locations in all_inputs
-            let mut cnt = 0;
-            for (idx, val) in self.unfinished_inputs.iter().enumerate() {
-                if *val {
-                    self.in_flight_inputs_idx[idx] = cnt;
-                    cnt += 1;
-                }
-            }
-            self.unfinished_inputs = vec![true; self.saved_inputs.num_rows()?];
-        }
-
-        Ok(output)
+        Ok((completed_idxs, completed_contents))
     }
 }
 
-impl StreamingSinkState for UrlDownloadSinkState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
+type UrlDownloadSinkState = AsyncSinkState<UrlDownloadOpState>;
 
 pub struct UrlDownloadSink {
     args: Arc<UrlDownloadArgsDefault<BoundExpr>>,
@@ -258,6 +193,7 @@ impl StreamingSink for UrlDownloadSink {
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         let input_schema = self.input_schema.clone();
+        let builder = spawner.runtime_context.builder.clone();
 
         spawner
             .spawn(
@@ -267,8 +203,13 @@ impl StreamingSink for UrlDownloadSink {
                         .downcast_mut::<UrlDownloadSinkState>()
                         .expect("UrlDownload sink should have UrlDownloadSinkState");
 
-                    url_state.start_download(input)?;
-                    let output = url_state.poll_finished(false).await?;
+                    let stats = builder.as_any_arc();
+                    let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
+                        "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
+                    );
+
+                    url_state.process_input(input)?;
+                    let output = url_state.poll_finished(false, stats).await?;
 
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
@@ -278,7 +219,7 @@ impl StreamingSink for UrlDownloadSink {
                     ));
 
                     // Accept more input if we have room
-                    if url_state.get_in_flight() <= url_state.max_in_flight() {
+                    if url_state.accept_more_input() {
                         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
                     } else {
                         let next_input = Arc::new(MicroPartition::empty(Some(input_schema)));
@@ -299,6 +240,8 @@ impl StreamingSink for UrlDownloadSink {
         mut states: Vec<Box<dyn StreamingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
+        let builder = spawner.runtime_context.builder.clone();
+
         spawner
             .spawn(
                 async move {
@@ -310,7 +253,12 @@ impl StreamingSink for UrlDownloadSink {
                         .downcast_mut::<UrlDownloadSinkState>()
                         .expect("UrlDownload sink state should be UrlDownloadSinkState");
 
-                    let output = state.poll_finished(true).await?;
+                    let stats = builder.as_any_arc();
+                    let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
+                        "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
+                    );
+
+                    let output = state.poll_finished(true, stats).await?;
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
                         schema,
@@ -318,7 +266,7 @@ impl StreamingSink for UrlDownloadSink {
                         None,
                     ));
 
-                    if state.get_in_flight() > 0 {
+                    if state.num_active_tasks() > 0 {
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
                             output: Some(output),
@@ -362,14 +310,20 @@ impl StreamingSink for UrlDownloadSink {
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
+        let inner_state = UrlDownloadOpState::new(self.args.clone());
+
         Box::new(UrlDownloadSinkState::new(
-            self.args.clone(),
             self.passthrough_columns.clone(),
             self.save_schema.clone(),
             self.output_schema.clone(),
             self.output_column.clone(),
             self.input_size_bytes_buffer,
+            inner_state,
         ))
+    }
+
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(AsyncOpRuntimeStatsBuilder::new())
     }
 
     fn max_concurrency(&self) -> usize {

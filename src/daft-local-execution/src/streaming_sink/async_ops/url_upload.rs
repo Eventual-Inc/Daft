@@ -4,37 +4,35 @@ use arrow_array::builder::LargeStringBuilder;
 use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
-    prelude::{AsArrow, DataType, Field, SchemaRef, Utf8Array},
-    series::IntoSeries,
+    prelude::{AsArrow, DataType, Field, Schema, SchemaRef, Utf8Array},
+    series::{IntoSeries, Series},
 };
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_dsl::expr::{bound_expr::BoundExpr, BoundColumn};
 use daft_functions_uri::{upload::UrlUploadArgsDefault, UrlUploadArgs};
 use daft_io::{get_io_client, IOClient};
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::RecordBatch;
 use tokio::task::JoinSet;
 use tokio_util::bytes::Bytes;
 use tracing::{instrument, Span};
 
-use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
-    StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState,
-};
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::NodeName,
-    streaming_sink::base::build_output,
+    streaming_sink::{
+        async_ops::template::{
+            AsyncOpRuntimeStatsBuilder, AsyncOpState, AsyncSinkState, IN_FLIGHT_SCALE_FACTOR,
+        },
+        base::{
+            StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+            StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState,
+        },
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-struct UrlUploadSinkState {
+struct UrlUploadOpState {
     // Arguments
     args: Arc<UrlUploadArgsDefault<BoundExpr>>,
-    output_schema: SchemaRef,
-    output_column: String,
-    // Max size of saved inputs before we start pruning rows
-    #[allow(dead_code)]
-    input_size_bytes_buffer: usize,
 
     // Fixed state
     io_client: Arc<IOClient>,
@@ -42,44 +40,51 @@ struct UrlUploadSinkState {
 
     // Updatable state
     in_flight_uploads: JoinSet<DaftResult<(usize, Option<String>)>>,
-    all_inputs: Arc<MicroPartition>,
     submitted_uploads: usize,
 }
 
-impl UrlUploadSinkState {
-    fn new(
-        args: Arc<UrlUploadArgsDefault<BoundExpr>>,
-        output_column: String,
-        input_schema: SchemaRef,
-        input_size_bytes_buffer: usize,
-    ) -> Self {
+impl UrlUploadOpState {
+    fn new(args: Arc<UrlUploadArgsDefault<BoundExpr>>) -> Self {
         let multi_thread = args.multi_thread;
         let io_config = args.io_config.clone();
 
-        // Generate output schema initially
-        let mut output_schema = input_schema.as_ref().clone();
-        output_schema.append(Field::new(output_column.as_str(), DataType::Utf8));
-
         Self {
             args,
-            output_schema: Arc::new(output_schema),
-            output_column,
-            input_size_bytes_buffer,
 
             io_runtime_handle: get_io_runtime(multi_thread),
             io_client: get_io_client(multi_thread, io_config).expect("Failed to get IO client"),
 
             in_flight_uploads: JoinSet::new(),
-            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema))),
             submitted_uploads: 0,
         }
     }
+}
 
-    fn upload(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
-        if input.is_empty() {
-            return Ok(());
+impl AsyncOpState for UrlUploadOpState {
+    fn num_active_tasks(&self) -> usize {
+        self.in_flight_uploads.len()
+    }
+
+    fn execute_batch_size(&self) -> usize {
+        if self.num_active_tasks() < self.args.max_connections {
+            0
+        } else {
+            std::cmp::min(
+                self.num_active_tasks() - self.args.max_connections,
+                self.args.max_connections,
+            )
         }
+    }
 
+    fn finalize_batch_size(&self) -> usize {
+        std::cmp::min(self.num_active_tasks(), self.args.max_connections)
+    }
+
+    fn accept_more_input(&self) -> bool {
+        self.num_active_tasks() < (self.args.max_connections * *IN_FLIGHT_SCALE_FACTOR)
+    }
+
+    fn process_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
         let raise_error_on_failure = self.args.raise_error_on_failure;
 
         for input in input.get_tables()?.iter() {
@@ -115,22 +120,19 @@ impl UrlUploadSinkState {
             }
         }
 
-        self.all_inputs = Arc::new(MicroPartition::concat([self.all_inputs.clone(), input])?);
         Ok(())
     }
 
-    async fn poll_finished(&mut self, finished: bool) -> DaftResult<RecordBatch> {
-        let exp_capacity = if finished {
-            std::cmp::min(self.in_flight_uploads.len(), 32)
-        } else {
-            0
-        };
-
-        let mut completed_idxs = Vec::with_capacity(exp_capacity);
-        let mut completed_urls = LargeStringBuilder::with_capacity(exp_capacity, exp_capacity);
+    async fn poll_finished(
+        &mut self,
+        num_rows: usize,
+        stats: &AsyncOpRuntimeStatsBuilder,
+    ) -> DaftResult<(Vec<u64>, Series)> {
+        let mut completed_idxs = Vec::with_capacity(num_rows);
+        let mut completed_urls = LargeStringBuilder::with_capacity(num_rows, num_rows);
 
         // Wait for uploads to complete until we are under the active limit
-        while completed_idxs.len() < exp_capacity {
+        while completed_idxs.len() < num_rows {
             let Some(result) = self.in_flight_uploads.join_next().await else {
                 unreachable!("There should always be at least one upload in flight");
             };
@@ -138,6 +140,11 @@ impl UrlUploadSinkState {
             let (idx, contents) = result
                 .expect("Failed to join upload")
                 .expect("Failed to get upload result");
+
+            if contents.is_none() {
+                stats.inc_num_failed();
+            }
+
             completed_idxs.push(idx as u64);
             completed_urls.append_option(contents);
         }
@@ -147,34 +154,27 @@ impl UrlUploadSinkState {
             let (idx, contents) = result
                 .expect("Failed to join upload")
                 .expect("Failed to get upload result");
+
+            if contents.is_none() {
+                stats.inc_num_failed();
+            }
+
             completed_idxs.push(idx as u64);
             completed_urls.append_option(contents);
         }
 
-        let completed_urls =
-            Utf8Array::from((self.output_column.as_str(), completed_urls.finish())).into_series();
-
-        eprintln!(
-            "URL Upload Bytes: {}",
-            self.all_inputs.size_bytes().unwrap_or(0)
-        );
-        build_output(
-            self.all_inputs.clone(),
-            completed_idxs,
-            completed_urls,
-            self.output_schema.clone(),
-        )
+        let completed_urls = Utf8Array::from(("", completed_urls.finish())).into_series();
+        Ok((completed_idxs, completed_urls))
     }
 }
 
-impl StreamingSinkState for UrlUploadSinkState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
+type UrlUploadSinkState = AsyncSinkState<UrlUploadOpState>;
 
 pub struct UrlUploadSink {
     args: Arc<UrlUploadArgsDefault<BoundExpr>>,
+    passthrough_columns: Vec<BoundColumn>,
+    save_schema: SchemaRef,
+    output_schema: SchemaRef,
     output_column: String,
     input_schema: SchemaRef,
     input_size_bytes_buffer: usize,
@@ -183,12 +183,26 @@ pub struct UrlUploadSink {
 impl UrlUploadSink {
     pub fn new(
         args: UrlUploadArgs<BoundExpr>,
+        passthrough_columns: Vec<BoundColumn>,
         output_column: String,
         input_schema: SchemaRef,
         input_size_bytes_buffer: usize,
     ) -> DaftResult<Self> {
+        // Generate output schema initially
+        let mut save_fields = passthrough_columns
+            .iter()
+            .map(|expr| input_schema[expr.index].clone())
+            .collect::<Vec<_>>();
+        let save_schema = Arc::new(Schema::new(save_fields.clone()));
+
+        save_fields.push(Field::new(output_column.as_str(), DataType::Utf8));
+        let output_schema = Arc::new(Schema::new(save_fields));
+
         Ok(Self {
             args: Arc::new(args.unwrap_or_default()?),
+            passthrough_columns,
+            save_schema,
+            output_schema,
             output_column,
             input_schema,
             input_size_bytes_buffer,
@@ -204,6 +218,9 @@ impl StreamingSink for UrlUploadSink {
         mut state: Box<dyn StreamingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
+        let input_schema = self.input_schema.clone();
+        let builder = spawner.runtime_context.builder.clone();
+
         spawner
             .spawn(
                 async move {
@@ -212,16 +229,31 @@ impl StreamingSink for UrlUploadSink {
                         .downcast_mut::<UrlUploadSinkState>()
                         .expect("UrlUpload sink should have UrlUploadSinkState");
 
-                    url_state.upload(input)?;
-                    let output = url_state.poll_finished(false).await?;
+                    let stats = builder.as_any_arc();
+                    let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
+                        "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
+                    );
+
+                    url_state.process_input(input)?;
+                    let output = url_state.poll_finished(false, stats).await?;
 
                     let schema = output.schema.clone();
-                    let output = MicroPartition::new_loaded(schema, Arc::new(vec![output]), None);
+                    let output = Arc::new(MicroPartition::new_loaded(
+                        schema,
+                        Arc::new(vec![output]),
+                        None,
+                    ));
 
-                    Ok((
-                        state,
-                        StreamingSinkOutput::NeedMoreInput(Some(Arc::new(output))),
-                    ))
+                    // Accept more input if we have room
+                    if url_state.accept_more_input() {
+                        Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
+                    } else {
+                        let next_input = Arc::new(MicroPartition::empty(Some(input_schema)));
+                        Ok((
+                            state,
+                            StreamingSinkOutput::HasMoreOutput { next_input, output },
+                        ))
+                    }
                 },
                 Span::current(),
             )
@@ -234,6 +266,8 @@ impl StreamingSink for UrlUploadSink {
         mut states: Vec<Box<dyn StreamingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
+        let builder = spawner.runtime_context.builder.clone();
+
         spawner
             .spawn(
                 async move {
@@ -245,7 +279,12 @@ impl StreamingSink for UrlUploadSink {
                         .downcast_mut::<UrlUploadSinkState>()
                         .expect("UrlUpload sink state should be UrlUploadSinkState");
 
-                    let output = state.poll_finished(true).await?;
+                    let stats = builder.as_any_arc();
+                    let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
+                        "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
+                    );
+
+                    let output = state.poll_finished(true, stats).await?;
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
                         schema,
@@ -253,7 +292,7 @@ impl StreamingSink for UrlUploadSink {
                         None,
                     ));
 
-                    if !state.in_flight_uploads.is_empty() {
+                    if state.num_active_tasks() > 0 {
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
                             output: Some(output),
@@ -286,11 +325,15 @@ impl StreamingSink for UrlUploadSink {
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
+        let inner_state = UrlUploadOpState::new(self.args.clone());
+
         Box::new(UrlUploadSinkState::new(
-            self.args.clone(),
+            self.passthrough_columns.clone(),
+            self.save_schema.clone(),
+            self.output_schema.clone(),
             self.output_column.clone(),
-            self.input_schema.clone(),
             self.input_size_bytes_buffer,
+            inner_state,
         ))
     }
 
