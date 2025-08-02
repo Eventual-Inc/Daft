@@ -323,7 +323,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralValueDeserializer {
             LiteralValue::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
             LiteralValue::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             LiteralValue::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
-            LiteralValue::List(_) => Err(LitError::custom("Not implemented: Series")),
+            LiteralValue::List(_) => Err(LitError::custom("Not implemented: List")),
             #[cfg(feature = "python")]
             LiteralValue::Python(_) => Err(LitError::custom("Not implemented: Python")),
             LiteralValue::Struct(_) => Err(LitError::custom("Not implemented: Struct")),

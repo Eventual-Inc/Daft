@@ -41,16 +41,18 @@ impl ScalarUDF for CountMatches {
                         .into_series(),
                 )
             }),
-            DataType::List(_) => patterns
-                .list()
-                .expect("patterns should be a list")
-                .flat_child
-                .with_utf8_array(|pattern_arr| {
-                    Ok(
-                        count_matches_impl(arr, pattern_arr, whole_words, case_sensitive)?
-                            .into_series(),
-                    )
-                }),
+            DataType::List(_) => {
+                patterns
+                    .list()
+                    .unwrap()
+                    .flat_child
+                    .with_utf8_array(|pattern_arr| {
+                        Ok(
+                            count_matches_impl(arr, pattern_arr, whole_words, case_sensitive)?
+                                .into_series(),
+                        )
+                    })
+            }
             patterns_dtype => Err(DaftError::ValueError(format!(
                 "expected string or list of strings for 'patterns', got {}",
                 patterns_dtype

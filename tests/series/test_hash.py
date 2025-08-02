@@ -323,7 +323,6 @@ def test_hash_fixed_size_list_array_different_seeds(dtype):
     arr = Series.from_pylist([[1, 2], [1, 2], [1, 2], [1, 2]]).cast(DataType.fixed_size_list(dtype, 2))
     seeds = Series.from_pylist([1, 2, 3, 4]).cast(DataType.uint64())
 
-    print(seeds.datatype())
     hashed = arr.hash(seeds).to_pylist()
 
     different_inds = [0, 1, 2, 3]
