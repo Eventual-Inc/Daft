@@ -131,13 +131,20 @@ pub mod rel {
     }
 
     /// Creates a new limit relational operator.
-    pub fn new_limit<I>(input: I, limit: u64) -> DaftResult<Limit>
+    pub fn new_limit<I>(input: I, limit: u64, offset: Option<u64>) -> DaftResult<Limit>
     where
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        Ok(Limit { plan_id: None,
-            node_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Limit {
+            plan_id: None,
+            node_id: None,
+            input,
+            limit,
+            offset,
+            eager: false,
+            stats_state: stats::StatsState::NotMaterialized
+        })
     }
 
     /// Creates a new distinct relational operator.
