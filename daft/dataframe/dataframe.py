@@ -199,10 +199,10 @@ class DataFrame:
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>>
-            >>> def double(df, column: str):
+            >>> def square(df, column: str):
             ...     return df.select((df[column] * df[column]).alias(column))
             >>>
-            >>> df.pipe(double, "x").show()
+            >>> df.pipe(square, "x").show()
             ╭───────╮
             │ x     │
             │ ---   │
@@ -255,30 +255,69 @@ class DataFrame:
             >>> df = df.pipe(double, "x")
             >>>
             >>> df.explain()
+            Result is cached and will skip computation
+            <BLANKLINE>
+            * Source:
+            |   Number of partitions = 1
+            |   Output schema = x#Int64
+            <BLANKLINE>
+            However here is the logical plan used to produce this result:
+            <BLANKLINE>
             == Unoptimized Logical Plan ==
-            ...  # logical plan output truncated
             <BLANKLINE>
-            (Showing unoptimized logical plan only)
+            * Source:
+            |   Number of partitions = 1
+            |   Output schema = x#Int64
             <BLANKLINE>
+            <BLANKLINE>
+            Set `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.
+            >>>
             >>> df.explain(show_all=True)
+            Result is cached and will skip computation
+            <BLANKLINE>
+            * Source:
+            |   Number of partitions = 1
+            |   Output schema = x#Int64
+            <BLANKLINE>
+            However here is the logical plan used to produce this result:
+            <BLANKLINE>
             == Unoptimized Logical Plan ==
-            ...
+            <BLANKLINE>
+            * Source:
+            |   Number of partitions = 1
+            |   Output schema = x#Int64
+            <BLANKLINE>
+            <BLANKLINE>
             == Optimized Logical Plan ==
-            ...
+            <BLANKLINE>
+            * Source:
+            |   Number of partitions = 1
+            |   Output schema = x#Int64
+            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity
+            |     = 1.00 }
+            <BLANKLINE>
+            <BLANKLINE>
             == Physical Plan ==
-            ...
             <BLANKLINE>
-            (Showing all stages of execution)
-            <BLANKLINE>
+            * InMemorySource:
+            |   Schema = x#Int64
+            |   Size bytes = 24
+            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity
+            |     = 1.00 }
+            >>>
             >>> with open("plan.txt", "w") as f:
             ...     df.explain(show_all=True, file=f)
             <BLANKLINE>
             (Plan written to file `plan.txt`)
             <BLANKLINE>
+            >>>
             >>> df.explain(format="mermaid")
-            'graph TD\n  A --> B\n  ...'
+            flowchart TD
+            Source0["Source:
+            Number of partitions = 1
+            Output schema = x#Int64"]
+            Set show_all=True to also see the Optimized and Physical plans. This will run the query optimizer.
             <BLANKLINE>
-            (Returned Mermaid-format string, or MermaidFormatter if in a notebook)
         """
         is_cached = self._result_cache is not None
         if format == "mermaid":
@@ -367,7 +406,7 @@ class DataFrame:
             >>>
             >>> # Partition count may depend on default config or optimizer decisions
             >>> df.num_partitions()
-            4
+            1
             >>>
             >>> # You can repartition manually (if supported), and then inspect again:
             >>> df2 = df.repartition(10)
@@ -394,10 +433,12 @@ class DataFrame:
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.schema()
-            Schema([
-                Field(name='x', dtype=DataType.int64()),
-                Field(name='y', dtype=DataType.string())
-            ])
+                    ┌────────────┬───────┐
+                    │ column_name┆ type  │
+                    ├────────────┼───────┤
+                    │ x          ┆ Int64 │
+                    │ y          ┆ Utf8  │
+                    └────────────┴───────┘
         """
         return self.__builder.schema()
 
@@ -437,7 +478,10 @@ class DataFrame:
             {'foo': 1, 'bar': 'a'}
             {'foo': 2, 'bar': 'b'}
             {'foo': 3, 'bar': 'c'}
-        !!! tip "See also [`df.iter_rows()`][daft.DataFrame.iter_rows]: iterator over rows with more options"
+
+        Tip:
+            See also [`df.iter_rows()`][daft.DataFrame.iter_rows]
+            Iterator over rows with more options"
         """
         return self.iter_rows(results_buffer_size=None)
 
@@ -484,7 +528,8 @@ class DataFrame:
             {'foo': 2, 'bar': 'b'}
             {'foo': 3, 'bar': 'c'}
 
-        !!! tip "See also [`df.iter_partitions()`][daft.DataFrame.iter_partitions]: iterator over entire partitions instead of single rows"
+        Tip:
+            "See also [`df.iter_partitions()`][daft.DataFrame.iter_partitions]: iterator over entire partitions instead of single rows"
         """
         if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
@@ -556,19 +601,12 @@ class DataFrame:
             >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
             >>> for batch in df.to_arrow_iter():
             ...     print(batch)
-            pyarrow.RecordBatch with 3 rows and 2 columns
+            pyarrow.RecordBatch
             foo: int64
-            bar: string
-            ┌─────┬─────┐
-            │ foo ┆ bar │
-            ├─────┼─────┤
-            │ 1   ┆ a   │
-            │ 2   ┆ b   │
-            │ 3   ┆ c   │
-            └─────┴─────┘
-            <BLANKLINE>
-            Statistics: missing
-            <BLANKLINE>
+            bar: large_string
+            ----
+            foo: [1,2,3]
+            bar: ["a","b","c"]
         """
         for name in self.schema().column_names():
             if self.schema()[name].dtype.is_python():
@@ -635,7 +673,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
             >>> for part in df.iter_partitions():
             ...     print(part)  # doctest: +SKIP
-            MicroPartition with 2 rows:
+            MicroPartition with 3 rows:
             TableState: Loaded. 1 tables
             ╭───────┬──────╮
             │ foo   ┆ bar  │
@@ -645,24 +683,12 @@ class DataFrame:
             │ 1     ┆ a    │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
             │ 2     ┆ b    │
-            ╰───────┴──────╯
-            <BLANKLINE>
-            <BLANKLINE>
-            Statistics: missing
-            <BLANKLINE>
-            MicroPartition with 1 rows:
-            TableState: Loaded. 1 tables
-            ╭───────┬──────╮
-            │ foo   ┆ bar  │
-            │ ---   ┆ ---  │
-            │ Int64 ┆ Utf8 │
-            ╞═══════╪══════╡
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
             │ 3     ┆ c    │
             ╰───────┴──────╯
             <BLANKLINE>
             <BLANKLINE>
             Statistics: missing
-            <BLANKLINE>
         """
         if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
@@ -850,12 +876,22 @@ class DataFrame:
             ...     "s3://my-bucket/my-data",
             ...     write_mode="overwrite",
             ...     partition_cols=["x"],
-            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret)
-            ... )
+            ...     io_config=daft.IOConfig(
+            ...         s3=S3Config(
+            ...             endpoint_url="tos-s3-{region}.ivolces.com",
+            ...             region_name="cn-beijing",
+            ...             force_virtual_addressing=True,
+            ...             verify_ssl=True,
+            ...             key_id="your-access-key-id",
+            ...             access_key="your-secret-access-key",
+            ...         )
+            ...     )
             <BLANKLINE>
             (Writes the DataFrame to S3 in Parquet format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
-        !!! tip "See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]: other formats for writing DataFrames
+        Tip:
+            See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
+            Other formats for writing DataFrames
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -934,12 +970,22 @@ class DataFrame:
             ...     "s3://my-bucket/my-data",
             ...     write_mode="overwrite",
             ...     partition_cols=["x"],
-            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret)
-            ... )
+            ...     io_config=daft.IOConfig(
+            ...         s3=S3Config(
+            ...             endpoint_url="tos-s3-{region}.ivolces.com",
+            ...             region_name="cn-beijing",
+            ...             force_virtual_addressing=True,
+            ...             verify_ssl=True,
+            ...             key_id="your-access-key-id",
+            ...             access_key="your-secret-access-key",
+            ...         )
+            ...     )
             <BLANKLINE>
             (Writes the DataFrame to S3 in CSV format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
-        !!! tip "See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]: other formats for writing DataFrames
+        Tip:
+            See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
+            other formats for writing DataFrames
 
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
@@ -1017,8 +1063,16 @@ class DataFrame:
             ...     "s3://my-bucket/my-data",
             ...     write_mode="overwrite",
             ...     partition_cols=["x"],
-            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret)
-            ... )
+            ...     io_config=daft.IOConfig(
+            ...         s3=S3Config(
+            ...             endpoint_url="tos-s3-{region}.ivolces.com",
+            ...             region_name="cn-beijing",
+            ...             force_virtual_addressing=True,
+            ...             verify_ssl=True,
+            ...             key_id="your-access-key-id",
+            ...             access_key="your-secret-access-key",
+            ...         )
+            ...     )
             <BLANKLINE>
             (Writes the DataFrame to S3 in JSON format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
@@ -1096,11 +1150,29 @@ class DataFrame:
             ...     catalog_name="my_catalog",
             ...     schema_name="my_schema",
             ...     table_name="my_table",
-            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret"),
-            ... )
+            ...     io_config=daft.IOConfig(
+            ...         s3=S3Config(
+            ...             endpoint_url="tos-s3-{region}.ivolces.com",
+            ...             region_name="cn-beijing",
+            ...             force_virtual_addressing=True,
+            ...             verify_ssl=True,
+            ...             key_id="your-access-key-id",
+            ...             access_key="your-secret-access-key",
+            ...         )
+            ...     )
+            >>>
             >>> df.write_iceberg(
-            ...     table, mode="overwrite", io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret")
-            ... )
+            ...     table, mode="overwrite",
+            ...     io_config=daft.IOConfig(
+            ...         s3=S3Config(
+            ...             endpoint_url="tos-s3-{region}.ivolces.com",
+            ...             region_name="cn-beijing",
+            ...             force_virtual_addressing=True,
+            ...             verify_ssl=True,
+            ...             key_id="your-access-key-id",
+            ...             access_key="your-secret-access-key",
+            ...         )
+            ...     )
             <BLANKLINE>
             (Writes the DataFrame to the Iceberg table in overwrite mode, replacing existing data)
             <BLANKLINE>
@@ -1284,8 +1356,17 @@ class DataFrame:
             ...     catalog_name="my_catalog",
             ...     schema_name="my_schema",
             ...     table_name="my_table",
-            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret"),
-            ... )
+            ...     io_config=daft.IOConfig(
+            ...         s3=S3Config(
+            ...             endpoint_url="tos-s3-{region}.ivolces.com",
+            ...             region_name="cn-beijing",
+            ...             force_virtual_addressing=True,
+            ...             verify_ssl=True,
+            ...             key_id="your-access-key-id",
+            ...             access_key="your-secret-access-key",
+            ...         )
+            ...     )
+            >>>
             >>> df.write_deltalake(
             ...     table,
             ...     partition_cols=["x"],
@@ -1297,8 +1378,16 @@ class DataFrame:
             ...     custom_metadata={"key": "value"},
             ...     dynamo_table_name="my-dynamo-table",
             ...     allow_unsafe_rename=True,
-            ...     io_config=daft.IOConfig(s3_access_key="my-access-key", s3_secret="my-secret"),
-            ... )
+            ...     io_config=daft.IOConfig(
+            ...         s3=S3Config(
+            ...             endpoint_url="tos-s3-{region}.ivolces.com",
+            ...             region_name="cn-beijing",
+            ...             force_virtual_addressing=True,
+            ...             verify_ssl=True,
+            ...             key_id="your-access-key-id",
+            ...             access_key="your-secret-access-key",
+            ...         )
+            ...     )
             <BLANKLINE>
             (Writes the DataFrame to the Delta Lake table, partitioned by column "x",
             overwriting existing data, with specified metadata and custom configurations)
@@ -1873,17 +1962,14 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df.summarize().show()
-            ╭─────────────┬─────────────┬─────────────╮
-            │ column_name ┆ num_rows    ┆ num_nulls   │
-            │ ---         ┆ ---         ┆ ---         │
-            │ Utf8        ┆ Int64       ┆ Int64       │
-            ╞═════════════╪═════════════╪═════════════╡
-            │ x           ┆ 3           ┆ 0           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ y           ┆ 3           ┆ 0           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ z           ┆ 3           ┆ 0           │
-            ╰─────────────┴─────────────┴─────────────╯
+            ┌─────────┬────────┬───────┬───────┬────────┬─────────────┬───────────────────────┐
+            │ column  │ type   │ min   │ max   │ count  │ count_nulls │ approx_count_distinct │
+            │ Utf8    │ Utf8   │ Utf8  │ Utf8  │ Utf8   │ UInt64      │ UInt64                │
+            ├─────────┼────────┼───────┼───────┼────────┼─────────────┼───────────────────────┤
+            │ x       │ Int64  │ 1     │ 3     │ 3      │ 0           │ 3                     │
+            │ y       │ Int64  │ 4     │ 6     │ 3      │ 0           │ 3                     │
+            │ z       │ Int64  │ 7     │ 9     │ 3      │ 0           │ 3                     │
+            └─────────┴────────┴───────┴───────┴────────┴─────────────┴───────────────────────┘
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
@@ -2023,6 +2109,7 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> sampled_df = df.sample(0.5)
+            >>> sampled_df.show()
             >>> # Samples will vary from output to output
             >>> # here is a sample output
             >>> # ╭───────┬───────┬───────╮
@@ -2093,7 +2180,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
-            >>> df.filter((col("x") > 1) & (col("y") > 1)).collect()
+            >>> df.filter((df["x"] > 1) & (df["y"] > 1)).collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
@@ -2122,7 +2209,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
-            >>> df.where((col("x") > 1) & (col("y") > 1)).collect()
+            >>> df.where((df["x"] > 1) & (df["y"] > 1)).collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
@@ -2178,7 +2265,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
-            >>> new_df = df.with_column("x+1", col("x") + 1)
+            >>> new_df = df.with_column("x+1", df["x"] + 1)
             >>> new_df.show()
             ╭───────┬───────╮
             │ x     ┆ x+1   │
@@ -2324,7 +2411,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [3, 2, 1], "y": [6, 4, 5]})
-            >>> sorted_df = df.sort(col("x") + col("y"))
+            >>> sorted_df = df.sort(df["x"] + df["y"])
             >>> sorted_df.show()
             ╭───────┬───────╮
             │ x     ┆ y     │
@@ -2585,46 +2672,10 @@ class DataFrame:
             >>> from daft import col
             >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
             >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10])
+            >>> joined_df = df1.join(df2, left_on=df1["a"], right_on=df2["a"])
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ right.b │
-            │ ---  ┆ ---   ┆ ---     │
-            │ Utf8 ┆ Int64 ┆ Int64   │
-            ╞══════╪═══════╪═════════╡
-            │ x    ┆ 2     ┆ 20      │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ y    ┆ 3     ┆ 30      │
-            ╰──────┴───────┴─────────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
-
-            >>> import daft
-            >>> from daft import col
-            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
-            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], prefix="right_")
-            >>> joined_df.show()
-            ╭──────┬───────┬─────────╮
-            │ a    ┆ b     ┆ right_b │
-            │ ---  ┆ ---   ┆ ---     │
-            │ Utf8 ┆ Int64 ┆ Int64   │
-            ╞══════╪═══════╪═════════╡
-            │ x    ┆ 2     ┆ 20      │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ y    ┆ 3     ┆ 30      │
-            ╰──────┴───────┴─────────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
-
-            >>> import daft
-            >>> from daft import col
-            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
-            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], suffix="_right")
-            >>> joined_df.show()
-            ╭──────┬───────┬─────────╮
-            │ a    ┆ b     ┆ b_right │
             │ ---  ┆ ---   ┆ ---     │
             │ Utf8 ┆ Int64 ┆ Int64   │
             ╞══════╪═══════╪═════════╡
@@ -2853,7 +2904,7 @@ class DataFrame:
             ...         ],
             ...     }
             ... )
-            >>> df.explode(col("x"), col("y")).collect()
+            >>> df.explode(df["x"], df["y"]).collect()
             ╭───────┬──────┬───────────────╮
             │ x     ┆ y    ┆ z             │
             │ ---   ┆ ---  ┆ ---           │
@@ -3255,7 +3306,6 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
 
-            ///// check the below examples if they are correct /////
 
         Examples:
             If no columns are specified (i.e. in the case you call `df.count()`), or only the literal string "*",
@@ -3291,7 +3341,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
-            >>> df.count(col("*")).show()
+            >>> df.count(df["*")).show()
             ╭────────┬────────┬────────╮
             │ foo    ┆ bar    ┆ baz    │
             │ ---    ┆ ---    ┆ ---    │
@@ -3417,10 +3467,10 @@ class DataFrame:
             ...     {"student_id": [1, 2, 3, 4], "test1": [0.5, 0.4, 0.6, 0.7], "test2": [0.9, 0.8, 0.7, 1.0]}
             ... )
             >>> agg_df = df.agg(
-            ...     col("test1").mean(),
-            ...     col("test2").mean(),
-            ...     ((col("test1") + col("test2")) / 2).min().alias("total_min"),
-            ...     ((col("test1") + col("test2")) / 2).max().alias("total_max"),
+            ...     df["test1"].mean(),
+            ...     df["test2"].mean(),
+            ...     ((df["test1"] + df["test2"]) / 2).min().alias("total_min"),
+            ...     ((df["test1"] + df["test2"]) / 2).max().alias("total_max"),
             ... )
             >>> agg_df.show()
             ╭─────────┬────────────────────┬────────────────────┬───────────╮
@@ -3467,10 +3517,10 @@ class DataFrame:
             ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
-            ...     col("age").min().alias("min_age"),
-            ...     col("age").max().alias("max_age"),
-            ...     col("pet").count().alias("count"),
-            ...     col("name").any_value(),
+            ...     df["age"].min().alias("min_age"),
+            ...     df["age"].max().alias("max_age"),
+            ...     df["pet"].count().alias("count"),
+            ...     df["name"].any_value(),
             ... )
             >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()
@@ -4058,11 +4108,10 @@ class DataFrame:
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
             >>> pd_df = df.to_pandas()
             >>> print(pd_df)
-            a  b
+               a  b
             0  1  4
             1  2  5
             2  3  6
-
         """
         self.collect()
         result = self._result
@@ -4640,10 +4689,10 @@ class GroupedDataFrame:
             ...     }
             ... )
             >>> grouped_df = df.groupby("pet").agg(
-            ...     col("age").min().alias("min_age"),
-            ...     col("age").max().alias("max_age"),
-            ...     col("pet").count().alias("count"),
-            ...     col("name").any_value(),
+            ...     df["age"].min().alias("min_age"),
+            ...     df["age"].max().alias("max_age"),
+            ...     df["pet"].count().alias("count"),
+            ...     df["name"].any_value(),
             ... )
             >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()

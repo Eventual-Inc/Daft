@@ -198,11 +198,11 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     Args:
         ddf: The Dask DataFrame to create a Daft DataFrame from.
 
-    Note:
-        This function can only work if Daft is running using the RayRunner
-
     Returns:
         DataFrame: Daft DataFrame created from the provided Dask DataFrame.
+
+    Note:
+        This function can only work if Daft is running using the RayRunner
 
     Examples:
         >>> import dask.dataframe as dd
