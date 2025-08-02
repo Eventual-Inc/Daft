@@ -47,6 +47,12 @@ where
             LogicalPlan::UDFProject(project) => json!({
                 "project": project.project.to_string(),
             }),
+            LogicalPlan::UrlDownload(url_download) => json!({
+                "input": url_download.input.to_string(),
+            }),
+            LogicalPlan::UrlUpload(url_upload) => json!({
+                "input": url_upload.input.to_string(),
+            }),
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],
             }),

@@ -458,7 +458,6 @@ impl PhysicalPlan {
                     Self::Project(Project::new_with_clustering_spec(
                     input.clone(), projection.clone(), clustering_spec.clone(),
                 ).unwrap()),
-
                 Self::ActorPoolProject(ActorPoolProject {projection, udf_properties, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), udf_properties.clone()).unwrap()),
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),

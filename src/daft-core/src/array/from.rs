@@ -5,6 +5,7 @@
 
 use std::{borrow::Cow, sync::Arc};
 
+use arrow_array::Array;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -38,10 +39,32 @@ impl From<(&str, Box<arrow2::array::Utf8Array<i64>>)> for Utf8Array {
     }
 }
 
+impl From<(&str, arrow_array::array::LargeStringArray)> for Utf8Array {
+    fn from(item: (&str, arrow_array::array::LargeStringArray)) -> Self {
+        let (name, array) = item;
+        Self::new(
+            Field::new(name, DataType::Utf8).into(),
+            arrow2::array::from_data(&array.to_data()),
+        )
+        .unwrap()
+    }
+}
+
 impl From<(&str, Box<arrow2::array::BinaryArray<i64>>)> for BinaryArray {
     fn from(item: (&str, Box<arrow2::array::BinaryArray<i64>>)) -> Self {
         let (name, array) = item;
         Self::new(Field::new(name, DataType::Binary).into(), array).unwrap()
+    }
+}
+
+impl From<(&str, arrow_array::array::LargeBinaryArray)> for BinaryArray {
+    fn from(item: (&str, arrow_array::array::LargeBinaryArray)) -> Self {
+        let (name, array) = item;
+        Self::new(
+            Field::new(name, DataType::Binary).into(),
+            arrow2::array::from_data(&array.to_data()),
+        )
+        .unwrap()
     }
 }
 

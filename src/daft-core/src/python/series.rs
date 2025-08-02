@@ -314,8 +314,8 @@ impl PySeries {
         Ok(self.series.len())
     }
 
-    pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.series.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.series.size_bytes()
     }
 
     pub fn name(&self) -> PyResult<String> {

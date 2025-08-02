@@ -15,6 +15,7 @@ use daft_dsl::{
     functions::python::get_resource_request,
     Column, WindowExpr, WindowFrame, WindowSpec,
 };
+use daft_functions_uri::{UrlDownloadArgs, UrlUploadArgs};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
@@ -30,6 +31,8 @@ pub enum LocalPhysicalPlan {
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     UDFProject(UDFProject),
+    UrlDownload(UrlDownload),
+    UrlUpload(UrlUpload),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -95,6 +98,8 @@ impl LocalPhysicalPlan {
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
+            | Self::UrlDownload(UrlDownload { stats_state, .. })
+            | Self::UrlUpload(UrlUpload { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -270,6 +275,45 @@ impl LocalPhysicalPlan {
         })
         .arced()
     }
+
+    pub fn url_download(
+        input: LocalPhysicalPlanRef,
+        args: UrlDownloadArgs<BoundExpr>,
+        passthrough_columns: Vec<BoundColumn>,
+        output_column: String,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::UrlDownload(UrlDownload {
+            input,
+            args,
+            passthrough_columns,
+            output_column,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub fn url_upload(
+        input: LocalPhysicalPlanRef,
+        args: UrlUploadArgs<BoundExpr>,
+        passthrough_columns: Vec<BoundColumn>,
+        output_column: String,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::UrlUpload(UrlUpload {
+            input,
+            args,
+            passthrough_columns,
+            output_column,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
@@ -703,6 +747,8 @@ impl LocalPhysicalPlan {
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
             | Self::UDFProject(UDFProject { schema, .. })
+            | Self::UrlDownload(UrlDownload { schema, .. })
+            | Self::UrlUpload(UrlUpload { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Dedup(Dedup { schema, .. })
@@ -774,6 +820,8 @@ impl LocalPhysicalPlan {
             | Self::Limit(Limit { input, .. })
             | Self::Project(Project { input, .. })
             | Self::UDFProject(UDFProject { input, .. })
+            | Self::UrlDownload(UrlDownload { input, .. })
+            | Self::UrlUpload(UrlUpload { input, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { input, .. })
             | Self::HashAggregate(HashAggregate { input, .. })
             | Self::Dedup(Dedup { input, .. })
@@ -819,6 +867,8 @@ impl LocalPhysicalPlan {
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UrlDownload(UrlDownload {  args, passthrough_columns, output_column, schema, .. }) => Self::url_download(new_child.clone(), args.clone(), passthrough_columns.clone(), output_column.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UrlUpload(UrlUpload {  args, passthrough_columns, output_column, schema, .. }) => Self::url_upload(new_child.clone(), args.clone(), passthrough_columns.clone(), output_column.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -957,6 +1007,26 @@ pub struct DistributedActorPoolProject {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UrlDownload {
+    pub input: LocalPhysicalPlanRef,
+    pub args: UrlDownloadArgs<BoundExpr>,
+    pub passthrough_columns: Vec<BoundColumn>,
+    pub output_column: String,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UrlUpload {
+    pub input: LocalPhysicalPlanRef,
+    pub args: UrlUploadArgs<BoundExpr>,
+    pub passthrough_columns: Vec<BoundColumn>,
+    pub output_column: String,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,

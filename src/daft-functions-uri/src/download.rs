@@ -4,12 +4,12 @@ use common_error::{ensure, DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
-    ExprRef,
+    functions::{FunctionArg, FunctionArgs, ScalarUDF},
+    ExprRef, LiteralValue,
 };
 use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Container for the keyword arguments of `url_download`
 /// ex:
@@ -20,10 +20,10 @@ use serde::Serialize;
 /// url_download(input, on_error='null')
 /// url_download(input, max_connections=32, on_error='raise')
 /// ```
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlDownload;
 
-#[derive(FunctionArgs)]
+#[derive(FunctionArgs, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UrlDownloadArgs<T> {
     pub input: T,
     #[arg(optional)]
@@ -36,25 +36,84 @@ pub struct UrlDownloadArgs<T> {
     pub on_error: Option<String>,
 }
 
-#[typetag::serde]
-impl ScalarUDF for UrlDownload {
-    fn name(&self) -> &'static str {
-        "url_download"
+// TODO: This code is terrible, please remove with Ray runner
+impl<T> UrlDownloadArgs<T>
+where
+    T: Into<ExprRef> + Clone,
+{
+    pub fn to_func_args(&self) -> DaftResult<FunctionArgs<ExprRef>> {
+        let mut args = vec![FunctionArg::unnamed(self.input.clone().into())];
+        if let Some(multi_thread) = self.multi_thread {
+            args.push(FunctionArg::named(
+                "multi_thread",
+                LiteralValue::Boolean(multi_thread).into(),
+            ));
+        }
+        if let Some(on_error) = &self.on_error {
+            args.push(FunctionArg::named(
+                "on_error",
+                LiteralValue::Utf8(on_error.clone()).into(),
+            ));
+        }
+        if let Some(max_connections) = self.max_connections {
+            args.push(FunctionArg::named(
+                "max_connections",
+                LiteralValue::Int64(max_connections as i64).into(),
+            ));
+        }
+        if let Some(io_config) = &self.io_config {
+            #[cfg(feature = "python")]
+            {
+                use daft_io::python::IOConfig as PyIOConfig;
+                use pyo3::{IntoPyObject, Python};
+
+                let io_config = PyIOConfig::from(io_config.clone());
+
+                Python::with_gil(|py| {
+                    let py_lit = io_config.into_pyobject(py).unwrap().unbind().into();
+                    args.push(FunctionArg::named(
+                        "io_config",
+                        LiteralValue::Python(daft_dsl::pyobj_serde::PyObjectWrapper(Arc::new(
+                            py_lit,
+                        )))
+                        .into(),
+                    ));
+                });
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                panic!("Python feature is required for io_config");
+            }
+        }
+
+        FunctionArgs::try_new(args)
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let UrlDownloadArgs {
+}
+
+#[derive(Debug, Clone)]
+pub struct UrlDownloadArgsDefault<T> {
+    pub input: T,
+    pub multi_thread: bool,
+    pub io_config: Arc<IOConfig>,
+    pub max_connections: usize,
+    pub raise_error_on_failure: bool,
+}
+
+impl<T> UrlDownloadArgs<T> {
+    pub fn unwrap_or_default(self) -> DaftResult<UrlDownloadArgsDefault<T>> {
+        let Self {
             input,
             multi_thread,
             io_config,
             max_connections,
             on_error,
-        } = inputs.try_into()?;
+        } = self;
 
-        let max_connections = max_connections.unwrap_or(32);
-        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
         let multi_thread = multi_thread.unwrap_or(true);
-        let io_config = io_config.unwrap_or_default();
+        let io_config = Arc::new(io_config.unwrap_or_default());
+        let max_connections = max_connections.unwrap_or(32);
 
+        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
         let raise_error_on_failure = match on_error.as_str() {
             "raise" => true,
             "null" => false,
@@ -66,6 +125,31 @@ impl ScalarUDF for UrlDownload {
             }
         };
 
+        Ok(UrlDownloadArgsDefault {
+            input,
+            multi_thread,
+            io_config,
+            max_connections,
+            raise_error_on_failure,
+        })
+    }
+}
+
+#[typetag::serde]
+impl ScalarUDF for UrlDownload {
+    fn name(&self) -> &'static str {
+        "url_download"
+    }
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let args: UrlDownloadArgs<Series> = inputs.try_into()?;
+        let UrlDownloadArgsDefault {
+            input,
+            multi_thread,
+            io_config,
+            max_connections,
+            raise_error_on_failure,
+        } = args.unwrap_or_default()?;
+
         let array = input.utf8()?;
         let io_stats = IOStatsContext::new("download");
         let result = url_download(
@@ -73,7 +157,7 @@ impl ScalarUDF for UrlDownload {
             max_connections,
             raise_error_on_failure,
             multi_thread,
-            Arc::new(io_config),
+            io_config,
             Some(io_stats),
         )?;
         Ok(result.into_series())

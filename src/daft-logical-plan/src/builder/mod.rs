@@ -837,7 +837,6 @@ impl LogicalPlanBuilder {
                     |builder| builder.reorder_joins(),
                 )
                 .simplify_expressions()
-                .split_granular_projections()
                 .build();
 
             let optimized_plan = optimizer.optimize(
@@ -904,7 +903,6 @@ impl LogicalPlanBuilder {
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()
-            .split_granular_projections()
             .build();
 
         let optimized_plan = optimizer.optimize(

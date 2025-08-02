@@ -5,6 +5,7 @@ import tempfile
 
 import daft
 from daft import col, lit
+from tests.utils import sort_pydict
 
 
 def test_url_download():
@@ -91,6 +92,8 @@ def test_url_upload():
             .to_pydict()
         )
 
+        actual = sort_pydict(actual, "uploaded")
+        expected = sort_pydict(expected, "uploaded")
         assert actual == expected
 
         # Verify files were created

@@ -55,6 +55,8 @@ mod top_n;
 mod translate;
 mod udf;
 mod unpivot;
+mod url_download;
+mod url_upload;
 mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;

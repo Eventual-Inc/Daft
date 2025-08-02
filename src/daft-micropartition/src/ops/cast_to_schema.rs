@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
+use daft_core::prelude::{Schema, SchemaRef};
+use daft_dsl::expr::BoundColumn;
+use daft_io::IOStatsContext;
 use daft_scan::ScanTask;
 
 use crate::micropartition::{MicroPartition, TableState};
@@ -59,5 +61,28 @@ impl MicroPartition {
                 pruned_statistics,
             )),
         }
+    }
+
+    pub fn select_columns(&self, columns: &[BoundColumn]) -> DaftResult<Self> {
+        let new_schema = Arc::new(Schema::new(
+            columns.iter().map(|col| self.schema[col.index].clone()),
+        ));
+
+        let io_stats = IOStatsContext::new("MicroPartition::select_columns");
+        let tables = self.tables_or_read(io_stats)?;
+        let tables = tables
+            .iter()
+            .map(|table| table.select_columns(columns))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(Self::new_loaded(
+            new_schema,
+            Arc::new(tables),
+            if let Some(stats) = &self.statistics {
+                Some(stats.select_columns(columns)?)
+            } else {
+                None
+            },
+        ))
     }
 }

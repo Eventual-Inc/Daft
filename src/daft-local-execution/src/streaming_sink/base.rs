@@ -18,7 +18,8 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
-        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
+        RuntimeStatsContext, RuntimeStatsEventHandler,
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
@@ -29,15 +30,25 @@ pub trait StreamingSinkState: Send + Sync {
 
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput {
+        next_input: Arc<MicroPartition>,
+        output: Arc<MicroPartition>,
+    },
+    Finished(Option<Arc<MicroPartition>>),
+}
+
+pub enum StreamingSinkFinalizeOutput {
+    HasMoreOutput {
+        states: Vec<Box<dyn StreamingSinkState>>,
+        output: Option<Arc<MicroPartition>>,
+    },
     Finished(Option<Arc<MicroPartition>>),
 }
 
 pub(crate) type StreamingSinkExecuteResult =
     OperatorOutput<DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>>;
 pub(crate) type StreamingSinkFinalizeResult =
-    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+    OperatorOutput<DaftResult<StreamingSinkFinalizeOutput>>;
 pub trait StreamingSink: Send + Sync {
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
@@ -63,6 +74,11 @@ pub trait StreamingSink: Send + Sync {
 
     /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> Box<dyn StreamingSinkState>;
+
+    /// Create a new RuntimeStatsBuilder for this StreamingSink.
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(BaseStatsBuilder {})
+    }
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
@@ -94,10 +110,16 @@ impl StreamingSinkNode {
     ) -> Self {
         let name = op.name().into();
         let node_info = ctx.next_node_info(name);
+
+        let runtime_stats = RuntimeStatsContext::new_with_builder(
+            node_info.clone(),
+            op.make_runtime_stats_builder(),
+        );
+
         Self {
             op,
             children,
-            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
+            runtime_stats,
             plan_stats,
             node_info,
         }
@@ -126,7 +148,7 @@ impl StreamingSinkNode {
             span,
         );
         let mut state = op.make_state();
-        while let Some(morsel) = input_receiver.recv().await {
+        while let Some(mut morsel) = input_receiver.recv().await {
             loop {
                 let result = op.execute(morsel.clone(), state, &spawner).await??;
                 state = result.0;
@@ -139,10 +161,11 @@ impl StreamingSinkNode {
                         }
                         break;
                     }
-                    StreamingSinkOutput::HasMoreOutput(mp) => {
-                        if output_sender.send(mp).await.is_err() {
+                    StreamingSinkOutput::HasMoreOutput { next_input, output } => {
+                        if output_sender.send(output).await.is_err() {
                             return Ok(state);
                         }
+                        morsel = next_input;
                     }
                     StreamingSinkOutput::Finished(mp) => {
                         if let Some(mp) = mp {
@@ -308,9 +331,22 @@ impl PipelineNode for StreamingSinkNode {
                     rt_stats_handler,
                     info_span!("StreamingSink::Finalize"),
                 );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                loop {
+                    let finalized_result = op.finalize(finished_states, &spawner).await??;
+                    match finalized_result {
+                        StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                            finished_states = states;
+                            if let Some(output) = output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                        }
+                        StreamingSinkFinalizeOutput::Finished(output) => {
+                            if let Some(output) = output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                            break;
+                        }
+                    }
                 }
                 Ok(())
             },

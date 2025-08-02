@@ -179,6 +179,37 @@ pub struct BoundColumn {
     pub field: Field,
 }
 
+impl BoundColumn {
+    pub fn bind_one(column: &Column, schema: &Schema) -> DaftResult<Self> {
+        match column {
+            Column::Bound(bound_column) => Ok(bound_column.clone()),
+            Column::Unresolved(UnresolvedColumn { name, .. }) => {
+                let index = schema.get_index(name)?;
+                let field = schema.get_field(name)?.clone();
+                Ok(Self { index, field })
+            }
+            Column::Resolved(ResolvedColumn::Basic(name)) => {
+                let index = schema.get_index(name)?;
+                let field = schema.get_field(name)?.clone();
+                Ok(Self { index, field })
+            }
+            Column::Resolved(ResolvedColumn::JoinSide(..)) => Err(DaftError::InternalError(
+                format!("Join side columns cannot be bound: {column}"),
+            )),
+            Column::Resolved(ResolvedColumn::OuterRef(..)) => Err(DaftError::InternalError(
+                format!("Outer reference columns cannot be bound: {column}"),
+            )),
+        }
+    }
+
+    pub fn bind_all(columns: &[Column], schema: &Schema) -> DaftResult<Vec<Self>> {
+        columns
+            .iter()
+            .map(|column| Self::bind_one(column, schema))
+            .collect()
+    }
+}
+
 impl Column {
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn name(&self) -> String {

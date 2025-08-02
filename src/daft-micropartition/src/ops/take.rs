@@ -17,7 +17,6 @@ impl MicroPartition {
 
         let tables = self.concat_or_get_update(io_stats)?;
         match tables {
-            // Fallback onto `[empty_table]` behavior
             None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 empty_table.take(idx)

@@ -466,7 +466,7 @@ fn recursive_optimize_project(
         optimized_child_plan.data
     };
 
-    // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
+    // Start building a chain of `child -> Project -> UDFProject -> UDFProject -> ... -> Project`
     let (actor_pool_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
         .partition(|expr| exists_skip_list_map(expr, is_udf));
@@ -630,7 +630,7 @@ mod tests {
             .with_columns(vec![actor_pool_project_expr.alias("b")])?
             .build();
 
-        // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
+        // Project([col("a")]) --> UDFProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
         let expected = scan_plan.select(vec![resolved_col("a")])?.build();
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,

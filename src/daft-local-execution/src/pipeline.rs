@@ -14,8 +14,9 @@ use daft_dsl::join::get_common_join_cols;
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, UrlDownload, UrlUpload,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -60,7 +61,8 @@ use crate::{
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
         limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, url_download::UrlDownloadSink,
+        url_upload::UrlUploadSink,
     },
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
@@ -440,6 +442,62 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(distributed_actor_pool_project_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::UrlDownload(UrlDownload {
+            input,
+            args,
+            passthrough_columns,
+            output_column,
+            stats_state,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+
+            let url_download_op = UrlDownloadSink::new(
+                args.clone(),
+                passthrough_columns.clone(),
+                output_column.clone(),
+                input.schema().clone(),
+                cfg.url_ops_bytes_buffer,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+            StreamingSinkNode::new(
+                Arc::new(url_download_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::UrlUpload(UrlUpload {
+            input,
+            args,
+            passthrough_columns,
+            output_column,
+            stats_state,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+
+            let url_upload_op = UrlUploadSink::new(
+                args.clone(),
+                passthrough_columns.clone(),
+                output_column.clone(),
+                input.schema().clone(),
+                cfg.url_ops_bytes_buffer,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+            StreamingSinkNode::new(
+                Arc::new(url_upload_op),
                 vec![child_node],
                 stats_state.clone(),
                 ctx,

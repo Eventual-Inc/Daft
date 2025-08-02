@@ -6,9 +6,13 @@ use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+        BoundColumn,
+    },
     resolved_col,
 };
+use daft_functions_uri::{UrlDownloadArgs, UrlUploadArgs};
 use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
@@ -19,7 +23,8 @@ use crate::{
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
         sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode,
-        window::WindowNode, DistributedPipelineNode, NodeID,
+        url_download::UrlDownloadNode, url_upload::UrlUploadNode, window::WindowNode,
+        DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -175,6 +180,67 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     project,
                     passthrough_columns,
                     udf.udf_properties.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::UrlDownload(url_download) => {
+                let bound_input = BoundExpr::try_new(
+                    url_download.args.input.clone(),
+                    &url_download.input.schema(),
+                )?;
+                let args = UrlDownloadArgs {
+                    input: bound_input,
+                    multi_thread: url_download.args.multi_thread,
+                    io_config: url_download.args.io_config.clone(),
+                    max_connections: url_download.args.max_connections,
+                    on_error: url_download.args.on_error.clone(),
+                };
+                let passthrough_columns = BoundColumn::bind_all(
+                    &url_download.passthrough_columns,
+                    &url_download.input.schema(),
+                )?;
+                UrlDownloadNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    args,
+                    url_download.output_column.clone(),
+                    passthrough_columns,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
+            }
+            LogicalPlan::UrlUpload(url_upload) => {
+                let bound_input =
+                    BoundExpr::try_new(url_upload.args.input.clone(), &url_upload.input.schema())?;
+                let passthrough_columns = BoundColumn::bind_all(
+                    &url_upload.passthrough_columns,
+                    &url_upload.input.schema(),
+                )?;
+                let location = BoundExpr::try_new(
+                    url_upload.args.location.clone(),
+                    &url_upload.input.schema(),
+                )?;
+                let args = UrlUploadArgs {
+                    input: bound_input,
+                    multi_thread: url_upload.args.multi_thread,
+                    io_config: url_upload.args.io_config.clone(),
+                    max_connections: url_upload.args.max_connections,
+                    on_error: url_upload.args.on_error.clone(),
+                    location,
+                    is_single_folder: url_upload.args.is_single_folder,
+                };
+
+                UrlUploadNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    args,
+                    url_upload.output_column.clone(),
+                    passthrough_columns,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )

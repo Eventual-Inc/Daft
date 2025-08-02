@@ -216,6 +216,7 @@ members = [
 
 [workspace.dependencies]
 approx = "0.5.1"
+arrow-array = "=54.2.1"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
   "tokio",

@@ -5,8 +5,8 @@ use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
-    StreamingSinkState,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState,
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
@@ -50,7 +50,7 @@ impl StreamingSink for ConcatSink {
         _states: Vec<Box<dyn StreamingSinkState>>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {

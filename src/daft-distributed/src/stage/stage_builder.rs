@@ -36,6 +36,8 @@ impl StagePlanBuilder {
         let _ = plan.apply(|node| match node.as_ref() {
             LogicalPlan::Source(_)
             | LogicalPlan::Project(_)
+            | LogicalPlan::UrlDownload(_)
+            | LogicalPlan::UrlUpload(_)
             | LogicalPlan::Filter(_)
             | LogicalPlan::Sink(_)
             | LogicalPlan::Sample(_)

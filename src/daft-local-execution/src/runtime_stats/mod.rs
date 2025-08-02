@@ -288,9 +288,6 @@ impl RuntimeEventsProducer {
 }
 
 impl RuntimeStatsContext {
-    pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
-        Self::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}))
-    }
     pub(crate) fn new_with_builder(
         node_info: NodeInfo,
         builder: Arc<dyn RuntimeStatsBuilder>,
@@ -528,7 +525,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler.clone(), rt_context);
 
         // Send multiple events rapidly
@@ -557,10 +555,12 @@ mod tests {
 
         let node_info1 = create_node_info("node1", 1);
         let node_info2 = create_node_info("node2", 2);
-        let rt_context1 = RuntimeStatsContext::new(node_info1);
+        let rt_context1 =
+            RuntimeStatsContext::new_with_builder(node_info1, Arc::new(BaseStatsBuilder {}));
         let producer1 = RuntimeEventsProducer::new(handler.clone(), rt_context1);
 
-        let rt_context2 = RuntimeStatsContext::new(node_info2);
+        let rt_context2 =
+            RuntimeStatsContext::new_with_builder(node_info2, Arc::new(BaseStatsBuilder {}));
         let producer2 = RuntimeEventsProducer::new(handler, rt_context2);
 
         // Send events for different nodes
@@ -586,7 +586,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler.clone(), rt_context);
 
         // Send first event
@@ -634,7 +635,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         producer.mark_rows_received(100);
@@ -670,7 +672,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         producer.mark_rows_received(100);
@@ -713,7 +716,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         producer.mark_rows_received(100);
@@ -726,7 +730,8 @@ mod tests {
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
         let node_info = create_node_info("test_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
 
         // Test initial state
         let stats = rt_context.render();
@@ -762,7 +767,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("rapid_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Send many rapid updates
@@ -794,7 +800,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("mixed_node", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Interleave different event types
@@ -833,7 +840,8 @@ mod tests {
             throttle_interval,
         ));
         let node_info = create_node_info("fast_query", 1);
-        let rt_context = RuntimeStatsContext::new(node_info);
+        let rt_context =
+            RuntimeStatsContext::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}));
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Simulate a fast query that completes within the throttle interval (500ms)

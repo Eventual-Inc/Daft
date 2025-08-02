@@ -2427,6 +2427,7 @@ dependencies = [
 name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "arrow2",
  "bincode",
  "chrono",
@@ -2536,6 +2537,7 @@ dependencies = [
  "common-scan-info",
  "common-treenode",
  "daft-dsl",
+ "daft-functions-uri",
  "daft-local-plan",
  "daft-logical-plan",
  "daft-physical-plan",
@@ -2691,6 +2693,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "futures",
+ "pyo3",
  "serde",
  "tokio",
  "typetag",
@@ -2845,6 +2848,7 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "async-trait",
  "capitalize",
  "common-daft-config",
@@ -2904,6 +2908,7 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-dsl",
+ "daft-functions-uri",
  "daft-logical-plan",
  "daft-physical-plan",
  "log",
@@ -3044,6 +3049,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-list",
+ "daft-functions-uri",
  "daft-io",
  "daft-logical-plan",
  "daft-schema",

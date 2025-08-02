@@ -16,7 +16,7 @@ impl Partition for MicroPartition {
         self
     }
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        self.size_bytes()
+        Ok(self.size_bytes())
     }
     fn num_rows(&self) -> DaftResult<usize> {
         Ok(self.len())

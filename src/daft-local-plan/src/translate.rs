@@ -5,10 +5,14 @@ use common_file_formats::WriteMode;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+        BoundColumn,
+    },
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
+use daft_functions_uri::{UrlDownloadArgs, UrlUploadArgs};
 use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
@@ -93,6 +97,48 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 passthrough_columns,
                 udf_project.projected_schema.clone(),
                 udf_project.stats_state.clone(),
+            ))
+        }
+        LogicalPlan::UrlDownload(url_download) => {
+            let input = translate(&url_download.input)?;
+            let args = UrlDownloadArgs {
+                input: BoundExpr::try_new(url_download.args.input.clone(), input.schema())?,
+                multi_thread: url_download.args.multi_thread,
+                io_config: url_download.args.io_config.clone(),
+                max_connections: url_download.args.max_connections,
+                on_error: url_download.args.on_error.clone(),
+            };
+            let passthrough_columns =
+                BoundColumn::bind_all(&url_download.passthrough_columns, input.schema())?;
+            Ok(LocalPhysicalPlan::url_download(
+                input,
+                args,
+                passthrough_columns,
+                url_download.output_column.clone(),
+                url_download.output_schema.clone(),
+                url_download.stats_state.clone(),
+            ))
+        }
+        LogicalPlan::UrlUpload(url_upload) => {
+            let input = translate(&url_upload.input)?;
+            let args = UrlUploadArgs {
+                input: BoundExpr::try_new(url_upload.args.input.clone(), input.schema())?,
+                multi_thread: url_upload.args.multi_thread,
+                io_config: url_upload.args.io_config.clone(),
+                max_connections: url_upload.args.max_connections,
+                on_error: url_upload.args.on_error.clone(),
+                location: BoundExpr::try_new(url_upload.args.location.clone(), input.schema())?,
+                is_single_folder: url_upload.args.is_single_folder,
+            };
+            let passthrough_columns =
+                BoundColumn::bind_all(url_upload.passthrough_columns.as_slice(), input.schema())?;
+            Ok(LocalPhysicalPlan::url_upload(
+                input,
+                args,
+                passthrough_columns,
+                url_upload.output_column.clone(),
+                url_upload.output_schema.clone(),
+                url_upload.stats_state.clone(),
             ))
         }
         LogicalPlan::Sample(sample) => {

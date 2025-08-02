@@ -15,13 +15,14 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::agg::merge_mean,
+    functions::{agg::merge_mean, scalar::BuiltinScalarFn},
     is_partition_compatible,
     join::normalize_join_keys,
     lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
 };
 use daft_functions::numeric::sqrt;
 use daft_functions_list::{count_distinct, distinct};
+use daft_functions_uri::{download::UrlDownload, upload::UrlUpload};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -31,6 +32,7 @@ use daft_logical_plan::{
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
         Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
         UDFProject as LogicalUDFProject, Unpivot as LogicalUnpivot,
+        UrlDownload as LogicalUrlDownload, UrlUpload as LogicalUrlUpload,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -144,6 +146,52 @@ pub(super) fn translate_single_logical_node(
             } else {
                 Ok(PhysicalPlan::Project(Project::try_new(input_physical, projection)?).arced())
             }
+        }
+        LogicalPlan::UrlDownload(LogicalUrlDownload {
+            args,
+            passthrough_columns,
+            output_column,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            let args = args.to_func_args()?;
+            let url_fn = BuiltinScalarFn {
+                udf: Arc::new(UrlDownload),
+                inputs: args,
+            };
+            let url_fn: Arc<Expr> = url_fn.into();
+            Ok(PhysicalPlan::Project(Project::try_new(
+                input_physical,
+                passthrough_columns
+                    .iter()
+                    .map(|c| c.clone().into())
+                    .chain(std::iter::once(url_fn.alias(output_column.clone())))
+                    .collect(),
+            )?)
+            .arced())
+        }
+        LogicalPlan::UrlUpload(LogicalUrlUpload {
+            args,
+            passthrough_columns,
+            output_column,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            let args = args.to_func_args()?;
+            let url_fn = BuiltinScalarFn {
+                udf: Arc::new(UrlUpload),
+                inputs: args,
+            };
+            let url_fn: Arc<Expr> = url_fn.into();
+            Ok(PhysicalPlan::Project(Project::try_new(
+                input_physical,
+                passthrough_columns
+                    .iter()
+                    .map(|c| c.clone().into())
+                    .chain(std::iter::once(url_fn.alias(output_column.clone())))
+                    .collect(),
+            )?)
+            .arced())
         }
         LogicalPlan::Filter(LogicalFilter {
             predicate, input, ..
