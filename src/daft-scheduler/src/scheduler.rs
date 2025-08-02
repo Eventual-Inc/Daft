@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::AtomicUsize, Arc};
 
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
@@ -35,12 +35,12 @@ use {
     pyo3::{
         pyclass, pymethods,
         types::{PyAnyMethods, PyDict, PyList},
-        Bound, Py, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
+        Bound, Py, PyAny, PyObject, PyRef, PyResult, Python,
     },
 };
 
 /// A work scheduler for physical plans.
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalPlanScheduler {
     query_stage: Arc<QueryStageOutput>,
@@ -101,9 +101,9 @@ impl PhysicalPlanScheduler {
 }
 
 #[cfg(feature = "python")]
-#[pyclass]
+#[pyclass(frozen)]
 struct StreamingPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
+    iter: std::sync::Mutex<Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>>,
 }
 
 #[cfg(feature = "python")]
@@ -112,9 +112,14 @@ impl StreamingPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
-        let iter = &mut slf.iter;
-        Ok(py.allow_threads(|| iter.next().transpose())?)
+    fn __next__(slf: PyRef<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
+        let iter = &slf.iter;
+        Ok(py.allow_threads(|| {
+            iter.lock()
+                .expect("Failed to acquire lock for StreamingPartitionIterator")
+                .next()
+                .transpose()
+        })?)
     }
 }
 
@@ -129,10 +134,10 @@ impl From<QueryStageOutput> for PhysicalPlanScheduler {
 }
 
 #[cfg(feature = "python")]
-#[pyclass]
+#[pyclass(frozen)]
 struct PartitionIterator {
     parts: Py<PyList>,
-    index: usize,
+    index: AtomicUsize,
 }
 
 #[cfg(feature = "python")]
@@ -141,9 +146,10 @@ impl PartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Bound<PyAny>> {
-        let index = slf.index;
-        slf.index += 1;
+    fn __next__(slf: PyRef<'_, Self>) -> Option<Bound<PyAny>> {
+        use std::sync::atomic::Ordering;
+
+        let index = slf.index.fetch_add(1, Ordering::SeqCst);
         slf.parts.bind(slf.py()).get_item(index).ok()
     }
 }
@@ -298,7 +304,7 @@ fn physical_plan_to_partition_tasks(
         }) => {
             let partition_iter = PartitionIterator {
                 parts: psets.get_item(cache_key)?.extract()?,
-                index: 0usize,
+                index: AtomicUsize::new(0),
             };
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.physical_plan"))?

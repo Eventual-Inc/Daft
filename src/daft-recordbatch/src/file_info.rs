@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Metadata for a single file.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct FileInfo {
     pub file_path: String,
     pub file_size: Option<i64>,
@@ -36,7 +36,7 @@ impl FileInfo {
 
 /// Metadata for a collection of files.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct FileInfos {
     pub file_paths: Vec<String>,
     pub file_sizes: Vec<Option<i64>>,
@@ -61,7 +61,7 @@ impl FileInfos {
     }
 
     /// Merge two FileInfos together.
-    pub fn merge(&mut self, new_infos: Self) {
+    pub fn merge(&self, new_infos: Self) -> Self {
         let mut index_map = HashMap::new();
         for (i, path) in self.file_paths.iter().enumerate() {
             index_map.insert(path.clone(), i);
@@ -85,9 +85,7 @@ impl FileInfos {
             }
         });
 
-        self.file_paths = merged_paths;
-        self.file_sizes = merged_sizes;
-        self.num_rows = merged_rows;
+        Self::new_internal(merged_paths, merged_sizes, merged_rows)
     }
 
     pub fn __getitem__(&self, idx: isize) -> PyResult<FileInfo> {
