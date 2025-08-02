@@ -67,6 +67,13 @@ use crate::{
 
 pub type NodeName = Cow<'static, str>;
 
+pub type MorselSizeRange = (usize, usize);
+pub enum MorselSizeRequirement {
+    Required(MorselSizeRange),
+    Flexible(MorselSizeRange),
+    Whatever,
+}
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> Arc<str>;
@@ -74,6 +81,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        morsel_size: &MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;

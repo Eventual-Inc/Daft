@@ -60,16 +60,4 @@ impl StreamingSink for ConcatSink {
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::unbounded())
-        } else {
-            Arc::new(UnorderedDispatcher::unbounded())
-        }
-    }
 }

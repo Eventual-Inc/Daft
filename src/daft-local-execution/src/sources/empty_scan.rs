@@ -30,6 +30,7 @@ impl Source for EmptyScanSource {
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
+        _chunk_size: Option<usize>,
     ) -> DaftResult<SourceStream<'static>> {
         let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
         Ok(Box::pin(futures::stream::once(async { Ok(empty) })))

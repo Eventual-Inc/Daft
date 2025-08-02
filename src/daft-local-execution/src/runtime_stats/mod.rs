@@ -28,13 +28,10 @@ use tracing::{instrument::Instrumented, Instrument};
 #[cfg(debug_assertions)]
 use crate::runtime_stats::subscribers::debug::DebugSubscriber;
 use crate::{
-    channel::{Receiver, Sender},
-    pipeline::NodeInfo,
-    progress_bar::OperatorProgressBar,
-    runtime_stats::subscribers::{
+    buffer::RowBasedBuffer, channel::{Receiver, Sender}, pipeline::NodeInfo, progress_bar::OperatorProgressBar, runtime_stats::subscribers::{
         dashboard::DashboardSubscriber, opentelemetry::OpenTelemetrySubscriber,
         RuntimeStatsSubscriber,
-    },
+    }
 };
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
@@ -443,6 +440,44 @@ impl CountingReceiver {
 
         Self {
             receiver,
+            progress_bar,
+            rt_stats_producer,
+        }
+    }
+    #[inline]
+    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
+        let v = self.receiver.recv().await;
+        if let Some(ref v) = v {
+            self.rt_stats_producer.mark_rows_received(v.len() as u64);
+            if let Some(ref pb) = self.progress_bar {
+                pb.render();
+            }
+        }
+        v
+    }
+}
+
+pub struct BufferedCountingReceiver {
+    receiver: Receiver<Arc<MicroPartition>>,
+    buffer: RowBasedBuffer,
+    progress_bar: Option<Arc<OperatorProgressBar>>,
+    rt_stats_producer: RuntimeEventsProducer,
+}
+
+impl BufferedCountingReceiver {
+    pub(crate) fn new(
+        receiver: Receiver<Arc<MicroPartition>>,
+        rt: Arc<RuntimeStatsContext>,
+        progress_bar: Option<Arc<OperatorProgressBar>>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        lower_bound: usize,
+        upper_bound: usize,
+    ) -> Self {
+        let rt_stats_producer = RuntimeEventsProducer::new(rt_stats_handler, rt);
+
+        Self {
+            receiver,
+            buffer: RowBasedBuffer::new(lower_bound, upper_bound),
             progress_bar,
             rt_stats_producer,
         }

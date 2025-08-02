@@ -27,7 +27,10 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    pipeline::{MorselSizeRequirement, NodeName},
+    ExecutionTaskSpawner,
+};
 
 const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
@@ -404,11 +407,11 @@ impl IntermediateOperator for UdfOperator {
         Ok(self.concurrency)
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+    fn morsel_size_requirement(&self) -> MorselSizeRequirement {
         if let Some(batch_size) = self.udf_properties.batch_size {
-            (batch_size, batch_size)
+            MorselSizeRequirement::Required((batch_size, batch_size))
         } else {
-            (0, runtime_handle.default_morsel_size())
+            MorselSizeRequirement::Whatever
         }
     }
 }

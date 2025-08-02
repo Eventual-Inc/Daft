@@ -15,7 +15,9 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{
+        MorselSizeRange, MorselSizeRequirement, NodeInfo, NodeName, PipelineNode, RuntimeContext,
+    },
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -65,16 +67,16 @@ pub trait IntermediateOperator: Send + Sync {
         Ok(get_compute_pool_num_threads())
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        (0, runtime_handle.default_morsel_size())
+    fn morsel_size_requirement(&self) -> MorselSizeRequirement {
+        MorselSizeRequirement::Whatever
     }
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        morsel_size_range: MorselSizeRange,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        let (lower_bound, upper_bound) = self.morsel_size_range(runtime_handle);
+        let (lower_bound, upper_bound) = morsel_size_range;
 
         if maintain_order {
             Arc::new(RoundRobinDispatcher::new(lower_bound, upper_bound))
@@ -247,7 +249,11 @@ impl PipelineNode for IntermediateNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        morsel_size: &MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let morsel_size_requirement = self.intermediate_op.morsel_size_requirement();
+        let morsel_size_range =
+            runtime_handle.determine_morsel_size_range(&morsel_size_requirement, &morsel_size);
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         let progress_bar = runtime_handle.make_progress_bar(
             &self.name(),
@@ -257,7 +263,8 @@ impl PipelineNode for IntermediateNode {
         );
 
         for child in &self.children {
-            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
+            let child_result_receiver =
+                child.start(maintain_order, runtime_handle, &morsel_size_requirement)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
@@ -279,7 +286,7 @@ impl PipelineNode for IntermediateNode {
 
         let dispatch_spawner = self
             .intermediate_op
-            .dispatch_spawner(runtime_handle, maintain_order);
+            .dispatch_spawner(morsel_size_range, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,

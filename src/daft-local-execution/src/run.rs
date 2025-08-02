@@ -33,7 +33,7 @@ use crate::{
     channel::{create_channel, Receiver},
     pipeline::{
         get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
-        viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
+        viz_pipeline_mermaid, MorselSizeRequirement, RelationshipInformation, RuntimeContext,
     },
     progress_bar::make_progress_bar_manager,
     resource_manager::get_or_init_memory_manager,
@@ -315,7 +315,8 @@ impl NativeExecutor {
                     pb_manager,
                     stats_handler.clone(),
                 );
-                let receiver = pipeline.start(true, &mut runtime_handle)?;
+                let receiver =
+                    pipeline.start(true, &mut runtime_handle, &MorselSizeRequirement::Whatever)?;
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {
