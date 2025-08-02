@@ -12,6 +12,7 @@ pub struct TopN {
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
     pub limit: u64,
+    pub offset: Option<u64>,
     pub num_partitions: usize,
 }
 
@@ -22,6 +23,7 @@ impl TopN {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         limit: u64,
+        offset: Option<u64>,
         num_partitions: usize,
     ) -> Self {
         Self {
@@ -30,6 +32,7 @@ impl TopN {
             descending,
             nulls_first,
             limit,
+            offset,
             num_partitions,
         }
     }
@@ -52,10 +55,15 @@ impl TopN {
                 )
             })
             .join(", ");
-        res.push(format!(
-            "TopN: Sort by = {}, Num Rows = {}",
-            pairs, self.limit
-        ));
+        res.push(match &self.offset {
+            Some(offset) => {
+                format!(
+                    "TopN: Sort by = {}, Num Rows = {}, Offset = {}",
+                    pairs, self.limit, offset
+                )
+            }
+            None => format!("TopN: Sort by = {}, Num Rows = {}", pairs, self.limit),
+        });
         res.push(format!("Num partitions = {}", self.num_partitions));
         res
     }

@@ -165,16 +165,14 @@ pub(super) fn translate_single_logical_node(
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            if offset.is_some() {
-                // TODO(zhenchao) support offset
-                return Err(DaftError::not_implemented(
-                    "Offset operator is unsupported for distributed runner now!",
-                ));
-            }
-            Ok(
-                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
-                    .arced(),
-            )
+            Ok(PhysicalPlan::Limit(Limit::new(
+                input_physical,
+                *limit,
+                *offset,
+                *eager,
+                num_partitions,
+            ))
+            .arced())
         }
         LogicalPlan::TopN(LogicalTopN {
             sort_by,
@@ -186,18 +184,13 @@ pub(super) fn translate_single_logical_node(
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            if offset.is_some() {
-                // TODO(zhenchao) support offset
-                return Err(DaftError::not_implemented(
-                    "Offset operator is unsupported for distributed runner now!",
-                ));
-            }
             Ok(PhysicalPlan::TopN(TopN::new(
                 input_physical,
                 sort_by.clone(),
                 descending.clone(),
                 nulls_first.clone(),
                 *limit,
+                *offset,
                 num_partitions,
             ))
             .arced())

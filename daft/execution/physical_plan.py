@@ -62,7 +62,6 @@ if TYPE_CHECKING:
     from daft.io import DataSink
     from daft.logical.schema import Schema
 
-
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
 
@@ -1326,11 +1325,14 @@ def concat(
 def local_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
     limit: int,
+    offset: int = 0,
 ) -> Generator[None | PartitionTask[PartitionT] | PartitionTaskBuilder[PartitionT], int, None]:
     """Apply a limit instruction to each partition in the child_plan.
 
     limit:
         The value of the limit to apply to each partition.
+    offset:
+        The value of the offset to apply to each partition, default is 0.
 
     Yields: PartitionTask with the limit applied.
     Send back: A new value to the limit (optional). This allows you to update the limit after each partition if desired.
@@ -1340,7 +1342,7 @@ def local_limit(
             yield step
         else:
             maybe_new_limit = yield step.add_instruction(
-                execution_step.LocalLimit(limit),
+                execution_step.LocalLimit(limit=limit, offset=offset),
             )
             if maybe_new_limit is not None:
                 limit = maybe_new_limit
@@ -1349,12 +1351,17 @@ def local_limit(
 def global_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
     limit_rows: int,
+    offset_rows: int,
     eager: bool,
     num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """Return the first n rows from the `child_plan`."""
+    """Return n rows after offset from the `child_plan`."""
+    remaining_skip = offset_rows
+    assert remaining_skip >= 0, f"Invalid value for offset: {remaining_skip}"
+
     remaining_rows = limit_rows
     assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
+
     remaining_partitions = num_partitions
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
@@ -1365,7 +1372,7 @@ def global_limit(
 
     # As an optimization, push down a limit into each partition to reduce what gets materialized,
     # since we will never take more than the remaining limit anyway.
-    child_plan = local_limit(child_plan=child_plan, limit=remaining_rows)
+    child_plan = local_limit(child_plan=child_plan, limit=remaining_skip + remaining_rows)
     started = False
     while True:
         # Check if any inputs finished executing.
@@ -1373,14 +1380,21 @@ def global_limit(
         while len(materializations) > 0 and materializations[0].done():
             done_task = materializations.popleft()
             done_task_metadata = done_task.partition_metadata()
-            limit = remaining_rows and min(remaining_rows, done_task_metadata.num_rows)
+            task_num_rows = done_task_metadata.num_rows
 
+            skipped = min(remaining_skip, task_num_rows)
+            remaining_skip -= skipped
+            if remaining_skip > 0:
+                remaining_partitions -= 1
+                continue
+
+            limit = remaining_rows and min(remaining_rows, task_num_rows - skipped)
             global_limit_step = PartitionTaskBuilder[PartitionT](
                 inputs=[done_task.partition()],
                 partial_metadatas=[done_task_metadata],
                 resource_request=ResourceRequest(memory_bytes=done_task_metadata.size_bytes),
             ).add_instruction(
-                instruction=execution_step.GlobalLimit(limit),
+                instruction=execution_step.GlobalLimit(limit=limit, offset=skipped),
             )
 
             yield global_limit_step
@@ -1402,7 +1416,7 @@ def global_limit(
                         partial_metadatas=[done_task.partition_metadata()],
                         resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
                     ).add_instruction(
-                        instruction=execution_step.GlobalLimit(0),
+                        instruction=execution_step.GlobalLimit(limit=0, offset=0),
                     )
                     for _ in range(remaining_partitions)
                 )
@@ -1422,7 +1436,7 @@ def global_limit(
 
         # Execute a single child partition.
         try:
-            child_step = child_plan.send(remaining_rows) if started else next(child_plan)
+            child_step = child_plan.send(remaining_skip + remaining_rows) if started else next(child_plan)
             started = True
             if isinstance(child_step, PartitionTaskBuilder):
                 # If this is the very next partition to apply a nonvacuous global limit on,
@@ -1430,10 +1444,17 @@ def global_limit(
                 # If so, we can deterministically apply and deduct the rolling limit without materializing.
                 [partial_meta] = child_step.partial_metadatas
                 if len(materializations) == 0 and remaining_rows > 0 and partial_meta.num_rows is not None:
-                    limit = min(remaining_rows, partial_meta.num_rows)
-                    child_step = child_step.add_instruction(instruction=execution_step.LocalLimit(limit))
-
+                    partial_num_rows = partial_meta.num_rows
+                    skipped = min(remaining_skip, partial_num_rows)
+                    remaining_skip -= skipped
                     remaining_partitions -= 1
+                    if remaining_skip > 0:
+                        continue
+
+                    limit = min(remaining_rows, partial_num_rows - skipped)
+                    child_step = child_step.add_instruction(
+                        instruction=execution_step.LocalLimit(offset=skipped, limit=limit)
+                    )
                     remaining_rows -= limit
                 else:
                     child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
@@ -1740,6 +1761,7 @@ def top_n(
     descending: list[bool],
     nulls_first: list[bool],
     limit: int,
+    offset: int,
     num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Take the top N values from the result of `child_plan` according to `sort_info` and `limit`."""
@@ -1755,7 +1777,9 @@ def top_n(
         nulls_first=nulls_first,
         num_partitions=num_partitions,
     )
-    yield from global_limit(child_plan=child_plan, limit_rows=limit, eager=False, num_partitions=num_partitions)
+    yield from global_limit(
+        child_plan=child_plan, offset_rows=offset, limit_rows=limit, eager=False, num_partitions=num_partitions
+    )
 
 
 def fanout_random(
