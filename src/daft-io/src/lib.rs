@@ -4,6 +4,8 @@
 mod azure_blob;
 mod counting_reader;
 mod google_cloud;
+#[cfg(feature = "enable_hdfs")]
+mod hdfs;
 mod http;
 mod huggingface;
 mod local;
@@ -45,6 +47,8 @@ use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
+#[cfg(feature = "enable_hdfs")]
+use self::hdfs::HDFSSource;
 use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 pub use crate::range::GetRange;
 
@@ -240,6 +244,8 @@ impl IOClient {
             SourceType::HF => {
                 HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
             }
+            #[cfg(feature = "enable_hdfs")]
+            SourceType::HDFS => HDFSSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::Unity => {
                 #[cfg(feature = "python")]
                 {
@@ -393,6 +399,8 @@ pub enum SourceType {
     AzureBlob,
     GCS,
     HF,
+    #[cfg(feature = "enable_hdfs")]
+    HDFS,
     Unity,
 }
 
@@ -405,6 +413,8 @@ impl std::fmt::Display for SourceType {
             Self::AzureBlob => write!(f, "AzureBlob"),
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
+            #[cfg(feature = "enable_hdfs")]
+            Self::HDFS => write!(f, "hdfs"),
             Self::Unity => write!(f, "UnityCatalog"),
         }
     }
@@ -453,6 +463,8 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
+        #[cfg(feature = "enable_hdfs")]
+        "hdfs" => Ok((SourceType::HDFS, fixed_input)),
         "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
