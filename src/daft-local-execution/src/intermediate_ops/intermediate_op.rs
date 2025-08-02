@@ -15,7 +15,7 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, NodeType, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -48,7 +48,7 @@ pub trait IntermediateOperator: Send + Sync {
         state: Box<dyn IntermediateOpState>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> NodeName;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
@@ -97,8 +97,9 @@ impl IntermediateNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let info = ctx.next_node_info(intermediate_op.name(), NodeType::Intermediate);
+        let info = ctx.next_node_info(Arc::from(intermediate_op.name()), NodeType::Intermediate);
         let runtime_stats = intermediate_op.make_runtime_stats();
+
         Self {
             intermediate_op,
             children,
@@ -168,7 +169,7 @@ impl IntermediateNode {
                     self.runtime_stats.clone(),
                     memory_manager.clone(),
                 ),
-                self.intermediate_op.name(),
+                &self.intermediate_op.name(),
             );
         }
         output_receiver
@@ -220,8 +221,8 @@ impl PipelineNode for IntermediateNode {
         self.children.iter().collect()
     }
 
-    fn name(&self) -> &'static str {
-        self.intermediate_op.name()
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -242,7 +243,7 @@ impl PipelineNode for IntermediateNode {
         }
         let op = self.intermediate_op.clone();
         let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
-            node_name: self.name(),
+            node_name: self.name().to_string(),
         })?;
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
@@ -257,7 +258,7 @@ impl PipelineNode for IntermediateNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let mut output_receiver = self.spawn_workers(
@@ -278,7 +279,7 @@ impl PipelineNode for IntermediateNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            op.name(),
+            &op.name(),
         );
         Ok(destination_receiver)
     }

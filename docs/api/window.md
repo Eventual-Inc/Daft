@@ -21,17 +21,9 @@ Standard aggregate functions (e.g., [`sum`][daft.expressions.Expression.sum], [`
 
 These functions compute ranks within a window partition. They require an [`order_by`][daft.window.Window.order_by] clause without a [`rows_between`][daft.window.Window.rows_between] or [`range_between`][daft.window.Window.range_between] clause in the window specification.
 
-::: daft.functions.row_number
-    options:
-        heading_level: 3
-
-::: daft.functions.rank
-    options:
-        heading_level: 3
-
-::: daft.functions.dense_rank
-    options:
-        heading_level: 3
+* [daft.functions.row_number](functions/row_number.md)
+* [daft.functions.rank](functions/rank.md)
+* [daft.functions.dense_rank](functions/dense_rank.md)
 
 ## Lead/Lag Functions
 

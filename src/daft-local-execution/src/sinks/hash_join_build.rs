@@ -20,6 +20,7 @@ use super::blocking_sink::{
     BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{
+    pipeline::NodeName,
     runtime_stats::{RuntimeStats, Stat, CPU_US_KEY, ROWS_RECEIVED_KEY},
     state_bridge::BroadcastStateBridgeRef,
     ExecutionTaskSpawner,
@@ -62,7 +63,7 @@ impl ProbeTableState {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
             let input_tables = input.get_tables()?;
             if input_tables.is_empty() {
-                tables.push(RecordBatch::empty(Some(input.schema()))?);
+                tables.push(RecordBatch::empty(Some(input.schema())));
                 return Ok(());
             }
             for table in input_tables.iter() {
@@ -163,8 +164,8 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
-    fn name(&self) -> &'static str {
-        "HashJoinBuild"
+    fn name(&self) -> NodeName {
+        "HashJoinBuild".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

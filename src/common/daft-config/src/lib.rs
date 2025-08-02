@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub disable_join_reordering: bool,
+    pub enable_strict_filter_pushdown: bool,
 }
 
 impl DaftPlanningConfig {
@@ -22,6 +23,11 @@ impl DaftPlanningConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.disable_join_reordering = true;
+        }
+        if let Ok(val) = std::env::var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN")
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_strict_filter_pushdown = true;
         }
         cfg
     }

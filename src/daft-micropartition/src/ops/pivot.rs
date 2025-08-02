@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
@@ -17,13 +17,13 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => {
-                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
+        match tables {
+            None => {
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 let pivoted = empty_table.pivot(group_by, pivot_col, values_col, names)?;
                 Ok(Self::empty(Some(pivoted.schema)))
             }
-            [t] => {
+            Some(t) => {
                 let pivoted = t.pivot(group_by, pivot_col, values_col, names)?;
                 Ok(Self::new_loaded(
                     pivoted.schema.clone(),
@@ -31,9 +31,6 @@ impl MicroPartition {
                     None,
                 ))
             }
-            _ => Err(DaftError::ComputeError(
-                "Pivot operation is not supported on multiple tables".to_string(),
-            )),
         }
     }
 }

@@ -71,7 +71,7 @@ impl<'a> GrowableRecordBatch<'a> {
     /// Builds an array from the [`Growable`]
     pub fn build(&mut self) -> DaftResult<RecordBatch> {
         if self.growables.is_empty() {
-            RecordBatch::empty(None)
+            Ok(RecordBatch::empty(None))
         } else {
             let columns = self
                 .growables

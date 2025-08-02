@@ -43,9 +43,11 @@ impl RecordBatch {
         descending: &[bool],
         nulls_first: &[bool],
         limit: usize,
+        offset: Option<usize>,
     ) -> DaftResult<Self> {
         let argsort = self.argsort(sort_keys, descending, nulls_first)?;
-        let top_n = argsort.slice(0, limit)?;
+        let offset = offset.unwrap_or(0);
+        let top_n = argsort.slice(offset, offset + limit)?;
         self.take(&top_n)
     }
 }

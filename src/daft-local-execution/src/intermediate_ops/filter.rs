@@ -15,6 +15,7 @@ use super::intermediate_op::{
     IntermediateOperatorResult,
 };
 use crate::{
+    pipeline::NodeName,
     runtime_stats::{RuntimeStats, Stat, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionTaskSpawner,
 };
@@ -97,8 +98,8 @@ impl IntermediateOperator for FilterOperator {
         vec![format!("Filter: {}", self.predicate)]
     }
 
-    fn name(&self) -> &'static str {
-        "Filter"
+    fn name(&self) -> NodeName {
+        "Filter".into()
     }
 
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {

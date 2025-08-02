@@ -238,3 +238,101 @@ daft.context.set_runner_ray()
         )
         assert result.stdout.decode().strip() in {"native"}
         assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
+
+
+@pytest.mark.parametrize("daft_runner_envvar", ["ray", "native"])
+def test_get_or_infer_runner_type_from_env(daft_runner_envvar):
+    get_or_infer_runner_type_py_script = """
+import daft
+
+print(daft.context.get_context().get_or_infer_runner_type())
+
+
+@daft.udf(return_dtype=daft.DataType.string())
+def my_udf(foo):
+    runner_type = daft.context.get_context().get_or_infer_runner_type()
+    return [f"{runner_type}_{f}" for f in foo]
+
+
+df = daft.from_pydict({"foo": [7]})
+pd = df.with_column(column_name="bar", expr=my_udf(df["foo"])).to_pydict()
+print(pd["bar"][0])
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", get_or_infer_runner_type_py_script],
+            capture_output=True,
+            env={"DAFT_RUNNER": daft_runner_envvar},
+        )
+
+        assert result.stdout.decode().strip() == f"{daft_runner_envvar}\n{daft_runner_envvar}_7"
+
+
+def test_get_or_infer_runner_type_with_set_runner_native():
+    get_or_infer_runner_type_py_script = """
+import daft
+
+daft.context.set_runner_native()
+
+print(daft.context.get_context().get_or_infer_runner_type())
+
+
+@daft.udf(return_dtype=daft.DataType.string())
+def my_udf(foo):
+    runner_type = daft.context.get_context().get_or_infer_runner_type()
+    return [f"{runner_type}_{f}" for f in foo]
+
+
+df = daft.from_pydict({"foo": [7]})
+pd = df.with_column(column_name="bar", expr=my_udf(df["foo"])).to_pydict()
+print(pd["bar"][0])
+    """
+
+    with with_null_env():
+        result = subprocess.run([sys.executable, "-c", get_or_infer_runner_type_py_script], capture_output=True)
+        assert result.stdout.decode().strip() == "native\nnative_7"
+
+
+def test_get_or_infer_runner_type_with_set_runner_ray():
+    get_or_infer_runner_type_py_script = """
+import daft
+
+daft.context.set_runner_ray()
+
+print(daft.context.get_context().get_or_infer_runner_type())
+
+
+@daft.udf(return_dtype=daft.DataType.string())
+def my_udf(foo):
+    runner_type = daft.context.get_context().get_or_infer_runner_type()
+    return [f"{runner_type}_{f}" for f in foo]
+
+
+df = daft.from_pydict({"foo": [7]})
+pd = df.with_column(column_name="bar", expr=my_udf(df["foo"])).to_pydict()
+print(pd["bar"][0])
+    """
+
+    with with_null_env():
+        result = subprocess.run([sys.executable, "-c", get_or_infer_runner_type_py_script], capture_output=True)
+        assert result.stdout.decode().strip() == "ray\nray_7"
+
+
+@pytest.mark.parametrize("daft_runner_envvar", ["ray", "native"])
+def test_get_or_infer_runner_type_with_inconsistent_settings(daft_runner_envvar):
+    get_or_infer_runner_type_py_script = """
+import daft
+
+print(daft.context.get_context().get_or_infer_runner_type())
+daft.context.set_runner_ray()
+print(daft.context.get_context().get_or_infer_runner_type())
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", get_or_infer_runner_type_py_script],
+            capture_output=True,
+            env={"DAFT_RUNNER": daft_runner_envvar},
+        )
+        assert result.stdout.decode().strip() == f"{daft_runner_envvar}\nray"

@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -42,5 +42,5 @@ impl ScalarUDF for Cbrt {
 
 #[must_use]
 pub fn cbrt(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Cbrt, vec![input]).into()
+    ScalarFn::builtin(Cbrt, vec![input]).into()
 }

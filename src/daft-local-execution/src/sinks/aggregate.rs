@@ -12,7 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -52,15 +52,23 @@ struct AggParams {
 }
 
 pub struct AggregateSink {
+    aggregate_name: &'static str,
     agg_sink_params: Arc<AggParams>,
 }
 
 impl AggregateSink {
     pub fn new(aggregations: &[BoundAggExpr], input_schema: &SchemaRef) -> DaftResult<Self> {
+        let aggregate_name = if aggregations.len() == 1 {
+            aggregations[0].as_ref().agg_name()
+        } else {
+            "Aggregate"
+        };
+
         let (sink_agg_exprs, finalize_agg_exprs, final_projections) =
             daft_physical_plan::populate_aggregation_stages_bound(aggregations, input_schema, &[])?;
 
         Ok(Self {
+            aggregate_name,
             agg_sink_params: Arc::new(AggParams {
                 sink_agg_exprs,
                 finalize_agg_exprs,
@@ -124,8 +132,8 @@ impl BlockingSink for AggregateSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Aggregate"
+    fn name(&self) -> NodeName {
+        self.aggregate_name.into()
     }
 
     fn multiline_display(&self) -> Vec<String> {

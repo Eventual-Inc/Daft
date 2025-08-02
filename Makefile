@@ -76,7 +76,7 @@ test: .venv build  ## Run tests
 
 .PHONY: doctests
 doctests:
-	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf.py daft/functions/functions.py daft/datatype.py
+	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
@@ -90,7 +90,7 @@ install-docs-deps:
 		export PATH="$$HOME/.bun/bin:$$PATH"; \
 	fi
 	. $(VENV_BIN)/activate && uv pip install -r requirements-doc.txt
-	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
+# 	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
 
 .PHONY: docs
 docs: .venv install-docs-deps ## Build Daft documentation

@@ -37,7 +37,7 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionT,
 )
-from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
+from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions, in_notebook
 
 if TYPE_CHECKING:
     import dask
@@ -839,7 +839,8 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
-        !!! Currently only supported with the Native runner!
+        Warning:
+            Currently only supported with the Native runner!
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -1127,7 +1128,7 @@ class DataFrame:
             storage_options.update(new_storage_options or {})
         else:
             if isinstance(table, str):
-                table_uri = table
+                table_uri = os.path.expanduser(table)
             elif isinstance(table, pathlib.Path):
                 table_uri = str(table)
             elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
@@ -1388,17 +1389,19 @@ class DataFrame:
     @DataframePublicAPI
     def write_turbopuffer(
         self,
-        namespace: str,
+        namespace: Union[str, Expression],
         api_key: Optional[str] = None,
-        region: str = "aws-us-west-2",
+        region: Optional[str] = None,
         distance_metric: Optional[Literal["cosine_distance", "euclidean_squared"]] = None,
         schema: Optional[dict[str, Any]] = None,
         id_column: Optional[str] = None,
         vector_column: Optional[str] = None,
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a Turbopuffer namespace.
 
-        This method transforms each row of the dataframe into a turbopuffer document and writes it to the given namespace.
+        This method transforms each row of the dataframe into a turbopuffer document.
         This means that an `id` column is always required. Optionally, the `id_column` parameter can be used to specify the column name to used for the id column.
         Note that the column with the name specified by `id_column` will be renamed to "id" when written to turbopuffer.
 
@@ -1407,20 +1410,29 @@ class DataFrame:
 
         All other columns become attributes.
 
+        The namespace parameter can be either a string (for a single namespace) or an expression (for multiple namespaces).
+        When using an expression, the data will be partitioned by the computed namespace values and written to each namespace separately.
+
         For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
 
         Args:
-            namespace: The namespace to write to.
-            api_key: Turbopuffer API key (defaults to TURBOPUFFER_API_KEY env var).
-            region: Turbopuffer region (defaults to "aws-us-west-2").
+            namespace: The namespace to write to. Can be a string for a single namespace or an expression for multiple namespaces.
+            api_key: Turbopuffer API key.
+            region: Turbopuffer region.
             distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
             schema: Optional manual schema specification.
             id_column: Optional column name for the id column. The data sink will automatically rename the column to "id" for the id column.
             vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.
+            client_kwargs: Optional dictionary of arguments to pass to the Turbopuffer client constructor.
+                Explicit arguments (api_key, region) will be merged into client_kwargs.
+            write_kwargs: Optional dictionary of arguments to pass to the namespace.write() method.
+                Explicit arguments (distance_metric, schema) will be merged into write_kwargs.
         """
         from daft.io.turbopuffer.turbopuffer_data_sink import TurbopufferDataSink
 
-        sink = TurbopufferDataSink(namespace, api_key, region, distance_metric, schema, id_column, vector_column)
+        sink = TurbopufferDataSink(
+            namespace, api_key, region, distance_metric, schema, id_column, vector_column, client_kwargs, write_kwargs
+        )
         return self.write_sink(sink)
 
     ###
@@ -1527,11 +1539,12 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def select(self, *columns: ColumnInputType) -> "DataFrame":
+    def select(self, *columns: ColumnInputType, **projections: Expression) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``.
 
         Args:
             *columns (Union[str, Expression]): columns to select from the current DataFrame
+            **projections (Expression): additional projections in kwarg format.
 
         Returns:
             DataFrame: new DataFrame that will select the passed in columns
@@ -1555,8 +1568,9 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        assert len(columns) > 0
-        builder = self._builder.select(self.__column_input_to_expression(columns))
+        selection = column_inputs_to_expressions(columns)
+        selection += [expr.alias(alias) for (alias, expr) in projections.items()]
+        builder = self._builder.select(selection)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2121,6 +2135,43 @@ class DataFrame:
 
         """
         builder = self._builder.limit(num, eager=False)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def offset(self, num: int) -> "DataFrame":
+        """Returns a new DataFrame by skipping the first ``N`` rows, similar to a SQL ``Offset``.
+
+        Args:
+            num (int): the number of rows to skip
+
+        Returns:
+            DataFrame: A new DataFrame by skipping the first ``N`` rows
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
+            >>> df = df.offset(1).limit(5)  # skip the first row and return 5 rows
+            >>> df.show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ├╌╌╌╌╌╌╌┤
+            │ 5     │
+            ├╌╌╌╌╌╌╌┤
+            │ 6     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
+        """
+        builder = self._builder.offset(num)
         return DataFrame(builder)
 
     def _shard(self, strategy: Literal["file"], world_size: int, rank: int) -> "DataFrame":
@@ -3430,7 +3481,15 @@ class DataFrame:
         )
 
         try:
-            from IPython.display import display
+            from IPython.display import HTML, display
+
+            if in_notebook() and preview.partition is not None:
+                try:
+                    interactive_html = preview_formatter._generate_interactive_html()
+                    display(HTML(interactive_html), clear=True)
+                    return None
+                except Exception:
+                    pass
 
             display(preview_formatter, clear=True)
         except ImportError:

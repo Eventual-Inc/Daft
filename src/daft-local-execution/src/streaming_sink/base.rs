@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, NodeType, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -56,7 +56,7 @@ pub trait StreamingSink: Send + Sync {
     ) -> StreamingSinkFinalizeResult;
 
     /// The name of the StreamingSink operator.
-    fn name(&self) -> &'static str;
+    fn name(&self) -> NodeName;
 
     fn multiline_display(&self) -> Vec<String>;
 
@@ -83,7 +83,6 @@ pub trait StreamingSink: Send + Sync {
 
 pub struct StreamingSinkNode {
     op: Arc<dyn StreamingSink>,
-    name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
@@ -97,12 +96,11 @@ impl StreamingSinkNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name();
+        let name = op.name().into();
         let node_info = ctx.next_node_info(name, NodeType::StreamingSink);
         let runtime_stats = op.make_runtime_stats();
         Self {
             op,
-            name,
             children,
             runtime_stats,
             plan_stats,
@@ -227,8 +225,8 @@ impl PipelineNode for StreamingSinkNode {
         self.children.iter().collect()
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -262,7 +260,7 @@ impl PipelineNode for StreamingSinkNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
@@ -306,7 +304,7 @@ impl PipelineNode for StreamingSinkNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }

@@ -19,7 +19,7 @@ use smallvec::smallvec;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, NodeType, PipelineNode, RuntimeContext},
     runtime_stats::{
         CountingSender, RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY,
     },
@@ -72,7 +72,7 @@ impl RuntimeStats for SourceStats {
 
 #[async_trait]
 pub trait Source: Send + Sync {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> NodeName;
     fn make_runtime_stats(&self) -> Arc<SourceStats> {
         Arc::new(SourceStats::default())
     }
@@ -94,7 +94,7 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name(), NodeType::Source);
+        let info = ctx.next_node_info(source.name().into(), NodeType::Source);
         let runtime_stats = source.make_runtime_stats();
         Self {
             source,
@@ -147,8 +147,8 @@ impl TreeDisplay for SourceNode {
 }
 
 impl PipelineNode for SourceNode {
-    fn name(&self) -> &'static str {
-        self.source.name()
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![]
@@ -188,7 +188,7 @@ impl PipelineNode for SourceNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }

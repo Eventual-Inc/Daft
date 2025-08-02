@@ -22,6 +22,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    pipeline::NodeName,
     runtime_stats::{
         RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
     },
@@ -88,7 +89,7 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
-    DataSink,
+    DataSink(String),
 }
 
 struct WriteState {
@@ -199,20 +200,20 @@ impl BlockingSink for WriteSink {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        match self.write_format {
-            WriteFormat::Parquet => "ParquetSink",
-            WriteFormat::PartitionedParquet => "PartitionedParquetSink",
-            WriteFormat::Csv => "CsvSink",
-            WriteFormat::PartitionedCsv => "PartitionedCsvSink",
-            WriteFormat::Json => "JsonSink",
-            WriteFormat::PartitionedJson => "PartitionedJsonSink",
-            WriteFormat::Iceberg => "IcebergSink",
-            WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
-            WriteFormat::Deltalake => "DeltalakeSink",
-            WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
-            WriteFormat::Lance => "LanceSink",
-            WriteFormat::DataSink => "DataSink",
+    fn name(&self) -> NodeName {
+        match &self.write_format {
+            WriteFormat::Parquet => "Parquet Write".into(),
+            WriteFormat::PartitionedParquet => "PartitionedParquet Write".into(),
+            WriteFormat::Csv => "Csv Write".into(),
+            WriteFormat::PartitionedCsv => "PartitionedCsv Write".into(),
+            WriteFormat::Json => "Json Write".into(),
+            WriteFormat::PartitionedJson => "PartitionedJson Write".into(),
+            WriteFormat::Iceberg => "Iceberg Write".into(),
+            WriteFormat::PartitionedIceberg => "PartitionedIceberg Write".into(),
+            WriteFormat::Deltalake => "Deltalake Write".into(),
+            WriteFormat::PartitionedDeltalake => "PartitionedDeltalake Write".into(),
+            WriteFormat::Lance => "Lance Write".into(),
+            WriteFormat::DataSink(name) => name.clone().into(),
         }
     }
 

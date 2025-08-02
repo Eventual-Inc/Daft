@@ -21,11 +21,13 @@ use crate::{
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
-pub struct PushDownFilter {}
+pub struct PushDownFilter {
+    strict_pushdown: bool,
+}
 
 impl PushDownFilter {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(strict_pushdown: bool) -> Self {
+        Self { strict_pushdown }
     }
 }
 
@@ -134,7 +136,7 @@ impl PushDownFilter {
                             return Ok(Transformed::no(plan));
                         }
 
-                        let data_filter = combine_conjunction(data_only_filter);
+                        let data_filter = combine_conjunction(data_only_filter.clone());
                         let partition_filter = combine_conjunction(partition_only_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
@@ -148,6 +150,49 @@ impl PushDownFilter {
                         } else {
                             new_pushdowns
                         };
+
+                        let scan_op = external_info.scan_state.get_scan_op().0.clone();
+                        let remaining_filters = if let Some(supports_pushdown) =
+                            scan_op.as_pushdown_filter()
+                            && self.strict_pushdown
+                        {
+                            let filters_to_push = new_pushdowns
+                                .filters
+                                .as_ref()
+                                .map(std::slice::from_ref)
+                                .unwrap_or(&[]);
+
+                            let (pushed_filters, post_filters) =
+                                supports_pushdown.push_filters(filters_to_push);
+                            let _ = new_pushdowns.with_pushed_filters(Some(pushed_filters.clone()));
+                            if !post_filters.is_empty()
+                                && post_filters.len() == filters_to_push.len()
+                            {
+                                // If there are no remaining filters, we can drop the filter op.
+                                return Ok(Transformed::no(plan));
+                            }
+
+                            let mut seen = HashSet::new();
+                            post_filters
+                                .into_iter()
+                                .chain(
+                                    data_only_filter
+                                        .iter()
+                                        .filter(|f| !pushed_filters.contains(f))
+                                        .cloned(),
+                                )
+                                .filter(|e| seen.insert(e.clone()))
+                                .collect::<Vec<_>>()
+                        } else {
+                            // Return an empty Vec if strict pushdown is not supported
+                            Vec::new()
+                        };
+
+                        let needing_filter_op = remaining_filters
+                            .into_iter()
+                            .chain(needing_filter_op)
+                            .collect::<Vec<_>>();
+
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source: LogicalPlan = Source::new(
                             source.output_schema.clone(),
@@ -360,7 +405,7 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{functions::ScalarFunction, lit, resolved_col, unresolved_col, ExprRef};
+    use daft_dsl::{functions::BuiltinScalarFn, lit, resolved_col, unresolved_col, ExprRef};
     use daft_functions_uri::download::UrlDownload;
     use rstest::rstest;
 
@@ -380,12 +425,13 @@ mod tests {
     fn assert_optimized_plan_eq(
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
+        strict_pushdown: bool,
     ) -> DaftResult<()> {
         assert_optimized_plan_with_rules_eq(
             plan,
             expected,
             vec![RuleBatch::new(
-                vec![Box::new(PushDownFilter::new())],
+                vec![Box::new(PushDownFilter::new(strict_pushdown))],
                 RuleExecutionStrategy::Once,
             )],
         )
@@ -404,7 +450,7 @@ mod tests {
                 .build();
         // Plan should be unchanged after optimization.
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -436,14 +482,14 @@ mod tests {
             // Merged filter should not be pushed into scan.
             scan_plan.filter(merged_filter)?.build()
         };
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
     /// Tests that we can't pushdown a filter into a ScanOperator if it has an udf-ish expression.
     #[test]
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
-        let pred: ExprRef = ScalarFunction::new(
+        let pred: ExprRef = BuiltinScalarFn::new(
             UrlDownload,
             vec![resolved_col("a"), lit(1), lit(true), lit(true)],
         )
@@ -455,7 +501,7 @@ mod tests {
         .filter(pred.is_null())?
         .build();
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -484,7 +530,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_scan_filter.select(proj)?.build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -515,7 +561,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_scan_filter.select(proj)?.build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -532,7 +578,7 @@ mod tests {
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -564,7 +610,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_filter_scan.select(proj)?.build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -595,7 +641,7 @@ mod tests {
         let expected = expected_filter_scan
             .sort(sort_by, descending, nulls_first)?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -627,7 +673,7 @@ mod tests {
         let expected = expected_filter_scan
             .hash_repartition(Some(num_partitions), repartition_by)?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -670,7 +716,7 @@ mod tests {
         let expected = expected_left_filter_scan
             .concat(&expected_right_filter_scan)?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -730,7 +776,7 @@ mod tests {
                 Default::default(),
             )?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -789,7 +835,7 @@ mod tests {
                 Default::default(),
             )?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -864,7 +910,7 @@ mod tests {
                 Default::default(),
             )?
             .build();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -903,7 +949,7 @@ mod tests {
             .build();
         // should not push down filter
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -943,7 +989,7 @@ mod tests {
             .build();
         // should not push down filter
         let expected = plan.clone();
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }
 
@@ -1008,8 +1054,43 @@ mod tests {
         )?
         .build();
 
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan, expected, false)?;
 
         Ok(())
+    }
+
+    fn filter_pushdown_strict_mode_scenario(enable_strict_pushdown: bool) -> DaftResult<()> {
+        let pred = resolved_col("value").is_in(vec![lit(2)]);
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("date_col", DataType::Date),
+            Field::new("value", DataType::Int64),
+        ]);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .filter(pred.clone())?
+            .build();
+
+        let expected = if enable_strict_pushdown {
+            plan.clone()
+        } else {
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
+                .build()
+        };
+
+        assert_optimized_plan_eq(plan, expected, enable_strict_pushdown)?;
+
+        Ok(())
+    }
+
+    /// Tests that Filter pushdown respects the strict mode configuration.
+    /// The main reason for not using rstest is that it seems unable to handle the setting of environment variables properly.
+    #[test]
+    fn filter_pushdown_strict_mode_true() -> DaftResult<()> {
+        filter_pushdown_strict_mode_scenario(true)
+    }
+
+    #[test]
+    fn filter_pushdown_strict_mode_false() -> DaftResult<()> {
+        filter_pushdown_strict_mode_scenario(false)
     }
 }

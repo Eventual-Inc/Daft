@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -66,11 +66,13 @@ use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
+pub type NodeName = Cow<'static, str>;
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     #[allow(clippy::borrowed_box)]
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>>;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> Arc<str>;
     fn start(
         &self,
         maintain_order: bool,
@@ -151,9 +153,9 @@ impl RuntimeContext {
         index
     }
 
-    pub fn next_node_info(&self, name: &str, node_type: NodeType) -> NodeInfo {
+    pub fn next_node_info(&self, name: Arc<str>, node_type: NodeType) -> NodeInfo {
         NodeInfo {
-            name: Arc::from(name.to_string()),
+            name,
             id: self.next_id(),
             node_type,
             context: self.context.clone(),
@@ -527,11 +529,13 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Limit(Limit {
             input,
-            num_rows,
+            limit,
+            offset,
             stats_state,
             ..
         }) => {
-            let sink = LimitSink::new(*num_rows as usize);
+            let (offset, limit) = (*offset, *limit);
+            let sink = LimitSink::new(limit as usize, offset.map(|x| x as usize));
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node], stats_state.clone(), ctx)
                 .boxed()
@@ -656,6 +660,7 @@ pub fn physical_plan_to_pipeline(
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             stats_state,
             ..
@@ -665,6 +670,7 @@ pub fn physical_plan_to_pipeline(
                 descending.clone(),
                 nulls_first.clone(),
                 *limit as usize,
+                offset.map(|x| x as usize),
             );
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             BlockingSinkNode::new(Arc::new(sink), child_node, stats_state.clone(), ctx).boxed()
@@ -1075,7 +1081,7 @@ pub fn physical_plan_to_pipeline(
             let writer_factory =
                 daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
             let write_sink = WriteSink::new(
-                WriteFormat::DataSink,
+                WriteFormat::DataSink(data_sink_info.name.clone()),
                 writer_factory,
                 None,
                 file_schema.clone(),

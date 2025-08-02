@@ -11,7 +11,7 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, NodeType, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, NodeName, NodeType, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -51,7 +51,7 @@ pub trait BlockingSink: Send + Sync {
         states: Vec<Box<dyn BlockingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> NodeName;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
@@ -72,7 +72,6 @@ pub trait BlockingSink: Send + Sync {
 
 pub struct BlockingSinkNode {
     op: Arc<dyn BlockingSink>,
-    name: &'static str,
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
@@ -86,12 +85,12 @@ impl BlockingSinkNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name();
+        let name = op.name().into();
         let node_info = ctx.next_node_info(name, NodeType::BlockingSink);
         let runtime_stats = op.make_runtime_stats();
+
         Self {
             op,
-            name,
             child,
             runtime_stats,
             plan_stats,
@@ -188,8 +187,8 @@ impl PipelineNode for BlockingSinkNode {
         vec![&self.child]
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> Arc<str> {
+        self.node_info.name.clone()
     }
 
     fn start(
@@ -220,7 +219,7 @@ impl PipelineNode for BlockingSinkNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            &self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
@@ -271,7 +270,7 @@ impl PipelineNode for BlockingSinkNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            self.name(),
+            &self.name(),
         );
         Ok(destination_receiver)
     }
