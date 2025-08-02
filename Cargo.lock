@@ -2879,7 +2879,6 @@ dependencies = [
  "kanal",
  "log",
  "opentelemetry",
- "parking_lot 0.12.4",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
