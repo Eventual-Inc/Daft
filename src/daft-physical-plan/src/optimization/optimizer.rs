@@ -101,15 +101,18 @@ mod tests {
                 PhysicalPlan::Limit(Limit {
                     input,
                     limit,
+                    offset,
                     eager,
                     num_partitions,
                 }) => {
+                    assert!(offset.is_none(), "offset is some");
                     if *limit >= self.cutoff {
                         Ok(Transformed::no(plan))
                     } else {
                         let new_plan = PhysicalPlan::Limit(Limit::new(
                             input.clone(),
                             limit + 1,
+                            None,
                             *eager,
                             *num_partitions,
                         ));
@@ -129,7 +132,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, None, true, 1));
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
@@ -150,7 +153,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, None, true, 1));
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 2 })],
@@ -171,7 +174,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, None, true, 1));
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
@@ -192,7 +195,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, None, true, 1));
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
@@ -213,7 +216,7 @@ mod tests {
             1,
         );
 
-        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, true, 1));
+        let plan = PhysicalPlan::Limit(Limit::new(plan, 0, None, true, 1));
         let optimizer = PhysicalOptimizer::new(
             vec![PhysicalOptimizerRuleBatch::new(
                 vec![Box::new(CountingRule { cutoff: 100 })],
