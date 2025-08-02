@@ -1561,14 +1561,12 @@ def test_series_utf8_count_matches():
             "    fox     dog        over    ",
         ]
     )
-    p = Series.from_pylist(
-        [
-            "fox",
-            "over",
-            "lazy dog",
-            "dog",
-        ]
-    )
+    p = [
+        "fox",
+        "over",
+        "lazy dog",
+        "dog",
+    ]
 
     res = s.str.count_matches(p, whole_words=False, case_sensitive=False).to_pylist()
     assert res == [3, 0, 7, 3, 3, 3, 3, 3]
@@ -1584,6 +1582,6 @@ def test_series_utf8_count_matches():
 @pytest.mark.parametrize("case_sensitive", [False, True])
 def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     s = Series.from_pylist(["hello world"])
-    p = Series.from_pylist(["hello world", "hello", "world"])
+    p = ["hello world", "hello", "world"]
     res = s.str.count_matches(p, whole_words=whole_words, case_sensitive=case_sensitive).to_pylist()
     assert res == [1]

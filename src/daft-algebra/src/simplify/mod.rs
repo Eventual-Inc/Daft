@@ -70,7 +70,7 @@ fn simplify_is_in_expr(expr: ExprRef, _schema: &SchemaRef) -> DaftResult<Transfo
         // e IN (1, 2, 3) -> e = 1 OR e = 2 OR e = 3
         Expr::IsIn(e, list)
             if list.len() <= MAX_IS_IN_CHAIN_LENGTH
-                && list.iter().all(|e| matches!(e.as_ref(), Expr::Literal(l) if !matches!(l, LiteralValue::Series(_)))) =>
+                && list.iter().all(|e| matches!(e.as_ref(), Expr::Literal(l) if !matches!(l, LiteralValue::List(_)))) =>
         {
             let chain_of_eqs = list
                 .iter()

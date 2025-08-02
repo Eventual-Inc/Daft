@@ -255,7 +255,7 @@ impl<'de> serde::de::VariantAccess<'de> for VariantAccess<'de> {
         V: serde::de::Visitor<'de>,
     {
         match self.value {
-            LiteralValue::Series(series) => visitor.visit_seq(SeriesDeserializer::new(series)),
+            LiteralValue::List(series) => visitor.visit_seq(SeriesDeserializer::new(series)),
             _ => LiteralValueDeserializer { lit: self.value }.deserialize_seq(visitor),
         }
     }
@@ -323,7 +323,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralValueDeserializer {
             LiteralValue::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
             LiteralValue::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             LiteralValue::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
-            LiteralValue::Series(_) => Err(LitError::custom("Not implemented: Series")),
+            LiteralValue::List(_) => Err(LitError::custom("Not implemented: List")),
             #[cfg(feature = "python")]
             LiteralValue::Python(_) => Err(LitError::custom("Not implemented: Python")),
             LiteralValue::Struct(_) => Err(LitError::custom("Not implemented: Struct")),
@@ -365,7 +365,7 @@ impl<'de> Deserializer<'de> for LiteralValueDeserializer<'de> {
             LiteralValue::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
             LiteralValue::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             LiteralValue::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
-            LiteralValue::Series(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
+            LiteralValue::List(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
             #[cfg(feature = "python")]
             LiteralValue::Python(_) => Err(LitError::custom("Not implemented: Python")),
             LiteralValue::Struct(v) => visitor.visit_map(StructDeserializer::new(v)),

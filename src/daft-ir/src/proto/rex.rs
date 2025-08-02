@@ -730,7 +730,7 @@ impl ToFromProto for ir::LiteralValue {
                     value: display_decimal128(*value, *precision, *scale),
                 })
             }
-            Self::Series(_) => not_implemented_err!("series literal"),
+            Self::List(_) => not_implemented_err!("list literal"),
             #[cfg(feature = "python")]
             Self::Python(_) => todo!("python literal"),
             Self::Struct(struct_) => {

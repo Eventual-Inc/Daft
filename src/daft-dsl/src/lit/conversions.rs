@@ -43,7 +43,7 @@ impl_literal!(u64, UInt64);
 impl_literal!(f64, Float64);
 impl_literal!(IntervalValue, Interval);
 impl_literal!(String, Utf8);
-impl_literal!(Series, Series);
+impl_literal!(Series, List);
 impl_literal!(&'_ str, Utf8, |s: &'_ str| s.to_owned());
 impl_literal!(&'_ [u8], Binary, |s: &'_ [u8]| s.to_vec());
 #[cfg(feature = "python")]

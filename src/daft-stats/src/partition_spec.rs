@@ -1,10 +1,11 @@
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
-use daft_dsl::{ExprRef, Literal};
+use daft_dsl::{Expr, ExprRef, LiteralValue};
 use daft_recordbatch::RecordBatch;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -25,7 +26,15 @@ impl PartitionSpec {
         self.keys
             .columns()
             .iter()
-            .map(|column| (column.name(), column.clone().lit()))
+            .map(|column| {
+                (
+                    column.name(),
+                    Arc::new(Expr::Literal(
+                        LiteralValue::try_from_single_value_series(column)
+                            .expect("column should have one row"),
+                    )),
+                )
+            })
             .collect()
     }
 }
