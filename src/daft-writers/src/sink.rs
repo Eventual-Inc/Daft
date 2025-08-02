@@ -66,7 +66,10 @@ impl AsyncFileWriter for DataSinkWriter {
                 .extract()
         })?;
 
-        self.results.push(mp_result.into());
+        let mp_result: RecordBatch = mp_result.into();
+        if !mp_result.is_empty() {
+            self.results.push(mp_result);
+        }
         Ok(bytes_written)
     }
 

@@ -164,6 +164,8 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
             if isinstance(self._namespace, str):
                 # Namespace is a string. Write all data to this namespace.
                 arrow_table = self._prepare_arrow_table(micropartition.to_arrow())
+                if arrow_table.num_rows == 0:
+                    continue
 
                 namespace = tpuf.namespace(self._namespace)
                 write_response = namespace.write(
@@ -180,10 +182,9 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
                 # Namespace is an expression. Partition the data by namespace then write to each namespace.
                 (partitioned_data, partition_keys) = micropartition.partition_by_value(self._namespace)
                 for data, namespace_name in zip(partitioned_data, partition_keys.get_column(0)):
-                    if len(data) == 0:
-                        continue
-
                     arrow_table = self._prepare_arrow_table(data.to_arrow())
+                    if arrow_table.num_rows == 0:
+                        continue
 
                     TurbopufferDataSink._check_namespace_name(namespace_name)
                     namespace = tpuf.namespace(namespace_name)
@@ -201,10 +202,13 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
     def finalize(self, write_results: list[WriteResult[turbopuffer.types.NamespaceWriteResponse]]) -> MicroPartition:
         """Finalizes the write process and returns summary statistics."""
-        result_table = MicroPartition.from_pydict(
-            {
-                "write_responses": write_results,
-            }
-        )
+        if len(write_results) == 0:
+            return MicroPartition.empty(self._result_schema)
+        else:
+            result_table = MicroPartition.from_pydict(
+                {
+                    "write_responses": write_results,
+                }
+            )
 
-        return result_table
+            return result_table
