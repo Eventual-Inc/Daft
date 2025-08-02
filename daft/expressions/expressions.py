@@ -5208,6 +5208,18 @@ class ExpressionImageNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("to_mode")
         return Expression._from_pyexpr(f(self._expr, mode=image_mode))
 
+    def attribute(self, name: str) -> Expression:
+        """Get an attribute of the image, such as 'width', 'height', 'channel', or 'mode'.
+
+        Args:
+            name (str): The name of the attribute to retrieve.
+
+        Returns:
+            Expression: An Expression representing the requested attribute.
+        """
+        f = native.get_function_from_registry("image_attribute")
+        return Expression._from_pyexpr(f(self._expr, lit(name)._expr))
+
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.partition` attribute."""
