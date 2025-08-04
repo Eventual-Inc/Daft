@@ -82,7 +82,7 @@ pub enum LiteralValue {
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
     Decimal(i128, u8, i8),
-    /// A series literal.
+    /// A list literal.
     List(Series),
     /// Python object.
     #[cfg(feature = "python")]
