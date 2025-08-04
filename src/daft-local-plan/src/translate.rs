@@ -64,6 +64,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::limit(
                 input,
                 limit.limit,
+                limit.offset,
                 limit.stats_state.clone(),
             ))
         }
@@ -266,6 +267,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 top_n.descending.clone(),
                 top_n.nulls_first.clone(),
                 top_n.limit,
+                top_n.offset,
                 top_n.stats_state.clone(),
             ))
         }
@@ -424,14 +426,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 explode.stats_state.clone(),
             ))
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            plan.name()
+        ))),
     }
 }

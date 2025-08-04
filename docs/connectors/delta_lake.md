@@ -1,4 +1,4 @@
-# Delta Lake
+# Reading from and Writing to Delta Lake
 
 [Delta Lake](https://delta.io/) is an open-source storage framework for data analytics on data lakes. It provides ACID transactions, scalable metadata handling, and a unification of streaming and batch data processing, all on top of Parquet files in cloud storage.
 

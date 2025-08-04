@@ -1,41 +1,45 @@
-* Daft User Guide
+* Guide
     * [Overview](index.md)
     * [Installation](install.md)
     * [Quickstart](quickstart.md)
-    * [Core Concepts](core_concepts.md)
-    * I/O
-        * [Overview](io/index.md)
-        * [Amazon Web Services](io/aws.md)
-        * [Apache Hudi](io/hudi.md)
-        * [Apache Iceberg](io/iceberg.md)
-        * [Delta Lake](io/delta_lake.md)
-        * [Hugging Face Datasets](io/huggingface.md)
-        * [Microsoft Azure](io/azure.md)
-        * [SQL](io/sql.md)
-    * [SQL](sql_overview.md)
-    * [Sessions](sessions.md)
-    * Catalogs
-        * [Overview](catalogs/index.md)
-        * [AWS Glue](catalogs/glue.md)
-        * [AWS S3 Tables](catalogs/s3tables.md)
-        * [Unity Catalog](catalogs/unity_catalog.md)
-    * [Spark Connect](spark_connect.md)
-    * [Distributed Computing](distributed.md)
-    * [Integrations](integrations.md)
-    * Advanced
-        * [Managing Memory Usage](advanced/memory.md)
-        * [Partitioning](advanced/partitioning.md)
-        * [Observability](advanced/observability.md)
-    * Resources
-        * [Architecture](resources/architecture.md)
-        * [Engine Comparison](resources/engine_comparison.md)
-        * [Tutorials](resources/tutorials.md)
-        * [Benchmarks](resources/benchmarks/tpch.md)
-        * [Telemetry](resources/telemetry.md)
-    * Migration Guide
-        * [Coming from Dask](migration/dask_migration.md)
+    * Modalities
+        * [Overview](modalities/index.md)
+        * [Custom Modalities](modalities/custom.md)
+        * [URLs and Files](modalities/urls.md)
+        * [Text](modalities/text.md)
+        * [Images](modalities/images.md)
+        * [JSON and Nested Data](modalities/json.md)
+    * Data Connectors
+        * [Overview](connectors/index.md)
+        * [Custom Connectors](connectors/custom.md)
+        * [AWS Glue](connectors/glue.md)
+        * [AWS S3 Tables](connectors/s3tables.md)
+        * [Apache Hudi](connectors/hudi.md)
+        * [Apache Iceberg](connectors/iceberg.md)
+        * [Azure Blob Store](connectors/azure.md)
+        * [Delta Lake](connectors/delta_lake.md)
+        * [Hugging Face Datasets](connectors/huggingface.md)
+        * [S3](connectors/aws.md)
+        * [SQL Databases](connectors/sql.md)
+        * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
+    * Running Custom Python Code
+        * [Overview](custom-code/index.md)
+        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
+        * [Working with GPUs](custom-code/gpu.md)
+        * [External APIs](custom-code/apis.md)
+    * [Scaling Out and Deployment](distributed.md)
+    * Optimization and Debugging
+        * [Overview](optimization/index.md)
+        * [Architecture](optimization/architecture.md)
+        * [Managing Memory Usage](optimization/memory.md)
+        * [Partitioning](optimization/partitioning.md)
+        * [Observability](optimization/observability.md)
+    * [Benchmarks](benchmarks/index.md)
+    * [Community <sup>↗</sup>](http://www.daft.ai/slack)
+    * [Contributing](contributing-to-daft.md)
     * [Roadmap](roadmap.md)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
+    * [Usage Telemetry](telemetry.md)
 * Python API
     * [Overview](api/index.md)
     * [I/O](api/io.md)
@@ -50,6 +54,7 @@
     * [Data Types](api/datatypes.md)
     * [Aggregations](api/aggregations.md)
     * [Series](api/series.md)
+    * [Spark Connect](api/spark_connect.md)
     * [Configuration](api/config.md)
     * [Miscellaneous](api/misc.md)
 * SQL Reference
@@ -60,3 +65,16 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
+
+<!--
+TODO
+        * [Custom Connectors](connectors/custom.md)
+        * [CSV](connectors/csv.md)
+        * [Google Cloud Storage (GCS)](connectors/gcs.md)
+        * [HTTP](connectors/http.md)
+        * [JSON](connectors/json.md)
+        * [Lance](connectors/lance.md)
+        * [Parquet](connectors/parquet.md)
+        * [Turbopuffer](connectors/turbopuffer.md)
+        * [WARC (Web ARChive)](connectors/warc.md)
+-->
