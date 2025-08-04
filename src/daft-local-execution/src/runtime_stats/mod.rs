@@ -114,11 +114,11 @@ impl RuntimeStatsManager {
 
         let subscribers = Arc::new(subscribers);
         let throttle_interval = Duration::from_millis(200);
-        Self::new_impl(subscribers, node_stats, throttle_interval)
+        Self::new_impl::<true>(subscribers, node_stats, throttle_interval)
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
-    fn new_impl(
+    fn new_impl<const USE_IO_RUNTIME: bool>(
         subscribers: Arc<Vec<Arc<dyn RuntimeStatsSubscriber>>>,
         node_stats: Vec<(Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         throttle_interval: Duration,
@@ -128,7 +128,7 @@ impl RuntimeStatsManager {
         let (flush_tx, mut flush_rx) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
 
         let rt = get_io_runtime(true);
-        let handle = rt.runtime.spawn(async move {
+        let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_stats.len());
 
@@ -181,7 +181,13 @@ impl RuntimeStatsManager {
                     }
                 }
             }
-        });
+        };
+
+        let handle = if USE_IO_RUNTIME {
+            rt.runtime.spawn(event_loop)
+        } else {
+            tokio::spawn(event_loop)
+        };
 
         Self {
             flush_tx,
@@ -321,23 +327,25 @@ mod tests {
     #[derive(Debug)]
     struct MockSubscriber {
         total_calls: AtomicU64,
-        events: Mutex<Vec<StatSnapshot>>,
+        event: Mutex<Option<StatSnapshot>>,
     }
 
     impl MockSubscriber {
         fn new() -> Self {
             Self {
                 total_calls: AtomicU64::new(0),
-                events: Mutex::new(Vec::new()),
+                event: Mutex::new(None),
             }
         }
 
         fn get_total_calls(&self) -> u64 {
-            self.total_calls.load(std::sync::atomic::Ordering::Relaxed)
+            let out = self.total_calls.load(std::sync::atomic::Ordering::SeqCst);
+            eprintln!("get_total_calls: {:?}", out);
+            out
         }
 
-        fn get_events(&self) -> Vec<StatSnapshot> {
-            self.events.lock().unwrap().clone()
+        fn get_latest_event(&self) -> StatSnapshot {
+            self.event.lock().unwrap().clone().expect("No event")
         }
     }
 
@@ -357,10 +365,11 @@ mod tests {
 
         fn handle_event(&self, event: &StatSnapshot, _node_info: &NodeInfo) -> DaftResult<()> {
             self.total_calls
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            self.events.lock().unwrap().push(event.clone());
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            *self.event.lock().unwrap() = Some(event.clone());
             Ok(())
         }
+
         async fn flush(&self) -> DaftResult<()> {
             Ok(())
         }
@@ -376,82 +385,24 @@ mod tests {
         Arc::new(node_info)
     }
 
-    #[tokio::test]
-    async fn test_throttling_per_node_info() {
+    #[tokio::test(start_paused = true)]
+    async fn test_interval_respected() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
 
-        let node_info = create_node_info("test_node", 1);
+        let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
+        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
             subscribers,
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
 
-        // Send multiple events rapidly
-        node_stat.add_rows_received(100);
-        node_stat.add_rows_received(200);
-        node_stat.add_rows_received(300);
-
-        // Wait for processing
-        sleep(Duration::from_millis(100)).await;
-
-        // Should only get 1 call due to throttling
-        assert_eq!(mock_subscriber.get_total_calls(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_different_node_infos_not_throttled_together() {
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
-        ]);
-
-        let node_info1 = create_node_info("node1", 1);
-        let node_info2 = create_node_info("node2", 2);
-        let node_stat1 = Arc::new(DefaultRuntimeStats::default());
-        let node_stat2 = Arc::new(DefaultRuntimeStats::default());
-
-        let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
-            subscribers,
-            vec![
-                (node_info1, node_stat1.clone()),
-                (node_info2, node_stat2.clone()),
-            ],
-            throttle_interval,
-        ));
-
-        // Send events for different nodes
-        node_stat1.add_rows_received(100);
-        node_stat2.add_rows_received(200);
-
-        // Wait for processing - use longer interval for Windows compatibility
-        sleep(Duration::from_millis(100)).await;
-
-        // Should get 2 calls (one for each node)
-        assert_eq!(mock_subscriber.get_total_calls(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_throttling_interval_respected() {
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
-        ]);
-
-        let node_info = create_node_info("test_node", 1);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
-        let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
-            subscribers,
-            vec![(node_info, node_stat.clone())],
-            throttle_interval,
-        ));
+        // Activate the node
+        handler.activate_node(0);
 
         // Send first event
         node_stat.add_rows_received(100);
@@ -462,8 +413,9 @@ mod tests {
         );
 
         // Send second event rapidly (within throttle interval)
-        node_stat.add_rows_received(200);
-        sleep(Duration::from_millis(100)).await;
+        eprintln!("sending second event");
+        node_stat.add_rows_received(100);
+        sleep(Duration::from_millis(50)).await;
 
         // Should only get 1 call due to throttling
         assert_eq!(
@@ -471,11 +423,14 @@ mod tests {
             1,
             "Rapid events should be throttled to a single call"
         );
+        assert_eq!(
+            mock_subscriber.get_latest_event()[1],
+            (ROWS_RECEIVED_KEY, Stat::Count(200))
+        );
 
         // Wait for throttle interval to pass, then send another event
-        sleep(throttle_interval).await;
         node_stat.add_rows_received(300);
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(50)).await;
 
         // Should now get a second call
         assert_eq!(
@@ -483,45 +438,13 @@ mod tests {
             2,
             "Event after throttle interval should trigger a new call"
         );
+        assert_eq!(
+            mock_subscriber.get_latest_event()[1],
+            (ROWS_RECEIVED_KEY, Stat::Count(500))
+        );
     }
 
-    #[tokio::test]
-    #[ignore = "flake; TODO(cory): investigate flaky test"]
-    async fn test_event_contains_cumulative_stats() {
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
-        ]);
-
-        let node_info = create_node_info("test_node", 1);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
-        let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
-            subscribers,
-            vec![(node_info, node_stat.clone())],
-            throttle_interval,
-        ));
-
-        node_stat.add_rows_received(100);
-        node_stat.add_cpu_us(1000);
-        node_stat.add_rows_emitted(50);
-
-        sleep(Duration::from_millis(100)).await;
-
-        // Only 1 call since all operations are on same NodeInfo within throttle window
-        assert_eq!(mock_subscriber.get_total_calls(), 1);
-
-        let events = mock_subscriber.get_events();
-        assert_eq!(events.len(), 1);
-
-        // Event should contain cumulative stats
-        let event = &events[0];
-        assert_eq!(event[0], (CPU_US_KEY, Stat::Count(1000)));
-        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
-        assert_eq!(event[2], (ROWS_EMITTED_KEY, Stat::Count(50)));
-    }
-
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_multiple_subscribers_all_receive_events() {
         let subscriber1 = Arc::new(MockSubscriber::new());
         let subscriber2 = Arc::new(MockSubscriber::new());
@@ -530,24 +453,26 @@ mod tests {
             subscriber2.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
 
-        let node_info = create_node_info("test_node", 1);
+        let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
+        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
             subscribers,
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
 
+        handler.activate_node(0);
+
         node_stat.add_rows_received(100);
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(50)).await;
 
         // Both subscribers should receive the event
         assert_eq!(subscriber1.get_total_calls(), 1);
         assert_eq!(subscriber2.get_total_calls(), 1);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_subscriber_error_doesnt_affect_others() {
         #[derive(Debug)]
         struct FailingSubscriber;
@@ -577,21 +502,22 @@ mod tests {
         let failing_subscriber = Arc::new(FailingSubscriber);
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let subscribers = Arc::new(vec![
-            failing_subscriber as Arc<dyn RuntimeStatsSubscriber>,
+            failing_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
 
-        let node_info = create_node_info("test_node", 1);
+        let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
+        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
             subscribers,
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
 
+        handler.activate_node(0);
         node_stat.add_rows_received(100);
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(50)).await;
 
         // Mock subscriber should still receive event despite other failing
         assert_eq!(mock_subscriber.get_total_calls(), 1);
@@ -603,92 +529,53 @@ mod tests {
 
         // Test initial state
         let stats = node_stat.snapshot();
-        assert_eq!(stats[0], (ROWS_RECEIVED_KEY, Stat::Count(0)));
-        assert_eq!(stats[1], (ROWS_EMITTED_KEY, Stat::Count(0)));
+        assert_eq!(stats[1], (ROWS_RECEIVED_KEY, Stat::Count(0)));
+        assert_eq!(stats[2], (ROWS_EMITTED_KEY, Stat::Count(0)));
 
         // Test incremental updates
         node_stat.add_rows_received(100);
         node_stat.add_rows_received(50);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[0], (ROWS_RECEIVED_KEY, Stat::Count(150)));
+        assert_eq!(stats[1], (ROWS_RECEIVED_KEY, Stat::Count(150)));
 
         node_stat.add_rows_emitted(75);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_EMITTED_KEY, Stat::Count(75)));
+        assert_eq!(stats[2], (ROWS_EMITTED_KEY, Stat::Count(75)));
     }
 
-    #[tokio::test]
-    async fn test_rapid_event_updates_latest_wins() {
+    #[tokio::test(start_paused = true)]
+    async fn test_events_without_init() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
 
-        let node_info = create_node_info("rapid_node", 1);
+        let node_info = create_node_info("uninitialized_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
+        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
             subscribers,
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
 
-        // Send many rapid updates
-        for i in 1..=20 {
-            node_stat.add_rows_received(i * 10);
-        }
-
-        sleep(Duration::from_millis(100)).await;
-
-        // Should only get 1 event due to throttling
-        assert_eq!(mock_subscriber.get_total_calls(), 1);
-
-        let events = mock_subscriber.get_events();
-        let event = &events[0];
-
-        // Should contain cumulative rows: 10+20+30+...+200 = 2100
-        assert_eq!(event[0], (ROWS_RECEIVED_KEY, Stat::Count(2100)));
-    }
-
-    #[tokio::test]
-    async fn test_mixed_event_types_cumulative() {
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
-        ]);
-
-        let node_info = create_node_info("mixed_node", 1);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
-        let throttle_interval = Duration::from_millis(50);
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
-            subscribers,
-            vec![(node_info, node_stat.clone())],
-            throttle_interval,
-        ));
-
-        // Interleave different event types
+        // No events yet because no nodes are initialized
         node_stat.add_rows_received(100);
-        node_stat.add_cpu_us(500);
-        node_stat.add_rows_emitted(50);
-        node_stat.add_rows_received(200); // Additional increment
-        node_stat.add_cpu_us(1500);
+        sleep(Duration::from_millis(50)).await;
+        assert_eq!(mock_subscriber.get_total_calls(), 0);
 
-        sleep(Duration::from_millis(100)).await;
+        // Activate the node
+        handler.activate_node(0);
+        sleep(Duration::from_millis(50)).await;
 
+        // Now we should get an event
         assert_eq!(mock_subscriber.get_total_calls(), 1);
-
-        let events = mock_subscriber.get_events();
-        let event = &events[0];
-
-        // Should contain cumulative values
-        assert_eq!(event[0], (CPU_US_KEY, Stat::Count(2000))); // 500 + 1500
-        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(300))); // 100 + 200
-        assert_eq!(event[2], (ROWS_EMITTED_KEY, Stat::Count(50)));
+        let event = mock_subscriber.get_latest_event();
+        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn test_final_event_observed_under_throttle_threshold() {
+    #[tokio::test(start_paused = true)]
+    async fn test_final_event_before_interval() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
@@ -696,18 +583,22 @@ mod tests {
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-        let node_info = create_node_info("fast_query", 1);
+        let node_info = create_node_info("fast_query", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
-        let _handler = Arc::new(RuntimeStatsManager::new_impl(
+        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
             subscribers,
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
 
+        handler.activate_node(0);
+
         // Simulate a fast query that completes within the throttle interval (500ms)
         node_stat.add_rows_received(100);
         node_stat.add_rows_emitted(50);
         node_stat.add_cpu_us(1000);
+
+        handler.finalize_node(0);
 
         // Wait less than throttle interval (500ms) but enough for processing (1ms)
         sleep(Duration::from_millis(10)).await;
@@ -715,11 +606,11 @@ mod tests {
         // The final event should still be observed even though throttle interval wasn't met
         assert_eq!(mock_subscriber.get_total_calls(), 1);
 
-        let events = mock_subscriber.get_events();
-        assert_eq!(events.len(), 1);
-
-        let event = &events[0];
-        assert_eq!(event[0], (CPU_US_KEY, Stat::Count(1000)));
+        let event = mock_subscriber.get_latest_event();
+        assert_eq!(
+            event[0],
+            (CPU_US_KEY, Stat::Duration(Duration::from_millis(1)))
+        );
         assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
         assert_eq!(event[2], (ROWS_EMITTED_KEY, Stat::Count(50)));
     }

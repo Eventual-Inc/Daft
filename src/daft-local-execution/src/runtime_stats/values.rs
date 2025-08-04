@@ -78,7 +78,7 @@ impl RuntimeStats for DefaultRuntimeStats {
         smallvec![
             (
                 CPU_US_KEY,
-                Stat::Duration(Duration::from_nanos(self.cpu_us.load(ordering)))
+                Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
             ),
             (
                 ROWS_RECEIVED_KEY,
