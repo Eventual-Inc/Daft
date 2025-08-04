@@ -114,16 +114,21 @@ def is_column_input(x: Any) -> bool:
     return isinstance(x, str) or isinstance(x, Expression)
 
 
+def column_input_to_expression(column: ColumnInputType) -> Expression:
+    """Converts a column-like object to a daft column expression."""
+    from daft.expressions import col
+
+    return col(column) if isinstance(column, str) else column
+
+
 def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expression]:
     """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
 
     In addition, they may be strings or Expressions.
     This method normalizes the inputs to a list of Expressions.
     """
-    from daft.expressions import col
-
     column_iter: Iterable[ColumnInputType] = [columns] if is_column_input(columns) else columns  # type: ignore
-    return [col(c) if isinstance(c, str) else c for c in column_iter]
+    return [column_input_to_expression(c) for c in column_iter]
 
 
 def detect_ray_state() -> tuple[bool, bool]:

@@ -790,6 +790,8 @@ pub struct RelLimit {
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
     #[prost(uint64, tag = "2")]
     pub limit: u64,
+    #[prost(uint64, optional, tag = "3")]
+    pub offset: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelExplode {

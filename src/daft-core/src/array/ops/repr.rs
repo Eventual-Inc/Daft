@@ -435,9 +435,13 @@ fn truncate_for_html(s: &str) -> String {
 macro_rules! impl_array_html_value {
     ($ArrayT:ty) => {
         impl $ArrayT {
-            pub fn html_value(&self, idx: usize) -> String {
+            pub fn html_value(&self, idx: usize, truncate: bool) -> String {
                 let str_value = self.str_value(idx).unwrap();
-                let truncated = truncate_for_html(&str_value);
+                let truncated = if truncate {
+                    truncate_for_html(&str_value)
+                } else {
+                    str_value
+                };
                 html_escape::encode_text(&truncated)
                     .into_owned()
                     .replace('\n', "<br />")
@@ -447,9 +451,13 @@ macro_rules! impl_array_html_value {
 }
 
 impl Utf8Array {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        let truncated = truncate_for_html(&str_value);
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
         html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
@@ -475,7 +483,7 @@ impl_array_html_value!(EmbeddingArray);
 
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         use pyo3::prelude::*;
 
         let val = self.get(idx);
@@ -499,7 +507,11 @@ impl crate::datatypes::PythonArray {
         match custom_viz_hook_result {
             None => {
                 let str_value = self.str_value(idx).unwrap();
-                let truncated = truncate_for_html(&str_value);
+                let truncated = if truncate {
+                    truncate_for_html(&str_value)
+                } else {
+                    str_value
+                };
                 html_escape::encode_text(&truncated)
                     .into_owned()
                     .replace('\n', "<br />")
@@ -513,9 +525,13 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        let truncated = truncate_for_html(&str_value);
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
         html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
@@ -523,9 +539,13 @@ where
 }
 
 impl FixedShapeTensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        let truncated = truncate_for_html(&str_value);
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
         html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
@@ -533,9 +553,13 @@ impl FixedShapeTensorArray {
 }
 
 impl TensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        let truncated = truncate_for_html(&str_value);
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
         html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
@@ -543,9 +567,13 @@ impl TensorArray {
 }
 
 impl SparseTensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        let truncated = truncate_for_html(&str_value);
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
         html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
@@ -553,9 +581,13 @@ impl SparseTensorArray {
 }
 
 impl FixedShapeSparseTensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        let truncated = truncate_for_html(&str_value);
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
         html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")

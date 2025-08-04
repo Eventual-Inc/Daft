@@ -5,7 +5,9 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
+    ops::{
+        Limit as LogicalLimit, Sort as LogicalSort, Source as LogicalSource, TopN as LogicalTopN,
+    },
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -36,6 +38,7 @@ impl PushDownLimit {
             LogicalPlan::Limit(LogicalLimit {
                 input,
                 limit,
+                offset,
                 eager,
                 ..
             }) => {
@@ -55,23 +58,29 @@ impl PushDownLimit {
                     // Push limit into source as a "local" limit.
                     //
                     // Limit-Source -> Limit-Source[with_limit]
-                    LogicalPlan::Source(source) => {
-                        match source.source_info.as_ref() {
+                    LogicalPlan::Source(LogicalSource {
+                        output_schema,
+                        source_info,
+                        ..
+                    }) => {
+                        let pushdown_limit = limit + offset.unwrap_or(0) as usize;
+                        match source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::Physical(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit
-                                    && existing_limit <= limit =>
+                                    && existing_limit <= pushdown_limit =>
                             {
                                 Ok(Transformed::no(plan))
                             }
                             // Pushdown limit into the Source node as a "local" limit
                             SourceInfo::Physical(external_info) => {
-                                let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));
+                                let new_pushdowns =
+                                    external_info.pushdowns.with_limit(Some(pushdown_limit));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
-                                let new_source = LogicalPlan::Source(Source::new(
-                                    source.output_schema.clone(),
+                                let new_source = LogicalPlan::Source(LogicalSource::new(
+                                    output_schema.clone(),
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
@@ -97,16 +106,25 @@ impl PushDownLimit {
                     // Limit-Limit -> Limit
                     LogicalPlan::Limit(LogicalLimit {
                         input,
+                        offset: child_offset,
                         limit: child_limit,
                         eager: child_eager,
                         ..
                     }) => {
-                        let new_limit = limit.min(*child_limit as usize);
-                        let new_eager = eager | child_eager;
+                        let new_offset = match (*offset, *child_offset) {
+                            (Some(o1), Some(o2)) => Some(o1 + o2),
+                            (Some(o1), None) => Some(o1),
+                            (None, Some(o2)) => Some(o2),
+                            (None, None) => None,
+                        };
 
+                        let new_limit =
+                            (limit as u64).min(child_limit.saturating_sub(offset.unwrap_or(0)));
+                        let new_eager = eager | child_eager;
                         let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
                             input.clone(),
-                            new_limit as u64,
+                            new_limit,
+                            new_offset,
                             new_eager,
                         )));
                         // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
@@ -132,6 +150,7 @@ impl PushDownLimit {
                             descending.clone(),
                             nulls_first.clone(),
                             limit as u64,
+                            *offset,
                         )?));
 
                         Ok(Transformed::yes(new_plan))
@@ -260,28 +279,34 @@ mod tests {
         Ok(())
     }
 
-    /// Tests that multiple adjacent Limits fold into the smallest limit.
+    /// Tests that multiple adjacent Limits with offset fold into the smallest limit.
     ///
-    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
+    /// Limit[o1, l1]-Limit[o2, l2] -> Limit[o1 + o2, min(l1,l2)]
     #[rstest]
     fn limit_folds_with_smaller_limit(
+        #[values(false, true)] none_offset: bool,
         #[values(false, true)] smaller_first: bool,
     ) -> DaftResult<()> {
         let smaller_limit = 5;
         let limit = 10;
+        let offset = if none_offset { None } else { Some(1) };
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .limit(if smaller_first { smaller_limit } else { limit }, false)?
+            .limit_with_offset(
+                if smaller_first { smaller_limit } else { limit },
+                offset,
+                false,
+            )?
             .limit(if smaller_first { limit } else { smaller_limit }, false)?
             .build();
         let expected = dummy_scan_node_with_pushdowns(
             scan_op,
-            Pushdowns::default().with_limit(Some(smaller_limit as usize)),
+            Pushdowns::default().with_limit(Some((offset.unwrap_or(0) + smaller_limit) as usize)),
         )
-        .limit(smaller_limit, false)?
+        .limit_with_offset(smaller_limit, offset, false)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
