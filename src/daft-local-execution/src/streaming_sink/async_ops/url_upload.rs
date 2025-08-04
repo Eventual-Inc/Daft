@@ -18,6 +18,7 @@ use tracing::{instrument, Span};
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::NodeName,
+    runtime_stats::RuntimeStatsBuilder,
     streaming_sink::{
         async_ops::template::{
             AsyncOpRuntimeStatsBuilder, AsyncOpState, AsyncSinkState, IN_FLIGHT_SCALE_FACTOR,
@@ -335,6 +336,10 @@ impl StreamingSink for UrlUploadSink {
             self.input_size_bytes_buffer,
             inner_state,
         ))
+    }
+
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(AsyncOpRuntimeStatsBuilder::new())
     }
 
     fn max_concurrency(&self) -> usize {
