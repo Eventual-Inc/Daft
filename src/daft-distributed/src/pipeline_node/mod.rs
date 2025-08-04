@@ -35,14 +35,13 @@ use crate::{
 #[cfg(feature = "python")]
 mod actor_udf;
 mod aggregate;
-mod broadcast_join;
 mod concat;
 mod distinct;
 mod explode;
 mod filter;
 mod gather;
-mod hash_join;
 mod in_memory_source;
+mod join;
 mod limit;
 pub(crate) mod materialize;
 mod monotonically_increasing_id;

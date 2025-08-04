@@ -7,19 +7,15 @@ use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    is_partition_compatible, resolved_col,
+    resolved_col,
 };
-use daft_logical_plan::{
-    partitioning::{ClusteringSpec, RepartitionSpec},
-    JoinStrategy, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
-};
+use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        broadcast_join::BroadcastJoinNode, concat::ConcatNode, distinct::DistinctNode,
-        explode::ExplodeNode, filter::FilterNode, gather::GatherNode,
-        in_memory_source::InMemorySourceNode, limit::LimitNode,
+        concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
+        gather::GatherNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
         sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode,
@@ -98,75 +94,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 input_node,
             )
             .arced()
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn determine_join_strategy(
-        &self,
-        left_node: &Arc<dyn DistributedPipelineNode>,
-        right_node: &Arc<dyn DistributedPipelineNode>,
-        left_on: &[BoundExpr],
-        right_on: &[BoundExpr],
-        join_type: &JoinType,
-        join_strategy: Option<JoinStrategy>,
-        left_stats: &daft_logical_plan::stats::ApproxStats,
-        right_stats: &daft_logical_plan::stats::ApproxStats,
-    ) -> JoinStrategy {
-        // If join strategy is explicitly specified, use it
-        if let Some(strategy) = join_strategy {
-            return strategy;
-        }
-
-        // Check for cross join
-        if left_on.is_empty() && right_on.is_empty() && *join_type == JoinType::Inner {
-            return JoinStrategy::Cross;
-        }
-
-        let left_clustering_spec = left_node.config().clustering_spec.as_ref();
-        let right_clustering_spec = right_node.config().clustering_spec.as_ref();
-
-        // Check if sides are hash partitioned on join keys
-        let left_on_exprs: Vec<daft_dsl::expr::ExprRef> =
-            left_on.iter().map(|e| e.inner().clone()).collect();
-        let right_on_exprs: Vec<daft_dsl::expr::ExprRef> =
-            right_on.iter().map(|e| e.inner().clone()).collect();
-
-        let is_left_hash_partitioned = matches!(left_clustering_spec, ClusteringSpec::Hash(..))
-            && is_partition_compatible(&left_clustering_spec.partition_by(), &left_on_exprs);
-        let is_right_hash_partitioned = matches!(right_clustering_spec, ClusteringSpec::Hash(..))
-            && is_partition_compatible(&right_clustering_spec.partition_by(), &right_on_exprs);
-
-        // For broadcast joins, ensure that the left side of the join is the smaller side
-        let (smaller_size_bytes, left_is_larger) = if right_stats.size_bytes < left_stats.size_bytes
-        {
-            (right_stats.size_bytes, true)
-        } else {
-            (left_stats.size_bytes, false)
-        };
-
-        let is_larger_partitioned = if left_is_larger {
-            is_left_hash_partitioned
-        } else {
-            is_right_hash_partitioned
-        };
-
-        let smaller_side_is_broadcastable = match join_type {
-            JoinType::Inner => true,
-            JoinType::Left | JoinType::Anti | JoinType::Semi => left_is_larger,
-            JoinType::Right => !left_is_larger,
-            JoinType::Outer => false,
-        };
-
-        // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join
-        if !is_larger_partitioned
-            && smaller_size_bytes <= self.stage_config.config.broadcast_join_size_bytes_threshold
-            && smaller_side_is_broadcastable
-        {
-            JoinStrategy::Broadcast
-        // Otherwise, use a hash join
-        } else {
-            JoinStrategy::Hash
         }
     }
 }
@@ -474,100 +401,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Join(join) => {
-                let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
-                if !remaining_on.is_empty() {
-                    todo!("FLOTILLA_MS?: Implement non-equality joins")
-                }
-
                 // Visitor appends in in-order
                 // TODO: Just use regular recursion?
                 let right_node = self.curr_node.pop().unwrap();
                 let left_node = self.curr_node.pop().unwrap();
 
-                // Normalize join keys
-                let (left_on, right_on) = daft_dsl::join::normalize_join_keys(
-                    left_on,
-                    right_on,
-                    left_node.config().schema.clone(),
-                    right_node.config().schema.clone(),
-                )?;
-                let left_on = BoundExpr::bind_all(&left_on, &left_node.config().schema)?;
-                let right_on = BoundExpr::bind_all(&right_on, &right_node.config().schema)?;
-
-                // Get stats from the join logical plan's left and right children
-                let left_stats = join.left.materialized_stats().approx_stats.clone();
-                let right_stats = join.right.materialized_stats().approx_stats.clone();
-
-                // Determine join strategy
-                let join_strategy = self.determine_join_strategy(
-                    &left_node,
-                    &right_node,
-                    &left_on,
-                    &right_on,
-                    &join.join_type,
-                    join.join_strategy,
-                    &left_stats,
-                    &right_stats,
-                );
-
-                match join_strategy {
-                    JoinStrategy::Hash => self.gen_hash_join_nodes(
-                        logical_node_id,
-                        join.on.clone(),
-                        left_node,
-                        right_node,
-                        join.join_type,
-                        join.output_schema.clone(),
-                    )?,
-                    JoinStrategy::Broadcast => {
-                        // Calculate which side is larger for broadcast join logic
-                        let left_is_larger = right_stats.size_bytes < left_stats.size_bytes;
-
-                        // Determine if we need to swap the sides based on join type and size
-                        let is_swapped = match (join.join_type, left_is_larger) {
-                            (JoinType::Left, _) => true,
-                            (JoinType::Right, _) => false,
-                            (JoinType::Inner, left_is_larger) => left_is_larger,
-                            (JoinType::Outer, _) => {
-                                return Err(common_error::DaftError::ValueError(
-                                    "Broadcast join does not support outer joins.".to_string(),
-                                ));
-                            }
-                            (JoinType::Anti, _) => true,
-                            (JoinType::Semi, _) => true,
-                        };
-
-                        let (broadcaster, receiver) = if is_swapped {
-                            (right_node, left_node)
-                        } else {
-                            (left_node, right_node)
-                        };
-
-                        // Create broadcast join node
-                        BroadcastJoinNode::new(
-                            self.get_next_pipeline_node_id(),
-                            logical_node_id,
-                            &self.stage_config,
-                            left_on,
-                            right_on,
-                            Some(null_equals_nulls),
-                            join.join_type,
-                            is_swapped,
-                            broadcaster,
-                            receiver,
-                            join.output_schema.clone(),
-                        )
-                        .arced()
-                    }
-                    JoinStrategy::SortMerge => {
-                        // TODO: Implement sort-merge join
-                        todo!("FLOTILLA_MS?: Implement sort-merge join")
-                    }
-                    JoinStrategy::Cross => {
-                        // TODO: Implement cross join
-                        todo!("FLOTILLA_MS?: Implement cross join")
-                    }
-                }
+                self.translate_join(logical_node_id, join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
