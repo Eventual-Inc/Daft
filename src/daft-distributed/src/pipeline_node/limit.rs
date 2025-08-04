@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
@@ -66,17 +66,17 @@ impl LimitNode {
         }
     }
 
-    async fn process_materialized_output(
+    fn process_materialized_output(
         self: &Arc<Self>,
         materialized_output: MaterializedOutput,
         remaining_limit: &mut usize,
-        result_tx: &Sender<SubmittableTask<SwordfishTask>>,
         task_id_counter: &TaskIDCounter,
-    ) -> DaftResult<bool> {
+    ) -> DaftResult<Vec<SubmittableTask<SwordfishTask>>> {
+        let mut downstream_tasks = vec![];
         for next_input in materialized_output.split_into_materialized_outputs() {
             let num_rows = next_input.num_rows()?;
 
-            let (to_send, should_break) = match num_rows.cmp(remaining_limit) {
+            let task = match num_rows.cmp(remaining_limit) {
                 Ordering::Less => {
                     *remaining_limit -= num_rows;
                     let task = make_in_memory_scan_from_materialized_outputs(
@@ -84,15 +84,16 @@ impl LimitNode {
                         vec![next_input],
                         &(self.clone() as Arc<dyn DistributedPipelineNode>),
                     )?;
-                    (task, false)
+                    task
                 }
                 Ordering::Equal => {
+                    *remaining_limit = 0;
                     let task = make_in_memory_scan_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
                         &(self.clone() as Arc<dyn DistributedPipelineNode>),
                     )?;
-                    (task, true)
+                    task
                 }
                 Ordering::Greater => {
                     let remaining = *remaining_limit;
@@ -109,17 +110,16 @@ impl LimitNode {
                             )
                         },
                     )?;
-                    (task, true)
+                    *remaining_limit = 0;
+                    task
                 }
             };
-            if result_tx.send(to_send).await.is_err() {
-                return Ok(true); // Channel closed, should break
-            }
-            if should_break {
-                return Ok(true); // Limit reached, should break
+            downstream_tasks.push(task);
+            if *remaining_limit == 0 {
+                break;
             }
         }
-        Ok(false) // Continue processing
+        Ok(downstream_tasks)
     }
 
     async fn eager_execution_loop(
@@ -152,15 +152,17 @@ impl LimitNode {
                 continue;
             };
 
-            if self
-                .process_materialized_output(
-                    materialized_output,
-                    &mut remaining_limit,
-                    &result_tx,
-                    &task_id_counter,
-                )
-                .await?
-            {
+            let downstream_tasks = self.process_materialized_output(
+                materialized_output,
+                &mut remaining_limit,
+                &task_id_counter,
+            )?;
+            for task in downstream_tasks {
+                if result_tx.send(task).await.is_err() {
+                    return Ok(());
+                }
+            }
+            if remaining_limit == 0 {
                 return Ok(());
             }
         }
@@ -170,27 +172,71 @@ impl LimitNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        input: SubmittableTaskStream,
+        mut input: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let mut remaining_limit = self.limit;
-        let mut materialized_result_stream = input.materialize(scheduler_handle.clone());
+        let mut max_concurrent_tasks = 1;
+        let mut input_exhausted = false;
 
-        while let Some(materialized_output) = materialized_result_stream.next().await {
-            let materialized_output = materialized_output?;
+        // Keep submitting local limit tasks as long as we have remaining limit or we have input
+        while !input_exhausted {
+            let mut local_limits = VecDeque::with_capacity(max_concurrent_tasks);
+            let local_limit_per_task = remaining_limit;
 
-            if self
-                .process_materialized_output(
-                    materialized_output,
-                    &mut remaining_limit,
-                    &result_tx,
-                    &task_id_counter,
-                )
-                .await?
-            {
-                return Ok(());
+            // Submit tasks until we have max_concurrent_tasks or we run out of input
+            for _ in 0..max_concurrent_tasks {
+                if let Some(task) = input.next().await {
+                    let task_with_limit = append_plan_to_existing_task(
+                        task,
+                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        &move |input| {
+                            LocalPhysicalPlan::limit(
+                                input,
+                                local_limit_per_task as u64,
+                                None,
+                                StatsState::NotMaterialized,
+                            )
+                        },
+                    );
+                    let future = task_with_limit.submit(&scheduler_handle)?;
+                    local_limits.push_back(future);
+                } else {
+                    input_exhausted = true;
+                    break;
+                }
+            }
+
+            let mut total_num_rows = 0;
+            // Process results from all local limit tasks
+            let mut downstream_tasks = vec![];
+            for future in local_limits.drain(..) {
+                let maybe_result = future.await?;
+                if let Some(materialized_output) = maybe_result {
+                    total_num_rows += materialized_output.num_rows()?;
+                    // Process the result and check if we should exit early
+                    downstream_tasks.extend(self.process_materialized_output(
+                        materialized_output,
+                        &mut remaining_limit,
+                        &task_id_counter,
+                    )?);
+                }
+            }
+
+            // Send tasks to result channel
+            for task in downstream_tasks {
+                if result_tx.send(task).await.is_err() {
+                    return Ok(());
+                }
+            }
+
+            // Update max_concurrent_tasks based on actual output
+            if total_num_rows > 0 {
+                let rows_per_task = total_num_rows / max_concurrent_tasks;
+                let tasks_needed = (remaining_limit + rows_per_task - 1) / rows_per_task;
+                max_concurrent_tasks = tasks_needed.max(1);
             }
         }
 
