@@ -7,12 +7,12 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{make_probeable_builder, ProbeState, ProbeableBuilder, RecordBatch};
 use itertools::Itertools;
-use smallvec::smallvec;
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -20,8 +20,9 @@ use super::blocking_sink::{
     BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{
+    ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{RuntimeStats, Stat, CPU_US_KEY, ROWS_RECEIVED_KEY},
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_RECEIVED_KEY},
     state_bridge::BroadcastStateBridgeRef,
     ExecutionTaskSpawner,
 };
@@ -113,16 +114,10 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> crate::runtime_stats::StatSnapshot {
-        smallvec![
-            (
-                CPU_US_KEY,
-                Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
-            ),
-            (
-                ROWS_RECEIVED_KEY,
-                Stat::Count(self.rows_received.load(ordering))
-            ),
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+            ROWS_RECEIVED_KEY; Stat::Count(self.rows_received.load(ordering)),
         ]
     }
 
@@ -166,6 +161,10 @@ impl HashJoinBuildSink {
 impl BlockingSink for HashJoinBuildSink {
     fn name(&self) -> NodeName {
         "HashJoinBuild".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::HashJoinBuild
     }
 
     fn multiline_display(&self) -> Vec<String> {

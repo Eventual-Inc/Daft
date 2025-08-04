@@ -15,7 +15,8 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::{NodeInfo, NodeName, NodeType, PipelineNode, RuntimeContext},
+    ops::{NodeCategory, NodeInfo, NodeType},
+    pipeline::{NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -49,6 +50,7 @@ pub trait IntermediateOperator: Send + Sync {
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult;
     fn name(&self) -> NodeName;
+    fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
@@ -97,7 +99,11 @@ impl IntermediateNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let info = ctx.next_node_info(Arc::from(intermediate_op.name()), NodeType::Intermediate);
+        let info = ctx.next_node_info(
+            Arc::from(intermediate_op.name()),
+            intermediate_op.op_type(),
+            NodeCategory::Intermediate,
+        );
         let runtime_stats = intermediate_op.make_runtime_stats();
 
         Self {

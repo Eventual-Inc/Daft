@@ -10,19 +10,18 @@ use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
-use smallvec::smallvec;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, NodeName, NodeType, PipelineNode, RuntimeContext},
-    runtime_stats::{
-        CountingSender, RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY,
-    },
+    ops::{NodeCategory, NodeInfo, NodeType},
+    pipeline::{NodeName, PipelineNode, RuntimeContext},
+    runtime_stats::{CountingSender, RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
 };
 
@@ -40,20 +39,11 @@ impl RuntimeStats for SourceStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        smallvec![
-            (
-                CPU_US_KEY,
-                Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
-            ),
-            (
-                ROWS_EMITTED_KEY,
-                Stat::Count(self.rows_emitted.load(ordering))
-            ),
-            (
-                "bytes read",
-                Stat::Bytes(self.io_stats.load_bytes_read() as u64)
-            )
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+            ROWS_EMITTED_KEY; Stat::Count(self.rows_emitted.load(ordering)),
+            "bytes read"; Stat::Bytes(self.io_stats.load_bytes_read() as u64),
         ]
     }
 
@@ -73,6 +63,7 @@ impl RuntimeStats for SourceStats {
 #[async_trait]
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
+    fn op_type(&self) -> NodeType;
     fn make_runtime_stats(&self) -> Arc<SourceStats> {
         Arc::new(SourceStats::default())
     }
@@ -94,7 +85,7 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name().into(), NodeType::Source);
+        let info = ctx.next_node_info(source.name().into(), source.op_type(), NodeCategory::Source);
         let runtime_stats = source.make_runtime_stats();
         Self {
             source,

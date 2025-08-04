@@ -7,13 +7,13 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriterFactory};
-use smallvec::smallvec;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -22,10 +22,9 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{
-        RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
-    },
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -42,24 +41,12 @@ impl RuntimeStats for WriteStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        smallvec![
-            (
-                CPU_US_KEY,
-                Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering)))
-            ),
-            (
-                ROWS_RECEIVED_KEY,
-                Stat::Count(self.rows_received.load(ordering))
-            ),
-            (
-                ROWS_EMITTED_KEY,
-                Stat::Count(self.rows_emitted.load(ordering))
-            ),
-            (
-                "bytes written",
-                Stat::Bytes(self.bytes_written.load(ordering))
-            )
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+            ROWS_RECEIVED_KEY; Stat::Count(self.rows_received.load(ordering)),
+            ROWS_EMITTED_KEY; Stat::Count(self.rows_emitted.load(ordering)),
+            "bytes written"; Stat::Bytes(self.bytes_written.load(ordering)),
         ]
     }
 
@@ -215,6 +202,10 @@ impl BlockingSink for WriteSink {
             WriteFormat::Lance => "Lance Write".into(),
             WriteFormat::DataSink(name) => name.clone().into(),
         }
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Write
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

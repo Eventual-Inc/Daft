@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
@@ -15,8 +16,9 @@ use super::intermediate_op::{
     IntermediateOperatorResult,
 };
 use crate::{
+    ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{RuntimeStats, Stat, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     ExecutionTaskSpawner,
 };
 
@@ -32,19 +34,16 @@ impl RuntimeStats for FilterStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> crate::runtime_stats::StatSnapshot {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
         let cpu_us = self.cpu_us.load(ordering);
         let rows_received = self.rows_received.load(ordering);
         let rows_emitted = self.rows_emitted.load(ordering);
 
-        smallvec::smallvec![
-            (CPU_US_KEY, Stat::Duration(Duration::from_micros(cpu_us))),
-            (ROWS_RECEIVED_KEY, Stat::Count(rows_received)),
-            (ROWS_EMITTED_KEY, Stat::Count(rows_emitted)),
-            (
-                "selectivity",
-                Stat::Float(rows_emitted as f64 / rows_received as f64 * 100.0)
-            ),
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
+            ROWS_RECEIVED_KEY; Stat::Count(rows_received),
+            ROWS_EMITTED_KEY; Stat::Count(rows_emitted),
+            "selectivity"; Stat::Float(rows_emitted as f64 / rows_received as f64 * 100.0),
         ]
     }
 
@@ -100,6 +99,10 @@ impl IntermediateOperator for FilterOperator {
 
     fn name(&self) -> NodeName {
         "Filter".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Filter
     }
 
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {

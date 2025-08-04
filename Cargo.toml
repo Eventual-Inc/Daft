@@ -3,6 +3,7 @@ common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-metrics = {path = "src/common/metrics", default-features = false}
 common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
@@ -232,6 +233,7 @@ common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
+common-metrics = {path = "src/common/metrics"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-algebra = {path = "src/daft-algebra"}
 daft-context = {path = "src/daft-context"}

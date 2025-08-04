@@ -37,6 +37,7 @@ use crate::{
         project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
+    ops::{NodeCategory, NodeInfo, NodeType},
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -112,23 +113,6 @@ pub struct RuntimeContext {
     context: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug)]
-pub enum NodeType {
-    Intermediate,
-    Source,
-    StreamingSink,
-    BlockingSink,
-}
-
-/// Contains information about the node such as name, id, and the plan_id
-#[derive(Clone, Debug)]
-pub struct NodeInfo {
-    pub name: Arc<str>,
-    pub id: usize,
-    pub node_type: NodeType,
-    pub context: HashMap<String, String>,
-}
-
 impl RuntimeContext {
     pub fn new() -> Self {
         Self::new_with_context(HashMap::new())
@@ -153,11 +137,17 @@ impl RuntimeContext {
         index
     }
 
-    pub fn next_node_info(&self, name: Arc<str>, node_type: NodeType) -> NodeInfo {
+    pub fn next_node_info(
+        &self,
+        name: Arc<str>,
+        node_type: NodeType,
+        node_category: NodeCategory,
+    ) -> NodeInfo {
         NodeInfo {
             name,
             id: self.next_id(),
             node_type,
+            node_category,
             context: self.context.clone(),
         }
     }

@@ -14,7 +14,8 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, NodeName, NodeType, PipelineNode, RuntimeContext},
+    ops::{NodeCategory, NodeInfo, NodeType},
+    pipeline::{NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -55,8 +56,11 @@ pub trait StreamingSink: Send + Sync {
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult;
 
-    /// The name of the StreamingSink operator.
+    /// The name of the StreamingSink operator. Used for display purposes.
     fn name(&self) -> NodeName;
+
+    /// The type of the StreamingSink operator.
+    fn op_type(&self) -> NodeType;
 
     fn multiline_display(&self) -> Vec<String>;
 
@@ -97,7 +101,7 @@ impl StreamingSinkNode {
         ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name().into();
-        let node_info = ctx.next_node_info(name, NodeType::StreamingSink);
+        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
         let runtime_stats = op.make_runtime_stats();
         Self {
             op,

@@ -1,16 +1,17 @@
 use std::{sync::Arc, time::Duration};
 
 use common_error::DaftResult;
+use common_metrics::StatSnapshotSend;
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 
 use crate::{
-    pipeline::{NodeInfo, NodeType},
-    runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStats, StatSnapshot, CPU_US_KEY},
+    ops::{NodeCategory, NodeInfo},
+    runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStats, CPU_US_KEY},
 };
 
 /// Convert statistics to a message for progress bars
-fn event_to_message(event: &StatSnapshot) -> String {
+fn event_to_message(event: &StatSnapshotSend) -> String {
     event
         .iter()
         .filter(|(name, _)| *name != CPU_US_KEY)
@@ -67,11 +68,11 @@ impl IndicatifProgressBarManager {
     }
 
     fn make_new_bar(&mut self, node_info: &NodeInfo) {
-        let color = match node_info.node_type {
-            NodeType::Source => ProgressBarColor::Blue,
-            NodeType::Intermediate => ProgressBarColor::Magenta,
-            NodeType::BlockingSink => ProgressBarColor::Cyan,
-            NodeType::StreamingSink => ProgressBarColor::Red,
+        let color = match node_info.node_category {
+            NodeCategory::Source => ProgressBarColor::Blue,
+            NodeCategory::Intermediate => ProgressBarColor::Magenta,
+            NodeCategory::BlockingSink => ProgressBarColor::Cyan,
+            NodeCategory::StreamingSink => ProgressBarColor::Red,
         };
 
         #[allow(clippy::literal_string_with_formatting_args)]
@@ -118,13 +119,13 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         Ok(())
     }
 
-    fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
+    fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
         let pb = self.pbars.get(node_info.id).unwrap();
         pb.set_message(event_to_message(event));
         Ok(())
     }
 
-    async fn flush(&self) -> DaftResult<()> {
+    fn finish(self: Box<Self>) -> DaftResult<()> {
         self.multi_progress.clear()?;
         Ok(())
     }
@@ -134,19 +135,19 @@ pub const MAX_PIPELINE_NAME_LEN: usize = 18;
 
 pub fn make_progress_bar_manager(
     node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)],
-) -> Arc<dyn RuntimeStatsSubscriber> {
+) -> Box<dyn RuntimeStatsSubscriber> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
-            Arc::new(python::TqdmProgressBarManager::new(node_stats))
+            Box::new(python::TqdmProgressBarManager::new(node_stats))
         } else {
-            Arc::new(IndicatifProgressBarManager::new(node_stats))
+            Box::new(IndicatifProgressBarManager::new(node_stats))
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Arc::new(IndicatifProgressBarManager::new(node_stats))
+        Box::new(IndicatifProgressBarManager::new(node_stats))
     }
 }
 
@@ -157,7 +158,7 @@ mod python {
     use pyo3::{types::PyAnyMethods, PyObject, Python};
 
     use super::*;
-    use crate::{pipeline::NodeInfo, runtime_stats::StatSnapshot};
+    use crate::ops::NodeInfo;
 
     pub fn in_notebook() -> bool {
         pyo3::Python::with_gil(|py| {
@@ -238,16 +239,13 @@ mod python {
             Ok(())
         }
 
-        fn handle_event(&self, event: &StatSnapshot, node_info: &NodeInfo) -> DaftResult<()> {
+        fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
             let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
             self.update_bar(*pb_id, &event_to_message(event))
         }
 
-        async fn flush(&self) -> DaftResult<()> {
-            Python::with_gil(|py| {
-                self.inner.call_method0(py, "flush")?;
-                DaftResult::Ok(())
-            })
+        fn finish(self: Box<Self>) -> DaftResult<()> {
+            Ok(())
         }
     }
 }

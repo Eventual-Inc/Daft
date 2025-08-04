@@ -13,27 +13,26 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_runtime::get_io_runtime;
+use common_runtime::{get_io_runtime, RuntimeTask};
 use common_tracing::should_enable_opentelemetry;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
 use tokio::{
     sync::{mpsc, oneshot},
-    task::JoinHandle,
     time::interval,
 };
 use tracing::{instrument::Instrumented, Instrument};
 pub use values::{
-    DefaultRuntimeStats, RuntimeStats, Stat, StatSnapshot, CPU_US_KEY, ROWS_EMITTED_KEY,
-    ROWS_RECEIVED_KEY,
+    DefaultRuntimeStats, RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
 };
 
 #[cfg(debug_assertions)]
 use crate::runtime_stats::subscribers::debug::DebugSubscriber;
 use crate::{
     channel::{Receiver, Sender},
-    pipeline::{NodeInfo, PipelineNode},
+    ops::NodeInfo,
+    pipeline::PipelineNode,
     runtime_stats::subscribers::{
         dashboard::DashboardSubscriber, opentelemetry::OpenTelemetrySubscriber,
         progress_bar::make_progress_bar_manager, RuntimeStatsSubscriber,
@@ -56,9 +55,9 @@ fn should_enable_progress_bar() -> bool {
 /// For a given event, the event handler ensures that the subscribers only get the latest event at a frequency of once every 500ms
 /// This prevents the subscribers from being overwhelmed by too many events.
 pub struct RuntimeStatsManager {
-    flush_tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
-    _handle: JoinHandle<()>,
+    finish_tx: oneshot::Sender<()>,
+    _handle: RuntimeTask<()>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -87,18 +86,18 @@ impl RuntimeStatsManager {
             })
             .collect::<Vec<_>>();
 
-        let mut subscribers: Vec<Arc<dyn RuntimeStatsSubscriber>> = Vec::new();
+        let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
 
         if should_enable_progress_bar() {
             subscribers.push(make_progress_bar_manager(&node_stats));
         }
 
         if should_enable_opentelemetry() {
-            subscribers.push(Arc::new(OpenTelemetrySubscriber::new()));
+            subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
         }
 
         if DashboardSubscriber::is_enabled() {
-            subscribers.push(DashboardSubscriber::new());
+            subscribers.push(Box::new(DashboardSubscriber::new()));
         }
 
         #[cfg(debug_assertions)]
@@ -106,26 +105,25 @@ impl RuntimeStatsManager {
             let s = s.to_lowercase();
             match s.as_ref() {
                 "1" | "true" => {
-                    subscribers.push(Arc::new(DebugSubscriber));
+                    subscribers.push(Box::new(DebugSubscriber));
                 }
                 _ => {}
             }
         }
 
-        let subscribers = Arc::new(subscribers);
         let throttle_interval = Duration::from_millis(200);
         Self::new_impl::<true>(subscribers, node_stats, throttle_interval)
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
     fn new_impl<const USE_IO_RUNTIME: bool>(
-        subscribers: Arc<Vec<Arc<dyn RuntimeStatsSubscriber>>>,
+        subscribers: Vec<Box<dyn RuntimeStatsSubscriber>>,
         node_stats: Vec<(Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         throttle_interval: Duration,
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
         let node_tx = Arc::new(node_tx);
-        let (flush_tx, mut flush_rx) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
+        let (finish_tx, mut finish_rx) = oneshot::channel::<()>();
 
         let rt = get_io_runtime(true);
         let event_loop = async move {
@@ -137,7 +135,7 @@ impl RuntimeStatsManager {
                     biased;
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
-                            for subscriber in subscribers.iter() {
+                            for subscriber in &subscribers {
                                 if let Err(e) = subscriber.initialize_node(&node_stats[node_id].0) {
                                     log::error!("Failed to initialize node: {}", e);
                                 }
@@ -145,7 +143,7 @@ impl RuntimeStatsManager {
                         } else if !is_initialize && active_nodes.remove(&node_id) {
                             let (node_info, runtime_stats) = &node_stats[node_id];
                             let event = runtime_stats.flush();
-                            for subscriber in subscribers.iter() {
+                            for subscriber in &subscribers {
                                 if let Err(e) = subscriber.handle_event(&event, node_info) {
                                     log::error!("Failed to handle event: {}", e);
                                 }
@@ -160,7 +158,7 @@ impl RuntimeStatsManager {
                         for node_id in &active_nodes {
                             let (node_info, runtime_stats) = &node_stats[*node_id];
                             let event = runtime_stats.snapshot();
-                            for subscriber in subscribers.iter() {
+                            for subscriber in &subscribers {
                                 if let Err(e) = subscriber.handle_event(&event, node_info) {
                                     log::error!("Failed to handle event: {}", e);
                                 }
@@ -168,29 +166,27 @@ impl RuntimeStatsManager {
                         }
                     }
 
-                    Some(flush_response) = flush_rx.recv() => {
-                        if !active_nodes.is_empty() {
-                            log::error!("Received flush event while nodes are active: {:?}", active_nodes);
-                        }
-                        for subscriber in subscribers.iter() {
-                            if let Err(e) = subscriber.flush().await {
-                                log::error!("Failed to flush subscriber: {}", e);
-                            }
-                        }
-                        let _ = flush_response.send(());
+                    _ = &mut finish_rx => {
+                        break;
                     }
+                }
+            }
+
+            for subscriber in subscribers {
+                if let Err(e) = subscriber.finish() {
+                    log::error!("Failed to flush subscriber: {}", e);
                 }
             }
         };
 
         let handle = if USE_IO_RUNTIME {
-            rt.runtime.spawn(event_loop)
+            rt.spawn(event_loop)
         } else {
-            tokio::spawn(event_loop)
+            RuntimeTask::new(&tokio::runtime::Handle::current(), event_loop)
         };
 
         Self {
-            flush_tx,
+            finish_tx,
             node_tx,
             _handle: handle,
         }
@@ -208,12 +204,10 @@ impl RuntimeStatsManager {
             .expect("The node_tx channel was closed");
     }
 
-    pub async fn flush(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (tx, rx) = oneshot::channel();
-        self.flush_tx.send(tx)?;
-        rx.await?;
-
-        Ok(())
+    pub fn finish(self) {
+        self.finish_tx
+            .send(())
+            .expect("The finish_tx channel was closed");
     }
 }
 
@@ -319,33 +313,41 @@ mod tests {
     use std::sync::{atomic::AtomicU64, Arc, Mutex};
 
     use common_error::DaftResult;
+    use common_metrics::{Stat, StatSnapshotSend};
     use tokio::time::{sleep, Duration};
 
     use super::*;
-    use crate::pipeline::NodeType;
+    use crate::ops::{NodeCategory, NodeType};
+
+    #[derive(Debug)]
+    struct MockState {
+        total_calls: AtomicU64,
+        event: Mutex<Option<StatSnapshotSend>>,
+    }
+
+    impl MockState {
+        fn get_total_calls(&self) -> u64 {
+            self.total_calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        fn get_latest_event(&self) -> StatSnapshotSend {
+            self.event.lock().unwrap().clone().expect("No event")
+        }
+    }
 
     #[derive(Debug)]
     struct MockSubscriber {
-        total_calls: AtomicU64,
-        event: Mutex<Option<StatSnapshot>>,
+        pub state: Arc<MockState>,
     }
 
     impl MockSubscriber {
         fn new() -> Self {
             Self {
-                total_calls: AtomicU64::new(0),
-                event: Mutex::new(None),
+                state: Arc::new(MockState {
+                    total_calls: AtomicU64::new(0),
+                    event: Mutex::new(None),
+                }),
             }
-        }
-
-        fn get_total_calls(&self) -> u64 {
-            let out = self.total_calls.load(std::sync::atomic::Ordering::SeqCst);
-            eprintln!("get_total_calls: {:?}", out);
-            out
-        }
-
-        fn get_latest_event(&self) -> StatSnapshot {
-            self.event.lock().unwrap().clone().expect("No event")
         }
     }
 
@@ -363,14 +365,15 @@ mod tests {
             Ok(())
         }
 
-        fn handle_event(&self, event: &StatSnapshot, _node_info: &NodeInfo) -> DaftResult<()> {
-            self.total_calls
+        fn handle_event(&self, event: &StatSnapshotSend, _node_info: &NodeInfo) -> DaftResult<()> {
+            self.state
+                .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            *self.event.lock().unwrap() = Some(event.clone());
+            *self.state.event.lock().unwrap() = Some(event.clone());
             Ok(())
         }
 
-        async fn flush(&self) -> DaftResult<()> {
+        fn finish(self: Box<Self>) -> DaftResult<()> {
             Ok(())
         }
     }
@@ -379,7 +382,8 @@ mod tests {
         let node_info = NodeInfo {
             name: Arc::from(name.to_string()),
             id,
-            node_type: NodeType::Intermediate,
+            node_type: NodeType::Project,
+            node_category: NodeCategory::Intermediate,
             context: std::collections::HashMap::new(),
         };
         Arc::new(node_info)
@@ -387,16 +391,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_interval_respected() {
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
-        ]);
+        let mock_subscriber = Box::new(MockSubscriber::new());
+        let mock_state = mock_subscriber.state.clone();
 
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
         let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
-            subscribers,
+            vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
@@ -407,24 +409,23 @@ mod tests {
         // Send first event
         node_stat.add_rows_received(100);
         assert_eq!(
-            mock_subscriber.get_total_calls(),
+            mock_state.get_total_calls(),
             0,
             "No materialized events should be sent yet"
         );
 
         // Send second event rapidly (within throttle interval)
-        eprintln!("sending second event");
         node_stat.add_rows_received(100);
         sleep(Duration::from_millis(50)).await;
 
         // Should only get 1 call due to throttling
         assert_eq!(
-            mock_subscriber.get_total_calls(),
+            mock_state.get_total_calls(),
             1,
             "Rapid events should be throttled to a single call"
         );
         assert_eq!(
-            mock_subscriber.get_latest_event()[1],
+            mock_state.get_latest_event()[1],
             (ROWS_RECEIVED_KEY, Stat::Count(200))
         );
 
@@ -434,30 +435,28 @@ mod tests {
 
         // Should now get a second call
         assert_eq!(
-            mock_subscriber.get_total_calls(),
+            mock_state.get_total_calls(),
             2,
             "Event after throttle interval should trigger a new call"
         );
         assert_eq!(
-            mock_subscriber.get_latest_event()[1],
+            mock_state.get_latest_event()[1],
             (ROWS_RECEIVED_KEY, Stat::Count(500))
         );
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_multiple_subscribers_all_receive_events() {
-        let subscriber1 = Arc::new(MockSubscriber::new());
-        let subscriber2 = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            subscriber1.clone() as Arc<dyn RuntimeStatsSubscriber>,
-            subscriber2.clone() as Arc<dyn RuntimeStatsSubscriber>,
-        ]);
+        let subscriber1 = Box::new(MockSubscriber::new());
+        let subscriber2 = Box::new(MockSubscriber::new());
+        let state1 = subscriber1.state.clone();
+        let state2 = subscriber2.state.clone();
 
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
         let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
-            subscribers,
+            vec![subscriber1, subscriber2],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
@@ -468,8 +467,8 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
 
         // Both subscribers should receive the event
-        assert_eq!(subscriber1.get_total_calls(), 1);
-        assert_eq!(subscriber2.get_total_calls(), 1);
+        assert_eq!(state1.get_total_calls(), 1);
+        assert_eq!(state2.get_total_calls(), 1);
     }
 
     #[tokio::test(start_paused = true)]
@@ -489,28 +488,25 @@ mod tests {
                 Ok(())
             }
 
-            fn handle_event(&self, _: &StatSnapshot, _: &NodeInfo) -> DaftResult<()> {
+            fn handle_event(&self, _: &StatSnapshotSend, _: &NodeInfo) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
             }
-            async fn flush(&self) -> DaftResult<()> {
+            fn finish(self: Box<Self>) -> DaftResult<()> {
                 Ok(())
             }
         }
 
-        let failing_subscriber = Arc::new(FailingSubscriber);
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            failing_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
-        ]);
+        let failing_subscriber = Box::new(FailingSubscriber);
+        let mock_subscriber = Box::new(MockSubscriber::new());
+        let state = mock_subscriber.state.clone();
 
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
         let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
-            subscribers,
+            vec![failing_subscriber, mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
@@ -520,7 +516,7 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
 
         // Mock subscriber should still receive event despite other failing
-        assert_eq!(mock_subscriber.get_total_calls(), 1);
+        assert_eq!(state.get_total_calls(), 1);
     }
 
     #[tokio::test]
@@ -545,16 +541,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn test_events_without_init() {
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
-        ]);
+        let mock_subscriber = Box::new(MockSubscriber::new());
+        let state = mock_subscriber.state.clone();
 
         let node_info = create_node_info("uninitialized_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
         let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
-            subscribers,
+            vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
@@ -562,31 +556,29 @@ mod tests {
         // No events yet because no nodes are initialized
         node_stat.add_rows_received(100);
         sleep(Duration::from_millis(50)).await;
-        assert_eq!(mock_subscriber.get_total_calls(), 0);
+        assert_eq!(state.get_total_calls(), 0);
 
         // Activate the node
         handler.activate_node(0);
         sleep(Duration::from_millis(50)).await;
 
         // Now we should get an event
-        assert_eq!(mock_subscriber.get_total_calls(), 1);
-        let event = mock_subscriber.get_latest_event();
+        assert_eq!(state.get_total_calls(), 1);
+        let event = state.get_latest_event();
         assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_final_event_before_interval() {
-        let mock_subscriber = Arc::new(MockSubscriber::new());
-        let subscribers = Arc::new(vec![
-            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
-        ]);
+        let mock_subscriber = Box::new(MockSubscriber::new());
+        let state = mock_subscriber.state.clone();
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
         let node_info = create_node_info("fast_query", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
-            subscribers,
+            vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
         ));
@@ -604,9 +596,9 @@ mod tests {
         sleep(Duration::from_millis(10)).await;
 
         // The final event should still be observed even though throttle interval wasn't met
-        assert_eq!(mock_subscriber.get_total_calls(), 1);
+        assert_eq!(state.get_total_calls(), 1);
 
-        let event = mock_subscriber.get_latest_event();
+        let event = state.get_latest_event();
         assert_eq!(
             event[0],
             (CPU_US_KEY, Stat::Duration(Duration::from_millis(1)))

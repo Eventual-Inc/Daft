@@ -344,13 +344,14 @@ impl NativeExecutor {
                     result = execution_task => result,
                 };
 
-                // Flush remaining stats events
-                if let Err(e) = stats_manager.flush().await {
-                    log::warn!("Failed to flush runtime stats: {}", e);
-                }
-
                 result
             })?;
+
+            // Finish the stats manager
+            let stats_manager = Arc::into_inner(stats_manager)
+                .expect("There should only be 1 stats manager instance by the end");
+            stats_manager.finish();
+
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
