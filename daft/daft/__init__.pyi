@@ -861,6 +861,14 @@ class PyPartitionTransform:
     def num_buckets(self) -> int: ...
     def width(self) -> int: ...
 
+class PyAggregation:
+    pass
+
+class PyCountAggregation(PyAggregation):
+    mode: CountMode
+
+    def __init__(self, mode: CountMode): ...
+
 class PyPushdowns:
     """Pushdowns from the query optimizer that can optimize scanning data sources."""
 
@@ -868,6 +876,7 @@ class PyPushdowns:
     filters: PyExpr | None
     partition_filters: PyExpr | None
     limit: int | None
+    aggregation: PyAggregation | None
 
     def __init__(
         self,
@@ -875,6 +884,7 @@ class PyPushdowns:
         filters: PyExpr | None = None,
         partition_filters: PyExpr | None = None,
         limit: int | None = None,
+        aggregation: PyAggregation | None = None,
     ) -> None: ...
     def filter_required_column_names(self) -> list[str]:
         """List of field names that are required by the filter predicate."""

@@ -79,3 +79,11 @@ class ScanOperator(abc.ABC):
     def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
         """Returns this scan operator as a SupportsPushdownFilters if it supports pushdown filters."""
         raise NotImplementedError()
+
+    def can_absorb_aggregation(self) -> bool:
+        """Returns true if this scan can accept aggregation pushdowns."""
+        return False
+
+    def supports_count_pushdown(self) -> bool:
+        """Returns true if this scan can accept count pushdowns."""
+        return False

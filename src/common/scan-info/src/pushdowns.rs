@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use common_display::DisplayAs;
+use daft_core::count_mode::CountMode;
 use daft_dsl::{estimated_selectivity, ExprRef};
 use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,27 @@ pub struct Pushdowns {
     /// The `filters` field is kept for backward compatibility;
     /// it represents all current filters.
     pub pushed_filters: Option<Vec<ExprRef>>,
+
+    // /// Optional aggregation pushdown.
+    /// This is used to indicate that the scan operator can perform an aggregation.
+    /// This is useful for scans that can perform aggregations like `count` or `sum
+    pub aggregation: Option<Aggregation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum Aggregation {
+    Count(CountMode),
+    // 未来可能支持的其他聚合类型
+}
+
+// 添加 Display 实现
+
+impl fmt::Display for Aggregation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Count(mode) => write!(f, "Count({})", mode), // 使用Self代替Aggregation
+        }
+    }
 }
 
 impl Default for Pushdowns {
@@ -52,6 +74,7 @@ impl Pushdowns {
             limit,
             sharder,
             pushed_filters: None,
+            aggregation: None,
         }
     }
 
@@ -72,6 +95,7 @@ impl Pushdowns {
             limit,
             sharder: self.sharder.clone(),
             pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -84,6 +108,7 @@ impl Pushdowns {
             limit: self.limit,
             sharder: self.sharder.clone(),
             pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -96,6 +121,7 @@ impl Pushdowns {
             limit: self.limit,
             sharder: self.sharder.clone(),
             pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -108,6 +134,7 @@ impl Pushdowns {
             limit: self.limit,
             sharder: self.sharder.clone(),
             pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -120,6 +147,7 @@ impl Pushdowns {
             limit: self.limit,
             sharder,
             pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -132,6 +160,20 @@ impl Pushdowns {
             limit: self.limit,
             sharder: self.sharder.clone(),
             pushed_filters,
+            aggregation: self.aggregation.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_aggregation(&self, aggregation: Option<Aggregation>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
+            aggregation,
         }
     }
 
@@ -152,6 +194,9 @@ impl Pushdowns {
         }
         if let Some(sharder) = &self.sharder {
             res.push(format!("Sharder = {sharder}"));
+        }
+        if let Some(aggregation) = &self.aggregation {
+            res.push(format!("Aggregation pushdown = {aggregation}"));
         }
         res
     }
@@ -186,6 +231,9 @@ impl DisplayAs for Pushdowns {
                 }
                 if let Some(sharder) = &self.sharder {
                     sub_items.push(format!("sharder: {sharder}"));
+                }
+                if let Some(aggregation) = &self.aggregation {
+                    sub_items.push(format!("aggregation: {aggregation}"));
                 }
                 s.push_str(&sub_items.join(", "));
                 s.push('}');

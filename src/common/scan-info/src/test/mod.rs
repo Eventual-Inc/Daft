@@ -145,6 +145,14 @@ impl ScanOperator for DummyScanOperator {
         vec!["DummyScanOperator".to_string()]
     }
 
+    fn supports_count_pushdown(&self) -> bool {
+        false
+    }
+
+    fn can_absorb_aggregation(&self) -> bool {
+        false
+    }
+
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
         Ok((0..self.num_scan_tasks)
             .map(|i| {

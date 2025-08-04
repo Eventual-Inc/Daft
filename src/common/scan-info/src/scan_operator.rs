@@ -32,6 +32,8 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn can_absorb_limit(&self) -> bool;
     fn can_absorb_shard(&self) -> bool;
     fn multiline_display(&self) -> Vec<String>;
+    fn supports_count_pushdown(&self) -> bool;
+    fn can_absorb_aggregation(&self) -> bool;
 
     /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations
     /// (merging, splitting) to the outputted scan tasks
