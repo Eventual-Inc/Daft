@@ -21,11 +21,11 @@ pub use crate::{
 pub mod rex {
     use std::sync::Arc;
 
-    use daft_dsl::functions::{python::PythonUDF, FunctionArgs, FunctionExpr, ScalarFunction, ScalarUDF};
+    use daft_dsl::{functions::{python::LegacyPythonUDF, scalar::ScalarFn, BuiltinScalarFn, FunctionArgs, FunctionExpr, ScalarUDF}, python_udf::{PyScalarFn, RowWisePyFn}};
     pub use daft_dsl::*;
 
     /// Creates an expression from a python-scalar function
-    pub fn from_py_func<A, E>(func: PythonUDF, args: A) -> Expr
+    pub fn from_py_legacy_func<A, E>(func: LegacyPythonUDF, args: A) -> Expr
     where
         A: IntoIterator<Item = E>,
         E: Into<Arc<Expr>>,
@@ -36,10 +36,15 @@ pub mod rex {
     }
 
     /// Creates an expression from a python-scalar function
-    pub fn from_rs_func(func: Arc<dyn ScalarUDF>, args: FunctionArgs<ExprRef>) -> Expr {
+    pub fn from_builtin_func(func: Arc<dyn ScalarUDF>, args: FunctionArgs<ExprRef>) -> Expr {
         // don't use ::new
-        let func = ScalarFunction { udf: func, inputs: args };
-        Expr::ScalarFunction(func)
+        let func = BuiltinScalarFn { udf: func, inputs: args };
+        Expr::ScalarFn(ScalarFn::Builtin(func))
+    }
+
+    /// Creates an expression from a python-scalar function
+    pub fn from_py_rowwise_func(func: RowWisePyFn) -> Expr {
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(func)))
     }
 }
 
@@ -48,6 +53,7 @@ pub mod functions {
     use std::sync::Arc;
 
     pub use daft_dsl::functions::*;
+    pub use daft_dsl::python_udf::*;
 
     // Link the function (infallibly) .. todo(conner): add error handling later.
     pub fn get_function(name: &str) -> Arc<dyn ScalarFunctionFactory + 'static> {
@@ -125,13 +131,20 @@ pub mod rel {
     }
 
     /// Creates a new limit relational operator.
-    pub fn new_limit<I>(input: I, limit: u64) -> DaftResult<Limit>
+    pub fn new_limit<I>(input: I, limit: u64, offset: Option<u64>) -> DaftResult<Limit>
     where
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        Ok(Limit { plan_id: None,
-            node_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Limit {
+            plan_id: None,
+            node_id: None,
+            input,
+            limit,
+            offset,
+            eager: false,
+            stats_state: stats::StatsState::NotMaterialized
+        })
     }
 
     /// Creates a new distinct relational operator.

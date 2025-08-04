@@ -8,10 +8,13 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
+use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
-use crate::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
+use crate::{
+    PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef, SupportsPushdownFilters,
+};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Hash)]
 struct DummyScanTask {
@@ -154,5 +157,29 @@ impl ScanOperator for DummyScanOperator {
                 scan_task as Arc<dyn ScanTaskLike>
             })
             .collect())
+    }
+
+    fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
+        Some(self)
+    }
+}
+
+impl SupportsPushdownFilters for DummyScanOperator {
+    fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
+        // Split predicates: those containing date functions are not pushable
+        let (pushable, unpushable): (Vec<_>, Vec<_>) = filters
+            .iter()
+            .cloned()
+            .partition(|expr| !contains_in_expression(expr));
+
+        (pushable, unpushable)
+    }
+}
+
+// Helper function to check for date function in expressions
+fn contains_in_expression(expr: &ExprRef) -> bool {
+    match expr.as_ref() {
+        daft_dsl::Expr::IsIn { .. } => true,
+        _ => expr.children().iter().any(contains_in_expression),
     }
 }

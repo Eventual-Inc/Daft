@@ -48,7 +48,7 @@ impl PartitionedWriter {
         data: Arc<MicroPartition>,
     ) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
         let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
-        let table = data.first().unwrap();
+        let table = data.unwrap();
 
         let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
         Ok((split_tables, partition_values))

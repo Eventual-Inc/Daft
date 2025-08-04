@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -8,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -82,18 +80,12 @@ impl ScalarUDF for RegexpSplit {
 
 #[must_use]
 pub fn split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
-    ScalarFunction {
-        udf: if regex {
-            Arc::new(RegexpSplit) as _
-        } else {
-            Arc::new(Split)
-        },
-        inputs: FunctionArgs::new_unchecked(vec![
-            FunctionArg::unnamed(input),
-            FunctionArg::unnamed(pattern),
-        ]),
+    let inputs = vec![input, pattern];
+    if regex {
+        ScalarFn::builtin(RegexpSplit, inputs).into()
+    } else {
+        ScalarFn::builtin(Split, inputs).into()
     }
-    .into()
 }
 
 fn series_split(s: &Series, pattern: &Series, regex: bool) -> DaftResult<Series> {

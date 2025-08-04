@@ -611,24 +611,32 @@ impl MicroPartition {
         Ok(tables)
     }
 
-    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<RecordBatch>>> {
+    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
         let tables = self.tables_or_read(io_stats)?;
-        if tables.len() <= 1 {
-            return Ok(tables);
+        if tables.is_empty() {
+            Ok(None)
+        } else if tables.len() == 1 {
+            Ok(Some(tables[0].clone()))
+        } else {
+            Ok(Some(
+                RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
+                    .context(DaftCoreComputeSnafu)?,
+            ))
         }
+    }
 
-        let mut guard = self.state.lock().unwrap();
-
-        if tables.len() > 1 {
+    pub fn concat_or_get_update(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
+        let tables = self.tables_or_read(io_stats)?;
+        if tables.is_empty() {
+            Ok(None)
+        } else if tables.len() == 1 {
+            Ok(Some(tables[0].clone()))
+        } else {
+            let mut guard = self.state.lock().unwrap();
             let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
                 .context(DaftCoreComputeSnafu)?;
-            *guard = TableState::Loaded(Arc::new(vec![new_table]));
-        }
-        if let TableState::Loaded(tables) = &*guard {
-            assert_eq!(tables.len(), 1);
-            Ok(tables.clone())
-        } else {
-            unreachable!()
+            *guard = TableState::Loaded(Arc::new(vec![new_table.clone()]));
+            Ok(Some(new_table))
         }
     }
 

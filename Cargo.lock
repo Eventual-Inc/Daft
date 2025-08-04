@@ -2517,6 +2517,7 @@ name = "daft-dashboard"
 version = "0.3.0-dev0"
 dependencies = [
  "anyhow",
+ "daft-recordbatch",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -2527,6 +2528,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uuid 1.17.0",
 ]
 
 [[package]]
@@ -2579,6 +2581,7 @@ dependencies = [
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "bincode",
  "common-error",
  "common-hashable-float-wrapper",
@@ -2594,6 +2597,7 @@ dependencies = [
  "itertools 0.14.0",
  "num-traits",
  "pyo3",
+ "rayon",
  "rstest",
  "serde",
  "typetag",

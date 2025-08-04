@@ -3,7 +3,7 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
-    functions::ScalarFunction,
+    functions::{scalar::ScalarFn, BuiltinScalarFn},
     is_udf,
     optimization::{get_required_columns, requires_computation},
     resolved_col, Column, Expr, ExprRef, ResolvedColumn,
@@ -190,7 +190,7 @@ impl TreeNodeRewriter for TruncateRootUDF {
                 Ok(common_treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map() can not be split
-            Expr::ScalarFunction(ScalarFunction { udf, .. })
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
                 if udf.as_ref().type_id() == TypeId::of::<ListMap>() =>
             {
                 Ok(common_treenode::Transformed::no(node))
@@ -256,7 +256,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
                 Ok(common_treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map() can not be split
-            Expr::ScalarFunction(ScalarFunction { udf, .. })
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
                 if udf.as_ref().type_id() == TypeId::of::<ListMap>() =>
             {
                 self.is_list_map = true;
@@ -296,7 +296,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
 }
 
 fn is_list_map(expr: &ExprRef) -> bool {
-    matches!(expr.as_ref(), Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<ListMap>())
+    matches!(expr.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<ListMap>())
 }
 
 fn exists_skip_list_map<F: FnMut(&ExprRef) -> bool>(expr: &ExprRef, mut f: F) -> bool {
@@ -538,7 +538,7 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{
         functions::{
-            python::{MaybeInitializedUDF, PythonUDF, RuntimePyObject},
+            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
             FunctionExpr,
         },
         resolved_col, Expr, ExprRef,
@@ -596,7 +596,7 @@ mod tests {
 
     fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF {
+            func: FunctionExpr::Python(LegacyPythonUDF {
                 name: Arc::new("foo".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),

@@ -4,7 +4,7 @@ use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -32,13 +32,31 @@ impl ScalarUDF for CountMatches {
             Ok(s.bool().unwrap().get(0).unwrap())
         }).transpose()?.unwrap_or(CASE_SENSITIVE_DEFAULT_VALUE);
 
-        input.with_utf8_array(|arr| {
-            patterns.with_utf8_array(|pattern_arr| {
+        ensure!(patterns.len() == 1, ValueError: "Cannot set `patterns` in `count_matches` to an Expression. Only string or list of strings are currently supported.");
+
+        input.with_utf8_array(|arr| match patterns.data_type() {
+            DataType::Utf8 => patterns.with_utf8_array(|pattern_arr| {
                 Ok(
                     count_matches_impl(arr, pattern_arr, whole_words, case_sensitive)?
                         .into_series(),
                 )
-            })
+            }),
+            DataType::List(_) => {
+                patterns
+                    .list()
+                    .unwrap()
+                    .flat_child
+                    .with_utf8_array(|pattern_arr| {
+                        Ok(
+                            count_matches_impl(arr, pattern_arr, whole_words, case_sensitive)?
+                                .into_series(),
+                        )
+                    })
+            }
+            patterns_dtype => Err(DaftError::ValueError(format!(
+                "expected string or list of strings for 'patterns', got {}",
+                patterns_dtype
+            ))),
         })
     }
 
@@ -49,7 +67,7 @@ impl ScalarUDF for CountMatches {
     ) -> DaftResult<Field> {
         let input = inputs.required((0, "input"))?.to_field(schema)?;
         let patterns = inputs.required((1, "patterns"))?.to_field(schema)?;
-        ensure!(patterns.dtype.is_string(), ValueError: "expected list for 'patterns', got {}", patterns.dtype);
+        ensure!(matches!(&patterns.dtype, DataType::List(inner_dtype) if inner_dtype.is_string()) | patterns.dtype.is_string(), ValueError: "expected string or list of strings for 'patterns', got {}", patterns.dtype);
 
         if let Some(whole_words) = inputs.optional("whole_words")? {
             whole_words
@@ -84,7 +102,7 @@ pub fn count_matches(
     whole_words: bool,
     case_sensitive: bool,
 ) -> ExprRef {
-    ScalarFunction::new(
+    ScalarFn::builtin(
         CountMatches,
         vec![input, patterns, lit(whole_words), lit(case_sensitive)],
     )

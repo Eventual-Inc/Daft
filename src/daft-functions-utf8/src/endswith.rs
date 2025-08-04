@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ impl ScalarUDF for EndsWith {
 }
 
 pub fn endswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    ScalarFunction::new(EndsWith, vec![input, pattern]).into()
+    ScalarFn::builtin(EndsWith, vec![input, pattern]).into()
 }
 
 fn endswith_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {

@@ -6,7 +6,7 @@ use common_treenode::TreeNode;
 use daft_dsl::{
     count_actor_pool_udfs,
     functions::{
-        python::{PythonUDF, UDFProperties},
+        python::{LegacyPythonUDF, UDFProperties},
         FunctionExpr,
     },
     Expr, ExprRef,
@@ -73,7 +73,7 @@ impl ActorPoolProject {
                     proj.apply(|e| {
                         if let Expr::Function {
                             func:
-                                FunctionExpr::Python(PythonUDF {
+                                FunctionExpr::Python(LegacyPythonUDF {
                                     name,
                                     concurrency: Some(_),
                                     ..

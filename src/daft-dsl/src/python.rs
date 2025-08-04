@@ -42,6 +42,11 @@ pub fn resolved_col(name: &str) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn bound_col(index: usize, field: PyField) -> PyExpr {
+    crate::bound_col(index, field.field).into()
+}
+
+#[pyfunction]
 pub fn date_lit(item: i32) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Date(item));
     Ok(expr.into())
@@ -169,8 +174,8 @@ pub fn decimal_lit(sign: bool, digits: Vec<u8>, exp: i32) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Series(series.series));
+pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::List(series.series));
     Ok(expr.into())
 }
 
@@ -270,6 +275,30 @@ pub fn udf(
         )?
         .into(),
     })
+}
+
+#[pyfunction]
+pub fn row_wise_udf(
+    name: &str,
+    inner: PyObject,
+    return_dtype: PyDataType,
+    original_args: PyObject,
+    expr_args: Vec<PyExpr>,
+) -> PyExpr {
+    use crate::python_udf::row_wise_udf;
+
+    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
+    PyExpr {
+        expr: row_wise_udf(
+            name,
+            inner.into(),
+            return_dtype.into(),
+            original_args.into(),
+            args,
+        )
+        .into(),
+    }
 }
 
 /// Initializes all uninitialized UDFs in the expression
@@ -755,7 +784,7 @@ impl<'py> IntoPyObject<'py> for LiteralValue {
                 .import(intern!(py, "decimal"))?
                 .getattr(intern!(py, "Decimal"))?
                 .call1((display_decimal128(val, p, s),)),
-            Self::Series(series) => py
+            Self::List(series) => py
                 .import(intern!(py, "daft.series"))?
                 .getattr(intern!(py, "Series"))?
                 .getattr(intern!(py, "_from_pyseries"))?

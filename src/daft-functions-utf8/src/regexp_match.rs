@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -51,7 +51,7 @@ impl ScalarUDF for RegexpMatch {
 
 #[must_use]
 pub fn utf8_match(input: ExprRef, pattern: ExprRef) -> ExprRef {
-    ScalarFunction::new(RegexpMatch {}, vec![input, pattern]).into()
+    ScalarFn::builtin(RegexpMatch {}, vec![input, pattern]).into()
 }
 
 fn match_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
