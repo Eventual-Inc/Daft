@@ -188,6 +188,8 @@ pub mod pylib {
         can_absorb_filter: bool,
         can_absorb_limit: bool,
         can_absorb_select: bool,
+        can_absorb_aggregation: bool,
+        supports_count_pushdown: bool,
         display_name: String,
     }
 
@@ -232,6 +234,16 @@ pub mod pylib {
             abc.call_method0(py, pyo3::intern!(py, "display_name"))?
                 .extract::<String>(py)
         }
+
+        fn _can_absorb_aggregation(abc: &PyObject, py: Python) -> PyResult<bool> {
+            abc.call_method0(py, pyo3::intern!(py, "can_absorb_aggregation"))?
+                .extract::<bool>(py)
+        }
+
+        fn _supports_count_pushdown(abc: &PyObject, py: Python) -> PyResult<bool> {
+            abc.call_method0(py, pyo3::intern!(py, "supports_count_pushdown"))?
+                .extract::<bool>(py)
+        }
     }
 
     #[pymethods]
@@ -245,6 +257,8 @@ pub mod pylib {
             let can_absorb_limit = Self::_can_absorb_limit(&abc, py)?;
             let can_absorb_select = Self::_can_absorb_select(&abc, py)?;
             let display_name = Self::_display_name(&abc, py)?;
+            let can_absorb_aggregation = Self::_can_absorb_aggregation(&abc, py)?;
+            let supports_count_pushdown = Self::_supports_count_pushdown(&abc, py)?;
 
             Ok(Self {
                 name,
@@ -255,6 +269,8 @@ pub mod pylib {
                 can_absorb_limit,
                 can_absorb_select,
                 display_name,
+                can_absorb_aggregation,
+                supports_count_pushdown,
             })
         }
     }
@@ -350,6 +366,14 @@ pub mod pylib {
 
         fn can_absorb_shard(&self) -> bool {
             false
+        }
+
+        fn can_absorb_aggregation(&self) -> bool {
+            self.can_absorb_aggregation
+        }
+
+        fn supports_count_pushdown(&self) -> bool {
+            self.supports_count_pushdown
         }
 
         fn multiline_display(&self) -> Vec<String> {
@@ -681,7 +705,7 @@ pub mod pylib {
             Arc::new(FileFormatConfig::Parquet(default::Default::default())),
             Arc::new(schema),
             Arc::new(Default::default()),
-            Pushdowns::new(None, None, columns.map(Arc::new), None, None),
+            Pushdowns::new(None, None, columns.map(Arc::new), None, None, None),
             None,
         );
         Ok(st.estimate_in_memory_size_bytes(None).unwrap())

@@ -1894,6 +1894,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "daft-algebra",
+ "daft-core",
  "daft-dsl",
  "daft-schema",
  "fnv",

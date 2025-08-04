@@ -352,6 +352,14 @@ impl ScanOperator for GlobScanOperator {
         false
     }
 
+    fn can_absorb_aggregation(&self) -> bool {
+        false
+    }
+
+    fn supports_count_pushdown(&self) -> bool {
+        false
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let condensed_glob_paths = if self.glob_paths.len() <= 7 {
             self.glob_paths.join(", ")

@@ -29,6 +29,8 @@ pub struct DummyScanOperator {
     pub schema: SchemaRef,
     pub num_scan_tasks: u32,
     pub num_rows_per_task: Option<usize>,
+    pub supports_count_pushdown_flag: bool,
+    pub can_absorb_aggregation_flag: bool,
 }
 
 #[typetag::serde]
@@ -143,6 +145,14 @@ impl ScanOperator for DummyScanOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         vec!["DummyScanOperator".to_string()]
+    }
+
+    fn supports_count_pushdown(&self) -> bool {
+        self.supports_count_pushdown_flag
+    }
+
+    fn can_absorb_aggregation(&self) -> bool {
+        self.can_absorb_aggregation_flag
     }
 
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
