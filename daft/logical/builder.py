@@ -184,6 +184,10 @@ class LogicalPlanBuilder:
         builder = self._builder.limit(num_rows, eager)
         return LogicalPlanBuilder(builder)
 
+    def offset(self, num_rows: int) -> LogicalPlanBuilder:
+        builder = self._builder.offset(num_rows)
+        return LogicalPlanBuilder(builder)
+
     def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder:
         builder = self._builder.shard(strategy, world_size, rank)
         return LogicalPlanBuilder(builder)

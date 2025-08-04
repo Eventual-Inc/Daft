@@ -7,6 +7,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::Sharder;
 
+pub trait SupportsPushdownFilters {
+    /// Applies filters to the scan operator and returns the pushable filters and the remaining filters.
+    fn push_filters(&self, filter: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
@@ -19,6 +24,10 @@ pub struct Pushdowns {
     pub limit: Option<usize>,
     /// Sharding information.
     pub sharder: Option<Sharder>,
+    /// Optional filters that have been pushed down to the scan operator.
+    /// The `filters` field is kept for backward compatibility;
+    /// it represents all current filters.
+    pub pushed_filters: Option<Vec<ExprRef>>,
 }
 
 impl Default for Pushdowns {
@@ -42,6 +51,7 @@ impl Pushdowns {
             columns,
             limit,
             sharder,
+            pushed_filters: None,
         }
     }
 
@@ -61,6 +71,7 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -72,6 +83,7 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit: self.limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -83,6 +95,7 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit: self.limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -94,6 +107,7 @@ impl Pushdowns {
             columns,
             limit: self.limit,
             sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
         }
     }
 
@@ -105,6 +119,19 @@ impl Pushdowns {
             columns: self.columns.clone(),
             limit: self.limit,
             sharder,
+            pushed_filters: self.pushed_filters.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_pushed_filters(&self, pushed_filters: Option<Vec<ExprRef>>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters,
         }
     }
 

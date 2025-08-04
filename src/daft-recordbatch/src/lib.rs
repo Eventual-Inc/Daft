@@ -50,7 +50,7 @@ pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 use rand::seq::index::sample;
-use repr_html::html_value;
+pub use repr_html::html_value;
 
 #[macro_export]
 macro_rules! value_err {
@@ -182,14 +182,14 @@ impl RecordBatch {
         }
     }
 
-    pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
+    pub fn empty(schema: Option<SchemaRef>) -> Self {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.len());
         for field in schema.as_ref() {
             let series = Series::empty(&field.name, &field.dtype);
             columns.push(series);
         }
-        Ok(Self::new_unchecked(schema, columns, 0))
+        Self::new_unchecked(schema, columns, 0)
     }
 
     /// Create a RecordBatch from a set of columns.
@@ -443,7 +443,7 @@ impl RecordBatch {
         schema: Option<SchemaRef>,
     ) -> DaftResult<Self> {
         if tables.is_empty() {
-            return Self::empty(schema);
+            return Ok(Self::empty(schema));
         }
         Self::concat(tables)
     }
@@ -926,15 +926,19 @@ impl RecordBatch {
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 
-        let mut res = "<table class=\"dataframe\">\n".to_string();
+        let num_columns = self.columns.len();
+
+        let mut res =
+            "<table class=\"dataframe\" style=\"table-layout: fixed; min-width: 100%\">\n"
+                .to_string();
 
         // Begin the header.
         res.push_str("<thead><tr>");
 
+        let header_style = format!("text-wrap: nowrap; width: calc(100vw / {}); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left", num_columns);
+
         for field in self.schema.as_ref() {
-            res.push_str(
-                "<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
-            );
+            res.push_str(&format!("<th style=\"{}\">", header_style));
             res.push_str(&html_escape::encode_text(&field.name));
             res.push_str("<br />");
             res.push_str(&html_escape::encode_text(&format!("{}", field.dtype)));
@@ -947,22 +951,24 @@ impl RecordBatch {
         // Begin the body.
         res.push_str("<tbody>\n");
 
+        let body_style = format!("text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto", num_columns);
+
         let (head_rows, tail_rows) = if self.len() > 10 {
             (5, 5)
         } else {
             (self.len(), 0)
         };
 
-        let styled_td =
-            "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
-
         for i in 0..head_rows {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in &*self.columns {
-                res.push_str(styled_td);
-                res.push_str(&html_value(col, i));
+            for (col_idx, col) in self.columns.iter().enumerate() {
+                res.push_str(&format!(
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
+                    i, col_idx, body_style
+                ));
+                res.push_str(&html_value(col, i, true));
                 res.push_str("</div></td>");
             }
 
@@ -972,7 +978,7 @@ impl RecordBatch {
 
         if tail_rows != 0 {
             res.push_str("<tr>");
-            for _ in &*self.columns {
+            for _ in 0..self.columns.len() {
                 res.push_str("<td>...</td>");
             }
             res.push_str("</tr>\n");
@@ -982,10 +988,13 @@ impl RecordBatch {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in &*self.columns {
-                res.push_str(styled_td);
-                res.push_str(&html_value(col, i));
-                res.push_str("</td>");
+            for (col_idx, col) in self.columns.iter().enumerate() {
+                res.push_str(&format!(
+                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
+                    i, col_idx, body_style
+                ));
+                res.push_str(&html_value(col, i, true));
+                res.push_str("</div></td>");
             }
 
             // End row.

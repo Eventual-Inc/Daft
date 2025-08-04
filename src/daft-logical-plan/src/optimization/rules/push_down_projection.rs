@@ -355,6 +355,7 @@ impl PushDownProjection {
             | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
             | LogicalPlan::Limit(..)
+            | LogicalPlan::Offset(..)
             | LogicalPlan::TopN(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
@@ -1165,6 +1166,7 @@ mod tests {
                 columns: Some(Arc::new(vec!["a".to_string()])),
                 filters: None,
                 sharder: None,
+                pushed_filters: None,
             },
         )
         .build();
@@ -1210,6 +1212,7 @@ mod tests {
                 ])),
                 filters: None,
                 sharder: None,
+                pushed_filters: None,
             },
         )
         .build();

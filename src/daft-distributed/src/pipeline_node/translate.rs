@@ -80,6 +80,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         input_node: Arc<dyn DistributedPipelineNode>,
         partition_cols: Vec<BoundExpr>,
+        num_partitions: Option<usize>,
     ) -> Arc<dyn DistributedPipelineNode> {
         if partition_cols.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
@@ -89,7 +90,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 &self.stage_config,
                 partition_cols,
-                None,
+                num_partitions,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -192,14 +193,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
-                self.get_next_pipeline_node_id(),
-                logical_node_id,
-                &self.stage_config,
-                limit.limit as usize,
-                node.schema(),
-                self.curr_node.pop().unwrap(),
-            )),
+            LogicalPlan::Limit(limit) => {
+                if limit.offset.is_some() {
+                    todo!("FLOTILLA_MS3: Implement Offset")
+                }
+                Arc::new(LimitNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    limit.limit as usize,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                ))
+            }
             LogicalPlan::Project(project) => {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
                 ProjectNode::new(
@@ -380,7 +386,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition =
-                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone());
+                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone(), None);
 
                 // Final stage: The actual window op
                 WindowNode::new(
@@ -431,6 +437,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::TopN(top_n) => {
                 let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
 
+                if top_n.offset.is_some() {
+                    todo!("FLOTILLA_MS3: Implement Offset")
+                }
+
                 // First stage: Perform a local topN
                 let local_topn = TopNNode::new(
                     self.get_next_pipeline_node_id(),
@@ -468,8 +478,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
-            | LogicalPlan::Shard(_) => {
-                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_) => {
+                panic!(
+                    "Logical plan operator {} should be handled by the optimizer",
+                    node.name()
+                )
             }
         };
         self.curr_node.push(output);

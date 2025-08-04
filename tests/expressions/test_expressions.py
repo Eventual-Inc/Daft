@@ -638,10 +638,10 @@ def test_duration_lit(input, expected) -> None:
     assert output == expected
 
 
-def test_repr_series_lit() -> None:
+def test_repr_list_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
-    assert output == "lit([[1, 2, 3]])"
+    assert output == "lit([1, 2, 3])"
 
 
 def test_list_value_counts():

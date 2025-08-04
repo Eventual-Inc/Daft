@@ -15,7 +15,7 @@ pub fn record_batch_from_arrow(
     schema: SchemaRef,
 ) -> PyResult<RecordBatch> {
     if batches.is_empty() {
-        return Ok(RecordBatch::empty(Some(schema))?);
+        return Ok(RecordBatch::empty(Some(schema)));
     }
 
     let names = schema.field_names().collect::<Vec<_>>();

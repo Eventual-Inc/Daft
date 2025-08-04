@@ -29,6 +29,7 @@ pub enum LogicalPlan {
     UDFProject(UDFProject),
     Filter(Filter),
     Limit(Limit),
+    Offset(Offset),
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
@@ -100,6 +101,7 @@ impl LogicalPlan {
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
+            Self::Offset(Offset { input, .. }) => input.schema(),
             Self::Explode(Explode {
                 exploded_schema, ..
             }) => exploded_schema.clone(),
@@ -127,10 +129,11 @@ impl LogicalPlan {
     pub fn required_columns(&self) -> Vec<IndexSet<String>> {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
-            Self::Shard(..) => vec![IndexSet::new()],
-            Self::Limit(..) => vec![IndexSet::new()],
-            Self::Sample(..) => vec![IndexSet::new()],
-            Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
+            Self::Shard(..)
+            | Self::Limit(..)
+            | Self::Offset(..)
+            | Self::Sample(..)
+            | Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
             Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
             Self::Project(projection) => {
                 let res = projection
@@ -285,6 +288,7 @@ impl LogicalPlan {
             Self::UDFProject(..) => "UDFProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
+            Self::Offset(..) => "Offset",
             Self::Explode(..) => "Explode",
             Self::Unpivot(..) => "Unpivot",
             Self::Sort(..) => "Sort",
@@ -313,6 +317,7 @@ impl LogicalPlan {
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
+            | Self::Offset(Offset { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
@@ -327,14 +332,11 @@ impl LogicalPlan {
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::Window(Window { stats_state, .. })
             | Self::TopN(TopN { stats_state, .. }) => stats_state,
-            Self::Intersect(_) => {
-                panic!("Intersect nodes should be optimized away before stats are materialized")
-            }
-            Self::Union(_) => {
-                panic!("Union nodes should be optimized away before stats are materialized")
-            }
-            Self::SubqueryAlias(_) => {
-                panic!("Alias nodes should be optimized away before stats are materialized")
+            Self::Intersect(_) | Self::Union(_) | Self::SubqueryAlias(_) => {
+                panic!(
+                    "{} nodes should be optimized away before stats are materialized",
+                    self.name()
+                )
             }
         }
     }
@@ -353,6 +355,7 @@ impl LogicalPlan {
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
+            Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
             Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
             Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
@@ -361,15 +364,6 @@ impl LogicalPlan {
             Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
             Self::Concat(plan) => Self::Concat(plan.with_materialized_stats()),
-            Self::Intersect(_) => {
-                panic!("Intersect should be optimized away before stats are derived")
-            }
-            Self::Union(_) => {
-                panic!("Union should be optimized away before stats are derived")
-            }
-            Self::SubqueryAlias(_) => {
-                panic!("Alias should be optimized away before stats are derived")
-            }
             Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
             Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
             Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
@@ -378,6 +372,12 @@ impl LogicalPlan {
             }
             Self::Window(plan) => Self::Window(plan.with_materialized_stats()),
             Self::TopN(plan) => Self::TopN(plan.with_materialized_stats()),
+            Self::Intersect(_) | Self::Union(_) | Self::SubqueryAlias(_) => {
+                panic!(
+                    "{} should be optimized away before stats are derived",
+                    self.name()
+                )
+            }
         }
     }
 
@@ -389,6 +389,7 @@ impl LogicalPlan {
             Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
+            Self::Offset(offset) => offset.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
@@ -419,6 +420,7 @@ impl LogicalPlan {
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Offset(Offset { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
@@ -451,7 +453,8 @@ impl LogicalPlan {
                     ).unwrap()),
                 Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
-                Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
+                Self::Limit(Limit { limit, offset, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
+                Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
                 Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
@@ -470,13 +473,13 @@ impl LogicalPlan {
                     aliases.clone(),
                     window_spec.clone(),
                 ).unwrap()),
-                Self::TopN(TopN { sort_by, descending, nulls_first, limit, .. }) => Self::TopN(TopN::try_new(
-                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit
+                Self::TopN(TopN { sort_by, descending, nulls_first, limit, offset, .. }) => Self::TopN(TopN::try_new(
+                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *offset
                 ).unwrap()),
-                Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
-                Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
-                Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
-                Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
+                Self::Concat(_)
+                | Self::Intersect(_)
+                | Self::Union(_)
+                | Self::Join(_) => panic!("{} ops should never have only one input, but got one", input.name()),
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
@@ -604,6 +607,7 @@ impl LogicalPlan {
             | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
+            | Self::Offset(Offset { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
             | Self::Unpivot(Unpivot { plan_id, .. })
             | Self::Sort(Sort { plan_id, .. })
@@ -632,6 +636,7 @@ impl LogicalPlan {
             | Self::UDFProject(UDFProject { node_id, .. })
             | Self::Filter(Filter { node_id, .. })
             | Self::Limit(Limit { node_id, .. })
+            | Self::Offset(Offset { node_id, .. })
             | Self::Explode(Explode { node_id, .. })
             | Self::Unpivot(Unpivot { node_id, .. })
             | Self::Sort(Sort { node_id, .. })
@@ -661,6 +666,7 @@ impl LogicalPlan {
             Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
             Self::Limit(limit) => Self::Limit(limit.with_plan_id(plan_id)),
+            Self::Offset(offset) => Self::Offset(offset.with_plan_id(plan_id)),
             Self::Explode(explode) => Self::Explode(explode.with_plan_id(plan_id)),
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_plan_id(plan_id)),
             Self::Sort(sort) => Self::Sort(sort.with_plan_id(plan_id)),
@@ -692,6 +698,7 @@ impl LogicalPlan {
             Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
             Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
             Self::Limit(limit) => Self::Limit(limit.with_node_id(node_id)),
+            Self::Offset(offset) => Self::Offset(offset.with_node_id(node_id)),
             Self::Explode(explode) => Self::Explode(explode.with_node_id(node_id)),
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_node_id(node_id)),
             Self::Sort(sort) => Self::Sort(sort.with_node_id(node_id)),
@@ -801,6 +808,7 @@ impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);
+impl_from_data_struct_for_logical_plan!(Offset);
 impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Unpivot);
 impl_from_data_struct_for_logical_plan!(Sort);
