@@ -400,15 +400,15 @@ pub fn physical_plan_to_pipeline(
             input,
             project,
             passthrough_columns,
+            in_ray_runner,
             stats_state,
             schema,
-            ..
         }) => {
             let proj_op = UdfOperator::try_new(
                 project.clone(),
                 passthrough_columns.clone(),
                 schema,
-                cfg.use_experimental_distributed_engine,
+                *in_ray_runner,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),

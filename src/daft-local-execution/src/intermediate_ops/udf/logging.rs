@@ -43,16 +43,12 @@ impl LoggingStdout {
             self.buffer.clear();
         }
     }
-
-    // Just need the property for hasattr
-    #[allow(dead_code)]
-    pub fn is_daft(&self) {}
 }
 
 /// Helper function to register a Python stdout & stderr writer for thread logging
 pub fn with_py_thread_logger<T>(
-    f: impl FnOnce() -> DaftResult<T>,
     in_ray_runner: bool,
+    f: impl FnOnce() -> DaftResult<T>,
 ) -> DaftResult<T> {
     // Ray already messes with Python's prints w/ progress bars, so we shouldn't do so on top of it.
     // https://docs.ray.io/en/latest/ray-observability/user-guides/configure-logging.html#distributed-progress-bars-with-tqdm
@@ -60,24 +56,21 @@ pub fn with_py_thread_logger<T>(
         return f();
     }
 
+    let stdout_log = LoggingStdout::new();
+
     let output = Python::with_gil(|py| {
-        let std_log = LoggingStdout::new();
-
         let sys = py.import(intern!(py, "sys"))?;
-        let old_stdout = sys.getattr("stdout")?;
-        let old_stderr = sys.getattr("stderr")?;
 
-        let std_log_py = std_log.into_pyobject(py)?;
-        sys.setattr("stdout", std_log_py.clone())?;
-        sys.setattr("stderr", std_log_py)?;
+        let stdout_log_py = stdout_log.into_pyobject(py)?;
+        sys.setattr(intern!(py, "stdout"), stdout_log_py.clone())?;
 
         let output = f()?;
 
-        if !old_stdout.hasattr("is_daft")? {
-            sys.setattr("stdout", old_stdout)?;
-            sys.setattr("stderr", old_stderr)?;
-        }
-
+        // Set back to the originals
+        sys.setattr(
+            intern!(py, "stdout"),
+            sys.getattr(intern!(py, "__stdout__"))?,
+        )?;
         Ok::<T, PyErr>(output)
     })?;
 

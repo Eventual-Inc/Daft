@@ -1,5 +1,5 @@
 #[cfg(feature = "python")]
-mod logging;
+pub mod logging;
 
 use std::{
     ops::RangeInclusive,
@@ -197,15 +197,13 @@ impl UdfHandle {
             // Get the functions inputs
             let func_input = batch.eval_expression_list(input_exprs.as_slice())?;
             // Call the UDF, getting the GIL contention time and total runtime
-            let (total_runtime, gil_contention_time, mut result) = with_py_thread_logger(
-                || {
+            let (total_runtime, gil_contention_time, mut result) =
+                with_py_thread_logger(self.params.use_ray_runner, || {
                     let start_time = Instant::now();
                     let (result, gil_contention_time) = func.call_udf(func_input.columns())?;
                     let end_time = Instant::now();
                     Ok((end_time - start_time, gil_contention_time, result))
-                },
-                self.params.use_ray_runner,
-            )?;
+                })?;
 
             // Rename if necessary
             if let Some(out_name) = out_name.as_ref() {
