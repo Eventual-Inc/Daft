@@ -136,27 +136,27 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 if filter_required_column_names is None
                 else pushdowns.columns + filter_required_column_names
             )
-        # 检查是否有count聚合下推
+        # Check if there is a count aggregation pushdown
         if pushdowns.aggregation is not None and isinstance(pushdowns.aggregation, PyCountAggregation):
-            # 处理count聚合下推
+            # Handle count aggregation pushdown
             count_mode = pushdowns.aggregation.mode
 
-            # 处理过滤器（如果有）
+            # If there are pushed filters, convert them to Arrow expressions
             filters = None
             if self._pushed_filters is not None:
-                # 将过滤器转换为Arrow表达式
+                # Convert filters to Arrow expressions
                 from daft.expressions import Expression
 
                 filters = [Expression._from_pyexpr(f).to_arrow_expr() for f in self._pushed_filters]
 
-            # 创建返回count结果的扫描任务
+            # Create a ScanTask for counting rows
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_count_result_function.__module__,
                 func_name=_lancedb_count_result_function.__name__,
                 func_args=(self._ds, count_mode, filters),
-                schema=self.schema()._schema,
-                num_rows=1,  # 结果只有一行
-                size_bytes=8,  # 一个UInt64值的大小
+                schema=pa.schema([pa.field("count", pa.uint64())]),
+                num_rows=1,
+                size_bytes=8,
                 pushdowns=pushdowns,
                 stats=None,
             )

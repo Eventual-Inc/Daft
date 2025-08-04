@@ -32,17 +32,15 @@ pub struct Pushdowns {
 
     // /// Optional aggregation pushdown.
     /// This is used to indicate that the scan operator can perform an aggregation.
-    /// This is useful for scans that can perform aggregations like `count` or `sum
+    /// This is useful for scans that can perform aggregations like `count` or `sum`
     pub aggregation: Option<Aggregation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Aggregation {
     Count(CountMode),
-    // 未来可能支持的其他聚合类型
+    // Future aggregation types can be added here
 }
-
-// 添加 Display 实现
 
 impl fmt::Display for Aggregation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

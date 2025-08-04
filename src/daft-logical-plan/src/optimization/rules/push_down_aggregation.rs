@@ -27,21 +27,21 @@ impl OptimizerRule for PushDownAggregation {
                 groupby,
                 ..
             }) if groupby.is_empty() => {
-                // 只处理全局聚合（没有GROUP BY）
+                // ONLY handle global aggregations (no GROUP BY)
 
-                // 检查是否只有一个count聚合
+                // CHECK if there is only one count aggregation
                 if aggregations.len() == 1 {
                     if let Some(count_expr) = is_count_expr(&aggregations[0]) {
-                        // 将 match 替换为 if let 来匹配 Source 节点
+                        // REPLACE match with if let to match Source node
                         if let LogicalPlan::Source(source) = input.as_ref() {
                             let source_info = source.source_info.as_ref();
                             if let SourceInfo::Physical(external_info) = source_info {
-                                // 检查扫描操作符是否支持count下推
+                                // CHECK if scan operator supports count pushdown
                                 let scan_op = external_info.scan_state.get_scan_op().clone().0;
                                 if scan_op.can_absorb_aggregation()
                                     && scan_op.supports_count_pushdown()
                                 {
-                                    // 创建带有count聚合的pushdowns
+                                    // CREATE new pushdowns with count aggregation
                                     let count_mode = extract_count_mode(count_expr);
                                     let new_pushdowns = external_info
                                         .pushdowns
@@ -49,9 +49,9 @@ impl OptimizerRule for PushDownAggregation {
                                     let new_external_info =
                                         external_info.with_pushdowns(new_pushdowns);
 
-                                    // 创建新的数据源节点，包含count聚合pushdown
+                                    // CREATE new data source node with count aggregation pushdown
                                     let new_source = LogicalPlan::Source(LogicalSource::new(
-                                        // 输出模式应该是单列UInt64类型
+                                        // OUTPUT schema should be single column of UInt64 type
                                         Schema::new(vec![Field::new("count", DataType::UInt64)])
                                             .into(),
                                         SourceInfo::Physical(new_external_info).into(),
@@ -65,7 +65,7 @@ impl OptimizerRule for PushDownAggregation {
                     }
                 }
 
-                // 如果不能下推，则保持原样
+                // IF no count aggregation pushdown, return original plan
                 Ok(Transformed::no(plan))
             }
             _ => Ok(Transformed::no(plan)),
@@ -73,24 +73,18 @@ impl OptimizerRule for PushDownAggregation {
     }
 }
 
-// 辅助函数，检查表达式是否为count聚合
+// CHECK if expression is count aggregation
 fn is_count_expr(expr: &ExprRef) -> Option<&CountMode> {
     match expr.as_ref() {
-        Expr::Agg(agg) => {
-            // 匹配Count和CountDistinct两种聚合表达式
-            match agg {
-                // 标准Count表达式，包含计数模式
-                AggExpr::Count(_, count_mode) => Some(count_mode),
-                // CountDistinct表达式，固定为Distinct模式
-                AggExpr::CountDistinct(_) => Some(&CountMode::All),
-                _ => None,
-            }
-        }
+        Expr::Agg(agg) => match agg {
+            AggExpr::Count(_, count_mode) => Some(count_mode),
+            AggExpr::CountDistinct(_) => Some(&CountMode::Valid),
+            _ => None,
+        },
         _ => None,
     }
 }
-
-// 辅助函数，提取count模式
+// EXTRACT count mode from CountMode enum
 fn extract_count_mode(count_mode: &CountMode) -> CountMode {
     *count_mode
 }
