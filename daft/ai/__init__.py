@@ -1,9 +1,9 @@
 import os
 
 
-from daft.ml.model import Model
-from daft.ml.typing import Embedding, Provider
-from daft.ml.protocols import TextEmbedderLike
+from daft.ai.model import Model
+from daft.ai.typing import Embedding, Provider
+from daft.ai.protocols import TextEmbedderLike
 from daft.session import current_provider, current_model
 
 __all__ = [

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from daft.ml.model import Model
+from daft.ai.model import Model
 
 
 class _VLLM(Model):

@@ -12,7 +12,7 @@ from daft.logical.schema import Schema
 from daft.udf import UDF
 
 if TYPE_CHECKING:
-    from daft.ml import Provider
+    from daft.ai import Provider
 
 __all__ = [
     "Session",

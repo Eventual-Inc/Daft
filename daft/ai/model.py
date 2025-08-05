@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from daft.ml.typing import Provider
+    from daft.ai.typing import Provider
 
 
 @runtime_checkable
@@ -19,7 +19,7 @@ class Model(Protocol):
     @classmethod
     def _from_vllm(cls, model: str | None = None, **properties: str) -> Model:
         try:
-            from daft.ml._vllm import _VLLM
+            from daft.ai._vllm import _VLLM
 
             return _VLLM(model, **properties)
         except ImportError:
@@ -28,7 +28,7 @@ class Model(Protocol):
     @classmethod
     def _from_sentence_transformers(cls, model: str | None = None, **properties: str) -> Model:
         try:
-            from daft.ml._transformers import _SentenceTransformers
+            from daft.ai._transformers import _SentenceTransformers
 
             if model is None:
                 raise ValueError("The sentence_transformers provider requires a model identifier.")
