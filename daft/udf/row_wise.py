@@ -95,12 +95,12 @@ def call_func_with_evaluated_exprs(
     fn: Callable[..., Any],
     return_dtype: PyDataType,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
-    evaluted_args: list[Any],
+    evaluated_args: list[Any],
 ) -> PySeries:
     args, kwargs = original_args
 
-    new_args = [evaluted_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
-    new_kwargs = {key: (evaluted_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()}
+    new_args = [evaluated_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
+    new_kwargs = {key: (evaluated_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()}
 
     output = fn(*new_args, **new_kwargs)
     dtype = DataType._from_pydatatype(return_dtype)

@@ -142,7 +142,7 @@ impl RowWisePyFn {
                     .import(pyo3::intern!(py, "daft.udf.row_wise"))?
                     .getattr(pyo3::intern!(py, "call_async_batch_with_evaluated_exprs"))?;
 
-                let mut evaluted_args = Vec::with_capacity(num_rows);
+                let mut evaluated_args = Vec::with_capacity(num_rows);
                 for i in 0..num_rows {
                     let args_for_row = args
                         .iter()
@@ -155,14 +155,14 @@ impl RowWisePyFn {
                         .into_iter()
                         .map(|a| a.into_pyobject(py))
                         .collect::<PyResult<Vec<_>>>()?;
-                    evaluted_args.push(py_args_for_row);
+                    evaluated_args.push(py_args_for_row);
                 }
 
                 let res = f.call1((
                     self.inner.clone().unwrap().as_ref(),
                     py_return_type.clone(),
                     self.original_args.clone().unwrap().as_ref(),
-                    evaluted_args,
+                    evaluated_args,
                 ))?;
                 let name = args[0].name();
 
