@@ -4,7 +4,6 @@ daft-dashboard = {path = "../daft-dashboard", optional = true}
 pyo3 = {workspace = true, optional = true}
 
 [features]
-default = ["python"]
 python = ["dep:pyo3", "dep:clap", "dep:daft-dashboard"]
 
 [package]

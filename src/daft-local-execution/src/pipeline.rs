@@ -498,11 +498,13 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Limit(Limit {
             input,
-            num_rows,
+            limit,
+            offset,
             stats_state,
             ..
         }) => {
-            let sink = LimitSink::new(*num_rows as usize);
+            let (offset, limit) = (*offset, *limit);
+            let sink = LimitSink::new(limit as usize, offset.map(|x| x as usize));
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node], stats_state.clone(), ctx)
                 .boxed()
@@ -627,6 +629,7 @@ pub fn physical_plan_to_pipeline(
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             stats_state,
             ..
@@ -636,6 +639,7 @@ pub fn physical_plan_to_pipeline(
                 descending.clone(),
                 nulls_first.clone(),
                 *limit as usize,
+                offset.map(|x| x as usize),
             );
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             BlockingSinkNode::new(Arc::new(sink), child_node, stats_state.clone(), ctx).boxed()
@@ -1056,14 +1060,14 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
             input,
-            columns,
+            repartition_spec,
             num_partitions,
             stats_state,
             schema,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let repartition_op =
-                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
+                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
             BlockingSinkNode::new(
                 Arc::new(repartition_op),
                 child_node,

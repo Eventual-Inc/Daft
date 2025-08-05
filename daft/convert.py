@@ -165,6 +165,24 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
     Note:
         This function can only work if Daft is running using the RayRunner
 
+    Examples:
+        >>> import ray
+        >>> import daft
+        >>> ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])
+        >>> df = daft.from_ray_dataset(ds)
+        >>> df.show()
+        ╭───────┬──────╮
+        │ a     ┆ b    │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ foo  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ bar  │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
     """
     from daft import DataFrame
 
@@ -180,8 +198,32 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     Args:
         ddf: The Dask DataFrame to create a Daft DataFrame from.
 
+    Returns:
+        DataFrame: Daft DataFrame created from the provided Dask DataFrame.
+
     Note:
         This function can only work if Daft is running using the RayRunner
+
+    Examples:
+        >>> import dask.dataframe as dd
+        >>> import pandas as pd
+        >>> import daft
+        >>> import ray
+        >>> ray.init()
+        >>> ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)
+        >>> df = daft.from_dask_dataframe(ddf)
+        >>> df.show()
+        ╭───────┬──────╮
+        │ a     ┆ b    │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ foo  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ bar  │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
 
     """
     from daft import DataFrame

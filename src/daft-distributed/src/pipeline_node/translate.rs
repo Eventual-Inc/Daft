@@ -85,12 +85,17 @@ impl LogicalPlanToPipelineNodeTranslator {
         if partition_cols.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
         } else {
+            let repartition_spec = daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                    num_partitions,
+                    partition_cols.into_iter().map(|e| e.into()).collect(),
+                ),
+            );
             RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
-                partition_cols,
-                num_partitions,
+                repartition_spec,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -193,14 +198,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
-                self.get_next_pipeline_node_id(),
-                logical_node_id,
-                &self.stage_config,
-                limit.limit as usize,
-                node.schema(),
-                self.curr_node.pop().unwrap(),
-            )),
+            LogicalPlan::Limit(limit) => {
+                if limit.offset.is_some() {
+                    todo!("FLOTILLA_MS3: Implement Offset")
+                }
+                Arc::new(LimitNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    limit.limit as usize,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                ))
+            }
             LogicalPlan::Project(project) => {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
                 ProjectNode::new(
@@ -286,19 +296,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             )
             .arced(),
             LogicalPlan::Repartition(repartition) => {
-                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
-                    todo!("FLOTILLA_MS3: Support other types of repartition");
-                };
-
-                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-
-                assert!(!columns.is_empty());
+                match &repartition.repartition_spec {
+                    RepartitionSpec::Hash(repart_spec) => {
+                        assert!(!repart_spec.by.is_empty());
+                    }
+                    RepartitionSpec::Random(_) => {}
+                    RepartitionSpec::IntoPartitions(_) => {
+                        todo!("FLOTILLA_MS3: Support other types of repartition");
+                    }
+                }
                 RepartitionNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    columns,
-                    repart_spec.num_partitions,
+                    repartition.repartition_spec.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -352,8 +363,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    columns.clone(),
-                    None,
+                    daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                        daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                            None,
+                            columns.clone().into_iter().map(|e| e.into()).collect(),
+                        ),
+                    ),
                     distinct.input.schema(),
                     initial_distinct,
                 )
@@ -444,6 +459,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::TopN(top_n) => {
                 let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
 
+                if top_n.offset.is_some() {
+                    todo!("FLOTILLA_MS3: Implement Offset")
+                }
+
                 // First stage: Perform a local topN
                 let local_topn = TopNNode::new(
                     self.get_next_pipeline_node_id(),
@@ -481,8 +500,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
-            | LogicalPlan::Shard(_) => {
-                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_) => {
+                panic!(
+                    "Logical plan operator {} should be handled by the optimizer",
+                    node.name()
+                )
             }
         };
         self.curr_node.push(output);

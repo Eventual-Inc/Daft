@@ -1,10 +1,10 @@
-# Glue
+# Reading from and Writing to AWS Glue
 
 !!! warning "Warning"
 
     These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear want you would like, thank you! 🤘
 
-Daft integrates with [AWS Glue](https://docs.aws.amazon.com/glue/latest/dg/what-is-glue.html) using the [Daft Catalog](index.md) interface. Daft provides builtin support for a handful of tables (details below), but you may provide your own `GlueTable` implementations and register them to your `GlueCatalog` instance. Note that in Daft, the AWS Glue service-level *Data Catalog* maps to a Daft *Catalog* and a Glue *Database* is a *Namespace* — this can be confusing and is important to remember.
+Daft integrates with [AWS Glue](https://docs.aws.amazon.com/glue/latest/dg/what-is-glue.html) using the [Daft Catalog](../api/catalogs_tables.md) interface. Daft provides builtin support for a handful of tables (details below), but you may provide your own `GlueTable` implementations and register them to your `GlueCatalog` instance. Note that in Daft, the AWS Glue service-level *Data Catalog* maps to a Daft *Catalog* and a Glue *Database* is a *Namespace* — this can be confusing and is important to remember.
 
 | Daft      | Glue         |
 |-----------|--------------|
@@ -60,8 +60,8 @@ The [Glue Catalog Type System](https://docs.aws.amazon.com/glue/latest/dg/glue-t
 |--------------|------------------------------------------------------------------------------------------------------------------------------------------|
 | CSV          | [Glue CSV Type Reference](https://docs.aws.amazon.com/glue/latest/webapi/API_CsvClassifier.html#Glue-Type-CsvClassifier-CustomDatatypes) |
 | Parquet      | [Arrow Type System Reference](https://arrow.apache.org/docs/python/api/datatypes.html)                                                   |
-| Iceberg      | [Iceberg Type System Reference](../io/iceberg.md#type-system)                                                                                |
-| Delta Lake   | [Delta Lake Type System Reference](../io/delta_lake.md#type-system)                                                                          |
+| Iceberg      | [Iceberg Type System Reference](iceberg.md#type-system)                                                                                |
+| Delta Lake   | [Delta Lake Type System Reference](delta_lake.md#type-system)                                                                          |
 
 
 ## Custom Table Implementation
