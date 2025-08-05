@@ -167,7 +167,7 @@ plugins:
       advanced/observability.md: optimization/observability.md
       resources/telemetry.md: telemetry.md
       resources/engine_comparison.md: index.md
-      # resources/tutorials.md: examples/index.md
+      resources/tutorials.md: examples/index.md
       migration/dask_migration.md: index.md
       resources/benchmarks/tpch.md: benchmarks/index.md
       spark_connect.md: api/spark_connect.md
