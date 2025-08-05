@@ -2636,6 +2636,10 @@ class DataFrame:
             3
 
         """
+        if get_context().get_or_create_runner().name == "native":
+            warnings.warn(
+                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition."
+            )
         if len(partition_by) == 0:
             warnings.warn(
                 "No columns specified for repartition, so doing a random shuffle. If you do not require rebalancing of "
@@ -2667,6 +2671,11 @@ class DataFrame:
             >>> df_with_5_partitions.num_partitions()
             5
         """
+        if get_context().get_or_create_runner().name == "native":
+            warnings.warn(
+                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition."
+            )
+
         builder = self._builder.into_partitions(num)
         return DataFrame(builder)
 
