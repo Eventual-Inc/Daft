@@ -860,11 +860,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> # df.write_parquet("output.parquet", write_mode="overwrite")
-            >>> # (Writes the DataFrame to Parquet format)
-            <BLANKLINE>
-            (Writes the DataFrame to S3 in Parquet format, partitioned by column "x" and overwriting existing data)
-            <BLANKLINE>
+            >>> df.write_parquet("output.parquet", write_mode="overwrite")  # doctest: +SKIP
 
         Tip:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -1097,41 +1093,12 @@ class DataFrame:
             This call is **blocking** and will execute the DataFrame when called
 
         Examples:
-            >>> import daft
             >>> import pyiceberg
-            >>> # from daft.io.iceberg import DataCatalogTable
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> # table = DataCatalogTable(
-            >>> #     catalog_name="my_catalog",
-            >>> #     schema_name="my_schema",
-            >>> #     table_name="my_table",
-            >>> #     io_config=daft.IOConfig(
-            >>> #         s3=S3Config(
-            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
-            >>> #             region_name="cn-beijing",
-            >>> #             force_virtual_addressing=True,
-            >>> #             verify_ssl=True,
-            >>> #             key_id="your-access-key-id",
-            >>> #             access_key="your-secret-access-key",
-            >>> #         )
-            >>> #     )
-            >>> # )
-            >>> # df.write_iceberg(
-            >>> #     table, mode="overwrite",
-            >>> #     io_config=daft.IOConfig(
-            >>> #         s3=S3Config(
-            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
-            >>> #             region_name="cn-beijing",
-            >>> #             force_virtual_addressing=True,
-            >>> #             verify_ssl=True,
-            >>> #             key_id="your-access-key-id",
-            >>> #             access_key="your-secret-access-key",
-            >>> #         )
-            >>> #     )
-            >>> # )
-            <BLANKLINE>
-            (Writes the DataFrame to the Iceberg table in overwrite mode, replacing existing data)
-            <BLANKLINE>
+            >>> import daft
+            >>>
+            >>> table = pyiceberg.Table(...)
+            >>> df = daft.from_pydict({"user_id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
+            >>> df = df.write_iceberg(table, mode="overwrite")  # doctest: +SKIP
 
         """
         import pyarrow as pa
@@ -1306,49 +1273,8 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> import deltalake
-            >>> # from daft.io.delta_lake import DataCatalogTable
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> # table = DataCatalogTable(
-            >>> #     catalog_name="my_catalog",
-            >>> #     schema_name="my_schema",
-            >>> #     table_name="my_table",
-            >>> #     io_config=daft.IOConfig(
-            >>> #         s3=S3Config(
-            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
-            >>> #             region_name="cn-beijing",
-            >>> #             force_virtual_addressing=True,
-            >>> #             verify_ssl=True,
-            >>> #             key_id="your-access-key-id",
-            >>> #             access_key="your-secret-access-key",
-            >>> #         )
-            >>> #     )
-            >>> # )
-            >>> # df.write_deltalake(
-            >>> #     table,
-            >>> #     partition_cols=["x"],
-            >>> #     mode="overwrite",
-            >>> #     schema_mode="overwrite",
-            >>> #     name="My Delta Table",
-            >>> #     description="This is my Delta table",
-            >>> #     configuration={"delta.appendOnly": "true"},
-            >>> #     custom_metadata={"key": "value"},
-            >>> #     dynamo_table_name="my-dynamo-table",
-            >>> #     allow_unsafe_rename=True,
-            >>> #     io_config=daft.IOConfig(
-            >>> #         s3=S3Config(
-            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
-            >>> #             region_name="cn-beijing",
-            >>> #             force_virtual_addressing=True,
-            >>> #             verify_ssl=True,
-            >>> #             key_id="your-access-key-id",
-            >>> #             access_key="your-secret-access-key",
-            >>> #         )
-            >>> #     )
-            >>> # )
-            <BLANKLINE>
-            (Writes the DataFrame to the Delta Lake table, partitioned by column "x",
-            overwriting existing data, with specified metadata and custom configurations)
-            <BLANKLINE>
+            >>> df.write_deltalake("s3://my-bucket/my-deltalake-table")  # doctest: +SKIP
         """
         import json
 
