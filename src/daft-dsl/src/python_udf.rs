@@ -128,7 +128,50 @@ impl RowWisePyFn {
             );
         }
 
+        let is_async: bool = Python::with_gil(|py| {
+            py.import(pyo3::intern!(py, "asyncio"))?
+                .getattr(pyo3::intern!(py, "iscoroutinefunction"))?
+                .call1((self.inner.clone().unwrap().as_ref(),))?
+                .extract()
+        })?;
         let py_return_type = PyDataType::from(self.return_dtype.clone());
+
+        if is_async {
+            return Ok(pyo3::Python::with_gil(|py| {
+                let f = py
+                    .import(pyo3::intern!(py, "daft.udf.row_wise"))?
+                    .getattr(pyo3::intern!(py, "call_async_batch_with_evaluated_exprs"))?;
+
+                let mut evaluted_args = Vec::with_capacity(num_rows);
+                for i in 0..num_rows {
+                    let args_for_row = args
+                        .iter()
+                        .map(|a| {
+                            let idx = if a.len() == 1 { 0 } else { i };
+                            LiteralValue::get_from_series(a, idx)
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    let py_args_for_row = args_for_row
+                        .into_iter()
+                        .map(|a| a.into_pyobject(py))
+                        .collect::<PyResult<Vec<_>>>()?;
+                    evaluted_args.push(py_args_for_row);
+                }
+
+                let res = f.call1((
+                    self.inner.clone().unwrap().as_ref(),
+                    py_return_type.clone(),
+                    self.original_args.clone().unwrap().as_ref(),
+                    evaluted_args,
+                ))?;
+                let name = args[0].name();
+
+                let result_series = res.extract::<PySeries>()?.series;
+
+                Ok::<_, PyErr>(result_series.rename(name))
+            })?);
+            // todo!()
+        }
 
         let call_func_with_evaluated_exprs = pyo3::Python::with_gil(|py| {
             Ok::<_, PyErr>(

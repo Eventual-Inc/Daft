@@ -13,6 +13,8 @@ from daft.expressions import Expression
 from daft.series import Series
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from daft.daft import PyDataType, PySeries
 
 
@@ -59,6 +61,34 @@ class RowWiseUdf(Generic[P, T]):
             return self._inner(*args, **kwargs)
         else:
             return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), expr_args)
+
+
+def call_async_batch_with_evaluated_exprs(
+    fn: Callable[..., Awaitable[Any]],
+    return_dtype: PyDataType,
+    original_args: tuple[tuple[Any, ...], dict[str, Any]],
+    evaluated_args_list: list[list[Any]],
+) -> PySeries:
+    import asyncio
+
+    args, kwargs = original_args
+
+    tasks = []
+    for evaluated_args in evaluated_args_list:
+        new_args = [evaluated_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
+        new_kwargs = {
+            key: (evaluated_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()
+        }
+        coroutine = fn(*new_args, **new_kwargs)
+        tasks.append(coroutine)
+
+    async def run_tasks() -> list[Any]:
+        return await asyncio.gather(*tasks)
+
+    dtype = DataType._from_pydatatype(return_dtype)
+    outputs = asyncio.run(run_tasks())
+
+    return Series.from_pylist(outputs, dtype=dtype)._series
 
 
 def call_func_with_evaluated_exprs(
