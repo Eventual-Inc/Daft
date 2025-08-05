@@ -43,8 +43,12 @@ impl RepartitionNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let num_partitions = match &repartition_spec {
-            RepartitionSpec::Hash(config) => config.num_partitions.unwrap_or(1),
-            RepartitionSpec::Random(config) => config.num_partitions.unwrap_or(1),
+            RepartitionSpec::Hash(config) => config
+                .num_partitions
+                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
+            RepartitionSpec::Random(config) => config
+                .num_partitions
+                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
             RepartitionSpec::IntoPartitions(config) => config.num_partitions,
         };
 
