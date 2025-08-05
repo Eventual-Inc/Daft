@@ -120,6 +120,7 @@ impl LimitNode {
         Ok(downstream_tasks)
     }
 
+    // Eager execution loop runs one local limit task at a time.
     async fn eager_execution_loop(
         self: Arc<Self>,
         mut input: SubmittableTaskStream,
@@ -168,7 +169,8 @@ impl LimitNode {
         Ok(())
     }
 
-    async fn execution_loop(
+    // Gradual execution loop runs multiple local limit tasks in parallel.
+    async fn gradual_execution_loop(
         self: Arc<Self>,
         mut input: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
@@ -291,7 +293,6 @@ impl DistributedPipelineNode for LimitNode {
         let input_stream = self.child.clone().produce_tasks(stage_context);
         let (result_tx, result_rx) = create_channel(1);
 
-        let limit = self.limit as u64;
         if self.eager {
             let execution_loop = self.eager_execution_loop(
                 input_stream,
@@ -301,13 +302,8 @@ impl DistributedPipelineNode for LimitNode {
             );
             stage_context.spawn(execution_loop);
         } else {
-            let local_limit_stream =
-                input_stream.pipeline_instruction(self.clone(), move |input_plan| {
-                    // TODO(zhenchao) support offset
-                    LocalPhysicalPlan::limit(input_plan, limit, None, StatsState::NotMaterialized)
-                });
-            let execution_loop = self.execution_loop(
-                local_limit_stream,
+            let execution_loop = self.gradual_execution_loop(
+                input_stream,
                 result_tx,
                 stage_context.scheduler_handle(),
                 stage_context.task_id_counter(),
