@@ -61,11 +61,11 @@ class ClickHouseDataSink(DataSink[QuerySummary]):
         ck_client = get_client(**self._client_kwargs)
         try:
             for micropartition in micropartitions:
-                arrow_table = micropartition.to_arrow()
-                bytes_written = arrow_table.nbytes
-                rows_written = arrow_table.num_rows
+                df = micropartition.to_pandas()
+                bytes_written = df.memory_usage().sum()
+                rows_written = df.shape[0]
 
-                query_summary = ck_client.insert_arrow(self._table, arrow_table, **self._write_kwargs)
+                query_summary = ck_client.insert_df(self._table, df, **self._write_kwargs)
                 yield WriteResult(
                     result=query_summary,
                     bytes_written=bytes_written,
