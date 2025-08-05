@@ -8,7 +8,6 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class Model(Protocol):
-
     @classmethod
     def from_provider(cls, provider: Provider, model: str | None = None, **properties: str) -> Model:
         if provider == "vllm":
@@ -35,7 +34,9 @@ class Model(Protocol):
                 raise ValueError("The sentence_transformers provider requires a model identifier.")
             return _SentenceTransformers(model, **properties)
         except ImportError as e:
-            raise ImportError("The sentence_transformers or torch import is missing, please install 'sentence_transformers' and 'torch' to use this provider.") from e
+            raise ImportError(
+                "The sentence_transformers or torch import is missing, please install 'sentence_transformers' and 'torch' to use this provider."
+            ) from e
 
     def __enter__(self) -> None:
         """Perform any initialization logic for this model resource."""

@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 
 
 class _SentenceTransformers(TextEmbedderBatched):
-
     _model: str
     _device: str
     _sentence_transformer: SentenceTransformer | None = None
@@ -26,16 +25,16 @@ class _SentenceTransformers(TextEmbedderBatched):
         """Initializes a single instance of the SentenceTransformer."""
         if self._sentence_transformer is not None:
             return
-        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self._sentence_transformer = SentenceTransformer(self._model, trust_remote_code=True)
-        self._sentence_transformer.to(self._device) # import to move _after_ loading
+        self._sentence_transformer.to(self._device)  # import to move _after_ loading
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Removes the sole reference to the inner sentence transformer."""
         if self._sentence_transformer is not None:
             del self._sentence_transformer
             self._sentence_transformer = None
-            if self._device == 'cuda' and torch.cuda.is_available():
+            if self._device == "cuda" and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
     @property

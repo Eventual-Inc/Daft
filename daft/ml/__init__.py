@@ -15,13 +15,13 @@ __all__ = [
 
 def get_default_provider() -> str:
     """Returns the default provider identifier."""
-    if (provider := current_provider()):
+    if provider := current_provider():
         return provider
     return os.environ.get("DAFT_DEFAULT_PROVIDER", "vllm")
 
 
 def get_default_model() -> str:
     """Returns the default model identifier."""
-    if (provider := current_model()):
+    if provider := current_model():
         return provider
     return os.environ.get("DAFT_DEFAULT_MODEL", "")

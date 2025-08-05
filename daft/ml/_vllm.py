@@ -10,7 +10,7 @@ class _VLLM(Model):
 
     def __init__(self, model: str | None = None, **properties: str):
         self._model = model
-    
+
     def __enter__(self) -> None:
         """Performs the VLLM instantiation logic."""
         ...

@@ -348,11 +348,11 @@ class Session:
         ident = self._session.current_namespace()
         return Identifier._from_pyidentifier(ident) if ident else None
 
-    def current_provider(self) -> Provider | None:
+    def current_provider(self) -> str | None:
         """Get the session's current provider or None.
-        
+
         Returns:
-            Provider: the session's default provider identifier
+            str: the session's default provider identifier
         """
         return self._session.current_provider()
 
@@ -363,7 +363,6 @@ class Session:
             str: the session's default model identifier
         """
         return self._session.current_model()
-
 
     ###
     # get_*
@@ -497,17 +496,17 @@ class Session:
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident if identifier else None)
 
-    def set_provider(self, identifier: Provider) -> None:
+    def set_provider(self, identifier: Provider | None) -> None:
         """Set the default model provider.
-        
+
         Args:
-            identifier (Provider): provider identifier string.
+            identifier (Provider | None): provider identifier string or None.
         """
         self._session.set_provider(identifier)
 
     def set_model(self, identifier: str) -> None:
         """Set the default model type.
-        
+
         Args:
             identifier (str): model identifier string.
         """
@@ -768,6 +767,7 @@ def set_catalog(identifier: str | None) -> None:
 def set_namespace(identifier: Identifier | str | None) -> None:
     """Set the given namespace as current_namespace for the active session."""
     _session().set_namespace(identifier)
+
 
 def set_provider(identifier: Provider | None) -> None:
     """Set the given provider as current_provider for the active session."""
