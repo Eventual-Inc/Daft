@@ -1060,14 +1060,14 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
             input,
-            columns,
+            repartition_spec,
             num_partitions,
             stats_state,
             schema,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let repartition_op =
-                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
+                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
             BlockingSinkNode::new(
                 Arc::new(repartition_op),
                 child_node,
