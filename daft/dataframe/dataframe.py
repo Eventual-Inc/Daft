@@ -888,6 +888,7 @@ class DataFrame:
             <BLANKLINE>
             (Writes the DataFrame to S3 in Parquet format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
+
         Tip:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
             Other formats for writing DataFrames
@@ -982,6 +983,7 @@ class DataFrame:
             <BLANKLINE>
             (Writes the DataFrame to S3 in CSV format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
+
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
             other formats for writing DataFrames
@@ -2597,6 +2599,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df.count_rows()
             3
+
         Note:
             This will execute the DataFrame and return the number of rows in it.
 
