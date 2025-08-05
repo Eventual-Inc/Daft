@@ -231,10 +231,10 @@ impl LimitNode {
             }
 
             // Update max_concurrent_tasks based on actual output
-            if total_num_rows > 0 {
-                let rows_per_task = total_num_rows / num_local_limits;
-                let tasks_needed = remaining_limit.div_ceil(rows_per_task);
-                max_concurrent_tasks = tasks_needed.max(1);
+            // Only update if we have remaining limit, and we did get some output
+            if remaining_limit > 0 && total_num_rows > 0 && num_local_limits > 0 {
+                let rows_per_task = total_num_rows.div_ceil(num_local_limits);
+                max_concurrent_tasks = remaining_limit.div_ceil(rows_per_task);
             }
         }
 
