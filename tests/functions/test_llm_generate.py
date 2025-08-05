@@ -7,7 +7,6 @@ import pytest
 from daft import Expression, Series, lit
 from daft.functions.llm import _OpenAIGenerator, _vLLMGenerator, llm_generate
 
-vllm = pytest.importorskip("vllm")
 openai = pytest.importorskip("openai")
 
 
@@ -69,9 +68,15 @@ def test_init_with_client_params_openai(mock_llm: MagicMock):
 @patch("openai.AsyncOpenAI")
 def test_llm_generate_generate_openai(mock_llm: MagicMock):
     # Create mock components
-    mock_llm.return_value.chat.completions.create.return_value = MagicMock(
-        choices=[MagicMock(message=MagicMock(content="This is a mocked response"))]
-    )
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content="This is a mocked response"))]
+
+    # Create an async mock that returns the completion
+    async def async_mock(*args, **kwargs):
+        return mock_completion
+
+    mock_llm.return_value.chat.completions.create = async_mock
+
     llm_generator = _OpenAIGenerator(generation_config={"temperature": 0.5})
     series = Series.from_pylist(["This is a test prompt"])
     res = llm_generator(series)
