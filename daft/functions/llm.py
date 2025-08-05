@@ -10,7 +10,7 @@ def llm_generate(
     model: str = "facebook/opt-125m",
     provider: Literal["vllm", "openai"] = "vllm",
     concurrency: int = 1,
-    batch_size: int = 1024,
+    batch_size: int | None = None,
     num_cpus: int | None = None,
     num_gpus: int | None = None,
     **generation_config: dict[str, Any],
@@ -27,8 +27,8 @@ def llm_generate(
             The LLM provider to use for generation. Supported values: "vllm", "openai"
         concurrency: int, default=1
             The number of concurrent instances of the model to run
-        batch_size: int, default=1024
-            The batch size for the UDF
+        batch_size: int, default=None
+            The batch size for the UDF. If None, the batch size will be determined by defaults based on the provider.
         num_cpus: float, default=None
             The number of CPUs to use for the UDF
         num_gpus: float, default=None
@@ -77,8 +77,12 @@ def llm_generate(
     cls: Any = None
     if provider == "vllm":
         cls = _vLLMGenerator
+        if batch_size is None:
+            batch_size = 1024
     elif provider == "openai":
         cls = _OpenAIGenerator
+        if batch_size is None:
+            batch_size = 128
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -124,6 +128,8 @@ class _OpenAIGenerator:
         model: str = "gpt-4o",
         generation_config: dict[str, Any] = {},
     ) -> None:
+        import asyncio
+
         try:
             from openai import AsyncOpenAI
         except ImportError:
@@ -135,11 +141,13 @@ class _OpenAIGenerator:
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
 
         self.llm = AsyncOpenAI(**client_params_opts)
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
 
     def __call__(self, input_prompt_column: Series) -> list[str]:
         import asyncio
-
-        prompts = input_prompt_column.to_pylist()
 
         async def get_completion(prompt: str) -> str:
             messages = [{"role": "user", "content": prompt}]
@@ -150,16 +158,18 @@ class _OpenAIGenerator:
             )
             return completion.choices[0].message.content
 
+        prompts = input_prompt_column.to_pylist()
+
         async def gather_completions() -> list[str]:
             tasks = [get_completion(prompt) for prompt in prompts]
             return await asyncio.gather(*tasks)
 
-        # Use existing event loop if available, otherwise create new one
         try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context, use the existing loop
-            outputs = loop.run_until_complete(gather_completions())
-        except RuntimeError:
-            # No running event loop, create one
-            outputs = asyncio.run(gather_completions())
+            outputs = self.loop.run_until_complete(gather_completions())
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.exception(e)
+            raise e
         return outputs
