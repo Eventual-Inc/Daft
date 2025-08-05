@@ -4,18 +4,27 @@ pub(crate) mod proto;
 //   DAFT IR ORGANIZATION VIA RE-EXPORTS
 // ---------------------------------------
 
+use common_error::DaftResult;
 // todo(conner): consider scan, partition, pushdown mod
 pub use common_scan_info::{
     PartitionField, PartitionTransform, Pushdowns, ScanState, ScanTaskLike, ScanTaskLikeRef,
 };
 // todo(conner): why here?
 pub use daft_core::count_mode::CountMode;
+use prost::Message;
 
+use crate::proto::ToFromProto;
 pub use crate::{
     rel::{LogicalPlan, LogicalPlanRef},
     rex::{Expr, ExprRef},
     schema::{DataType, Schema, SchemaRef},
 };
+
+pub fn logical_plan_from_proto_bytes(bytes: &[u8]) -> DaftResult<LogicalPlanRef> {
+    let message = daft_proto::protos::daft::v1::Rel::decode(bytes)
+        .expect("TODO: fixme Proto could not be decoded");
+    Ok(LogicalPlanRef::from_proto(message).expect("convert from proto"))
+}
 
 #[rustfmt::skip]
 pub mod rex {
