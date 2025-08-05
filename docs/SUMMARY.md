@@ -40,6 +40,8 @@
     * [Roadmap](roadmap.md)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
+* Examples
+    * [Overview](examples/index.md)
 * Python API
     * [Overview](api/index.md)
     * [I/O](api/io.md)
