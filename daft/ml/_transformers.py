@@ -6,24 +6,14 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 from daft import DataType
-from daft.ml.model import Model
-from daft.ml.protocols import TextEmbedder
+from daft.ml.protocols import TextEmbedderBatched
+from daft.ml.typing import EmbeddingDimensions
 
 if TYPE_CHECKING:
-    from daft.dependencies import np
     from daft.ml.typing import Embedding
 
 
-class _Transformers(Model):
-    """Transformers-based implementation of the Model protocol."""
-
-    _model: str
-
-    def __init__(self, model: str, **properties: str):
-        self._model = model
-
-
-class _TransformersTextEmbedder(TextEmbedder):
+class _SentenceTransformers(TextEmbedderBatched):
 
     _model: str
     _device: str
@@ -37,24 +27,25 @@ class _TransformersTextEmbedder(TextEmbedder):
         if self._sentence_transformer is not None:
             return
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self._sentence_transformer = SentenceTransformer(self._model, device=self._device)
+        self._sentence_transformer = SentenceTransformer(self._model, trust_remote_code=True)
+        self._sentence_transformer.to(self._device) # import to move _after_ loading
 
-    def __exit__(self) -> None:
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Removes the sole reference to the inner sentence transformer."""
-        del self._sentence_transformer
+        if self._sentence_transformer is not None:
+            del self._sentence_transformer
+            self._sentence_transformer = None
+            if self._device == 'cuda' and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-    def embed_text(self, text: str) -> Embedding:
-        """Embeds a single string of text into an embedding vector."""
-        if self._sentence_transformer is None:
-            raise RuntimeError("Cannot use model outside a context manager.")
-        return self._sentence_transformer.encode(text) # type: ignore
-
-    def embed_text_batched(self, text: np.ndarray) -> Embedding:
-        """Embeds a single string of text into an embedding vector."""
-        if self._sentence_transformer is None:
-            raise RuntimeError("Cannot use model outside a context manager.")
-        return self._sentence_transformer.encode(text) # type: ignore
-
-    def embed_text_return_dtype(self) -> DataType:
+    @property
+    def dimensions(self) -> EmbeddingDimensions:
         # hardcoding all-MiniLM-L6-v2
-        return DataType.embedding(dtype=DataType.int32(), size=384)
+        return EmbeddingDimensions(384, dtype=DataType.float32())
+
+    def embed_text(self, text: list[str]) -> list[Embedding]:
+        """Embeds a single string of text into an embedding vector."""
+        if self._sentence_transformer is None:
+            raise RuntimeError("Cannot use model outside a context manager.")
+        batch = self._sentence_transformer.encode(text, convert_to_numpy=True)  # type: ignore
+        return list(batch)

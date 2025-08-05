@@ -2,17 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Union
 
-from daft import DataType, Expression, col, udf
+from daft import DataType, Expression, col, udf, current_session
 from daft.ml import Model, get_default_provider, get_default_model
 
-from daft.ml._transformers import _TransformersTextEmbedder
-
 if TYPE_CHECKING:
-    from daft.ml.protocols import (
-        TextClassifierLike,
-        TextEmbedderLike,
-        TextTransformerLike,
-    )
+    from daft.ml.protocols import TextEmbedderLike
     from daft.ml import Provider
     from daft.utils import ColumnInputType
 
@@ -24,6 +18,18 @@ def _as_expr(expr: ExprLike) -> Expression:
     return col(expr) if isinstance(expr, str) else expr
 
 
+def _get_model(
+    provider: Provider | None,
+    model: str | None,
+    fallback_provider: Provider,
+    fallback_model: str,
+) -> Model:
+    sess = current_session()
+    p = provider or sess.current_provider() or fallback_provider
+    m = model or sess.current_model() or fallback_model
+    return Model.from_provider(p, m)
+
+
 ##
 # EMBED FUNCTIONS
 ##
@@ -32,76 +38,41 @@ def _as_expr(expr: ExprLike) -> Expression:
 def embed_text(
     text: ColumnInputType,
     *,
-    model: str | TextEmbedderLike | None = None,
     provider: Provider | None = None,
+    model: str | None = None,
 ) -> Expression:
     """Expression that embeds text using the specified model and provider.
 
     Args:
         text (ColumnInputType): The input text column or expression to embed.
-        model (str | None, optional): The name of the model to use for embedding. If None, a default model may be used.
-        provider (Provider | None, optional): The provider to use for the embedding model. If None, a default provider may be used.
+        provider (Provider | None, optional): The provider to use for the embedding model. If None, a default provider will be used.
+        model (str | None, optional): The name of the model to use for embedding. If None, a default model will be used.
 
     Returns:
         Expression: An expression representing the embedded text vectors.
     """
-    from daft.ml._expressions import _TextEmbedderExpression
+    from daft.ml._expressions import _TextEmbedderExpression, _TextEmbedderBatchedExpression
+    from daft.ml.protocols import TextEmbedder, TextEmbedderBatched
 
     # convert all arguments to expressions
     text = _as_expr(text)
 
-    # TODO load models from session with the runner cache
-    # model_ref: TextEmbedderLike = Model._from_transformers("all-MiniLM-L6-v2") # type: ignore
-    model_ref = _TransformersTextEmbedder("all-MiniLM-L6-v2")
+    # resolve the model and its expression implementation
+    text_embedder = _get_model(
+        provider,
+        model,
+        fallback_provider="sentence_transformers",
+        fallback_model="all-MiniLM-L6-v2",
+    )
 
-    expr = udf(return_dtype=model_ref.embed_text_return_dtype())(_TextEmbedderExpression)
-    expr = expr.with_init_args(model_ref)
+    text_embedder_cls: type = type(text_embedder)
+    if isinstance(text_embedder, TextEmbedderBatched):
+        text_embedder_cls = _TextEmbedderBatchedExpression
+    elif isinstance(text_embedder, TextEmbedder):
+        text_embedder_cls = _TextEmbedderExpression
+    else:
+        raise ValueError(f"The model instance {text_embedder_cls} does not implement the TextEmbedder protocol.")
+
+    expr = udf(return_dtype=text_embedder.dimensions.as_dtype())(text_embedder_cls) # type: ignore
+    expr = expr.with_init_args(text_embedder)
     return expr(text)
-
-
-##
-# CLASSIFY FUNCTIONS
-##
-
-
-def classify_text(
-    text: ColumnInputType,
-    *,
-    model: str | None = None,
-    provider: Provider | None = None,
-) -> Expression:
-    """Expression that classifies text using the specified model and provider.
-
-    Args:
-        text (ColumnInputType): The input text column or expression to classify.
-        model (str | None, optional): The name of the model to use for classification. If None, a default model may be used.
-        provider (Provider | None, optional): The provider to use for the classification model. If None, a default provider may be used.
-
-    Returns:
-        Expression: An expression representing the classification results.
-    """
-    raise NotImplementedError()
-
-
-##
-# TRANSFORM FUNCTIONS
-##
-
-
-def transform_text(
-    text: ColumnInputType,
-    *,
-    model: str | None = None,
-    provider: Provider | None = None,
-) -> Expression:
-    """Expression that transforms text using the specified model and provider.
-
-    Args:
-        text (ColumnInputType): The input text column or expression to transform.
-        model (str | None, optional): The name of the model to use for transformation. If None, a default model may be used.
-        provider (Provider | None, optional): The provider to use for the transformation model. If None, a default provider may be used.
-
-    Returns:
-        Expression: An expression representing the transformed text.
-    """
-    raise NotImplementedError()

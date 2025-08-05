@@ -3,11 +3,7 @@ import os
 
 from daft.ml.model import Model
 from daft.ml.typing import Embedding, Provider
-from daft.ml.protocols import (
-    TextClassifierLike,
-    TextEmbedderLike,
-    TextTransformerLike,
-)
+from daft.ml.protocols import TextEmbedderLike
 from daft.session import current_provider, current_model
 
 __all__ = [
