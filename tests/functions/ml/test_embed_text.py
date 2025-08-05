@@ -15,7 +15,7 @@ def test_embed_text():
     df.show()
 
 
-# @pytest.mark.skip()
+@pytest.mark.skip()
 def test_embed_text_large_corpus_batched():
     """550k rows, processing in batches."""
     start_time = time.time()

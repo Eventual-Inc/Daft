@@ -73,6 +73,6 @@ def embed_text(
     else:
         raise ValueError(f"The model instance {text_embedder_cls} does not implement the TextEmbedder protocol.")
 
-    expr = udf(return_dtype=text_embedder.dimensions.as_dtype())(text_embedder_cls) # type: ignore
+    expr = udf(return_dtype=text_embedder.dimensions.as_dtype(), concurrency=1)(text_embedder_cls)  # type: ignore
     expr = expr.with_init_args(text_embedder)
     return expr(text)
