@@ -41,7 +41,7 @@ class ClickHouseDataSink(DataSink[QuerySummary]):
         if database is not None:
             connection_params["database"] = database
 
-        # # Merge user-provided client_kwargs with explicit connection parameters
+        # Merge user-provided client_kwargs with explicit connection parameters
         self._client_kwargs = {**(client_kwargs or {}), **connection_params}
         self._table = table
 
