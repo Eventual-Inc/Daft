@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import unittest
 from unittest.mock import MagicMock, Mock, patch
 
+import pandas as pd
 import pytest
 from clickhouse_connect.driver.summary import QuerySummary
 
@@ -96,7 +98,7 @@ class TestClickHouseDataSink:
     def mock_client(self):
         with patch("daft.io.clickhouse.clickhouse_data_sink.get_client") as mock:  # 修正mock路径
             client = MagicMock()
-            client.insert_arrow.return_value = QuerySummary(
+            client.insert_df.return_value = QuerySummary(
                 summary={"written_rows": 3, "written_bytes": 128, "query_id": "test_query"}
             )
             client.command.return_value = ("22.8.0", "UTC")
@@ -112,10 +114,11 @@ class TestClickHouseDataSink:
         )
 
         mp = daft.recordbatch.MicroPartition.from_pydict({"col1": [1, 2, 3]})
-
         results = list(sink.write(iter([mp])))
 
-        mock_client.insert_arrow.assert_called_once_with("test_table", mp.to_arrow(), column_names=["col1"])
+        mock_client.insert_df.assert_called_once_with("test_table", unittest.mock.ANY, column_names=["col1"])
+        pd.testing.assert_frame_equal(mock_client.insert_df.call_args[0][1], mp.to_pandas())
+
         assert len(results) == 1
         assert isinstance(results[0].result, QuerySummary)
 
@@ -130,7 +133,7 @@ class TestClickHouseDataSink:
         sink = ClickHouseDataSink(table="test", host="localhost")
         mp = daft.recordbatch.MicroPartition.from_pydict({"col1": [1]})
 
-        mock_client.insert_arrow.side_effect = Exception("DB error")
+        mock_client.insert_df.side_effect = Exception("DB error")
         with pytest.raises(Exception):
             list(sink.write(iter([mp])))
 
