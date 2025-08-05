@@ -86,7 +86,13 @@ def call_async_batch_with_evaluated_exprs(
         return await asyncio.gather(*tasks)
 
     dtype = DataType._from_pydatatype(return_dtype)
-    outputs = asyncio.run(run_tasks())
+
+    try:
+        # try to use existing event loop
+        event_loop = asyncio.get_running_loop()
+        outputs = asyncio.run_coroutine_threadsafe(run_tasks(), event_loop).result()
+    except RuntimeError:
+        outputs = asyncio.run(run_tasks())
 
     return Series.from_pylist(outputs, dtype=dtype)._series
 
