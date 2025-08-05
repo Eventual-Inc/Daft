@@ -255,34 +255,23 @@ class DataFrame:
             >>> df = df.pipe(double, "x")
             >>>
             >>> df.explain()
-            Result is cached and will skip computation
-            <BLANKLINE>
-            * Source:
-            |   Number of partitions = 1
-            |   Output schema = x#Int64
-            <BLANKLINE>
-            However here is the logical plan used to produce this result:
-            <BLANKLINE>
             == Unoptimized Logical Plan ==
             <BLANKLINE>
+            * Project: col(x) * col(x) as x
+            |
             * Source:
             |   Number of partitions = 1
             |   Output schema = x#Int64
+            <BLANKLINE>
             <BLANKLINE>
             <BLANKLINE>
             Set `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.
             >>>
             >>> df.explain(show_all=True)
-            Result is cached and will skip computation
-            <BLANKLINE>
-            * Source:
-            |   Number of partitions = 1
-            |   Output schema = x#Int64
-            <BLANKLINE>
-            However here is the logical plan used to produce this result:
-            <BLANKLINE>
             == Unoptimized Logical Plan ==
             <BLANKLINE>
+            * Project: col(x) * col(x) as x
+            |
             * Source:
             |   Number of partitions = 1
             |   Output schema = x#Int64
@@ -290,34 +279,32 @@ class DataFrame:
             <BLANKLINE>
             == Optimized Logical Plan ==
             <BLANKLINE>
+            * Project: col(x) * col(x) as x
+            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
+            |
             * Source:
             |   Number of partitions = 1
             |   Output schema = x#Int64
-            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity
-            |     = 1.00 }
+            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
             <BLANKLINE>
             <BLANKLINE>
             == Physical Plan ==
             <BLANKLINE>
+            * Project: col(0: x) * col(0: x) as x
+            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
+            |
             * InMemorySource:
             |   Schema = x#Int64
             |   Size bytes = 24
-            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity
-            |     = 1.00 }
+            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
+            <BLANKLINE>
             >>>
             >>> with open("plan.txt", "w") as f:
             ...     df.explain(show_all=True, file=f)
-            <BLANKLINE>
-            (Plan written to file `plan.txt`)
-            <BLANKLINE>
+            >>> # Plan written to file `plan.txt`
             >>>
             >>> df.explain(format="mermaid")
-            flowchart TD
-            Source0["Source:
-            Number of partitions = 1
-            Output schema = x#Int64"]
-            Set show_all=True to also see the Optimized and Physical plans. This will run the query optimizer.
-            <BLANKLINE>
+            '```mermaid\nflowchart TD\nProject0["Project: col(x) * col(x) as x"]\nSource1["Source:\nNumber of partitions = 1\nOutput schema = x#Int64"]\nSource1 --> Project0\n\n```\nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.'
         """
         is_cached = self._result_cache is not None
         if format == "mermaid":
@@ -433,12 +420,14 @@ class DataFrame:
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.schema()
-                    ┌────────────┬───────┐
-                    │ column_name┆ type  │
-                    ├────────────┼───────┤
-                    │ x          ┆ Int64 │
-                    │ y          ┆ Utf8  │
-                    └────────────┴───────┘
+            ╭─────────────┬───────╮
+            │ column_name ┆ type  │
+            ╞═════════════╪═══════╡
+            │ x           ┆ Int64 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ y           ┆ Utf8  │
+            ╰─────────────┴───────╯
+            <BLANKLINE>
         """
         return self.__builder.schema()
 
@@ -871,20 +860,8 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_parquet(
-            ...     "s3://my-bucket/my-data",
-            ...     write_mode="overwrite",
-            ...     partition_cols=["x"],
-            ...     io_config=daft.IOConfig(
-            ...         s3=S3Config(
-            ...             endpoint_url="tos-s3-{region}.ivolces.com",
-            ...             region_name="cn-beijing",
-            ...             force_virtual_addressing=True,
-            ...             verify_ssl=True,
-            ...             key_id="your-access-key-id",
-            ...             access_key="your-secret-access-key",
-            ...         )
-            ...     )
+            >>> # df.write_parquet("output.parquet", write_mode="overwrite")
+            >>> # (Writes the DataFrame to Parquet format)
             <BLANKLINE>
             (Writes the DataFrame to S3 in Parquet format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
@@ -966,20 +943,8 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_csv(
-            ...     "s3://my-bucket/my-data",
-            ...     write_mode="overwrite",
-            ...     partition_cols=["x"],
-            ...     io_config=daft.IOConfig(
-            ...         s3=S3Config(
-            ...             endpoint_url="tos-s3-{region}.ivolces.com",
-            ...             region_name="cn-beijing",
-            ...             force_virtual_addressing=True,
-            ...             verify_ssl=True,
-            ...             key_id="your-access-key-id",
-            ...             access_key="your-secret-access-key",
-            ...         )
-            ...     )
+            >>> # df.write_csv("output.csv", write_mode="overwrite")
+            >>> # (Writes the DataFrame to CSV format)
             <BLANKLINE>
             (Writes the DataFrame to S3 in CSV format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
@@ -1060,20 +1025,8 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_json(
-            ...     "s3://my-bucket/my-data",
-            ...     write_mode="overwrite",
-            ...     partition_cols=["x"],
-            ...     io_config=daft.IOConfig(
-            ...         s3=S3Config(
-            ...             endpoint_url="tos-s3-{region}.ivolces.com",
-            ...             region_name="cn-beijing",
-            ...             force_virtual_addressing=True,
-            ...             verify_ssl=True,
-            ...             key_id="your-access-key-id",
-            ...             access_key="your-secret-access-key",
-            ...         )
-            ...     )
+            >>> # df.write_json("output.json", write_mode="overwrite")
+            >>> # (Writes the DataFrame to JSON format)
             <BLANKLINE>
             (Writes the DataFrame to S3 in JSON format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
@@ -1146,35 +1099,36 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> import pyiceberg
-            >>> from daft.io.iceberg import UnityCatalogTable
+            >>> # from daft.io.iceberg import DataCatalogTable
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> table = UnityCatalogTable(
-            ...     catalog_name="my_catalog",
-            ...     schema_name="my_schema",
-            ...     table_name="my_table",
-            ...     io_config=daft.IOConfig(
-            ...         s3=S3Config(
-            ...             endpoint_url="tos-s3-{region}.ivolces.com",
-            ...             region_name="cn-beijing",
-            ...             force_virtual_addressing=True,
-            ...             verify_ssl=True,
-            ...             key_id="your-access-key-id",
-            ...             access_key="your-secret-access-key",
-            ...         )
-            ...     )
-            >>>
-            >>> df.write_iceberg(
-            ...     table, mode="overwrite",
-            ...     io_config=daft.IOConfig(
-            ...         s3=S3Config(
-            ...             endpoint_url="tos-s3-{region}.ivolces.com",
-            ...             region_name="cn-beijing",
-            ...             force_virtual_addressing=True,
-            ...             verify_ssl=True,
-            ...             key_id="your-access-key-id",
-            ...             access_key="your-secret-access-key",
-            ...         )
-            ...     )
+            >>> # table = DataCatalogTable(
+            >>> #     catalog_name="my_catalog",
+            >>> #     schema_name="my_schema",
+            >>> #     table_name="my_table",
+            >>> #     io_config=daft.IOConfig(
+            >>> #         s3=S3Config(
+            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
+            >>> #             region_name="cn-beijing",
+            >>> #             force_virtual_addressing=True,
+            >>> #             verify_ssl=True,
+            >>> #             key_id="your-access-key-id",
+            >>> #             access_key="your-secret-access-key",
+            >>> #         )
+            >>> #     )
+            >>> # )
+            >>> # df.write_iceberg(
+            >>> #     table, mode="overwrite",
+            >>> #     io_config=daft.IOConfig(
+            >>> #         s3=S3Config(
+            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
+            >>> #             region_name="cn-beijing",
+            >>> #             force_virtual_addressing=True,
+            >>> #             verify_ssl=True,
+            >>> #             key_id="your-access-key-id",
+            >>> #             access_key="your-secret-access-key",
+            >>> #         )
+            >>> #     )
+            >>> # )
             <BLANKLINE>
             (Writes the DataFrame to the Iceberg table in overwrite mode, replacing existing data)
             <BLANKLINE>
@@ -1352,44 +1306,45 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> import deltalake
-            >>> from daft.io.delta_lake import UnityCatalogTable
+            >>> # from daft.io.delta_lake import DataCatalogTable
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> table = UnityCatalogTable(
-            ...     catalog_name="my_catalog",
-            ...     schema_name="my_schema",
-            ...     table_name="my_table",
-            ...     io_config=daft.IOConfig(
-            ...         s3=S3Config(
-            ...             endpoint_url="tos-s3-{region}.ivolces.com",
-            ...             region_name="cn-beijing",
-            ...             force_virtual_addressing=True,
-            ...             verify_ssl=True,
-            ...             key_id="your-access-key-id",
-            ...             access_key="your-secret-access-key",
-            ...         )
-            ...     )
-            >>>
-            >>> df.write_deltalake(
-            ...     table,
-            ...     partition_cols=["x"],
-            ...     mode="overwrite",
-            ...     schema_mode="overwrite",
-            ...     name="My Delta Table",
-            ...     description="This is my Delta table",
-            ...     configuration={"delta.appendOnly": "true"},
-            ...     custom_metadata={"key": "value"},
-            ...     dynamo_table_name="my-dynamo-table",
-            ...     allow_unsafe_rename=True,
-            ...     io_config=daft.IOConfig(
-            ...         s3=S3Config(
-            ...             endpoint_url="tos-s3-{region}.ivolces.com",
-            ...             region_name="cn-beijing",
-            ...             force_virtual_addressing=True,
-            ...             verify_ssl=True,
-            ...             key_id="your-access-key-id",
-            ...             access_key="your-secret-access-key",
-            ...         )
-            ...     )
+            >>> # table = DataCatalogTable(
+            >>> #     catalog_name="my_catalog",
+            >>> #     schema_name="my_schema",
+            >>> #     table_name="my_table",
+            >>> #     io_config=daft.IOConfig(
+            >>> #         s3=S3Config(
+            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
+            >>> #             region_name="cn-beijing",
+            >>> #             force_virtual_addressing=True,
+            >>> #             verify_ssl=True,
+            >>> #             key_id="your-access-key-id",
+            >>> #             access_key="your-secret-access-key",
+            >>> #         )
+            >>> #     )
+            >>> # )
+            >>> # df.write_deltalake(
+            >>> #     table,
+            >>> #     partition_cols=["x"],
+            >>> #     mode="overwrite",
+            >>> #     schema_mode="overwrite",
+            >>> #     name="My Delta Table",
+            >>> #     description="This is my Delta table",
+            >>> #     configuration={"delta.appendOnly": "true"},
+            >>> #     custom_metadata={"key": "value"},
+            >>> #     dynamo_table_name="my-dynamo-table",
+            >>> #     allow_unsafe_rename=True,
+            >>> #     io_config=daft.IOConfig(
+            >>> #         s3=S3Config(
+            >>> #             endpoint_url="tos-s3-{region}.ivolces.com",
+            >>> #             region_name="cn-beijing",
+            >>> #             force_virtual_addressing=True,
+            >>> #             verify_ssl=True,
+            >>> #             key_id="your-access-key-id",
+            >>> #             access_key="your-secret-access-key",
+            >>> #         )
+            >>> #     )
+            >>> # )
             <BLANKLINE>
             (Writes the DataFrame to the Delta Lake table, partitioned by column "x",
             overwriting existing data, with specified metadata and custom configurations)
@@ -1797,21 +1752,51 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
             >>> df["a"]  # Get a single column
-            Expression: a
+            col(a)
             >>> df["b"]  # Get another single column
-            Expression: b
+            col(b)
             >>> df[0]  # Get the first column by index
-            Expression: a
+            col(a)
             >>> df[1:3]  # Get a slice of columns
-            DataFrame with columns: b, c
+            ╭───────┬───────╮
+            │ b     ┆ c     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (No data to display: Dataframe not materialized)
             >>> df[["a", "c"]]  # Get multiple columns by name
-            DataFrame with columns: a, c
+            ╭───────┬───────╮
+            │ a     ┆ c     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (No data to display: Dataframe not materialized)
             >>> df[["a", 1]]  # Get multiple columns by name and index
-            DataFrame with columns: a, b
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (No data to display: Dataframe not materialized)
             >>> df[0:2]  # Get a slice of columns by index
-            DataFrame with columns: a, b
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (No data to display: Dataframe not materialized)
             >>> df[["a", "b", 2]]  # Get a mix of column names and indices
-            DataFrame with columns: a, b, c
+            ╭───────┬───────┬───────╮
+            │ a     ┆ b     ┆ c     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (No data to display: Dataframe not materialized)
 
         """
         result: Optional[Expression]
@@ -1969,14 +1954,17 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df.summarize().show()
-            ┌─────────┬────────┬───────┬───────┬────────┬─────────────┬───────────────────────┐
-            │ column  │ type   │ min   │ max   │ count  │ count_nulls │ approx_count_distinct │
-            │ Utf8    │ Utf8   │ Utf8  │ Utf8  │ Utf8   │ UInt64      │ UInt64                │
-            ├─────────┼────────┼───────┼───────┼────────┼─────────────┼───────────────────────┤
-            │ x       │ Int64  │ 1     │ 3     │ 3      │ 0           │ 3                     │
-            │ y       │ Int64  │ 4     │ 6     │ 3      │ 0           │ 3                     │
-            │ z       │ Int64  │ 7     │ 9     │ 3      │ 0           │ 3                     │
-            └─────────┴────────┴───────┴───────┴────────┴─────────────┴───────────────────────┘
+            ╭────────┬───────┬──────┬────────────┬────────┬─────────────┬───────────────────────╮
+            │ column ┆ type  ┆ min  ┆      …     ┆ count  ┆ count_nulls ┆ approx_count_distinct │
+            │ ---    ┆ ---   ┆ ---  ┆            ┆ ---    ┆ ---         ┆ ---                   │
+            │ Utf8   ┆ Utf8  ┆ Utf8 ┆ (1 hidden) ┆ UInt64 ┆ UInt64      ┆ UInt64                │
+            ╞════════╪═══════╪══════╪════════════╪════════╪═════════════╪═══════════════════════╡
+            │ x      ┆ Int64 ┆ 1    ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ y      ┆ Int64 ┆ 4    ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ z      ┆ Int64 ┆ 7    ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
+            ╰────────┴───────┴──────┴────────────┴────────┴─────────────┴───────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
@@ -2116,7 +2104,19 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> sampled_df = df.sample(0.5)
-            >>> sampled_df.show()
+            >>> sampled_df = sampled_df.collect()
+            >>> # sampled_df.show()
+            >>> # ╭───────┬───────┬───────╮
+            >>> # │ x     ┆ y     ┆ z     │
+            >>> # │ ---   ┆ ---   ┆ ---   │
+            >>> # │ Int64 ┆ Int64 ┆ Int64 │
+            >>> # ╞═══════╪═══════╪═══════╡
+            >>> # │ 3     ┆ 6     ┆ 9     │
+            >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            >>> # │ 1     ┆ 4     ┆ 7     │
+            >>> # ╰───────┴───────┴───────╯
+            >>> # <BLANKLINE>
+            >>> # (Showing first 2 of 2 rows)
             >>> # Samples will vary from output to output
             >>> # here is a sample output
             >>> # ╭───────┬───────┬───────╮
@@ -2790,19 +2790,19 @@ class DataFrame:
             >>> df2 = daft.from_pydict({"a": [5, 6], "b": [7, 8]})
             >>> concatenated_df = df1.concat(df2)
             >>> concatenated_df.show()
-            ╭─────┬─────╮
-            │ a   ┆ b   │
-            │ --- ┆ --- │
-            │Int64┆Int64│
-            ╞═════╪═════╡
-            │ 1   ┆ 3   │
-            ├╌╌╌╌╌┼╌╌╌╌╌┤
-            │ 2   ┆ 4   │
-            ├╌╌╌╌╌┼╌╌╌╌╌┤
-            │ 5   ┆ 7   │
-            ├╌╌╌╌╌┼╌╌╌╌╌┤
-            │ 6   ┆ 8   │
-            ╰─────┴─────╯
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 5     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 6     ┆ 8     │
+            ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
@@ -3067,15 +3067,15 @@ class DataFrame:
             │ Int64 ┆ Utf8  ┆ Int64     │
             ╞═══════╪═══════╪═══════════╡
             │ 2020  ┆ Jan   ┆ 10        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
             │ 2020  ┆ Feb   ┆ 20        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
             │ 2021  ┆ Jan   ┆ 30        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
             │ 2021  ┆ Feb   ┆ 40        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
             │ 2022  ┆ Jan   ┆ 50        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌══════════╡
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
             │ 2022  ┆ Feb   ┆ 60        │
             ╰───────┴───────┴───────────╯
             <BLANKLINE>
@@ -3197,13 +3197,13 @@ class DataFrame:
             >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
             >>> df = df.sum("col_a")
             >>> df.show()
-            ╭─────────╮
-            │ col_a   │
-            │ ---     │
-            │ Int64   │
-            ╞═════════╡
-            │ 6       │
-            ╰─────────╯
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 6     │
+            ╰───────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
@@ -3228,7 +3228,7 @@ class DataFrame:
             │ ---     │
             │ Float64 │
             ╞═════════╡
-            │ 2.0     │
+            │ 2       │
             ╰─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
@@ -3276,13 +3276,13 @@ class DataFrame:
             >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
             >>> df = df.min("col_a")
             >>> df.show()
-            ╭─────────╮
-            │ col_a   │
-            │ ---     │
-            │ Int64   │
-            ╞═════════╡
-            │ 1       │
-            ╰─────────╯
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ╰───────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
@@ -3302,13 +3302,13 @@ class DataFrame:
             >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
             >>> df = df.max("col_a")
             >>> df.show()
-            ╭─────────╮
-            │ col_a   │
-            │ ---     │
-            │ Int64   │
-            ╞═════════╡
-            │ 3       │
-            ╰─────────╯
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 3     │
+            ╰───────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
@@ -3330,13 +3330,13 @@ class DataFrame:
             >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
             >>> df = df.any_value("col_a")
             >>> df.show()
-            ╭─────────╮
-            │ col_a   │
-            │ ---     │
-            │ Int64   │
-            ╞═════════╡
-            │ 1       │
-            ╰─────────╯
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ╰───────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
@@ -3386,7 +3386,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
-            >>> df.count(df["*")).show()
+            >>> df.count(df["*"]).show()
             ╭────────┬────────┬────────╮
             │ foo    ┆ bar    ┆ baz    │
             │ ---    ┆ ---    ┆ ---    │
@@ -3457,9 +3457,9 @@ class DataFrame:
             ╭─────────────╮
             │ col_a       │
             │ ---         │
-            │ Set[Int64]  │
+            │ List[Int64] │
             ╞═════════════╡
-            │ {1, 2, 3}   │
+            │ [1, 2, 3]   │
             ╰─────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
@@ -3481,13 +3481,13 @@ class DataFrame:
             >>> df = daft.from_pydict({"col_a": [[1, 2], [3, 4]]})
             >>> df = df.agg_concat("col_a")
             >>> df.show()
-            ╭────────═─────╮
+            ╭──────────────╮
             │ col_a        │
             │ ---          │
             │ List[Int64]  │
             ╞══════════════╡
             │ [1, 2, 3, 4] │
-            ╰─────────═────╯
+            ╰──────────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
@@ -3944,17 +3944,17 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> df = df.collect()
             >>> df.show()
-            ╭─────┬─────╮
-            │ x   ┆ y   │
-            │ --- ┆ --- │
-            │ Int ┆ Int │
-            ╞═════╪═════╡
-            │ 1   ┆ 4   │
-            ├╌╌╌╌╌┼╌╌╌╌╌┤
-            │ 2   ┆ 5   │
-            ├╌╌╌╌╌┼╌╌╌╌╌┤
-            │ 3   ┆ 6   │
-            ╰─────┴─────╯
+            ╭───────┬───────╮
+            │ x     ┆ y     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
@@ -4108,7 +4108,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> df.collect()
+            >>> df = df.collect()
             >>> len(df)
             3
 
@@ -4197,8 +4197,8 @@ class DataFrame:
             a: int64
             b: int64
             ----
-            a: [[1, 2, 3]]
-            b: [[4, 5, 6]]
+            a: [[1,2,3]]
+            b: [[4,5,6]]
 
         Tip:
             See also [DataFrame.to_arrow_iter()][daft.DataFrame.to_arrow_iter] for
@@ -4223,7 +4223,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> df = daft.from_array({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
             >>> print(df.to_pydict())
             {'a': [1, 2, 3, 4], 'b': [2, 4, 3, 1]}
 
@@ -4296,14 +4296,14 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> import torch
+            >>> # import torch  # torch not available in test environment
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> torch_dataset = df.to_torch_map_dataset()
-            >>> for item in torch_dataset:
-            ...     print(item)
-            {'x': 1, 'y': 4}
-            {'x': 2, 'y': 5}
-            {'x': 3, 'y': 6}
+            >>> # torch_dataset = df.to_torch_map_dataset()
+            >>> # for item in torch_dataset:
+            >>> #     print(item)
+            >>> # {'x': 1, 'y': 4}
+            >>> # {'x': 2, 'y': 5}
+            >>> # {'x': 3, 'y': 6}
 
         Tip:
             This method returns results locally.
@@ -4343,14 +4343,14 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> import torch
+            >>> # import torch  # torch not available in test environment
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> torch_iter_dataset = df.to_torch_iter_dataset()
-            >>> for item in torch_iter_dataset:
-            ...     print(item)
-            {'x': 1, 'y': 4}
-            {'x': 2, 'y': 5}
-            {'x': 3, 'y': 6}
+            >>> # torch_iter_dataset = df.to_torch_iter_dataset()
+            >>> # for item in torch_iter_dataset:
+            >>> #     print(item)
+            >>> # {'x': 1, 'y': 4}
+            >>> # {'x': 2, 'y': 5}
+            >>> # {'x': 3, 'y': 6}
 
         Note:
             The produced dataset is meant to be used with the single-process DataLoader,
@@ -4390,9 +4390,10 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> ray_dataset = df.to_ray_dataset()
-            >>> print(ray_dataset)
-            Dataset(num_blocks=1, schema={x: int64, y: int64})
+            >>> # Note: This requires Daft to be running on the RayRunner
+            >>> # ray_dataset = df.to_ray_dataset()
+            >>> # print(ray_dataset)
+            >>> # Dataset(num_blocks=1, schema={x: int64, y: int64})
 
         Note:
             This function can only work if Daft is running using the RayRunner
@@ -4499,9 +4500,10 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-            >>> dask_df = df.to_dask_dataframe()
-            >>> print(dask_df.compute())
-            a  b
+            >>> # Note: This requires Daft to be running on the RayRunner
+            >>> # dask_df = df.to_dask_dataframe()
+            >>> # print(dask_df.compute())
+            >>> # a  b
             0  1  4
             1  2  5
             2  3  6
