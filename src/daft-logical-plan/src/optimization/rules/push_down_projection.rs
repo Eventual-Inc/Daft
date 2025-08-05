@@ -355,6 +355,7 @@ impl PushDownProjection {
             | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
             | LogicalPlan::Limit(..)
+            | LogicalPlan::Offset(..)
             | LogicalPlan::TopN(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
@@ -751,7 +752,7 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{
         functions::{
-            python::{MaybeInitializedUDF, PythonUDF, RuntimePyObject},
+            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
             FunctionExpr,
         },
         lit, resolved_col, unresolved_col, Expr, ExprRef,
@@ -787,7 +788,7 @@ mod tests {
 
     fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF {
+            func: FunctionExpr::Python(LegacyPythonUDF {
                 name: Arc::new("my-udf".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),
@@ -1165,6 +1166,7 @@ mod tests {
                 columns: Some(Arc::new(vec!["a".to_string()])),
                 filters: None,
                 sharder: None,
+                pushed_filters: None,
             },
         )
         .build();
@@ -1210,6 +1212,7 @@ mod tests {
                 ])),
                 filters: None,
                 sharder: None,
+                pushed_filters: None,
             },
         )
         .build();

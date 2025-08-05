@@ -2,7 +2,10 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
+use daft_dsl::{
+    functions::{scalar::ScalarFn, BuiltinScalarFn},
+    resolved_col, Expr,
+};
 use daft_functions_uri::download::UrlDownload;
 use itertools::Itertools;
 
@@ -43,7 +46,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
         )
     }
 
@@ -247,7 +250,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("url", DataType::Utf8)]),
             Pushdowns::default(),
         )
-        .with_columns(vec![ScalarFunction::new(
+        .with_columns(vec![BuiltinScalarFn::new(
             UrlDownload,
             vec![resolved_col("url")],
         )
@@ -274,10 +277,10 @@ mod tests {
             Pushdowns::default(),
         )
         .select(vec![
-            ExprRef::from(ScalarFunction::new(
+            ExprRef::from(BuiltinScalarFn::new(
                 BinaryDecode,
                 vec![
-                    ScalarFunction::new(UrlDownload, vec![resolved_col("url")]).into(),
+                    BuiltinScalarFn::new(UrlDownload, vec![resolved_col("url")]).into(),
                     lit(Codec::Utf8),
                 ],
             ))
@@ -317,7 +320,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<BinaryDecode>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<BinaryDecode>()
         ));
 
         // Check that the top level project has a single child, which is a project
@@ -338,7 +341,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node
@@ -362,10 +365,10 @@ mod tests {
             Pushdowns::default(),
         )
         .select(vec![
-            ExprRef::from(ScalarFunction::new(
+            ExprRef::from(BuiltinScalarFn::new(
                 BinaryConcat,
                 vec![
-                    ScalarFunction::new(UrlDownload, vec![capitalize(resolved_col("url"))]).into(),
+                    BuiltinScalarFn::new(UrlDownload, vec![capitalize(resolved_col("url"))]).into(),
                     resolved_col("extra"),
                 ],
             ))
@@ -405,7 +408,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<BinaryConcat>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<BinaryConcat>()
         ));
 
         // Check that the top level project has a single child, which is a project
@@ -426,7 +429,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the middle level project has a single child, which is a project
@@ -447,7 +450,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<Capitalize>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<Capitalize>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node

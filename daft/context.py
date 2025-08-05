@@ -47,6 +47,21 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
+    def get_or_infer_runner_type(self) -> str:
+        """Get or infer the runner type.
+
+        This API will get or infer the currently used runner type according to the following strategies:
+        1. If the `runner` has been set, return its type directly;
+        2. Try to determine whether it's currently running on a ray cluster. If so, consider it to be a ray type;
+        3. Try to determine based on `DAFT_RUNNER` env variable.
+
+        :return: runner type string ("native" or "ray")
+        """
+        if self._ctx._runner is not None:
+            return self._ctx._runner.name
+
+        return self._ctx.get_or_infer_runner_type()
+
     def get_or_create_runner(self) -> Runner[PartitionT]:
         return self._ctx.get_or_create_runner()
 

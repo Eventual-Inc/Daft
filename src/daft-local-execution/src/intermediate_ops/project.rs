@@ -5,7 +5,7 @@ use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
     common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
-    functions::ScalarFunction,
+    functions::{scalar::ScalarFn, BuiltinScalarFn},
     Expr,
 };
 use daft_functions_uri::download::UrlDownloadArgs;
@@ -17,7 +17,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -48,7 +48,7 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
         expr.inner()
             .apply(|e| {
                 let found_batch_size = match e.as_ref() {
-                    Expr::ScalarFunction(ScalarFunction { udf, inputs, .. })
+                    Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, inputs, .. }))
                         if udf.name() == "url_download" =>
                     {
                         let UrlDownloadArgs {
@@ -140,8 +140,8 @@ impl IntermediateOperator for ProjectOperator {
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Project"
+    fn name(&self) -> NodeName {
+        "Project".into()
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -196,15 +196,15 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFn {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
                         0,
                         Field::new("a", DataType::Utf8),
                     ))])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
         ];
 
@@ -220,15 +220,15 @@ mod tests {
         let projection = vec![
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFn {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![
                         FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
                         FunctionArg::named("max_connections", lit(10)),
                     ])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
         ];
 
@@ -242,26 +242,26 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFn {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![
                         FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
                         FunctionArg::named("max_connections", lit(4)),
                     ])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
             BoundExpr::new_unchecked(
-                Expr::ScalarFunction(ScalarFunction {
+                BuiltinScalarFn {
                     udf: Arc::new(UrlDownload),
                     inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
                         1,
                         Field::new("b", DataType::Utf8),
                     ))])
                     .unwrap(),
-                })
-                .arced(),
+                }
+                .into(),
             ),
         ];
 

@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use num_traits::Pow;
@@ -58,7 +58,7 @@ pub fn round(input: ExprRef, decimal: Option<ExprRef>) -> ExprRef {
     if let Some(decimal) = decimal {
         inputs.push(decimal);
     }
-    ScalarFunction::new(Round {}, inputs).into()
+    ScalarFn::builtin(Round {}, inputs).into()
 }
 
 pub fn series_round(s: &Series, decimal: i32) -> DaftResult<Series> {

@@ -15,7 +15,7 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::{agg::merge_mean, python::try_get_concurrency},
+    functions::agg::merge_mean,
     is_partition_compatible,
     join::normalize_join_keys,
     lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
@@ -125,6 +125,7 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::UDFProject(LogicalUDFProject {
             project,
             passthrough_columns,
+            udf_properties,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -133,10 +134,11 @@ pub(super) fn translate_single_logical_node(
                 .chain(std::iter::once(&project.clone()))
                 .cloned()
                 .collect();
-            if try_get_concurrency(project).is_some() {
+            if udf_properties.is_actor_pool_udf() {
                 Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                     input_physical,
                     projection,
+                    udf_properties.clone(),
                 )?)
                 .arced())
             } else {
@@ -155,9 +157,20 @@ pub(super) fn translate_single_logical_node(
             ))
             .arced())
         }
-        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
+        LogicalPlan::Limit(LogicalLimit {
+            limit,
+            offset,
+            eager,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
+            if offset.is_some() {
+                // TODO(zhenchao) support offset
+                return Err(DaftError::not_implemented(
+                    "Offset operator is unsupported for distributed runner now!",
+                ));
+            }
             Ok(
                 PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
                     .arced(),
@@ -167,11 +180,18 @@ pub(super) fn translate_single_logical_node(
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
+            if offset.is_some() {
+                // TODO(zhenchao) support offset
+                return Err(DaftError::not_implemented(
+                    "Offset operator is unsupported for distributed runner now!",
+                ));
+            }
             Ok(PhysicalPlan::TopN(TopN::new(
                 input_physical,
                 sort_by.clone(),
@@ -553,15 +573,13 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            logical_plan.name()
+        ))),
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),

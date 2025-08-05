@@ -2,12 +2,14 @@
 # isort: dont-add-import: from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
-from daft.daft import PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
+from daft.daft import PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
 from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
+
+from ..pushdowns import SupportsPushdownFilters
 
 if TYPE_CHECKING:
     import lance
@@ -29,9 +31,10 @@ def _lancedb_table_factory_function(
     return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
 
 
-class LanceDBScanOperator(ScanOperator):
+class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     def __init__(self, ds: "lance.LanceDataset"):
         self._ds = ds
+        self._pushed_filters: Union[list[PyExpr], None] = None
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -46,7 +49,7 @@ class LanceDBScanOperator(ScanOperator):
         return []
 
     def can_absorb_filter(self) -> bool:
-        return False
+        return isinstance(self, SupportsPushdownFilters)
 
     def can_absorb_limit(self) -> bool:
         return False
@@ -59,6 +62,25 @@ class LanceDBScanOperator(ScanOperator):
             self.display_name(),
             f"Schema = {self.schema()}",
         ]
+
+    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
+        from daft.expressions import Expression
+
+        pushed = []
+        remaining = []
+        for expr in filters:
+            try:
+                filters = Expression._from_pyexpr(expr).to_arrow_expr()
+                pushed.append(expr)
+            except NotImplementedError:
+                remaining.append(expr)
+
+        if pushed:
+            self._pushed_filters = pushed
+        else:
+            self._pushed_filters = None
+
+        return pushed, remaining
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         required_columns: Optional[list[str]]

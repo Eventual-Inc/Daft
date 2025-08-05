@@ -4,7 +4,7 @@ use std::{
 };
 
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{BuiltinScalarFn, ScalarUDF},
     ExprRef,
 };
 use spark_connect::Expression;
@@ -82,7 +82,7 @@ where
     T: ScalarUDF + 'static + Clone,
 {
     fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
-        let sf = ScalarFunction::new(
+        let sf = BuiltinScalarFn::new(
             self.clone(),
             args.iter()
                 .map(analyze_expr)

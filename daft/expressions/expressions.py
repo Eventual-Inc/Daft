@@ -31,8 +31,9 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
+from daft.daft import list_lit as _list_lit
 from daft.daft import lit as _lit
-from daft.daft import series_lit as _series_lit
+from daft.daft import row_wise_udf as _row_wise_udf
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
@@ -44,7 +45,7 @@ from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
-    from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
+    from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
     EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
@@ -107,8 +108,10 @@ def lit(value: object) -> Expression:
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
-        agg_listed = value._series.agg_list()
-        lit_value = _series_lit(agg_listed)
+        lit_value = _list_lit(value._series)
+    elif isinstance(value, list):
+        value_series = Series.from_pylist(value)
+        lit_value = _list_lit(value_series._series)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -413,6 +416,18 @@ class Expression:
                 concurrency,
                 use_process,
             )
+        )
+
+    @staticmethod
+    def _row_wise_udf(
+        name: builtins.str,
+        inner: Callable[..., Any],
+        return_dtype: DataType,
+        original_args: tuple[tuple[Any, ...], dict[builtins.str, Any]],
+        expr_args: builtins.list[Expression],
+    ) -> Expression:
+        return Expression._from_pyexpr(
+            _row_wise_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in expr_args])
         )
 
     @staticmethod
@@ -1385,7 +1400,12 @@ class Expression:
         name = getattr(func, "__module__", "")
         if name:
             name = name + "."
-        name = name + getattr(func, "__qualname__")
+        if hasattr(func, "__qualname__"):
+            name = name + getattr(func, "__qualname__")
+        elif hasattr(func, "__class__"):
+            name = name + func.__class__.__name__
+        else:
+            name = name + func.__name__
 
         return UDF(
             inner=batch_func,
@@ -1511,7 +1531,7 @@ class Expression:
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
             series = item_to_series("items", other)
-            other = [Expression._from_pyexpr(_series_lit(series._series))]
+            other = [Expression._from_pyexpr(_list_lit(series._series))]
         else:
             other = [other]
 
@@ -1552,19 +1572,28 @@ class Expression:
         expr = self._expr.between(lower._expr, upper._expr)
         return Expression._from_pyexpr(expr)
 
-    def hash(self, seed: Any | None = None) -> Expression:
+    def hash(
+        self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash"
+    ) -> Expression:
         """Hashes the values in the Expression.
 
-        Uses the [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function to hash the values in the expression.
+        Uses the specified hash function to hash the values in the expression. Default to [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function.
 
         Args:
             seed (optional): Seed used for generating the hash. Defaults to 0.
+            hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
 
         Note:
             Null values will produce a hash value instead of being propagated as null.
 
         """
-        return self._eval_expressions("hash", seed=seed)
+        # Only pass hash_function if explicitly provided to maintain backward compatibility in string representation
+        kwargs = {}
+        if seed is not None:
+            kwargs["seed"] = seed
+        if hash_function is not None:
+            kwargs["hash_function"] = hash_function
+        return self._eval_expressions("hash", **kwargs)
 
     def minhash(
         self,
@@ -4566,7 +4595,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             patterns = [patterns]
         if not isinstance(patterns, Expression):
             series = item_to_series("items", patterns)
-            patterns = Expression._from_pyexpr(_series_lit(series._series))
+            patterns = Expression._from_pyexpr(_list_lit(series._series))
 
         whole_words_expr = Expression._to_expression(whole_words)._expr
         case_sensitive_expr = Expression._to_expression(case_sensitive)._expr

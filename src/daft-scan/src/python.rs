@@ -75,8 +75,9 @@ pub mod pylib {
     use common_scan_info::{
         python::pylib::{PyPartitionField, PyPushdowns},
         PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
+        SupportsPushdownFilters,
     };
-    use daft_dsl::expr::bound_expr::BoundExpr;
+    use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr, ExprRef};
     use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
     use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
@@ -89,6 +90,7 @@ pub mod pylib {
         anonymous::AnonymousScanOperator, glob::GlobScanOperator, storage_config::StorageConfig,
         DataSource, ScanTask,
     };
+
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -117,6 +119,7 @@ pub mod pylib {
                     file_format_config.into(),
                     storage_config.into(),
                 ));
+
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })
@@ -174,9 +177,10 @@ pub mod pylib {
             Ok(Self { scan_op })
         }
     }
+
     #[pyclass(module = "daft.daft")]
     #[derive(Debug)]
-    struct PythonScanOperatorBridge {
+    pub struct PythonScanOperatorBridge {
         name: String,
         operator: PyObject,
         schema: SchemaRef,
@@ -255,6 +259,69 @@ pub mod pylib {
         }
     }
 
+    impl SupportsPushdownFilters for PythonScanOperatorBridge {
+        fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
+            Python::with_gil(|py| {
+                let py_filters: Vec<PyObject> = filters
+                    .iter()
+                    .map(|expr| Py::new(py, PyExpr::from(expr.clone())).unwrap().into())
+                    .collect();
+
+                let result = match self
+                    .operator
+                    .call_method1(py, "push_filters", (py_filters,))
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        e.print_and_set_sys_last_vars(py);
+                        panic!("Python method call failed, please ensure return value is a tuple of (pushed_filters, post_filters)");
+                    }
+                };
+
+                let (pushed_pyexpr, post_pyexpr): (Vec<PyExpr>, Vec<PyExpr>) = match result
+                    .extract(py)
+                {
+                    Ok(res) => res,
+                    Err(_) => {
+                        let py_result = result.bind(py);
+
+                        let elem1_type = py_result
+                            .get_item(0)
+                            .map(|e| {
+                                let type_ = e.get_type();
+                                let name = type_.name().unwrap();
+                                name.to_string_lossy().into_owned()
+                            })
+                            .unwrap_or_else(|_| "unknown".to_string());
+
+                        let elem2_type = py_result
+                            .get_item(1)
+                            .map(|e| {
+                                let type_ = e.get_type();
+                                let name = type_.name().unwrap();
+                                name.to_string_lossy().into_owned()
+                            })
+                            .unwrap_or_else(|_| "unknown".to_string());
+
+                        let full_type = py_result.get_type();
+                        let type_name_obj = full_type.name().unwrap();
+                        let type_name = type_name_obj.to_string_lossy();
+
+                        panic!(
+                            "Python return type mismatch. Expected tuple[list[Expr], list[Expr]]\nActual:\nElement 1 type: {}\nElement 2 type: {}\nFull type: {}",
+                            elem1_type, elem2_type, type_name
+                        );
+                    }
+                };
+
+                (
+                    pushed_pyexpr.into_iter().map(|e| e.expr).collect(),
+                    post_pyexpr.into_iter().map(|e| e.expr).collect(),
+                )
+            })
+        }
+    }
+
     impl ScanOperator for PythonScanOperatorBridge {
         fn name(&self) -> &str {
             &self.name
@@ -311,6 +378,14 @@ pub mod pylib {
                 .into_iter()
                 .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
                 .collect()
+        }
+
+        fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
+            if self.can_absorb_filter {
+                Some(self)
+            } else {
+                None
+            }
         }
     }
 
@@ -398,8 +473,7 @@ pub mod pylib {
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
 
             let pspec = PartitionSpec {
-                keys: partition_values
-                    .map_or_else(|| RecordBatch::empty(None).unwrap(), |p| p.record_batch),
+                keys: partition_values.map_or_else(|| RecordBatch::empty(None), |p| p.record_batch),
             };
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))

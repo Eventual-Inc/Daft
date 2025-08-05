@@ -62,7 +62,7 @@ fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<PyObject> {
             daft_dsl::LiteralValue::Interval(..) => todo!(),
             daft_dsl::LiteralValue::Float64(f) => f.into_py_any(py),
             daft_dsl::LiteralValue::Decimal(..) => unreachable_variant!(Decimal),
-            daft_dsl::LiteralValue::Series(series) => daft_core::python::PySeries {
+            daft_dsl::LiteralValue::List(series) => daft_core::python::PySeries {
                 series: series.clone(),
             }
             .into_py_any(py),

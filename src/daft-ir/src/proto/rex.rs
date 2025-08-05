@@ -5,7 +5,7 @@ use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
         from_proto_vec,
-        functions::{from_proto_function, function_expr_to_proto},
+        functions::{from_proto_function, function_expr_to_proto, scalar_fn_to_proto},
         to_proto_vec, UNIT,
     },
 };
@@ -272,10 +272,7 @@ impl ToFromProto for ir::Expr {
                     .into(),
                 )
             }
-            Self::ScalarFunction(scalar_function) => {
-                let function = scalar_function.to_proto()?;
-                proto::ExprVariant::Function(function)
-            }
+            Self::ScalarFn(sf) => proto::ExprVariant::Function(scalar_fn_to_proto(sf)?),
             Self::Subquery(_) => {
                 // todo(conner)
                 not_implemented_err!("subquery")
@@ -733,7 +730,7 @@ impl ToFromProto for ir::LiteralValue {
                     value: display_decimal128(*value, *precision, *scale),
                 })
             }
-            Self::Series(_) => not_implemented_err!("series literal"),
+            Self::List(_) => not_implemented_err!("list literal"),
             #[cfg(feature = "python")]
             Self::Python(_) => todo!("python literal"),
             Self::Struct(struct_) => {

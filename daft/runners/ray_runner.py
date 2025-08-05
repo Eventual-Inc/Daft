@@ -145,11 +145,15 @@ def _glob_path_into_file_infos(
 ) -> FileInfos:
     file_infos = FileInfos()
     file_format = file_format_config.file_format() if file_format_config is not None else None
-    for path in paths:
-        path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
-        if len(path_file_infos) == 0:
-            raise FileNotFoundError(f"No files found at {path}")
-        file_infos.extend(path_file_infos)
+    for path in set(paths):
+        try:
+            path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
+            file_infos.merge(path_file_infos)
+        except FileNotFoundError:
+            logger.debug("%s is not found.", path)
+
+    if len(file_infos) == 0:
+        raise FileNotFoundError(f"No files found at {','.join(paths)}")
 
     return file_infos
 
@@ -1128,13 +1132,13 @@ class DaftRayActor:
     def __init__(
         self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection
     ) -> None:
-        from daft.daft import get_udf_names
+        from daft.daft import try_get_udf_name
 
         self.daft_execution_config = daft_execution_config
 
         logger.info(
             "Initializing stateful UDFs: %s",
-            ", ".join(name for expr in uninitialized_projection for name in get_udf_names(expr._expr)),
+            ", ".join(name for expr in uninitialized_projection if (name := try_get_udf_name(expr._expr)) is not None),
         )
         self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 

@@ -37,7 +37,7 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionT,
 )
-from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
+from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions, in_notebook
 
 if TYPE_CHECKING:
     import dask
@@ -1076,7 +1076,8 @@ class DataFrame:
             (Writes the DataFrame to S3 in JSON format, partitioned by column "x" and overwriting existing data)
             <BLANKLINE>
 
-        !!! Currently only supported with the Native runner!
+        Warning:
+            Currently only supported with the Native runner!
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -1710,9 +1711,9 @@ class DataFrame:
     @DataframePublicAPI
     def write_turbopuffer(
         self,
-        namespace: str,
-        api_key: str,
-        region: str = "aws-us-west-2",
+        namespace: Union[str, Expression],
+        api_key: Optional[str] = None,
+        region: Optional[str] = None,
         distance_metric: Optional[Literal["cosine_distance", "euclidean_squared"]] = None,
         schema: Optional[dict[str, Any]] = None,
         id_column: Optional[str] = None,
@@ -1731,13 +1732,16 @@ class DataFrame:
 
         All other columns become attributes.
 
+        The namespace parameter can be either a string (for a single namespace) or an expression (for multiple namespaces).
+        When using an expression, the data will be partitioned by the computed namespace values and written to each namespace separately.
+
         For more details on parameters, please see the turbopuffer documentation: https://turbopuffer.com/docs/write
 
         Args:
-            namespace: The namespace to write to.
+            namespace: The namespace to write to. Can be a string for a single namespace or an expression for multiple namespaces.
             api_key: Turbopuffer API key.
             region: Turbopuffer region.
-            distance_metric: Optional distance metric for vector similarity ("cosine_distance", "euclidean_squared").
+            distance_metric: Distance metric for vector similarity ("cosine_distance", "euclidean_squared").
             schema: Optional manual schema specification.
             id_column: Optional column name for the id column. The data sink will automatically rename the column to "id" for the id column.
             vector_column: Optional column name for the vector index column. The data sink will automatically rename the column to "vector" for the vector index.
@@ -1886,11 +1890,12 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def select(self, *columns: ColumnInputType) -> "DataFrame":
+    def select(self, *columns: ColumnInputType, **projections: Expression) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``.
 
         Args:
             *columns (Union[str, Expression]): columns to select from the current DataFrame
+            **projections (Expression): additional projections in kwarg format.
 
         Returns:
             DataFrame: new DataFrame that will select the passed in columns
@@ -1914,8 +1919,9 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        assert len(columns) > 0
-        builder = self._builder.select(self.__column_input_to_expression(columns))
+        selection = column_inputs_to_expressions(columns)
+        selection += [expr.alias(alias) for (alias, expr) in projections.items()]
+        builder = self._builder.select(selection)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2518,6 +2524,43 @@ class DataFrame:
 
         """
         builder = self._builder.limit(num, eager=False)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def offset(self, num: int) -> "DataFrame":
+        """Returns a new DataFrame by skipping the first ``N`` rows, similar to a SQL ``Offset``.
+
+        Args:
+            num (int): the number of rows to skip
+
+        Returns:
+            DataFrame: A new DataFrame by skipping the first ``N`` rows
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
+            >>> df = df.offset(1).limit(5)  # skip the first row and return 5 rows
+            >>> df.show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 2     │
+            ├╌╌╌╌╌╌╌┤
+            │ 3     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ├╌╌╌╌╌╌╌┤
+            │ 5     │
+            ├╌╌╌╌╌╌╌┤
+            │ 6     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
+        """
+        builder = self._builder.offset(num)
         return DataFrame(builder)
 
     def _shard(self, strategy: Literal["file"], world_size: int, rank: int) -> "DataFrame":
@@ -4033,7 +4076,15 @@ class DataFrame:
         )
 
         try:
-            from IPython.display import display
+            from IPython.display import HTML, display
+
+            if in_notebook() and preview.partition is not None:
+                try:
+                    interactive_html = preview_formatter._generate_interactive_html()
+                    display(HTML(interactive_html), clear=True)
+                    return None
+                except Exception:
+                    pass
 
             display(preview_formatter, clear=True)
         except ImportError:
