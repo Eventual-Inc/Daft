@@ -66,7 +66,10 @@ impl StagePlanBuilder {
                 }
             }
             LogicalPlan::Join(join) => {
-                if join.join_strategy.is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast)) {
+                if join
+                    .join_strategy
+                    .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+                {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 } else {
