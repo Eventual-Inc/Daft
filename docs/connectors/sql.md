@@ -1,4 +1,4 @@
-# SQL
+# Reading from and Writing to SQL Databases
 
 You can read the results of SQL queries from databases, data warehouses, and query engines via the [`daft.read_sql()`][daft.read_sql] function.
 

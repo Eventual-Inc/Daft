@@ -26,7 +26,7 @@ use crate::{
 
 const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
-const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com";
+const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com/.default";
 const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
 
 #[derive(Debug, Snafu)]

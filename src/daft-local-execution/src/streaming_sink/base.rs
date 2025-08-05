@@ -290,7 +290,7 @@ impl PipelineNode for StreamingSinkNode {
 
                 while let Some(morsel) = output_receiver.recv().await {
                     if counting_sender.send(morsel).await.is_err() {
-                        break;
+                        return Ok(());
                     }
                 }
 
