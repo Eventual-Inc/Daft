@@ -480,8 +480,7 @@ class DataFrame:
             {'foo': 3, 'bar': 'c'}
 
         Tip:
-            See also [`df.iter_rows()`][daft.DataFrame.iter_rows]
-            Iterator over rows with more options"
+            See also [`df.iter_rows()`][daft.DataFrame.iter_rows]: iterator over rows with more options
         """
         return self.iter_rows(results_buffer_size=None)
 
