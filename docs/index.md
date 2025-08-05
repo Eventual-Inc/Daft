@@ -32,6 +32,18 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 * **Out of the Box reliability**: Deploy with confidence—intelligent memory management prevents OOM errors while sensible defaults eliminate configuration headaches, letting you focus on results, not infrastructure.
 
+## Learning Daft
+
+This guide aims to help you master the usage of Daft for all your data needs.
+
+!!! tip "Looking to get started with Daft ASAP?"
+
+    The Daft Guide is a useful resource to take deeper dives into specific Daft concepts, but if you are ready to jump into code you may wish to take a look at these resources:
+
+    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
+
+    2. [API Documentation](api/index.md): Searchable documentation and reference material to Daft’s public API.
+
 ## Contribute to Daft
 
 If you're interested in hands-on learning about Daft internals and would like to contribute to our project, join us [on Github](https://github.com/Eventual-Inc/Daft) 🚀
