@@ -79,21 +79,19 @@ impl LimitNode {
             let task = match num_rows.cmp(remaining_limit) {
                 Ordering::Less => {
                     *remaining_limit -= num_rows;
-                    let task = make_in_memory_scan_from_materialized_outputs(
+                    make_in_memory_scan_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
                         &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                    )?;
-                    task
+                    )?
                 }
                 Ordering::Equal => {
                     *remaining_limit = 0;
-                    let task = make_in_memory_scan_from_materialized_outputs(
+                    make_in_memory_scan_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
                         &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                    )?;
-                    task
+                    )?
                 }
                 Ordering::Greater => {
                     let remaining = *remaining_limit;
@@ -183,7 +181,7 @@ impl LimitNode {
 
         // Keep submitting local limit tasks as long as we have remaining limit or we have input
         while !input_exhausted {
-            let mut local_limits = VecDeque::with_capacity(max_concurrent_tasks);
+            let mut local_limits = VecDeque::new();
             let local_limit_per_task = remaining_limit;
 
             // Submit tasks until we have max_concurrent_tasks or we run out of input
@@ -208,11 +206,11 @@ impl LimitNode {
                     break;
                 }
             }
-
+            let num_local_limits = local_limits.len();
             let mut total_num_rows = 0;
             // Process results from all local limit tasks
             let mut downstream_tasks = vec![];
-            for future in local_limits.drain(..) {
+            for future in local_limits {
                 let maybe_result = future.await?;
                 if let Some(materialized_output) = maybe_result {
                     total_num_rows += materialized_output.num_rows()?;
@@ -234,8 +232,8 @@ impl LimitNode {
 
             // Update max_concurrent_tasks based on actual output
             if total_num_rows > 0 {
-                let rows_per_task = total_num_rows / max_concurrent_tasks;
-                let tasks_needed = (remaining_limit + rows_per_task - 1) / rows_per_task;
+                let rows_per_task = total_num_rows / num_local_limits;
+                let tasks_needed = remaining_limit.div_ceil(rows_per_task);
                 max_concurrent_tasks = tasks_needed.max(1);
             }
         }
