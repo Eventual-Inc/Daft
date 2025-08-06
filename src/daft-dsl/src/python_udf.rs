@@ -109,7 +109,7 @@ impl RowWisePyFn {
 
     #[cfg(feature = "python")]
     pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
-        use daft_core::python::{PyDataType, PySeries};
+        use daft_core::python::PySeries;
         use pyo3::prelude::*;
         use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 
@@ -128,8 +128,6 @@ impl RowWisePyFn {
             );
         }
 
-        let py_return_type = PyDataType::from(self.return_dtype.clone());
-
         let call_func_with_evaluated_exprs = pyo3::Python::with_gil(|py| {
             Ok::<_, PyErr>(
                 py.import(pyo3::intern!(py, "daft.udf.row_wise"))?
@@ -147,15 +145,15 @@ impl RowWisePyFn {
         // Since we're processing data in chunks, there's less thrashing of the gil than if we were to use `.par_iter().map(|row| {Python::with_gil(..)})`
         let n_cpus =
             std::thread::available_parallelism().expect("Failed to get available parallelism");
-
         let chunk_size = (num_rows / (n_cpus.get() * 4)).clamp(1, 512);
 
         let indices: Vec<usize> = (0..num_rows).collect();
+
         let outputs = indices
             .par_chunks(chunk_size)
             .map(|chunk| {
                 Python::with_gil(|py| {
-                    chunk
+                    let res = chunk
                         .iter()
                         .map(|&i| {
                             let args_for_row = args
@@ -165,34 +163,29 @@ impl RowWisePyFn {
                                     LiteralValue::get_from_series(a, idx)
                                 })
                                 .collect::<DaftResult<Vec<_>>>()?;
-
                             let py_args = args_for_row
                                 .into_iter()
-                                .map(|a| a.into_pyobject(py))
-                                .collect::<PyResult<Vec<_>>>()?;
+                                .map(|a| a.into_pyobject(py).map_err(|e| e.into()))
+                                .collect::<DaftResult<Vec<_>>>()?;
 
                             let result = call_func_with_evaluated_exprs.bind(py).call1((
                                 self.inner.clone().unwrap().as_ref(),
-                                py_return_type.clone(),
                                 self.original_args.clone().unwrap().as_ref(),
                                 py_args,
                             ))?;
-
-                            let result_series = result.extract::<PySeries>()?.series;
-                            Ok(result_series)
+                            DaftResult::Ok(result.unbind())
                         })
-                        .collect::<DaftResult<Vec<Series>>>()
+                        .collect::<DaftResult<Vec<_>>>()?;
+
+                    DaftResult::Ok(
+                        PySeries::from_pylist_impl(args[0].name(), res, self.return_dtype.clone())?
+                            .series,
+                    )
                 })
             })
-            .collect::<DaftResult<Vec<Vec<Series>>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
+            .collect::<DaftResult<Vec<Series>>>()?;
         let outputs_ref = outputs.iter().collect::<Vec<_>>();
-
         let name = args[0].name();
-
         Ok(Series::concat(&outputs_ref)?.rename(name))
     }
 }
