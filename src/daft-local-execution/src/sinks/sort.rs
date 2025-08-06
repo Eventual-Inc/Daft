@@ -8,11 +8,11 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
 use crate::{pipeline::NodeName, ExecutionTaskSpawner};
 
-enum SortState {
+pub(crate) enum SortState {
     Building(Vec<Arc<MicroPartition>>),
     Done,
 }
@@ -34,12 +34,6 @@ impl SortState {
         };
         *self = Self::Done;
         res
-    }
-}
-
-impl BlockingSinkState for SortState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -65,38 +59,30 @@ impl SortSink {
 }
 
 impl BlockingSink for SortSink {
+    type State = SortState;
+
     #[instrument(skip_all, name = "SortSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
-        state
-            .as_any_mut()
-            .downcast_mut::<SortState>()
-            .expect("SortSink should have sort state")
-            .push(input);
+    ) -> BlockingSinkSinkResult<Self> {
+        state.push(input);
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.params.clone();
         spawner
             .spawn(
                 async move {
-                    let parts = states.into_iter().flat_map(|mut state| {
-                        let state = state
-                            .as_any_mut()
-                            .downcast_mut::<SortState>()
-                            .expect("State type mismatch");
-                        state.finalize()
-                    });
+                    let parts = states.into_iter().flat_map(|mut state| state.finalize());
                     let concated = MicroPartition::concat(parts)?;
                     let sorted = Arc::new(concated.sort(
                         &params.sort_by,
@@ -136,7 +122,7 @@ impl BlockingSink for SortSink {
         lines
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(SortState::Building(Vec::new())))
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(SortState::Building(Vec::new()))
     }
 }

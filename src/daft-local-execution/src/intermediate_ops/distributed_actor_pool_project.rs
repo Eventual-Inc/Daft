@@ -16,8 +16,7 @@ use pyo3::prelude::*;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
@@ -74,14 +73,8 @@ impl From<daft_dsl::pyobj_serde::PyObjectWrapper> for ActorHandle {
     }
 }
 
-struct DistributedActorPoolProjectState {
+pub struct DistributedActorPoolProjectState {
     pub actor_handle: ActorHandle,
-}
-
-impl IntermediateOpState for DistributedActorPoolProjectState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
 pub struct DistributedActorPoolProjectOperator {
@@ -124,22 +117,20 @@ impl DistributedActorPoolProjectOperator {
 }
 
 impl IntermediateOperator for DistributedActorPoolProjectOperator {
+    type State = DistributedActorPoolProjectState;
+
     #[instrument(skip_all, name = "DistributedActorPoolProjectOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let distributed_actor_pool_project_state = state
-                    .as_any_mut()
-                    .downcast_mut::<DistributedActorPoolProjectState>()
-                    .expect("DistributedActorPoolProjectState");
-                let res = distributed_actor_pool_project_state
+                let res = state
                     .actor_handle
                     .eval_input(input)
                     .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
@@ -170,13 +161,13 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         let next_actor_handle_idx =
             self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
         let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
-        Ok(Box::new(DistributedActorPoolProjectState {
+        Ok(DistributedActorPoolProjectState {
             actor_handle: next_actor_handle.clone(),
-        }))
+        })
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {

@@ -7,17 +7,11 @@ use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
 use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
-struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
-
-impl BlockingSinkState for CrossJoinCollectState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
+pub(crate) struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
 
 pub struct CrossJoinCollectSink {
     state_bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
@@ -30,6 +24,8 @@ impl CrossJoinCollectSink {
 }
 
 impl BlockingSink for CrossJoinCollectSink {
+    type State = CrossJoinCollectState;
+
     fn name(&self) -> NodeName {
         "CrossJoinCollect".into()
     }
@@ -37,9 +33,9 @@ impl BlockingSink for CrossJoinCollectSink {
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         if input.is_empty() {
             return Ok(BlockingSinkStatus::NeedMoreInput(state)).into();
         }
@@ -47,12 +43,7 @@ impl BlockingSink for CrossJoinCollectSink {
         spawner
             .spawn(
                 async move {
-                    let cross_join_collect_state = state
-                        .as_any_mut()
-                        .downcast_mut::<CrossJoinCollectState>()
-                        .expect("CrossJoinCollectSink should have CrossJoinCollectState");
-
-                    cross_join_collect_state
+                    state
                         .0
                         .as_mut()
                         .expect("Collected tables should not be consumed before sink stage is done")
@@ -68,16 +59,12 @@ impl BlockingSink for CrossJoinCollectSink {
     #[instrument(skip_all, name = "CrossJoinCollectSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
+        assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();
-        let cross_join_collect_state = state
-            .as_any_mut()
-            .downcast_mut::<CrossJoinCollectState>()
-            .expect("CrossJoinCollectSink should have CrossJoinCollectState");
-
-        let tables = cross_join_collect_state
+        let tables = state
             .0
             .take()
             .expect("Cross join collect state should have tables before finalize is called");
@@ -86,8 +73,8 @@ impl BlockingSink for CrossJoinCollectSink {
         Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(CrossJoinCollectState(Some(Vec::new()))))
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(CrossJoinCollectState(Some(Vec::new())))
     }
 
     fn multiline_display(&self) -> Vec<String> {

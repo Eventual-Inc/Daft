@@ -10,12 +10,11 @@ use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
-enum InnerHashJoinProbeState {
+pub enum InnerHashJoinProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
     Probing(Arc<ProbeState>),
 }
@@ -30,12 +29,6 @@ impl InnerHashJoinProbeState {
             }
             Self::Probing(probeable) => probeable.clone(),
         }
-    }
-}
-
-impl IntermediateOpState for InnerHashJoinProbeState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -165,13 +158,15 @@ impl InnerHashJoinProbeOperator {
 }
 
 impl IntermediateOperator for InnerHashJoinProbeOperator {
+    type State = InnerHashJoinProbeState;
+
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn IntermediateOpState>,
+        mut state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
             return Ok((
@@ -185,13 +180,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         task_spawner
             .spawn(
                 async move {
-                    let inner_join_state = state
-                    .as_any_mut()
-                    .downcast_mut::<InnerHashJoinProbeState>()
-                    .expect(
-                        "InnerHashJoinProbeState should be used with InnerHashJoinProbeOperator",
-                    );
-                    let probe_state = inner_join_state.get_or_await_probe_state().await;
+                    let probe_state = state.get_or_await_probe_state().await;
                     let res = Self::probe_inner(
                         &input,
                         &probe_state,
@@ -227,9 +216,9 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        Ok(Box::new(InnerHashJoinProbeState::Building(
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(InnerHashJoinProbeState::Building(
             self.probe_state_bridge.clone(),
-        )))
+        ))
     }
 }

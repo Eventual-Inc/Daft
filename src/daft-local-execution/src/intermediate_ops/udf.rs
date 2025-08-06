@@ -24,8 +24,7 @@ use rand::Rng;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
@@ -235,14 +234,8 @@ impl Drop for UdfHandle {
 /// and the local executor handles task scheduling.
 ///
 /// TODO: Implement a work-stealing dispatcher in the executor to improve pipelining.
-struct UdfState {
-    pub udf_handle: UdfHandle,
-}
-
-impl IntermediateOpState for UdfState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+pub struct UdfState {
+    udf_handle: UdfHandle,
 }
 
 pub struct UdfOperator {
@@ -320,22 +313,20 @@ impl UdfOperator {
 }
 
 impl IntermediateOperator for UdfOperator {
+    type State = UdfState;
+
     #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn IntermediateOpState>,
+        mut state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let udf_state = state
-                    .as_any_mut()
-                    .downcast_mut::<UdfState>()
-                    .expect("UdfState");
-                let res = udf_state
+                let res = state
                     .udf_handle
                     .eval_input(input)
                     .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
@@ -381,7 +372,7 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         let mut rng = rand::thread_rng();
 
         let mut udf_handle = UdfHandle::no_handle(
@@ -397,7 +388,7 @@ impl IntermediateOperator for UdfOperator {
             udf_handle.create_handle()?;
         }
 
-        Ok(Box::new(UdfState { udf_handle }))
+        Ok(UdfState { udf_handle })
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use indexmap::IndexMap;
@@ -7,8 +8,7 @@ use indicatif::{HumanCount, HumanFloatCount};
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
     pipeline::NodeName,
@@ -49,13 +49,15 @@ impl FilterOperator {
 }
 
 impl IntermediateOperator for FilterOperator {
+    type State = ();
+
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let predicate = self.predicate.clone();
         task_spawner
             .spawn(
@@ -81,5 +83,9 @@ impl IntermediateOperator for FilterOperator {
 
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
         Arc::new(FilterStatsBuilder {})
+    }
+
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
     }
 }
