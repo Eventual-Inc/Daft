@@ -21,6 +21,7 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
@@ -630,6 +631,10 @@ impl StreamingSink for OuterHashJoinProbeSink {
 
     fn name(&self) -> NodeName {
         "OuterHashJoinProbe".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::OuterHashJoinProbe
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -14,7 +14,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 pub(crate) struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
@@ -144,6 +144,10 @@ impl BlockingSink for RepartitionSink {
 
     fn name(&self) -> NodeName {
         "Repartition".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Repartition
     }
 
     fn multiline_display(&self) -> Vec<String> {

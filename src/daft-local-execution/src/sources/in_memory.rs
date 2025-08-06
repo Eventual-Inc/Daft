@@ -8,7 +8,7 @@ use daft_micropartition::{partitioning::PartitionSetRef, MicroPartitionRef};
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{pipeline::NodeName, sources::source::SourceStream};
+use crate::{ops::NodeType, pipeline::NodeName, sources::source::SourceStream};
 
 pub struct InMemorySource {
     data: Option<PartitionSetRef<MicroPartitionRef>>,
@@ -48,8 +48,13 @@ impl Source for InMemorySource {
             .clone()
             .to_partition_stream())
     }
+
     fn name(&self) -> NodeName {
         "InMemorySource".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::InMemoryScan
     }
 
     fn multiline_display(&self) -> Vec<String> {

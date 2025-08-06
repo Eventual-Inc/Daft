@@ -1,6 +1,13 @@
-use std::sync::Arc;
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -12,7 +19,13 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType,
+    pipeline::NodeName,
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_RECEIVED_KEY},
+    state_bridge::BroadcastStateBridgeRef,
+    ExecutionTaskSpawner,
+};
 
 pub(crate) enum ProbeTableState {
     Building {
@@ -84,6 +97,37 @@ impl ProbeTableState {
     }
 }
 
+#[derive(Default)]
+struct HashJoinBuildRuntimeStats {
+    cpu_us: AtomicU64,
+    rows_received: AtomicU64,
+}
+
+impl RuntimeStats for HashJoinBuildRuntimeStats {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+            ROWS_RECEIVED_KEY; Stat::Count(self.rows_received.load(ordering)),
+        ]
+    }
+
+    fn add_rows_received(&self, rows: u64) {
+        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_rows_emitted(&self, _: u64) {
+        unreachable!("HashJoinBuildSink shouldn't emit rows")
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+    }
+}
+
 pub struct HashJoinBuildSink {
     key_schema: SchemaRef,
     projection: Vec<BoundExpr>,
@@ -115,6 +159,10 @@ impl BlockingSink for HashJoinBuildSink {
 
     fn name(&self) -> NodeName {
         "HashJoinBuild".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::HashJoinBuild
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -173,5 +221,9 @@ impl BlockingSink for HashJoinBuildSink {
             self.nulls_equal_aware.as_ref(),
             self.track_indices,
         )
+    }
+
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(HashJoinBuildRuntimeStats::default())
     }
 }

@@ -9,6 +9,7 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
@@ -32,6 +33,10 @@ impl StreamingSink for ConcatSink {
 
     fn name(&self) -> NodeName {
         "Concat".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Concat
     }
 
     fn multiline_display(&self) -> Vec<String> {

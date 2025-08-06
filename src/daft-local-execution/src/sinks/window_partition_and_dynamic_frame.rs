@@ -18,7 +18,7 @@ use super::{
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<BoundAggExpr>,
@@ -234,6 +234,10 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
 
     fn name(&self) -> NodeName {
         "WindowPartitionAndDynamicFrame".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::WindowPartitionAndDynamicFrame
     }
 
     fn multiline_display(&self) -> Vec<String> {

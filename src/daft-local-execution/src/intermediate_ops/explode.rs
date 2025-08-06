@@ -10,7 +10,7 @@ use tracing::{instrument, Span};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,
@@ -67,5 +67,9 @@ impl IntermediateOperator for ExplodeOperator {
 
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Explode
     }
 }

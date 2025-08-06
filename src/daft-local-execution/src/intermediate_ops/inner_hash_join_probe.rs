@@ -12,7 +12,9 @@ use tracing::{info_span, instrument, Span};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
+};
 
 pub(crate) enum InnerHashJoinProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -199,6 +201,10 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
 
     fn name(&self) -> NodeName {
         Cow::Borrowed("InnerHashJoinProbe")
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::InnerHashJoinProbe
     }
 
     fn multiline_display(&self) -> Vec<String> {

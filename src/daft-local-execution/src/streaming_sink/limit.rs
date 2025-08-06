@@ -11,6 +11,7 @@ use super::base::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
@@ -104,6 +105,10 @@ impl StreamingSink for LimitSink {
 
     fn name(&self) -> NodeName {
         format!("Limit {}", self.limit).into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Limit
     }
 
     fn multiline_display(&self) -> Vec<String> {

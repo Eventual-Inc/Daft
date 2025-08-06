@@ -265,7 +265,7 @@ pub(crate) fn timeunit_from_precision(prec: Option<u64>) -> SQLPlannerResult<Tim
 
 #[cfg(test)]
 mod test {
-    use daft_core::prelude::{DataType, Field, ImageMode};
+    use daft_core::prelude::{DataType, ImageMode};
     use rstest::rstest;
 
     #[rstest]

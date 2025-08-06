@@ -13,7 +13,7 @@ use tracing::{instrument, Span};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowOrderByOnlyParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -187,6 +187,10 @@ impl BlockingSink for WindowOrderByOnlySink {
 
     fn name(&self) -> NodeName {
         "WindowOrderByOnly".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::WindowOrderByOnly
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -9,7 +9,9 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
+};
 
 pub(crate) struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
 
@@ -28,6 +30,10 @@ impl BlockingSink for CrossJoinCollectSink {
 
     fn name(&self) -> NodeName {
         "CrossJoinCollect".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::CrossJoinCollect
     }
 
     fn sink(

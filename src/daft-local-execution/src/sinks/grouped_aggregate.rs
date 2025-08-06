@@ -19,7 +19,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 #[derive(Clone)]
 pub(crate) enum AggStrategy {
@@ -406,6 +406,10 @@ impl BlockingSink for GroupedAggregateSink {
 
     fn name(&self) -> NodeName {
         "GroupedAggregate".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::GroupByAgg
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -118,6 +118,10 @@ impl BlockingSink for PivotSink {
 
     fn name(&self) -> NodeName {
         "Pivot".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Pivot
     }
 
     fn multiline_display(&self) -> Vec<String> {
