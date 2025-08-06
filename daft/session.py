@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from daft.catalog import Catalog, Identifier, Table
 from daft.context import get_context
@@ -10,9 +10,6 @@ from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.udf import UDF
-
-if TYPE_CHECKING:
-    from daft.ai import Provider
 
 __all__ = [
     "Session",
@@ -496,19 +493,19 @@ class Session:
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident if identifier else None)
 
-    def set_provider(self, identifier: Provider | None) -> None:
+    def set_provider(self, identifier: str | None) -> None:
         """Set the default model provider.
 
         Args:
-            identifier (Provider | None): provider identifier string or None.
+            identifier (str | None): provider identifier string or None.
         """
         self._session.set_provider(identifier)
 
-    def set_model(self, identifier: str) -> None:
+    def set_model(self, identifier: str | None) -> None:
         """Set the default model type.
 
         Args:
-            identifier (str): model identifier string.
+            identifier (str | None): model identifier string.
         """
         self._session.set_model(identifier)
 
@@ -769,7 +766,7 @@ def set_namespace(identifier: Identifier | str | None) -> None:
     _session().set_namespace(identifier)
 
 
-def set_provider(identifier: Provider | None) -> None:
+def set_provider(identifier: str | None) -> None:
     """Set the given provider as current_provider for the active session."""
     _session().set_provider(identifier)
 

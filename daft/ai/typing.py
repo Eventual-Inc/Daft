@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal
+from typing import Generic, TypeVar
 
 from daft.datatype import DataType
 from daft.dependencies import np
 
-Provider = Literal["vllm", "openai", "sentence_transformers"]
+Options = dict[str, str]
 
-Embedding = np.ndarray
+T = TypeVar("T")
+
+
+class Descriptor(ABC, Generic[T]):
+    """A descriptor is a serializable factory, with protocol-specific properties, used to instantiate a model."""
+
+    @abstractmethod
+    def instantiate(self) -> T:
+        """Instantiates and returns a concrete instance corresponding to this descriptor."""
+
+
+# temp definition to defer complexity of a more generic embedding type to later PRs
+Embedding = np.typing.NDArray
 
 
 @dataclass
@@ -18,11 +31,3 @@ class EmbeddingDimensions:
 
     def as_dtype(self) -> DataType:
         return DataType.embedding(dtype=self.dtype, size=self.size)
-
-    def as_numpy(self) -> tuple[int, type]:
-        if self.dtype.is_float32():
-            return (self.size, np.float32)
-        elif self.dtype.is_float64():
-            return (self.size, np.float64)
-        else:
-            raise ValueError("Unsupported embedding size.")
