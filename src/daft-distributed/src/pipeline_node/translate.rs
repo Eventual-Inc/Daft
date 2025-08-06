@@ -202,7 +202,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     logical_node_id,
                     &self.stage_config,
                     limit.limit as usize,
-                    limit.eager,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 ))

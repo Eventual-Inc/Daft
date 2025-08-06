@@ -28,7 +28,6 @@ pub(crate) struct LimitNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     limit: usize,
-    eager: bool,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -40,7 +39,6 @@ impl LimitNode {
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
         limit: usize,
-        eager: bool,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -61,7 +59,6 @@ impl LimitNode {
             config,
             context,
             limit,
-            eager,
             child,
         }
     }
@@ -120,57 +117,7 @@ impl LimitNode {
         Ok(downstream_tasks)
     }
 
-    // Eager execution loop runs one local limit task at a time.
-    async fn eager_execution_loop(
-        self: Arc<Self>,
-        mut input: SubmittableTaskStream,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-        task_id_counter: TaskIDCounter,
-    ) -> DaftResult<()> {
-        let mut remaining_limit = self.limit;
-        while let Some(task) = input.next().await {
-            let limit_for_task = remaining_limit;
-            let task_with_limit = append_plan_to_existing_task(
-                task,
-                &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                &move |input| {
-                    LocalPhysicalPlan::limit(
-                        input,
-                        limit_for_task as u64,
-                        None,
-                        StatsState::NotMaterialized,
-                    )
-                },
-            );
-
-            let maybe_result = task_with_limit.submit(&scheduler_handle)?.await?;
-            let materialized_output = if let Some(output) = maybe_result {
-                output
-            } else {
-                continue;
-            };
-
-            let downstream_tasks = self.process_materialized_output(
-                materialized_output,
-                &mut remaining_limit,
-                &task_id_counter,
-            )?;
-            for task in downstream_tasks {
-                if result_tx.send(task).await.is_err() {
-                    return Ok(());
-                }
-            }
-            if remaining_limit == 0 {
-                return Ok(());
-            }
-        }
-
-        Ok(())
-    }
-
-    // Gradual execution loop runs multiple local limit tasks in parallel.
-    async fn gradual_execution_loop(
+    async fn limit_execution_loop(
         self: Arc<Self>,
         mut input: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
@@ -293,23 +240,12 @@ impl DistributedPipelineNode for LimitNode {
         let input_stream = self.child.clone().produce_tasks(stage_context);
         let (result_tx, result_rx) = create_channel(1);
 
-        if self.eager {
-            let execution_loop = self.eager_execution_loop(
-                input_stream,
-                result_tx,
-                stage_context.scheduler_handle(),
-                stage_context.task_id_counter(),
-            );
-            stage_context.spawn(execution_loop);
-        } else {
-            let execution_loop = self.gradual_execution_loop(
-                input_stream,
-                result_tx,
-                stage_context.scheduler_handle(),
-                stage_context.task_id_counter(),
-            );
-            stage_context.spawn(execution_loop);
-        };
+        stage_context.spawn(self.limit_execution_loop(
+            input_stream,
+            result_tx,
+            stage_context.scheduler_handle(),
+            stage_context.task_id_counter(),
+        ));
 
         SubmittableTaskStream::from(result_rx)
     }
