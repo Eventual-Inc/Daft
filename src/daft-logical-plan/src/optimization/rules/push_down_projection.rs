@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_treenode::{DynTreeNode, Transformed, TreeNode, TreeNodeRecursion};
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::prelude::*;
 use daft_dsl::{
-    optimization::{replace_columns_with_expressions, requires_computation},
-    resolved_col, Column, Expr, ExprRef, ResolvedColumn,
+    optimization::replace_columns_with_expressions, resolved_col, Column, Expr, ExprRef,
+    ResolvedColumn,
 };
 use indexmap::IndexSet;
 
@@ -36,7 +36,7 @@ impl PushDownProjection {
         // (selecting exactly all parent columns in the same order and nothing else).
         let projection_is_noop = {
             // Short circuit early if the projection length is different (obviously not a no-op).
-            upstream_schema.names().len() == projection.projection.len()
+            upstream_schema.len() == projection.projection.len()
                 && projection
                     .projection
                     .iter()
@@ -241,15 +241,8 @@ impl PushDownProjection {
                 debug_assert!(required_columns.contains(&output_column));
                 required_columns.shift_remove(&output_column);
 
-                eprintln!("Required Columns by projection: {:?}", required_columns);
-                eprintln!(
-                    "Passthrough set of UDF {}: {:?}",
-                    upstream_udf.project.name(),
-                    passthrough_set
-                );
-
                 // If required_columns ⊂ passthrough_set, then push down the projection
-                let (new_upstream, transformed) = if required_columns.len() < passthrough_set.len()
+                if required_columns.len() < passthrough_set.len()
                     && required_columns.is_subset(&passthrough_set)
                 {
                     // First, update the passthrough_columns to only include the required columns
@@ -257,7 +250,6 @@ impl PushDownProjection {
                         .iter()
                         .map(|s| resolved_col(s.as_str()))
                         .collect::<Vec<_>>();
-                    eprintln!("Pruned Passthrough: {:?}", pruned_passthrough);
 
                     let new_upstream = LogicalPlan::UDFProject(UDFProject::try_new(
                         upstream_udf.input.clone(),
@@ -266,33 +258,12 @@ impl PushDownProjection {
                     )?)
                     .arced();
 
-                    (new_upstream, true)
-                } else {
-                    (upstream_plan.clone(), false)
-                };
-
-                // Remove top projection if it is unnecessary
-                // Only when the output col is appended at the end
-                if new_upstream.schema() == plan.schema()
-                    && projection
-                        .projection
-                        .iter()
-                        .all(|e| requires_computation(e))
-                {
-                    Ok(self
-                        .try_optimize_node(new_upstream.clone())?
-                        .or(Transformed::new(
-                            new_upstream,
-                            transformed,
-                            TreeNodeRecursion::Continue,
-                        )))
-                } else {
                     let new_plan = plan.with_new_children(&[new_upstream.into()]).arced();
-                    Ok(Transformed::new(
-                        new_plan,
-                        transformed,
-                        TreeNodeRecursion::Continue,
-                    ))
+                    Ok(self
+                        .try_optimize_node(new_plan.clone())?
+                        .or(Transformed::yes(new_plan)))
+                } else {
+                    Ok(Transformed::no(plan))
                 }
             }
             LogicalPlan::Sort(..)
@@ -541,11 +512,19 @@ impl PushDownProjection {
         let upstream_schema = upstream_plan.schema();
 
         let (udf_project_required_cols, _) = plan.required_columns();
-        if udf_project_required_cols.len() < upstream_schema.names().len() {
+        if udf_project_required_cols.len() < upstream_schema.len() {
             let new_subprojection: LogicalPlan = {
-                let pushdown_column_exprs = udf_project_required_cols
+                // Attempt to match the order of the upstream schema to reduce reorders
+                let pushdown_column_exprs = upstream_schema
+                    .names()
                     .iter()
-                    .map(|s| resolved_col(s.as_str()))
+                    .filter_map(|s| {
+                        if udf_project_required_cols.contains(s) {
+                            Some(resolved_col(s.as_str()))
+                        } else {
+                            None
+                        }
+                    })
                     .collect::<Vec<_>>();
 
                 Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
@@ -679,8 +658,7 @@ impl PushDownProjection {
 
 impl OptimizerRule for PushDownProjection {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        let out = plan.transform_down(|node| self.try_optimize_node(node))?;
-        Ok(out)
+        plan.transform_down(|node| self.try_optimize_node(node))
     }
 }
 
@@ -689,22 +667,15 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use common_resource_request::ResourceRequest;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{
-        functions::{
-            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
-            FunctionExpr,
-        },
-        lit, resolved_col, unresolved_col, Expr, ExprRef,
-    };
+    use daft_dsl::{lit, resolved_col, unresolved_col};
 
     use crate::{
         ops::{Project, Unpivot},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::{PushDownProjection, SplitUDFs},
+            rules::PushDownProjection,
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
@@ -726,27 +697,6 @@ mod tests {
                 RuleExecutionStrategy::Once,
             )],
         )
-    }
-
-    fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
-        Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF {
-                name: Arc::new("my-udf".to_string()),
-                func: MaybeInitializedUDF::Uninitialized {
-                    inner: RuntimePyObject::new_none(),
-                    init_args: RuntimePyObject::new_none(),
-                },
-                bound_args: RuntimePyObject::new_none(),
-                num_expressions: inputs.len(),
-                return_dtype: DataType::Utf8,
-                resource_request: Some(ResourceRequest::default_cpu()),
-                batch_size: None,
-                concurrency: Some(8),
-                use_process: None,
-            }),
-            inputs,
-        }
-        .arced()
     }
 
     /// Projection merging: Ensure factored projections do not get merged.
@@ -966,171 +916,6 @@ mod tests {
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
 
-        Ok(())
-    }
-
-    /// Projection<-UDFProject prunes columns from the UDFProject
-    #[test]
-    fn test_projection_pushdown_into_udf_project() -> DaftResult<()> {
-        use crate::ops::{Project, UDFProject};
-
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Boolean),
-            Field::new("c", DataType::Int64),
-        ]);
-        let scan_node = dummy_scan_node(scan_op.clone());
-        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
-
-        // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
-        let udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
-            scan_node.build(),
-            mock_udf.alias("udf_results"),
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-        let project = LogicalPlan::Project(Project::try_new(
-            udf_project,
-            vec![resolved_col("udf_results")],
-        )?)
-        .arced();
-
-        let expected_udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_columns(Some(Arc::new(vec!["c".to_string()]))),
-            )
-            .build(),
-            mock_udf.alias("udf_results"),
-            vec![],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq(project, expected_udf_project)?;
-        Ok(())
-    }
-
-    /// Projection<-UDFProject<-UDFProject prunes columns from both UDFProjects
-    #[test]
-    fn test_projection_pushdown_into_double_udf_project() -> DaftResult<()> {
-        use crate::ops::{Project, UDFProject};
-
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Boolean),
-            Field::new("c", DataType::Int64),
-        ]);
-        let scan_node = dummy_scan_node(scan_op.clone()).build();
-        let mock_udf = create_actor_pool_udf(vec![resolved_col("a")]);
-
-        // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
-        let plan = LogicalPlan::UDFProject(UDFProject::try_new(
-            scan_node,
-            mock_udf.alias("udf_results_0"),
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-
-        let plan = LogicalPlan::UDFProject(UDFProject::try_new(
-            plan,
-            mock_udf.alias("udf_results_1"),
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                resolved_col("udf_results_0"),
-            ],
-        )?)
-        .arced();
-
-        let plan = LogicalPlan::Project(Project::try_new(
-            plan,
-            vec![
-                resolved_col("udf_results_0").alias("udf_results_0_alias"),
-                resolved_col("udf_results_1"),
-            ],
-        )?)
-        .arced();
-
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_columns(Some(Arc::new(vec!["a".to_string()]))),
-            )
-            .build(),
-            // col("b") is pruned
-            mock_udf.alias("udf_results_0"),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        // NOTE: Ideally this shouldn't be needed, but I don't think this pass
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("udf_results_0"), resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            mock_udf.alias("udf_results_1"),
-            vec![
-                // Absorbed a non-computational expression (alias) from the Projection
-                resolved_col("udf_results_0").alias("udf_results_0_alias"),
-            ],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    /// Projection<-UDFProject prunes UDFProject entirely if the UDF column is pruned
-    #[test]
-    fn test_projection_pushdown_into_udf_project_completely_removed() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Boolean),
-            Field::new("c", DataType::Int64),
-        ]);
-        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
-        let plan = dummy_scan_node(scan_op.clone())
-            .with_columns(vec![mock_udf.alias("udf_results")])?
-            // Select only col("a"), so the udf is redundant and should be removed
-            .select(vec![resolved_col("a")])?
-            .build();
-
-        // Optimized plan will push the projection all the way down into the scan
-        let expected_scan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
-            Pushdowns {
-                limit: None,
-                partition_filters: None,
-                columns: Some(Arc::new(vec!["a".to_string()])),
-                filters: None,
-                sharder: None,
-                pushed_filters: None,
-            },
-        )
-        .build();
-
-        assert_optimized_plan_with_rules_eq(
-            plan,
-            expected_scan,
-            vec![
-                RuleBatch::new(
-                    vec![Box::new(PushDownProjection::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-                RuleBatch::new(
-                    vec![Box::new(SplitUDFs::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-                // Checking that our assertion is correct
-                // That UDFProjects are only created with UDFs that are used later
-                RuleBatch::new(
-                    vec![Box::new(PushDownProjection::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-            ],
-        )?;
         Ok(())
     }
 

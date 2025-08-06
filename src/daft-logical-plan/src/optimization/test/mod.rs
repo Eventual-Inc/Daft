@@ -54,18 +54,10 @@ fn optimize_with_rules(
     rule_batches: Vec<RuleBatch>,
 ) -> DaftResult<Arc<LogicalPlan>> {
     let config = OptimizerConfig::default();
-    let default_max_passes = config.default_max_optimizer_passes;
     let optimizer = Optimizer::with_rule_batches(rule_batches, config);
-    let rule_batch = &optimizer.rule_batches[0];
-    let max_passes = match rule_batch.strategy {
-        RuleExecutionStrategy::Once => 1,
-        RuleExecutionStrategy::FixedPoint(max_passes) => max_passes.unwrap_or(default_max_passes),
-    };
 
-    (0..max_passes).try_fold(plan, |plan, pass| -> DaftResult<Arc<LogicalPlan>> {
-        match optimizer.optimize_with_rules(rule_batch.rules.as_slice(), plan) {
-            Ok(Transformed { data, .. }) => Ok(data),
-            Err(e) => Err(e),
-        }
-    })
+    match optimizer.optimize(plan, |_, _, _, _, _| {}) {
+        Ok(data) => Ok(data),
+        Err(e) => Err(e),
+    }
 }
