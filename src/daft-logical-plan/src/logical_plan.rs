@@ -126,22 +126,22 @@ impl LogicalPlan {
         }
     }
 
-    pub fn required_columns(&self) -> Vec<IndexSet<String>> {
+    pub fn required_columns(&self) -> (IndexSet<String>, Option<IndexSet<String>>) {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
             Self::Shard(..)
             | Self::Limit(..)
             | Self::Offset(..)
             | Self::Sample(..)
-            | Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
-            Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
+            | Self::MonotonicallyIncreasingId(..) => (IndexSet::new(), None),
+            Self::Concat(..) => (IndexSet::new(), Some(IndexSet::new())),
             Self::Project(projection) => {
                 let res = projection
                     .projection
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::UDFProject(UDFProject {
                 project,
@@ -154,17 +154,18 @@ impl LogicalPlan {
                     .collect::<IndexSet<_>>();
 
                 res.extend(get_required_columns(project).into_iter());
-                vec![res]
+                (res, None)
             }
-            Self::Filter(filter) => {
-                vec![get_required_columns(&filter.predicate)
+            Self::Filter(filter) => (
+                get_required_columns(&filter.predicate)
                     .iter()
                     .cloned()
-                    .collect()]
-            }
+                    .collect(),
+                None,
+            ),
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
-                vec![res]
+                (res, None)
             }
             Self::Repartition(repartition) => {
                 let res = repartition
@@ -173,7 +174,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Explode(explode) => {
                 let res = explode
@@ -181,7 +182,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Unpivot(unpivot) => {
                 let res = unpivot
@@ -190,12 +191,12 @@ impl LogicalPlan {
                     .chain(unpivot.values.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Distinct(distinct) => {
                 if let Some(on) = &distinct.columns {
                     let res = on.iter().flat_map(get_required_columns).collect();
-                    vec![res]
+                    (res, None)
                 } else {
                     let res = distinct
                         .input
@@ -203,7 +204,7 @@ impl LogicalPlan {
                         .field_names()
                         .map(ToString::to_string)
                         .collect();
-                    vec![res]
+                    (res, None)
                 }
             }
             Self::Aggregate(aggregate) => {
@@ -214,7 +215,7 @@ impl LogicalPlan {
                     .flat_map(|e| get_required_columns(&e))
                     .chain(aggregate.groupby.iter().flat_map(get_required_columns))
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Pivot(pivot) => {
                 let res = pivot
@@ -224,7 +225,7 @@ impl LogicalPlan {
                     .chain(std::iter::once(&pivot.value_column))
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::Join(join) => {
                 let mut left = IndexSet::new();
@@ -252,10 +253,10 @@ impl LogicalPlan {
                     })
                     .unwrap();
                 }
-                vec![left, right]
+                (left, Some(right))
             }
-            Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
-            Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Intersect(_) => (IndexSet::new(), Some(IndexSet::new())),
+            Self::Union(_) => (IndexSet::new(), Some(IndexSet::new())),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -267,7 +268,7 @@ impl LogicalPlan {
                     .chain(window.window_spec.order_by.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
             Self::TopN(top_n) => {
                 let res = top_n
@@ -275,7 +276,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                (res, None)
             }
         }
     }

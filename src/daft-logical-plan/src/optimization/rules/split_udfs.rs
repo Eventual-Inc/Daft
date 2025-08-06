@@ -120,10 +120,15 @@ impl SplitUDFs {
 ///        └─────────────────┘  └────────────────────┘                 └───────────┘
 impl OptimizerRule for SplitUDFs {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        plan.transform_down(|node| match node.as_ref() {
+        let out = plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Project(projection) => try_optimize_project(projection, node.clone()),
             _ => Ok(Transformed::no(node)),
-        })
+        })?;
+
+        if out.transformed {
+            eprintln!("out_plan: {}", out.data.repr_ascii(false));
+        }
+        Ok(out)
     }
 }
 
