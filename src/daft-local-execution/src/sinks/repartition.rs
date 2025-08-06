@@ -15,7 +15,8 @@ use super::blocking_sink::{
     BlockingSinkStatus,
 };
 use crate::{
-    pipeline::NodeName, sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner,
+    ops::NodeType, pipeline::NodeName, sinks::blocking_sink::BlockingSinkFinalizeOutput,
+    ExecutionTaskSpawner,
 };
 
 struct RepartitionState {
@@ -164,6 +165,10 @@ impl BlockingSink for RepartitionSink {
 
     fn name(&self) -> NodeName {
         "Repartition".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Repartition
     }
 
     fn multiline_display(&self) -> Vec<String> {
