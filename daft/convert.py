@@ -83,7 +83,9 @@ def from_pydict(data: dict[str, InputListType]) -> "DataFrame":
 
 
 @PublicAPI
-def from_arrow(data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"]]) -> "DataFrame":
+def from_arrow(
+    data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"]],
+) -> "DataFrame":
     """Creates a DataFrame from a pyarrow Table.
 
     Args:
@@ -168,9 +170,12 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
     Examples:
         >>> import ray
         >>> import daft
-        >>> ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])
-        >>> df = daft.from_ray_dataset(ds)
-        >>> df.show()
+        >>>
+        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>>
+        >>> ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])  # doctest: +SKIP
+        >>> df = daft.from_ray_dataset(ds)  # doctest: +SKIP
+        >>> df.show()  # doctest: +SKIP
         ╭───────┬──────╮
         │ a     ┆ b    │
         │ ---   ┆ ---  │
@@ -209,10 +214,12 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
         >>> import pandas as pd
         >>> import daft
         >>> import ray
-        >>> ray.init()
-        >>> ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)
-        >>> df = daft.from_dask_dataframe(ddf)
-        >>> df.show()
+        >>>
+        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>>
+        >>> ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)  # doctest: +SKIP
+        >>> df = daft.from_dask_dataframe(ddf)  # doctest: +SKIP
+        >>> df.show()  # doctest: +SKIP
         ╭───────┬──────╮
         │ a     ┆ b    │
         │ ---   ┆ ---  │
