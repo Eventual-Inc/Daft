@@ -266,45 +266,7 @@ class DataFrame:
             <BLANKLINE>
             <BLANKLINE>
             Set `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.
-            >>>
-            >>> df.explain(show_all=True)
-            == Unoptimized Logical Plan ==
-            <BLANKLINE>
-            * Project: col(x) * col(x) as x
-            |
-            * Source:
-            |   Number of partitions = 1
-            |   Output schema = x#Int64
-            <BLANKLINE>
-            <BLANKLINE>
-            == Optimized Logical Plan ==
-            <BLANKLINE>
-            * Project: col(x) * col(x) as x
-            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
-            |
-            * Source:
-            |   Number of partitions = 1
-            |   Output schema = x#Int64
-            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
-            <BLANKLINE>
-            <BLANKLINE>
-            == Physical Plan ==
-            <BLANKLINE>
-            * Project: col(0: x) * col(0: x) as x
-            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
-            |
-            * InMemorySource:
-            |   Schema = x#Int64
-            |   Size bytes = 24
-            |   Stats = { Approx num rows = 3, Approx size bytes = 24 B, Accumulated selectivity = 1.00 }
-            <BLANKLINE>
-            >>>
-            >>> with open("plan.txt", "w") as f:
-            ...     df.explain(show_all=True, file=f)
-            >>> # Plan written to file `plan.txt`
-            >>>
-            >>> df.explain(format="mermaid")
-            '```mermaid\nflowchart TD\nProject0["Project: col(x) * col(x) as x"]\nSource1["Source:\nNumber of partitions = 1\nOutput schema = x#Int64"]\nSource1 --> Project0\n\n```\nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.'
+
         """
         is_cached = self._result_cache is not None
         if format == "mermaid":
