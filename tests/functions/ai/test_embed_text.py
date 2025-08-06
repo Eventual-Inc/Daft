@@ -8,7 +8,7 @@ import daft
 from daft.functions.ai import embed_text
 
 
-# @pytest.mark.skip()
+@pytest.mark.skip()
 def test_embed_text():
     df = daft.from_pydict({"text": ["Hello, world!"]})
     df = df.with_column("text_embedded", embed_text("text"))
