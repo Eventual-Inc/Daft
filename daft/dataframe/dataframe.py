@@ -822,7 +822,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_parquet("output.parquet", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_parquet("output_dir", write_mode="overwrite")  # doctest: +SKIP
 
         Tip:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -901,7 +901,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_csv("output.csv", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_csv("output_dir", write_mode="overwrite")  # doctest: +SKIP
 
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -979,7 +979,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_json("output.json", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_json("output_dir", write_mode="overwrite")  # doctest: +SKIP
 
         Warning:
             Currently only supported with the Native runner!
