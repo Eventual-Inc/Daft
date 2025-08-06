@@ -4299,11 +4299,9 @@ class DataFrame:
 
         Examples:
             >>> import daft
+            >>> daft.context.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> # Note: This requires Daft to be running on the RayRunner
-            >>> # ray_dataset = df.to_ray_dataset()
-            >>> # print(ray_dataset)
-            >>> # Dataset(num_blocks=1, schema={x: int64, y: int64})
+            >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
         Note:
             This function can only work if Daft is running using the RayRunner
@@ -4409,14 +4407,9 @@ class DataFrame:
 
         Examples:
             >>> import daft
+            >>> daft.context.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-            >>> # Note: This requires Daft to be running on the RayRunner
-            >>> # dask_df = df.to_dask_dataframe()
-            >>> # print(dask_df.compute())
-            >>> # a  b
-            0  1  4
-            1  2  5
-            2  3  6
+            >>> dask_df = df.to_dask_dataframe()  # doctest: +SKIP
 
         """
         from daft.runners.ray_runner import RayPartitionSet
