@@ -285,8 +285,6 @@ impl NativeExecutor {
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
 
-        let stats_manager = Arc::new(RuntimeStatsManager::new(&pipeline));
-
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
@@ -302,6 +300,8 @@ impl NativeExecutor {
                         .expect("Failed to create tokio runtime"),
                 )
             });
+
+            let stats_manager = Arc::new(RuntimeStatsManager::new(runtime.handle(), &pipeline));
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle = ExecutionRuntimeContext::new(

@@ -13,12 +13,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_runtime::{get_io_runtime, RuntimeTask};
+use common_runtime::RuntimeTask;
 use common_tracing::should_enable_opentelemetry;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
 use tokio::{
+    runtime::Handle,
     sync::{mpsc, oneshot},
     time::interval,
 };
@@ -68,7 +69,7 @@ impl std::fmt::Debug for RuntimeStatsManager {
 
 impl RuntimeStatsManager {
     #[allow(clippy::borrowed_box)]
-    pub fn new(pipeline: &Box<dyn PipelineNode>) -> Self {
+    pub fn new(handle: &Handle, pipeline: &Box<dyn PipelineNode>) -> Self {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
         let _ = pipeline.apply(|node| {
@@ -85,6 +86,10 @@ impl RuntimeStatsManager {
                 (node_info, runtime_stats)
             })
             .collect::<Vec<_>>();
+        debug_assert!(
+            node_stats_map.is_empty(),
+            "All nodes should be in the node_stats map"
+        );
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
 
@@ -112,11 +117,12 @@ impl RuntimeStatsManager {
         }
 
         let throttle_interval = Duration::from_millis(200);
-        Self::new_impl::<true>(subscribers, node_stats, throttle_interval)
+        Self::new_impl(handle, subscribers, node_stats, throttle_interval)
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
-    fn new_impl<const USE_IO_RUNTIME: bool>(
+    fn new_impl(
+        handle: &Handle,
         subscribers: Vec<Box<dyn RuntimeStatsSubscriber>>,
         node_stats: Vec<(Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         throttle_interval: Duration,
@@ -125,7 +131,6 @@ impl RuntimeStatsManager {
         let node_tx = Arc::new(node_tx);
         let (finish_tx, mut finish_rx) = oneshot::channel::<()>();
 
-        let rt = get_io_runtime(true);
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_stats.len());
@@ -179,16 +184,11 @@ impl RuntimeStatsManager {
             }
         };
 
-        let handle = if USE_IO_RUNTIME {
-            rt.spawn(event_loop)
-        } else {
-            RuntimeTask::new(&tokio::runtime::Handle::current(), event_loop)
-        };
-
+        let task_handle = RuntimeTask::new(handle, event_loop);
         Self {
             finish_tx,
             node_tx,
-            _handle: handle,
+            _handle: task_handle,
         }
     }
 
@@ -351,7 +351,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl RuntimeStatsSubscriber for MockSubscriber {
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -397,7 +396,8 @@ mod tests {
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
+        let handler = Arc::new(RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
@@ -455,7 +455,8 @@ mod tests {
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
+        let handler = Arc::new(RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
             vec![subscriber1, subscriber2],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
@@ -476,7 +477,6 @@ mod tests {
         #[derive(Debug)]
         struct FailingSubscriber;
 
-        #[async_trait::async_trait]
         impl RuntimeStatsSubscriber for FailingSubscriber {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
@@ -505,7 +505,8 @@ mod tests {
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
+        let handler = Arc::new(RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
             vec![failing_subscriber, mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
@@ -547,7 +548,8 @@ mod tests {
         let node_info = create_node_info("uninitialized_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
+        let handler = Arc::new(RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
@@ -577,7 +579,8 @@ mod tests {
         let throttle_interval = Duration::from_millis(500);
         let node_info = create_node_info("fast_query", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
-        let handler = Arc::new(RuntimeStatsManager::new_impl::<false>(
+        let handler = Arc::new(RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,

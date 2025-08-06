@@ -48,7 +48,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_rows_received(&self, _: u64) {
-        unimplemented!("Source Nodes shouldn't receive rows")
+        unreachable!("Source Nodes shouldn't receive rows")
     }
 
     fn add_rows_emitted(&self, rows: u64) {

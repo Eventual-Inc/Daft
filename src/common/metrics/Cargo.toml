@@ -1,7 +1,7 @@
 [dependencies]
 indicatif = "0.17.9"
 serde = {workspace = true}
-smallvec = {version = "1.15.1", features = ["serde"]}
+smallvec = {workspace = true, features = ["serde"]}
 
 [lints]
 workspace = true

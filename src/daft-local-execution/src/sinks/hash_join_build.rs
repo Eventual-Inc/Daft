@@ -125,7 +125,9 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
         self.rows_received.fetch_add(rows, Ordering::Relaxed);
     }
 
-    fn add_rows_emitted(&self, _: u64) {}
+    fn add_rows_emitted(&self, _: u64) {
+        unreachable!("HashJoinBuildSink shouldn't emit rows")
+    }
 
     fn add_cpu_us(&self, cpu_us: u64) {
         self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);

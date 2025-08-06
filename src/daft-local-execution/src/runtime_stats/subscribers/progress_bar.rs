@@ -99,7 +99,6 @@ impl IndicatifProgressBarManager {
     }
 }
 
-#[async_trait::async_trait]
 impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     #[cfg(test)]
     #[allow(dead_code)]
@@ -221,7 +220,6 @@ mod python {
         }
     }
 
-    #[async_trait::async_trait]
     impl RuntimeStatsSubscriber for TqdmProgressBarManager {
         #[cfg(test)]
         #[allow(dead_code)]

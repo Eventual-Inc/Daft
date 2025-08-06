@@ -2,6 +2,7 @@ use std::{ops::Index, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
 use serde::{Deserialize, Serialize};
+pub use smallvec::smallvec;
 use smallvec::SmallVec;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9,8 +10,10 @@ pub enum Stat {
     // Integer Representations
     Count(u64),
     Bytes(u64),
-    // Base Types
+    // Float Representations
+    Percent(f64),
     Float(f64),
+    // Base Types
     Duration(Duration),
 }
 
@@ -19,6 +22,7 @@ impl std::fmt::Display for Stat {
         match self {
             Self::Count(value) => write!(f, "{}", HumanCount(*value)),
             Self::Bytes(value) => write!(f, "{}", HumanBytes(*value)),
+            Self::Percent(value) => write!(f, "{:.2}%", *value),
             Self::Float(value) => write!(f, "{}", HumanFloatCount(*value)),
             Self::Duration(value) => write!(f, "{}", HumanDuration(*value)),
         }
@@ -66,10 +70,10 @@ impl IntoIterator for StatSnapshotSend {
     }
 }
 
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! snapshot {
     ($($name:expr; $value:expr),* $(,)?) => {
-        StatSnapshotSend(smallvec::smallvec![
+        StatSnapshotSend(smallvec![
             $(($name, $value)),*
         ])
     };

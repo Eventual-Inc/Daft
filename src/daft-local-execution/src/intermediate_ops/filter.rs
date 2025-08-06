@@ -39,11 +39,16 @@ impl RuntimeStats for FilterStats {
         let rows_received = self.rows_received.load(ordering);
         let rows_emitted = self.rows_emitted.load(ordering);
 
+        let selectivity = if rows_received == 0 {
+            100.0
+        } else {
+            (rows_emitted as f64 / rows_received as f64) * 100.0
+        };
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
             ROWS_RECEIVED_KEY; Stat::Count(rows_received),
             ROWS_EMITTED_KEY; Stat::Count(rows_emitted),
-            "selectivity"; Stat::Float(rows_emitted as f64 / rows_received as f64 * 100.0),
+            "selectivity"; Stat::Percent(selectivity),
         ]
     }
 
