@@ -2638,7 +2638,7 @@ class DataFrame:
         """
         if get_context().get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition."
+                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
             )
         if len(partition_by) == 0:
             warnings.warn(
@@ -2673,7 +2673,7 @@ class DataFrame:
         """
         if get_context().get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition."
+                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
             )
 
         builder = self._builder.into_partitions(num)
