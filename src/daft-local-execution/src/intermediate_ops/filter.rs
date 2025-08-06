@@ -6,8 +6,8 @@ use std::{
     time::Duration,
 };
 
-use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
@@ -115,7 +115,7 @@ impl IntermediateOperator for FilterOperator {
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(FilterStats::default())
     }
-    
+
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
