@@ -939,11 +939,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> # df.write_csv("output.csv", write_mode="overwrite")
-            >>> # (Writes the DataFrame to CSV format)
-            <BLANKLINE>
-            (Writes the DataFrame to S3 in CSV format, partitioned by column "x" and overwriting existing data)
-            <BLANKLINE>
+            >>> df.write_csv("output.csv", write_mode="overwrite")  # doctest: +SKIP
 
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -1021,11 +1017,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> # df.write_json("output.json", write_mode="overwrite")
-            >>> # (Writes the DataFrame to JSON format)
-            <BLANKLINE>
-            (Writes the DataFrame to S3 in JSON format, partitioned by column "x" and overwriting existing data)
-            <BLANKLINE>
+            >>> df.write_json("output.json", write_mode="overwrite")  # doctest: +SKIP
 
         Warning:
             Currently only supported with the Native runner!
@@ -1096,7 +1088,7 @@ class DataFrame:
             >>> import pyiceberg
             >>> import daft
             >>>
-            >>> table = pyiceberg.Table(...)
+            >>> table = pyiceberg.Table(...)  # doctest: +SKIP
             >>> df = daft.from_pydict({"user_id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>> df = df.write_iceberg(table, mode="overwrite")  # doctest: +SKIP
 
@@ -4222,14 +4214,9 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> # import torch  # torch not available in test environment
+            >>> import torch  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> # torch_dataset = df.to_torch_map_dataset()
-            >>> # for item in torch_dataset:
-            >>> #     print(item)
-            >>> # {'x': 1, 'y': 4}
-            >>> # {'x': 2, 'y': 5}
-            >>> # {'x': 3, 'y': 6}
+            >>> torch_dataset = df.to_torch_map_dataset()  # doctest: +SKIP
 
         Tip:
             This method returns results locally.
@@ -4269,14 +4256,11 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> # import torch  # torch not available in test environment
+            >>> import torch  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-            >>> # torch_iter_dataset = df.to_torch_iter_dataset()
-            >>> # for item in torch_iter_dataset:
-            >>> #     print(item)
-            >>> # {'x': 1, 'y': 4}
-            >>> # {'x': 2, 'y': 5}
-            >>> # {'x': 3, 'y': 6}
+            >>> torch_iter_dataset = df.to_torch_iter_dataset()  # doctest: +SKIP
+            >>> list(torch.utils.data.DataLoader(torch_iter_dataset))  # doctest: +SKIP
+            [{'x': tensor([1]), 'y': tensor([4])}, {'x': tensor([2]), 'y': tensor([5])}, {'x': tensor([3]), 'y': tensor([6])}]
 
         Note:
             The produced dataset is meant to be used with the single-process DataLoader,
