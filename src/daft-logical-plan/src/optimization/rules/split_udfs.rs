@@ -520,7 +520,7 @@ fn recursive_optimize_project(
     };
 
     // One final project to select just the columns we need
-    // This will help us do the necessary column pruning via projection pushdowns
+    // This will help us do the necessary column pruning and reordering
     let final_selection_project = LogicalPlan::Project(Project::try_new(
         new_plan,
         projection
@@ -589,13 +589,19 @@ mod tests {
         assert_optimized_plan_with_rules_eq(
             plan,
             expected,
-            vec![RuleBatch::new(
-                vec![
-                    Box::new(SplitUDFs::new()),
-                    Box::new(PushDownProjection::new()),
-                ],
-                RuleExecutionStrategy::Once,
-            )],
+            vec![
+                RuleBatch::new(
+                    vec![
+                        Box::new(PushDownProjection::new()),
+                        Box::new(SplitUDFs::new()),
+                    ],
+                    RuleExecutionStrategy::Once,
+                ),
+                RuleBatch::new(
+                    vec![Box::new(PushDownProjection::new())],
+                    RuleExecutionStrategy::FixedPoint(Some(3)),
+                ),
+            ],
         )
     }
 
@@ -1198,6 +1204,46 @@ mod tests {
 
         assert_optimized_plan_eq(project_plan, expected)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_projection_pushdown_into_udf_and_reorder() -> DaftResult<()> {
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
+
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .with_columns(vec![mock_udf.alias("udf_results")])?
+            .select(vec![
+                resolved_col("a"),
+                resolved_col("udf_results"),
+                resolved_col("b"),
+            ])?
+            .build();
+
+        // Expect a Scan -> UDFProject -> Reorder
+        let scan_node = dummy_scan_node(scan_op).build();
+        let udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
+            scan_node,
+            mock_udf.alias("udf_results"),
+            vec![resolved_col("a"), resolved_col("b")],
+        )?)
+        .arced();
+        let project = LogicalPlan::Project(Project::try_new(
+            udf_project,
+            vec![
+                resolved_col("a"),
+                resolved_col("udf_results"),
+                resolved_col("b"),
+            ],
+        )?)
+        .arced();
+
+        assert_optimized_plan_eq_with_projection_pushdown(plan, project)?;
         Ok(())
     }
 }

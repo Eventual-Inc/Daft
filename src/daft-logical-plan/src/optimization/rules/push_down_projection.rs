@@ -282,14 +282,12 @@ impl PushDownProjection {
                     Ok(self
                         .try_optimize_node(new_upstream.clone())?
                         .or(Transformed::new(
-                            new_upstream.clone(),
+                            new_upstream,
                             transformed,
                             TreeNodeRecursion::Continue,
                         )))
                 } else {
-                    let new_plan = plan
-                        .with_new_children(&[new_upstream.clone().into()])
-                        .arced();
+                    let new_plan = plan.with_new_children(&[new_upstream.into()]).arced();
                     Ok(Transformed::new(
                         new_plan,
                         transformed,
