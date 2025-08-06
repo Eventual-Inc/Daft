@@ -177,3 +177,25 @@ code.doc-symbol-method::after {
     display: none !important;
   }
 }
+
+/* Remove padding around images in examples grid cards */
+.grid.cards.examples > ul > li,
+.grid.cards.examples > ol > li {
+  padding: 0 !important;
+}
+
+/* Style captions in examples grid cards */
+.grid.cards.examples > ul > li p {
+  text-align: center;
+}
+
+.grid.cards.examples > ul > li p a {
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+/* Add spacing below images */
+.grid.cards.examples > ul > li p a img {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  margin-bottom: 0.1rem;
+}

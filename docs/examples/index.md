@@ -35,7 +35,7 @@ Compare traditional join operations with more efficient window functions for ran
 
 Load a collection of PDFs from S3, OCR or extract text from them, run layout analysis to group text boxes into paragraphs, then compute text embeddings using a locally running LLM. Also showcases how to use custom Pydantic classes as Daft DataTypes for UDFs.
 
-<div class="grid cards" markdown>
+<div class="grid cards examples" markdown>
 
 - [![colab](../img/colab.png) Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/document_processing/document_processing_tutorial.ipynb)
 
