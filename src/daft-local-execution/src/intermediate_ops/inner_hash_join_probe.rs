@@ -14,7 +14,7 @@ use super::intermediate_op::{
 };
 use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
-pub enum InnerHashJoinProbeState {
+pub(crate) enum InnerHashJoinProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
     Probing(Arc<ProbeState>),
 }

@@ -11,7 +11,7 @@ use super::intermediate_op::{
 };
 use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
-pub struct CrossJoinState {
+pub(crate) struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
     stream_idx: usize,
     collect_idx: usize,

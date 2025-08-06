@@ -31,7 +31,7 @@ use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
 
-struct UdfHandle {
+pub(crate) struct UdfHandle {
     udf_expr: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
@@ -234,11 +234,11 @@ impl Drop for UdfHandle {
 /// and the local executor handles task scheduling.
 ///
 /// TODO: Implement a work-stealing dispatcher in the executor to improve pipelining.
-pub struct UdfState {
+pub(crate) struct UdfState {
     udf_handle: UdfHandle,
 }
 
-pub struct UdfOperator {
+pub(crate) struct UdfOperator {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,

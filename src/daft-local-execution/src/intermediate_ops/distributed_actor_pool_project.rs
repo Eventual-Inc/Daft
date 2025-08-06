@@ -73,11 +73,11 @@ impl From<daft_dsl::pyobj_serde::PyObjectWrapper> for ActorHandle {
     }
 }
 
-pub struct DistributedActorPoolProjectState {
-    pub actor_handle: ActorHandle,
+pub(crate) struct DistributedActorPoolProjectState {
+    actor_handle: ActorHandle,
 }
 
-pub struct DistributedActorPoolProjectOperator {
+pub(crate) struct DistributedActorPoolProjectOperator {
     actor_handles: Vec<ActorHandle>,
     batch_size: Option<usize>,
     memory_request: u64,
