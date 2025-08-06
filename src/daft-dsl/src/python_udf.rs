@@ -148,44 +148,36 @@ impl RowWisePyFn {
         let chunk_size = (num_rows / (n_cpus.get() * 4)).clamp(1, 512);
 
         let indices: Vec<usize> = (0..num_rows).collect();
-
+        let inner_ref = self.inner.as_ref();
+        let args_ref = self.original_args.as_ref();
+        let name = args[0].name();
         let outputs = indices
             .par_chunks(chunk_size)
-            .map(|chunk| {
+            .flat_map(|chunk| {
                 Python::with_gil(|py| {
-                    let res = chunk
+                    // pre-allocating py_args vector so we're not creating a new vector for each iteration
+                    let mut py_args = Vec::with_capacity(args.len());
+                    chunk
                         .iter()
                         .map(|&i| {
-                            let args_for_row = args
-                                .iter()
-                                .map(|a| {
-                                    let idx = if a.len() == 1 { 0 } else { i };
-                                    LiteralValue::get_from_series(a, idx)
-                                })
-                                .collect::<DaftResult<Vec<_>>>()?;
-                            let py_args = args_for_row
-                                .into_iter()
-                                .map(|a| a.into_pyobject(py).map_err(|e| e.into()))
-                                .collect::<DaftResult<Vec<_>>>()?;
+                            for s in &args {
+                                let idx = if s.len() == 1 { 0 } else { i };
+                                let lit = LiteralValue::get_from_series(s, idx)?;
+                                let pyarg = lit.into_pyobject(py)?;
+                                py_args.push(pyarg);
+                            }
 
-                            let result = call_func_with_evaluated_exprs.bind(py).call1((
-                                self.inner.clone().unwrap().as_ref(),
-                                self.original_args.clone().unwrap().as_ref(),
-                                py_args,
-                            ))?;
+                            let result = call_func_with_evaluated_exprs
+                                .bind(py)
+                                .call1((inner_ref, args_ref, &py_args))?;
+                            py_args.clear();
                             DaftResult::Ok(result.unbind())
                         })
-                        .collect::<DaftResult<Vec<_>>>()?;
-
-                    DaftResult::Ok(
-                        PySeries::from_pylist_impl(args[0].name(), res, self.return_dtype.clone())?
-                            .series,
-                    )
+                        .collect::<Vec<DaftResult<_>>>()
                 })
             })
-            .collect::<DaftResult<Vec<Series>>>()?;
-        let outputs_ref = outputs.iter().collect::<Vec<_>>();
-        let name = args[0].name();
-        Ok(Series::concat(&outputs_ref)?.rename(name))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
     }
 }
