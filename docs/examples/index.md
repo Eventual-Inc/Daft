@@ -37,7 +37,8 @@ Load a collection of PDFs from S3, OCR or extract text from them, run layout ana
 
 <div class="grid cards" markdown>
 
-- [Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/document_processing/document_processing_tutorial.ipynb)
-- [Follow along with the tutorial video](https://youtu.be/BLcKDQRTFKY)
+- [![colab](../img/colab.png) Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/document_processing/document_processing_tutorial.ipynb)
+
+- [![thumbnail](../img/doc_proc.png) Follow along with the tutorial video](https://youtu.be/BLcKDQRTFKY)
 
 </div>
