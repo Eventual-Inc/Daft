@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
@@ -26,7 +25,7 @@ use crate::{
 pub(crate) struct RepartitionNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    columns: Vec<BoundExpr>,
+    repartition_spec: RepartitionSpec,
     num_partitions: usize,
     child: Arc<dyn DistributedPipelineNode>,
 }
@@ -39,13 +38,19 @@ impl RepartitionNode {
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        columns: Vec<BoundExpr>,
-        num_partitions: Option<usize>,
+        repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
-        let num_partitions =
-            num_partitions.unwrap_or_else(|| child.config().clustering_spec.num_partitions());
+        let num_partitions = match &repartition_spec {
+            RepartitionSpec::Hash(config) => config
+                .num_partitions
+                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
+            RepartitionSpec::Random(config) => config
+                .num_partitions
+                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
+            RepartitionSpec::IntoPartitions(config) => config.num_partitions,
+        };
 
         let context = PipelineNodeContext::new(
             stage_config,
@@ -58,19 +63,13 @@ impl RepartitionNode {
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            Arc::new(
-                HashClusteringConfig::new(
-                    num_partitions,
-                    columns.clone().into_iter().map(|e| e.into()).collect(),
-                )
-                .into(),
-            ),
+            Arc::new(repartition_spec.to_clustering_spec(num_partitions)),
         );
 
         Self {
             config,
             context,
-            columns,
+            repartition_spec,
             num_partitions,
             child,
         }
@@ -81,12 +80,9 @@ impl RepartitionNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
         let mut res = vec![];
-        res.push(format!(
-            "Repartition: {}",
-            self.columns.iter().map(|e| e.to_string()).join(", ")
-        ));
+        res.push(format!("Repartition: {}", self.repartition_spec.var_name(),));
+        res.extend(self.repartition_spec.multiline_display());
         res.push(format!("Num partitions = {}", self.num_partitions));
         res
     }
@@ -207,7 +203,7 @@ impl DistributedPipelineNode for RepartitionNode {
         let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::repartition(
                 input,
-                self_clone.columns.clone(),
+                self_clone.repartition_spec.clone(),
                 self_clone.num_partitions,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
