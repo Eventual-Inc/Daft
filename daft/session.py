@@ -662,7 +662,7 @@ def current_model() -> str | None:
 
 
 def current_provider() -> str | None:
-    """Returns the active session's current model or None."""
+    """Returns the active session's current provider or None."""
     return _session().current_provider()
 
 
