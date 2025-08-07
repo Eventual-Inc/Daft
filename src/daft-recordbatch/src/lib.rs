@@ -747,7 +747,7 @@ impl RecordBatch {
             },
             Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
                 let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
-                python_udf.call(args)
+                python_udf.call(args.as_slice()).map(|(s,_)| s)
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),

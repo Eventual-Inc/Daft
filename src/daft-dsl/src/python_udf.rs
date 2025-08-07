@@ -17,7 +17,12 @@ pub enum PyScalarFn {
 }
 
 impl PyScalarFn {
-    pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::RowWise(RowWisePyFn { function_name, .. }) => function_name,
+        }
+    }
+    pub fn call(&self, args: &[Series]) -> DaftResult<(Series, std::time::Duration)> {
         match self {
             Self::RowWise(func) => func.call(args),
         }
@@ -100,12 +105,12 @@ impl RowWisePyFn {
     }
 
     #[cfg(not(feature = "python"))]
-    pub fn call(&self, _args: Vec<Series>) -> DaftResult<Series> {
+    pub fn call(&self, _args: &[Series]) -> DaftResult<(Series, std::time::Duration)> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
+    pub fn call(&self, args: &[Series]) -> DaftResult<(Series, std::time::Duration)> {
         use pyo3::prelude::*;
 
         let num_rows = args
@@ -114,7 +119,7 @@ impl RowWisePyFn {
             .max()
             .expect("RowWisePyFn should have at least one argument");
 
-        for a in &args {
+        for a in args {
             assert!(
                 a.len() == num_rows || a.len() == 1,
                 "arg lengths differ: {} vs {}",
@@ -133,18 +138,26 @@ impl RowWisePyFn {
         if is_async {
             self.call_async(args, num_rows)
         } else {
-            self.call_parallel(args, num_rows)
+            self.call_serial(args, num_rows)
         }
     }
 
     #[cfg(feature = "python")]
-    fn call_async(&self, args: Vec<Series>, num_rows: usize) -> DaftResult<Series> {
+    fn call_async(
+        &self,
+        args: &[Series],
+        num_rows: usize,
+    ) -> DaftResult<(Series, std::time::Duration)> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
         let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
+        let start_time = std::time::Instant::now();
+
         Ok(pyo3::Python::with_gil(|py| {
+            let gil_contention_time = start_time.elapsed();
+
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.row_wise"))?
                 .getattr(pyo3::intern!(py, "__call_async_batch"))?;
@@ -153,11 +166,13 @@ impl RowWisePyFn {
             for i in 0..num_rows {
                 let py_args_for_row = args
                     .iter()
-                    .map(|a| {
-                        let idx = if a.len() == 1 { 0 } else { i };
-                        a.get_lit(idx).into_pyobject(py)
+                    .map(|s| {
+                        let idx = if s.len() == 1 { 0 } else { i };
+                        let lit = s.get_lit(idx);
+                        lit.into_pyobject(py).map_err(|e| e.into())
                     })
-                    .collect::<PyResult<Vec<_>>>()?;
+                    .collect::<DaftResult<Vec<_>>>()?;
+
                 evaluated_args.push(py_args_for_row);
             }
 
@@ -166,64 +181,51 @@ impl RowWisePyFn {
 
             let result_series = res.extract::<PySeries>()?.series;
 
-            Ok::<_, PyErr>(result_series.rename(name))
+            Ok::<_, PyErr>((result_series.rename(name), gil_contention_time))
         })?)
     }
 
     #[cfg(feature = "python")]
-    fn call_parallel(&self, args: Vec<Series>, num_rows: usize) -> DaftResult<Series> {
+    fn call_serial(
+        &self,
+        args: &[Series],
+        num_rows: usize,
+    ) -> DaftResult<(Series, std::time::Duration)> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
-        use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-        let func = pyo3::Python::with_gil(|py| {
-            Ok::<_, PyErr>(
-                py.import(pyo3::intern!(py, "daft.udf.row_wise"))?
-                    .getattr(pyo3::intern!(py, "__call_func"))?
-                    .unbind(),
-            )
-        })?;
 
-        // To minimize gil contention, while also allowing parallelism, we chunk up the rows
-        // for now,its just based on the max of (512) and (num rows / (number of CPUs * 4))
-        // This may need additional tuning based on usage patterns
-        //
-        // Instead of running sequentially and acquiring the gil for each row, we instead parallelize based off the chunk size.
-        // Each chunk then acquires the gil.
-        // Since we're processing data in chunks, there's less thrashing of the gil than if we were to use `.par_iter().map(|row| {Python::with_gil(..)})`
-        let n_cpus =
-            std::thread::available_parallelism().expect("Failed to get available parallelism");
-        let chunk_size = (num_rows / (n_cpus.get() * 4)).clamp(1, 512);
-
-        let indices: Vec<usize> = (0..num_rows).collect();
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
-        let outputs = indices
-            .par_chunks(chunk_size)
-            .flat_map(|chunk| {
-                Python::with_gil(|py| {
-                    // pre-allocating py_args vector so we're not creating a new vector for each iteration
-                    let mut py_args = Vec::with_capacity(args.len());
-                    let func = func.bind(py);
-                    chunk
-                        .iter()
-                        .map(|&i| {
-                            for s in &args {
-                                let idx = if s.len() == 1 { 0 } else { i };
-                                let lit = s.get_lit(idx);
-                                let pyarg = lit.into_pyobject(py)?;
-                                py_args.push(pyarg);
-                            }
+        let start_time = std::time::Instant::now();
+        let (outputs, gil_contention_time) = Python::with_gil(|py| {
+            let gil_contention_time = start_time.elapsed();
+            let func = py
+                .import(pyo3::intern!(py, "daft.udf.row_wise"))?
+                .getattr(pyo3::intern!(py, "__call_func"))?;
 
-                            let result = func.call1((inner_ref, args_ref, &py_args))?;
-                            py_args.clear();
-                            DaftResult::Ok(result.unbind())
-                        })
-                        .collect::<Vec<DaftResult<_>>>()
+            let mut py_args = Vec::with_capacity(args.len());
+            // pre-allocating py_args vector so we're not creating a new vector for each iteration
+            let outputs = (0..num_rows)
+                .map(|i| {
+                    for s in args {
+                        let idx = if s.len() == 1 { 0 } else { i };
+                        let lit = s.get_lit(idx);
+                        let pyarg = lit.into_pyobject(py)?;
+                        py_args.push(pyarg);
+                    }
+
+                    let result = func.call1((inner_ref, args_ref, &py_args))?;
+                    py_args.clear();
+                    DaftResult::Ok(result.unbind())
                 })
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+                .collect::<DaftResult<Vec<_>>>()?;
+            DaftResult::Ok((outputs, gil_contention_time))
+        })?;
 
-        Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
+        Ok((
+            PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series,
+            gil_contention_time,
+        ))
     }
 }
