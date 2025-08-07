@@ -8,11 +8,11 @@ use super::{
     rules::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateOffsets,
         EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
-        PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
-        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
-        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
-        UnnestPredicateSubquery, UnnestScalarSubquery,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
+        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
+        PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
+        ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
+        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -203,6 +203,11 @@ impl OptimizerBuilder {
             // --- Enrich logical plan with stats ---
             RuleBatch::new(
                 vec![Box::new(EnrichWithStats::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Push down aggregations ---
+            RuleBatch::new(
+                vec![Box::new(PushDownAggregation)],
                 RuleExecutionStrategy::Once,
             ),
         ]);

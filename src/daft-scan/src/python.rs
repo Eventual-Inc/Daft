@@ -352,6 +352,14 @@ pub mod pylib {
             false
         }
 
+        fn can_absorb_aggregation(&self) -> bool {
+            false
+        }
+
+        fn supports_count_pushdown(&self) -> bool {
+            false
+        }
+
         fn multiline_display(&self) -> Vec<String> {
             let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
             lines

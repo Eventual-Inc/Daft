@@ -2,9 +2,10 @@
 # isort: dont-add-import: from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
-from daft.daft import PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
+from daft.daft import CountMode, PyCountAggregation, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
+from daft.dependencies import pa
 from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
@@ -13,7 +14,6 @@ from ..pushdowns import SupportsPushdownFilters
 
 if TYPE_CHECKING:
     import lance
-    import pyarrow
 
 
 # TODO support fts and fast_search
@@ -21,7 +21,7 @@ def _lancedb_table_factory_function(
     ds: "lance.LanceDataset",
     fragment_ids: Optional[list[int]] = None,
     required_columns: Optional[list[str]] = None,
-    filter: Optional["pyarrow.compute.Expression"] = None,
+    filter: Optional["pa.compute.Expression"] = None,
     limit: Optional[int] = None,
 ) -> Iterator[PyRecordBatch]:
     fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
@@ -29,6 +29,41 @@ def _lancedb_table_factory_function(
         raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
     scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
     return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
+
+
+def _lancedb_count_result_function(
+    ds: "lance.LanceDataset", count_mode: CountMode, filters: Optional[list[Any]] = None
+) -> RecordBatch:
+    """Use LanceDB's API to count rows and return a record batch with the count result."""
+    count = 0
+
+    # 根据count_mode和filters计算行数
+    if count_mode == CountMode.All:
+        if filters is None:
+            # 如果没有过滤器，可以直接使用元数据
+            for fragment in ds.get_fragments():
+                count += fragment.count_rows()
+        else:
+            # 如果有过滤器，需要应用过滤器后计数
+            # 这可能需要实际扫描数据，效率可能不如直接使用元数据
+            scanner = ds.scanner(filter=filters)
+            count = sum(1 for _ in scanner.to_table().iterrows())
+    elif count_mode == CountMode.Valid:
+        # 计算非空值的数量
+        # 这可能需要实际扫描数据
+        # ...
+        raise NotImplementedError("CountMode.Valid is not implemented yet.")
+    elif count_mode == CountMode.Null:
+        # 计算空值的数量
+        # 这可能需要实际扫描数据
+        # ...
+        raise NotImplementedError("CountMode.Null is not implemented yet.")
+
+    # 创建包含count结果的记录批次
+    arrow_schema = pa.schema([pa.field("count", pa.uint64())])
+    return RecordBatch.from_arrow_record_batches(
+        [pa.RecordBatch.from_arrays([pa.array([count], type=pa.uint64())], ["count"])], arrow_schema
+    )
 
 
 class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
@@ -56,6 +91,14 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
 
     def can_absorb_select(self) -> bool:
         return False
+
+    def can_absorb_aggregation(self) -> bool:
+        """Returns whether this scan operator can absorb aggregation operations."""
+        return True
+
+    def supports_count_pushdown(self) -> bool:
+        """Returns whether this scan operator supports count pushdown."""
+        return True
 
     def multiline_display(self) -> list[str]:
         return [
@@ -93,30 +136,54 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 if filter_required_column_names is None
                 else pushdowns.columns + filter_required_column_names
             )
+        # Check if there is a count aggregation pushdown
+        if pushdowns.aggregation is not None and isinstance(pushdowns.aggregation, PyCountAggregation):
+            # Handle count aggregation pushdown
+            count_mode = pushdowns.aggregation.mode
 
-        # TODO: figure out how to translate Pushdowns into LanceDB filters
-        filters = None
-        fragments = self._ds.get_fragments()
-        for fragment in fragments:
-            # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
-            size_bytes = None
-            stats = None
+            # If there are pushed filters, convert them to Arrow expressions
+            filters = None
+            if self._pushed_filters is not None:
+                # Convert filters to Arrow expressions
+                from daft.expressions import Expression
 
-            # NOTE: `fragment.count_rows()` should result in 1 IO call for the data file
-            # (1 fragment = 1 data file) and 1 more IO call for the deletion file (if present).
-            # This could potentially be expensive to perform serially if there are thousands of files.
-            # Given that num_rows isn't leveraged for much at the moment, and without statistics
-            # we will probably end up materializing the data anyways for any operations, we leave this
-            # as None.
-            num_rows = None
+                filters = [Expression._from_pyexpr(f).to_arrow_expr() for f in self._pushed_filters]
 
+            # Create a ScanTask for counting rows
             yield ScanTask.python_factory_func_scan_task(
-                module=_lancedb_table_factory_function.__module__,
-                func_name=_lancedb_table_factory_function.__name__,
-                func_args=(self._ds, [fragment.fragment_id], required_columns, filters, pushdowns.limit),
-                schema=self.schema()._schema,
-                num_rows=num_rows,
-                size_bytes=size_bytes,
+                module=_lancedb_count_result_function.__module__,
+                func_name=_lancedb_count_result_function.__name__,
+                func_args=(self._ds, count_mode, filters),
+                schema=pa.schema([pa.field("count", pa.uint64())]),
+                num_rows=1,
+                size_bytes=8,
                 pushdowns=pushdowns,
-                stats=stats,
+                stats=None,
             )
+        else:
+            # TODO: figure out how to translate Pushdowns into LanceDB filters
+            filters = None
+            fragments = self._ds.get_fragments()
+            for fragment in fragments:
+                # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
+                size_bytes = None
+                stats = None
+
+                # NOTE: `fragment.count_rows()` should result in 1 IO call for the data file
+                # (1 fragment = 1 data file) and 1 more IO call for the deletion file (if present).
+                # This could potentially be expensive to perform serially if there are thousands of files.
+                # Given that num_rows isn't leveraged for much at the moment, and without statistics
+                # we will probably end up materializing the data anyways for any operations, we leave this
+                # as None.
+                num_rows = None
+
+                yield ScanTask.python_factory_func_scan_task(
+                    module=_lancedb_table_factory_function.__module__,
+                    func_name=_lancedb_table_factory_function.__name__,
+                    func_args=(self._ds, [fragment.fragment_id], required_columns, filters, pushdowns.limit),
+                    schema=self.schema()._schema,
+                    num_rows=num_rows,
+                    size_bytes=size_bytes,
+                    pushdowns=pushdowns,
+                    stats=stats,
+                )
