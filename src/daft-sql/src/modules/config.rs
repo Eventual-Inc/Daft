@@ -1,6 +1,6 @@
 use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
-use daft_core::prelude::{DataType, Field};
-use daft_dsl::{literal_value, Expr, ExprRef, LiteralValue};
+use daft_core::prelude::*;
+use daft_dsl::{Expr, ExprRef};
 
 use super::SQLModule;
 use crate::{
@@ -23,10 +23,7 @@ impl SQLModule for SQLModuleConfig {
 pub struct S3ConfigFunction;
 macro_rules! item {
     ($name:expr, $ty:ident) => {
-        (
-            Field::new(stringify!($name), DataType::$ty),
-            literal_value($name),
-        )
+        (Field::new(stringify!($name), DataType::$ty), $name.into())
     };
 }
 
@@ -99,7 +96,7 @@ impl SQLFunction for S3ConfigFunction {
         let profile_name = args.try_get_named::<String>("profile_name")?;
 
         let entries = vec![
-            (Field::new("variant", DataType::Utf8), literal_value("s3")),
+            (Field::new("variant", DataType::Utf8), "s3".into()),
             item!(region_name, Utf8),
             item!(endpoint_url, Utf8),
             item!(key_id, Utf8),
@@ -123,7 +120,7 @@ impl SQLFunction for S3ConfigFunction {
         .into_iter()
         .collect::<_>();
 
-        Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+        Ok(Expr::Literal(Literal::Struct(entries)).arced())
     }
     fn docstrings(&self, _: &str) -> String {
         "Create configurations to be used when accessing an S3-compatible system.".to_string()
@@ -183,7 +180,7 @@ impl SQLFunction for HTTPConfigFunction {
             .map(|t: usize| t as u32);
 
         let entries = vec![
-            (Field::new("variant", DataType::Utf8), literal_value("http")),
+            (Field::new("variant", DataType::Utf8), "http".into()),
             item!(user_agent, Utf8),
             item!(bearer_token, Utf8),
             item!(retry_initial_backoff_ms, UInt64),
@@ -194,7 +191,7 @@ impl SQLFunction for HTTPConfigFunction {
         .into_iter()
         .collect::<_>();
 
-        Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+        Ok(Expr::Literal(Literal::Struct(entries)).arced())
     }
 
     fn docstrings(&self, _: &str) -> String {
@@ -250,10 +247,7 @@ impl SQLFunction for AzureConfigFunction {
         let use_ssl = args.try_get_named::<bool>("use_ssl")?;
 
         let entries = vec![
-            (
-                Field::new("variant", DataType::Utf8),
-                literal_value("azure"),
-            ),
+            (Field::new("variant", DataType::Utf8), "azure".into()),
             item!(storage_account, Utf8),
             item!(access_key, Utf8),
             item!(sas_token, Utf8),
@@ -269,7 +263,7 @@ impl SQLFunction for AzureConfigFunction {
         .into_iter()
         .collect::<_>();
 
-        Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+        Ok(Expr::Literal(Literal::Struct(entries)).arced())
     }
 
     fn docstrings(&self, _: &str) -> String {
@@ -313,7 +307,7 @@ impl SQLFunction for GCSConfigFunction {
         let anonymous = args.try_get_named::<bool>("anonymous")?;
 
         let entries = vec![
-            (Field::new("variant", DataType::Utf8), literal_value("gcs")),
+            (Field::new("variant", DataType::Utf8), "gcs".into()),
             item!(project_id, Utf8),
             item!(credentials, Utf8),
             item!(token, Utf8),
@@ -322,7 +316,7 @@ impl SQLFunction for GCSConfigFunction {
         .into_iter()
         .collect::<_>();
 
-        Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+        Ok(Expr::Literal(Literal::Struct(entries)).arced())
     }
     fn docstrings(&self, _: &str) -> String {
         "Create configurations to be used when accessing Google Cloud Storage.".to_string()
@@ -335,7 +329,7 @@ impl SQLFunction for GCSConfigFunction {
 
 pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
     // TODO(CORY): use serde to deserialize this
-    let Expr::Literal(LiteralValue::Struct(entries)) = expr.as_ref() else {
+    let Expr::Literal(Literal::Struct(entries)) = expr.as_ref() else {
         unsupported_sql_err!("Invalid IOConfig");
     };
 
@@ -344,8 +338,8 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             entries
                 .get(&Field::new($field, DataType::$type))
                 .and_then(|s| match s {
-                    LiteralValue::$type(s) => Some(Ok(s.clone())),
-                    LiteralValue::Null => None,
+                    Literal::$type(s) => Some(Ok(s.clone())),
+                    Literal::Null => None,
                     _ => Some(Err(PlannerError::invalid_argument($field, "IOConfig"))),
                 })
                 .transpose()

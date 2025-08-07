@@ -26,6 +26,7 @@ mod floor;
 pub mod from_arrow;
 pub mod full;
 mod get;
+mod get_lit;
 pub(crate) mod groups;
 mod hash;
 mod hll_merge;

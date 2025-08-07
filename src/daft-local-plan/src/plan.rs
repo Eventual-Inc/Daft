@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::{ensure, DaftError, DaftResult};
 #[cfg(feature = "python")]
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use common_py_serde::{deserialize_py_object, serialize_py_object, PyObjectWrapper};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
@@ -255,7 +255,7 @@ impl LocalPhysicalPlan {
     #[cfg(feature = "python")]
     pub fn distributed_actor_pool_project(
         input: LocalPhysicalPlanRef,
-        actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+        actor_objects: Vec<PyObjectWrapper>,
         batch_size: Option<usize>,
         memory_request: u64,
         schema: SchemaRef,
@@ -952,7 +952,7 @@ pub struct UDFProject {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DistributedActorPoolProject {
     pub input: LocalPhysicalPlanRef,
-    pub actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+    pub actor_objects: Vec<PyObjectWrapper>,
     pub batch_size: Option<usize>,
     pub memory_request: u64,
     pub schema: SchemaRef,

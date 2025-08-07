@@ -269,7 +269,7 @@ impl SQLLiteral for i64 {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(daft_dsl::LiteralValue::as_i64)
+            .and_then(daft_core::lit::Literal::as_i64)
             .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
     }
 }
@@ -291,7 +291,7 @@ impl SQLLiteral for bool {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(daft_dsl::LiteralValue::as_bool)
+            .and_then(daft_core::lit::Literal::as_bool)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a boolean literal"))
     }
 }
@@ -309,7 +309,7 @@ impl<T: SQLLiteral> SQLLiteral for HashMap<String, T> {
         // get reference to struct
         let fields = expr
             .as_literal()
-            .and_then(daft_dsl::LiteralValue::as_struct)
+            .and_then(daft_core::lit::Literal::as_struct)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a struct literal"))?;
         // add literals to new map
         let mut map = Self::new();

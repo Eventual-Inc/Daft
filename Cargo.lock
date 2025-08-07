@@ -2342,6 +2342,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-treenode",
+ "daft-core",
  "daft-dsl",
  "daft-schema",
  "indexmap 2.9.0",
@@ -2446,6 +2447,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-io-config",
  "common-py-serde",
  "daft-hash",
  "daft-minhash",
@@ -2569,11 +2571,8 @@ dependencies = [
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
- "bincode",
  "common-error",
  "common-hashable-float-wrapper",
- "common-io-config",
  "common-macros",
  "common-py-serde",
  "common-resource-request",
@@ -2583,7 +2582,6 @@ dependencies = [
  "derive_more",
  "indexmap 2.9.0",
  "itertools 0.14.0",
- "num-traits",
  "pyo3",
  "rstest",
  "serde",
@@ -2862,6 +2860,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-metrics",
+ "common-py-serde",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",
