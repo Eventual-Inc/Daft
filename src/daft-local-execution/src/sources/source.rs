@@ -167,6 +167,7 @@ impl PipelineNode for SourceNode {
                     has_data = true;
                     stats_manager.activate_node(node_id);
                     if counting_sender.send(part?).await.is_err() {
+                        stats_manager.finalize_node(node_id);
                         return Ok(());
                     }
                 }
