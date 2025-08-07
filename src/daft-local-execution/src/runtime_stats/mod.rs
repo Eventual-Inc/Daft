@@ -174,6 +174,10 @@ impl RuntimeStatsManager {
                     }
 
                     _ = interval.tick() => {
+                        if active_nodes.is_empty() {
+                            continue;
+                        }
+
                         for node_id in &active_nodes {
                             let (node_info, runtime_stats) = &node_stats[*node_id];
                             let event = runtime_stats.snapshot();
@@ -383,7 +387,9 @@ mod tests {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            *self.state.event.lock().unwrap() = Some(events[0].1.clone());
+            for (_, snapshot) in events {
+                *self.state.event.lock().unwrap() = Some(snapshot.clone());
+            }
             Ok(())
         }
 
