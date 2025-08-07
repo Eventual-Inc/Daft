@@ -114,9 +114,6 @@ impl RowWisePyFn {
 
     #[cfg(feature = "python")]
     pub fn call(&self, args: &[Series]) -> DaftResult<(Series, std::time::Duration)> {
-        use std::time::Instant;
-
-        use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
         let num_rows = args
@@ -134,10 +131,77 @@ impl RowWisePyFn {
             );
         }
 
-        let call_func_with_evaluated_exprs = pyo3::Python::with_gil(|py| {
+        let is_async: bool = Python::with_gil(|py| {
+            py.import(pyo3::intern!(py, "asyncio"))?
+                .getattr(pyo3::intern!(py, "iscoroutinefunction"))?
+                .call1((self.inner.as_ref(),))?
+                .extract()
+        })?;
+
+        if is_async {
+            self.call_async(args, num_rows)
+        } else {
+            self.call_parallel(args, num_rows)
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn call_async(
+        &self,
+        args: &[Series],
+        num_rows: usize,
+    ) -> DaftResult<(Series, std::time::Duration)> {
+        use daft_core::python::PySeries;
+        use pyo3::prelude::*;
+        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
+        let inner_ref = self.inner.as_ref();
+        let args_ref = self.original_args.as_ref();
+        let start_time = std::time::Instant::now();
+
+        Ok(pyo3::Python::with_gil(|py| {
+            let gil_contention_time = start_time.elapsed();
+
+            let f = py
+                .import(pyo3::intern!(py, "daft.udf.row_wise"))?
+                .getattr(pyo3::intern!(py, "__call_async_batch"))?;
+
+            let mut evaluated_args = Vec::with_capacity(num_rows);
+            for i in 0..num_rows {
+                let args_for_row = args
+                    .iter()
+                    .map(|a| {
+                        let idx = if a.len() == 1 { 0 } else { i };
+                        LiteralValue::get_from_series(a, idx)
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let py_args_for_row = args_for_row
+                    .into_iter()
+                    .map(|a| a.into_pyobject(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                evaluated_args.push(py_args_for_row);
+            }
+
+            let res = f.call1((inner_ref, py_return_type.clone(), args_ref, evaluated_args))?;
+            let name = args[0].name();
+
+            let result_series = res.extract::<PySeries>()?.series;
+
+            Ok::<_, PyErr>((result_series.rename(name), gil_contention_time))
+        })?)
+    }
+
+    #[cfg(feature = "python")]
+    fn call_parallel(
+        &self,
+        args: &[Series],
+        num_rows: usize,
+    ) -> DaftResult<(Series, std::time::Duration)> {
+        use daft_core::python::PySeries;
+        use pyo3::prelude::*;
+        let func = pyo3::Python::with_gil(|py| {
             Ok::<_, PyErr>(
                 py.import(pyo3::intern!(py, "daft.udf.row_wise"))?
-                    .getattr(pyo3::intern!(py, "call_func_with_evaluated_exprs"))?
+                    .getattr(pyo3::intern!(py, "__call_func"))?
                     .unbind(),
             )
         })?;
@@ -145,7 +209,7 @@ impl RowWisePyFn {
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
-        let start_time = Instant::now();
+        let start_time = std::time::Instant::now();
 
         let (outputs, gil_contention_time) = Python::with_gil(|py| {
             let gil_contention_time = start_time.elapsed();
@@ -161,9 +225,7 @@ impl RowWisePyFn {
                         py_args.push(pyarg);
                     }
 
-                    let result = call_func_with_evaluated_exprs
-                        .bind(py)
-                        .call1((inner_ref, args_ref, &py_args))?;
+                    let result = func.bind(py).call1((inner_ref, args_ref, &py_args))?;
                     py_args.clear();
                     DaftResult::Ok(result.unbind())
                 })
