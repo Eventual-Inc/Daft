@@ -36,7 +36,7 @@ class Descriptor(ABC, Generic[T]):
 
 
 # temp definition to defer complexity of a more generic embedding type to later PRs
-Embedding = np.typing.NDArray
+Embedding = np.typing.NDArray  # type: ignore[type-arg]
 
 
 @dataclass
