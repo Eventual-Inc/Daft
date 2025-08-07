@@ -1,8 +1,14 @@
 use common_error::DaftResult;
+use common_metrics::{Stat, StatSnapshotSend};
 use common_tracing::flush_oltp_metrics_provider;
 use opentelemetry::{global, metrics::Counter, KeyValue};
 
-use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEvent};
+use crate::{
+    ops::NodeInfo,
+    runtime_stats::{
+        subscribers::RuntimeStatsSubscriber, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
+    },
+};
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
@@ -23,27 +29,42 @@ impl OpenTelemetrySubscriber {
         }
     }
 }
-#[async_trait::async_trait]
+
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
-        let mut attributes = vec![
-            KeyValue::new("name", event.node_info.name.to_string()),
-            KeyValue::new("id", event.node_info.id.to_string()),
-        ];
-        for (k, v) in &event.node_info.context {
-            attributes.push(KeyValue::new(k.clone(), v.clone()));
-        }
-        self.rows_received.add(event.rows_received, &attributes);
-        self.rows_emitted.add(event.rows_emitted, &attributes);
-        self.cpu_us.add(event.cpu_us, &attributes);
+
+    fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
         Ok(())
     }
 
-    async fn flush(&self) -> DaftResult<()> {
+    fn finalize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+        Ok(())
+    }
+
+    fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
+        let mut attributes = vec![
+            KeyValue::new("name", node_info.name.to_string()),
+            KeyValue::new("id", node_info.id.to_string()),
+        ];
+        for (k, v) in &node_info.context {
+            attributes.push(KeyValue::new(k.clone(), v.clone()));
+        }
+
+        for (k, v) in event.iter() {
+            match (k, v) {
+                (ROWS_RECEIVED_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
+                (ROWS_EMITTED_KEY, Stat::Count(v)) => self.rows_emitted.add(*v, &attributes),
+                (CPU_US_KEY, Stat::Count(v)) => self.cpu_us.add(*v, &attributes),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(self: Box<Self>) -> DaftResult<()> {
         flush_oltp_metrics_provider();
         Ok(())
     }

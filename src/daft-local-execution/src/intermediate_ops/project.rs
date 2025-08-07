@@ -17,7 +17,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -142,6 +142,10 @@ impl IntermediateOperator for ProjectOperator {
 
     fn name(&self) -> NodeName {
         "Project".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Project
     }
 
     fn multiline_display(&self) -> Vec<String> {
