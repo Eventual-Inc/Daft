@@ -109,9 +109,7 @@ impl RowWisePyFn {
 
     #[cfg(feature = "python")]
     pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
-        use daft_core::python::PySeries;
         use pyo3::prelude::*;
-        use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 
         let num_rows = args
             .iter()
@@ -128,10 +126,66 @@ impl RowWisePyFn {
             );
         }
 
-        let call_func_with_evaluated_exprs = pyo3::Python::with_gil(|py| {
+        let is_async: bool = Python::with_gil(|py| {
+            py.import(pyo3::intern!(py, "asyncio"))?
+                .getattr(pyo3::intern!(py, "iscoroutinefunction"))?
+                .call1((self.inner.as_ref(),))?
+                .extract()
+        })?;
+
+        if is_async {
+            self.call_async(args, num_rows)
+        } else {
+            self.call_parallel(args, num_rows)
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn call_async(&self, args: Vec<Series>, num_rows: usize) -> DaftResult<Series> {
+        use daft_core::python::PySeries;
+        use pyo3::prelude::*;
+        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
+        let inner_ref = self.inner.as_ref();
+        let args_ref = self.original_args.as_ref();
+        Ok(pyo3::Python::with_gil(|py| {
+            let f = py
+                .import(pyo3::intern!(py, "daft.udf.row_wise"))?
+                .getattr(pyo3::intern!(py, "__call_async_batch"))?;
+
+            let mut evaluated_args = Vec::with_capacity(num_rows);
+            for i in 0..num_rows {
+                let args_for_row = args
+                    .iter()
+                    .map(|a| {
+                        let idx = if a.len() == 1 { 0 } else { i };
+                        LiteralValue::get_from_series(a, idx)
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let py_args_for_row = args_for_row
+                    .into_iter()
+                    .map(|a| a.into_pyobject(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                evaluated_args.push(py_args_for_row);
+            }
+
+            let res = f.call1((inner_ref, py_return_type.clone(), args_ref, evaluated_args))?;
+            let name = args[0].name();
+
+            let result_series = res.extract::<PySeries>()?.series;
+
+            Ok::<_, PyErr>(result_series.rename(name))
+        })?)
+    }
+
+    #[cfg(feature = "python")]
+    fn call_parallel(&self, args: Vec<Series>, num_rows: usize) -> DaftResult<Series> {
+        use daft_core::python::PySeries;
+        use pyo3::prelude::*;
+        use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+        let func = pyo3::Python::with_gil(|py| {
             Ok::<_, PyErr>(
                 py.import(pyo3::intern!(py, "daft.udf.row_wise"))?
-                    .getattr(pyo3::intern!(py, "call_func_with_evaluated_exprs"))?
+                    .getattr(pyo3::intern!(py, "__call_func"))?
                     .unbind(),
             )
         })?;
@@ -157,6 +211,7 @@ impl RowWisePyFn {
                 Python::with_gil(|py| {
                     // pre-allocating py_args vector so we're not creating a new vector for each iteration
                     let mut py_args = Vec::with_capacity(args.len());
+                    let func = func.bind(py);
                     chunk
                         .iter()
                         .map(|&i| {
@@ -167,9 +222,7 @@ impl RowWisePyFn {
                                 py_args.push(pyarg);
                             }
 
-                            let result = call_func_with_evaluated_exprs
-                                .bind(py)
-                                .call1((inner_ref, args_ref, &py_args))?;
+                            let result = func.call1((inner_ref, args_ref, &py_args))?;
                             py_args.clear();
                             DaftResult::Ok(result.unbind())
                         })
