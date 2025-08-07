@@ -83,7 +83,7 @@ macro_rules! unimplemented_get_lit {
     ($type:ty) => {
         impl $type {
             pub fn get_lit(&self, _: usize) -> Literal {
-                unimplemented!("Unsupported ata type: {}", self.data_type())
+                unimplemented!("Unsupported data type: {}", self.data_type())
             }
         }
     };

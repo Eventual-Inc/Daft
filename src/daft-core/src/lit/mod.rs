@@ -263,6 +263,13 @@ impl Literal {
             }
             Self::UInt64(v) => {
                 if *v > 0 {
+                    if *v > i64::MAX as u64 {
+                        return Err(DaftError::ValueError(format!(
+                            "Cannot negate UInt64 value {} as it exceeds i64::MAX",
+                            v
+                        )));
+                    }
+
                     Ok(Self::Int64(-(*v as i64)))
                 } else {
                     Ok(self.clone())
@@ -411,9 +418,9 @@ impl Literal {
             Self::Int16(i) => usize::try_from(*i).map(Some),
             Self::Int32(i) => usize::try_from(*i).map(Some),
             Self::Int64(i) => usize::try_from(*i).map(Some),
-            Self::UInt32(i) => return Ok(Some(*i as usize)),
-            Self::UInt64(i) => return Ok(Some(*i as usize)),
-            _ => return Ok(None),
+            Self::UInt32(i) => Ok(Some(*i as usize)),
+            Self::UInt64(i) => Ok(Some(*i as usize)),
+            _ => Ok(None),
         }
         .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
     }

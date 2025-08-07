@@ -83,7 +83,7 @@ impl TryFrom<Vec<Literal>> for Series {
                 TimeArray::new(field, physical).into_series()
             }
             DataType::Duration(_) => {
-                let data = values.into_iter().map(|lit| unwrap_inner!(lit, Time));
+                let data = values.into_iter().map(|lit| unwrap_inner!(lit, Duration));
                 let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
 
                 DurationArray::new(field, physical).into_series()

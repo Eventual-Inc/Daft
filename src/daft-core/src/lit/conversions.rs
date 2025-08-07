@@ -93,6 +93,13 @@ macro_rules! impl_int_fromliteral {
                     Literal::UInt32(v) => num_traits::cast(*v),
                     Literal::Int64(v) => num_traits::cast(*v),
                     Literal::UInt64(v) => num_traits::cast(*v),
+                    Literal::Float32(v) => {
+                        if v.fract() == 0.0 {
+                            num_traits::cast(*v)
+                        } else {
+                            None
+                        }
+                    }
                     Literal::Float64(v) => {
                         if v.fract() == 0.0 {
                             num_traits::cast(*v)
@@ -132,6 +139,7 @@ macro_rules! impl_float_fromliteral {
                     Literal::UInt32(v) => num_traits::cast(*v),
                     Literal::Int64(v) => num_traits::cast(*v),
                     Literal::UInt64(v) => num_traits::cast(*v),
+                    Literal::Float32(v) => num_traits::cast(*v),
                     Literal::Float64(v) => num_traits::cast(*v),
                     _ => {
                         return Err(DaftError::ValueError(format!(
