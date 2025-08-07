@@ -1,13 +1,16 @@
 use std::{sync::Arc, time::Duration};
 
 use common_error::DaftResult;
+use common_logging::GLOBAL_LOGGER;
 use common_metrics::StatSnapshotSend;
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
+use log::Log;
 
 use crate::{
     ops::{NodeCategory, NodeInfo},
     runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStats, CPU_US_KEY},
+    PythonPrintTarget, STDOUT,
 };
 
 /// Convert statistics to a message for progress bars
@@ -23,7 +26,7 @@ pub enum ProgressBarColor {
     Blue,
     Magenta,
     Cyan,
-    Red,
+    Yellow,
 }
 
 impl ProgressBarColor {
@@ -32,12 +35,55 @@ impl ProgressBarColor {
             Self::Blue => "blue",
             Self::Magenta => "magenta",
             Self::Cyan => "cyan",
-            Self::Red => "red",
+            Self::Yellow => "yellow",
         }
     }
 }
 
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
+
+struct IndicatifLogger<L: Log> {
+    pbar: indicatif::MultiProgress,
+    inner: L,
+}
+
+impl<L: Log> IndicatifLogger<L> {
+    fn new(pbar: indicatif::MultiProgress, inner: L) -> Self {
+        Self { pbar, inner }
+    }
+}
+
+impl<L: Log> Log for IndicatifLogger<L> {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        self.inner.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.inner.enabled(record.metadata()) {
+            self.pbar.suspend(|| self.inner.log(record));
+        }
+    }
+
+    fn flush(&self) {
+        self.inner.flush();
+    }
+}
+
+struct IndicatifPrintTarget {
+    pbar: indicatif::MultiProgress,
+}
+
+impl IndicatifPrintTarget {
+    fn new(pbar: indicatif::MultiProgress) -> Self {
+        Self { pbar }
+    }
+}
+
+impl PythonPrintTarget for IndicatifPrintTarget {
+    fn println(&self, message: &str) {
+        self.pbar.println(message).unwrap();
+    }
+}
 
 #[derive(Debug)]
 struct IndicatifProgressBarManager {
@@ -49,6 +95,17 @@ struct IndicatifProgressBarManager {
 impl IndicatifProgressBarManager {
     fn new(node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)]) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
+
+        if cfg!(feature = "python") {
+            // Register the IndicatifLogger to redirect Rust logs correctly
+            GLOBAL_LOGGER.set_inner_logger(Box::new(IndicatifLogger::new(
+                multi_progress.clone(),
+                GLOBAL_LOGGER.get_inner(),
+            )));
+
+            STDOUT.set_target(Box::new(IndicatifPrintTarget::new(multi_progress.clone())));
+        }
+
         multi_progress.set_move_cursor(true);
         multi_progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
 
@@ -72,7 +129,7 @@ impl IndicatifProgressBarManager {
             NodeCategory::Source => ProgressBarColor::Blue,
             NodeCategory::Intermediate => ProgressBarColor::Magenta,
             NodeCategory::BlockingSink => ProgressBarColor::Cyan,
-            NodeCategory::StreamingSink => ProgressBarColor::Red,
+            NodeCategory::StreamingSink => ProgressBarColor::Yellow,
         };
 
         #[allow(clippy::literal_string_with_formatting_args)]
@@ -124,7 +181,8 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         Ok(())
     }
 
-    fn finish(self: Box<Self>) -> DaftResult<()> {
+    fn finish(mut self: Box<Self>) -> DaftResult<()> {
+        self.pbars.clear();
         self.multi_progress.clear()?;
         Ok(())
     }

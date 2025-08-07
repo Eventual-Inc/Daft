@@ -1,0 +1,11 @@
+[dependencies]
+arc-swap = {workspace = true}
+log = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-logging"
+version = {workspace = true}

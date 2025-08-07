@@ -40,7 +40,7 @@ def test_udf():
 def test_class_udf(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
-    @udf(return_dtype=DataType.string(), batch_size=batch_size)
+    @udf(return_dtype=DataType.string(), batch_size=batch_size, use_process=False)
     class RepeatN:
         def __init__(self):
             self.n = 2

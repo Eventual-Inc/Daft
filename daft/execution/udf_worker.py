@@ -6,7 +6,16 @@ from multiprocessing.connection import Client
 from traceback import TracebackException
 
 from daft.errors import UDFException
-from daft.execution.udf import _ENTER, _ERROR, _SENTINEL, _SUCCESS, _UDF_ERROR, SharedMemoryTransport
+from daft.execution.udf import (
+    _ENTER,
+    _ERROR,
+    _OUTPUT_DIVIDER,
+    _READY,
+    _SENTINEL,
+    _SUCCESS,
+    _UDF_ERROR,
+    SharedMemoryTransport,
+)
 from daft.expressions.expressions import ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 
@@ -28,6 +37,11 @@ def udf_event_loop(
     try:
         initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
+        print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        conn.send(_READY)
+
         while True:
             name, size = conn.recv()
             if (name, size) == _SENTINEL:
@@ -36,9 +50,13 @@ def udf_event_loop(
             input_bytes = transport.read_and_release(name, size)
             input = MicroPartition.from_ipc_stream(input_bytes)
             evaluated = input.eval_expression_list(initialized_projection)
-            output_bytes = evaluated.to_ipc_stream()
 
+            output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
+
+            print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
+            sys.stdout.flush()
+            sys.stderr.flush()
             conn.send((_SUCCESS, out_name, out_size))
     except UDFException as e:
         exc = e.__cause__
