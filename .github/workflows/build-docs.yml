@@ -50,7 +50,6 @@ jobs:
         command: |
           source venv/bin/activate
           uv pip install -r requirements-dev.txt
-          uv pip install -e docs/plugins/
     - name: Build Daft in development mode and generate docs
       run: |
         source activate
