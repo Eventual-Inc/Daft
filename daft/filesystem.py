@@ -55,7 +55,7 @@ def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
             import botocore.session
         except ImportError:
             logger.error(
-                "Error when importing botocore. install daft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://docs.getdaft.io/en/latest/install)"
+                "Error when importing botocore. install daft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://docs.daft.ai/en/latest/install)"
             )
             raise
 
@@ -75,7 +75,7 @@ def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
         klass = fsspec.get_filesystem_class(protocol)
     except ImportError:
         logger.error(
-            "Error when importing dependencies for accessing data with: %s. Please ensure that daft was installed with the appropriate extra dependencies (https://docs.getdaft.io/en/latest/install)",
+            "Error when importing dependencies for accessing data with: %s. Please ensure that daft was installed with the appropriate extra dependencies (https://docs.daft.ai/en/latest/install)",
             protocol,
         )
         raise

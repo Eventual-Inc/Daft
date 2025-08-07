@@ -83,15 +83,15 @@ extra:
   - icon: fontawesome/brands/github
     link: https://github.com/Eventual-Inc/Daft
   - icon: fontawesome/brands/slack
-    link: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
+    link: https://www.daft.ai/slack
   - icon: fontawesome/brands/linkedin
     link: https://www.linkedin.com/showcase/daftengine/
   - icon: fontawesome/brands/x-twitter
     link: https://x.com/daftengine
   - icon: fontawesome/brands/youtube
     link: https://www.youtube.com/@daftengine
-  - icon: simple/substack
-    link: https://blog.getdaft.io/
+  - icon: fontawesome/solid/bookmark
+    link: https://www.daft.ai/blog
   generator: false
 # Additional Style
 extra_css:
