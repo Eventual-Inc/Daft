@@ -64,9 +64,14 @@ pub trait BlockingSink: Send + Sync {
     }
     fn dispatch_spawner(
         &self,
-        morsel_size_requirement: MorselSizeRequirement,
+        morsel_size_requirement: Option<MorselSizeRequirement>,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+        match morsel_size_requirement {
+            Some(morsel_size_requirement) => {
+                Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+            }
+            None => Arc::new(UnorderedDispatcher::unbounded()),
+        }
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
@@ -200,13 +205,12 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle: &mut ExecutionRuntimeContext,
         _morsel_size_requirement: MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let morsel_size_requirement = self
-            .op
-            .morsel_size_requirement()
+        let current_morsel_size_requirement = self.op.morsel_size_requirement();
+        let child_morsel_size_requirement = current_morsel_size_requirement
             .unwrap_or_else(|| runtime_handle.default_morsel_requirement());
         let child_results_receiver =
             self.child
-                .start(false, runtime_handle, morsel_size_requirement)?;
+                .start(false, runtime_handle, child_morsel_size_requirement)?;
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
             self.node_id(),
@@ -221,7 +225,7 @@ impl PipelineNode for BlockingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(morsel_size_requirement);
+        let dispatch_spawner = op.dispatch_spawner(current_morsel_size_requirement);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,

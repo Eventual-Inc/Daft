@@ -219,7 +219,7 @@ impl BlockingSink for WriteSink {
 
     fn dispatch_spawner(
         &self,
-        _morsel_size_requirement: MorselSizeRequirement,
+        _morsel_size_requirement: Option<MorselSizeRequirement>,
     ) -> Arc<dyn DispatchSpawner> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))
