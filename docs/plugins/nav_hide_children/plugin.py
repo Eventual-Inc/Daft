@@ -23,7 +23,9 @@ class NavHideChildrenPlugin(BasePlugin[NavHideChildrenConfig]):
         return nav
 
 
-def set_hide_children(paths_to_hide: list[list[str]], item: StructureItem, curr_path: list[str] = []):
+def set_hide_children(paths_to_hide: list[list[str]], item: StructureItem, curr_path: list[str] | None = None):
+    if curr_path is None:
+        curr_path = []
     if item.title is None:
         return
 
