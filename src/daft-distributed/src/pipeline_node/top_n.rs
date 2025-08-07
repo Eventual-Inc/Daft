@@ -20,6 +20,7 @@ pub(crate) struct TopNNode {
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
     limit: u64,
+    offset: Option<u64>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -35,6 +36,7 @@ impl TopNNode {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         limit: u64,
+        offset: Option<u64>,
         output_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -58,6 +60,7 @@ impl TopNNode {
             descending,
             nulls_first,
             limit,
+            offset,
             child,
         }
     }
@@ -68,6 +71,7 @@ impl TopNNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
+
         let mut res = vec!["TopN".to_string()];
         res.push(format!(
             "Sort by: {}",
@@ -81,7 +85,12 @@ impl TopNNode {
             "Nulls first = {}",
             self.nulls_first.iter().map(|e| e.to_string()).join(", ")
         ));
-        res.push(format!("Limit = {}", self.limit));
+        res.push(format!("Num Rows = {}", self.limit));
+
+        if let Some(offset) = self.offset {
+            res.push(format!("Offset = {}", offset));
+        }
+
         res
     }
 }
@@ -139,7 +148,7 @@ impl DistributedPipelineNode for TopNNode {
                 self_clone.descending.clone(),
                 self_clone.nulls_first.clone(),
                 self_clone.limit,
-                None, // TODO(zhenchao) support offset
+                self_clone.offset,
                 StatsState::NotMaterialized,
             )
         })
