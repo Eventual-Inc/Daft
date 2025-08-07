@@ -1,13 +1,9 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_treenode::Transformed;
 
 use crate::{
-    optimization::{
-        optimizer::{RuleBatch, RuleExecutionStrategy},
-        Optimizer, OptimizerConfig,
-    },
+    optimization::{optimizer::RuleBatch, Optimizer, OptimizerConfig},
     LogicalPlan,
 };
 

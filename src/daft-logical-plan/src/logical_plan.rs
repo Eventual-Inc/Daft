@@ -84,6 +84,40 @@ impl SubqueryAlias {
     }
 }
 
+/// Return value of [LogicalPlan::required_columns]
+pub(crate) struct RequiredCols {
+    /// Base required columns for an operator. For operators with 2 sides
+    /// (e.g. join, concat), this is the required columns for the left side.
+    pub(crate) required_cols: IndexSet<String>,
+    /// Optional right side columns for an operator. For operators with 2 sides
+    /// (e.g. join, concat), this is the optional columns for the right side.
+    /// For other operators, this is None.
+    pub(crate) opt_right_cols: Option<IndexSet<String>>,
+}
+
+impl RequiredCols {
+    pub fn new(required_cols: IndexSet<String>, opt_right_cols: Option<IndexSet<String>>) -> Self {
+        Self {
+            required_cols,
+            opt_right_cols,
+        }
+    }
+
+    /// Unwrap and return the required (left) side columns. Intended for 1-side ops.
+    pub fn single(self) -> IndexSet<String> {
+        self.required_cols
+    }
+
+    /// Unwrap and return the required (left) and optional (right) side columns. Intended for 2-side ops.
+    pub fn double(self) -> (IndexSet<String>, IndexSet<String>) {
+        if let Some(opt_right_cols) = self.opt_right_cols {
+            (self.required_cols, opt_right_cols)
+        } else {
+            panic!("Expected 2-side plan node (e.g. join, concat), but got 1-side plan node")
+        }
+    }
+}
+
 impl LogicalPlan {
     pub fn arced(self) -> Arc<Self> {
         Arc::new(self)
@@ -126,22 +160,22 @@ impl LogicalPlan {
         }
     }
 
-    pub fn required_columns(&self) -> (IndexSet<String>, Option<IndexSet<String>>) {
+    pub(crate) fn required_columns(&self) -> RequiredCols {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
             Self::Shard(..)
             | Self::Limit(..)
             | Self::Offset(..)
             | Self::Sample(..)
-            | Self::MonotonicallyIncreasingId(..) => (IndexSet::new(), None),
-            Self::Concat(..) => (IndexSet::new(), Some(IndexSet::new())),
+            | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
+            Self::Concat(..) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Project(projection) => {
                 let res = projection
                     .projection
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::UDFProject(UDFProject {
                 project,
@@ -154,9 +188,9 @@ impl LogicalPlan {
                     .collect::<IndexSet<_>>();
 
                 res.extend(get_required_columns(project).into_iter());
-                (res, None)
+                RequiredCols::new(res, None)
             }
-            Self::Filter(filter) => (
+            Self::Filter(filter) => RequiredCols::new(
                 get_required_columns(&filter.predicate)
                     .iter()
                     .cloned()
@@ -165,7 +199,7 @@ impl LogicalPlan {
             ),
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::Repartition(repartition) => {
                 let res = repartition
@@ -174,7 +208,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::Explode(explode) => {
                 let res = explode
@@ -182,7 +216,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::Unpivot(unpivot) => {
                 let res = unpivot
@@ -191,12 +225,12 @@ impl LogicalPlan {
                     .chain(unpivot.values.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::Distinct(distinct) => {
                 if let Some(on) = &distinct.columns {
                     let res = on.iter().flat_map(get_required_columns).collect();
-                    (res, None)
+                    RequiredCols::new(res, None)
                 } else {
                     let res = distinct
                         .input
@@ -204,7 +238,7 @@ impl LogicalPlan {
                         .field_names()
                         .map(ToString::to_string)
                         .collect();
-                    (res, None)
+                    RequiredCols::new(res, None)
                 }
             }
             Self::Aggregate(aggregate) => {
@@ -215,7 +249,7 @@ impl LogicalPlan {
                     .flat_map(|e| get_required_columns(&e))
                     .chain(aggregate.groupby.iter().flat_map(get_required_columns))
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::Pivot(pivot) => {
                 let res = pivot
@@ -225,7 +259,7 @@ impl LogicalPlan {
                     .chain(std::iter::once(&pivot.value_column))
                     .flat_map(get_required_columns)
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::Join(join) => {
                 let mut left = IndexSet::new();
@@ -253,10 +287,10 @@ impl LogicalPlan {
                     })
                     .unwrap();
                 }
-                (left, Some(right))
+                RequiredCols::new(left, Some(right))
             }
-            Self::Intersect(_) => (IndexSet::new(), Some(IndexSet::new())),
-            Self::Union(_) => (IndexSet::new(), Some(IndexSet::new())),
+            Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
+            Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -268,7 +302,7 @@ impl LogicalPlan {
                     .chain(window.window_spec.order_by.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
             Self::TopN(top_n) => {
                 let res = top_n
@@ -276,7 +310,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                (res, None)
+                RequiredCols::new(res, None)
             }
         }
     }
