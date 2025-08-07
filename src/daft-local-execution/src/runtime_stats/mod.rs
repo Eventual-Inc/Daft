@@ -19,7 +19,7 @@ use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
 use tokio::{
-    runtime::Handle,
+    runtime::{Handle, Runtime},
     sync::{mpsc, oneshot},
     time::interval,
 };
@@ -58,7 +58,7 @@ fn should_enable_progress_bar() -> bool {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<()>,
-    _handle: RuntimeTask<()>,
+    handle: RuntimeTask<()>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -138,6 +138,15 @@ impl RuntimeStatsManager {
             loop {
                 tokio::select! {
                     biased;
+                    _ = &mut finish_rx => {
+                        if !active_nodes.is_empty() {
+                            for node_id in active_nodes {
+                                log::error!("Node not finalized: {}", node_id);
+                            }
+                        }
+                        break;
+                    }
+
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
                             for subscriber in &subscribers {
@@ -170,10 +179,6 @@ impl RuntimeStatsManager {
                             }
                         }
                     }
-
-                    _ = &mut finish_rx => {
-                        break;
-                    }
                 }
             }
 
@@ -188,7 +193,7 @@ impl RuntimeStatsManager {
         Self {
             finish_tx,
             node_tx,
-            _handle: task_handle,
+            handle: task_handle,
         }
     }
 
@@ -204,10 +209,13 @@ impl RuntimeStatsManager {
             .expect("The node_tx channel was closed");
     }
 
-    pub fn finish(self) {
+    pub fn finish(self, runtime: &Runtime) {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
+        runtime.block_on(async move {
+            let _ = self.handle.await;
+        });
     }
 }
 

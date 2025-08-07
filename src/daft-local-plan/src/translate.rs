@@ -91,7 +91,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 input,
                 project,
                 passthrough_columns,
-                false,
                 udf_project.projected_schema.clone(),
                 udf_project.stats_state.clone(),
             ))

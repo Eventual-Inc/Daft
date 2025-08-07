@@ -1,5 +1,5 @@
 [dependencies]
-arc-swap = "1.7.1"
+arc-swap = {workspace = true}
 log = {workspace = true}
 
 [lints]

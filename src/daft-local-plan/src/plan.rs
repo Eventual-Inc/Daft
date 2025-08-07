@@ -239,7 +239,6 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         project: BoundExpr,
         passthrough_columns: Vec<BoundExpr>,
-        in_ray_runner: bool,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
@@ -247,7 +246,6 @@ impl LocalPhysicalPlan {
             input,
             project,
             passthrough_columns,
-            in_ray_runner,
             schema,
             stats_state,
         })
@@ -821,7 +819,7 @@ impl LocalPhysicalPlan {
                 Self::Filter(Filter { predicate, .. }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::UDFProject(UDFProject { project, passthrough_columns, schema, in_ray_runner, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), *in_ray_runner, schema.clone(), StatsState::NotMaterialized),
+                Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -946,7 +944,6 @@ pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
     pub project: BoundExpr,
     pub passthrough_columns: Vec<BoundExpr>,
-    pub in_ray_runner: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

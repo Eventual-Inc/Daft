@@ -17,12 +17,14 @@ mod streaming_sink;
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, LazyLock},
     task::{Context, Poll},
 };
 
+use arc_swap::ArcSwap;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeRef, RuntimeTask};
+use console::style;
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStats, RuntimeStatsManager, TimedFuture};
@@ -244,6 +246,123 @@ impl ExecutionTaskSpawner {
         self.runtime_ref.spawn(timed_fut)
     }
 }
+
+// ---------------------------- STDOUT / STDERR PIPING ---------------------------- //
+
+/// Target for printing to.
+trait PythonPrintTarget: Send + Sync + 'static {
+    fn println(&self, message: &str);
+}
+
+/// Class that mimics Python sys.stdout / sys.stderr
+#[cfg(feature = "python")]
+#[cfg_attr(feature = "python", pyclass)]
+struct StdoutPipe {
+    printer: Arc<StdoutHandler>,
+    buffer: String,
+}
+
+#[cfg(feature = "python")]
+#[cfg_attr(feature = "python", pymethods)]
+/// Methods that mimic Python sys.stdout / sys.stderr
+impl StdoutPipe {
+    pub fn write(&mut self, message: &str) {
+        self.buffer.push_str(message);
+
+        // Check if the buffer contains a newline
+        if let Some(newline_pos) = self.buffer.find('\n') {
+            // Split at the newline and write the complete lines
+            let (complete_lines, remaining) = self.buffer.split_at(newline_pos + 1);
+            self.printer
+                .print("[UDF on Thread]", complete_lines.trim_end_matches('\n'));
+
+            // Keep the remaining content in the buffer
+            self.buffer = remaining.to_string();
+        }
+    }
+
+    pub fn flush(&mut self) {
+        if !self.buffer.is_empty() {
+            self.printer.print("[UDF on Thread]", &self.buffer);
+            self.buffer.clear();
+        }
+    }
+}
+
+/// Set Python stdout / stderr back to original on drop.
+#[cfg(feature = "python")]
+struct PythonStdoutGuard;
+
+#[cfg(feature = "python")]
+impl Drop for PythonStdoutGuard {
+    fn drop(&mut self) {
+        use pyo3::{intern, Python};
+
+        // Something else has probably gone wrong if we can't reset, so just ignore
+        let _ = Python::with_gil(|py| {
+            let sys = py.import(intern!(py, "sys"))?;
+            sys.setattr(
+                intern!(py, "stdout"),
+                sys.getattr(intern!(py, "__stdout__"))?,
+            )?;
+
+            Ok::<(), PyErr>(())
+        });
+    }
+}
+
+/// A static entity that redirects Python sys.stdout / sys.stderr to handle Rust side effects.
+/// Tracks internal tags to reduce interweaving of user prints
+/// Can also register callbacks, for example for suspending the progress bar before prints.
+struct StdoutHandler {
+    target: ArcSwap<Option<Box<dyn PythonPrintTarget>>>,
+}
+
+impl StdoutHandler {
+    pub fn new() -> Self {
+        Self {
+            target: ArcSwap::new(Arc::new(None)),
+        }
+    }
+
+    fn set_target(&self, target: Box<dyn PythonPrintTarget>) {
+        self.target.store(Arc::new(Some(target)));
+    }
+
+    fn print(&self, prefix: &str, message: &str) {
+        let message = format!("{} {}", style(prefix).magenta(), message);
+
+        if let Some(target) = self.target.load().as_ref() {
+            target.println(&message);
+        } else {
+            println!("{message}");
+        }
+    }
+
+    #[cfg(feature = "python")]
+    pub fn override_python_stdout(self: Arc<Self>) -> DaftResult<PythonStdoutGuard> {
+        use pyo3::{intern, PyErr, Python};
+
+        let stdout_pipe = StdoutPipe {
+            printer: self,
+            buffer: String::new(),
+        };
+
+        Python::with_gil(|py| {
+            let sys = py.import(intern!(py, "sys"))?;
+            let py_stdout = stdout_pipe.into_pyobject(py)?;
+            sys.setattr(intern!(py, "stdout"), py_stdout.into_pyobject(py)?)?;
+
+            Ok::<(), PyErr>(())
+        })?;
+
+        Ok(PythonStdoutGuard)
+    }
+}
+
+static STDOUT: LazyLock<Arc<StdoutHandler>> = LazyLock::new(|| Arc::new(StdoutHandler::new()));
+
+// -------------------------------------------------------------------------------- //
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

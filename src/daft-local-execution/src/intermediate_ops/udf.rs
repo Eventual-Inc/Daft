@@ -1,6 +1,3 @@
-#[cfg(feature = "python")]
-pub mod logging;
-
 use std::{
     ops::RangeInclusive,
     sync::{
@@ -49,7 +46,6 @@ struct UdfParams {
     passthrough_columns: Vec<BoundExpr>,
     udf_name: String,
     output_schema: SchemaRef,
-    use_ray_runner: bool,
 }
 
 struct UdfHandle {
@@ -93,6 +89,8 @@ impl UdfHandle {
     fn create_handle(&mut self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
+            use crate::STDOUT;
+
             let py_expr = PyExpr::from(self.params.udf_expr.as_ref().clone());
             let passthrough_exprs = self
                 .params
@@ -112,19 +110,16 @@ impl UdfHandle {
             })?;
 
             Python::with_gil(|py| {
-                use console::style;
-
                 let log_lines = inner
                     .bind(py)
                     .call_method0(pyo3::intern!(py, "trace_output"))?
                     .extract::<Vec<String>>()?;
-                let label = style(format!(
-                    "[`{}` Worker #{}]",
+                let label = format!(
+                    "[`{}` Worker #{} Init]",
                     self.params.udf_name, self.worker_idx
-                ))
-                .green();
+                );
                 for line in log_lines {
-                    log::error!(target: "PYTHON", "{} {}", label, line);
+                    STDOUT.print(&label, &line);
                 }
                 Ok::<(), PyErr>(())
             })?;
@@ -145,7 +140,7 @@ impl UdfHandle {
         input: Arc<MicroPartition>,
         inner: &PyObject,
     ) -> DaftResult<Arc<MicroPartition>> {
-        use console::style;
+        use crate::STDOUT;
 
         let (micropartition, outs) = Python::with_gil(|py| {
             inner
@@ -157,13 +152,9 @@ impl UdfHandle {
                 .extract::<(PyMicroPartition, Vec<String>)>()
         })?;
 
-        let label = style(format!(
-            "[`{}` Worker #{}]",
-            self.params.udf_name, self.worker_idx
-        ))
-        .green();
+        let label = format!("[`{}` Worker #{}]", self.params.udf_name, self.worker_idx);
         for line in outs {
-            log::error!(target: "PYTHON", "{} {}", label, line);
+            STDOUT.print(&label, &line);
         }
         Ok(micropartition.into())
     }
@@ -192,18 +183,12 @@ impl UdfHandle {
         for batch in input_batches.as_ref() {
             use std::time::Instant;
 
-            use crate::intermediate_ops::udf::logging::with_py_thread_logger;
-
             // Get the functions inputs
             let func_input = batch.eval_expression_list(input_exprs.as_slice())?;
             // Call the UDF, getting the GIL contention time and total runtime
-            let (total_runtime, gil_contention_time, mut result) =
-                with_py_thread_logger(self.params.use_ray_runner, || {
-                    let start_time = Instant::now();
-                    let (result, gil_contention_time) = func.call_udf(func_input.columns())?;
-                    let end_time = Instant::now();
-                    Ok((end_time - start_time, gil_contention_time, result))
-                })?;
+            let start_time = Instant::now();
+            let (mut result, gil_contention_time) = func.call_udf(func_input.columns())?;
+            let total_runtime = start_time.elapsed();
 
             // Rename if necessary
             if let Some(out_name) = out_name.as_ref() {
@@ -311,7 +296,6 @@ impl UdfOperator {
         project: BoundExpr,
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
-        use_ray_runner: bool,
     ) -> DaftResult<Self> {
         let project_unbound = project.inner().clone();
 
@@ -338,7 +322,6 @@ impl UdfOperator {
                 passthrough_columns,
                 udf_name: udf_properties.name.clone(),
                 output_schema: output_schema.clone(),
-                use_ray_runner,
             }),
             worker_count: AtomicUsize::new(0),
             udf_properties,

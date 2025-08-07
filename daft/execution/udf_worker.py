@@ -37,7 +37,7 @@ def udf_event_loop(
     try:
         initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
-        print(_OUTPUT_DIVIDER.decode(), file=sys.stderr, flush=True)
+        print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
         sys.stdout.flush()
         sys.stderr.flush()
         conn.send(_READY)
@@ -54,7 +54,7 @@ def udf_event_loop(
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
 
-            print(_OUTPUT_DIVIDER.decode(), file=sys.stderr, flush=True)
+            print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
             sys.stdout.flush()
             sys.stderr.flush()
             conn.send((_SUCCESS, out_name, out_size))
