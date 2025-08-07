@@ -129,16 +129,18 @@ impl UdfHandle {
         };
         let inner_expr = self.udf_expr.inner();
         let (inner_expr, out_name) = inner_expr.unwrap_alias();
-        enum UDFFunc {
-            Legacy(LegacyPythonUDF),
-            PyScalarFn(PyScalarFn),
+
+        enum UdfImpl<'a> {
+            Legacy(&'a LegacyPythonUDF),
+            PyScalarFn(&'a PyScalarFn),
         }
+
         let (func, input_exprs) = match inner_expr.as_ref() {
             Expr::Function {
                 func: FunctionExpr::Python(func),
                 inputs: input_exprs,
-            } => (UDFFunc::Legacy(func.clone()), input_exprs.clone()),
-            Expr::ScalarFn(ScalarFn::Python(f)) => (UDFFunc::PyScalarFn(f.clone()), f.args()),
+            } => (UdfImpl::Legacy(func), input_exprs.clone()),
+            Expr::ScalarFn(ScalarFn::Python(f)) => (UdfImpl::PyScalarFn(f), f.args()),
             _ => {
                 return Err(DaftError::InternalError(format!(
                     "Expected a Python UDF, got {}",
@@ -161,8 +163,8 @@ impl UdfHandle {
             // Call the UDF, getting the GIL contention time and total runtime
             let start_time = Instant::now();
             let (mut result, gil_contention_time) = match &func {
-                UDFFunc::Legacy(f) => f.call_udf(func_input.columns())?,
-                UDFFunc::PyScalarFn(f) => f.call(func_input.columns())?,
+                UdfImpl::Legacy(f) => f.call_udf(func_input.columns())?,
+                UdfImpl::PyScalarFn(f) => f.call(func_input.columns())?,
             };
             let end_time = Instant::now();
             let total_runtime = end_time - start_time;
