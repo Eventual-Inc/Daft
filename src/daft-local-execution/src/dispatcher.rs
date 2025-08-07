@@ -7,7 +7,8 @@ use daft_micropartition::MicroPartition;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
-    runtime_stats::CountingReceiver,
+    pipeline::MorselSizeRequirement,
+    runtime_stats::InitializingCountingReceiver,
     RuntimeHandle, SpawnedTask,
 };
 
@@ -24,7 +25,7 @@ use crate::{
 pub(crate) trait DispatchSpawner {
     fn spawn_dispatch(
         &self,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult;
@@ -43,30 +44,20 @@ pub(crate) struct RoundRobinDispatcher {
 }
 
 impl RoundRobinDispatcher {
-    pub(crate) fn new(morsel_size_lower_bound: usize, morsel_size_upper_bound: usize) -> Self {
+    pub(crate) fn new(morsel_size_requirement: MorselSizeRequirement) -> Self {
+        let (lower_bound, upper_bound) = match morsel_size_requirement {
+            MorselSizeRequirement::Strict(size) => (size, size),
+            MorselSizeRequirement::Flexible(size) => (0, size),
+        };
         Self {
-            morsel_size_lower_bound,
-            morsel_size_upper_bound,
-        }
-    }
-
-    pub(crate) fn with_fixed_threshold(threshold: usize) -> Self {
-        Self {
-            morsel_size_lower_bound: threshold,
-            morsel_size_upper_bound: threshold,
-        }
-    }
-
-    pub(crate) fn unbounded() -> Self {
-        Self {
-            morsel_size_lower_bound: 0,
-            morsel_size_upper_bound: usize::MAX,
+            morsel_size_lower_bound: lower_bound,
+            morsel_size_upper_bound: upper_bound,
         }
     }
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: usize,
     ) -> DaftResult<()> {
@@ -105,7 +96,7 @@ impl RoundRobinDispatcher {
 impl DispatchSpawner for RoundRobinDispatcher {
     fn spawn_dispatch(
         &self,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {
@@ -138,17 +129,14 @@ pub(crate) struct UnorderedDispatcher {
 }
 
 impl UnorderedDispatcher {
-    pub(crate) fn new(morsel_size_lower_bound: usize, morsel_size_upper_bound: usize) -> Self {
+    pub(crate) fn new(morsel_size_requirement: MorselSizeRequirement) -> Self {
+        let (lower_bound, upper_bound) = match morsel_size_requirement {
+            MorselSizeRequirement::Strict(size) => (size, size),
+            MorselSizeRequirement::Flexible(size) => (0, size),
+        };
         Self {
-            morsel_size_lower_bound,
-            morsel_size_upper_bound,
-        }
-    }
-
-    pub(crate) fn with_fixed_threshold(threshold: usize) -> Self {
-        Self {
-            morsel_size_lower_bound: threshold,
-            morsel_size_upper_bound: threshold,
+            morsel_size_lower_bound: lower_bound,
+            morsel_size_upper_bound: upper_bound,
         }
     }
 
@@ -161,7 +149,7 @@ impl UnorderedDispatcher {
 
     async fn dispatch_inner(
         worker_sender: Sender<Arc<MicroPartition>>,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: usize,
     ) -> DaftResult<()> {
@@ -193,7 +181,7 @@ impl UnorderedDispatcher {
 impl DispatchSpawner for UnorderedDispatcher {
     fn spawn_dispatch(
         &self,
-        receiver: Vec<CountingReceiver>,
+        receiver: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {
@@ -232,7 +220,7 @@ impl PartitionedDispatcher {
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<()> {
         for receiver in input_receivers {
@@ -253,7 +241,7 @@ impl PartitionedDispatcher {
 impl DispatchSpawner for PartitionedDispatcher {
     fn spawn_dispatch(
         &self,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {

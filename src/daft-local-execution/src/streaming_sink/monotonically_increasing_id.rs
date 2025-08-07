@@ -8,11 +8,7 @@ use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::NodeName,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -102,6 +98,10 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
 
     fn name(&self) -> NodeName {
         "MonotonicallyIncreasingId".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::MonotonicallyIncreasingId
     }
 
     fn multiline_display(&self) -> Vec<String> {

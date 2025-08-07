@@ -20,8 +20,9 @@ use super::intermediate_op::{
     IntermediateOperatorResult,
 };
 use crate::{
+    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
+    ExecutionTaskSpawner,
 };
 
 #[derive(Clone, Debug)]
@@ -157,6 +158,10 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         "DistributedActorPoolProject".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::DistributedActorPoolProject
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("DistributedActorPoolProject:".to_string());
@@ -186,11 +191,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         Ok(self.actor_handles.len())
     }
 
-    fn morsel_size_requirement(&self) -> MorselSizeRequirement {
-        if let Some(batch_size) = self.batch_size {
-            MorselSizeRequirement::Required((batch_size, batch_size))
-        } else {
-            MorselSizeRequirement::Whatever
-        }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        self.batch_size.map(MorselSizeRequirement::Strict)
     }
 }

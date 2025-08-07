@@ -21,10 +21,7 @@ use super::base::{
     StreamingSinkState,
 };
 use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::NodeName,
-    state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
+    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
 };
 
 pub(crate) struct IndexBitmapBuilder {
@@ -648,6 +645,10 @@ impl StreamingSink for OuterHashJoinProbeSink {
 
     fn name(&self) -> NodeName {
         "OuterHashJoinProbe".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::OuterHashJoinProbe
     }
 
     fn multiline_display(&self) -> Vec<String> {

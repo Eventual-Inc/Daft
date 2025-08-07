@@ -28,6 +28,7 @@ use super::intermediate_op::{
     IntermediateOperatorResult,
 };
 use crate::{
+    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
     ExecutionTaskSpawner,
 };
@@ -360,6 +361,10 @@ impl IntermediateOperator for UdfOperator {
         format!("UDF {}", udf_name).into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::UDFProject
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("UDF Executor:".to_string());
@@ -407,12 +412,10 @@ impl IntermediateOperator for UdfOperator {
         Ok(self.concurrency)
     }
 
-    fn morsel_size_requirement(&self) -> MorselSizeRequirement {
-        if let Some(batch_size) = self.udf_properties.batch_size {
-            MorselSizeRequirement::Required((batch_size, batch_size))
-        } else {
-            MorselSizeRequirement::Whatever
-        }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        self.udf_properties
+            .batch_size
+            .map(MorselSizeRequirement::Strict)
     }
 }
 

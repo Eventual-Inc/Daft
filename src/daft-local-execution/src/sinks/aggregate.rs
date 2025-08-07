@@ -12,7 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -134,6 +134,10 @@ impl BlockingSink for AggregateSink {
 
     fn name(&self) -> NodeName {
         self.aggregate_name.into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Aggregate
     }
 
     fn multiline_display(&self) -> Vec<String> {

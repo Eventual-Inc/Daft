@@ -8,11 +8,7 @@ use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::NodeName,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct ConcatSinkState {}
 impl StreamingSinkState for ConcatSinkState {
@@ -39,6 +35,10 @@ impl StreamingSink for ConcatSink {
 
     fn name(&self) -> NodeName {
         "Concat".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Concat
     }
 
     fn multiline_display(&self) -> Vec<String> {

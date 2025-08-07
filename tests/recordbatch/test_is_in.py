@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import datetime
 
-import numpy as np
-import pandas as pd
-import pyarrow as pa
 import pytest
 
 from daft import col
 from daft.recordbatch import MicroPartition
-from daft.series import Series
 
 
 class CustomClass:
@@ -126,23 +122,6 @@ def test_table_expr_is_in_different_types_castable(input, items, expected) -> No
     ],
 )
 def test_table_expr_is_in_items_is_none(input, items, expected) -> None:
-    daft_recordbatch = MicroPartition.from_pydict({"input": input})
-    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items)])
-    pydict = daft_recordbatch.to_pydict()
-
-    assert pydict["input"] == expected
-
-
-@pytest.mark.parametrize(
-    "input,items,expected",
-    [
-        pytest.param([1, 2, 3, 4], np.array([1, 2]), [True, True, False, False], id="NumpyArray"),
-        pytest.param([1, 2, 3, 4], pa.array([1, 2], type=pa.int8()), [True, True, False, False], id="PyArrowArray"),
-        pytest.param([1, 2, 3, 4], pd.Series([1, 2]), [True, True, False, False], id="PandasSeries"),
-        pytest.param([1, 2, 3, 4], Series.from_pylist([1, 2]), [True, True, False, False], id="DaftSeries"),
-    ],
-)
-def test_table_expr_is_in_different_input_types(input, items, expected) -> None:
     daft_recordbatch = MicroPartition.from_pydict({"input": input})
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items)])
     pydict = daft_recordbatch.to_pydict()

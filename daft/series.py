@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyExpr, PyRecordBatch, PySeries, series_lit
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
+from daft.schema import Field
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
@@ -772,39 +773,45 @@ class Series:
     def _eval_expressions(
         self,
         func_name: builtins.str,
-        *others: Series | None,
+        *args: Any,
         **kwargs: Any,
     ) -> Series:
         from daft.expressions.expressions import lit
 
-        name = self._series.name()
-        s = self._series
-        other_series_list = []
-        col_names = []
-        for i, other in enumerate(others):
-            col_name = f"c{i}"
+        inputs: list[PySeries] = []
+        arg_exprs = []
+        kwarg_exprs = {}
 
-            if other is None:
-                continue
-            if not isinstance(other, Series):
-                try:
-                    other_series_list.append(Series.from_pylist([other])._series.rename(col_name))
-                    col_names.append(col_name)
-                except AttributeError:
-                    raise ValueError(f"expected another Series but got {type(other)}")
+        for arg in [self, *args]:
+            if isinstance(arg, Series):
+                index = len(inputs)
+                field = Field.create(arg.name(), arg.datatype())
+                inputs.append(arg._series)
+
+                arg_exprs.append(native.bound_col(index, field._field))
             else:
-                other_series_list.append(other._series.rename(col_name))
-                col_names.append(col_name)
+                arg_exprs.append(lit(arg)._expr)
 
-        rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
+        for name, arg in kwargs.items():
+            if arg is None:
+                continue
 
-        args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
+            if isinstance(arg, Series):
+                index = len(inputs)
+                field = Field.create(arg.name(), arg.datatype())
+                inputs.append(arg._series)
+
+                kwarg_exprs[name] = native.bound_col(index, field._field)
+            else:
+                kwarg_exprs[name] = lit(arg)._expr
+
+        rb = PyRecordBatch.from_pyseries_list(inputs)
 
         f = native.get_function_from_registry(func_name)
         expr = f(
-            *args,
-            **{name: lit(v)._expr if not isinstance(v, PyExpr) else v for name, v in kwargs.items() if v is not None},
-        ).alias(name)
+            *arg_exprs,
+            **kwarg_exprs,
+        ).alias(self.name())
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(0)
@@ -844,9 +851,9 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
-    def _eval_expressions(self, func_name: builtins.str, *others: Series | None, **kwargs: Any) -> Series:
+    def _eval_expressions(self, func_name: builtins.str, *args: Any, **kwargs: Any) -> Series:
         s = Series._from_pyseries(self._series)
-        return s._eval_expressions(func_name, *others, **kwargs)
+        return s._eval_expressions(func_name, *args, **kwargs)
 
 
 class SeriesFloatNamespace(SeriesNamespace):
@@ -971,15 +978,14 @@ class SeriesStringNamespace(SeriesNamespace):
 
     def count_matches(
         self,
-        patterns: Series,
+        patterns: list[str],
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,
     ) -> Series:
-        pattern_expr = series_lit(patterns._series)
         return self._eval_expressions(
             "count_matches",
-            patterns=pattern_expr,
+            patterns=patterns,
             whole_words=whole_words,
             case_sensitive=case_sensitive,
         )
@@ -1104,8 +1110,7 @@ class SeriesListNamespace(SeriesNamespace):
         return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        desc_expr = series_lit(desc._series) if isinstance(desc, Series) else desc
-        return self._eval_expressions("list_sort", desc=desc_expr, nulls_first=nulls_first)
+        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
 
 class SeriesMapNamespace(SeriesNamespace):

@@ -74,7 +74,6 @@ pub struct DaftExecutionConfig {
     pub native_parquet_writer: bool,
     pub use_experimental_distributed_engine: bool,
     pub min_cpu_per_task: f64,
-    pub enable_strict_filter_pushdown: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -110,7 +109,6 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_experimental_distributed_engine: true,
             min_cpu_per_task: 0.5,
-            enable_strict_filter_pushdown: false,
         }
     }
 }

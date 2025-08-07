@@ -15,10 +15,7 @@ use super::{
     outer_hash_join_probe::IndexBitmapBuilder,
 };
 use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::NodeName,
-    state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
+    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
 };
 
 enum AntiSemiProbeState {
@@ -272,6 +269,10 @@ impl StreamingSink for AntiSemiProbeSink {
 
     fn name(&self) -> NodeName {
         "AntiSemiHashJoinProbe".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::AntiSemiHashJoinProbe
     }
 
     fn multiline_display(&self) -> Vec<String> {
