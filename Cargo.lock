@@ -2571,11 +2571,8 @@ dependencies = [
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
- "bincode",
  "common-error",
  "common-hashable-float-wrapper",
- "common-io-config",
  "common-macros",
  "common-py-serde",
  "common-resource-request",
@@ -2585,7 +2582,6 @@ dependencies = [
  "derive_more",
  "indexmap 2.9.0",
  "itertools 0.14.0",
- "num-traits",
  "pyo3",
  "rayon",
  "rstest",
