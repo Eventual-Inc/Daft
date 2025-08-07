@@ -1572,19 +1572,28 @@ class Expression:
         expr = self._expr.between(lower._expr, upper._expr)
         return Expression._from_pyexpr(expr)
 
-    def hash(self, seed: Any | None = None) -> Expression:
+    def hash(
+        self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash"
+    ) -> Expression:
         """Hashes the values in the Expression.
 
-        Uses the [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function to hash the values in the expression.
+        Uses the specified hash function to hash the values in the expression. Default to [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function.
 
         Args:
             seed (optional): Seed used for generating the hash. Defaults to 0.
+            hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
 
         Note:
             Null values will produce a hash value instead of being propagated as null.
 
         """
-        return self._eval_expressions("hash", seed=seed)
+        # Only pass hash_function if explicitly provided to maintain backward compatibility in string representation
+        kwargs = {}
+        if seed is not None:
+            kwargs["seed"] = seed
+        if hash_function is not None:
+            kwargs["hash_function"] = hash_function
+        return self._eval_expressions("hash", **kwargs)
 
     def minhash(
         self,

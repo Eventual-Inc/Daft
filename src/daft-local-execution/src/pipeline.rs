@@ -10,7 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::join::get_common_join_cols;
+use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
@@ -37,6 +37,8 @@ use crate::{
         project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
+    ops::{NodeCategory, NodeInfo, NodeType},
+    runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -69,6 +71,8 @@ pub type NodeName = Cow<'static, str>;
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
+    #[allow(clippy::borrowed_box)]
+    fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>>;
     fn name(&self) -> Arc<str>;
     fn start(
         &self,
@@ -82,6 +86,24 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn plan_id(&self) -> Arc<str>;
     /// Unique id to identify the node.
     fn node_id(&self) -> usize;
+    // General Node Info
+    fn node_info(&self) -> Arc<NodeInfo>;
+    // Runtime Stats
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats>;
+}
+
+impl ConcreteTreeNode for Box<dyn PipelineNode> {
+    fn children(&self) -> Vec<&Self> {
+        self.boxed_children()
+    }
+
+    fn take_children(self) -> (Self, Vec<Self>) {
+        unimplemented!("with_new_children is not supported for Box<dyn PipelineNode>")
+    }
+
+    fn with_new_children(self, _children: Vec<Self>) -> DaftResult<Self> {
+        unimplemented!("with_new_children is not supported for Box<dyn PipelineNode>")
+    }
 }
 
 /// Single use context for translating a physical plan to a Pipeline.
@@ -89,14 +111,6 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
 pub struct RuntimeContext {
     index_counter: std::cell::RefCell<usize>,
     context: HashMap<String, String>,
-}
-
-/// Contains information about the node such as name, id, and the plan_id
-#[derive(Clone, Debug)]
-pub struct NodeInfo {
-    pub name: Arc<str>,
-    pub id: usize,
-    pub context: HashMap<String, String>,
 }
 
 impl RuntimeContext {
@@ -123,10 +137,17 @@ impl RuntimeContext {
         index
     }
 
-    pub fn next_node_info(&self, name: Arc<str>) -> NodeInfo {
+    pub fn next_node_info(
+        &self,
+        name: Arc<str>,
+        node_type: NodeType,
+        node_category: NodeCategory,
+    ) -> NodeInfo {
         NodeInfo {
             name,
             id: self.next_id(),
+            node_type,
+            node_category,
             context: self.context.clone(),
         }
     }
@@ -1064,14 +1085,14 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
             input,
-            columns,
+            repartition_spec,
             num_partitions,
             stats_state,
             schema,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let repartition_op =
-                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
+                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
             BlockingSinkNode::new(
                 Arc::new(repartition_op),
                 child_node,

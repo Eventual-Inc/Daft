@@ -1852,6 +1852,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-metrics"
+version = "0.3.0-dev0"
+dependencies = [
+ "indicatif 0.17.11",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
 name = "common-partitioning"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2289,6 +2298,7 @@ dependencies = [
  "common-file-formats",
  "common-hashable-float-wrapper",
  "common-logging",
+ "common-metrics",
  "common-partitioning",
  "common-resource-request",
  "common-runtime",
@@ -2875,12 +2885,13 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-logging",
+ "common-metrics",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",
  "common-system-info",
  "common-tracing",
- "console 0.15.11",
+ "console 0.16.0",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -2899,12 +2910,11 @@ dependencies = [
  "daft-writers",
  "futures",
  "indexmap 2.9.0",
- "indicatif",
+ "indicatif 0.18.0",
  "itertools 0.14.0",
  "kanal",
  "log",
  "opentelemetry",
- "parking_lot 0.12.4",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
@@ -4697,6 +4707,19 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
+version = "0.17.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
+dependencies = [
+ "console 0.15.11",
+ "number_prefix",
+ "portable-atomic",
+ "unicode-width 0.2.1",
+ "web-time",
+]
+
+[[package]]
+name = "indicatif"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70a646d946d06bedbbc4cac4c218acf4bbf2d87757a784857025f4d447e4e1cd"
@@ -5504,6 +5527,12 @@ dependencies = [
  "autocfg",
  "libm",
 ]
+
+[[package]]
+name = "number_prefix"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 
 [[package]]
 name = "numpy"
@@ -7394,6 +7423,9 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "smawk"
