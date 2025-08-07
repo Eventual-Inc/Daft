@@ -1,16 +1,13 @@
 use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{
-    prelude::{DataType, Field, Schema},
-    series::Series,
-};
+use daft_core::prelude::*;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     functions::{python::RuntimePyObject, scalar::ScalarFn},
-    Expr, ExprRef, LiteralValue,
+    Expr, ExprRef,
 };
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -154,16 +151,12 @@ impl RowWisePyFn {
 
             let mut evaluated_args = Vec::with_capacity(num_rows);
             for i in 0..num_rows {
-                let args_for_row = args
+                let py_args_for_row = args
                     .iter()
                     .map(|a| {
                         let idx = if a.len() == 1 { 0 } else { i };
-                        LiteralValue::get_from_series(a, idx)
+                        a.get_lit(idx).into_pyobject(py)
                     })
-                    .collect::<DaftResult<Vec<_>>>()?;
-                let py_args_for_row = args_for_row
-                    .into_iter()
-                    .map(|a| a.into_pyobject(py))
                     .collect::<PyResult<Vec<_>>>()?;
                 evaluated_args.push(py_args_for_row);
             }
@@ -217,7 +210,7 @@ impl RowWisePyFn {
                         .map(|&i| {
                             for s in &args {
                                 let idx = if s.len() == 1 { 0 } else { i };
-                                let lit = LiteralValue::get_from_series(s, idx)?;
+                                let lit = s.get_lit(idx);
                                 let pyarg = lit.into_pyobject(py)?;
                                 py_args.push(pyarg);
                             }

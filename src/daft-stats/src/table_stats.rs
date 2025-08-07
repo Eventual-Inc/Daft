@@ -122,7 +122,7 @@ impl TableStatistics {
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].clone())
             }
-            Expr::Literal(lit_value) => lit_value.try_into(),
+            Expr::Literal(lit_value) => lit_value.clone().try_into(),
             Expr::Not(col) => self
                 .eval_expression(&BoundExpr::new_unchecked(col.clone()))?
                 .not(),

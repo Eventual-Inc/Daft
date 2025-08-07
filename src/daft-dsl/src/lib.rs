@@ -5,10 +5,7 @@ mod arithmetic;
 pub mod expr;
 pub mod functions;
 pub mod join;
-mod lit;
 pub mod optimization;
-#[cfg(feature = "python")]
-pub mod pyobj_serde;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod python_udf;
@@ -20,14 +17,11 @@ mod treenode;
 pub use common_treenode;
 pub use expr::{
     binary_op, bound_col, count_actor_pool_udfs, deduplicate_expr_names, estimated_selectivity,
-    exprs_to_schema, has_agg, is_actor_pool_udf, is_partition_compatible, is_udf, left_col,
-    resolved_col, right_col, unresolved_col,
+    exprs_to_schema, has_agg, is_actor_pool_udf, is_partition_compatible, is_udf, left_col, lit,
+    null_lit, resolved_col, right_col, unresolved_col,
     window::{window_to_agg_exprs, WindowBoundary, WindowFrame, WindowSpec},
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, Operator, PlanRef, ResolvedColumn,
     SketchType, Subquery, SubqueryPlan, UnresolvedColumn, WindowExpr,
-};
-pub use lit::{
-    lit, literal_value, literals_to_series, null_lit, FromLiteral, Literal, LiteralValue,
 };
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
