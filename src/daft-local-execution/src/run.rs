@@ -350,7 +350,7 @@ impl NativeExecutor {
             // Finish the stats manager
             let stats_manager = Arc::into_inner(stats_manager)
                 .expect("There should only be 1 stats manager instance by the end");
-            stats_manager.finish();
+            stats_manager.finish(&runtime);
 
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()

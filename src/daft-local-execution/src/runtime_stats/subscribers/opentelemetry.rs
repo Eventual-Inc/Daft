@@ -44,21 +44,23 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
         Ok(())
     }
 
-    fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
-        let mut attributes = vec![
-            KeyValue::new("name", node_info.name.to_string()),
-            KeyValue::new("id", node_info.id.to_string()),
-        ];
-        for (k, v) in &node_info.context {
-            attributes.push(KeyValue::new(k.clone(), v.clone()));
-        }
+    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_info, event) in events {
+            let mut attributes = vec![
+                KeyValue::new("name", node_info.name.to_string()),
+                KeyValue::new("id", node_info.id.to_string()),
+            ];
+            for (k, v) in &node_info.context {
+                attributes.push(KeyValue::new(k.clone(), v.clone()));
+            }
 
-        for (k, v) in event.iter() {
-            match (k, v) {
-                (ROWS_RECEIVED_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
-                (ROWS_EMITTED_KEY, Stat::Count(v)) => self.rows_emitted.add(*v, &attributes),
-                (CPU_US_KEY, Stat::Count(v)) => self.cpu_us.add(*v, &attributes),
-                _ => {}
+            for (k, v) in event.iter() {
+                match (k, v) {
+                    (ROWS_RECEIVED_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
+                    (ROWS_EMITTED_KEY, Stat::Count(v)) => self.rows_emitted.add(*v, &attributes),
+                    (CPU_US_KEY, Stat::Count(v)) => self.cpu_us.add(*v, &attributes),
+                    _ => {}
+                }
             }
         }
         Ok(())

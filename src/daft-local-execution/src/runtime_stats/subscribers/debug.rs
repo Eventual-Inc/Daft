@@ -22,8 +22,10 @@ impl RuntimeStatsSubscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
-        println!("{:?} {:#?}", node_info, event);
+    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_info, event) in events {
+            println!("{:?} {:#?}", node_info, event);
+        }
         Ok(())
     }
 

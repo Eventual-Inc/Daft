@@ -17,9 +17,10 @@ use common_runtime::RuntimeTask;
 use common_tracing::should_enable_opentelemetry;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
+use itertools::Itertools;
 use kanal::SendError;
 use tokio::{
-    runtime::Handle,
+    runtime::{Handle, Runtime},
     sync::{mpsc, oneshot},
     time::interval,
 };
@@ -58,7 +59,7 @@ fn should_enable_progress_bar() -> bool {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<()>,
-    _handle: RuntimeTask<()>,
+    handle: RuntimeTask<()>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -134,6 +135,8 @@ impl RuntimeStatsManager {
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_stats.len());
+            // Reuse container for ticks
+            let mut snapshot_container = Vec::with_capacity(node_stats.len());
 
             loop {
                 tokio::select! {
@@ -148,8 +151,9 @@ impl RuntimeStatsManager {
                         } else if !is_initialize && active_nodes.remove(&node_id) {
                             let (node_info, runtime_stats) = &node_stats[node_id];
                             let event = runtime_stats.flush();
+                            let event = [(node_info.as_ref(), event)];
                             for subscriber in &subscribers {
-                                if let Err(e) = subscriber.handle_event(&event, node_info) {
+                                if let Err(e) = subscriber.handle_event(&event) {
                                     log::error!("Failed to handle event: {}", e);
                                 }
                                 if let Err(e) = subscriber.finalize_node(&node_stats[node_id].0) {
@@ -159,20 +163,28 @@ impl RuntimeStatsManager {
                         }
                     }
 
+                    _ = &mut finish_rx => {
+                        if !active_nodes.is_empty() {
+                            log::warn!(
+                                "RuntimeStatsManager finished with active nodes {{{}}}",
+                                active_nodes.iter().map(|id| id.to_string()).join(", ")
+                            );
+                        }
+                        break;
+                    }
+
                     _ = interval.tick() => {
                         for node_id in &active_nodes {
                             let (node_info, runtime_stats) = &node_stats[*node_id];
                             let event = runtime_stats.snapshot();
-                            for subscriber in &subscribers {
-                                if let Err(e) = subscriber.handle_event(&event, node_info) {
-                                    log::error!("Failed to handle event: {}", e);
-                                }
+                            snapshot_container.push((node_info.as_ref(), event));
+                        }
+                        for subscriber in &subscribers {
+                            if let Err(e) = subscriber.handle_event(snapshot_container.as_slice()) {
+                                log::error!("Failed to handle event: {}", e);
                             }
                         }
-                    }
-
-                    _ = &mut finish_rx => {
-                        break;
+                        snapshot_container.clear();
                     }
                 }
             }
@@ -188,7 +200,7 @@ impl RuntimeStatsManager {
         Self {
             finish_tx,
             node_tx,
-            _handle: task_handle,
+            handle: task_handle,
         }
     }
 
@@ -204,10 +216,13 @@ impl RuntimeStatsManager {
             .expect("The node_tx channel was closed");
     }
 
-    pub fn finish(self) {
+    pub fn finish(self, runtime: &Runtime) {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
+        runtime.block_on(async move {
+            self.handle.await.expect("The finish_tx channel was closed");
+        });
     }
 }
 
@@ -364,11 +379,11 @@ mod tests {
             Ok(())
         }
 
-        fn handle_event(&self, event: &StatSnapshotSend, _node_info: &NodeInfo) -> DaftResult<()> {
+        fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            *self.state.event.lock().unwrap() = Some(event.clone());
+            *self.state.event.lock().unwrap() = Some(events[0].1.clone());
             Ok(())
         }
 
@@ -488,7 +503,7 @@ mod tests {
                 Ok(())
             }
 
-            fn handle_event(&self, _: &StatSnapshotSend, _: &NodeInfo) -> DaftResult<()> {
+            fn handle_event(&self, _: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
