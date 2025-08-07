@@ -59,8 +59,13 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 filter.stats_state.clone(),
             ))
         }
-        LogicalPlan::IntoBatches(_into_batches) => {
-            todo!("IntoBatches not yet supported in the local physical plan translator")
+        LogicalPlan::IntoBatches(into_batches) => {
+            let input = translate(&into_batches.input)?;
+            Ok(LocalPhysicalPlan::into_batches(
+                input,
+                into_batches.batch_size,
+                into_batches.stats_state.clone(),
+            ))
         }
         LogicalPlan::Limit(limit) => {
             let input = translate(&limit.input)?;

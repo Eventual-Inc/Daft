@@ -13,8 +13,8 @@ use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
-    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
+    Pivot, Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
@@ -500,6 +500,9 @@ pub fn physical_plan_to_pipeline(
                 ctx,
             )
             .boxed()
+        }
+        LocalPhysicalPlan::IntoBatches(IntoBatches { .. }) => {
+            todo!("IntoBatches Physical Plan to Pipeline conversion not yet supported")
         }
         LocalPhysicalPlan::Explode(Explode {
             input,
