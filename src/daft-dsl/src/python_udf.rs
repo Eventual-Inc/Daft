@@ -1,16 +1,13 @@
 use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{
-    prelude::{DataType, Field, Schema},
-    series::Series,
-};
+use daft_core::prelude::*;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     functions::{python::RuntimePyObject, scalar::ScalarFn},
-    Expr, ExprRef, LiteralValue,
+    Expr, ExprRef,
 };
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -162,7 +159,7 @@ impl RowWisePyFn {
                         .map(|&i| {
                             for s in &args {
                                 let idx = if s.len() == 1 { 0 } else { i };
-                                let lit = LiteralValue::get_from_series(s, idx)?;
+                                let lit = s.get_lit(idx);
                                 let pyarg = lit.into_pyobject(py)?;
                                 py_args.push(pyarg);
                             }

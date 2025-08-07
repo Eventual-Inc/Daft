@@ -24,6 +24,7 @@ use daft_core::{
         try_stddev_aggregation_supertype, try_sum_supertype, InferDataType,
     },
     join::JoinSide,
+    lit::Literal,
     prelude::*,
     utils::supertype::{try_get_collection_supertype, try_get_supertype},
 };
@@ -42,7 +43,6 @@ use crate::{
         struct_::StructExpr,
         BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionEvaluator, FUNCTION_REGISTRY,
     },
-    lit,
     optimization::{get_required_columns, requires_computation},
     python_udf::{PyScalarFn, RowWisePyFn},
 };
@@ -276,7 +276,7 @@ pub enum Expr {
     List(Vec<ExprRef>),
 
     #[display("lit({_0})")]
-    Literal(lit::LiteralValue),
+    Literal(Literal),
 
     #[display("if [{predicate}] then [{if_true}] else [{if_false}]")]
     IfElse {
@@ -398,6 +398,14 @@ pub enum WindowExpr {
 pub enum SketchType {
     DDSketch,
     HyperLogLog,
+}
+
+pub fn lit<L: Into<Literal>>(t: L) -> ExprRef {
+    Arc::new(Expr::Literal(t.into()))
+}
+
+pub fn null_lit() -> ExprRef {
+    Arc::new(Expr::Literal(Literal::Null))
 }
 
 /// Unresolved column with no associated plan ID or schema.
@@ -1649,8 +1657,8 @@ impl Expr {
                     )));
                 }
                 match predicate.as_ref() {
-                    Self::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
-                    Self::Literal(lit::LiteralValue::Boolean(false)) => {
+                    Self::Literal(Literal::Boolean(true)) => if_true.to_field(schema),
+                    Self::Literal(Literal::Boolean(false)) => {
                         Ok(if_false.to_field(schema)?.rename(if_true.name()))
                     }
                     _ => {
@@ -1838,7 +1846,7 @@ impl Expr {
     }
 
     /// Returns the literal value if this is a literal expression, otherwise none.
-    pub fn as_literal(&self) -> Option<&lit::LiteralValue> {
+    pub fn as_literal(&self) -> Option<&Literal> {
         match self {
             Self::Literal(lit) => Some(lit),
             _ => None,
@@ -2168,8 +2176,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
 
         // Boolean literals
         Expr::Literal(lit) => match lit {
-            lit::LiteralValue::Boolean(true) => 1.0,
-            lit::LiteralValue::Boolean(false) => 0.0,
+            Literal::Boolean(true) => 1.0,
+            Literal::Boolean(false) => 0.0,
             _ => 1.0,
         },
 

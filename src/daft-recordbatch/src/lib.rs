@@ -25,8 +25,7 @@ use daft_dsl::{
         BoundColumn,
     },
     functions::{scalar::ScalarFn, FunctionArgs, FunctionEvaluator},
-    null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
-    SketchType,
+    null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
 };
 use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
@@ -728,15 +727,15 @@ impl RecordBatch {
 
                 func.udf.call(args)
             }
-            Expr::Literal(lit_value) => Ok(lit_value.to_series()),
+            Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
             Expr::IfElse {
                 if_true,
                 if_false,
                 predicate,
             } => match predicate.as_ref() {
                 // TODO: move this into simplify expression
-                Expr::Literal(LiteralValue::Boolean(true)) => self.eval_expression(&BoundExpr::new_unchecked(if_true.clone())),
-                Expr::Literal(LiteralValue::Boolean(false)) => {
+                Expr::Literal(Literal::Boolean(true)) => self.eval_expression(&BoundExpr::new_unchecked(if_true.clone())),
+                Expr::Literal(Literal::Boolean(false)) => {
                     Ok(self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?.rename(if_true.get_name(&self.schema)?))
                 }
                 _ => {

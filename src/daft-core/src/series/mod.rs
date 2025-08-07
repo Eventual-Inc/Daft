@@ -1,5 +1,6 @@
 mod array_impl;
 mod from;
+mod from_lit;
 mod ops;
 mod serdes;
 mod series_like;
@@ -22,6 +23,7 @@ use crate::{
         DataArray,
     },
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
+    lit::Literal,
     prelude::AsArrow,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
     with_match_daft_types,
@@ -228,5 +230,12 @@ impl Series {
             }
             _ => self == other,
         }
+    }
+
+    /// Get the value at `idx` as a [`Literal`]
+    ///
+    /// Panics if `idx` is out of bounds
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.inner.get_lit(idx)
     }
 }

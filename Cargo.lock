@@ -2342,6 +2342,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-treenode",
+ "daft-core",
  "daft-dsl",
  "daft-schema",
  "indexmap 2.9.0",
@@ -2446,6 +2447,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-io-config",
  "common-py-serde",
  "daft-hash",
  "daft-minhash",
@@ -2863,6 +2865,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-metrics",
+ "common-py-serde",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",

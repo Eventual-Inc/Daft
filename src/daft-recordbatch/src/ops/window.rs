@@ -178,7 +178,7 @@ impl RecordBatch {
                 .saturating_add_signed(*offset as isize)
                 .min(total_rows),
             WindowBoundary::RangeOffset(offset) => {
-                let lower_bound = (current_row_order_by.clone() + offset.to_series())?;
+                let lower_bound = (current_row_order_by.clone() + offset.clone().into())?;
                 let cmp = |i: usize| -> bool {
                     if descending {
                         order_by_col
@@ -222,7 +222,7 @@ impl RecordBatch {
                     .min(total_rows)
             }
             WindowBoundary::RangeOffset(offset) => {
-                let upper_bound = (current_row_order_by + offset.to_series())?;
+                let upper_bound = (current_row_order_by + offset.clone().into())?;
                 let cmp = |i: usize| -> bool {
                     if descending {
                         order_by_col
