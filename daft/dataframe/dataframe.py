@@ -2563,6 +2563,29 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def into_batches(self, batch_size: int) -> "DataFrame":
+        """Splits or coalesces DataFrame to partitions of size ``batch_size``.
+
+        Args:
+            batch_size (int): number of target rows per partition.
+
+        Returns:
+            DataFrame: Dataframe with `batch_size` rows per partition.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> df_with_2_batches = df.into_batches(2)
+            >>> df_with_2_batches.num_partitions()
+            2
+        """
+        if get_context().get_or_create_runner().name == "ray":
+            warnings.warn("DataFrame.into_batches not yet implemented on the RayRunner. This will be a no-op")
+
+        builder = self._builder.into_batches(batch_size)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def join(
         self,
         other: "DataFrame",
