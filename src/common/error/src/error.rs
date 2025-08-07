@@ -62,6 +62,8 @@ pub enum DaftError {
     NotImplemented(String),
     #[error("DaftError::CatalogError {0}")]
     CatalogError(String),
+    #[error("DaftError::ProtoError {0}")]
+    ProtoError(String),
 }
 
 impl DaftError {

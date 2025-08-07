@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+import requests
+
 
 class NativeRunnerIO(runner_io.RunnerIO):
     def glob_paths_details(
@@ -84,6 +86,12 @@ class NativeRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         builder = builder.optimize()
+        from daft.daft import to_proto_bytes
+
+        proto_bytes = to_proto_bytes(builder._builder)
+        message = requests.post("http://localhost:50051/query_service/v1", data=proto_bytes)
+        print(message.status_code)
+        print(f"proto bytes is: {len(proto_bytes)}")
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
         # builder = _to_from_proto(builder)
