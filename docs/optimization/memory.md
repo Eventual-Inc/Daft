@@ -59,7 +59,7 @@ There are some options available to you.
 
 3. Aggressively filter your data so that Daft can avoid reading data that it does not have to (e.g. `df.where(...)`)
 
-4. Request more memory for your UDFs (see [Resource Requests](../core_concepts.md#resource-requests)) if your UDFs are memory intensive (e.g. decompression of data, running large matrix computations etc)
+4. Request more memory for your UDFs (see [Resource Requests](../custom-code/udfs.md#resource-requests)) if your UDFs are memory intensive (e.g. decompression of data, running large matrix computations etc)
 
 5. Increase the number of partitions in your dataframe (hence making each partition smaller) using something like: `df.into_partitions(df.num_partitions() * 2)`
 

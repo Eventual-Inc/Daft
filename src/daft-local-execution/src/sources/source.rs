@@ -1,49 +1,71 @@
-use std::sync::Arc;
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use capitalize::Capitalize;
-use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use daft_core::prelude::SchemaRef;
-use daft_io::{IOStatsContext, IOStatsRef};
+use daft_io::IOStatsRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
-use indexmap::IndexMap;
-use indicatif::HumanCount;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
-    progress_bar::ProgressBarColor,
-    runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext, ROWS_EMITTED_KEY},
+    ops::{NodeCategory, NodeInfo, NodeType},
+    pipeline::{NodeName, PipelineNode, RuntimeContext},
+    runtime_stats::{CountingSender, RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
-pub(crate) struct SourceStatsBuilder {}
+#[derive(Default)]
+pub(crate) struct SourceStats {
+    cpu_us: AtomicU64,
+    rows_emitted: AtomicU64,
+    io_stats: IOStatsRef,
+}
 
-impl RuntimeStatsBuilder for SourceStatsBuilder {
+impl RuntimeStats for SourceStats {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
 
-    fn build(
-        &self,
-        stats: &mut IndexMap<&'static str, String>,
-        _rows_received: u64,
-        rows_emitted: u64,
-    ) {
-        stats.insert(ROWS_EMITTED_KEY, HumanCount(rows_emitted).to_string());
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+            ROWS_EMITTED_KEY; Stat::Count(self.rows_emitted.load(ordering)),
+            "bytes read"; Stat::Bytes(self.io_stats.load_bytes_read() as u64),
+        ]
+    }
+
+    fn add_rows_received(&self, _: u64) {
+        unreachable!("Source Nodes shouldn't receive rows")
+    }
+
+    fn add_rows_emitted(&self, rows: u64) {
+        self.rows_emitted.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
     }
 }
 
 #[async_trait]
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
-    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
-        Arc::new(SourceStatsBuilder {})
+    fn op_type(&self) -> NodeType;
+    fn make_runtime_stats(&self) -> Arc<SourceStats> {
+        Arc::new(SourceStats::default())
     }
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
@@ -56,26 +78,20 @@ pub trait Source: Send + Sync {
 
 pub(crate) struct SourceNode {
     source: Arc<dyn Source>,
-    runtime_stats: Arc<RuntimeStatsContext>,
+    runtime_stats: Arc<SourceStats>,
     plan_stats: StatsState,
-    io_stats: IOStatsRef,
-    node_info: NodeInfo,
+    node_info: Arc<NodeInfo>,
 }
 
 impl SourceNode {
     pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name().into());
-        let runtime_stats = RuntimeStatsContext::new_with_builder(
-            info.clone(),
-            source.make_runtime_stats_builder(),
-        );
-        let io_stats = IOStatsContext::new(source.name().to_string());
+        let info = ctx.next_node_info(source.name().into(), source.op_type(), NodeCategory::Source);
+        let runtime_stats = source.make_runtime_stats();
         Self {
             source,
             runtime_stats,
             plan_stats,
-            io_stats,
-            node_info: info,
+            node_info: Arc::new(info),
         }
     }
 
@@ -102,19 +118,12 @@ impl TreeDisplay for SourceNode {
                 }
 
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.render();
+                    let rt_result = self.runtime_stats.snapshot();
 
                     writeln!(display).unwrap();
                     for (name, value) in rt_result {
                         writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
                     }
-                    let bytes_read = self.io_stats.load_bytes_read();
-                    writeln!(
-                        display,
-                        "Bytes read = {}",
-                        bytes_to_human_readable(bytes_read)
-                    )
-                    .unwrap();
                 }
             }
         }
@@ -135,40 +144,39 @@ impl PipelineNode for SourceNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![]
     }
+    fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
+        vec![]
+    }
     fn start(
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let progress_bar = runtime_handle.make_progress_bar(
-            &self.name(),
-            ProgressBarColor::Blue,
-            self.node_id(),
-            self.runtime_stats.clone(),
-        );
         let source = self.source.clone();
-        let io_stats = self.io_stats.clone();
+        let io_stats = self.runtime_stats.io_stats.clone();
+        let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
+
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender = CountingSender::new(
-            destination_sender,
-            self.runtime_stats.clone(),
-            progress_bar,
-            runtime_handle.rt_stats_handler.clone(),
-        );
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         runtime_handle.spawn_local(
             async move {
                 let mut has_data = false;
                 let mut source_stream = source.get_data(maintain_order, io_stats).await?;
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
+                    stats_manager.activate_node(node_id);
                     if counting_sender.send(part?).await.is_err() {
                         return Ok(());
                     }
                 }
                 if !has_data {
+                    stats_manager.activate_node(node_id);
                     let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
                     let _ = counting_sender.send(empty).await;
                 }
+
+                stats_manager.finalize_node(node_id);
                 Ok(())
             },
             &self.name(),
@@ -185,5 +193,13 @@ impl PipelineNode for SourceNode {
 
     fn plan_id(&self) -> Arc<str> {
         Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
+    }
+
+    fn node_info(&self) -> Arc<NodeInfo> {
+        self.node_info.clone()
+    }
+
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        self.runtime_stats.clone()
     }
 }

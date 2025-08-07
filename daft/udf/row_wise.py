@@ -10,10 +10,9 @@ else:
 
 from daft.datatype import DataType
 from daft.expressions import Expression
-from daft.series import Series
 
 if TYPE_CHECKING:
-    from daft.daft import PyDataType, PySeries
+    from daft.daft import PySeries
 
 
 P = ParamSpec("P")
@@ -63,7 +62,6 @@ class RowWiseUdf(Generic[P, T]):
 
 def call_func_with_evaluated_exprs(
     fn: Callable[..., Any],
-    return_dtype: PyDataType,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     evaluted_args: list[Any],
 ) -> PySeries:
@@ -73,5 +71,4 @@ def call_func_with_evaluated_exprs(
     new_kwargs = {key: (evaluted_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()}
 
     output = fn(*new_args, **new_kwargs)
-    dtype = DataType._from_pydatatype(return_dtype)
-    return Series.from_pylist([output], dtype=dtype)._series
+    return output

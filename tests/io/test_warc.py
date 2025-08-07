@@ -10,7 +10,7 @@ def test_warc():
     assert df.filter(df["WARC-Type"] == "response").count_rows() == 11
     # Test that we can correctly extract metadata from the warc_headers json column.
     num_rows = (
-        df.with_column("WARC-Identified-Payload-Type", daft.col("warc_headers").json.query('."Content-Type"'))
+        df.with_column("WARC-Identified-Payload-Type", daft.col("warc_headers").jq('."Content-Type"'))
         .where(
             (daft.col("WARC-Type") == "response")
             & (daft.col("Content-Length") < 10 * 1024 * 1024)
@@ -29,7 +29,7 @@ def test_warc_gz():
     assert df.filter(df["WARC-Type"] == "response").count_rows() == 11
     # Test that we can correctly extract metadata from the warc_headers json column.
     num_rows = (
-        df.with_column("WARC-Identified-Payload-Type", daft.col("warc_headers").json.query('."Content-Type"'))
+        df.with_column("WARC-Identified-Payload-Type", daft.col("warc_headers").jq('."Content-Type"'))
         .where(
             (daft.col("WARC-Type") == "response")
             & (daft.col("Content-Length") < 10 * 1024 * 1024)

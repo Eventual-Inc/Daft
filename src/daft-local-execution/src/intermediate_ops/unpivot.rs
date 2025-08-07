@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -9,7 +9,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct UnpivotParams {
     ids: Vec<BoundExpr>,
@@ -83,6 +83,10 @@ impl IntermediateOperator for UnpivotOperator {
     }
 
     fn name(&self) -> NodeName {
-        Cow::Borrowed("Unpivot")
+        "Unpivot".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Unpivot
     }
 }
