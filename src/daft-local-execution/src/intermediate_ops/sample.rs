@@ -7,7 +7,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct SampleParams {
     fraction: f64,
@@ -71,5 +71,9 @@ impl IntermediateOperator for SampleOperator {
 
     fn name(&self) -> NodeName {
         "Sample".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Sample
     }
 }

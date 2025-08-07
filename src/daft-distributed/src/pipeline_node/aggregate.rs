@@ -11,7 +11,10 @@ use daft_dsl::{
 };
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, ClusteringSpec};
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_schema::{
+    dtype::DataType,
+    schema::{Schema, SchemaRef},
+};
 
 use super::DistributedPipelineNode;
 use crate::{
@@ -198,6 +201,7 @@ fn split_groupby_aggs(
         input_schema,
         group_by,
     )?;
+    let first_stage_schema = Arc::new(first_stage_schema);
     let second_stage_schema = Arc::new(second_stage_schema);
 
     // Generate the expression for the second stage group_by
@@ -216,7 +220,7 @@ fn split_groupby_aggs(
 
     Ok(GroupByAggSplit {
         first_stage_aggs,
-        first_stage_schema: Arc::new(first_stage_schema),
+        first_stage_schema,
         first_stage_group_by: group_by.to_vec(),
 
         second_stage_aggs,
@@ -328,7 +332,12 @@ impl LogicalPlanToPipelineNodeTranslator {
             matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
                 && !group_by.is_empty()
                 && is_partition_compatible(
-                    &input_clustering_spec.partition_by(),
+                    BoundExpr::bind_all(
+                        &input_clustering_spec.partition_by(),
+                        &input_node.config().schema,
+                    )?
+                    .iter()
+                    .map(|e| e.inner()),
                     group_by.iter().map(|e| e.inner()),
                 );
         if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_group_by {
@@ -347,13 +356,20 @@ impl LogicalPlanToPipelineNodeTranslator {
         let split_details =
             split_groupby_aggs(&group_by, &aggregations, &input_node.config().schema)?;
 
+        if split_details.first_stage_aggs.is_empty()
         // Special case for ApproxCountDistinct
         // Right now, we can't do a pre-aggregation because we can't recursively merge HLL sketches
         // TODO: Look for alternative approaches for this
-        if split_details.first_stage_aggs.is_empty()
             || aggregations
                 .iter()
                 .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
+            // Special case for Decimal128
+            // Right now, we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
+            || split_details
+                .first_stage_schema
+                .fields()
+                .iter()
+                .any(|f| matches!(f.dtype, DataType::Decimal128(_, _)))
         {
             Ok(self.gen_without_pre_agg(
                 input_node,
