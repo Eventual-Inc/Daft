@@ -19,7 +19,7 @@ class TextEmbedder(Protocol):
 
 
 class TextEmbedderDescriptor(Descriptor[TextEmbedder]):
-    """Descriptor for a TextEmbedder."""
+    """Descriptor for a TextEmbedder implementation."""
 
     @abstractmethod
     def get_dimensions(self) -> EmbeddingDimensions:

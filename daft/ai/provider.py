@@ -38,9 +38,15 @@ def load_provider(provider: str, **options: str) -> Provider:
 
 
 class Provider(ABC):
-    """Provider is the base class for resolving implementations for the various AI/ML protocols."""
+    """Provider is the base class for resolving implementations for the various AI/ML protocols.
+
+    Note:
+        We will need to move instantiation from the TextEmbedderDesriptor to the Provider or other.
+        It is not set at the moment, and instantiation directly from the descriptor is the easiest.
+        We could opt to include a factory method location (descriptor's init) in the serialization.
+    """
 
     @abstractmethod
     def get_text_embedder(self, model: str | None = None, **options: str) -> TextEmbedderDescriptor:
-        """Returns a TextEmbedder implementation for this provider."""
+        """Returns a TextEmbedderDescriptor for this provider."""
         ...

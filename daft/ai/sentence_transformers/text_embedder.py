@@ -19,6 +19,15 @@ class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
     model: str
     options: Options
 
+    def get_provider(self) -> str:
+        return "sentence_transformers"
+
+    def get_model(self) -> str:
+        return self.model
+
+    def get_options(self) -> Options:
+        return self.options
+
     def get_dimensions(self) -> EmbeddingDimensions:
         # hardcoding all-MiniLM-L6-v2 for now
         return EmbeddingDimensions(size=384, dtype=DataType.float32())
