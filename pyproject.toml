@@ -48,7 +48,7 @@ viz = []
 daft = "daft.cli:main"
 
 [project.urls]
-homepage = "https://www.getdaft.io"
+homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [tool]
