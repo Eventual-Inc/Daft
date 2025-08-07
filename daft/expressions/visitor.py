@@ -321,3 +321,22 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
         pc_strings = self.visit(input)
         pc_pattern = prefix.as_py()  # must be literal
         return pc.starts_with(pc_strings, pc_pattern)
+
+
+class _ColumnVisitor(ExpressionVisitor[set[str]]):
+    """Visitor which returns a set of columns in the expression."""
+
+    def visit_col(self, name: str) -> set[str]:
+        return {name}
+
+    def visit_lit(self, value: Any) -> set[str]:
+        return set()
+
+    def visit_alias(self, expr: Expression, alias: str) -> set[str]:
+        return self.visit(expr)
+
+    def visit_cast(self, expr: Expression, dtype: DataType) -> set[str]:
+        return self.visit(expr)
+
+    def visit_function(self, name: str, args: list[Expression]) -> set[str]:
+        return set().union(*(self.visit(arg) for arg in args))
