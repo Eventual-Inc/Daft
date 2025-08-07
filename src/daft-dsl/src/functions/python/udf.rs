@@ -125,14 +125,14 @@ impl FunctionEvaluator for LegacyPythonUDF {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, _inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         #[cfg(not(feature = "python"))]
         {
             panic!("Cannot evaluate a PythonUDF without compiling for Python");
         }
         #[cfg(feature = "python")]
         {
-            Ok(self.call_udf(inputs)?.0)
+            Ok(self.call_udf(_inputs)?.0)
         }
     }
 }

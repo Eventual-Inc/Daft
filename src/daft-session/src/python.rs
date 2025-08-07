@@ -66,6 +66,14 @@ impl PySession {
         Ok(None)
     }
 
+    pub fn current_provider(&self) -> PyResult<Option<String>> {
+        Ok(self.0.current_provider()?)
+    }
+
+    pub fn current_model(&self) -> PyResult<Option<String>> {
+        Ok(self.0.current_model()?)
+    }
+
     pub fn get_catalog(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
         self.0.get_catalog(name)?.to_py(py)
     }
@@ -100,6 +108,16 @@ impl PySession {
     #[pyo3(signature = (ident))]
     pub fn set_namespace(&self, ident: Option<&PyIdentifier>) -> PyResult<()> {
         Ok(self.0.set_namespace(ident.map(|i| i.as_ref()))?)
+    }
+
+    #[pyo3(signature = (ident))]
+    pub fn set_provider(&self, ident: Option<&str>) -> PyResult<()> {
+        Ok(self.0.set_provider(ident)?)
+    }
+
+    #[pyo3(signature = (ident))]
+    pub fn set_model(&self, ident: Option<&str>) -> PyResult<()> {
+        Ok(self.0.set_model(ident)?)
     }
 
     #[pyo3(signature = (function, alias = None))]

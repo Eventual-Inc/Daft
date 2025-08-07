@@ -1844,6 +1844,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-metrics"
+version = "0.3.0-dev0"
+dependencies = [
+ "indicatif",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
 name = "common-partitioning"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2267,6 +2276,7 @@ dependencies = [
  "common-display",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-metrics",
  "common-partitioning",
  "common-resource-request",
  "common-runtime",
@@ -2852,6 +2862,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-metrics",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",
@@ -2880,7 +2891,6 @@ dependencies = [
  "kanal",
  "log",
  "opentelemetry",
- "parking_lot 0.12.4",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
@@ -7376,6 +7386,9 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "smawk"

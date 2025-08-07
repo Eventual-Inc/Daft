@@ -8,9 +8,9 @@ if sys.version_info < (3, 10):
 else:
     from typing import ParamSpec
 
+from daft import Series
 from daft.datatype import DataType
 from daft.expressions import Expression
-from daft.series import Series
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -63,7 +63,7 @@ class RowWiseUdf(Generic[P, T]):
             return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), expr_args)
 
 
-def call_async_batch_with_evaluated_exprs(
+def __call_async_batch(
     fn: Callable[..., Awaitable[Any]],
     return_dtype: PyDataType,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
@@ -97,9 +97,8 @@ def call_async_batch_with_evaluated_exprs(
     return Series.from_pylist(outputs, dtype=dtype)._series
 
 
-def call_func_with_evaluated_exprs(
+def __call_func(
     fn: Callable[..., Any],
-    return_dtype: PyDataType,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     evaluated_args: list[Any],
 ) -> PySeries:
@@ -109,5 +108,4 @@ def call_func_with_evaluated_exprs(
     new_kwargs = {key: (evaluated_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()}
 
     output = fn(*new_args, **new_kwargs)
-    dtype = DataType._from_pydatatype(return_dtype)
-    return Series.from_pylist([output], dtype=dtype)._series
+    return output

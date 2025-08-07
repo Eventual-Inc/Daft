@@ -27,7 +27,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
 const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
@@ -355,6 +355,10 @@ impl IntermediateOperator for UdfOperator {
         };
 
         format!("UDF {}", udf_name).into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::UDFProject
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -16,6 +16,7 @@ use super::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
@@ -272,6 +273,10 @@ impl StreamingSink for AntiSemiProbeSink {
 
     fn name(&self) -> NodeName {
         "AntiSemiHashJoinProbe".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::AntiSemiHashJoinProbe
     }
 
     fn multiline_display(&self) -> Vec<String> {
