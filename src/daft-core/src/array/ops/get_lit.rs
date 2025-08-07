@@ -15,6 +15,13 @@ impl NullArray {
 
 impl StructArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
         if self.is_valid(idx) {
             Literal::Struct(
                 self.children
@@ -32,6 +39,13 @@ impl StructArray {
 impl PythonArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         use pyo3::prelude::*;
+
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
 
         let v = self.get(idx);
         if Python::with_gil(|py| v.is_none(py)) {
@@ -57,6 +71,12 @@ macro_rules! impl_array_get_lit {
     ($type:ty, $variant:ident) => {
         impl $type {
             pub fn get_lit(&self, idx: usize) -> Literal {
+                assert!(
+                    idx < self.len(),
+                    "Out of bounds: {} vs len: {}",
+                    idx,
+                    self.len()
+                );
                 map_or_null(self.get(idx), Literal::$variant)
             }
         }
@@ -65,6 +85,12 @@ macro_rules! impl_array_get_lit {
     ($type:ty, $dtype:pat => $mapper:expr) => {
         impl $type {
             pub fn get_lit(&self, idx: usize) -> Literal {
+                assert!(
+                    idx < self.len(),
+                    "Out of bounds: {} vs len: {}",
+                    idx,
+                    self.len()
+                );
                 let $dtype = self.data_type() else {
                     unreachable!(
                         "Unexpected data type for {}: {}",
