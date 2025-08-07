@@ -2072,7 +2072,7 @@ pub fn is_udf(expr: &ExprRef) -> bool {
         Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF { .. }),
             ..
-        }
+        } | Expr::ScalarFn(ScalarFn::Python(_))
     )
 }
 
