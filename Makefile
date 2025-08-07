@@ -90,6 +90,7 @@ install-docs-deps:
 		export PATH="$$HOME/.bun/bin:$$PATH"; \
 	fi
 	. $(VENV_BIN)/activate && uv pip install -r requirements-doc.txt
+	. $(VENV_BIN)/activate && uv pip install -e docs/plugins/
 # 	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
 
 .PHONY: docs

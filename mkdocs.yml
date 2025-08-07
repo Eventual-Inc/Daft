@@ -204,3 +204,6 @@ plugins:
     - docs/gen_pages/gen_function_pages.py
 - literate-nav:
     nav_file: SUMMARY.md
+- nav-hide-children:
+    hide_children:
+    - ["Python API", "Functions"]
