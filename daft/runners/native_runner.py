@@ -90,7 +90,7 @@ class NativeRunner(Runner[MicroPartition]):
 
         proto_bytes = to_proto_bytes(builder._builder)
         message = requests.post("http://localhost:50051/query_service/v1", data=proto_bytes)
-        print(message.status_code)
+        print(message.content)
         print(f"proto bytes is: {len(proto_bytes)}")
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
