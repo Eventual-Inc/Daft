@@ -63,11 +63,18 @@ impl ProbeTableState {
         {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
             let input_tables = input.get_tables()?;
-            for table in input_tables.iter() {
-                tables.push(table.clone());
-                let join_keys = table.eval_expression_list(projection)?;
-
+            if input_tables.is_empty() {
+                let empty_table = RecordBatch::empty(Some(input.schema()));
+                let join_keys = empty_table.eval_expression_list(projection)?;
                 probe_table_builder.add_table(&join_keys)?;
+                tables.push(empty_table);
+            } else {
+                for table in input_tables.iter() {
+                    tables.push(table.clone());
+                    let join_keys = table.eval_expression_list(projection)?;
+
+                    probe_table_builder.add_table(&join_keys)?;
+                }
             }
             Ok(())
         } else {
@@ -233,5 +240,9 @@ impl BlockingSink for HashJoinBuildSink {
 
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(HashJoinBuildRuntimeStats::default())
+    }
+
+    fn morsel_size_requirement(&self) -> Option<crate::pipeline::MorselSizeRequirement> {
+        None
     }
 }
