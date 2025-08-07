@@ -372,8 +372,15 @@ impl BlockingSink for GroupedAggregateSink {
                                 partially_aggregated.extend(state.partially_aggregated);
                             }
 
+                            // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
+                            if params.partial_agg_exprs.is_empty() {
+                                let concated = MicroPartition::concat(&unaggregated)?;
+                                let agged = concated
+                                    .agg(&params.original_aggregations, &params.group_by)?;
+                                Ok(agged)
+                            }
                             // If we have no unaggregated partitions, finalize the partially aggregated partitions
-                            if unaggregated.is_empty() {
+                            else if unaggregated.is_empty() {
                                 let concated = MicroPartition::concat(&partially_aggregated)?;
                                 let agged = concated
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
