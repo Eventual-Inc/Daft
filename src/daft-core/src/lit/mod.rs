@@ -457,13 +457,6 @@ impl Literal {
     }
 }
 
-impl From<Literal> for Series {
-    fn from(value: Literal) -> Self {
-        Self::try_from(vec![value])
-            .expect("Series::try_from should not fail on single literal value")
-    }
-}
-
 pub trait FromLiteral: Sized {
     fn try_from_literal(lit: &Literal) -> DaftResult<Self>;
 }

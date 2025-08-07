@@ -155,6 +155,13 @@ impl TryFrom<Vec<Literal>> for Series {
     }
 }
 
+impl From<Literal> for Series {
+    fn from(value: Literal) -> Self {
+        Self::try_from(vec![value])
+            .expect("Series::try_from should not fail on single literal value")
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
