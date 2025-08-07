@@ -141,7 +141,7 @@ impl RowWisePyFn {
         if is_async {
             self.call_async(args, num_rows)
         } else {
-            self.call_parallel(args, num_rows)
+            self.call_serial(args, num_rows)
         }
     }
 
@@ -167,17 +167,15 @@ impl RowWisePyFn {
 
             let mut evaluated_args = Vec::with_capacity(num_rows);
             for i in 0..num_rows {
-                let args_for_row = args
+                let py_args_for_row = args
                     .iter()
                     .map(|a| {
                         let idx = if a.len() == 1 { 0 } else { i };
-                        LiteralValue::get_from_series(a, idx)
+                        let lit = LiteralValue::get_from_series(a, idx)?;
+                        lit.into_pyobject(py).map_err(|e| e.into())
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
-                let py_args_for_row = args_for_row
-                    .into_iter()
-                    .map(|a| a.into_pyobject(py))
-                    .collect::<PyResult<Vec<_>>>()?;
+
                 evaluated_args.push(py_args_for_row);
             }
 
@@ -191,28 +189,23 @@ impl RowWisePyFn {
     }
 
     #[cfg(feature = "python")]
-    fn call_parallel(
+    fn call_serial(
         &self,
         args: &[Series],
         num_rows: usize,
     ) -> DaftResult<(Series, std::time::Duration)> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
-        let func = pyo3::Python::with_gil(|py| {
-            Ok::<_, PyErr>(
-                py.import(pyo3::intern!(py, "daft.udf.row_wise"))?
-                    .getattr(pyo3::intern!(py, "__call_func"))?
-                    .unbind(),
-            )
-        })?;
 
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
         let start_time = std::time::Instant::now();
-
         let (outputs, gil_contention_time) = Python::with_gil(|py| {
             let gil_contention_time = start_time.elapsed();
+            let func = py
+                .import(pyo3::intern!(py, "daft.udf.row_wise"))?
+                .getattr(pyo3::intern!(py, "__call_func"))?;
 
             let mut py_args = Vec::with_capacity(args.len());
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
@@ -225,7 +218,7 @@ impl RowWisePyFn {
                         py_args.push(pyarg);
                     }
 
-                    let result = func.bind(py).call1((inner_ref, args_ref, &py_args))?;
+                    let result = func.call1((inner_ref, args_ref, &py_args))?;
                     py_args.clear();
                     DaftResult::Ok(result.unbind())
                 })

@@ -17,7 +17,6 @@ num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 typetag = {workspace = true}
-rayon.workspace = true
 
 [dev-dependencies]
 rstest = {workspace = true}

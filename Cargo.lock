@@ -2585,7 +2585,6 @@ dependencies = [
  "itertools 0.14.0",
  "num-traits",
  "pyo3",
- "rayon",
  "rstest",
  "serde",
  "typetag",
