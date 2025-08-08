@@ -347,7 +347,7 @@ Alternatively, you can also run your column transformation using Expressions dir
 ```
 
 ### Transform Columns with Custom Logic
-We strive to have a comprehensive expression library, but inevitable you will need to write some custom logic to transform your data, such as inference, tokenization or otherwise. We try to make integrating custom logic into daft as seamless as possible.
+We strive to have a comprehensive expression library, but inevitably you will need to write some custom logic to transform your data, such as inference, tokenization or otherwise. We try to make integrating custom logic into daft as seamless as possible.
 
 
 === "Tokenizing a Sentence using HuggingFace Transformers"
