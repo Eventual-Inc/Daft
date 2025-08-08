@@ -261,14 +261,13 @@ import torch
 import daft
 from daft import col
 
-# Configuration constants
-NUM_GPU_NODES = 8                      # The number of GPU nodes available
-NLP_MODEL_NAME = "en_core_web_sm"      # The spaCy model to use for chunking text
-CHUNKING_PARALLELISM = 8               # The number of chunking UDFs to run in parallel per node
+NUM_GPU_NODES = 8                     # The number of GPU nodes available
+NLP_MODEL_NAME = "en_core_web_sm"     # The spaCy model to use for chunking text
+CHUNKING_PARALLELISM = 8              # The number of chunking UDFs to run in parallel per node
 EMBEDDING_MODEL_NAME = "Qwen/Qwen3-Embedding-0.6B"  # The text embedding model to use
-ENCODING_DIM = 1024                    # The output dimensions for embeddings
-BATCH_SIZE = 2048                      # The number of records passed into our embeddings UDF
-SENTENCE_TRANSFORMER_BATCH_SIZE = 128  # The number of records in each batch to use with SentenceTransformers
+ENCODING_DIM = 1024                   # The output dimensions for embeddings
+BATCH_SIZE = 512                      # The number of records passed into our embeddings UDF
+SENTENCE_TRANSFORMER_BATCH_SIZE = 16  # The number of records in each batch to use with SentenceTransformers
 
 # Define the return type for chunked text
 chunked_type = daft.DataType.list(
@@ -280,8 +279,8 @@ chunked_type = daft.DataType.list(
 
 @daft.udf(
     return_dtype=chunked_type,
-    concurrency=NUM_GPU_NODES * CHUNKING_PARALLELISM,
-    batch_size=BATCH_SIZE//CHUNKING_PARALLELISM
+    concurrency=NUM_GPU_NODES * (CHUNKING_PARALLELISM + 1),
+    batch_size=BATCH_SIZE // CHUNKING_PARALLELISM // 2
 )
 class ChunkingUDF:
     def __init__(self):
@@ -337,10 +336,7 @@ def main():
     )
 
     (
-        daft.read_parquet(
-            "s3://desmond-demo/text-embedding-dataset.parquet",
-            _chunk_size=BATCH_SIZE*10
-        )
+        daft.read_parquet("s3://desmond-demo/text-embedding-dataset.parquet")
         .with_column("sentences", ChunkingUDF(col("text")))
         .explode("sentences")
         .with_column("text", col("sentences")["text"])
