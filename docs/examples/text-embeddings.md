@@ -1,4 +1,4 @@
-# Generate Text Embeddings for Turbopuffer
+# Generate Text Embeddings for Turbopuffer with Daft
 
 In this example, we demonstrate how to build a text embedding pipeline for processing large text datasets and storing these embeddings in [Turbopuffer](https://turbopuffer.com/). You'll learn how to:
 
