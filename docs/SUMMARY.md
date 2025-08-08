@@ -40,6 +40,15 @@
     * [Roadmap](roadmap.md)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
+* Examples
+    * [Overview](examples/index.md)
+    * [Document Processing](examples/document-processing.md)
+    * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
+    * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
+    * [Generate Images from Text with Stable Diffusion](examples/image-generation.md)
+    * [Querying Image Data](examples/querying-images.md)
+    * [MNIST Digit Classification](examples/mnist.md)
+    * [Window Functions](examples/window-functions.md)
 * Python API
     * [Overview](api/index.md)
     * [I/O](api/io.md)

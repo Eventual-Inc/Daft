@@ -201,28 +201,23 @@ message Literal {
     bool boolean = 2;
     string utf8 = 3;
     bytes binary = 4;
-    FixedSizeBinary fixed_size_binary = 5;
-    int32 int8 = 6;
-    uint32 uint8 = 7;
-    int32 int16 = 8;
-    uint32 uint16 = 9;
-    int32 int32 = 10;
-    uint32 uint32 = 11;
-    int64 int64 = 12;
-    uint64 uint64 = 13;
-    Timestamp timestamp = 14;
-    int32 date = 15;
-    Time time = 16;
-    Duration duration = 17;
-    Interval interval = 18;
+    int32 int8 = 5;
+    uint32 uint8 = 6;
+    int32 int16 = 7;
+    uint32 uint16 = 8;
+    int32 int32 = 9;
+    uint32 uint32 = 10;
+    int64 int64 = 11;
+    uint64 uint64 = 12;
+    Timestamp timestamp = 13;
+    int32 date = 14;
+    Time time = 15;
+    Duration duration = 16;
+    Interval interval = 17;
+    float float32 = 18;
     double float64 = 19;
     Decimal decimal = 20;
     Struct struct = 21;
-  }
-
-  message FixedSizeBinary {
-    bytes value = 1;
-    uint64 size = 2;
   }
 
   message Timestamp {

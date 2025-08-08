@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::{ensure, DaftError, DaftResult};
 #[cfg(feature = "python")]
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use common_py_serde::{deserialize_py_object, serialize_py_object, PyObjectWrapper};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
@@ -16,6 +16,7 @@ use daft_dsl::{
     Column, WindowExpr, WindowFrame, WindowSpec,
 };
 use daft_logical_plan::{
+    partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
 };
@@ -254,7 +255,7 @@ impl LocalPhysicalPlan {
     #[cfg(feature = "python")]
     pub fn distributed_actor_pool_project(
         input: LocalPhysicalPlanRef,
-        actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+        actor_objects: Vec<PyObjectWrapper>,
         batch_size: Option<usize>,
         memory_request: u64,
         schema: SchemaRef,
@@ -679,14 +680,14 @@ impl LocalPhysicalPlan {
 
     pub fn repartition(
         input: LocalPhysicalPlanRef,
-        columns: Vec<BoundExpr>,
+        repartition_spec: RepartitionSpec,
         num_partitions: usize,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::Repartition(Repartition {
             input,
-            columns,
+            repartition_spec,
             num_partitions,
             schema,
             stats_state,
@@ -844,7 +845,7 @@ impl LocalPhysicalPlan {
                 Self::LanceWrite(LanceWrite {  lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(new_child.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
                 Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
-                Self::Repartition(Repartition {  columns, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), columns.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
+                Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -951,7 +952,7 @@ pub struct UDFProject {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DistributedActorPoolProject {
     pub input: LocalPhysicalPlanRef,
-    pub actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+    pub actor_objects: Vec<PyObjectWrapper>,
     pub batch_size: Option<usize>,
     pub memory_request: u64,
     pub schema: SchemaRef,
@@ -1198,7 +1199,7 @@ pub struct WindowOrderByOnly {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Repartition {
     pub input: LocalPhysicalPlanRef,
-    pub columns: Vec<BoundExpr>,
+    pub repartition_spec: RepartitionSpec,
     pub num_partitions: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

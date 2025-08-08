@@ -2,7 +2,12 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
-use daft_logical_plan::{ops::Join, stats::ApproxStats, JoinStrategy, JoinType};
+use daft_logical_plan::{
+    ops::Join,
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    stats::ApproxStats,
+    JoinStrategy, JoinType,
+};
 use daft_schema::schema::SchemaRef;
 
 use super::hash_join::gen_num_partitions;
@@ -81,8 +86,10 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
-            left_on.clone(),
-            Some(num_partitions),
+            RepartitionSpec::Hash(HashRepartitionConfig::new(
+                Some(num_partitions),
+                left_on.iter().map(|e| e.clone().into()).collect(),
+            )),
             left.config().schema.clone(),
             left,
         )
@@ -92,8 +99,10 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
-            right_on.clone(),
-            Some(num_partitions),
+            RepartitionSpec::Hash(HashRepartitionConfig::new(
+                Some(num_partitions),
+                right_on.iter().map(|e| e.clone().into()).collect(),
+            )),
             right.config().schema.clone(),
             right,
         )

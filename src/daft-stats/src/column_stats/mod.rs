@@ -241,10 +241,10 @@ impl std::fmt::Debug for ColumnRangeStatistics {
     }
 }
 
-impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
+impl TryFrom<daft_core::lit::Literal> for ColumnRangeStatistics {
     type Error = crate::Error;
-    fn try_from(value: &daft_dsl::LiteralValue) -> crate::Result<Self, Self::Error> {
-        let series = value.to_series();
+    fn try_from(value: daft_core::lit::Literal) -> crate::Result<Self, Self::Error> {
+        let series: Series = value.into();
         assert_eq!(series.len(), 1);
         Self::new(Some(series.clone()), Some(series))
     }

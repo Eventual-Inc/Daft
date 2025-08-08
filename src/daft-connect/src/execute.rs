@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
 use daft_context::get_context;
-use daft_dsl::{literals_to_series, LiteralValue};
+use daft_core::prelude::*;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -367,7 +367,7 @@ impl ConnectSession {
         let tbl = RecordBatch::concat(&tbls)?;
         let output = tbl.to_comfy_table(None).to_string();
 
-        let s = literals_to_series(&[LiteralValue::Utf8(output)])?.rename("show_string");
+        let s = Series::from(Literal::Utf8(output)).rename("show_string");
 
         let tbl = RecordBatch::from_nonempty_columns(vec![s])?;
         response_builder.arrow_batch_response(&tbl)
