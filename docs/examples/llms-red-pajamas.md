@@ -17,7 +17,7 @@ We would like to go through all the questions on StackExchange and **associate e
 
 ## Step 0: Dependencies and configuration
 
-```
+```bash
 pip install "daft[aws]" sentence-transformers accelerate
 ```
 
@@ -46,7 +46,7 @@ We can see there is a text column that holds the question answer text and a meta
 
 Let's **compute the embeddings of our text**. We start by putting our model (SentenceTransformers) into a **[Daft User-Defined Function (UDF)](../custom-code/udfs.md)**.
 
-```
+```python
 import torch
 
 MODEL_NAME = "all-MiniLM-L6-v2"
@@ -66,7 +66,7 @@ class EncodingUDF:
 
 Then, we can just call the UDF to run the model.
 
-```
+```python
 df = df.with_column("embedding", EncodingUDF(df["text"]))
 ```
 
@@ -76,7 +76,7 @@ In particular, we are not forced to do any sort of unwieldy type coercion on the
 
 Next, let's also **extract the URL and score**:
 
-```
+```python
 df = df.select(
     df["embedding"],
     df["meta"].struct.get("url"),
@@ -86,7 +86,7 @@ df = df.select(
 
 and wait for all the results to finish computing:
 
-```
+```python
 df = df.collect()
 embeddings_df = df
 print("Embeddings complete!")
@@ -96,7 +96,7 @@ print("Embeddings complete!")
 
 Let's **get the top questions**. We will use `df.sort` to sort by score and then `df.limit` to grab some fraction of the top.
 
-```
+```python
 import math
 
 NUM_TOP_QUESTIONS = math.ceil(math.sqrt(len(df)))
@@ -106,7 +106,7 @@ top_questions = (df.sort(df["question_score"], desc=True).limit(NUM_TOP_QUESTION
 
 Now we will **take each regular question and find a related top question**. For this we will need to do a similarity search. Let's do that within a Daft UDF.
 
-```
+```python
 @daft.udf(
     return_dtype=daft.DataType.struct(
         {
@@ -165,7 +165,7 @@ df = df.select(
 
 Did the matching work well? Let's take a peek at our best results to see if they make sense.
 
-```
+```python
 df = df.where(df["similarity"] < 0.99)  # To ignore duplicate questions.
 df = df.sort(df["similarity"], desc=True)
 df.show()
@@ -175,7 +175,7 @@ On the left hand side is an average question without much activity. The link in 
 
 Finally, we will probably want to save the results for future use. Let's write them out to parquet files locally.
 
-```
+```python
 df.write_parquet("question_matches.pq").to_pydict()
 ```
 

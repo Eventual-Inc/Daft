@@ -93,7 +93,7 @@ df.collect()
 
 Note that calling `.collect()` **materializes** the data. It will execute the above plan and all the computed data will be materialized in memory as long as the `df` variable is valid. This means that any subsequent operation on `df` will read from this materialized data instead of computing the entire plan again.
 
-Let's prune the columns to just the "filepath" column, which is the only one we need at the moment:
+Let's prune the columns to just the "path" column, which is the only one we need at the moment:
 
 ```python
 df = df.select("path")

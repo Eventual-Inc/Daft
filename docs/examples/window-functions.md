@@ -4,7 +4,7 @@
 
 Window functions allow you to perform calculations across a set of rows related to the current row. These calculations happen within a defined "window" of data, giving developers and analysts the ability to create running totals, rankings, and comparisons without altering the dataset.
 
-In this tutorial, we'll explore how Daft's window functions can transform complex analytical challenges into elegant solutions. We'll follow an entertaining twist on a classic scenario -- a chocholate eating contest between a tortoise and a hare -- where we'll analyze their performance using different window function techniques.
+In this tutorial, we'll explore how Daft's window functions can transform complex analytical challenges into elegant solutions. We'll follow an entertaining twist on a classic scenario -- a chocolate eating contest between a tortoise and a hare -- where we'll analyze their performance using different window function techniques.
 
 Without window functions, these operations would require multiple self-joins, temporary tables, and complex aggregations. We'll demonstrate how window functions can reduce dozens of lines of complex code to just a few simple, readable lines.
 

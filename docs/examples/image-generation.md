@@ -23,7 +23,7 @@ Next, let's load a Parquet file into Daft. This particular file is hosted in Hug
 import daft
 
 # Flip this flag if you want to see the performance of running on CPU vs GPU
-USE_GPU = False if CI else True
+USE_GPU = True
 IO_CONFIG = daft.io.IOConfig(
     s3=daft.io.S3Config(anonymous=True, region_name="us-west-2")
 )  # Use anonymous-mode for accessing AWS S3
@@ -53,7 +53,7 @@ parquet_df_with_long_strings = parquet_df.where(parquet_df["TEXT"].str.length() 
 images_df = (
     parquet_df_with_long_strings.with_column(
         "image",
-        parquet_df["URL"].url.download(on_error="null").image.decode(on_error="null"),
+        parquet_df_with_long_strings["URL"].url.download(on_error="null").image.decode(on_error="null"),
     )
     .limit(5)
     .where(daft.col("image").not_null())

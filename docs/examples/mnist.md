@@ -22,7 +22,7 @@ To peek at the dataset, simply display the `images_df` that was just created.
 images_df.show(10)
 ```
 
-You just loaded your first DaFt Dataframe! It consists of two columns:
+You just loaded your first Daft Dataframe! It consists of two columns:
 
 1. The "image" column is a Python column of type `list` - where it looks like each row contains a list of digits representing the pixels of each image
 2. The "label" column is an Integer column, consisting of just the label of that image.
@@ -61,7 +61,7 @@ Amazing! This looks great and we can finally get some idea of what the dataset t
 
 Next, let's try to run a deep learning model to classify each image. Models are expensive to initialize and load, so we want to do this as few times as possible, and share a model across multiple invocations.
 
-For the convenience of this quickstart tutorial, we pre-trained a model using a PyTorch-provided example script and saved the trained weights at https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_cnn.pt.  We need to define the same deep learning model "scaffold" as the trained model that we want to load (this part is all PyTorch and is not specific at all to DaFt)
+For the convenience of this quickstart tutorial, we pre-trained a model using a PyTorch-provided example script and saved the trained weights at https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_cnn.pt.  We need to define the same deep learning model "scaffold" as the trained model that we want to load (this part is all PyTorch and is not specific at all to Daft)
 
 ```python
 ###

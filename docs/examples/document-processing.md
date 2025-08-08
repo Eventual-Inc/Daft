@@ -549,12 +549,12 @@ def sort_bounding_boxes_reading_order(boxes: list[TextBlock], *, row_tolerance: 
         tboxes_in_row.sort(key=lambda box: box.bounding_box.x)
 
     # Sort rows from top to bottom
-    fininished_rows = [(row_y, tboxes_in_row) for row_y, tboxes_in_row in rows.items()]
-    fininished_rows.sort(key=lambda x: x[0])
+    finished_rows = [(row_y, tboxes_in_row) for row_y, tboxes_in_row in rows.items()]
+    finished_rows.sort(key=lambda x: x[0])
 
     # Flatten the result
     result: list[TextBlock] = []
-    for _, tboxes_in_row in fininished_rows:
+    for _, tboxes_in_row in finished_rows:
         result.extend(tboxes_in_row)
 
     return result
@@ -685,7 +685,7 @@ ocr: bool = False
 page_limit: Optional[int] = 10
 
 # Determine how text boxes are grouped together to form more semantically
-# relevant passages of text. These options control herusitics in the
+# relevant passages of text. These options control heuristics in the
 # DocProcessor UDF. Increasing the thresholds and tolerance will cause more
 # distance text boxes to be grouped together.
 config = PipelineConfig(
