@@ -426,17 +426,17 @@ We strive to have a comprehensive expression library, but inevitably you will ne
     ```
 
 ```{title="Output"}
-╭───────────────────────────────────────────────────────────────╮
-│ review                                          │ sentiment   │
-│ ---                                             │ ---         │
-│ String                                          │ String      │
-╞════════════════════════════════════════════════╪═════════════╡
-│ I absolutely loved this product!                │ Positive    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ The service was terrible and I'm disappointed.  │ Negative    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ It works as expected, nothing special.          │ Neutral     │
-╰───────────────────────────────────────────────────────────────╯
+╭────────────────────────────────┬───────────╮
+│ review                         ┆ sentiment │
+│ ---                            ┆ ---       │
+│ Utf8                           ┆ Utf8      │
+╞════════════════════════════════╪═══════════╡
+│ I absolutely loved this produ… ┆ positive  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ The service was terrible and … ┆ Negative  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ It works as expected, nothing… ┆ Neutral   │
+╰────────────────────────────────┴───────────╯
 ```
 
 
