@@ -33,100 +33,104 @@ class _DaftFuncDecorator:
     The function either needs to be annotated with types, or you must provide a return type for the function using the `return_dtype` parameter. Daft requires type information to plan and optimize query execution.
 
     Examples:
-    Basic Example
-    >>> import daft
-    >>> from daft import col
-    >>> @daft.func
-    ... def my_sum(a: int, b: int) -> int:
-    ...     return a + b
-    >>>
-    >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    >>> df.select(my_sum(col("x"), col("y"))).collect()
-    ╭───────╮
-    │ x     │
-    │ ---   │
-    │ Int64 │
-    ╞═══════╡
-    │ 5     │
-    ├╌╌╌╌╌╌╌┤
-    │ 7     │
-    ├╌╌╌╌╌╌╌┤
-    │ 9     │
-    ╰───────╯
-    <BLANKLINE>
-    (Showing first 3 of 3 rows)
+        Basic Example
 
-    Basic Example with existing function
-    >>> import daft
-    >>> from daft import col
-    >>> def tokenize(text: str) -> list[int]:
-    ...     vocab = {char: i for i, char in enumerate(text)}
-    ...     return [vocab[char] for char in text]
-    >>>
-    >>> daft_tokenize = daft.func(tokenize)
-    >>> df = daft.from_pydict({"text": ["hello", "world", "daft"]})
-    >>> df.select(daft_tokenize(df["text"])).collect()
-    ╭─────────────────╮
-    │ text            │
-    │ ---             │
-    │ List[Int64]     │
-    ╞═════════════════╡
-    │ [0, 1, 3, 3, 4] │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [0, 1, 2, 3, 4] │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [0, 1, 2, 3]    │
-    ╰─────────────────╯
-    <BLANKLINE>
-    (Showing first 3 of 3 rows)
+        >>> import daft
+        >>> from daft import col
+        >>> @daft.func
+        ... def my_sum(a: int, b: int) -> int:
+        ...     return a + b
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> df.select(my_sum(col("x"), col("y"))).collect()
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 5     │
+        ├╌╌╌╌╌╌╌┤
+        │ 7     │
+        ├╌╌╌╌╌╌╌┤
+        │ 9     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
-    Basic Example with existing function and no type hints
-    >>> import daft
-    >>> from daft import col
-    >>> def tokenize(text: str):
-    ...     vocab = {char: i for i, char in enumerate(text)}
-    ...     return [vocab[char] for char in text]
-    >>> daft_tokenize = daft.func(tokenize, return_dtype=list[int])
-    >>> df = daft.from_pydict({"text": ["hello", "world", "daft"]})
-    >>> df.select(daft_tokenize(df["text"])).collect()
-    ╭─────────────────╮
-    │ text            │
-    │ ---             │
-    │ List[Int64]     │
-    ╞═════════════════╡
-    │ [0, 1, 3, 3, 4] │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [0, 1, 2, 3, 4] │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [0, 1, 2, 3]    │
-    ╰─────────────────╯
-    <BLANKLINE>
-    (Showing first 3 of 3 rows)
+        Basic Example with existing function
 
-    Async Example
-    >>> import daft
-    >>> import asyncio
-    >>> from daft import col
-    >>> @daft.func
-    ... async def my_sum(a: int, b: int) -> int:
-    ...     await asyncio.sleep(1)
-    ...     return a + b
-    >>>
-    >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    >>> df.select(my_sum(col("x"), col("y"))).collect()
-    ╭───────╮
-    │ x     │
-    │ ---   │
-    │ Int64 │
-    ╞═══════╡
-    │ 5     │
-    ├╌╌╌╌╌╌╌┤
-    │ 7     │
-    ├╌╌╌╌╌╌╌┤
-    │ 9     │
-    ╰───────╯
-    <BLANKLINE>
-    (Showing first 3 of 3 rows)
+        >>> import daft
+        >>> from daft import col
+        >>> def tokenize(text: str) -> list[int]:
+        ...     vocab = {char: i for i, char in enumerate(text)}
+        ...     return [vocab[char] for char in text]
+        >>>
+        >>> daft_tokenize = daft.func(tokenize)
+        >>> df = daft.from_pydict({"text": ["hello", "world", "daft"]})
+        >>> df.select(daft_tokenize(df["text"])).collect()
+        ╭─────────────────╮
+        │ text            │
+        │ ---             │
+        │ List[Int64]     │
+        ╞═════════════════╡
+        │ [0, 1, 3, 3, 4] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [0, 1, 2, 3, 4] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [0, 1, 2, 3]    │
+        ╰─────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Basic Example with existing function and no type hints
+
+        >>> import daft
+        >>> from daft import col
+        >>> def tokenize(text: str):
+        ...     vocab = {char: i for i, char in enumerate(text)}
+        ...     return [vocab[char] for char in text]
+        >>> daft_tokenize = daft.func(tokenize, return_dtype=list[int])
+        >>> df = daft.from_pydict({"text": ["hello", "world", "daft"]})
+        >>> df.select(daft_tokenize(df["text"])).collect()
+        ╭─────────────────╮
+        │ text            │
+        │ ---             │
+        │ List[Int64]     │
+        ╞═════════════════╡
+        │ [0, 1, 3, 3, 4] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [0, 1, 2, 3, 4] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [0, 1, 2, 3]    │
+        ╰─────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Async Example
+
+        >>> import daft
+        >>> import asyncio
+        >>> from daft import col
+        >>> @daft.func
+        ... async def my_sum(a: int, b: int) -> int:
+        ...     await asyncio.sleep(1)
+        ...     return a + b
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> df.select(my_sum(col("x"), col("y"))).collect()
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 5     │
+        ├╌╌╌╌╌╌╌┤
+        │ 7     │
+        ├╌╌╌╌╌╌╌┤
+        │ 9     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
     """
 
     @overload
