@@ -392,7 +392,25 @@ impl PushDownFilter {
                     return Ok(Transformed::no(plan));
                 }
             }
-            _ => return Ok(Transformed::no(plan)),
+            LogicalPlan::Limit(_)
+            | LogicalPlan::Offset(_)
+            | LogicalPlan::TopN(..)
+            | LogicalPlan::Sample(..)
+            | LogicalPlan::Explode(..)
+            | LogicalPlan::Shard(..)
+            | LogicalPlan::UDFProject(..)
+            | LogicalPlan::Unpivot(..)
+            | LogicalPlan::Pivot(..)
+            | LogicalPlan::Aggregate(..)
+            | LogicalPlan::Intersect(..)
+            | LogicalPlan::Union(..)
+            | LogicalPlan::Sink(..)
+            | LogicalPlan::MonotonicallyIncreasingId(..)
+            | LogicalPlan::SubqueryAlias(..)
+            | LogicalPlan::Window(..)
+            | LogicalPlan::Distinct(..) => {
+                return Ok(Transformed::no(plan));
+            }
         };
         Ok(Transformed::yes(new_plan))
     }

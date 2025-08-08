@@ -42,6 +42,8 @@ impl PushDownShard {
                     | LogicalPlan::UDFProject(_)
                     | LogicalPlan::Filter(_)
                     | LogicalPlan::Limit(_)
+                    | LogicalPlan::Offset(_)
+                    | LogicalPlan::Concat(_)
                     | LogicalPlan::Explode(_)
                     | LogicalPlan::Unpivot(_)
                     | LogicalPlan::Sort(_)
@@ -99,10 +101,12 @@ impl PushDownShard {
                     LogicalPlan::Shard(_) => Err(DaftError::ValueError(
                         "Shards cannot be folded together".to_string(),
                     )),
-                    op => Err(DaftError::ValueError(format!(
-                        "Shard cannot exist above the non-unary {} operator",
-                        op.name()
-                    ))),
+                    LogicalPlan::Join(_) => Err(DaftError::ValueError(
+                        "Shard cannot exist above join".to_string(),
+                    )),
+                    LogicalPlan::Intersect(_)
+                    | LogicalPlan::Union(_)
+                    | LogicalPlan::SubqueryAlias(_) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),
