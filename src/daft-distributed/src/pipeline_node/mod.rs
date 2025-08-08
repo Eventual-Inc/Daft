@@ -113,6 +113,14 @@ impl MaterializedOutput {
             .map(|partition| partition.size_bytes().map(|size| size.unwrap_or(0)))
             .sum()
     }
+
+    pub fn slice(&self, _start: usize, _end: usize) -> DaftResult<Self> {
+        // TODO by zhenchao add impl 2025-08-07 20:50:31
+        Ok(Self {
+            partition: self.partition.clone(),
+            worker_id: self.worker_id.clone(),
+        })
+    }
 }
 
 pub(super) struct PipelineNodeConfig {
