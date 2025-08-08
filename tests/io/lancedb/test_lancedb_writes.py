@@ -85,3 +85,34 @@ def test_lancedb_write_with_schema(lance_dataset_path):
     compress_field_metadata = compress_field.metadata
     assert compress_field_metadata is not None
     assert compress_field_metadata[b"lance-encoding:compression"] == b"zstd"
+
+
+def test_lancedb_write_blob(lance_dataset_path):
+    schema = pa.schema(
+        [
+            pa.field("blob", pa.large_binary(), metadata={"lance-encoding:blob": "true"}),
+        ]
+    )
+
+    blobs_data = [b"foo", b"bar", b"baz"]
+    df = daft.from_pydict({"blob": blobs_data})
+
+    df.write_lance(lance_dataset_path, schema=daft.schema.Schema.from_pyarrow_schema(schema))
+
+    import lance
+
+    ds = lance.dataset(lance_dataset_path)
+    written_pa_schema = ds.schema
+
+    blob_field = written_pa_schema.field("blob")
+    assert blob_field.type == pa.large_binary()
+
+    blob_field_metadata = blob_field.metadata
+    assert blob_field_metadata is not None
+    assert blob_field_metadata[b"lance-encoding:blob"] == b"true"
+
+    row_ids = ds.to_table(columns=[], with_row_id=True).column("_rowid").to_pylist()
+    blobs = ds.take_blobs("blob", row_ids)
+    for expected in blobs_data:
+        with blobs.pop(0) as f:
+            assert f.read() == expected
