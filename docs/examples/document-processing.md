@@ -803,7 +803,7 @@ print(df.schema())
 
 #### Explaining Structure Access Expressions
 
-Note that we're using [`.struct`](../api/expressions/#daft.expressions.struct) to construct an expression that allows Daft to extract individual field values from our complex document structure.
+Note that we're using [`.struct`](../api/expressions.md#daft.expressions.struct) to construct an expression that allows Daft to extract individual field values from our complex document structure.
 
 When write `col("text_blocks").struct.get("bounding_box")`, we're telling Daft that we want to access the `bounding_box` field of each element from the `text_blocks` column. From this, we can provide additional field-selecting logic (e.g. `["x"]` to get the value for field `x` on the `bounding_box` value from each structure in `text_blocks`).
 
