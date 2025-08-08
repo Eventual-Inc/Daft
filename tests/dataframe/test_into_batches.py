@@ -59,7 +59,7 @@ def test_many_small_partitions_into_batches(make_df):
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="into_batches not yet implemented on Ray runner")
 def test_into_batches_with_remainder():
     """Test into_batches when the total size doesn't evenly divide by batch_size."""
-    # Create a dataframe with 65 rows (not evenly divisible by 8)
+    # Create a dataframe with 70 rows (not evenly divisible by 8)
     df = daft.from_pydict({"id": list(range(70))})
 
     # Split into batches of size 8
@@ -69,7 +69,7 @@ def test_into_batches_with_remainder():
     @daft.udf(return_dtype=daft.DataType.int64())
     def check_batch_size(data):
         batch_size = len(data.to_pylist())
-        assert batch_size == 8 or batch_size == 6, f"Expected batch size 8 or 1, got {batch_size}"
+        assert batch_size == 8 or batch_size == 6, f"Expected batch size 8 or 6, got {batch_size}"
         return data.to_pylist()
 
     # Apply the UDF
