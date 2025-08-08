@@ -94,8 +94,8 @@ impl MorselSizeRequirement {
                 Self::Strict(size) => Self::Flexible(size),
                 Self::Flexible(size) => Self::Flexible(size),
             },
-            // If the current requirement is required, use it regardless of the downstream requirement
-            // If the current requirement is strict, use it regardless of the downstream requirement
+            // If the current requirement is strict use it regardless of the downstream requirement
+            (Some(Self::Strict(current_size)), _) => Self::Strict(current_size),
             // If the current requirement is flexible and the downstream requirement is strict, use the minimum of the two sizes
             (Some(Self::Flexible(current_size)), Self::Strict(other_size)) => {
                 Self::Flexible(current_size.min(other_size))
