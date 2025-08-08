@@ -2582,6 +2582,9 @@ class DataFrame:
         if get_context().get_or_create_runner().name == "ray":
             warnings.warn("DataFrame.into_batches not yet implemented on the RayRunner. This will be a no-op")
 
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
+
         builder = self._builder.into_batches(batch_size)
         return DataFrame(builder)
 
