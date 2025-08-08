@@ -12,6 +12,10 @@ In this example, we demonstrate how to build a text embedding pipeline for proce
 
 > **What are embeddings?** An [embedding](https://en.wikipedia.org/wiki/Word_embedding) is a representation of data (text, images, audio etc.), often a vector of numerical values, that encodes semantic information. These embeddings can then be used in many applications such as semantic search, deduplication, multi-lingual applications, and so on.
 
+By the end, you should be able to run a text embedding pipeline on a cluster and achieve near 100% GPU utilization for your workloads.
+
+![GPU utilization graph showing near 100% usage across multiple GPUs during text embedding pipeline execution](../img/text-embed-gpu-utilization.jpeg "GPU utilization for a text embedding pipeline")
+
 
 ## Pipeline Overview
 
@@ -31,7 +35,7 @@ pip install "daft[ray]" turbopuffer torch sentence-transformers spacy accelerate
 python -m spacy download en_core_web_sm
 ```
 
-You may also need AWS access. [Individual methods will vary](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html), but once set up you can login via:
+[You will also need AWS access](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html). Individual methods may vary, but once set up you can login via:
 
 ```bash
 aws sso login
@@ -44,26 +48,20 @@ import torch
 import daft
 from daft import col
 
-NUM_GPU_NODES = 8                      # The number of GPU nodes available
-NLP_MODEL_NAME = "en_core_web_sm"      # The spaCy model to use for chunking text
-CHUNKING_PARALLELISM = 8               # The number of chunking UDFs to run in parallel per node
+NUM_GPU_NODES = 8                     # The number of GPU nodes available
+NLP_MODEL_NAME = "en_core_web_sm"     # The spaCy model to use for chunking text
+CHUNKING_PARALLELISM = 8              # The number of chunking UDFs to run in parallel per node
 EMBEDDING_MODEL_NAME = "Qwen/Qwen3-Embedding-0.6B"  # The text embedding model to use
-ENCODING_DIM = 1024                    # The output dimensions for embeddings
-BATCH_SIZE = 2048                      # The number of records passed into our embeddings UDF
-SENTENCE_TRANSFORMER_BATCH_SIZE = 128  # The number of records in each batch to use with SentenceTransformers
+ENCODING_DIM = 1024                   # The output dimensions for embeddings
+BATCH_SIZE = 512                      # The number of records passed into our embeddings UDF
+SENTENCE_TRANSFORMER_BATCH_SIZE = 16  # The number of records in each batch to use with SentenceTransformers
 ```
 
 ## Step 2: Create Text Chunking UDF
 
 ### Understanding Text Chunking
 
-When creating embeddings, it's useful to split your text into meaningful chunks.
-
-Text is hierarchical and can be broken down at different levels:
-
-Document → Sections → Paragraphs → Sentences → Words → Characters
-
-The chunking strategy to use depends on your use case.
+When creating embeddings, it's useful to split your text into meaningful chunks. Text is hierarchical and can be broken down at different levels: Document → Sections → Paragraphs → Sentences → Words → Characters. The chunking strategy to use depends on your use case.
 
 #### Chunking Strategies
 
@@ -96,8 +94,8 @@ chunked_type = daft.DataType.list(
 
 @daft.udf(
     return_dtype=chunked_type,
-    concurrency=NUM_GPU_NODES * CHUNKING_PARALLELISM,
-    batch_size=BATCH_SIZE//CHUNKING_PARALLELISM
+    concurrency=NUM_GPU_NODES * (CHUNKING_PARALLELISM + 1),
+    batch_size=BATCH_SIZE // CHUNKING_PARALLELISM // 2
 )
 class ChunkingUDF:
     def __init__(self):
@@ -161,14 +159,14 @@ class EncodingUDF:
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.model = SentenceTransformer(EMBEDDING_MODEL_NAME, device=device)
-        self.model.compile()  # Optimize for inference
+        self.model.compile()
 
     def __call__(self, text_col):
         embeddings = self.model.encode(
             text_col.to_pylist(),
             batch_size=SENTENCE_TRANSFORMER_BATCH_SIZE,
             convert_to_tensor=True,
-            torch_dtype=torch.bfloat16,  # Use bfloat16 for memory efficiency
+            torch_dtype=torch.bfloat16,
         )
         return embeddings.cpu().numpy()
 ```
@@ -181,6 +179,9 @@ This UDF:
 - Returns numpy arrays which are compatible with Daft
 
 ## Step 4: Configure Distributed Processing
+
+You can run this script locally, but if you're interested in running this pipeline on a cluster, check out our guide on [scaling up](../distributed.md). In this example,
+we ran on a ray cluster with 8 [g5.2xlarge](https://aws.amazon.com/ec2/instance-types/g5/) workers (each comes with an A10G GPU). To configure our Daft script to use the ray cluster, we added:
 
 ```python
 # Configure Daft to use Ray to schedule work on different worker nodes
@@ -200,10 +201,7 @@ Now we'll execute the complete data processing pipeline:
 
 ```python
 (
-    daft.read_parquet(
-        "s3://desmond-demo/text-embedding-dataset.parquet",
-        _chunk_size=BATCH_SIZE*10
-    )
+    daft.read_parquet("s3://desmond-demo/text-embedding-dataset.parquet")
     .with_column("sentences", ChunkingUDF(col("text")))
     .explode("sentences")
     .with_column("text", col("sentences")["text"])
