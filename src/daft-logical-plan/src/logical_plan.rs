@@ -167,6 +167,7 @@ impl LogicalPlan {
         match self {
             Self::Shard(..)
             | Self::Limit(..)
+            | Self::IntoBatches(..)
             | Self::Offset(..)
             | Self::Sample(..)
             | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
@@ -199,7 +200,6 @@ impl LogicalPlan {
                     .collect(),
                 None,
             ),
-            Self::IntoBatches(IntoBatches { input, .. }) => input.required_columns(),
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
                 RequiredCols::new(res, None)
