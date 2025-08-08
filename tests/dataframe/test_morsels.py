@@ -3,7 +3,12 @@ from __future__ import annotations
 import io
 import re
 
+import pytest
+
 import daft
+from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
 
 _pattern = re.compile("|".join(map(re.escape, ["\n", "|", " ", "*", "\\"])))
 _rep = {"\n": "", "|": "", " ": "", "*": "", "\\": ""}
