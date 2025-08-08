@@ -87,6 +87,7 @@ pub struct IntermediateNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
+    morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
 }
 
@@ -109,6 +110,7 @@ impl IntermediateNode {
             children,
             runtime_stats,
             plan_stats,
+            morsel_size_requirement: MorselSizeRequirement::Flexible(0),
             node_info: Arc::new(info),
         }
     }
@@ -196,6 +198,7 @@ impl TreeDisplay for IntermediateNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Morsel Size = {:?}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.snapshot();
@@ -229,21 +232,34 @@ impl PipelineNode for IntermediateNode {
         self.node_info.name.clone()
     }
 
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        default_requirement: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.intermediate_op.morsel_size_requirement();
+        let combined_morsel_size_requirement = MorselSizeRequirement::combine_requirements(
+            operator_morsel_size_requirement,
+            downstream_requirement,
+        );
+        self.morsel_size_requirement = combined_morsel_size_requirement;
+        for child in &mut self.children {
+            child.propagate_morsel_size_requirement(
+                combined_morsel_size_requirement,
+                default_requirement,
+            );
+        }
+    }
+
     fn start(
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-        morsel_size_requirement: MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let morsel_size_requirement = runtime_handle.determine_morsel_size_requirement(
-            self.intermediate_op.morsel_size_requirement(),
-            morsel_size_requirement,
-        );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
 
         for child in &self.children {
-            let child_result_receiver =
-                child.start(maintain_order, runtime_handle, morsel_size_requirement)?;
+            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(InitializingCountingReceiver::new(
                 child_result_receiver,
                 self.node_id(),
@@ -260,7 +276,7 @@ impl PipelineNode for IntermediateNode {
 
         let dispatch_spawner = self
             .intermediate_op
-            .dispatch_spawner(morsel_size_requirement, maintain_order);
+            .dispatch_spawner(self.morsel_size_requirement, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,

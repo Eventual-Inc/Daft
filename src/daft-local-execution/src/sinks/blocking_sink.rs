@@ -83,6 +83,7 @@ pub struct BlockingSinkNode {
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
+    morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
 }
 
@@ -102,6 +103,7 @@ impl BlockingSinkNode {
             child,
             runtime_stats,
             plan_stats,
+            morsel_size_requirement: MorselSizeRequirement::Flexible(0),
             node_info: Arc::new(node_info),
         }
     }
@@ -170,6 +172,7 @@ impl TreeDisplay for BlockingSinkNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Morsel Size = {:?}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
@@ -199,18 +202,27 @@ impl PipelineNode for BlockingSinkNode {
         self.node_info.name.clone()
     }
 
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        _downstream_requirement: MorselSizeRequirement,
+        default_morsel_size: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.op.morsel_size_requirement();
+        let new_morsel_size_requirement = match operator_morsel_size_requirement {
+            Some(requirement) => requirement,
+            None => default_morsel_size,
+        };
+        self.morsel_size_requirement = new_morsel_size_requirement;
+        self.child
+            .propagate_morsel_size_requirement(new_morsel_size_requirement, default_morsel_size);
+    }
+
     fn start(
         &self,
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-        _morsel_size_requirement: MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let current_morsel_size_requirement = self.op.morsel_size_requirement();
-        let child_morsel_size_requirement = current_morsel_size_requirement
-            .unwrap_or_else(|| runtime_handle.default_morsel_requirement());
-        let child_results_receiver =
-            self.child
-                .start(false, runtime_handle, child_morsel_size_requirement)?;
+        let child_results_receiver = self.child.start(false, runtime_handle)?;
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
             self.node_id(),
@@ -225,7 +237,7 @@ impl PipelineNode for BlockingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(current_morsel_size_requirement);
+        let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,

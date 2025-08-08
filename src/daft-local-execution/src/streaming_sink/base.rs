@@ -101,6 +101,7 @@ pub struct StreamingSinkNode {
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
+    morsel_size_requirement: MorselSizeRequirement,
 }
 
 impl StreamingSinkNode {
@@ -119,6 +120,7 @@ impl StreamingSinkNode {
             runtime_stats,
             plan_stats,
             node_info: Arc::new(node_info),
+            morsel_size_requirement: MorselSizeRequirement::Flexible(0),
         }
     }
 
@@ -209,6 +211,7 @@ impl TreeDisplay for StreamingSinkNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Morsel Size = {:?}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
@@ -243,20 +246,33 @@ impl PipelineNode for StreamingSinkNode {
         self.node_info.name.clone()
     }
 
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        _default_morsel_size: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.op.morsel_size_requirement();
+        let combined_morsel_size_requirement = MorselSizeRequirement::combine_requirements(
+            operator_morsel_size_requirement,
+            downstream_requirement,
+        );
+        self.morsel_size_requirement = combined_morsel_size_requirement;
+        for child in &mut self.children {
+            child.propagate_morsel_size_requirement(
+                combined_morsel_size_requirement,
+                _default_morsel_size,
+            );
+        }
+    }
+
     fn start(
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-        morsel_size_requirement: MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let morsel_size_requirement = runtime_handle.determine_morsel_size_requirement(
-            self.op.morsel_size_requirement(),
-            morsel_size_requirement,
-        );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
-            let child_result_receiver =
-                child.start(maintain_order, runtime_handle, morsel_size_requirement)?;
+            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(InitializingCountingReceiver::new(
                 child_result_receiver,
                 self.node_id(),
@@ -272,7 +288,7 @@ impl PipelineNode for StreamingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(morsel_size_requirement, maintain_order);
+        let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,

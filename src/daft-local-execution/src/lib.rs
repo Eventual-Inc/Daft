@@ -127,7 +127,6 @@ impl RuntimeHandle {
 
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
-    default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
     stats_manager: Arc<RuntimeStatsManager>,
 }
@@ -135,13 +134,11 @@ pub(crate) struct ExecutionRuntimeContext {
 impl ExecutionRuntimeContext {
     #[must_use]
     pub fn new(
-        default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
         stats_manager: Arc<RuntimeStatsManager>,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
-            default_morsel_size,
             memory_manager,
             stats_manager,
         }
@@ -163,36 +160,6 @@ impl ExecutionRuntimeContext {
 
     pub async fn shutdown(&mut self) {
         self.worker_set.shutdown().await;
-    }
-
-    #[must_use]
-    pub fn default_morsel_requirement(&self) -> MorselSizeRequirement {
-        MorselSizeRequirement::Flexible(self.default_morsel_size)
-    }
-
-    pub fn determine_morsel_size_requirement(
-        &self,
-        current_requirement: Option<MorselSizeRequirement>,
-        downstream_requirement: MorselSizeRequirement,
-    ) -> MorselSizeRequirement {
-        match (current_requirement, downstream_requirement) {
-            // If there is no current requirement, use the downstream requirement
-            (None, requirement) => requirement,
-            // If the current requirement is required, use it regardless of the downstream requirement
-            (Some(MorselSizeRequirement::Strict(current_size)), _) => {
-                MorselSizeRequirement::Strict(current_size)
-            }
-            // If the current requirement is flexible and the downstream requirement is strict, use the minimum of the two sizes
-            (
-                Some(MorselSizeRequirement::Flexible(current_size)),
-                MorselSizeRequirement::Strict(other_size),
-            ) => MorselSizeRequirement::Flexible(current_size.min(other_size)),
-            // If the current requirement is flexible and the downstream requirement is flexible, use the minimum of the two sizes
-            (
-                Some(MorselSizeRequirement::Flexible(current_size)),
-                MorselSizeRequirement::Flexible(other_size),
-            ) => MorselSizeRequirement::Flexible(current_size.min(other_size)),
-        }
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
@@ -272,8 +239,6 @@ impl ExecutionTaskSpawner {
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-
-use crate::pipeline::MorselSizeRequirement;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

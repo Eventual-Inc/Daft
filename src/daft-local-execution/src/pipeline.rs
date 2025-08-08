@@ -77,16 +77,45 @@ pub enum MorselSizeRequirement {
     Flexible(usize),
 }
 
+impl MorselSizeRequirement {
+    pub fn combine_requirements(
+        current_requirement: Option<Self>,
+        downstream_requirement: Self,
+    ) -> Self {
+        match (current_requirement, downstream_requirement) {
+            // If there is no current requirement, use the downstream requirement
+            (None, requirement) => match requirement {
+                Self::Strict(size) => Self::Flexible(size),
+                Self::Flexible(size) => Self::Flexible(size),
+            },
+            // If the current requirement is required, use it regardless of the downstream requirement
+            (Some(Self::Strict(current_size)), _) => Self::Strict(current_size),
+            // If the current requirement is flexible and the downstream requirement is strict, use the minimum of the two sizes
+            (Some(Self::Flexible(current_size)), Self::Strict(other_size)) => {
+                Self::Flexible(current_size.min(other_size))
+            }
+            // If the current requirement is flexible and the downstream requirement is flexible, use the minimum of the two sizes
+            (Some(Self::Flexible(current_size)), Self::Flexible(other_size)) => {
+                Self::Flexible(current_size.min(other_size))
+            }
+        }
+    }
+}
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     #[allow(clippy::borrowed_box)]
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>>;
     fn name(&self) -> Arc<str>;
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        default_requirement: MorselSizeRequirement,
+    );
     fn start(
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-        morsel_size_requirement: MorselSizeRequirement,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
@@ -239,7 +268,21 @@ pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
     s
 }
 
-pub fn physical_plan_to_pipeline(
+pub fn translate_physical_plan_to_pipeline(
+    physical_plan: &LocalPhysicalPlan,
+    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
+    cfg: &Arc<DaftExecutionConfig>,
+    ctx: &RuntimeContext,
+) -> crate::Result<Box<dyn PipelineNode>> {
+    let mut pipeline_node = physical_plan_to_pipeline(physical_plan, psets, cfg, ctx)?;
+    pipeline_node.propagate_morsel_size_requirement(
+        MorselSizeRequirement::Flexible(cfg.default_morsel_size),
+        MorselSizeRequirement::Flexible(cfg.default_morsel_size),
+    );
+    Ok(pipeline_node)
+}
+
+fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
@@ -248,7 +291,7 @@ pub fn physical_plan_to_pipeline(
     use daft_local_plan::PhysicalScan;
 
     use crate::sources::scan_task::ScanTaskSource;
-    let out: Box<dyn PipelineNode> = match physical_plan {
+    let pipeline_node: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
         }
@@ -1108,5 +1151,5 @@ pub fn physical_plan_to_pipeline(
         }
     };
 
-    Ok(out)
+    Ok(pipeline_node)
 }
