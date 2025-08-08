@@ -104,13 +104,15 @@ impl IntermediateNode {
             NodeCategory::Intermediate,
         );
         let runtime_stats = intermediate_op.make_runtime_stats();
-
+        let morsel_size_requirement = intermediate_op
+            .morsel_size_requirement()
+            .unwrap_or_default();
         Self {
             intermediate_op,
             children,
             runtime_stats,
             plan_stats,
-            morsel_size_requirement: MorselSizeRequirement::Flexible(0),
+            morsel_size_requirement,
             node_info: Arc::new(info),
         }
     }

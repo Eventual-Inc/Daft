@@ -98,12 +98,13 @@ impl BlockingSinkNode {
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink);
         let runtime_stats = op.make_runtime_stats();
 
+        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             child,
             runtime_stats,
             plan_stats,
-            morsel_size_requirement: MorselSizeRequirement::Flexible(0),
+            morsel_size_requirement,
             node_info: Arc::new(node_info),
         }
     }

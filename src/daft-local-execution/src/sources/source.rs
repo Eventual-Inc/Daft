@@ -94,7 +94,7 @@ impl SourceNode {
             runtime_stats,
             plan_stats,
             node_info: Arc::new(info),
-            morsel_size_requirement: MorselSizeRequirement::Flexible(0),
+            morsel_size_requirement: MorselSizeRequirement::default(),
         }
     }
 

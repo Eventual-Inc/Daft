@@ -77,6 +77,12 @@ pub enum MorselSizeRequirement {
     Flexible(usize),
 }
 
+impl Default for MorselSizeRequirement {
+    fn default() -> Self {
+        Self::Flexible(common_daft_config::DaftExecutionConfig::default().default_morsel_size)
+    }
+}
+
 impl MorselSizeRequirement {
     pub fn combine_requirements(
         current_requirement: Option<Self>,
