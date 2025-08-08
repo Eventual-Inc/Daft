@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable
 
     from daft.daft import PyDataType, PySeries
+    from daft.datatype import DataTypeLike
 
 
 P = ParamSpec("P")
@@ -23,7 +24,7 @@ T = TypeVar("T")
 
 
 class RowWiseUdf(Generic[P, T]):
-    def __init__(self, fn: Callable[P, T], return_dtype: DataType | None):
+    def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None):
         self._inner = fn
 
         module_name = getattr(fn, "__module__")
@@ -39,8 +40,10 @@ class RowWiseUdf(Generic[P, T]):
                 self.return_dtype = DataType._infer_type(type_hints["return"])
             else:
                 raise ValueError("return_dtype is required when function has no return annotation")
-        else:
+        elif isinstance(return_dtype, DataType):
             self.return_dtype = return_dtype
+        else:
+            self.return_dtype = DataType._infer_type(return_dtype)
 
     @overload
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
