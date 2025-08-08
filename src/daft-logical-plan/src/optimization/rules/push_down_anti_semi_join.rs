@@ -272,7 +272,15 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                             _ => {}
                         }
                     }
-                    LogicalPlan::Join(_) => return Ok(Transformed::no(node)),
+                    // Anti/semi join cannot be pushed down a non inner join.
+                    LogicalPlan::Join(Join {
+                        left: _,
+                        right: _,
+                        join_type: _,
+                        ..
+                    }) => {
+                        return Ok(Transformed::no(node));
+                    }
                     // Anti/semi join can be trivially pushed down these ops
                     LogicalPlan::Filter(Filter { input, .. })
                     | LogicalPlan::Sort(Sort { input, .. })
@@ -308,9 +316,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     | LogicalPlan::Window(..)
                     | LogicalPlan::Source(_)
                     | LogicalPlan::Repartition(_)
-                    | LogicalPlan::Concat(_) => {
-                        return Ok(Transformed::no(node));
-                    }
+                    | LogicalPlan::Concat(_) => {}
                 }
             }
 
