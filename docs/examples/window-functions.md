@@ -177,7 +177,7 @@ Already we can see the different eating patterns starting to emerge! The hare te
 
 Now let's start demonstrating the power of window functions by solving increasingly complex analytical queries.
 
-## Challenge 1: Ranking Chcolate Sessions by Size
+## Challenge 1: Ranking Chocolate Sessions by Size
 
 Our first challenge is to rank each contestant's chocolate-eating sessions from largest to smallest. This is a perfect use case for window functions!
 
@@ -330,11 +330,11 @@ plt.show()
 
 ![A graph showing the chocolate consumption change over time](../img/window-functions-image-2.png)
 
-We see the hare's erratic consumption pattern with high variability, compared to the tortoise's more steady appracoh. Also note the gap in the hare's data, reflecting the nap it took between times 700 and 900.
+We see the hare's erratic consumption pattern with high variability, compared to the tortoise's more steady approach. Also note the gap in the hare's data, reflecting the nap it took between times 700 and 900.
 
 ## Challenge 3: Peak Chocolate-Eating Sprees
 
-Now, let's identify when each contestant had their most impressive chocolate-eating sprees. We'll define a *spree* as the total chocoaltes eaten within a 100-time-unit window (50 units before and 50 units after a given point).
+Now, let's identify when each contestant had their most impressive chocolate-eating sprees. We'll define a *spree* as the total chocolates eaten within a 100-time-unit window (50 units before and 50 units after a given point).
 
 _Without_ window functions, this gets even more complex. For this, we need:
 
@@ -501,7 +501,7 @@ With just a handful of window function calls, we've calculated:
 * Chocolates eaten within 100-minute sprees
 * Session rankings by chocolate count
 * Changes in consumption between consecutive sessions
-* Rankings of the most intense eating spress
+* Rankings of the most intense eating sprees
 
 ## SQL
 
