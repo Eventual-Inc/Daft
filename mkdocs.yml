@@ -201,6 +201,8 @@ plugins:
 - gen-files:
     scripts:
     - docs/gen_pages/gen_function_pages.py
+    - docs/gen_pages/gen_txt_files.py
+    - docs/gen_pages/generate_llms_txt.py
 - literate-nav:
     nav_file: SUMMARY.md
 - nav-hide-children:
