@@ -42,6 +42,7 @@
     * [Usage Telemetry](telemetry.md)
 * Examples
     * [Overview](examples/index.md)
+    * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
 * Python API
     * [Overview](api/index.md)
     * [I/O](api/io.md)
