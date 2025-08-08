@@ -461,8 +461,15 @@ pub fn image_html_value(arr: &ImageArray, idx: usize, truncate: bool) -> String 
                 .unwrap();
             drop(writer);
 
+            let style = if truncate {
+                "width:auto;height:auto"
+            } else {
+                "width:100%;height:auto"
+            };
+
             format!(
-                "<img style=\"width:auto;height:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                "<img style=\"{}\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
+                style,
                 base64::engine::general_purpose::STANDARD.encode(&mut bytes),
                 str_val,
             )
@@ -491,9 +498,9 @@ pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize, truncate: 
             drop(writer);
 
             let style = if truncate {
-                "max-height:128px;width:auto"
+                "width:auto;height:auto"
             } else {
-                "max-width:90%;max-height:90vh;width:auto;height:auto"
+                "width:100%;height:auto"
             };
 
             format!(
