@@ -2577,11 +2577,27 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]})
             >>> df = df.into_batches(2)
             >>> @daft.udf(return_dtype=daft.DataType.int64())
-            ... def check_batch_size(data):
-            ...     batch_size = len(data.to_pylist())
+            ... def check_batch_group(data):
+            ...     py_data = data.to_pylist()
+            ...     batch_size = len(py_data)
             ...     assert batch_size == 2, f"Expected batch size 2, got {batch_size}"
-            ...     return data.to_pylist()
-            >>> df.with_column("batch_size", check_batch_size(df["x"])).collect()
+            ...     return [py_data[0]] * batch_size
+            >>> df.with_column("batch_group", check_batch_group(df["x"])).show(4)
+            ╭───────┬─────────────╮
+            │ x     ┆ batch_group │
+            │ ---   ┆ ---         │
+            │ Int64 ┆ Int64       │
+            ╞═══════╪═════════════╡
+            │ 1     ┆ 1           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 1           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 3           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 3           │
+            ╰───────┴─────────────╯
+            <BLANKLINE>
+            (Showing first 4 rows)
         """
         if get_context().get_or_create_runner().name == "ray":
             warnings.warn("DataFrame.into_batches not yet implemented on the RayRunner. This will be a no-op")
