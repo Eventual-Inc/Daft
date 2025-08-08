@@ -20,7 +20,7 @@ def clean_explain_output(output: str) -> str:
 
 
 def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64()):
-    @daft.udf(return_dtype=dtype, batch_size=batch_size)
+    @daft.udf(return_dtype=dtype, batch_size=batch_size, concurrency=1)
     def noop(x: dtype) -> dtype:
         return x
 
@@ -37,7 +37,7 @@ def test_batch_size_from_udf_propagated_to_scan():
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
-|   Concurrency = 12
+|   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Morsel Size = Strict(10)
@@ -77,7 +77,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as data
 |   Passthrough Columns = []
-|   Concurrency = 12
+|   Concurrency = 1
 |   Resource request = None
 |   Morsel Size = Strict(10)
 |
@@ -158,7 +158,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as a
 |   Passthrough Columns = []
-|   Concurrency = 12
+|   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Morsel Size = Strict(30)
@@ -166,7 +166,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
 |   Passthrough Columns = []
-|   Concurrency = 12
+|   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Morsel Size = Strict(20)
@@ -174,7 +174,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as __TruncateRootUDF_1-0-0__
 |   Passthrough Columns = []
-|   Concurrency = 12
+|   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Morsel Size = Strict(10)
@@ -200,7 +200,7 @@ def test_batch_size_from_udf_not_propagated_through_agg():
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
-|   Concurrency = 12
+|   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 4, Approx size bytes = 32 B, Accumulated selectivity = 0.80 }
 |   Morsel Size = Strict(10)
@@ -218,7 +218,7 @@ def test_batch_size_from_udf_not_propagated_through_agg():
 
 """
 
-    assert string_io.getvalue().split("== Physical Plan ==")[-1] == expected
+    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
 
 
 def test_batch_size_from_udf_not_propagated_through_join():
@@ -233,7 +233,7 @@ def test_batch_size_from_udf_not_propagated_through_join():
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
-|   Concurrency = 12
+|   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
 |   Morsel Size = Strict(10)
