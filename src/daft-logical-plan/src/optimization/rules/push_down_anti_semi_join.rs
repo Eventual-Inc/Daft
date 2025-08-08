@@ -272,6 +272,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                             _ => {}
                         }
                     }
+                    LogicalPlan::Join(_) => return Ok(Transformed::no(node)),
                     // Anti/semi join can be trivially pushed down these ops
                     LogicalPlan::Filter(Filter { input, .. })
                     | LogicalPlan::Sort(Sort { input, .. })
@@ -289,7 +290,27 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                             left.with_new_children(&[new_child]),
                         )));
                     }
-                    _ => {}
+                    LogicalPlan::Limit(_)
+                    | LogicalPlan::Offset(_)
+                    | LogicalPlan::TopN(..)
+                    | LogicalPlan::Sample(..)
+                    | LogicalPlan::Explode(..)
+                    | LogicalPlan::Shard(..)
+                    | LogicalPlan::UDFProject(..)
+                    | LogicalPlan::Unpivot(..)
+                    | LogicalPlan::Pivot(..)
+                    | LogicalPlan::Aggregate(..)
+                    | LogicalPlan::Intersect(..)
+                    | LogicalPlan::Union(..)
+                    | LogicalPlan::Sink(..)
+                    | LogicalPlan::MonotonicallyIncreasingId(..)
+                    | LogicalPlan::SubqueryAlias(..)
+                    | LogicalPlan::Window(..)
+                    | LogicalPlan::Source(_)
+                    | LogicalPlan::Repartition(_)
+                    | LogicalPlan::Concat(_) => {
+                        return Ok(Transformed::no(node));
+                    }
                 }
             }
 

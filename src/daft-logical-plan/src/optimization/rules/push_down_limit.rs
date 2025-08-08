@@ -155,7 +155,25 @@ impl PushDownLimit {
 
                         Ok(Transformed::yes(new_plan))
                     }
-                    _ => Ok(Transformed::no(plan)),
+                    LogicalPlan::Join(_)
+                    | LogicalPlan::Filter(_)
+                    | LogicalPlan::Distinct(_)
+                    | LogicalPlan::Offset(_)
+                    | LogicalPlan::TopN(..)
+                    | LogicalPlan::Sample(..)
+                    | LogicalPlan::Explode(..)
+                    | LogicalPlan::Shard(..)
+                    | LogicalPlan::UDFProject(..)
+                    | LogicalPlan::Unpivot(..)
+                    | LogicalPlan::Pivot(..)
+                    | LogicalPlan::Aggregate(..)
+                    | LogicalPlan::Intersect(..)
+                    | LogicalPlan::Union(..)
+                    | LogicalPlan::Sink(..)
+                    | LogicalPlan::MonotonicallyIncreasingId(..)
+                    | LogicalPlan::SubqueryAlias(..)
+                    | LogicalPlan::Window(..)
+                    | LogicalPlan::Concat(_) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),
