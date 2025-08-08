@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -49,9 +50,6 @@ def get_doc_structure():
 
         # Check for any indented lines (subsections and nested items)
         if line.startswith("    ") and current_section:
-            # Extract the link
-            import re
-
             match = re.search(r"\[([^\]]+)\]\(([^)]+)\)", line)
             if match:
                 name = match.group(1)
