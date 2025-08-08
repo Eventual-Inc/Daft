@@ -65,7 +65,7 @@ pub fn derive_function_args(input: proc_macro::TokenStream) -> proc_macro::Token
     };
 
     let series_to_lit = quote! {
-        |series: #daft_core::series::Series, _name: &str| #daft_dsl::LiteralValue::try_from_single_value_series(&series)
+        |series: #daft_core::series::Series, _name: &str| #daft_core::lit::Literal::try_from_single_value_series(&series)
     };
 
     let expr_impl = derive_for_type(
@@ -109,6 +109,7 @@ fn derive_for_type(
     has_generic: bool,
 ) -> TokenStream {
     let daft_dsl = get_crate_name("daft-dsl");
+    let daft_core = get_crate_name("daft-core");
 
     let num_fields = field_names.len();
 
@@ -125,7 +126,7 @@ fn derive_for_type(
                         .ok_or_else(|| common_error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?
                 },
                 (ArgCardinality::Required, ArgType::Concrete(_)) => quote! {
-                    #daft_dsl::FromLiteral::try_from_literal(
+                    #daft_core::lit::FromLiteral::try_from_literal(
                         &to_lit(
                             unnamed
                                 .pop_front()
@@ -144,7 +145,7 @@ fn derive_for_type(
                     unnamed
                         .pop_front()
                         .or_else(|| named.remove(#n))
-                        .map(|val| #daft_dsl::FromLiteral::try_from_literal(&to_lit(val, #n)?))
+                        .map(|val| #daft_core::lit::FromLiteral::try_from_literal(&to_lit(val, #n)?))
                         .transpose()?
                         .flatten()
 
@@ -155,7 +156,7 @@ fn derive_for_type(
                 (ArgCardinality::Variadic, ArgType::Concrete(_)) => quote! {
                     unnamed
                         .drain(..)
-                        .map(|val| #daft_dsl::FromLiteral::try_from_literal(&to_lit(val, #n)?))
+                        .map(|val| #daft_core::lit::FromLiteral::try_from_literal(&to_lit(val, #n)?))
                         .collect::<common_error::DaftResult<_>>()?
                 },
             }

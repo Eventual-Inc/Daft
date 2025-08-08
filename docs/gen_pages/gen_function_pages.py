@@ -1,7 +1,9 @@
+import copy
 import os
 
 import griffe
 import mkdocs_gen_files
+import yaml
 from jinja2 import Environment, FileSystemLoader
 
 # map of functions submodule to name displayed on docs
@@ -12,6 +14,33 @@ CATEGORY_TITLES = {"misc": "Miscellaneous", "columnar": "Columnar", "window": "W
 template_dir = os.path.join(os.path.dirname(__file__), "templates")
 env = Environment(loader=FileSystemLoader(template_dir))
 module = griffe.load("daft.functions")
+
+
+def build_function_category_map() -> dict[str, list[griffe.Function]]:
+    categories = {name: [] for name in CATEGORY_TITLES.keys()}
+
+    for fn_name in module.exports:
+        fn: griffe.Function = module[fn_name]
+        if not fn.is_function:
+            raise ValueError(f"Expected all `daft.functions` exports to be functions, found: {fn_name}")
+
+        category = fn.module.name
+        if category not in categories:
+            raise ValueError(
+                f"`daft.functions.{category}` not in category titles mapping. Add it in `docs/gen_pages/gen_function_pages.py`"
+            )
+        categories[category].append(fn)
+
+    empty_categories = [k for k, v in categories.items() if len(v) == 0]
+    if len(empty_categories) > 0:
+        raise ValueError(
+            f"These function submodules no longer exist: {empty_categories}. Remove them from the category titles mapping in `docs/gen_pages/gen_function_pages.py`"
+        )
+
+    categories = {
+        CATEGORY_TITLES[name]: sorted(functions, key=lambda fn: fn.name) for name, functions in categories.items()
+    }
+    return categories
 
 
 def format_function_signature(fn: griffe.Function) -> str:
@@ -58,44 +87,54 @@ def format_function_signature(fn: griffe.Function) -> str:
     return "".join(result_parts)
 
 
-def gen_index():
-    categories = {name: [] for name in CATEGORY_TITLES.keys()}
-
-    for fn_name in module.exports:
-        fn: griffe.Function = module[fn_name]
-        if not fn.is_function:
-            raise ValueError(f"Expected all `daft.functions` exports to be functions, found: {fn_name}")
-
-        category = fn.module.name
-        if category not in categories:
-            raise ValueError(
-                f"`daft.functions.{category}` not in category titles mapping. Add it in `docs/gen_pages/gen_function_pages.py`"
-            )
-
-        # Create enhanced function object with formatted signature
-        fn_data = {
-            "name": fn.name,
-            "signature": format_function_signature(fn),
-            "description": fn.docstring.value.split("\n")[0] if fn.docstring else "",
-        }
-        categories[category].append(fn_data)
-
-    empty_categories = [k for k, v in categories.items() if len(v) == 0]
-    if len(empty_categories) > 0:
-        raise ValueError(
-            f"These function submodules no longer exist: {empty_categories}. Remove them from the category titles mapping in `docs/gen_pages/gen_function_pages.py`"
-        )
+def gen_index(categories: dict[str, list[griffe.Function]]):
+    categories_formatted = {
+        name: [
+            {
+                "name": fn.name,
+                "signature": format_function_signature(fn),
+                "description": fn.docstring.value.split("\n")[0] if fn.docstring else "",
+            }
+            for fn in functions
+        ]
+        for name, functions in categories.items()
+    }
 
     template = env.get_template("functions.md.j2")
-    content = template.render(categories=categories, category_titles=CATEGORY_TITLES)
+    content = template.render(categories=categories_formatted)
 
     with mkdocs_gen_files.open("api/functions/index.md", "w") as f:
         f.write(content)
 
 
-def gen_function_page(fn: griffe.Function):
+def build_function_toc(categories: dict[str, list[griffe.Function]]) -> list:
+    toc = []
+    for name, functions in categories.items():
+        children = []
+        for fn in functions:
+            children.append(
+                {
+                    "title": fn.name,
+                    "url": f"../{fn.name}/",
+                }
+            )
+
+        toc.append({"title": name, "url": f"../#{name.lower()}", "children": children})
+
+    return toc
+
+
+def gen_function_page(fn: griffe.Function, toc: list):
+    toc = copy.deepcopy(toc)
+    for category in toc:
+        for child in category["children"]:
+            if child["title"] == fn.name:
+                child["active"] = True
+
+    meta = yaml.dump({"custom_toc": toc})
+
     template = env.get_template("function_page.md.j2")
-    content = template.render(fn=fn)
+    content = template.render(fn=fn, meta=meta)
 
     with mkdocs_gen_files.open(f"api/functions/{fn.name}.md", "w") as f:
         f.write(content)
@@ -113,11 +152,14 @@ def gen_nav_summary():
 
 
 def main():
-    gen_nav_summary()
-    gen_index()
+    categories = build_function_category_map()
 
+    gen_nav_summary()
+    gen_index(categories)
+
+    toc = build_function_toc(categories)
     for fn_name in module.exports:
-        gen_function_page(module[fn_name])
+        gen_function_page(module[fn_name], toc)
 
 
 main()

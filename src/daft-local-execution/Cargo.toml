@@ -6,6 +6,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
@@ -53,6 +54,7 @@ python = [
   "common-display/python",
   "common-error/python",
   "common-file-formats/python",
+  "common-py-serde/python",
   "common-scan-info/python",
   "daft-core/python",
   "daft-functions-list/python",

@@ -68,8 +68,8 @@ impl ActorHandle {
 }
 
 #[cfg(feature = "python")]
-impl From<daft_dsl::pyobj_serde::PyObjectWrapper> for ActorHandle {
-    fn from(value: daft_dsl::pyobj_serde::PyObjectWrapper) -> Self {
+impl From<common_py_serde::PyObjectWrapper> for ActorHandle {
+    fn from(value: common_py_serde::PyObjectWrapper) -> Self {
         Self { inner: value.0 }
     }
 }
