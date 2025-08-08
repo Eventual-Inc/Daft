@@ -26,7 +26,7 @@ use crate::{
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,

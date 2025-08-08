@@ -9,7 +9,7 @@ use pyo3::{prelude::*, types::PyDict, IntoPyObjectExt};
 
 use crate::{exec::execute_statement, functions::SQL_FUNCTIONS, schema::try_parse_dtype};
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct SQLFunctionStub {
     name: String,
     docstring: String,
@@ -92,7 +92,8 @@ pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
 ///
 /// TODO remove once session is removed on python side
 /// PyCatalog is the Python interface to the Catalog.
-#[pyclass(module = "daft.daft")]
+// Note that this is unsendable because Mutex is not cloneable.
+#[pyclass(module = "daft.daft", unsendable)]
 #[derive(Debug, Clone)]
 pub struct PySqlCatalog {
     tables: HashMap<String, Arc<LogicalPlan>>,
@@ -109,11 +110,7 @@ impl PySqlCatalog {
     }
 
     /// Register a table with the catalog.
-    pub fn register_table(
-        &mut self,
-        name: &str,
-        dataframe: &mut PyLogicalPlanBuilder,
-    ) -> PyResult<()> {
+    pub fn register_table(&mut self, name: &str, dataframe: &PyLogicalPlanBuilder) -> PyResult<()> {
         // TODO this is being removed, but do not parse python strings as SQL strings.
         let plan = dataframe.builder.build();
         self.tables.insert(name.to_string(), plan);

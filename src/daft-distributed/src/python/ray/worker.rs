@@ -11,7 +11,9 @@ use crate::scheduling::{
 
 type ActiveTaskDetails = HashMap<TaskContext, TaskDetails>;
 
-#[pyclass(module = "daft.daft", name = "RaySwordfishWorker")]
+// Unsendable because we need to modify the active task details
+// but can't use Mutex because it's not cloneable
+#[pyclass(module = "daft.daft", name = "RaySwordfishWorker", unsendable)]
 #[derive(Debug, Clone)]
 pub(crate) struct RaySwordfishWorker {
     worker_id: WorkerId,
