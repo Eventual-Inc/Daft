@@ -126,12 +126,12 @@ impl PhysicalPlan {
                 // If the groupby keys are the partition columns (very likely, since we often partition by hash on the groupby keys), the
                 // clustering spec is still valid
                 let input_partition_by = input.clustering_spec().partition_by();
-                let input_partition_col_names: HashSet<&str> =
+                let input_partition_col_names: HashSet<String> =
                     input_partition_by.iter().map(|e| e.name()).collect();
                 if aggregations
                     .iter()
                     .map(|e| e.name())
-                    .any(|name| input_partition_col_names.contains(name))
+                    .any(|name| input_partition_col_names.contains(name.as_str()))
                 {
                     ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                         input.clustering_spec().num_partitions(),

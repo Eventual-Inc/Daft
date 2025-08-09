@@ -893,18 +893,16 @@ impl JoinGraphBuilder {
 
                 for l in &left_on {
                     let name = l.name();
-                    let final_name = if let Some(final_name) = self.final_name_map.get(name) {
-                        final_name.name()
-                    } else {
-                        self.final_name_map
-                            .insert(name.to_string(), resolved_col(name));
-                        name
-                    };
-                    self.join_conds_to_resolve.push((
-                        final_name.to_string(),
-                        cur_node.clone(),
-                        false,
-                    ));
+                    let final_name =
+                        if let Some(final_name) = self.final_name_map.get(name.as_str()) {
+                            final_name.name()
+                        } else {
+                            self.final_name_map
+                                .insert(name.clone(), resolved_col(name.clone()));
+                            name.clone()
+                        };
+                    self.join_conds_to_resolve
+                        .push((final_name, cur_node.clone(), false));
                 }
                 self.process_node(left);
                 let mut ready_left = vec![];
@@ -913,18 +911,16 @@ impl JoinGraphBuilder {
                 }
                 for r in &right_on {
                     let name = r.name();
-                    let final_name = if let Some(final_name) = self.final_name_map.get(name) {
-                        final_name.name()
-                    } else {
-                        self.final_name_map
-                            .insert(name.to_string(), resolved_col(name));
-                        name
-                    };
-                    self.join_conds_to_resolve.push((
-                        final_name.to_string(),
-                        cur_node.clone(),
-                        false,
-                    ));
+                    let final_name =
+                        if let Some(final_name) = self.final_name_map.get(name.as_str()) {
+                            final_name.name()
+                        } else {
+                            self.final_name_map
+                                .insert(name.clone(), resolved_col(name.clone()));
+                            name.clone()
+                        };
+                    self.join_conds_to_resolve
+                        .push((final_name, cur_node.clone(), false));
                 }
                 self.process_node(right);
                 let mut ready_right = vec![];

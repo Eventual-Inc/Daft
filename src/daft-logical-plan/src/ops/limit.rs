@@ -41,6 +41,10 @@ impl Limit {
         }
     }
 
+    pub fn name(&self) -> String {
+        format!("Limit {}", self.limit)
+    }
+
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
         self

@@ -534,7 +534,7 @@ impl PyExpr {
             .into())
     }
 
-    pub fn name(&self) -> PyResult<&str> {
+    pub fn name(&self) -> PyResult<String> {
         Ok(self.expr.name())
     }
 

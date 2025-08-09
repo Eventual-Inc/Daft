@@ -564,7 +564,7 @@ fn get_missing_exprs(
         if existing_exprs.contains(&expr) {
             // column already exists in schema
             new_subquery_on.push(expr);
-        } else if schema.has_field(expr.name()) {
+        } else if schema.has_field(expr.name().as_str()) {
             // another expression takes pull up column name, we rename the pull up column.
             let new_name = format!("{}-{}", expr.name(), Uuid::new_v4());
 

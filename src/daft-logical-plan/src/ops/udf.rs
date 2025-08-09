@@ -109,6 +109,10 @@ impl UDFProject {
         self.udf_properties.concurrency.is_some()
     }
 
+    pub fn name(&self) -> String {
+        format!("UDF {}", self.udf_properties.name)
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("UDFProject:".to_string());

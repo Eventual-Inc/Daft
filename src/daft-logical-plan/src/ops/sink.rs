@@ -87,6 +87,24 @@ impl Sink {
         self
     }
 
+    pub fn name(&self) -> String {
+        match self.sink_info.as_ref() {
+            SinkInfo::OutputFileInfo(output_file_info) => {
+                format!("Write to {:?}", output_file_info.file_format)
+            }
+            #[cfg(feature = "python")]
+            SinkInfo::CatalogInfo(catalog_info) => match catalog_info.catalog {
+                CatalogType::Iceberg(_) => "Write to Iceberg".to_string(),
+                CatalogType::DeltaLake(_) => "Write to DeltaLake".to_string(),
+                CatalogType::Lance(_) => "Write to Lance".to_string(),
+            },
+            #[cfg(feature = "python")]
+            SinkInfo::DataSinkInfo(data_sink_info) => {
+                format!("Write to {}", data_sink_info.name)
+            }
+        }
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
 

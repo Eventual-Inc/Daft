@@ -5,7 +5,7 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{scalar::ScalarFn, FunctionArgs},
-    optimization,
+    optimization::{self, requires_computation},
     python_udf::{PyScalarFn, RowWisePyFn},
     resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
 };
@@ -84,6 +84,31 @@ impl Project {
         let input_stats = self.input.materialized_stats();
         self.stats_state = StatsState::Materialized(input_stats.clone().into());
         self
+    }
+
+    pub fn name(&self) -> String {
+        if self
+            .projection
+            .iter()
+            .any(|e| requires_computation(e.as_ref()))
+        {
+            let compute_cols = self
+                .projection
+                .iter()
+                .filter(|e| requires_computation(e.as_ref()))
+                .collect::<Vec<_>>();
+            if compute_cols.len() == 1 {
+                format!("Add Column {}", compute_cols[0])
+            } else {
+                "Project".to_string()
+            }
+        } else if self.input.schema() == self.projected_schema {
+            "Passthrough Columns".to_string()
+        } else if self.input.schema().len() < self.projected_schema.len() {
+            "Prune Columns".to_string()
+        } else {
+            "Reorder and Rename Columns".to_string()
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

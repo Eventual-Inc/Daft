@@ -391,7 +391,7 @@ impl HttpSubscriber {
         let mut nodes_map: HashMap<NodeID, QueryGraphNode> = HashMap::new();
 
         // Build a mapping from node_id to logical plan node information
-        let mut node_info_map: HashMap<NodeID, (&'static str, String)> = HashMap::new();
+        let mut node_info_map: HashMap<NodeID, (String, String)> = HashMap::new();
         let _ = plan_data.plan_state.logical_plan.apply(|node| {
             if let Some(node_id) = node.node_id() {
                 let name = node.name();

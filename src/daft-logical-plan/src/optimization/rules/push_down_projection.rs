@@ -181,7 +181,7 @@ impl PushDownProjection {
                     let pruned_upstream_projections = upstream_projection
                         .projection
                         .iter()
-                        .filter(|&e| required_columns.contains(e.name()))
+                        .filter(|&e| required_columns.contains(e.name().as_str()))
                         .cloned()
                         .collect::<Vec<_>>();
 
@@ -207,7 +207,7 @@ impl PushDownProjection {
                 let pruned_aggregate_exprs = aggregate
                     .aggregations
                     .iter()
-                    .filter(|&e| required_columns.contains(e.name()))
+                    .filter(|&e| required_columns.contains(e.name().as_str()))
                     .cloned()
                     .collect::<Vec<_>>();
 

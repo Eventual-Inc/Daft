@@ -61,6 +61,21 @@ impl Distinct {
         self
     }
 
+    pub fn name(&self) -> String {
+        if let Some(columns) = &self.columns {
+            format!(
+                "Distinct on Columns {}",
+                columns
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        } else {
+            "Distinct on All Columns".to_string()
+        }
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let distinct_label = if let Some(columns) = &self.columns {
             format!(

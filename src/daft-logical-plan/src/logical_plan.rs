@@ -315,32 +315,32 @@ impl LogicalPlan {
         }
     }
 
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> String {
         match self {
-            Self::Source(..) => "Source",
-            Self::Shard(..) => "Shard",
-            Self::Project(..) => "Project",
-            Self::UDFProject(..) => "UDFProject",
-            Self::Filter(..) => "Filter",
-            Self::Limit(..) => "Limit",
-            Self::Offset(..) => "Offset",
-            Self::Explode(..) => "Explode",
-            Self::Unpivot(..) => "Unpivot",
-            Self::Sort(..) => "Sort",
-            Self::Repartition(..) => "Repartition",
-            Self::Distinct(..) => "Distinct",
-            Self::Aggregate(..) => "Aggregate",
-            Self::Pivot(..) => "Pivot",
-            Self::Concat(..) => "Concat",
-            Self::Join(..) => "Join",
-            Self::Intersect(..) => "Intersect",
-            Self::Union(..) => "Union",
-            Self::Sink(..) => "Sink",
-            Self::Sample(..) => "Sample",
-            Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
-            Self::SubqueryAlias(..) => "Alias",
-            Self::Window(..) => "Window",
-            Self::TopN(..) => "TopN",
+            Self::Source(source) => source.name(),
+            Self::Shard(..) => "Shard".to_string(),
+            Self::Project(project) => project.name(),
+            Self::UDFProject(udf) => udf.name(),
+            Self::Filter(filter) => filter.name(),
+            Self::Limit(limit) => limit.name(),
+            Self::Explode(..) => "Explode".to_string(),
+            Self::Unpivot(..) => "Unpivot".to_string(),
+            Self::Sort(..) => "Sort".to_string(),
+            Self::Repartition(..) => "Repartition".to_string(),
+            Self::Distinct(distinct) => distinct.name(),
+            Self::Aggregate(..) => "Aggregate".to_string(),
+            Self::Pivot(..) => "Pivot".to_string(),
+            Self::Concat(..) => "Concat".to_string(),
+            Self::Join(..) => "Join".to_string(),
+            Self::Intersect(..) => "Intersect".to_string(),
+            Self::Union(..) => "Union".to_string(),
+            Self::Sink(sink) => sink.name(),
+            Self::Sample(..) => "Sample".to_string(),
+            Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId".to_string(),
+            Self::SubqueryAlias(..) => "Alias".to_string(),
+            Self::Window(..) => "Window".to_string(),
+            Self::TopN(..) => "TopN".to_string(),
+            Self::Offset(..) => "Offset".to_string(),
         }
     }
 
@@ -766,8 +766,8 @@ impl SubqueryPlan for LogicalPlan {
         self
     }
 
-    fn name(&self) -> &'static str {
-        Self::name(self)
+    fn name(&self) -> String {
+        self.name()
     }
 
     fn schema(&self) -> SchemaRef {

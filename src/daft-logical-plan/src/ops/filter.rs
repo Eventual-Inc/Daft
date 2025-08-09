@@ -46,6 +46,10 @@ impl Filter {
         })
     }
 
+    pub fn name(&self) -> String {
+        format!("Filter by {}", self.predicate)
+    }
+
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
         self

@@ -50,7 +50,7 @@ use crate::{
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> String;
     fn schema(&self) -> SchemaRef;
     fn dyn_eq(&self, other: &dyn SubqueryPlan) -> bool;
     fn dyn_hash(&self, state: &mut dyn Hasher);
@@ -71,7 +71,7 @@ impl Subquery {
     pub fn schema(&self) -> SchemaRef {
         self.plan.schema()
     }
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> String {
         self.plan.name()
     }
 
@@ -466,7 +466,7 @@ impl AggExpr {
         }
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> String {
         match self {
             Self::Count(expr, ..)
             | Self::CountDistinct(expr)
@@ -781,17 +781,17 @@ impl From<&AggExpr> for ExprRef {
 }
 
 impl WindowExpr {
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> String {
         match self {
-            Self::Agg(agg_expr) => agg_expr.name(),
-            Self::RowNumber => "row_number",
-            Self::Rank => "rank",
-            Self::DenseRank => "dense_rank",
+            Self::Agg(agg_expr) => agg_expr.name().to_string(),
+            Self::RowNumber => "row_number".to_string(),
+            Self::Rank => "rank".to_string(),
+            Self::DenseRank => "dense_rank".to_string(),
             Self::Offset {
                 input,
                 offset: _,
                 default: _,
-            } => input.name(),
+            } => input.name().to_string(),
         }
     }
 
@@ -1690,52 +1690,56 @@ impl Expr {
     }
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> String {
         match self {
-            Self::Alias(.., name) => name.as_ref(),
+            Self::Alias(.., name) => name.as_ref().to_string(),
             // unlike alias, we only use the expr name here for functions,
-            Self::Agg(agg_expr) => agg_expr.name(),
+            Self::Agg(agg_expr) => agg_expr.name().to_string(),
             Self::Cast(expr, ..) => expr.name(),
-            Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
-            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => name.as_ref(),
+            Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                name.as_ref().to_string()
+            }
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                name.as_ref().to_string()
+            }
             Self::Column(Column::Resolved(ResolvedColumn::JoinSide(Field { name, .. }, ..))) => {
-                name.as_ref()
+                name.to_string()
             }
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _))) => {
-                name.as_ref()
+                name.to_string()
             }
             Self::Column(Column::Bound(BoundColumn {
                 field: Field { name, .. },
                 ..
-            })) => name.as_ref(),
+            })) => name.to_string(),
             Self::Not(expr) => expr.name(),
             Self::IsNull(expr) => expr.name(),
             Self::NotNull(expr) => expr.name(),
             Self::FillNull(expr, ..) => expr.name(),
             Self::IsIn(expr, ..) => expr.name(),
             Self::Between(expr, ..) => expr.name(),
-            Self::Literal(..) => "literal",
-            Self::List(..) => "list",
+            Self::Literal(..) => "literal".to_string(),
+            Self::List(..) => "list".to_string(),
             Self::Function { func, inputs } => match func {
-                FunctionExpr::Struct(StructExpr::Get(name)) => name,
-                _ => inputs.first().unwrap().name(),
+                FunctionExpr::Struct(StructExpr::Get(name)) => name.to_string(),
+                _ => inputs.first().unwrap().name().to_string(),
             },
             Self::ScalarFn(ScalarFn::Builtin(func)) => match func.name() {
-                "struct" => "struct", // FIXME: make struct its own expr variant
-                "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
-                _ => func.inputs.first().unwrap().name(),
+                "struct" => "struct".to_string(), // FIXME: make struct its own expr variant
+                "monotonically_increasing_id" => "monotonically_increasing_id".to_string(), // Special case for functions with no inputs
+                _ => func.inputs.first().unwrap().name().to_string(),
             },
             Self::BinaryOp {
                 op: _,
                 left,
                 right: _,
-            } => left.name(),
-            Self::IfElse { if_true, .. } => if_true.name(),
-            Self::Subquery(subquery) => subquery.name(),
-            Self::InSubquery(expr, _) => expr.name(),
-            Self::Exists(subquery) => subquery.name(),
-            Self::Over(expr, ..) => expr.name(),
-            Self::WindowFunction(expr) => expr.name(),
+            } => left.name().to_string(),
+            Self::IfElse { if_true, .. } => if_true.name().to_string(),
+            Self::Subquery(subquery) => subquery.name().to_string(),
+            Self::InSubquery(expr, _) => expr.name().to_string(),
+            Self::Exists(subquery) => subquery.name().to_string(),
+            Self::Over(expr, ..) => expr.name().to_string(),
+            Self::WindowFunction(expr) => expr.name().to_string(),
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
                 function_name: name,
                 args: children,
@@ -1744,7 +1748,7 @@ impl Expr {
                 if let Some(first_child) = children.first() {
                     first_child.name()
                 } else {
-                    name.as_ref()
+                    name.to_string()
                 }
             }
         }

@@ -183,7 +183,7 @@ impl TreeNodeRewriter for TruncateRootUDF {
                     .new_children
                     .iter()
                     .map(|e| e.name())
-                    .contains(&name.as_ref())
+                    .contains(name.as_ref())
                 {
                     self.new_children.push(node.clone());
                 }
@@ -249,7 +249,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
                     .new_children
                     .iter()
                     .map(|e| e.name())
-                    .contains(&name.as_ref())
+                    .contains(name.as_ref())
                 {
                     self.new_children.push(node.clone());
                 }
@@ -345,7 +345,7 @@ fn split_projection(
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
             for new_child in rewriter.new_children {
-                if !new_children_seen.contains(new_child.name()) {
+                if !new_children_seen.contains(new_child.name().as_str()) {
                     new_children_seen.insert(new_child.name().to_string());
                     new_children.push(new_child.clone());
                 }
@@ -357,7 +357,7 @@ fn split_projection(
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
             for new_child in rewriter.new_children {
-                if !new_children_seen.contains(new_child.name()) {
+                if !new_children_seen.contains(new_child.name().as_str()) {
                     new_children_seen.insert(new_child.name().to_string());
                     new_children.push(new_child.clone());
                 }

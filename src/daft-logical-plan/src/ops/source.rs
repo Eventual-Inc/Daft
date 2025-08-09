@@ -106,6 +106,20 @@ impl Source {
         self
     }
 
+    pub fn name(&self) -> String {
+        match self.source_info.as_ref() {
+            SourceInfo::Physical(PhysicalScanInfo { source_schema, .. }) => {
+                format!("Scan")
+            }
+            SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {
+                format!("In-Memory Scan")
+            }
+            SourceInfo::PlaceHolder(PlaceHolderInfo { source_schema, .. }) => {
+                format!("PlaceHolder")
+            }
+        }
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
 

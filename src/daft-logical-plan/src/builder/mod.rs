@@ -259,7 +259,7 @@ impl LogicalPlanBuilder {
         exprs.extend(
             columns
                 .iter()
-                .filter(|e| !current_col_names.contains(e.name()))
+                .filter(|e| !current_col_names.contains(e.name().as_str()))
                 .cloned(),
         );
 
