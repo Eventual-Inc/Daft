@@ -50,7 +50,7 @@ impl ScalarUDF for ListFill {
                 num_field.dtype
             )));
         }
-        elem_field.to_list_field()
+        Ok(elem_field.to_list_field())
     }
 }
 

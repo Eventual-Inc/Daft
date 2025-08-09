@@ -8,11 +8,9 @@ use std::{borrow::Cow, sync::Arc};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::DataArray,
-    datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field,
-        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array, Utf8Type,
-    },
+    datatypes::NumericNative,
+    prelude::*,
+    series::{ArrayWrapper, SeriesLike},
 };
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>
@@ -250,5 +248,127 @@ impl
     ) -> DaftResult<Self> {
         let (name, array) = item;
         Self::new(Field::new(name, DataType::Python).into(), Box::new(array))
+    }
+}
+
+impl TryFrom<(&str, &[&Series])> for ListArray {
+    type Error = DaftError;
+
+    fn try_from(item: (&str, &[&Series])) -> DaftResult<Self> {
+        let (name, data) = item;
+
+        let lengths = data.iter().map(|s| s.len());
+        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)?.into();
+        let flat_child = Series::concat(data)?;
+
+        Ok(Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            None,
+        ))
+    }
+}
+
+impl TryFrom<(&str, &[Option<&Series>])> for ListArray {
+    type Error = DaftError;
+
+    fn try_from(item: (&str, &[Option<&Series>])) -> DaftResult<Self> {
+        let (name, data) = item;
+
+        let lengths = data.iter().map(|s| s.map_or(0, Series::len));
+        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)?.into();
+
+        let validity =
+            arrow2::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+
+        let flat_child = Series::concat(&data.iter().flatten().copied().collect::<Vec<_>>())?;
+
+        Ok(Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            Some(validity),
+        ))
+    }
+}
+
+impl TryFrom<(&str, &[Option<Series>])> for ListArray {
+    type Error = DaftError;
+
+    fn try_from(item: (&str, &[Option<Series>])) -> DaftResult<Self> {
+        let (name, data) = item;
+
+        let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
+        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)?.into();
+
+        let validity =
+            arrow2::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+
+        let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
+
+        Ok(Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            Some(validity),
+        ))
+    }
+}
+
+impl<T: NumericNative> From<(&str, &[&[T]])> for ListArray
+where
+    T::DAFTTYPE: DaftNumericType<Native = T> + DaftArrowBackedType,
+    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+{
+    fn from(item: (&str, &[&[T]])) -> Self {
+        let (name, data) = item;
+        let flat_child_vec = data.iter().copied().flatten().copied().collect::<Vec<_>>();
+        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
+
+        let lengths = data.iter().map(|d| d.len());
+        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)
+            .unwrap()
+            .into();
+
+        Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            None,
+        )
+    }
+}
+
+impl<T: NumericNative> From<(&str, &[Option<&[T]>])> for ListArray
+where
+    T::DAFTTYPE: DaftNumericType<Native = T>,
+    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+{
+    fn from(item: (&str, &[Option<&[T]>])) -> Self {
+        let (name, data) = item;
+        let flat_child_vec = data
+            .iter()
+            .copied()
+            .flatten()
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
+
+        let lengths = data.iter().map(|d| d.map_or(0, |d| d.len()));
+        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)
+            .unwrap()
+            .into();
+
+        let validity =
+            arrow2::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+
+        Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            Some(validity),
+        )
     }
 }

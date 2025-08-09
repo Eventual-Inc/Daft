@@ -2452,6 +2452,7 @@ name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2471,6 +2472,7 @@ dependencies = [
  "fnv",
  "html-escape",
  "hyperloglog",
+ "image",
  "indexmap 2.9.0",
  "itertools 0.14.0",
  "log",
@@ -2480,6 +2482,7 @@ dependencies = [
  "numpy",
  "pyo3",
  "rand 0.9.1",
+ "rstest",
  "serde",
  "sketches-ddsketch",
  "xxhash-rust",

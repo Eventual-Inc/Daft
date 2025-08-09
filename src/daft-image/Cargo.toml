@@ -10,9 +10,8 @@ typetag = {workspace = true}
 base64.workspace = true
 
 [dependencies.image]
-default-features = false
 features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
-version = "0.25.5"
+workspace = true
 
 [features]
 python = ["common-error/python"]

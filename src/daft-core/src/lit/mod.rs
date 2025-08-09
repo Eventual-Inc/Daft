@@ -1,26 +1,31 @@
 mod conversions;
 mod deserializer;
+mod image_buffer;
 #[cfg(feature = "python")]
 mod python;
+
 use std::{
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
     io::{self, Write},
 };
 
+use common_display::table_display::StrValue;
 use common_error::{ensure, DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 #[cfg(feature = "python")]
 use common_py_serde::PyObjectWrapper;
+pub use image_buffer::{DaftImageBuffer, ImageBufferWrapper};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     datatypes::IntervalValue,
     prelude::*,
     utils::display::{
-        display_date32, display_decimal128, display_duration, display_list_literal, display_time64,
-        display_timestamp,
+        display_date32, display_decimal128, display_duration, display_series_in_literal,
+        display_time64, display_timestamp,
     },
 };
 
@@ -88,6 +93,30 @@ pub enum Literal {
     Python(PyObjectWrapper),
     /// TODO chore: audit struct literal vs. struct expression support.
     Struct(IndexMap<Field, Literal>),
+    /// A tensor
+    Tensor {
+        data: Series,
+        shape: Vec<u64>,
+    },
+    /// A sparse tensor (values, indices, shape, indices_offset)
+    SparseTensor {
+        values: Series,
+        indices: Vec<u64>,
+        shape: Vec<u64>,
+        indices_offset: bool,
+    },
+    /// Embedding data and size
+    Embedding {
+        data: Series,
+        size: usize,
+    },
+    /// Map keys and values
+    Map {
+        keys: Series,
+        values: Series,
+    },
+    // An image buffer
+    Image(ImageBufferWrapper),
 }
 
 impl Eq for Literal {}
@@ -95,7 +124,6 @@ impl Eq for Literal {}
 impl Hash for Literal {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            // Stable hash for Null variant.
             Self::Null => 1.hash(state),
             Self::Boolean(bool) => bool.hash(state),
             Self::Utf8(s) => s.hash(state),
@@ -125,7 +153,6 @@ impl Hash for Literal {
             Self::Interval(n) => {
                 n.hash(state);
             }
-            // Wrap floats in hashable newtype.
             Self::Float32(n) => FloatWrapper(*n).hash(state),
             Self::Float64(n) => FloatWrapper(*n).hash(state),
             Self::Decimal(n, precision, scale) => {
@@ -134,11 +161,7 @@ impl Hash for Literal {
                 scale.hash(state);
             }
             Self::List(series) => {
-                let hash_result = series.hash(None);
-                match hash_result {
-                    Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
-                    Err(..) => panic!("Cannot hash series"),
-                }
+                Hash::hash(series, state);
             }
             #[cfg(feature = "python")]
             Self::Python(py_obj) => py_obj.hash(state),
@@ -147,6 +170,32 @@ impl Hash for Literal {
                     v.hash(state);
                     f.hash(state);
                 });
+            }
+            Self::Tensor { data, shape } => {
+                Hash::hash(data, state);
+                shape.hash(state);
+            }
+            Self::SparseTensor {
+                values,
+                indices,
+                shape,
+                indices_offset,
+            } => {
+                Hash::hash(values, state);
+                indices.hash(state);
+                shape.hash(state);
+                indices_offset.hash(state);
+            }
+            Self::Embedding { data, size } => {
+                Hash::hash(data, state);
+                size.hash(state);
+            }
+            Self::Map { keys, values } => {
+                Hash::hash(keys, state);
+                Hash::hash(values, state);
+            }
+            Self::Image(image_buffer_wrapper) => {
+                image_buffer_wrapper.hash(state);
             }
         }
     }
@@ -178,7 +227,7 @@ impl Display for Literal {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
             }
             Self::Interval(value) => write!(f, "{value}"),
-            Self::List(series) => write!(f, "{}", display_list_literal(series)),
+            Self::List(series) => write!(f, "{}", display_series_in_literal(series)),
             #[cfg(feature = "python")]
             Self::Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
@@ -195,6 +244,48 @@ impl Display for Literal {
                 }
                 write!(f, ")")
             }
+            Self::Tensor { data, shape } => {
+                write!(
+                    f,
+                    "Tensor({}, shape=[{:?}]",
+                    display_series_in_literal(data),
+                    shape
+                )
+            }
+            Self::SparseTensor {
+                values,
+                indices,
+                shape,
+                indices_offset,
+            } => {
+                write!(
+                    f,
+                    "SparseTensor({}, indices=[{:?}], shape=[{:?}], indices_offset={}",
+                    display_series_in_literal(values),
+                    indices,
+                    shape,
+                    indices_offset
+                )
+            }
+            Self::Embedding { data, .. } => {
+                write!(f, "Embedding{}", display_series_in_literal(data))
+            }
+            Self::Map { keys, values } => {
+                assert_eq!(
+                    keys.len(),
+                    values.len(),
+                    "Key and value counts should be equal in map literal"
+                );
+
+                write!(
+                    f,
+                    "Map({})",
+                    (0..keys.len())
+                        .map(|i| { format!("{}: {}", keys.str_value(i), values.str_value(i)) })
+                        .join(", ")
+                )
+            }
+            Self::Image(image_buffer_wrapper) => write!(f, "Image({image_buffer_wrapper:?})"),
         }
     }
 }
@@ -231,6 +322,22 @@ impl Literal {
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
             Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
+            Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
+            Self::SparseTensor {
+                values,
+                indices_offset,
+                ..
+            } => DataType::SparseTensor(Box::new(values.data_type().clone()), *indices_offset),
+            Self::Embedding { data, size } => {
+                DataType::Embedding(Box::new(data.data_type().clone()), *size)
+            }
+            Self::Map { keys, values } => DataType::Map {
+                key: Box::new(keys.data_type().clone()),
+                value: Box::new(values.data_type().clone()),
+            },
+            Self::Image(image_buffer_wrapper) => {
+                DataType::Image(Some(DaftImageBuffer::from(&image_buffer_wrapper.0).mode()))
+            }
         }
     }
 
@@ -304,24 +411,25 @@ impl Literal {
             Self::Float64(val) => write!(buffer, "{}", val),
             Self::Utf8(val) => write!(buffer, "'{}'", val),
             Self::Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
-            // The `display_timestamp` function formats a timestamp in the ISO 8601 format: "YYYY-MM-DDTHH:MM:SS.fffff".
-            // ANSI SQL standard uses a space instead of 'T'. Some databases do not support 'T', hence it's replaced with a space.
-            // Reference: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.html
             Self::Timestamp(val, tu, tz) => write!(
                 buffer,
                 "TIMESTAMP '{}'",
                 display_timestamp(*val, tu, tz).replace('T', " ")
             ),
-            // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Self::Decimal(..)
             | Self::List(..)
             | Self::Time(..)
             | Self::Binary(..)
             | Self::Duration(..)
-            | Self::Interval(..) => display_sql_err,
+            | Self::Interval(..)
+            | Self::Struct(..)
+            | Self::Tensor { .. }
+            | Self::SparseTensor { .. }
+            | Self::Embedding { .. }
+            | Self::Map { .. }
+            | Self::Image(_) => display_sql_err,
             #[cfg(feature = "python")]
             Self::Python(..) => display_sql_err,
-            Self::Struct(..) => display_sql_err,
         }
     }
 

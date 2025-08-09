@@ -1,10 +1,9 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
-
-use crate::{
-    ops::{image_array_from_img_buffers, ImageOps},
-    DaftImageBuffer,
+use daft_core::{
+    array::ops::image::image_array_from_img_buffers, lit::DaftImageBuffer, prelude::*,
 };
+
+use crate::ops::ImageOps;
 fn image_decode_impl(
     ba: &BinaryArray,
     raise_error_on_failure: bool,
