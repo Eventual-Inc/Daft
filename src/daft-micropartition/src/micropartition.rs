@@ -387,7 +387,9 @@ impl MicroPartition {
         for batch in record_batches.iter() {
             assert!(
                 batch.schema == schema,
-                "Loaded MicroPartition's batch schema must match its own schema exactly"
+                "Loaded MicroPartition's batch schema must match its own schema exactly, found {} vs {}",
+                batch.schema,
+                schema,
             );
         }
 

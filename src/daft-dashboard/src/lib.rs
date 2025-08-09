@@ -266,16 +266,6 @@ fn generate_interactive_html(
             const closeButton = document.getElementById('close-button-' + dfId);
             let selectedCell = null;
 
-            // Function to check if the server is available
-            async function isServerAvailable() {{
-                try {{
-                    const response = await fetch(serverUrl + '/api/ping', {{ method: 'HEAD' }});
-                    return response.ok;
-                }} catch (e) {{
-                    return false;
-                }}
-            }}
-
             function closeSidePane(paneId) {{
                 const pane = document.getElementById('side-pane-' + paneId);
                 if (pane) {{
@@ -297,72 +287,65 @@ fn generate_interactive_html(
                 sidePaneContent.innerHTML = '<div style="text-align:center; padding:20px;"><span style="font-style:italic">Loading full content...</span></div>';
             }}
 
-            isServerAvailable().then((available) => {{
-                if (!available) {{
-                    // Server is unavailable, do not attach any handlers
-                    return;
-                }}
-
-                // Add event listener for close button
-                if (closeButton) {{
-                    closeButton.addEventListener('click', function() {{
-                        closeSidePane(dfId);
-                    }});
-                }}
-
-                cells.forEach((cell) => {{
-                    // Skip cells that do not have data-row and data-col attributes (e.g., ellipsis row)
-                    const rowAttr = cell.getAttribute('data-row');
-                    const colAttr = cell.getAttribute('data-col');
-                    if (rowAttr === null || colAttr === null) return;
-
-                    const row = parseInt(rowAttr);
-                    const col = parseInt(colAttr);
-                    cell.classList.add('clickable');
-
-                    cell.onclick = function() {{
-                        // Remove selection from previously selected cell
-                        if (selectedCell && selectedCell !== cell) {{
-                            selectedCell.classList.remove('selected');
-                        }}
-
-                        // Toggle selection for current cell
-                        if (selectedCell === cell) {{
-                            cell.classList.remove('selected');
-                            selectedCell = null;
-                            closeSidePane(dfId);
-                            return;
-                        }} else {{
-                            cell.classList.add('selected');
-                            selectedCell = cell;
-                        }}
-
-                        // Show the side pane immediately
-                        showSidePane(row, col, '');
-
-                        // Set a timeout to show loading content after 1 second
-                        const loadingTimeout = setTimeout(() => {{
-                            showLoadingContent();
-                        }}, 100);
-
-                        // Fetch the cell content
-                        fetch(serverUrl + '/api/dataframes/' + dfId + '/cell?row=' + row + '&col=' + col)
-                            .then(response => response.json())
-                            .then(data => {{
-                                clearTimeout(loadingTimeout);
-                                showSidePane(row, col, data.value);
-                            }})
-                            .catch(err => {{
-                                clearTimeout(loadingTimeout);
-                                // Get the original cell content from the table
-                                const cell = selectedCell;
-                                if (cell) {{
-                                    const originalContent = cell.innerHTML;
-                                    showSidePane(row, col, originalContent);
-                                }}
-                            }});
-                    }};
+            // Add event listener for close button
+            if (closeButton) {{
+                closeButton.addEventListener('click', function() {{
+                    closeSidePane(dfId);
                 }});
+            }}
+
+            cells.forEach((cell) => {{
+                // Skip cells that do not have data-row and data-col attributes (e.g., ellipsis row)
+                const rowAttr = cell.getAttribute('data-row');
+                const colAttr = cell.getAttribute('data-col');
+                if (rowAttr === null || colAttr === null) return;
+
+                const row = parseInt(rowAttr);
+                const col = parseInt(colAttr);
+                cell.classList.add('clickable');
+
+                cell.onclick = function() {{
+                    // Remove selection from previously selected cell
+                    if (selectedCell && selectedCell !== cell) {{
+                        selectedCell.classList.remove('selected');
+                    }}
+
+                    // Toggle selection for current cell
+                    if (selectedCell === cell) {{
+                        cell.classList.remove('selected');
+                        selectedCell = null;
+                        closeSidePane(dfId);
+                        return;
+                    }} else {{
+                        cell.classList.add('selected');
+                        selectedCell = cell;
+                    }}
+
+                    // Show the side pane immediately
+                    showSidePane(row, col, '');
+
+                    // Set a timeout to show loading content after 1 second
+                    const loadingTimeout = setTimeout(() => {{
+                        showLoadingContent();
+                    }}, 100);
+
+                    // Fetch the cell content
+                    fetch(serverUrl + '/api/dataframes/' + dfId + '/cell?row=' + row + '&col=' + col)
+                        .then(response => response.json())
+                        .then(data => {{
+                            clearTimeout(loadingTimeout);
+                            showSidePane(row, col, data.value);
+                        }})
+                        .catch(err => {{
+                            clearTimeout(loadingTimeout);
+                            // Get the original cell content from the table
+                            const cell = selectedCell;
+                            if (cell) {{
+                                const originalContent = cell.innerHTML;
+                                showSidePane(row, col, originalContent);
+                            }}
+                        }});
+                }};
             }});
         }})();
         </script>

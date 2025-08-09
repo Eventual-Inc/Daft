@@ -4,8 +4,7 @@ mod wrappers;
 
 use std::sync::Arc;
 
-use daft_core::python::PySchema;
-use daft_dsl::LiteralValue;
+use daft_core::{lit::Literal, python::PySchema};
 use daft_logical_plan::PyLogicalPlanBuilder;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyIndexError, intern, prelude::*, types::PyDict};
@@ -89,9 +88,7 @@ impl PyCatalog {
 pub struct PyTable(pub TableRef);
 
 impl PyTable {
-    fn pydict_to_options(
-        options: Option<&Bound<PyDict>>,
-    ) -> PyResult<IndexMap<String, LiteralValue>> {
+    fn pydict_to_options(options: Option<&Bound<PyDict>>) -> PyResult<IndexMap<String, Literal>> {
         if let Some(options) = options {
             options
                 .iter()

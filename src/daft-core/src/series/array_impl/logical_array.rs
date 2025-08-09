@@ -4,6 +4,7 @@ use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
     datatypes::prelude::*,
+    lit::Literal,
     series::{DaftResult, SeriesLike},
     with_match_integer_daft_types,
 };
@@ -180,6 +181,10 @@ macro_rules! impl_series_like_for_logical_array {
                     data_array.validity().cloned(),
                 )
                 .into_series())
+            }
+
+            fn get_lit(&self, idx: usize) -> Literal {
+                self.0.get_lit(idx)
             }
         }
     };

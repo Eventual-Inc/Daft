@@ -8,11 +8,13 @@ if sys.version_info < (3, 10):
 else:
     from typing import ParamSpec
 
+from daft import Series
 from daft.datatype import DataType
 from daft.expressions import Expression
-from daft.series import Series
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from daft.daft import PyDataType, PySeries
 
 
@@ -61,17 +63,49 @@ class RowWiseUdf(Generic[P, T]):
             return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), expr_args)
 
 
-def call_func_with_evaluated_exprs(
-    fn: Callable[..., Any],
+def __call_async_batch(
+    fn: Callable[..., Awaitable[Any]],
     return_dtype: PyDataType,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
-    evaluted_args: list[Any],
+    evaluated_args_list: list[list[Any]],
+) -> PySeries:
+    import asyncio
+
+    args, kwargs = original_args
+
+    tasks = []
+    for evaluated_args in evaluated_args_list:
+        new_args = [evaluated_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
+        new_kwargs = {
+            key: (evaluated_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()
+        }
+        coroutine = fn(*new_args, **new_kwargs)
+        tasks.append(coroutine)
+
+    async def run_tasks() -> list[Any]:
+        return await asyncio.gather(*tasks)
+
+    dtype = DataType._from_pydatatype(return_dtype)
+
+    try:
+        # try to use existing event loop
+        event_loop = asyncio.get_running_loop()
+        outputs = asyncio.run_coroutine_threadsafe(run_tasks(), event_loop).result()
+    except RuntimeError:
+        outputs = asyncio.run(run_tasks())
+
+    return Series.from_pylist(outputs, dtype=dtype)._series
+
+
+def __call_func(
+    fn: Callable[..., Any],
+    original_args: tuple[tuple[Any, ...], dict[str, Any]],
+    evaluated_args: list[Any],
 ) -> PySeries:
     args, kwargs = original_args
 
-    new_args = [evaluted_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
-    new_kwargs = {key: (evaluted_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()}
+    new_args = [evaluated_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
+    new_kwargs = {key: (evaluated_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()}
 
     output = fn(*new_args, **new_kwargs)
-    dtype = DataType._from_pydatatype(return_dtype)
-    return Series.from_pylist([output], dtype=dtype)._series
+    return output

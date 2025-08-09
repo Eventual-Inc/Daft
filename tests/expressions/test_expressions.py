@@ -416,7 +416,7 @@ def test_repr_functions_hash() -> None:
     a = col("a")
     y = a.hash()
     repr_out = repr(y)
-    assert repr_out == "hash(col(a))"
+    assert repr_out == 'hash(col(a), lit("xxhash"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -425,7 +425,7 @@ def test_repr_functions_hash_2() -> None:
     a = col("a")
     y = a.hash(lit(1))
     repr_out = repr(y)
-    assert repr_out == "hash(col(a), lit(1))"
+    assert repr_out == 'hash(col(a), lit(1), lit("xxhash"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -638,10 +638,10 @@ def test_duration_lit(input, expected) -> None:
     assert output == expected
 
 
-def test_repr_series_lit() -> None:
+def test_repr_list_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
-    assert output == "lit([[1, 2, 3]])"
+    assert output == "lit([1, 2, 3])"
 
 
 def test_list_value_counts():

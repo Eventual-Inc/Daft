@@ -1,6 +1,7 @@
 [dependencies]
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
@@ -16,6 +17,7 @@ uuid = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "common-py-serde/python",
   "common-error/python",
   "daft-core/python",
   "daft-dsl/python",

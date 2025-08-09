@@ -509,8 +509,8 @@ def udf(
         2. Iterates over the ``x`` Daft Series
         3. Adds a Python constant value ``c`` to every element in ``x``
         4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
-        5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://docs.getdaft.io/en/latest/api/dataframe/#daft.DataFrame.with_column),
-        [df.select()](https://docs.getdaft.io/en/latest/api/dataframe/#daft.DataFrame.select), etc.)
+        5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://docs.daft.ai/en/latest/api/dataframe/#daft.DataFrame.with_column),
+        [df.select()](https://docs.daft.ai/en/latest/api/dataframe/#daft.DataFrame.select), etc.)
 
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.int64())

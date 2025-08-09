@@ -6,6 +6,7 @@ import pytest
 
 import daft
 from tests.integration.io.conftest import YieldFixture
+from tests.utils import sort_pydict
 
 
 @pytest.fixture(scope="function")
@@ -31,7 +32,9 @@ def test_url_download_local(local_image_data_fixture, image_data):
     data = {"urls": local_image_data_fixture}
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download())
-    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(local_image_data_fixture))]}
+    assert sort_pydict(df.to_pydict(), "urls") == sort_pydict(
+        {**data, "data": [image_data for _ in range(len(local_image_data_fixture))]}, "urls"
+    )
 
 
 @pytest.mark.integration()

@@ -3,6 +3,7 @@ common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-metrics = {path = "src/common/metrics", default-features = false}
 common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
@@ -233,6 +234,7 @@ common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
+common-metrics = {path = "src/common/metrics"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-algebra = {path = "src/daft-algebra"}
 daft-context = {path = "src/daft-context"}
@@ -264,6 +266,7 @@ educe = "0.6.0"
 futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.9.0"
+indicatif = "0.18"
 itertools = "0.14"
 jaq-core = "2.2.0"
 jaq-json = {version = "1.1.2", features = ["serde_json"]}
@@ -289,6 +292,7 @@ serde_json = "1.0.133"
 sha1 = "0.11.0-pre.4"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
+smallvec = {version = "1.15.1", features = ["serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"

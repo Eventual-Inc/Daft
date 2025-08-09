@@ -17,8 +17,9 @@ use tracing::{instrument, Span};
 
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::RuntimeStatsBuilder,
+    runtime_stats::RuntimeStats,
     streaming_sink::{
         async_ops::template::{
             AsyncOpRuntimeStatsBuilder, AsyncOpState, AsyncSinkState, IN_FLIGHT_SCALE_FACTOR,
@@ -193,7 +194,7 @@ impl StreamingSink for UrlDownloadSink {
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         let input_schema = self.input_schema.clone();
-        let builder = spawner.runtime_context.builder.clone();
+        let stats = spawner.runtime_stats.clone();
 
         spawner
             .spawn(
@@ -203,7 +204,7 @@ impl StreamingSink for UrlDownloadSink {
                         .downcast_mut::<UrlDownloadSinkState>()
                         .expect("UrlDownload sink should have UrlDownloadSinkState");
 
-                    let stats = builder.as_any_arc();
+                    let stats = stats.as_any_arc();
                     let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
                         "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
                     );
@@ -240,7 +241,7 @@ impl StreamingSink for UrlDownloadSink {
         mut states: Vec<Box<dyn StreamingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
-        let builder = spawner.runtime_context.builder.clone();
+        let stats = spawner.runtime_stats.clone();
 
         spawner
             .spawn(
@@ -253,7 +254,7 @@ impl StreamingSink for UrlDownloadSink {
                         .downcast_mut::<UrlDownloadSinkState>()
                         .expect("UrlDownload sink state should be UrlDownloadSinkState");
 
-                    let stats = builder.as_any_arc();
+                    let stats = stats.as_any_arc();
                     let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
                         "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
                     );
@@ -290,6 +291,10 @@ impl StreamingSink for UrlDownloadSink {
         "URL Download".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::UrlDownload
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         vec![
             format!(
@@ -322,7 +327,7 @@ impl StreamingSink for UrlDownloadSink {
         ))
     }
 
-    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(AsyncOpRuntimeStatsBuilder::new())
     }
 

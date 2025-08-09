@@ -27,6 +27,7 @@ use std::sync::{
 };
 
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use common_runtime::NUM_CPUS;
 use daft_core::{
     prelude::{BooleanArray, SchemaRef, UInt64Array},
@@ -35,11 +36,9 @@ use daft_core::{
 use daft_dsl::expr::BoundColumn;
 use daft_micropartition::{partitioning::Partition, MicroPartition};
 use daft_recordbatch::RecordBatch;
-use indexmap::IndexMap;
-use indicatif::HumanCount;
 
 use crate::{
-    runtime_stats::{RuntimeStatsBuilder, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
     streaming_sink::base::StreamingSinkState,
 };
 
@@ -81,13 +80,19 @@ pub fn build_output(
 }
 
 pub struct AsyncOpRuntimeStatsBuilder {
+    rows_received: AtomicU64,
+    rows_emitted: AtomicU64,
     num_download_failed: AtomicU64,
+    cpu_us: AtomicU64,
 }
 
 impl AsyncOpRuntimeStatsBuilder {
     pub fn new() -> Self {
         Self {
+            rows_received: AtomicU64::new(0),
+            rows_emitted: AtomicU64::new(0),
             num_download_failed: AtomicU64::new(0),
+            cpu_us: AtomicU64::new(0),
         }
     }
 
@@ -96,23 +101,30 @@ impl AsyncOpRuntimeStatsBuilder {
     }
 }
 
-impl RuntimeStatsBuilder for AsyncOpRuntimeStatsBuilder {
+impl RuntimeStats for AsyncOpRuntimeStatsBuilder {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
 
-    fn build(
-        &self,
-        stats: &mut IndexMap<&'static str, String>,
-        rows_received: u64,
-        rows_emitted: u64,
-    ) {
-        stats.insert(ROWS_RECEIVED_KEY, rows_received.to_string());
-        stats.insert(ROWS_EMITTED_KEY, rows_emitted.to_string());
-        stats.insert(
-            "failed downloads",
-            HumanCount(self.num_download_failed.load(Ordering::Relaxed)).to_string(),
-        );
+    fn add_rows_received(&self, rows: u64) {
+        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_rows_emitted(&self, rows: u64) {
+        self.rows_emitted.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+    }
+
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        snapshot![
+            CPU_US_KEY; Stat::Count(self.cpu_us.load(ordering)),
+            ROWS_RECEIVED_KEY; Stat::Count(self.rows_received.load(ordering)),
+            ROWS_EMITTED_KEY; Stat::Count(self.rows_emitted.load(ordering)),
+            "failed downloads"; Stat::Count(self.num_download_failed.load(ordering)),
+        ]
     }
 }
 

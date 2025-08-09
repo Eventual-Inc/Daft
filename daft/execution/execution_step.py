@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
 
-
 ID_GEN = itertools.count()
 
 
@@ -711,19 +710,22 @@ class LocalCount(SingleOutputInstruction):
 @dataclass(frozen=True)
 class LocalLimit(SingleOutputInstruction):
     limit: int
+    offset: int
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._limit(inputs)
 
     def _limit(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
-        return [input.head(self.limit)]
+        return [input.slice(self.offset, self.limit + self.offset)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
             PartialPartitionMetadata(
-                num_rows=(min(self.limit, input_meta.num_rows) if input_meta.num_rows is not None else None),
+                num_rows=(
+                    min(input_meta.num_rows, self.limit + self.offset) if input_meta.num_rows is not None else None
+                ),
                 size_bytes=None,
                 boundaries=input_meta.boundaries,
             )

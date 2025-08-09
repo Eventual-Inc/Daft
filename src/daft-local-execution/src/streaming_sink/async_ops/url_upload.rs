@@ -8,7 +8,10 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::expr::{bound_expr::BoundExpr, BoundColumn};
-use daft_functions_uri::{upload::UrlUploadArgsDefault, UrlUploadArgs};
+use daft_functions_uri::{
+    upload::{prepare_folder_paths, UrlUploadArgsDefault},
+    UrlUploadArgs,
+};
 use daft_io::{get_io_client, IOClient};
 use daft_micropartition::MicroPartition;
 use tokio::task::JoinSet;
@@ -17,8 +20,9 @@ use tracing::{instrument, Span};
 
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::RuntimeStatsBuilder,
+    runtime_stats::RuntimeStats,
     streaming_sink::{
         async_ops::template::{
             AsyncOpRuntimeStatsBuilder, AsyncOpState, AsyncSinkState, IN_FLIGHT_SCALE_FACTOR,
@@ -93,20 +97,28 @@ impl AsyncOpState for UrlUploadOpState {
             let data_col = data_col.binary()?.as_arrow();
 
             let location_col = input.eval_expression(&self.args.location)?;
-            let location_col = location_col.utf8()?.as_arrow();
+            let location_col = prepare_folder_paths(
+                location_col.utf8()?,
+                data_col.len(),
+                self.args.is_single_folder,
+            )?;
 
-            for (data_val, location_val) in data_col.iter().zip(location_col.iter()) {
+            for (data_val, location_val) in data_col.iter().zip(location_col.into_iter()) {
                 let submitted_uploads = self.submitted_uploads;
                 let data_val = data_val.map(Bytes::copy_from_slice);
-                let Some(location_val) = location_val.map(ToString::to_string) else {
-                    continue;
-                };
                 let io_client = self.io_client.clone();
+
+                let path = if self.args.is_single_folder {
+                    format!("{}/{}", location_val, uuid::Uuid::new_v4())
+                } else {
+                    location_val
+                };
+
                 let handle = self.io_runtime_handle.spawn(async move {
                     let url = io_client
                         .single_url_upload(
                             submitted_uploads,
-                            location_val,
+                            path,
                             data_val,
                             raise_error_on_failure,
                             None,
@@ -220,7 +232,7 @@ impl StreamingSink for UrlUploadSink {
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         let input_schema = self.input_schema.clone();
-        let builder = spawner.runtime_context.builder.clone();
+        let stats = spawner.runtime_stats.clone();
 
         spawner
             .spawn(
@@ -230,7 +242,7 @@ impl StreamingSink for UrlUploadSink {
                         .downcast_mut::<UrlUploadSinkState>()
                         .expect("UrlUpload sink should have UrlUploadSinkState");
 
-                    let stats = builder.as_any_arc();
+                    let stats = stats.as_any_arc();
                     let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
                         "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
                     );
@@ -267,7 +279,7 @@ impl StreamingSink for UrlUploadSink {
         mut states: Vec<Box<dyn StreamingSinkState>>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
-        let builder = spawner.runtime_context.builder.clone();
+        let stats = spawner.runtime_stats.clone();
 
         spawner
             .spawn(
@@ -280,7 +292,7 @@ impl StreamingSink for UrlUploadSink {
                         .downcast_mut::<UrlUploadSinkState>()
                         .expect("UrlUpload sink state should be UrlUploadSinkState");
 
-                    let stats = builder.as_any_arc();
+                    let stats = stats.as_any_arc();
                     let stats = stats.downcast_ref::<AsyncOpRuntimeStatsBuilder>().expect(
                         "AsyncOpRuntimeStatsBuilder should be the additional stats builder",
                     );
@@ -317,6 +329,10 @@ impl StreamingSink for UrlUploadSink {
         "Url Upload".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::UrlUpload
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         vec![
             "URL Upload".to_string(),
@@ -338,7 +354,7 @@ impl StreamingSink for UrlUploadSink {
         ))
     }
 
-    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(AsyncOpRuntimeStatsBuilder::new())
     }
 

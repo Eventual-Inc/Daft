@@ -2,10 +2,10 @@ use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
 use common_error::{ensure, DaftError, DaftResult};
 use common_runtime::get_io_runtime;
-use daft_core::prelude::*;
+use daft_core::{lit::Literal, prelude::*};
 use daft_dsl::{
     functions::{FunctionArg, FunctionArgs, ScalarUDF},
-    ExprRef, LiteralValue,
+    Expr, ExprRef,
 };
 use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
@@ -44,25 +44,25 @@ where
         if let Some(max_connections) = self.max_connections {
             args.push(FunctionArg::named(
                 "max_connections",
-                LiteralValue::Int64(max_connections as i64).into(),
+                Expr::Literal(Literal::Int64(max_connections as i64)).into(),
             ));
         }
         if let Some(on_error) = &self.on_error {
             args.push(FunctionArg::named(
                 "on_error",
-                LiteralValue::Utf8(on_error.clone()).into(),
+                Expr::Literal(Literal::Utf8(on_error.clone())).into(),
             ));
         }
         if let Some(multi_thread) = self.multi_thread {
             args.push(FunctionArg::named(
                 "multi_thread",
-                LiteralValue::Boolean(multi_thread).into(),
+                Expr::Literal(Literal::Boolean(multi_thread)).into(),
             ));
         }
         if let Some(is_single_folder) = self.is_single_folder {
             args.push(FunctionArg::named(
                 "is_single_folder",
-                LiteralValue::Boolean(is_single_folder).into(),
+                Expr::Literal(Literal::Boolean(is_single_folder)).into(),
             ));
         }
         if let Some(io_config) = &self.io_config {
@@ -77,9 +77,9 @@ where
                     let py_lit = io_config.into_pyobject(py).unwrap().unbind().into();
                     args.push(FunctionArg::named(
                         "io_config",
-                        LiteralValue::Python(daft_dsl::pyobj_serde::PyObjectWrapper(Arc::new(
+                        Expr::Literal(Literal::Python(common_py_serde::PyObjectWrapper(Arc::new(
                             py_lit,
-                        )))
+                        ))))
                         .into(),
                     ));
                 });
@@ -252,7 +252,8 @@ fn instantiate_and_trim_path(
 ///
 /// If `is_single_folder` is set, the prepared path is repeated `len` times.
 /// Otherwise, we return the array of prepared paths.
-fn prepare_folder_paths(
+#[allow(clippy::too_long_first_doc_paragraph)]
+pub fn prepare_folder_paths(
     arr: &Utf8Array,
     len: usize,
     is_single_folder: bool,

@@ -7,7 +7,7 @@ use daft_micropartition::MicroPartition;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
-    runtime_stats::CountingReceiver,
+    runtime_stats::InitializingCountingReceiver,
     RuntimeHandle, SpawnedTask,
 };
 
@@ -24,7 +24,7 @@ use crate::{
 pub(crate) trait DispatchSpawner {
     fn spawn_dispatch(
         &self,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult;
@@ -66,7 +66,7 @@ impl RoundRobinDispatcher {
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: usize,
     ) -> DaftResult<()> {
@@ -105,7 +105,7 @@ impl RoundRobinDispatcher {
 impl DispatchSpawner for RoundRobinDispatcher {
     fn spawn_dispatch(
         &self,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {
@@ -161,7 +161,7 @@ impl UnorderedDispatcher {
 
     async fn dispatch_inner(
         worker_sender: Sender<Arc<MicroPartition>>,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: usize,
     ) -> DaftResult<()> {
@@ -193,7 +193,7 @@ impl UnorderedDispatcher {
 impl DispatchSpawner for UnorderedDispatcher {
     fn spawn_dispatch(
         &self,
-        receiver: Vec<CountingReceiver>,
+        receiver: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {
@@ -232,7 +232,7 @@ impl PartitionedDispatcher {
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<()> {
         for receiver in input_receivers {
@@ -253,7 +253,7 @@ impl PartitionedDispatcher {
 impl DispatchSpawner for PartitionedDispatcher {
     fn spawn_dispatch(
         &self,
-        input_receivers: Vec<CountingReceiver>,
+        input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {

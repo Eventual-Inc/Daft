@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use common_error::{ensure, DaftError, DaftResult};
 use common_runtime::get_io_runtime;
-use daft_core::prelude::*;
+use daft_core::{lit::Literal, prelude::*};
 use daft_dsl::{
     functions::{FunctionArg, FunctionArgs, ScalarUDF},
-    ExprRef, LiteralValue,
+    Expr, ExprRef,
 };
 use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
@@ -46,19 +46,19 @@ where
         if let Some(multi_thread) = self.multi_thread {
             args.push(FunctionArg::named(
                 "multi_thread",
-                LiteralValue::Boolean(multi_thread).into(),
+                Expr::Literal(Literal::Boolean(multi_thread)).into(),
             ));
         }
         if let Some(on_error) = &self.on_error {
             args.push(FunctionArg::named(
                 "on_error",
-                LiteralValue::Utf8(on_error.clone()).into(),
+                Expr::Literal(Literal::Utf8(on_error.clone())).into(),
             ));
         }
         if let Some(max_connections) = self.max_connections {
             args.push(FunctionArg::named(
                 "max_connections",
-                LiteralValue::Int64(max_connections as i64).into(),
+                Expr::Literal(Literal::Int64(max_connections as i64)).into(),
             ));
         }
         if let Some(io_config) = &self.io_config {
@@ -70,12 +70,14 @@ where
                 let io_config = PyIOConfig::from(io_config.clone());
 
                 Python::with_gil(|py| {
+                    use daft_dsl::Expr;
+
                     let py_lit = io_config.into_pyobject(py).unwrap().unbind().into();
                     args.push(FunctionArg::named(
                         "io_config",
-                        LiteralValue::Python(daft_dsl::pyobj_serde::PyObjectWrapper(Arc::new(
+                        Expr::Literal(Literal::Python(common_py_serde::PyObjectWrapper(Arc::new(
                             py_lit,
-                        )))
+                        ))))
                         .into(),
                     ));
                 });

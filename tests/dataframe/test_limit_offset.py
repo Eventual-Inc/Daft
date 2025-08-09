@@ -4,7 +4,6 @@ import pytest
 
 import daft
 from daft import DataType, col
-from tests.conftest import get_tests_daft_runner_name
 
 
 @pytest.fixture(scope="session")
@@ -137,30 +136,18 @@ def test_limit_with_sort(input_df):
     assert df.to_pydict() == {"name": []}
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_negative_offset(input_df):
     with pytest.raises(ValueError) as excinfo:
         input_df.select("name").offset(-1).limit(1).collect()
     assert "OFFSET <n> must be greater than or equal to 0, instead got: -1" in str(excinfo.value)
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_offset_without_limit(input_df):
     with pytest.raises(Exception) as excinfo:
         input_df.select("name").offset(17).collect()
     assert "Not Yet Implemented: Offset without limit is unsupported now!" in str(excinfo.value)
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_limit_before_offset(input_df):
     df = input_df.select("name").limit(7).offset(0)
     assert df.count_rows() == 7
@@ -207,10 +194,6 @@ def test_limit_before_offset(input_df):
     assert df.count_rows() == 3
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_limit_after_offset(input_df):
     df = input_df.select("name").offset(2).limit(0)
     assert df.count_rows() == 0
@@ -269,10 +252,6 @@ def test_limit_after_offset(input_df):
     assert df.count_rows() == 3
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_limit_before_offset_with_sort(input_df):
     df = input_df.select("id", "name").sort(by=col("id"), desc=False).limit(7).offset(0)
     assert df.to_pydict() == {"id": [i for i in range(0, 7)], "name": [f"user_{i}" for i in range(0, 7)]}
@@ -374,10 +353,6 @@ def test_limit_before_offset_with_sort(input_df):
     assert df.to_pydict() == {"name": [f"user_{i}" for i in range(2, -1, -1)]}
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_limit_after_offset_with_sort(input_df):
     df = input_df.select("id", "name").sort(by=col("id"), desc=False).offset(2).limit(0)
     assert df.count_rows() == 0
@@ -481,10 +456,6 @@ def test_limit_after_offset_with_sort(input_df):
     assert df.to_pydict() == {"name": []}
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() != "native",
-    reason="Offset operator only implemented in the native runner now",
-)
 def test_paging(input_df):
     offset = 0
     limit = 100
@@ -500,3 +471,19 @@ def test_paging(input_df):
             "name": [f"user_{i}" for i in range(offset, min(total, offset + limit))],
         }
         offset += limit
+
+
+def test_multiple_limits():
+    df = daft.range(1000, partitions=100)
+    df = df.filter(daft.col("id") > 100).limit(900)
+    df = df.filter(daft.col("id") > 200).limit(800)
+    df = df.filter(daft.col("id") > 300).limit(700)
+    df = df.filter(daft.col("id") > 400).limit(600)
+    df = df.filter(daft.col("id") > 500).limit(500)
+    df = df.filter(daft.col("id") > 600).limit(400)
+    df = df.filter(daft.col("id") > 700).limit(300)
+    df = df.filter(daft.col("id") > 800).limit(200)
+    df = df.filter(daft.col("id") > 900).limit(100)
+
+    df = df.to_pydict()
+    assert df["id"] == [i for i in range(901, 1000)]
