@@ -31,14 +31,11 @@ impl IntermediateOperator for IntoBatchesOperator {
             .spawn(
                 async move {
                     let out = match input.concat_or_get(IOStatsContext::new("into_batches"))? {
-                        Some(out) => {
-                            let out = MicroPartition::new_loaded(
-                                input.schema(),
-                                Arc::new(vec![out]),
-                                None,
-                            );
-                            Arc::new(out)
-                        }
+                        Some(record_batch) => Arc::new(MicroPartition::new_loaded(
+                            input.schema(),
+                            Arc::new(vec![record_batch]),
+                            None,
+                        )),
                         None => Arc::new(MicroPartition::empty(Some(input.schema()))),
                     };
                     Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(out))))
