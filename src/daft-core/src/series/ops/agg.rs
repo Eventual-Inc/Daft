@@ -361,7 +361,7 @@ impl DaftSetAggable for Series {
         let deduped_series = child_series.take(&indices_array)?;
 
         let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
-        let list_field = self.field().to_list_field()?;
+        let list_field = self.field().to_list_field();
         Ok(ListArray::new(list_field, deduped_series, offsets, None))
     }
 
@@ -398,7 +398,7 @@ impl DaftSetAggable for Series {
             offsets.push(offsets.last().unwrap() + unique_indices.len() as i64);
         }
 
-        let list_field = self.field().to_list_field()?;
+        let list_field = self.field().to_list_field();
         let result = ListArray::new(
             list_field,
             growable.build()?,

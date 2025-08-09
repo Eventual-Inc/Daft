@@ -32,6 +32,7 @@ mod hash;
 mod hll_merge;
 mod hll_sketch;
 mod if_else;
+pub mod image;
 mod is_in;
 mod len;
 mod list_agg;

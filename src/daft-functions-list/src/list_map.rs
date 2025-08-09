@@ -30,7 +30,7 @@ impl ScalarUDF for ListMap {
         let offsets = list_arr.offsets();
         let validity = list_arr.validity().cloned();
 
-        let field = result_arr.field().to_list_field()?;
+        let field = result_arr.field().to_list_field();
 
         let res = ListArray::new(field, result_arr, offsets.clone(), validity);
         Ok(res.into_series())
@@ -46,6 +46,6 @@ impl ScalarUDF for ListMap {
         let input = input.to_field(schema)?;
         let expr = expr.to_field(schema)?;
 
-        Ok(expr.to_list_field()?.rename(input.name))
+        Ok(expr.to_list_field().rename(input.name))
     }
 }

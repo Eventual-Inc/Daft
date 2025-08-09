@@ -33,6 +33,16 @@ fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
+image = {workspace = true, features = [
+  "gif",
+  "jpeg",
+  "ico",
+  "png",
+  "tiff",
+  "webp",
+  "bmp",
+  "hdr"
+]}
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
 log = {workspace = true}
@@ -51,6 +61,9 @@ version = "0.25.0"
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3", "xxh64"]
 version = "0.8.5"
+
+[dev-dependencies]
+rstest = {workspace = true}
 
 [features]
 python = [

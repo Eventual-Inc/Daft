@@ -49,10 +49,10 @@ impl ScalarUDF for ListChunk {
 
         ensure!(size > 0, ValueError: "Expected non zero integer for 'size'");
 
-        input_field
+        Ok(input_field
             .to_exploded_field()?
             .to_fixed_size_list_field(size)?
-            .to_list_field()
+            .to_list_field())
     }
 }
 

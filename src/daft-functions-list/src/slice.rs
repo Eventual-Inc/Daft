@@ -61,7 +61,7 @@ impl ScalarUDF for ListSlice {
             );
         }
 
-        input.to_exploded_field()?.to_list_field()
+        Ok(input.to_exploded_field()?.to_list_field())
     }
 }
 
