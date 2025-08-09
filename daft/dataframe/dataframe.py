@@ -2580,7 +2580,7 @@ class DataFrame:
             ...     assert len(block) == 2, f"Expected batch size 2, got {len(block)}"
         """
         if get_context().get_or_create_runner().name == "ray":
-            warnings.warn("DataFrame.into_batches not yet implemented on the RayRunner. This will be a no-op")
+            raise NotImplementedError("DataFrame.into_batches not yet implemented on the RayRunner")
 
         if batch_size <= 0:
             raise ValueError("batch_size must be greater than 0")
