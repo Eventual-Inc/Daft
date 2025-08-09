@@ -6,7 +6,6 @@ use tracing::instrument;
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
-    StreamingSinkState,
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
@@ -15,16 +14,10 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-struct ConcatSinkState {}
-impl StreamingSinkState for ConcatSinkState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 pub struct ConcatSink {}
 
 impl StreamingSink for ConcatSink {
+    type State = ();
     /// By default, if the streaming_sink is called with maintain_order = true, input is distributed round-robin to the workers,
     /// and the output is received in the same order. Therefore, the 'execute' method does not need to do anything.
     /// If maintain_order = false, the input is distributed randomly to the workers, and the output is received in random order.
@@ -32,9 +25,9 @@ impl StreamingSink for ConcatSink {
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn StreamingSinkState>,
+        state: Self::State,
         _spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult {
+    ) -> StreamingSinkExecuteResult<Self> {
         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
     }
 
@@ -52,15 +45,13 @@ impl StreamingSink for ConcatSink {
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn StreamingSinkState>>,
+        _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(ConcatSinkState {})
-    }
+    fn make_state(&self) -> Self::State {}
 
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()

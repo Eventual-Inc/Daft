@@ -19,43 +19,47 @@ use crate::{
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
-pub trait BlockingSinkState: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
 
-pub enum BlockingSinkStatus {
-    NeedMoreInput(Box<dyn BlockingSinkState>),
+pub enum BlockingSinkStatus<Op: BlockingSink> {
+    NeedMoreInput(Op::State),
     #[allow(dead_code)]
-    Finished(Box<dyn BlockingSinkState>),
+    Finished(Op::State),
 }
 
-pub enum BlockingSinkFinalizeOutput {
+pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
     #[allow(dead_code)]
     HasMoreOutput {
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Op::State>,
         output: Vec<Arc<MicroPartition>>,
     },
     Finished(Vec<Arc<MicroPartition>>),
 }
 
-pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<BlockingSinkStatus>>;
-pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkFinalizeOutput>>;
-pub trait BlockingSink: Send + Sync {
+pub(crate) type BlockingSinkSinkResult<Op> = OperatorOutput<DaftResult<BlockingSinkStatus<Op>>>;
+pub(crate) type BlockingSinkFinalizeResult<Op> =
+    OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
+pub(crate) trait BlockingSink: Send + Sync {
+    type State: Send + Sync + Unpin;
+
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn BlockingSinkState>,
+        state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult;
+    ) -> BlockingSinkSinkResult<Self>
+    where
+        Self: Sized;
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult;
+    ) -> BlockingSinkFinalizeResult<Self>
+    where
+        Self: Sized;
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
+    fn make_state(&self) -> DaftResult<Self::State>;
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::default())
     }
@@ -72,17 +76,17 @@ pub trait BlockingSink: Send + Sync {
     }
 }
 
-pub struct BlockingSinkNode {
-    op: Arc<dyn BlockingSink>,
+pub struct BlockingSinkNode<Op: BlockingSink> {
+    op: Arc<Op>,
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
 }
 
-impl BlockingSinkNode {
+impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     pub(crate) fn new(
-        op: Arc<dyn BlockingSink>,
+        op: Arc<Op>,
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
@@ -105,11 +109,11 @@ impl BlockingSinkNode {
 
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
-        op: Arc<dyn BlockingSink>,
+        op: Arc<Op>,
         input_receiver: Receiver<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Box<dyn BlockingSinkState>> {
+    ) -> DaftResult<Op::State> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
         let spawner =
@@ -131,9 +135,9 @@ impl BlockingSinkNode {
     }
 
     fn spawn_workers(
-        op: Arc<dyn BlockingSink>,
+        op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
+        task_set: &mut TaskSet<DaftResult<Op::State>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
     ) {
@@ -148,7 +152,7 @@ impl BlockingSinkNode {
     }
 }
 
-impl TreeDisplay for BlockingSinkNode {
+impl<Op: BlockingSink> TreeDisplay for BlockingSinkNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -180,7 +184,7 @@ impl TreeDisplay for BlockingSinkNode {
     }
 }
 
-impl PipelineNode for BlockingSinkNode {
+impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![self.child.as_ref()]
     }
