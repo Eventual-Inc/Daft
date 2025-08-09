@@ -15,6 +15,7 @@ pub enum NodeType {
     Explode,
     Filter,
     InnerHashJoinProbe,
+    IntoBatches,
     Project,
     Sample,
     UDFProject,

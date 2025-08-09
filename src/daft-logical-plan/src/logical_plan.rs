@@ -28,6 +28,7 @@ pub enum LogicalPlan {
     Project(Project),
     UDFProject(UDFProject),
     Filter(Filter),
+    IntoBatches(IntoBatches),
     Limit(Limit),
     Offset(Offset),
     Explode(Explode),
@@ -134,6 +135,7 @@ impl LogicalPlan {
                 projected_schema, ..
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
+            Self::IntoBatches(IntoBatches { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Offset(Offset { input, .. }) => input.schema(),
             Self::Explode(Explode {
@@ -165,6 +167,7 @@ impl LogicalPlan {
         match self {
             Self::Shard(..)
             | Self::Limit(..)
+            | Self::IntoBatches(..)
             | Self::Offset(..)
             | Self::Sample(..)
             | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
@@ -322,6 +325,7 @@ impl LogicalPlan {
             Self::Project(..) => "Project",
             Self::UDFProject(..) => "UDFProject",
             Self::Filter(..) => "Filter",
+            Self::IntoBatches(..) => "IntoBatches",
             Self::Limit(..) => "Limit",
             Self::Offset(..) => "Offset",
             Self::Explode(..) => "Explode",
@@ -351,6 +355,7 @@ impl LogicalPlan {
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
+            | Self::IntoBatches(IntoBatches { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Offset(Offset { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -389,6 +394,7 @@ impl LogicalPlan {
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
+            Self::IntoBatches(plan) => Self::IntoBatches(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
@@ -423,6 +429,7 @@ impl LogicalPlan {
             Self::Project(projection) => projection.multiline_display(),
             Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
+            Self::IntoBatches(into_batches) => into_batches.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Offset(offset) => offset.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
@@ -454,6 +461,7 @@ impl LogicalPlan {
             Self::Project(Project { input, .. }) => vec![input],
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
+            Self::IntoBatches(IntoBatches { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Offset(Offset { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
@@ -488,6 +496,7 @@ impl LogicalPlan {
                     ).unwrap()),
                 Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
+                Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size)),
                 Self::Limit(Limit { limit, offset, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
                 Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
@@ -641,6 +650,7 @@ impl LogicalPlan {
             | Self::Project(Project { plan_id, .. })
             | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
+            | Self::IntoBatches(IntoBatches { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Offset(Offset { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
@@ -670,6 +680,7 @@ impl LogicalPlan {
             | Self::Project(Project { node_id, .. })
             | Self::UDFProject(UDFProject { node_id, .. })
             | Self::Filter(Filter { node_id, .. })
+            | Self::IntoBatches(IntoBatches { node_id, .. })
             | Self::Limit(Limit { node_id, .. })
             | Self::Offset(Offset { node_id, .. })
             | Self::Explode(Explode { node_id, .. })
@@ -700,6 +711,9 @@ impl LogicalPlan {
             Self::Project(project) => Self::Project(project.with_plan_id(plan_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
+            Self::IntoBatches(into_batches) => {
+                Self::IntoBatches(into_batches.with_plan_id(plan_id))
+            }
             Self::Limit(limit) => Self::Limit(limit.with_plan_id(plan_id)),
             Self::Offset(offset) => Self::Offset(offset.with_plan_id(plan_id)),
             Self::Explode(explode) => Self::Explode(explode.with_plan_id(plan_id)),
@@ -732,6 +746,9 @@ impl LogicalPlan {
             Self::Project(project) => Self::Project(project.with_node_id(node_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
             Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
+            Self::IntoBatches(into_batches) => {
+                Self::IntoBatches(into_batches.with_node_id(node_id))
+            }
             Self::Limit(limit) => Self::Limit(limit.with_node_id(node_id)),
             Self::Offset(offset) => Self::Offset(offset.with_node_id(node_id)),
             Self::Explode(explode) => Self::Explode(explode.with_node_id(node_id)),
@@ -842,6 +859,7 @@ impl_from_data_struct_for_logical_plan!(Source);
 impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
+impl_from_data_struct_for_logical_plan!(IntoBatches);
 impl_from_data_struct_for_logical_plan!(Limit);
 impl_from_data_struct_for_logical_plan!(Offset);
 impl_from_data_struct_for_logical_plan!(Explode);

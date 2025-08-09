@@ -190,6 +190,7 @@ impl ToFromProto for ir::rel::LogicalPlan {
             | Self::Unpivot(_)
             | Self::Sort(_)
             | Self::Repartition(_)
+            | Self::IntoBatches(_)
             | Self::Pivot(_)
             | Self::Join(_)
             | Self::Sink(_)

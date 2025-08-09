@@ -198,6 +198,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
+            LogicalPlan::IntoBatches(_into_batches) => {
+                todo!("IntoBatches not yet supported in the distributed pipeline node translator")
+            }
             LogicalPlan::Limit(limit) => {
                 if limit.offset.is_some() {
                     todo!("FLOTILLA_MS3: Implement Offset")

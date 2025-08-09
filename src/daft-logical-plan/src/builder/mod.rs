@@ -443,6 +443,11 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn into_batches(&self, batch_size: usize) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::IntoBatches::new(self.plan.clone(), batch_size).into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     /// Creates a logical scan operator by collapsing the plan to just its schema.
     #[cfg(feature = "python")]
     pub fn describe(&self) -> DaftResult<Self> {
@@ -1157,6 +1162,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn into_partitions(&self, num_partitions: usize) -> PyResult<Self> {
         Ok(self.builder.into_partitions(num_partitions)?.into())
+    }
+
+    pub fn into_batches(&self, batch_size: usize) -> PyResult<Self> {
+        Ok(self.builder.into_batches(batch_size)?.into())
     }
 
     pub fn describe(&self) -> PyResult<Self> {

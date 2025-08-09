@@ -50,6 +50,9 @@ where
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],
             }),
+            LogicalPlan::IntoBatches(into_batches) => json!({
+                "batch_size": into_batches.batch_size,
+            }),
             LogicalPlan::Limit(limit) => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("limit".to_string(), json!(limit.limit));
