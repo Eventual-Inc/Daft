@@ -457,6 +457,24 @@ impl SQLPlanner<'_> {
             None => {}
         }
 
+        // Daft's SQL dialect closely follows both DuckDB and PostgreSQL, So unlike DataFrame, when
+        // LIMIT and OFFSET appear at the same time, we need to ignore the order of LIMIT and OFFSET
+        // and ensure that OFFSET is a child node of LIMIT.
+        if let Some(offset) = &query.offset {
+            let offset_expr = self.plan_expr(&offset.value)?;
+            match offset_expr.as_ref() {
+                Expr::Literal(Literal::Int64(offset)) if *offset >= 0 => {
+                    self.update_plan(|plan| plan.offset(*offset as u64))?;
+                }
+                Expr::Literal(Literal::Int64(offset)) => invalid_operation_err!(
+                    "OFFSET <n> must be greater than or equal to 0, instead got: {offset}"
+                ),
+                _ => invalid_operation_err!(
+                    "OFFSET <n> must be a constant integer, instead got: {offset_expr}"
+                ),
+            }
+        }
+
         if let Some(limit) = &query.limit {
             let limit_expr = self.plan_expr(limit)?;
             match limit_expr.as_ref() {
@@ -1797,14 +1815,11 @@ impl SQLPlanner<'_> {
 }
 
 /// Checks if the SQL query is valid syntax and doesn't use unsupported features.
-/// /// This function examines various clauses and options in the provided [sqlparser::ast::Query]
+/// This function examines various clauses and options in the provided [sqlparser::ast::Query]
 /// and returns an error if any unsupported features are encountered.
-fn check_query_features(query: &sqlparser::ast::Query) -> SQLPlannerResult<()> {
+fn check_query_features(query: &Query) -> SQLPlannerResult<()> {
     if !query.limit_by.is_empty() {
         unsupported_sql_err!("LIMIT BY");
-    }
-    if query.offset.is_some() {
-        unsupported_sql_err!("OFFSET");
     }
     if query.fetch.is_some() {
         unsupported_sql_err!("FETCH");
