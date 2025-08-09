@@ -27,6 +27,8 @@ pub enum LogicalPlan {
     Shard(Shard),
     Project(Project),
     UDFProject(UDFProject),
+    UrlDownload(UrlDownload),
+    UrlUpload(UrlUpload),
     Filter(Filter),
     Limit(Limit),
     Offset(Offset),
@@ -133,6 +135,8 @@ impl LogicalPlan {
             Self::UDFProject(UDFProject {
                 projected_schema, ..
             }) => projected_schema.clone(),
+            Self::UrlDownload(UrlDownload { output_schema, .. }) => output_schema.clone(),
+            Self::UrlUpload(UrlUpload { output_schema, .. }) => output_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Offset(Offset { input, .. }) => input.schema(),
@@ -190,6 +194,20 @@ impl LogicalPlan {
                 res.extend(get_required_columns(project).into_iter());
                 RequiredCols::new(res, None)
             }
+            Self::UrlDownload(url_download) => RequiredCols::new(
+                get_required_columns(url_download.input_column())
+                    .iter()
+                    .cloned()
+                    .collect(),
+                None,
+            ),
+            Self::UrlUpload(url_upload) => RequiredCols::new(
+                get_required_columns(url_upload.input_column())
+                    .iter()
+                    .cloned()
+                    .collect(),
+                None,
+            ),
             Self::Filter(filter) => RequiredCols::new(
                 get_required_columns(&filter.predicate)
                     .iter()
@@ -321,6 +339,8 @@ impl LogicalPlan {
             Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
             Self::UDFProject(..) => "UDFProject",
+            Self::UrlDownload(..) => "UrlDownload",
+            Self::UrlUpload(..) => "UrlUpload",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Offset(..) => "Offset",
@@ -350,6 +370,8 @@ impl LogicalPlan {
             | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
+            | Self::UrlDownload(UrlDownload { stats_state, .. })
+            | Self::UrlUpload(UrlUpload { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Offset(Offset { stats_state, .. })
@@ -388,6 +410,8 @@ impl LogicalPlan {
             Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
+            Self::UrlDownload(plan) => Self::UrlDownload(plan.with_materialized_stats()),
+            Self::UrlUpload(plan) => Self::UrlUpload(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
@@ -422,6 +446,8 @@ impl LogicalPlan {
             Self::Shard(shard) => shard.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::UDFProject(projection) => projection.multiline_display(),
+            Self::UrlDownload(url_download) => url_download.multiline_display(),
+            Self::UrlUpload(url_upload) => url_upload.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Offset(offset) => offset.multiline_display(),
@@ -453,6 +479,8 @@ impl LogicalPlan {
             Self::Shard(Shard { input, .. }) => vec![input],
             Self::Project(Project { input, .. }) => vec![input],
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
+            Self::UrlDownload(UrlDownload { input, .. }) => vec![input],
+            Self::UrlUpload(UrlUpload { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Offset(Offset { input, .. }) => vec![input],
@@ -487,6 +515,8 @@ impl LogicalPlan {
                         input.clone(), projection.clone(),
                     ).unwrap()),
                 Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
+                Self::UrlDownload(UrlDownload { args, output_column, passthrough_columns, .. }) => Self::UrlDownload(UrlDownload::new(input.clone(), args.clone(), output_column.clone(), passthrough_columns.clone())),
+                Self::UrlUpload(UrlUpload { args, output_column, passthrough_columns, .. }) => Self::UrlUpload(UrlUpload::new(input.clone(), args.clone(), output_column.clone(), passthrough_columns.clone())),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, offset, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
                 Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
@@ -531,6 +561,19 @@ impl LogicalPlan {
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
             _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())
+        }
+    }
+
+    /// Update passthrough columns for a node.
+    /// This only works for URL nodes.
+    /// TODO(srinu): Add support for UDFProject as well.
+    pub fn with_passthrough_columns(self: Arc<Self>, passthrough_columns: Vec<Column>) -> Self {
+        let this = Arc::unwrap_or_clone(self);
+
+        match this {
+            Self::UrlDownload(url_download) => url_download.with_passthrough_columns(passthrough_columns).into(),
+            Self::UrlUpload(url_upload) => url_upload.with_passthrough_columns(passthrough_columns).into(),
+            _ => panic!("Logical op {} is not a URL node, with_passthrough_columns() should never be called for non-URL ops", this),
         }
     }
 
@@ -640,6 +683,8 @@ impl LogicalPlan {
             | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
             | Self::UDFProject(UDFProject { plan_id, .. })
+            | Self::UrlDownload(UrlDownload { plan_id, .. })
+            | Self::UrlUpload(UrlUpload { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Offset(Offset { plan_id, .. })
@@ -669,6 +714,8 @@ impl LogicalPlan {
             | Self::Shard(Shard { node_id, .. })
             | Self::Project(Project { node_id, .. })
             | Self::UDFProject(UDFProject { node_id, .. })
+            | Self::UrlDownload(UrlDownload { node_id, .. })
+            | Self::UrlUpload(UrlUpload { node_id, .. })
             | Self::Filter(Filter { node_id, .. })
             | Self::Limit(Limit { node_id, .. })
             | Self::Offset(Offset { node_id, .. })
@@ -699,6 +746,10 @@ impl LogicalPlan {
             Self::Shard(shard) => Self::Shard(shard.with_plan_id(plan_id)),
             Self::Project(project) => Self::Project(project.with_plan_id(plan_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
+            Self::UrlDownload(url_download) => {
+                Self::UrlDownload(url_download.with_plan_id(plan_id))
+            }
+            Self::UrlUpload(url_upload) => Self::UrlUpload(url_upload.with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
             Self::Limit(limit) => Self::Limit(limit.with_plan_id(plan_id)),
             Self::Offset(offset) => Self::Offset(offset.with_plan_id(plan_id)),
@@ -731,6 +782,10 @@ impl LogicalPlan {
             Self::Shard(shard) => Self::Shard(shard.with_node_id(node_id)),
             Self::Project(project) => Self::Project(project.with_node_id(node_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
+            Self::UrlDownload(url_download) => {
+                Self::UrlDownload(url_download.with_node_id(node_id))
+            }
+            Self::UrlUpload(url_upload) => Self::UrlUpload(url_upload.with_node_id(node_id)),
             Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
             Self::Limit(limit) => Self::Limit(limit.with_node_id(node_id)),
             Self::Offset(offset) => Self::Offset(offset.with_node_id(node_id)),
@@ -860,3 +915,5 @@ impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);
+impl_from_data_struct_for_logical_plan!(UrlDownload);
+impl_from_data_struct_for_logical_plan!(UrlUpload);

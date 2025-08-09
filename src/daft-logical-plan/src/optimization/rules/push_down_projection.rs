@@ -11,7 +11,7 @@ use indexmap::IndexSet;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject},
+    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject, UrlDownload, UrlUpload},
     source_info::SourceInfo,
     LogicalPlan, LogicalPlanRef,
 };
@@ -262,6 +262,56 @@ impl PushDownProjection {
                     Ok(self
                         .try_optimize_node(new_plan.clone())?
                         .or(Transformed::yes(new_plan)))
+                } else {
+                    Ok(Transformed::no(plan))
+                }
+            }
+            LogicalPlan::UrlDownload(UrlDownload {
+                passthrough_columns,
+                output_column,
+                ..
+            })
+            | LogicalPlan::UrlUpload(UrlUpload {
+                passthrough_columns,
+                output_column,
+                ..
+            }) => {
+                fn name_to_col(name: &str) -> Column {
+                    Column::Resolved(ResolvedColumn::Basic(name.into()))
+                }
+
+                let mut required_columns = plan.required_columns().single();
+                // Assume that previous optimization rule should have removed unused URL ops
+                debug_assert!(required_columns.contains(output_column.as_str()));
+                required_columns.shift_remove(output_column.as_str());
+
+                let passthrough_set = passthrough_columns
+                    .iter()
+                    .map(|c| c.name())
+                    .collect::<IndexSet<_>>();
+
+                // If required_columns ⊂ passthrough_set, then push down the projection
+                let (new_url, transformed) = if required_columns.len() < passthrough_set.len()
+                    && required_columns.is_subset(&passthrough_set)
+                {
+                    // First, update the passthrough columns. Note, the output projected by the op should be appended
+                    let passthrough_columns = required_columns
+                        .iter()
+                        .map(|s| name_to_col(s.as_str()))
+                        .collect::<Vec<_>>();
+
+                    let new_url_op = upstream_plan
+                        .clone()
+                        .with_passthrough_columns(passthrough_columns);
+                    (plan.with_new_children(&[new_url_op.arced()]).arced(), true)
+                } else {
+                    (upstream_plan.clone(), false)
+                };
+
+                // Remove top projection if it is unnecessary
+                // Only when the URL output col is appended at the end
+                if new_url.schema() == plan.schema() || transformed {
+                    Ok(Transformed::yes(new_url))
                 } else {
                     Ok(Transformed::no(plan))
                 }

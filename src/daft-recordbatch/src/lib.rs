@@ -373,10 +373,8 @@ impl RecordBatch {
         self.take(&indices.into_series())
     }
 
-    pub fn size_bytes(&self) -> DaftResult<usize> {
-        let column_sizes: DaftResult<Vec<usize>> =
-            self.columns.iter().map(|s| s.size_bytes()).collect();
-        Ok(column_sizes?.iter().sum())
+    pub fn size_bytes(&self) -> usize {
+        self.columns.iter().map(|s| s.size_bytes()).sum()
     }
 
     pub fn filter(&self, predicate: &[BoundExpr]) -> DaftResult<Self> {
@@ -636,7 +634,7 @@ impl RecordBatch {
         }
     }
 
-    fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
+    pub fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
             Expr::Alias(child, name) => Ok(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.rename(name)),

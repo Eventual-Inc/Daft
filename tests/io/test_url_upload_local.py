@@ -5,6 +5,7 @@ import os
 import pytest
 
 import daft
+from tests.utils import sort_pydict
 
 
 def test_upload_local(tmpdir):
@@ -15,7 +16,9 @@ def test_upload_local(tmpdir):
     df.collect()
 
     results = df.to_pydict()
-    assert results["data"] == bytes_data
+    data = results["data"]
+    data.sort()
+    assert data == bytes_data
     assert len(results["files"]) == len(bytes_data)
     for path, expected in zip(results["files"], bytes_data):
         assert path.startswith("file://")
@@ -56,7 +59,7 @@ def test_upload_local_row_specifc_urls(tmpdir):
     df = df.with_column("files", df["data"].url.upload(df["paths"]))
     df.collect()
 
-    results = df.to_pydict()
+    results = sort_pydict(df.to_pydict(), "data", ascending=True)
     assert results["data"] == bytes_data
     assert len(results["files"]) == len(bytes_data)
     for path, expected in zip(results["files"], bytes_data):
@@ -74,7 +77,7 @@ def test_upload_local_no_write_permissions(tmpdir):
     bytes_data = [b"a", b"b", b"c"]
     # We have no write permissions to the first and third paths.
     paths = ["/some-root-path", f"{tmpdir}/normal_path", "/another-bad-path"]
-    expected_paths = [None, f"file://{tmpdir}/normal_path", None]
+    expected_path = f"file://{tmpdir}/normal_path"
     expected_data = b"b"
     data = {"data": bytes_data, "paths": paths}
     df = daft.from_pydict(data)
@@ -84,11 +87,12 @@ def test_upload_local_no_write_permissions(tmpdir):
     # Retry with `on_error` set to `null`.
     df_null = df.with_column("files", df["data"].url.upload(df["paths"], on_error="null"))
     df_null.collect()
-    results = df_null.to_pydict()
-    for path, expected_path in zip(results["files"], expected_paths):
-        assert (path is None and expected_path is None) or path == expected_path
-        if path is not None:
-            assert path.startswith("file://")
-            path = path[len("file://") :]
-            with open(path, "rb") as f:
-                assert f.read() == expected_data
+
+    results = [res for res in df_null.to_pydict()["files"] if res]
+    assert len(results) == 1
+
+    path = results[0]
+    assert path == expected_path
+    path = path[len("file://") :]
+    with open(path, "rb") as f:
+        assert f.read() == expected_data

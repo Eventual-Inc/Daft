@@ -106,3 +106,23 @@ def test_download_with_duplicate_urls(files):
             [pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files * 2]
         )
         assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
+
+
+def test_download_with_lower_cleanup_threshold(files):
+    data = {
+        "id": list(range(len(files) * 2)),
+        "filenames": [str(f) for f in files] * 2,
+    }
+
+    with daft.execution_config_ctx(
+        url_ops_bytes_buffer=2,  # 2 bytes before attempting to cleanup
+    ):
+        # Run it twice to ensure runtime works
+        for _ in range(2):
+            df = daft.from_pydict(data)
+            df = df.with_column("bytes", col("filenames").url.download())
+            pd_df = pd.DataFrame.from_dict(data)
+            pd_df["bytes"] = pd.Series(
+                [pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files * 2]
+            )
+            assert_df_equals(df.to_pandas(), pd_df, sort_key="id")

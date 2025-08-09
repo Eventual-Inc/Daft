@@ -17,8 +17,8 @@ use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
-    StreamingSinkState,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState,
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
@@ -485,7 +485,7 @@ impl OuterHashJoinProbeSink {
         left_non_join_columns: &[String],
         right_non_join_schema: &SchemaRef,
         build_on_left: bool,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+    ) -> DaftResult<StreamingSinkFinalizeOutput> {
         let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
         #[allow(deprecated)]
         let join_table = get_columns_by_name(&build_side_table, common_join_cols)?
@@ -506,10 +506,12 @@ impl OuterHashJoinProbeSink {
             (right, left)
         };
         let final_table = join_table.union(&left)?.union(&right)?;
-        Ok(Some(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
-            None,
+        Ok(StreamingSinkFinalizeOutput::Finished(Some(Arc::new(
+            MicroPartition::new_loaded(
+                final_table.schema.clone(),
+                Arc::new(vec![final_table]),
+                None,
+            ),
         ))))
     }
 
@@ -518,7 +520,7 @@ impl OuterHashJoinProbeSink {
         common_join_cols: &[String],
         left_non_join_columns: &[String],
         right_non_join_schema: &SchemaRef,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+    ) -> DaftResult<StreamingSinkFinalizeOutput> {
         let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
         let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
         let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
@@ -531,10 +533,12 @@ impl OuterHashJoinProbeSink {
             RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len())
         };
         let final_table = join_table.union(&left)?.union(&right)?;
-        Ok(Some(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
-            None,
+        Ok(StreamingSinkFinalizeOutput::Finished(Some(Arc::new(
+            MicroPartition::new_loaded(
+                final_table.schema.clone(),
+                Arc::new(vec![final_table]),
+                None,
+            ),
         ))))
     }
 
@@ -543,7 +547,7 @@ impl OuterHashJoinProbeSink {
         common_join_cols: &[String],
         right_non_join_columns: &[String],
         left_non_join_schema: &SchemaRef,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+    ) -> DaftResult<StreamingSinkFinalizeOutput> {
         let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
         let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
         let left = {
@@ -560,10 +564,12 @@ impl OuterHashJoinProbeSink {
         };
         let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
         let final_table = join_table.union(&left)?.union(&right)?;
-        Ok(Some(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
-            None,
+        Ok(StreamingSinkFinalizeOutput::Finished(Some(Arc::new(
+            MicroPartition::new_loaded(
+                final_table.schema.clone(),
+                Arc::new(vec![final_table]),
+                None,
+            ),
         ))))
     }
 }
@@ -728,7 +734,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                 )
                 .into()
         } else {
-            Ok(None).into()
+            Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
         }
     }
 

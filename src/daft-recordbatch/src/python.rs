@@ -394,8 +394,8 @@ impl PyRecordBatch {
         Ok(self.record_batch.len())
     }
 
-    pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.record_batch.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.record_batch.size_bytes()
     }
 
     pub fn get_column(&self, idx: usize) -> PySeries {

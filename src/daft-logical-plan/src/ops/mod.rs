@@ -20,6 +20,8 @@ mod summarize;
 mod top_n;
 mod udf;
 mod unpivot;
+mod url_download;
+mod url_upload;
 mod window;
 
 pub use agg::Aggregate;
@@ -44,4 +46,6 @@ pub use summarize::summarize;
 pub use top_n::TopN;
 pub use udf::UDFProject;
 pub use unpivot::Unpivot;
+pub use url_download::UrlDownload;
+pub use url_upload::UrlUpload;
 pub use window::Window;

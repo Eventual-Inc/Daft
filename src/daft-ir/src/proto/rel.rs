@@ -157,6 +157,12 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let udf_project = udf_project.to_proto()?.into();
                 proto::RelVariant::UdfProject(udf_project)
             }
+            Self::UrlDownload(url_download) => {
+                not_implemented_err!("url_download");
+            }
+            Self::UrlUpload(url_upload) => {
+                not_implemented_err!("url_upload");
+            }
             Self::Filter(filter) => {
                 let filter = filter.to_proto()?.into();
                 proto::RelVariant::Filter(filter)

@@ -46,6 +46,8 @@ pub enum NodeType {
     Limit,
     MonotonicallyIncreasingId,
     OuterHashJoinProbe,
+    UrlDownload,
+    UrlUpload,
 }
 
 #[derive(Clone, Debug)]
