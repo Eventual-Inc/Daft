@@ -2452,7 +2452,6 @@ name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
- "base64 0.22.1",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2760,9 +2759,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "image",
  "log",
- "num-traits",
  "serde",
  "typetag",
 ]

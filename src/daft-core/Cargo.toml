@@ -14,7 +14,6 @@ arrow2 = {workspace = true, features = [
   "compute_substring",
   "io_ipc"
 ]}
-base64 = {workspace = true}
 bincode = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
@@ -34,7 +33,16 @@ fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
-image = {workspace = true}
+image = {workspace = true, features = [
+  "gif",
+  "jpeg",
+  "ico",
+  "png",
+  "tiff",
+  "webp",
+  "bmp",
+  "hdr"
+]}
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
 log = {workspace = true}
