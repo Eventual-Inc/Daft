@@ -12,7 +12,7 @@ use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
-    pipeline::{NodeName, PipelineNode, RuntimeContext},
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -59,13 +59,19 @@ pub trait BlockingSink: Send + Sync {
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::default())
     }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        None
+    }
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        morsel_size_requirement: Option<MorselSizeRequirement>,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::with_fixed_threshold(
-            runtime_handle.default_morsel_size(),
-        ))
+        match morsel_size_requirement {
+            Some(morsel_size_requirement) => {
+                Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+            }
+            None => Arc::new(UnorderedDispatcher::unbounded()),
+        }
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
@@ -77,6 +83,7 @@ pub struct BlockingSinkNode {
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
+    morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
 }
 
@@ -91,11 +98,13 @@ impl BlockingSinkNode {
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink);
         let runtime_stats = op.make_runtime_stats();
 
+        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             child,
             runtime_stats,
             plan_stats,
+            morsel_size_requirement,
             node_info: Arc::new(node_info),
         }
     }
@@ -164,6 +173,7 @@ impl TreeDisplay for BlockingSinkNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Morsel Size = {:?}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
@@ -193,6 +203,21 @@ impl PipelineNode for BlockingSinkNode {
         self.node_info.name.clone()
     }
 
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        _downstream_requirement: MorselSizeRequirement,
+        default_morsel_size: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.op.morsel_size_requirement();
+        let new_morsel_size_requirement = match operator_morsel_size_requirement {
+            Some(requirement) => requirement,
+            None => default_morsel_size,
+        };
+        self.morsel_size_requirement = new_morsel_size_requirement;
+        self.child
+            .propagate_morsel_size_requirement(new_morsel_size_requirement, default_morsel_size);
+    }
+
     fn start(
         &self,
         _maintain_order: bool,
@@ -213,7 +238,7 @@ impl PipelineNode for BlockingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle);
+        let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,

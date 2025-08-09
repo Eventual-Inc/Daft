@@ -15,11 +15,7 @@ use super::{
     outer_hash_join_probe::IndexBitmapBuilder,
 };
 use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ops::NodeType,
-    pipeline::NodeName,
-    state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
+    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
 };
 
 enum AntiSemiProbeState {
@@ -327,19 +323,6 @@ impl StreamingSink for AntiSemiProbeSink {
         Box::new(AntiSemiProbeState::Building(
             self.probe_state_bridge.clone(),
         ))
-    }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        let default_size = runtime_handle.default_morsel_size();
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::with_fixed_threshold(default_size))
-        } else {
-            Arc::new(UnorderedDispatcher::with_fixed_threshold(default_size))
-        }
     }
 
     fn max_concurrency(&self) -> usize {

@@ -16,7 +16,7 @@ use crate::{
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
-    pipeline::{NodeName, PipelineNode, RuntimeContext},
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -65,21 +65,19 @@ pub trait IntermediateOperator: Send + Sync {
         Ok(get_compute_pool_num_threads())
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        (0, runtime_handle.default_morsel_size())
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        None
     }
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        let (lower_bound, upper_bound) = self.morsel_size_range(runtime_handle);
-
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(lower_bound, upper_bound))
+            Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
         } else {
-            Arc::new(UnorderedDispatcher::new(lower_bound, upper_bound))
+            Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
         }
     }
 }
@@ -89,6 +87,7 @@ pub struct IntermediateNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
+    morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
 }
 
@@ -105,12 +104,15 @@ impl IntermediateNode {
             NodeCategory::Intermediate,
         );
         let runtime_stats = intermediate_op.make_runtime_stats();
-
+        let morsel_size_requirement = intermediate_op
+            .morsel_size_requirement()
+            .unwrap_or_default();
         Self {
             intermediate_op,
             children,
             runtime_stats,
             plan_stats,
+            morsel_size_requirement,
             node_info: Arc::new(info),
         }
     }
@@ -198,6 +200,7 @@ impl TreeDisplay for IntermediateNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Morsel Size = {:?}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.snapshot();
@@ -231,6 +234,25 @@ impl PipelineNode for IntermediateNode {
         self.node_info.name.clone()
     }
 
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        default_requirement: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.intermediate_op.morsel_size_requirement();
+        let combined_morsel_size_requirement = MorselSizeRequirement::combine_requirements(
+            operator_morsel_size_requirement,
+            downstream_requirement,
+        );
+        self.morsel_size_requirement = combined_morsel_size_requirement;
+        for child in &mut self.children {
+            child.propagate_morsel_size_requirement(
+                combined_morsel_size_requirement,
+                default_requirement,
+            );
+        }
+    }
+
     fn start(
         &self,
         maintain_order: bool,
@@ -256,7 +278,7 @@ impl PipelineNode for IntermediateNode {
 
         let dispatch_spawner = self
             .intermediate_op
-            .dispatch_spawner(runtime_handle, maintain_order);
+            .dispatch_spawner(self.morsel_size_requirement, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
