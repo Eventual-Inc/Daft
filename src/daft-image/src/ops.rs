@@ -38,6 +38,7 @@ pub trait ImageOps {
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self>
     where
         Self: Sized;
+    fn attribute(&self, attr: &str) -> DaftResult<DataArray<UInt32Type>>;
 }
 
 pub(crate) fn image_array_from_img_buffers(
@@ -194,6 +195,31 @@ impl ImageOps for ImageArray {
             .collect();
         image_array_from_img_buffers(self.name(), &buffers, Some(mode))
     }
+
+    fn attribute(&self, attr: &str) -> DaftResult<DataArray<UInt32Type>> {
+        match attr.to_lowercase().as_str() {
+            "height" => Ok(self.heights().clone().rename(self.name())),
+            "width" => Ok(self.widths().clone().rename(self.name())),
+            "channel" => Ok(self
+                .channels()
+                .clone()
+                .cast(&DataType::UInt32)?
+                .u32()?
+                .clone()
+                .rename(self.name())),
+            "mode" => Ok(self
+                .modes()
+                .clone()
+                .cast(&DataType::UInt32)?
+                .u32()?
+                .clone()
+                .rename(self.name())),
+            _ => Err(DaftError::ValueError(format!(
+                "Unsupported image attribute: {}, available: [height, width, channel, mode]",
+                attr
+            ))),
+        }
+    }
 }
 
 impl ImageOps for FixedShapeImageArray {
@@ -253,6 +279,36 @@ impl ImageOps for FixedShapeImageArray {
             _ => unreachable!("self should always be a FixedShapeImage"),
         };
         fixed_image_array_from_img_buffers(self.name(), &buffers, &mode, *height, *width)
+    }
+
+    fn attribute(&self, attr: &str) -> DaftResult<DataArray<UInt32Type>> {
+        let (height, width) = match self.data_type() {
+            DataType::FixedShapeImage(_, h, w) => (h, w),
+            _ => unreachable!("Should be FixedShapeImage type"),
+        };
+
+        match attr.to_lowercase().as_str() {
+            "height" => Ok(UInt32Array::from((
+                self.name(),
+                vec![*height; self.len()].as_slice(),
+            ))),
+            "width" => Ok(UInt32Array::from((
+                self.name(),
+                vec![*width; self.len()].as_slice(),
+            ))),
+            "channel" => Ok(UInt32Array::from((
+                self.name(),
+                vec![self.image_mode().num_channels() as u32; self.len()].as_slice(),
+            ))),
+            "mode" => Ok(UInt32Array::from((
+                self.name(),
+                vec![(*self.image_mode() as u8) as u32; self.len()].as_slice(),
+            ))),
+            _ => Err(DaftError::ValueError(format!(
+                "Unsupported image attribute: {}, available: [height, width, channel, mode]",
+                attr
+            ))),
+        }
     }
 }
 
