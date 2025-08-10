@@ -9,7 +9,10 @@ use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     resolved_col,
 };
-use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    LogicalPlan, LogicalPlanRef, SourceInfo,
+};
 use daft_physical_plan::extract_agg_expr;
 use daft_schema::schema::SchemaRef;
 
@@ -74,7 +77,7 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub fn create_shuffle_nodes(
         &mut self,
         logical_node_id: Option<NodeID>,
-        columns: Vec<BoundExpr>,
+        repartition_spec: RepartitionSpec,
         num_partitions: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -102,7 +105,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 self.get_next_pipeline_node_id(), // Gets a different node ID
                 logical_node_id,
                 &self.stage_config,
-                columns,
+                repartition_spec,
                 actual_num_partitions,
                 schema,
                 merge_node,
@@ -114,7 +117,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
-                columns,
+                repartition_spec,
                 actual_num_partitions,
                 schema,
                 child,
@@ -171,14 +174,18 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         input_node: Arc<dyn DistributedPipelineNode>,
         partition_cols: Vec<BoundExpr>,
+        num_partitions: Option<usize>,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         if partition_cols.is_empty() {
             Ok(self.gen_gather_node(logical_node_id, input_node))
         } else {
             self.create_shuffle_nodes(
                 logical_node_id,
-                partition_cols,
-                None,
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    num_partitions,
+                    partition_cols.iter().map(|e| e.clone().into()).collect(),
+                )),
+                num_partitions,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -280,14 +287,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
-                self.get_next_pipeline_node_id(),
-                logical_node_id,
-                &self.stage_config,
-                limit.limit as usize,
-                node.schema(),
-                self.curr_node.pop().unwrap(),
-            )),
+            LogicalPlan::Limit(limit) => {
+                if limit.offset.is_some() {
+                    todo!("FLOTILLA_MS3: Implement Offset")
+                }
+                Arc::new(LimitNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    limit.limit as usize,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                ))
+            }
             LogicalPlan::Project(project) => {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
                 ProjectNode::new(
@@ -376,20 +388,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
                     todo!("FLOTILLA_MS3: Support other types of repartition");
                 };
-
-                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-
-                assert!(!columns.is_empty());
-                {
-                    let child = self.curr_node.pop().unwrap();
-                    self.create_shuffle_nodes(
-                        logical_node_id,
-                        columns,
-                        repart_spec.num_partitions,
-                        node.schema(),
-                        child,
-                    )?
-                }
+                let child = self.curr_node.pop().unwrap();
+                self.create_shuffle_nodes(
+                    logical_node_id,
+                    repartition.repartition_spec.clone(),
+                    repart_spec.num_partitions,
+                    node.schema(),
+                    child,
+                )?
             }
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
@@ -437,7 +443,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // Second stage: Repartition to distribute the dataset
                 let repartition = self.create_shuffle_nodes(
                     logical_node_id,
-                    columns.clone(),
+                    RepartitionSpec::Hash(HashRepartitionConfig::new(
+                        None,
+                        columns.clone().into_iter().map(|e| e.into()).collect(),
+                    )),
                     None,
                     distinct.input.schema(),
                     initial_distinct,
@@ -465,7 +474,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition =
-                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone())?;
+                    self.gen_shuffle_node(logical_node_id, input_node, partition_by.clone(), None)?;
 
                 // Final stage: The actual window op
                 WindowNode::new(
@@ -486,24 +495,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Join(join) => {
-                let (remaining_on, _, _, _) = join.on.split_eq_preds();
-                if !remaining_on.is_empty() {
-                    todo!("FLOTILLA_MS?: Implement non-equality joins")
-                }
-
                 // Visitor appends in in-order
                 // TODO: Just use regular recursion?
                 let right_node = self.curr_node.pop().unwrap();
                 let left_node = self.curr_node.pop().unwrap();
 
-                self.gen_hash_join_nodes(
-                    logical_node_id,
-                    join.on.clone(),
-                    left_node,
-                    right_node,
-                    join.join_type,
-                    join.output_schema.clone(),
-                )?
+                self.translate_join(logical_node_id, join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
@@ -527,6 +524,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             }
             LogicalPlan::TopN(top_n) => {
                 let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
+
+                if top_n.offset.is_some() {
+                    todo!("FLOTILLA_MS3: Implement Offset")
+                }
 
                 // First stage: Perform a local topN
                 let local_topn = TopNNode::new(
@@ -565,8 +566,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
-            | LogicalPlan::Shard(_) => {
-                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_) => {
+                panic!(
+                    "Logical plan operator {} should be handled by the optimizer",
+                    node.name()
+                )
             }
         };
         self.curr_node.push(output);

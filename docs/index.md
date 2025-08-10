@@ -24,7 +24,7 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 * **Rust-Powered Performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
 
-* **Seamless ML Ecosystem Integration**: Slot directly into your existing ML workflows with zero friction—whether you're using [PyTorch](https://pytorch.org/), [NumPy](https://numpy.org/), [Pandas](https://pola.rs/), or [HuggingFace models](https://huggingface.co/models), Daft works where you work.
+* **Seamless ML Ecosystem Integration**: Slot directly into your existing ML workflows with zero friction—whether you're using [PyTorch](https://pytorch.org/), [NumPy](https://numpy.org/), [Pandas](https://pandas.pydata.org/), or [HuggingFace models](https://huggingface.co/models), Daft works where you work.
 
 * **Universal Data Connectivity**: Access data anywhere it lives—cloud storage ([S3](https://aws.amazon.com/s3/), [Azure](https://azure.microsoft.com/en-us/), [GCS](https://cloud.google.com/storage)), modern table formats ([Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/), [Apache Hudi](https://hudi.apache.org/)), or enterprise catalogs ([Unity](https://www.unitycatalog.io/), [AWS Glue](https://aws.amazon.com/glue/))—all with zero configuration.
 
@@ -32,96 +32,13 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 * **Out of the Box reliability**: Deploy with confidence—intelligent memory management prevents OOM errors while sensible defaults eliminate configuration headaches, letting you focus on results, not infrastructure.
 
-## Learning Daft
-
-This user guide aims to help Daft users master the usage of Daft for all your data needs.
-
 !!! tip "Looking to get started with Daft ASAP?"
 
-    The Daft User Guide is a useful resource to take deeper dives into specific Daft concepts, but if you are ready to jump into code you may wish to take a look at these resources:
+    The Daft Guide is a useful resource to take deeper dives into specific Daft concepts, but if you are ready to jump into code you may wish to take a look at these resources:
 
     1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
 
     2. [API Documentation](api/index.md): Searchable documentation and reference material to Daft’s public API.
-
-### Get Started
-
-<div class="grid cards" markdown>
-
-- [:material-download: **Installing Daft**](install.md)
-
-    Install Daft from your terminal and discover more advanced installation options.
-
-- [:material-clock-fast: **Quickstart**](quickstart.md)
-
-    Install Daft, create your first DataFrame, and get started with common DataFrame operations.
-
-- [:simple-elasticstack: **Architecture**](resources/architecture.md)
-
-    Understand the different components to Daft under-the-hood.
-
-</div>
-
-### Daft in Depth
-
-<div class="grid cards" markdown>
-
-- [:material-filter: **DataFrame Operations**](core_concepts.md#dataframe)
-
-    Learn how to perform core DataFrame operations in Daft, including selection, filtering, joining, and sorting.
-
-- [:octicons-code-16: **Expressions**](core_concepts.md#expressions)
-
-    Daft expressions enable computations on DataFrame columns using Python or SQL for various operations.
-
-- [:material-file-eye: **Reading Data**](core_concepts.md#reading-data)
-
-    How to use Daft to read data from diverse sources like files, databases, and URLs.
-
-- [:material-file-edit: **Writing Data**](core_concepts.md#reading-data)
-
-    How to use Daft to write data DataFrames to files or other destinations.
-
-- [:fontawesome-solid-square-binary: **DataTypes**](core_concepts.md#datatypes)
-
-    Daft DataTypes define the types of data in a DataFrame, from simple primitives to complex structures.
-
-- [:simple-quicklook: **SQL**](core_concepts.md#sql)
-
-    Daft supports SQL for constructing query plans and expressions, while integrating with Python expressions.
-
-- [:material-select-group: **Aggregations and Grouping**](core_concepts.md#aggregations-and-grouping)
-
-    Daft supports aggregations and grouping across entire DataFrames and within grouped subsets of data.
-
-- [:material-window-closed-variant: **Window Functions**](core_concepts.md#window-functions)
-
-    Daft's window functions allow you to perform calculations across a set of rows related to the current row.
-
-- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
-
-    Daft allows you to define custom UDFs to process data at scale with flexibility in input and output.
-
-- [:octicons-image-16: **Multimodal Data**](core_concepts.md#multimodal-data)
-
-    Daft is built to work with multimodal data types, including URLs and images.
-
-- [:simple-ray: **Distributed Computing**](distributed.md)
-
-    Daft's native support for Ray enables you to run distributed DataFrame workloads at scale.
-
-</div>
-
-### More Resources
-
-<div class="grid cards" markdown>
-
-- [:material-star-shooting: **Advanced Daft**](advanced/memory.md)
-- [:material-file-compare: **Engine Comparison**](resources/engine_comparison.md)
-- [:material-file-document: **Tutorials**](resources/tutorials.md)
-- [:material-chart-bar: **Benchmarks**](resources/benchmarks/tpch.md)
-
-</div>
 
 ## Contribute to Daft
 

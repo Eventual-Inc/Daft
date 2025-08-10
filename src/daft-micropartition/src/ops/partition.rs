@@ -114,12 +114,12 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        if tables.is_empty() {
+        if tables.is_none() {
             let empty = Self::empty(Some(self.schema.clone()));
             let pkeys = empty.eval_expression_list(partition_keys)?;
             return Ok((vec![], pkeys));
         }
-        let table = tables.first().unwrap();
+        let table = tables.unwrap();
 
         let (tables, values) = table.partition_by_value(partition_keys)?;
 

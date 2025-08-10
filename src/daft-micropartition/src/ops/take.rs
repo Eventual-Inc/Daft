@@ -8,34 +8,21 @@ use daft_recordbatch::RecordBatch;
 use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
-    pub fn take(&self, idx: &Series) -> DaftResult<Self> {
+    pub fn take(&self, idx: &Series) -> DaftResult<RecordBatch> {
         let io_stats = IOStatsContext::new("MicroPartition::take");
 
         if idx.is_empty() {
-            return Ok(Self::empty(Some(self.schema.clone())));
+            return Ok(RecordBatch::empty(Some(self.schema.clone())));
         }
 
-        let tables = self.concat_or_get(io_stats)?;
-        match tables.as_slice() {
+        let tables = self.concat_or_get_update(io_stats)?;
+        match tables {
             // Fallback onto `[empty_table]` behavior
-            [] => {
-                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
-                let taken = empty_table.take(idx)?;
-                Ok(Self::new_loaded(
-                    self.schema.clone(),
-                    Arc::new(vec![taken]),
-                    self.statistics.clone(),
-                ))
+            None => {
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()));
+                empty_table.take(idx)
             }
-            [single] => {
-                let taken = single.take(idx)?;
-                Ok(Self::new_loaded(
-                    self.schema.clone(),
-                    Arc::new(vec![taken]),
-                    self.statistics.clone(),
-                ))
-            }
-            _ => unreachable!(),
+            Some(single) => single.take(idx),
         }
     }
 
@@ -53,9 +40,9 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let taken = single.sample_by_fraction(fraction, with_replacement, seed)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -63,7 +50,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 
@@ -81,9 +67,9 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let taken = single.sample(size, with_replacement, seed)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -91,7 +77,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 
@@ -103,9 +88,9 @@ impl MicroPartition {
         }
 
         let tables = self.concat_or_get(io_stats)?;
-        match tables.as_slice() {
-            [] => Ok(Self::empty(Some(self.schema.clone()))),
-            [single] => {
+        match tables {
+            None => Ok(Self::empty(Some(self.schema.clone()))),
+            Some(single) => {
                 let taken = single.quantiles(num)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
@@ -113,7 +98,6 @@ impl MicroPartition {
                     self.statistics.clone(),
                 ))
             }
-            _ => unreachable!(),
         }
     }
 }

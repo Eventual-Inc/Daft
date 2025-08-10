@@ -1,11 +1,16 @@
-use std::{fmt, sync::Arc};
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    io::Write,
+    sync::Arc,
+};
 
 #[cfg(feature = "python")]
 use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
 use serde::{
     de::{Error as DeError, Visitor},
     ser::Error as SerError,
-    Deserializer, Serializer,
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 #[cfg(feature = "python")]
@@ -115,4 +120,63 @@ macro_rules! impl_bincode_py_state_serialization {
             }
         }
     };
+}
+
+#[cfg(feature = "python")]
+// This is a Rust wrapper on top of a Python UDF to make it serde-able and hashable
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PyObjectWrapper(
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub Arc<PyObject>,
+);
+
+#[cfg(feature = "python")]
+impl PartialEq for PyObjectWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        Python::with_gil(|py| self.0.bind(py).eq(other.0.bind(py)).unwrap())
+    }
+}
+
+#[cfg(feature = "python")]
+impl Eq for PyObjectWrapper {}
+
+#[cfg(feature = "python")]
+impl Hash for PyObjectWrapper {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let py_obj_hash = Python::with_gil(|py| self.0.bind(py).hash());
+        match py_obj_hash {
+            // If Python object is hashable, hash the Python-side hash.
+            Ok(py_obj_hash) => py_obj_hash.hash(state),
+            // Fall back to hashing the pickled Python object.
+            Err(_) => {
+                let hasher = HashWriter { state };
+                bincode::serialize_into(hasher, self)
+                    .expect("Pickling error occurred when computing hash of Pyobject");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<Arc<PyObject>> for PyObjectWrapper {
+    fn from(value: Arc<PyObject>) -> Self {
+        Self(value)
+    }
+}
+
+struct HashWriter<'a, H: Hasher> {
+    state: &'a mut H,
+}
+
+impl<H: Hasher> Write for HashWriter<'_, H> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        buf.hash(self.state);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }

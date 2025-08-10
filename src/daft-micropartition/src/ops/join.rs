@@ -65,20 +65,19 @@ impl MicroPartition {
         }
 
         // TODO(Clark): Elide concatenations where possible by doing a chunk-aware local table join.
-        let lt = self.concat_or_get(io_stats.clone())?;
-        let rt = right.concat_or_get(io_stats)?;
+        let lt = self.concat_or_get_update(io_stats.clone())?;
+        let rt = right.concat_or_get_update(io_stats)?;
 
-        match (lt.as_slice(), rt.as_slice()) {
-            ([], _) | (_, []) => Ok(Self::empty(Some(join_schema))),
-            ([lt], [rt]) => {
-                let joined_table = table_join(lt, rt, left_on, right_on, how)?;
+        match (lt, rt) {
+            (None, _) | (_, None) => Ok(Self::empty(Some(join_schema))),
+            (Some(lt), Some(rt)) => {
+                let joined_table = table_join(&lt, &rt, left_on, right_on, how)?;
                 Ok(Self::new_loaded(
                     join_schema,
                     vec![joined_table].into(),
                     None,
                 ))
             }
-            _ => unreachable!(),
         }
     }
 

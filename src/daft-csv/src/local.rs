@@ -176,7 +176,7 @@ pub async fn read_csv_local(
             io_stats,
         )
         .await?;
-        return RecordBatch::empty(Some(Arc::new(schema.into())));
+        return Ok(RecordBatch::empty(Some(Arc::new(schema.into()))));
     }
     let concated_table = tables_concat(collected_tables)?;
 

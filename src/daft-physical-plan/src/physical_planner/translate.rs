@@ -157,18 +157,28 @@ pub(super) fn translate_single_logical_node(
             ))
             .arced())
         }
-        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
+        LogicalPlan::Limit(LogicalLimit {
+            limit,
+            offset,
+            eager,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            Ok(
-                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
-                    .arced(),
-            )
+            Ok(PhysicalPlan::Limit(Limit::new(
+                input_physical,
+                *limit,
+                *offset,
+                *eager,
+                num_partitions,
+            ))
+            .arced())
         }
         LogicalPlan::TopN(LogicalTopN {
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             ..
         }) => {
@@ -180,6 +190,7 @@ pub(super) fn translate_single_logical_node(
                 descending.clone(),
                 nulls_first.clone(),
                 *limit,
+                *offset,
                 num_partitions,
             ))
             .arced())
@@ -555,15 +566,13 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            logical_plan.name()
+        ))),
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),

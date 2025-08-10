@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::min, sync::Arc};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
@@ -7,11 +7,14 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    AggExpr,
+    is_partition_compatible, AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_logical_plan::{stats::StatsState, ClusteringSpec};
+use daft_schema::{
+    dtype::DataType,
+    schema::{Schema, SchemaRef},
+};
 
 use super::DistributedPipelineNode;
 use crate::{
@@ -198,6 +201,7 @@ fn split_groupby_aggs(
         input_schema,
         group_by,
     )?;
+    let first_stage_schema = Arc::new(first_stage_schema);
     let second_stage_schema = Arc::new(second_stage_schema);
 
     // Generate the expression for the second stage group_by
@@ -216,7 +220,7 @@ fn split_groupby_aggs(
 
     Ok(GroupByAggSplit {
         first_stage_aggs,
-        first_stage_schema: Arc::new(first_stage_schema),
+        first_stage_schema,
         first_stage_group_by: group_by.to_vec(),
 
         second_stage_aggs,
@@ -239,7 +243,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone())?;
+        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone(), None)?;
 
         Ok(AggregateNode::new(
             self.get_next_pipeline_node_id(),
@@ -262,6 +266,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let num_partitions = input_node.config().clustering_spec.num_partitions();
         let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
@@ -274,10 +279,17 @@ impl LogicalPlanToPipelineNodeTranslator {
         .arced();
 
         // Second stage: Shuffle to distribute the dataset
+        let num_partitions = min(
+            num_partitions,
+            self.stage_config
+                .config
+                .shuffle_aggregation_default_partitions,
+        );
         let shuffle = self.gen_shuffle_node(
             logical_node_id,
             initial_agg,
             split_details.second_stage_group_by.clone(),
+            Some(num_partitions),
         )?;
 
         // Third stage re-agg to compute the final result
@@ -313,16 +325,51 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let input_clustering_spec = &input_node.config().clustering_spec;
+        // If there is only one partition, or the input is already partitioned by the group_by columns,
+        // then we can just do a single stage aggregation and skip the shuffle.
+        let is_hash_partitioned_by_group_by =
+            matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
+                && !group_by.is_empty()
+                && is_partition_compatible(
+                    BoundExpr::bind_all(
+                        &input_clustering_spec.partition_by(),
+                        &input_node.config().schema,
+                    )?
+                    .iter()
+                    .map(|e| e.inner()),
+                    group_by.iter().map(|e| e.inner()),
+                );
+        if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_group_by {
+            return Ok(AggregateNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                group_by,
+                aggregations,
+                output_schema,
+                input_node,
+            )
+            .arced());
+        }
+
         let split_details =
             split_groupby_aggs(&group_by, &aggregations, &input_node.config().schema)?;
 
+        if split_details.first_stage_aggs.is_empty()
         // Special case for ApproxCountDistinct
         // Right now, we can't do a pre-aggregation because we can't recursively merge HLL sketches
         // TODO: Look for alternative approaches for this
-        if split_details.first_stage_aggs.is_empty()
             || aggregations
                 .iter()
                 .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
+            // Special case for Decimal128
+            // Right now, we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
+            || split_details
+                .first_stage_schema
+                .fields()
+                .iter()
+                .any(|f| matches!(f.dtype, DataType::Decimal128(_, _)))
         {
             self.gen_without_pre_agg(
                 input_node,

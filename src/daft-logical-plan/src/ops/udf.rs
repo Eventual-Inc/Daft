@@ -117,11 +117,15 @@ impl UDFProject {
             self.udf_properties.name, self.project
         ));
         res.push(format!(
-            "Passthrough columns = {}",
-            self.passthrough_columns
-                .iter()
-                .map(|c| c.to_string())
-                .join(", ")
+            "Passthrough Columns = {}",
+            if self.passthrough_columns.is_empty() {
+                "None".to_string()
+            } else {
+                self.passthrough_columns
+                    .iter()
+                    .map(|c| c.to_string())
+                    .join(", ")
+            }
         ));
         res.push(format!("Concurrency = {:?}", self.concurrency()));
         if let Some(resource_request) = self.resource_request() {

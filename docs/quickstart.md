@@ -22,7 +22,7 @@ You can install Daft using `pip`. Run the following command in your terminal or 
     pip install daft
     ```
 
-For more advanced installation options, please see [Installation](install.md).
+<!-- For more advanced installation options, please see [Installation](install.md). -->
 
 ### Create Your First DataFrame in Daft
 
@@ -75,7 +75,7 @@ Daft supports both local paths as well as paths to object storage such as AWS S3
 
 !!! tip "Note"
 
-    To work with other formats like [Delta Lake](io/delta_lake.md) and [Iceberg](io/iceberg.md), check out their respective pages.
+    To work with other formats like [Delta Lake](connectors/delta_lake.md) and [Iceberg](connectors/iceberg.md), check out their respective pages.
 
 Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet file is partitioned on the column `country`. This will be important later on.
 
@@ -286,6 +286,7 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`][daft.DataFrame.
 (Showing first 5 of 5 rows)
 ```
 
+
 ### Transform Columns with Expressions
 
 [Expressions](core_concepts.md#expressions) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`][daft.col] expressions together with the [`with_column`][daft.DataFrame.with_column] method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
@@ -344,6 +345,100 @@ Alternatively, you can also run your column transformation using Expressions dir
 
 (Showing first 5 of 5 rows)
 ```
+
+### Transform Columns with Custom Logic
+
+We strive to have a comprehensive expression library, but inevitably you will need to write some custom logic to transform your data, such as inference, tokenization or otherwise. We try to make integrating custom logic into daft as seamless as possible.
+
+
+=== "Tokenizing a Sentence using HuggingFace Transformers"
+
+    ```python
+    import daft
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+
+    @daft.func
+    def tokenize(s: str) -> list[int]:
+        return tokenizer.encode(s)
+
+    df = daft.from_pydict({
+        "text": [
+            "This is a test sentence.",
+            "Another example of a sentence to tokenize.",
+            "Daft is a fast DataFrame library for Python.",
+        ]
+    })
+
+    df = df.select(tokenize(df["text"])).collect()
+    ```
+
+```{title="Output"}
+╭────────────────────────────────╮
+│ text                           │
+│ ---                            │
+│ List[Int64]                    │
+╞════════════════════════════════╡
+│ [101, 2023, 2003, 1037, 3231,… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ [101, 2178, 2742, 1997, 1037,… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ [101, 4830, 6199, 2003, 1037,… │
+╰────────────────────────────────╯
+```
+
+=== "Sentiment Analysis with OpenAI"
+
+    ```python
+    import daft
+    import openai
+    import os
+    client = openai.AsyncClient(api_key=os.environ["OPENAI_API_KEY"])
+
+    async def analyze_sentiment(text):
+        response = await client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Classify the sentiment as positive, negative, or neutral."},
+                {"role": "user", "content": text}
+            ],
+            max_tokens=10
+        )
+        return response.choices[0].message.content.strip()
+
+    # if you have an existing function, you can still easily plug it in to daft.
+    # You just need to wrap it in a `daft.func`
+    daft_analyze_sentiment = daft.func(
+        analyze_sentiment,
+        return_dtype=str # daft needs type information
+    )
+
+
+    df = daft.from_pydict({
+        "review": [
+            "I absolutely loved this product!",
+            "The service was terrible and I'm disappointed.",
+            "It works as expected, nothing special."
+        ]
+    })
+
+    df = df.with_column("sentiment", daft_analyze_sentiment(df["review"])).collect()
+    ```
+
+```{title="Output"}
+╭────────────────────────────────┬───────────╮
+│ review                         ┆ sentiment │
+│ ---                            ┆ ---       │
+│ Utf8                           ┆ Utf8      │
+╞════════════════════════════════╪═══════════╡
+│ I absolutely loved this produ… ┆ positive  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ The service was terrible and … ┆ Negative  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ It works as expected, nothing… ┆ Neutral   │
+╰────────────────────────────────┴───────────╯
+```
+
 
 ### Sort Data
 
@@ -416,7 +511,7 @@ You can **group** and **aggregate** your data using the [`df.groupby()`][daft.Da
 
 Now that you have a basic sense of Daft’s functionality and features, here are some more resources to help you get the most out of Daft:
 
-**Check out our [Core Concepts](core_concepts.md) for more details about:**
+<!-- **Check out our [Core Concepts](core_concepts.md) for more details about:**
 
 <div class="grid cards" markdown>
 
@@ -431,30 +526,30 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 - [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
 - [:octicons-image-16: **Multimodal Data**](core_concepts.md#multimodal-data)
 
-</div>
+</div> -->
 
 **Work with your favorite table and catalog formats**:
 
 <div class="grid cards" markdown>
 
-- [**Apache Hudi**](io/hudi.md)
-- [**Apache Iceberg**](io/iceberg.md)
-- [**AWS Glue**](catalogs/glue.md)
-- [**AWS S3Tables**](catalogs/s3tables.md)
-- [**Delta Lake**](io/delta_lake.md)
-- [**Hugging Face Datasets**](io/huggingface.md)
-- [**Unity Catalog**](catalogs/unity_catalog.md)
+- [**Apache Hudi**](connectors/hudi.md)
+- [**Apache Iceberg**](connectors/iceberg.md)
+- [**AWS Glue**](connectors/glue.md)
+- [**AWS S3Tables**](connectors/s3tables.md)
+- [**Delta Lake**](connectors/delta_lake.md)
+- [**Hugging Face Datasets**](connectors/huggingface.md)
+- [**Unity Catalog**](connectors/unity_catalog.md)
 <!-- - [**LanceDB**](io/lancedb.md) -->
 
 </div>
 
-**Coming from?**
+<!-- **Coming from?**
 
 <div class="grid cards" markdown>
 
 - [:simple-dask: **Dask Migration Guide**](migration/dask_migration.md)
 
-</div>
+</div> -->
 
 **Try your hand at some [Tutorials](resources/tutorials.md):**
 

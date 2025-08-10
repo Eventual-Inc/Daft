@@ -276,13 +276,6 @@ pub struct Literal {
 /// Nested message and enum types in `Literal`.
 pub mod literal {
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct FixedSizeBinary {
-        #[prost(bytes = "vec", tag = "1")]
-        pub value: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint64, tag = "2")]
-        pub size: u64,
-    }
-    #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Timestamp {
         #[prost(int64, tag = "1")]
         pub value: i64,
@@ -344,34 +337,34 @@ pub mod literal {
         Utf8(::prost::alloc::string::String),
         #[prost(bytes, tag = "4")]
         Binary(::prost::alloc::vec::Vec<u8>),
-        #[prost(message, tag = "5")]
-        FixedSizeBinary(FixedSizeBinary),
-        #[prost(int32, tag = "6")]
+        #[prost(int32, tag = "5")]
         Int8(i32),
-        #[prost(uint32, tag = "7")]
+        #[prost(uint32, tag = "6")]
         Uint8(u32),
-        #[prost(int32, tag = "8")]
+        #[prost(int32, tag = "7")]
         Int16(i32),
-        #[prost(uint32, tag = "9")]
+        #[prost(uint32, tag = "8")]
         Uint16(u32),
-        #[prost(int32, tag = "10")]
+        #[prost(int32, tag = "9")]
         Int32(i32),
-        #[prost(uint32, tag = "11")]
+        #[prost(uint32, tag = "10")]
         Uint32(u32),
-        #[prost(int64, tag = "12")]
+        #[prost(int64, tag = "11")]
         Int64(i64),
-        #[prost(uint64, tag = "13")]
+        #[prost(uint64, tag = "12")]
         Uint64(u64),
-        #[prost(message, tag = "14")]
+        #[prost(message, tag = "13")]
         Timestamp(Timestamp),
-        #[prost(int32, tag = "15")]
+        #[prost(int32, tag = "14")]
         Date(i32),
-        #[prost(message, tag = "16")]
+        #[prost(message, tag = "15")]
         Time(Time),
-        #[prost(message, tag = "17")]
+        #[prost(message, tag = "16")]
         Duration(Duration),
-        #[prost(message, tag = "18")]
+        #[prost(message, tag = "17")]
         Interval(Interval),
+        #[prost(float, tag = "18")]
+        Float32(f32),
         #[prost(double, tag = "19")]
         Float64(f64),
         #[prost(message, tag = "20")]
@@ -790,6 +783,8 @@ pub struct RelLimit {
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
     #[prost(uint64, tag = "2")]
     pub limit: u64,
+    #[prost(uint64, optional, tag = "3")]
+    pub offset: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelExplode {

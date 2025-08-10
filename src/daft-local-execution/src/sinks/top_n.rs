@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkState, BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -20,6 +20,7 @@ struct TopNParams {
     nulls_first: Vec<bool>,
     // Limit Parameters
     limit: usize,
+    offset: Option<usize>,
 }
 
 /// Current status of the TopN operation
@@ -69,6 +70,7 @@ impl TopNSink {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         limit: usize,
+        offset: Option<usize>,
     ) -> Self {
         Self {
             params: Arc::new(TopNParams {
@@ -76,6 +78,7 @@ impl TopNSink {
                 descending,
                 nulls_first,
                 limit,
+                offset,
             }),
         }
     }
@@ -100,11 +103,13 @@ impl BlockingSink for TopNSink {
                         .expect("TopNSink should have top_n state");
 
                     // Find the top N values in the input micro-partition
+                    let limit = params.limit + params.offset.unwrap_or(0);
                     let top_input_rows = input.top_n(
                         &params.sort_by,
                         &params.descending,
                         &params.nulls_first,
-                        params.limit,
+                        limit,
+                        Some(0),
                     )?;
 
                     // Append to the collection of existing top N values
@@ -139,6 +144,7 @@ impl BlockingSink for TopNSink {
                         &params.descending,
                         &params.nulls_first,
                         params.limit,
+                        params.offset,
                     )?);
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
                 },
@@ -149,6 +155,10 @@ impl BlockingSink for TopNSink {
 
     fn name(&self) -> NodeName {
         format!("TopN {}", self.params.limit).into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::TopN
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -169,10 +179,18 @@ impl BlockingSink for TopNSink {
                 )
             })
             .join(", ");
-        lines.push(format!(
-            "TopN: Sort by = {}, Num Rows = {}",
-            pairs, self.params.limit
-        ));
+
+        let limit = self.params.limit;
+        lines.push(match self.params.offset {
+            Some(offset) => {
+                format!(
+                    "TopN: Sort by = {}, Num Rows = {}, Offset = {}",
+                    pairs, limit, offset
+                )
+            }
+            None => format!("TopN: Sort by = {}, Num Rows = {}", pairs, limit),
+        });
+
         lines
     }
 

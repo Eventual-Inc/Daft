@@ -2,16 +2,15 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
+        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
         NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     scheduling::{
@@ -26,7 +25,7 @@ use crate::{
 pub(crate) struct MapReduceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    columns: Vec<BoundExpr>,
+    repartition_spec: RepartitionSpec,
     num_partitions: usize,
     child: Arc<dyn DistributedPipelineNode>,
 }
@@ -38,7 +37,7 @@ impl MapReduceNode {
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        columns: Vec<BoundExpr>,
+        repartition_spec: RepartitionSpec,
         num_partitions: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -60,7 +59,7 @@ impl MapReduceNode {
         Self {
             config,
             context,
-            columns,
+            repartition_spec,
             num_partitions,
             child,
         }
@@ -71,14 +70,76 @@ impl MapReduceNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
         vec![
-            format!(
-                "Repartition: {}",
-                self.columns.iter().map(|e| e.to_string()).join(", ")
-            ),
-            format!("Num partitions = {}", self.num_partitions),
+            format!("Repartition: {}", self.repartition_spec.var_name()),
+            self.repartition_spec.multiline_display().join("\n"),
         ]
+    }
+
+    pub(crate) async fn transpose_materialized_outputs(
+        materialized_stream: impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin,
+        num_partitions: usize,
+    ) -> DaftResult<Vec<Vec<MaterializedOutput>>> {
+        let materialized_partitions = materialized_stream
+            .map(|mat| mat.map(|mat| mat.split_into_materialized_outputs()))
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        debug_assert!(
+            materialized_partitions
+                .iter()
+                .all(|mat| mat.len() == num_partitions),
+            "Expected all outputs to have {} partitions, got {}",
+            num_partitions,
+            materialized_partitions
+                .iter()
+                .map(|mat| mat.len())
+                .join(", ")
+        );
+
+        let mut transposed_outputs = vec![];
+        for idx in 0..num_partitions {
+            let mut partition_group = vec![];
+            for materialized_partition in &materialized_partitions {
+                let part = &materialized_partition[idx];
+                if part.num_rows()? > 0 {
+                    partition_group.push(part.clone());
+                }
+            }
+            transposed_outputs.push(partition_group);
+        }
+
+        assert_eq!(transposed_outputs.len(), num_partitions);
+        Ok(transposed_outputs)
+    }
+
+    // Async execution to get all partitions out
+    async fn execution_loop(
+        self: Arc<Self>,
+        local_repartition_node: SubmittableTaskStream,
+        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<()> {
+        // Trigger materialization of the partitions
+        // This will produce a stream of materialized outputs, each containing a vector of num_partitions partitions
+        let materialized_stream = local_repartition_node.materialize(scheduler_handle.clone());
+        let transposed_outputs =
+            Self::transpose_materialized_outputs(materialized_stream, self.num_partitions).await?;
+
+        // Make each partition group (partitions equal by (hash % num_partitions)) input to a in-memory scan
+        for partition_group in transposed_outputs {
+            let self_clone = self.clone();
+            let task = make_in_memory_task_from_materialized_outputs(
+                TaskContext::from((&self_clone.context, task_id_counter.next())),
+                partition_group,
+                &(self_clone as Arc<dyn DistributedPipelineNode>),
+            )?;
+
+            let _ = result_tx.send(task).await;
+        }
+
+        Ok(())
     }
 }
 
@@ -127,6 +188,18 @@ impl DistributedPipelineNode for MapReduceNode {
         let input_node = self.child.clone().produce_tasks(stage_context);
         let self_arc = self.clone();
 
+        // First pipeline the local repartition op
+        let self_clone = self.clone();
+        let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::repartition(
+                input,
+                self_clone.repartition_spec.clone(),
+                self_clone.num_partitions,
+                self_clone.config.schema.clone(),
+                StatsState::NotMaterialized,
+            )
+        });
+
         let (result_tx, result_rx) = create_channel(1);
 
         let task_id_counter = stage_context.task_id_counter();
@@ -134,7 +207,12 @@ impl DistributedPipelineNode for MapReduceNode {
 
         let map_reduce_execution = async move {
             self_arc
-                .execute_map_reduce(input_node, task_id_counter, result_tx, scheduler_handle)
+                .execution_loop(
+                    local_repartition_node,
+                    task_id_counter,
+                    result_tx,
+                    scheduler_handle,
+                )
                 .await
         };
 
@@ -144,88 +222,5 @@ impl DistributedPipelineNode for MapReduceNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
-    }
-}
-
-impl MapReduceNode {
-    async fn execute_map_reduce(
-        &self,
-        input_stream: SubmittableTaskStream,
-        task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-    ) -> DaftResult<()> {
-        // Create the repartition instruction pipeline
-        let columns = self.columns.clone();
-        let num_partitions = self.num_partitions;
-        let schema = self.config.schema.clone();
-        let context = self.context();
-
-        let self_arc: Arc<dyn DistributedPipelineNode> = Arc::new((*self).clone());
-        let local_repartition_node =
-            input_stream.pipeline_instruction(self_arc.clone(), move |input| {
-                LocalPhysicalPlan::repartition(
-                    input,
-                    columns.clone(),
-                    num_partitions,
-                    schema.clone(),
-                    StatsState::NotMaterialized,
-                )
-            });
-
-        // Trigger materialization of the partitions
-        let materialized_stream = local_repartition_node.materialize(scheduler_handle.clone());
-        let transposed_outputs =
-            Self::transpose_materialized_outputs(materialized_stream, self.num_partitions).await?;
-
-        // Make each partition group input to a in-memory scan
-        for partition_group in transposed_outputs {
-            let task = make_in_memory_scan_from_materialized_outputs(
-                TaskContext::from((context, task_id_counter.next())),
-                partition_group,
-                &self_arc,
-            )?;
-
-            let _ = result_tx.send(task).await;
-        }
-
-        Ok(())
-    }
-
-    pub async fn transpose_materialized_outputs(
-        materialized_stream: impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin,
-        num_partitions: usize,
-    ) -> DaftResult<Vec<Vec<MaterializedOutput>>> {
-        let materialized_partitions = materialized_stream
-            .map(|mat| mat.map(|mat| mat.split_into_materialized_outputs()))
-            .try_collect::<Vec<_>>()
-            .await?;
-
-        debug_assert!(
-            materialized_partitions
-                .iter()
-                .all(|mat| mat.len() == num_partitions),
-            "Expected all outputs to have {} partitions, got {}",
-            num_partitions,
-            materialized_partitions
-                .iter()
-                .map(|mat| mat.len())
-                .join(", ")
-        );
-
-        let mut transposed_outputs = Vec::with_capacity(num_partitions);
-        for idx in 0..num_partitions {
-            let mut partition_group = Vec::with_capacity(materialized_partitions.len());
-            for materialized_partition in &materialized_partitions {
-                let part = &materialized_partition[idx];
-                if part.num_rows()? > 0 {
-                    partition_group.push(part.clone());
-                }
-            }
-            transposed_outputs.push(partition_group);
-        }
-
-        assert_eq!(transposed_outputs.len(), num_partitions);
-        Ok(transposed_outputs)
     }
 }

@@ -47,6 +47,21 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
+    def get_or_infer_runner_type(self) -> str:
+        """Get or infer the runner type.
+
+        This API will get or infer the currently used runner type according to the following strategies:
+        1. If the `runner` has been set, return its type directly;
+        2. Try to determine whether it's currently running on a ray cluster. If so, consider it to be a ray type;
+        3. Try to determine based on `DAFT_RUNNER` env variable.
+
+        :return: runner type string ("native" or "ray")
+        """
+        if self._ctx._runner is not None:
+            return self._ctx._runner.name
+
+        return self._ctx.get_or_infer_runner_type()
+
     def get_or_create_runner(self) -> Runner[PartitionT]:
         return self._ctx.get_or_create_runner()
 
@@ -191,7 +206,7 @@ def set_execution_config(
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
     These configuration values
-    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.select)).
+    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.select)).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates

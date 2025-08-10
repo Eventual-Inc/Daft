@@ -18,7 +18,7 @@ use super::{
     },
     window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionAndOrderByParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -146,7 +146,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             if input_data.is_empty() {
-                                return RecordBatch::empty(Some(params.original_schema.clone()));
+                                return Ok(RecordBatch::empty(Some(
+                                    params.original_schema.clone(),
+                                )));
                             }
 
                             let groupby_table =
@@ -255,6 +257,10 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
 
     fn name(&self) -> NodeName {
         "WindowPartitionAndOrderBy".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::WindowPartitionAndOrderBy
     }
 
     fn multiline_display(&self) -> Vec<String> {

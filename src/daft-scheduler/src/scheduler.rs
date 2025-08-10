@@ -407,6 +407,7 @@ fn physical_plan_to_partition_tasks(
         PhysicalPlan::Limit(Limit {
             input,
             limit,
+            offset,
             eager,
             num_partitions,
         }) => {
@@ -415,7 +416,13 @@ fn physical_plan_to_partition_tasks(
             let py_physical_plan = py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
             let global_limit_iter = py_physical_plan
                 .getattr(pyo3::intern!(py, "global_limit"))?
-                .call1((upstream_iter, *limit, *eager, *num_partitions))?;
+                .call1((
+                    upstream_iter,
+                    *limit,
+                    offset.unwrap_or(0),
+                    *eager,
+                    *num_partitions,
+                ))?;
             Ok(global_limit_iter.into())
         }
         PhysicalPlan::Explode(Explode {
@@ -518,6 +525,7 @@ fn physical_plan_to_partition_tasks(
             descending,
             nulls_first,
             limit,
+            offset,
             num_partitions,
         }) => {
             let upstream_iter =
@@ -537,6 +545,7 @@ fn physical_plan_to_partition_tasks(
                     descending.clone(),
                     nulls_first.clone(),
                     *limit,
+                    offset.unwrap_or(0),
                     *num_partitions,
                 ))?;
             Ok(global_limit_iter.into())

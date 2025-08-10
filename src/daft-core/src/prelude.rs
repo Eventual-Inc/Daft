@@ -15,6 +15,7 @@ pub use crate::datatypes::prelude::*;
 pub use crate::join::{JoinStrategy, JoinType};
 pub use crate::{
     array::prelude::*,
+    lit::Literal,
     series::{IntoSeries, Series},
 };
 
