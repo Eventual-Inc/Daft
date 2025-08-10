@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{Column, ExprRef};
 use daft_functions_uri::UrlUploadArgs;
@@ -7,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::LogicalPlan,
+    ops::url_download::gen_output_schema,
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
@@ -40,15 +42,19 @@ impl UrlUpload {
         output_column: String,
         passthrough_columns: Vec<Column>,
     ) -> Self {
-        let mut output_schema = input.schema().as_ref().clone();
-        output_schema.append(Field::new(output_column.clone(), DataType::Utf8));
+        let output_schema = gen_output_schema(
+            &input.schema(),
+            &passthrough_columns,
+            &output_column,
+            DataType::Utf8,
+        );
 
         Self {
             plan_id: None,
             node_id: None,
             input,
             output_column,
-            output_schema: Arc::new(output_schema),
+            output_schema,
             args,
             passthrough_columns,
             stats_state: StatsState::NotMaterialized,
@@ -69,9 +75,19 @@ impl UrlUpload {
         self
     }
 
-    pub fn with_passthrough_columns(mut self, passthrough_columns: Vec<Column>) -> Self {
+    pub fn with_passthrough_columns(
+        mut self,
+        passthrough_columns: Vec<Column>,
+    ) -> DaftResult<Self> {
+        let output_schema = gen_output_schema(
+            &self.input.schema(),
+            &passthrough_columns,
+            &self.output_column,
+            DataType::Utf8,
+        );
         self.passthrough_columns = passthrough_columns;
-        self
+        self.output_schema = output_schema;
+        Ok(self)
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {

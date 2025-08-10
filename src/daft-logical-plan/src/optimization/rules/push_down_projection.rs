@@ -302,7 +302,7 @@ impl PushDownProjection {
 
                     let new_url_op = upstream_plan
                         .clone()
-                        .with_passthrough_columns(passthrough_columns);
+                        .with_passthrough_columns(passthrough_columns)?;
                     (plan.with_new_children(&[new_url_op.arced()]).arced(), true)
                 } else {
                     (upstream_plan.clone(), false)

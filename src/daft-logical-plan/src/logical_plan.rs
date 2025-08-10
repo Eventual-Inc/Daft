@@ -567,12 +567,15 @@ impl LogicalPlan {
     /// Update passthrough columns for a node.
     /// This only works for URL nodes.
     /// TODO(srinu): Add support for UDFProject as well.
-    pub fn with_passthrough_columns(self: Arc<Self>, passthrough_columns: Vec<Column>) -> Self {
+    pub fn with_passthrough_columns(
+        self: Arc<Self>,
+        passthrough_columns: Vec<Column>,
+    ) -> DaftResult<Self> {
         let this = Arc::unwrap_or_clone(self);
 
         match this {
-            Self::UrlDownload(url_download) => url_download.with_passthrough_columns(passthrough_columns).into(),
-            Self::UrlUpload(url_upload) => url_upload.with_passthrough_columns(passthrough_columns).into(),
+            Self::UrlDownload(url_download) => Ok(url_download.with_passthrough_columns(passthrough_columns).into()),
+            Self::UrlUpload(url_upload) => Ok(url_upload.with_passthrough_columns(passthrough_columns)?.into()),
             _ => panic!("Logical op {} is not a URL node, with_passthrough_columns() should never be called for non-URL ops", this),
         }
     }

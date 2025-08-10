@@ -336,8 +336,19 @@ impl StreamingSink for UrlUploadSink {
     fn multiline_display(&self) -> Vec<String> {
         vec![
             "URL Upload".to_string(),
-            format!("Input DataColumn: {}", self.args.input),
-            format!("Output DataColumn: {}", self.output_column),
+            format!(
+                "Input Data Col: {}, Loc Col: {}",
+                self.args.input, self.args.location
+            ),
+            format!("Output File Path Col: {}", self.output_column),
+            format!(
+                "Passthrough Cols: {}",
+                self.passthrough_columns
+                    .iter()
+                    .map(|col| col.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         ]
     }
 

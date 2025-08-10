@@ -117,6 +117,27 @@ pub enum Column {
     Bound(BoundColumn),
 }
 
+impl Column {
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        match self {
+            Self::Unresolved(UnresolvedColumn {
+                name,
+                plan_schema: Some(plan_schema),
+                ..
+            }) => plan_schema.get_field(name).cloned(),
+            Self::Unresolved(UnresolvedColumn {
+                name,
+                plan_schema: None,
+                ..
+            }) => schema.get_field(name).cloned(),
+            Self::Resolved(ResolvedColumn::Basic(name)) => schema.get_field(name).cloned(),
+            Self::Resolved(ResolvedColumn::JoinSide(field, ..)) => Ok(field.clone()),
+            Self::Bound(BoundColumn { index, .. }) => Ok(schema[*index].clone()),
+            Self::Resolved(ResolvedColumn::OuterRef(field, _)) => Ok(field.clone()),
+        }
+    }
+}
+
 /// Information about the logical plan node that a column comes from.
 ///
 /// Used for resolving columns in the logical plan builder and subquery unnesting rule.
@@ -210,6 +231,12 @@ impl BoundColumn {
     }
 }
 
+impl std::fmt::Display for BoundColumn {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "col({}: {})", self.index, self.field.name)
+    }
+}
+
 impl Column {
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn name(&self) -> String {
@@ -237,8 +264,8 @@ impl Column {
 
 impl std::fmt::Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Self::Bound(BoundColumn { index, field, .. }) = self {
-            write!(f, "col({}: {})", index, field.name)
+        if let Self::Bound(col) = self {
+            write!(f, "{}", col)
         } else {
             write!(f, "col({})", self.name())
         }
@@ -1526,27 +1553,7 @@ impl Expr {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
             Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
-            Self::Column(Column::Unresolved(UnresolvedColumn {
-                name,
-                plan_schema: Some(plan_schema),
-                ..
-            })) => plan_schema.get_field(name).cloned(),
-            Self::Column(Column::Unresolved(UnresolvedColumn {
-                name,
-                plan_schema: None,
-                ..
-            })) => schema.get_field(name).cloned(),
-
-            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
-                schema.get_field(name).cloned()
-            }
-            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(field, ..))) => {
-                Ok(field.clone())
-            }
-
-            Self::Column(Column::Bound(BoundColumn { index, .. })) => Ok(schema[*index].clone()),
-
-            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field, _))) => Ok(field.clone()),
+            Self::Column(col) => col.to_field(schema),
             Self::Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {

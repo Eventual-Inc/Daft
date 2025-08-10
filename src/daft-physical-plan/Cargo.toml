@@ -35,7 +35,8 @@ python = [
   "daft-dsl/python",
   "daft-logical-plan/python",
   "daft-functions/python",
-  "daft-functions-list/python"
+  "daft-functions-list/python",
+  "daft-functions-uri/python"
 ]
 
 [lints]

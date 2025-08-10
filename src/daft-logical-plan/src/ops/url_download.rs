@@ -36,28 +36,18 @@ pub struct UrlDownload {
 }
 
 impl UrlDownload {
-    pub fn gen_output_schema(
-        input_schema: &SchemaRef,
-        passthrough_columns: &[Column],
-        output_column: &str,
-    ) -> SchemaRef {
-        let mut fields = passthrough_columns
-            .iter()
-            .map(|c| input_schema.get_field(&c.name()).unwrap())
-            .cloned()
-            .collect::<Vec<_>>();
-        fields.push(Field::new(output_column.to_string(), DataType::Binary));
-        Arc::new(Schema::new(fields))
-    }
-
     pub fn new(
         input: Arc<LogicalPlan>,
         args: UrlDownloadArgs<ExprRef>,
         output_column: String,
         passthrough_columns: Vec<Column>,
     ) -> Self {
-        let output_schema =
-            Self::gen_output_schema(&input.schema(), &passthrough_columns, &output_column);
+        let output_schema = gen_output_schema(
+            &input.schema(),
+            &passthrough_columns,
+            &output_column,
+            DataType::Binary,
+        );
 
         Self {
             plan_id: None,
@@ -87,10 +77,11 @@ impl UrlDownload {
 
     pub fn with_passthrough_columns(mut self, passthrough_columns: Vec<Column>) -> Self {
         self.passthrough_columns = passthrough_columns;
-        self.output_schema = Self::gen_output_schema(
+        self.output_schema = gen_output_schema(
             &self.input.schema(),
             &self.passthrough_columns,
             &self.output_column,
+            DataType::Binary,
         );
         self
     }
@@ -131,4 +122,19 @@ impl UrlDownload {
         }
         res
     }
+}
+
+pub fn gen_output_schema(
+    input_schema: &SchemaRef,
+    passthrough_columns: &[Column],
+    output_column: &str,
+    output_dtype: DataType,
+) -> SchemaRef {
+    let mut fields = passthrough_columns
+        .iter()
+        .map(|c| input_schema.get_field(&c.name()).unwrap())
+        .cloned()
+        .collect::<Vec<_>>();
+    fields.push(Field::new(output_column.to_string(), output_dtype));
+    Arc::new(Schema::new(fields))
 }
