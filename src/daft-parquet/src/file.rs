@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
+use arrow2::io::parquet::read::column_iter_to_arrays;
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
@@ -22,7 +22,7 @@ use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
-    determine_parquet_parallelism,
+    determine_parquet_parallelism, infer_arrow_schema_from_metadata,
     metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
@@ -269,11 +269,10 @@ impl ParquetReaderBuilder {
 
     pub fn build(self) -> super::Result<ParquetFileReader> {
         let options = self.schema_inference_options.into();
-        let mut arrow_schema = infer_schema_with_options(&self.metadata, Some(options)).context(
-            UnableToParseSchemaFromMetadataSnafu {
+        let mut arrow_schema = infer_arrow_schema_from_metadata(&self.metadata, Some(options))
+            .context(UnableToParseSchemaFromMetadataSnafu {
                 path: self.uri.clone(),
-            },
-        )?;
+            })?;
 
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema

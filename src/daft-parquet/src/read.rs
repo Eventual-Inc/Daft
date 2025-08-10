@@ -6,9 +6,7 @@ use std::{
 
 use arrow2::{
     bitmap::Bitmap,
-    io::parquet::read::schema::{
-        infer_schema_with_options, SchemaInferenceOptions, StringEncoding,
-    },
+    io::parquet::read::schema::{SchemaInferenceOptions, StringEncoding},
 };
 use common_error::DaftResult;
 use common_runtime::get_io_runtime;
@@ -28,7 +26,7 @@ use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{file::ParquetReaderBuilder, JoinSnafu};
+use crate::{file::ParquetReaderBuilder, infer_arrow_schema_from_metadata, JoinSnafu};
 
 #[cfg(feature = "python")]
 #[derive(Clone)]
@@ -980,7 +978,8 @@ pub async fn read_parquet_schema_and_metadata(
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
     let metadata = builder.metadata;
-    let arrow_schema = infer_schema_with_options(&metadata, Some(schema_inference_options.into()))?;
+    let arrow_schema =
+        infer_arrow_schema_from_metadata(&metadata, Some(schema_inference_options.into()))?;
     let schema = arrow_schema.into();
     Ok((schema, metadata))
 }

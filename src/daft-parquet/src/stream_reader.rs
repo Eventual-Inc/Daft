@@ -19,8 +19,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use crate::{
     determine_parquet_parallelism,
     file::{build_row_ranges, RowGroupRange},
+    infer_arrow_schema_from_metadata,
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
-    stream_reader::read::schema::infer_schema_with_options,
     PARQUET_MORSEL_SIZE,
 };
 
@@ -274,11 +274,12 @@ pub fn local_parquet_read_into_column_iters(
             })?,
     };
 
-    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
-        .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
-            path: uri.to_string(),
-        })?;
-    let schema = prune_fields_from_schema(schema, columns)?;
+    let inferred_schema =
+        infer_arrow_schema_from_metadata(&metadata, Some(schema_infer_options.into()))
+            .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
+                path: uri.to_string(),
+            })?;
+    let schema = prune_fields_from_schema(inferred_schema.into(), columns)?;
     let daft_schema = Schema::from(&schema);
 
     let row_ranges = build_row_ranges(
@@ -367,11 +368,12 @@ pub fn local_parquet_read_into_arrow(
     };
 
     // and infer a [`Schema`] from the `metadata`.
-    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
-        .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
-            path: uri.to_string(),
-        })?;
-    let schema = prune_fields_from_schema(schema, columns)?;
+    let inferred_schema =
+        infer_arrow_schema_from_metadata(&metadata, Some(schema_infer_options.into()))
+            .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
+                path: uri.to_string(),
+            })?;
+    let schema = prune_fields_from_schema(inferred_schema, columns)?;
     let daft_schema = Schema::from(&schema);
     let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
