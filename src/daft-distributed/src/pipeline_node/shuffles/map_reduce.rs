@@ -22,7 +22,6 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
-
 #[derive(Clone)]
 pub(crate) struct MapReduceNode {
     config: PipelineNodeConfig,
