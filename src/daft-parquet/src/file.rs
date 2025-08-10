@@ -7,7 +7,7 @@ use std::{
 use arrow2::io::parquet::read::column_iter_to_arrays;
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_io_runtime};
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::prelude::*;
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
@@ -673,12 +673,7 @@ impl ParquetFileReader {
                                     }
                                     all_arrays
                                         .into_iter()
-                                        .map(|a| {
-                                            Series::try_from((
-                                                field.name.as_str(),
-                                                cast_array_for_daft_if_needed(a),
-                                            ))
-                                        })
+                                        .map(|a| Series::try_from((field.name.as_str(), a)))
                                         .collect::<DaftResult<Vec<Series>>>()
                                 })();
 

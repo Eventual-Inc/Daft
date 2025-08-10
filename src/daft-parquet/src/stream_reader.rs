@@ -3,7 +3,7 @@ use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_compute_runtime, RuntimeTask};
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::prelude::*;
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
@@ -72,7 +72,7 @@ fn arrow_chunk_to_table(
                 let offset = row_range_start.saturating_sub(*index_so_far);
                 arr = arr.sliced(offset, arr.len() - offset);
             }
-            let series_result = Series::try_from((f_name, cast_array_for_daft_if_needed(arr)));
+            let series_result = Series::try_from((f_name, arr));
             Some(series_result)
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -497,9 +497,7 @@ pub async fn local_parquet_read_async(
                     } else {
                         let casted_arrays = v
                             .into_iter()
-                            .map(move |a| {
-                                Series::try_from((f_name, cast_array_for_daft_if_needed(a)))
-                            })
+                            .map(move |a| Series::try_from((f_name, a)))
                             .collect::<Result<Vec<_>, _>>()?;
                         Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
                     }
