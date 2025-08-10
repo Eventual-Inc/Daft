@@ -128,7 +128,7 @@ from daft.session import (
     detach_function,
 )
 from daft.sql import sql, sql_expr
-from daft.udf import udf, _DaftFuncDecorator as func
+from daft.udf import udf, _DaftFuncDecorator as func, gpu_udf
 from daft.viz import register_viz_hook
 from daft.window import Window
 
@@ -189,6 +189,7 @@ __all__ = [
     "func",
     "get_catalog",
     "get_table",
+    "gpu_udf",
     "has_catalog",
     "has_namespace",
     "has_table",

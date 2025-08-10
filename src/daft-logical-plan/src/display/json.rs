@@ -47,6 +47,9 @@ where
             LogicalPlan::UDFProject(project) => json!({
                 "project": project.project.to_string(),
             }),
+            LogicalPlan::GPUProject(project) => json!({
+                "project": project.project.to_string(),
+            }),
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],
             }),

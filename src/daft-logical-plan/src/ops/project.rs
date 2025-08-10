@@ -511,6 +511,7 @@ fn replace_column_with_semantic_id(
                     ))))
                 }
             }
+            _ => todo!(),
         }
     }
 }

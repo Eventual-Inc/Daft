@@ -27,6 +27,7 @@ pub enum LogicalPlan {
     Shard(Shard),
     Project(Project),
     UDFProject(UDFProject),
+    GPUProject(GPUProject),
     Filter(Filter),
     Limit(Limit),
     Offset(Offset),
@@ -133,6 +134,9 @@ impl LogicalPlan {
             Self::UDFProject(UDFProject {
                 projected_schema, ..
             }) => projected_schema.clone(),
+            Self::GPUProject(GPUProject {
+                projected_schema, ..
+            }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Offset(Offset { input, .. }) => input.schema(),
@@ -177,7 +181,12 @@ impl LogicalPlan {
                     .collect();
                 RequiredCols::new(res, None)
             }
-            Self::UDFProject(UDFProject {
+            Self::GPUProject(GPUProject {
+                project,
+                passthrough_columns,
+                ..
+            })
+            | Self::UDFProject(UDFProject {
                 project,
                 passthrough_columns,
                 ..
@@ -321,6 +330,7 @@ impl LogicalPlan {
             Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
             Self::UDFProject(..) => "UDFProject",
+            Self::GPUProject(..) => "GPUProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Offset(..) => "Offset",
@@ -350,6 +360,7 @@ impl LogicalPlan {
             | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
+            | Self::GPUProject(GPUProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Offset(Offset { stats_state, .. })
@@ -388,6 +399,7 @@ impl LogicalPlan {
             Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
+            Self::GPUProject(plan) => Self::GPUProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
@@ -422,6 +434,7 @@ impl LogicalPlan {
             Self::Shard(shard) => shard.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::UDFProject(projection) => projection.multiline_display(),
+            Self::GPUProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Offset(offset) => offset.multiline_display(),
@@ -453,6 +466,7 @@ impl LogicalPlan {
             Self::Shard(Shard { input, .. }) => vec![input],
             Self::Project(Project { input, .. }) => vec![input],
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
+            Self::GPUProject(GPUProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Offset(Offset { input, .. }) => vec![input],
@@ -487,6 +501,7 @@ impl LogicalPlan {
                         input.clone(), projection.clone(),
                     ).unwrap()),
                 Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
+                Self::GPUProject(GPUProject { project, passthrough_columns, .. }) => Self::GPUProject(GPUProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, offset, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
                 Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
@@ -640,6 +655,7 @@ impl LogicalPlan {
             | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
             | Self::UDFProject(UDFProject { plan_id, .. })
+            | Self::GPUProject(GPUProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Offset(Offset { plan_id, .. })
@@ -669,6 +685,7 @@ impl LogicalPlan {
             | Self::Shard(Shard { node_id, .. })
             | Self::Project(Project { node_id, .. })
             | Self::UDFProject(UDFProject { node_id, .. })
+            | Self::GPUProject(GPUProject { node_id, .. })
             | Self::Filter(Filter { node_id, .. })
             | Self::Limit(Limit { node_id, .. })
             | Self::Offset(Offset { node_id, .. })
@@ -699,6 +716,7 @@ impl LogicalPlan {
             Self::Shard(shard) => Self::Shard(shard.with_plan_id(plan_id)),
             Self::Project(project) => Self::Project(project.with_plan_id(plan_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
+            Self::GPUProject(project) => Self::GPUProject(project.with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
             Self::Limit(limit) => Self::Limit(limit.with_plan_id(plan_id)),
             Self::Offset(offset) => Self::Offset(offset.with_plan_id(plan_id)),
@@ -731,6 +749,7 @@ impl LogicalPlan {
             Self::Shard(shard) => Self::Shard(shard.with_node_id(node_id)),
             Self::Project(project) => Self::Project(project.with_node_id(node_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
+            Self::GPUProject(project) => Self::GPUProject(project.with_node_id(node_id)),
             Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
             Self::Limit(limit) => Self::Limit(limit.with_node_id(node_id)),
             Self::Offset(offset) => Self::Offset(offset.with_node_id(node_id)),

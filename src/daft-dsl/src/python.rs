@@ -298,6 +298,30 @@ pub fn row_wise_udf(
     }
 }
 
+#[pyfunction]
+pub fn gpu_udf(
+    name: &str,
+    func: PyObject,
+    arg: PyExpr,
+    return_dtype: PyDataType,
+    device: PyObject,
+    init_args: PyObject,
+) -> PyExpr {
+    use crate::python_udf::gpu_udf;
+
+    PyExpr {
+        expr: gpu_udf(
+            name,
+            func.into(),
+            arg.into(),
+            return_dtype.into(),
+            device.into(),
+            init_args.into(),
+        )
+        .into(),
+    }
+}
+
 /// Initializes all uninitialized UDFs in the expression
 #[pyfunction]
 pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {

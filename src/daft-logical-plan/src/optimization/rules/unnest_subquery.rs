@@ -527,6 +527,7 @@ fn pull_up_correlated_cols(
 
         // ops that cannot pull up correlated columns
         LogicalPlan::UDFProject(..)
+        | LogicalPlan::GPUProject(..)
         | LogicalPlan::Limit(..)
         | LogicalPlan::Offset(..)
         | LogicalPlan::Shard(..)

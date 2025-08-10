@@ -185,6 +185,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
+            LogicalPlan::GPUProject(_) => {
+                todo!("FLOTILLA_MS3: Implement GPUProject")
+            }
             LogicalPlan::Filter(filter) => {
                 let predicate =
                     BoundExpr::try_new(filter.predicate.clone(), &filter.input.schema())?;

@@ -12,9 +12,9 @@ use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
-    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GPUProject, HashAggregate,
+    HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
+    Pivot, Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
@@ -61,7 +61,8 @@ use crate::{
     state_bridge::BroadcastStateBridge,
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
-        limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
+        gpu::GPUOperator, limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
     },
     ExecutionRuntimeContext, PipelineCreationSnafu,
@@ -433,6 +434,26 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::GPUProject(GPUProject {
+            input,
+            project,
+            passthrough_columns,
+            stats_state,
+            schema,
+            ..
+        }) => {
+            let gpu_project_op =
+                GPUOperator::new("".to_string(), passthrough_columns.clone(), schema);
+
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            StreamingSinkNode::new(
+                Arc::new(gpu_project_op),
                 vec![child_node],
                 stats_state.clone(),
                 ctx,

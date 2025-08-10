@@ -186,6 +186,7 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 proto::RelVariant::Union(union_)
             }
             Self::Shard(_)
+            | Self::GPUProject(_)
             | Self::Explode(_)
             | Self::Unpivot(_)
             | Self::Sort(_)

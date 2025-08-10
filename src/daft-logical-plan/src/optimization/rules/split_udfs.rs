@@ -6,6 +6,7 @@ use daft_dsl::{
     functions::{scalar::ScalarFn, BuiltinScalarFn},
     is_udf,
     optimization::{get_required_columns, requires_computation},
+    python_udf::PyScalarFn,
     resolved_col, Column, Expr, ExprRef, ResolvedColumn,
 };
 use daft_functions_list::ListMap;
@@ -13,7 +14,7 @@ use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Project, UDFProject},
+    ops::{GPUProject, Project, UDFProject},
     LogicalPlan,
 };
 
@@ -407,6 +408,19 @@ fn try_optimize_project(
     recursive_optimize_project(&aliased_projection, plan, 0)
 }
 
+fn is_gpu_udf(expr: &ExprRef) -> bool {
+    let mut found_gpu = false;
+    expr.apply(|e| match e.as_ref() {
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::GPU(_))) => {
+            found_gpu = true;
+            Ok(TreeNodeRecursion::Stop)
+        }
+        _ => Ok(TreeNodeRecursion::Continue),
+    })
+    .unwrap();
+    found_gpu
+}
+
 fn recursive_optimize_project(
     projection: &Project,
     plan: Arc<LogicalPlan>,
@@ -434,7 +448,7 @@ fn recursive_optimize_project(
 
     // Split the Projection into:
     // * remaining: remaining parts of the Project to recurse on
-    // * truncated_exprs: current parts of the Project to split into (Project -> U
+    // * truncated_exprs: current parts of the Project to split into (Project -> UDFProject -> Project)
     let (truncated_exprs, remaining): (Vec<ExprRef>, Vec<ExprRef>) =
         split_projection(projection.projection.as_slice(), recursive_count)?;
 
@@ -466,8 +480,8 @@ fn recursive_optimize_project(
         optimized_child_plan.data
     };
 
-    // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
-    let (actor_pool_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
+    // Start building a chain of `child -> Project -> UDFProject -> UDFProject -> ... -> Project`
+    let (udf_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
         .partition(|expr| exists_skip_list_map(expr, is_udf));
 
@@ -501,15 +515,23 @@ fn recursive_optimize_project(
     let new_plan = {
         let mut child = new_plan;
 
-        for expr in actor_pool_stages {
+        for expr in udf_stages {
             let passthrough_columns = child
                 .schema()
                 .field_names()
                 .map(resolved_col)
                 .filter(|c| c.name() != expr.name())
                 .collect();
-            child = LogicalPlan::UDFProject(UDFProject::try_new(child, expr, passthrough_columns)?)
-                .arced();
+
+            if is_gpu_udf(&expr) {
+                child =
+                    LogicalPlan::GPUProject(GPUProject::try_new(child, expr, passthrough_columns)?)
+                        .arced();
+            } else {
+                child =
+                    LogicalPlan::UDFProject(UDFProject::try_new(child, expr, passthrough_columns)?)
+                        .arced();
+            }
         }
         child
     };

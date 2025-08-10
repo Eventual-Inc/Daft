@@ -31,6 +31,7 @@ pub enum LocalPhysicalPlan {
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     UDFProject(UDFProject),
+    GPUProject(GPUProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -96,6 +97,7 @@ impl LocalPhysicalPlan {
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
+            | Self::GPUProject(GPUProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -243,6 +245,23 @@ impl LocalPhysicalPlan {
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::UDFProject(UDFProject {
+            input,
+            project,
+            passthrough_columns,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub fn gpu_project(
+        input: LocalPhysicalPlanRef,
+        project: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::GPUProject(GPUProject {
             input,
             project,
             passthrough_columns,
@@ -704,6 +723,7 @@ impl LocalPhysicalPlan {
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
             | Self::UDFProject(UDFProject { schema, .. })
+            | Self::GPUProject(GPUProject { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Dedup(Dedup { schema, .. })
@@ -775,6 +795,7 @@ impl LocalPhysicalPlan {
             | Self::Limit(Limit { input, .. })
             | Self::Project(Project { input, .. })
             | Self::UDFProject(UDFProject { input, .. })
+            | Self::GPUProject(GPUProject { input, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { input, .. })
             | Self::HashAggregate(HashAggregate { input, .. })
             | Self::Dedup(Dedup { input, .. })
@@ -820,6 +841,7 @@ impl LocalPhysicalPlan {
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::GPUProject(GPUProject { project, passthrough_columns, schema, .. }) => Self::gpu_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -941,6 +963,15 @@ pub struct Project {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UDFProject {
+    pub input: LocalPhysicalPlanRef,
+    pub project: BoundExpr,
+    pub passthrough_columns: Vec<BoundExpr>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GPUProject {
     pub input: LocalPhysicalPlanRef,
     pub project: BoundExpr,
     pub passthrough_columns: Vec<BoundExpr>,

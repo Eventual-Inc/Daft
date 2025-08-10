@@ -11,7 +11,7 @@ use indexmap::IndexSet;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject},
+    ops::{Aggregate, GPUProject, Join, Pivot, Project, Source, UDFProject},
     source_info::SourceInfo,
     LogicalPlan, LogicalPlanRef,
 };
@@ -225,6 +225,43 @@ impl PushDownProjection {
                         .try_optimize_node(new_plan.clone())?
                         .or(Transformed::yes(new_plan));
                     Ok(new_plan)
+                } else {
+                    Ok(Transformed::no(plan))
+                }
+            }
+            LogicalPlan::GPUProject(upstream_udf) => {
+                let mut required_columns = plan.required_columns().single();
+                let passthrough_set = upstream_udf
+                    .passthrough_columns
+                    .iter()
+                    .map(|e| e.name().to_string())
+                    .collect::<IndexSet<_>>();
+                // Assume that previous opt rule should have removed unused cols, thus this op
+                let output_column = upstream_udf.project.name().to_string();
+                debug_assert!(required_columns.contains(&output_column));
+                required_columns.shift_remove(&output_column);
+
+                // If required_columns ⊂ passthrough_set, then push down the projection
+                if required_columns.len() < passthrough_set.len()
+                    && required_columns.is_subset(&passthrough_set)
+                {
+                    // First, update the passthrough_columns to only include the required columns
+                    let pruned_passthrough = required_columns
+                        .iter()
+                        .map(|s| resolved_col(s.as_str()))
+                        .collect::<Vec<_>>();
+
+                    let new_upstream = LogicalPlan::GPUProject(GPUProject::try_new(
+                        upstream_udf.input.clone(),
+                        upstream_udf.project.clone(),
+                        pruned_passthrough,
+                    )?)
+                    .arced();
+
+                    let new_plan = plan.with_new_children(&[new_upstream.into()]).arced();
+                    Ok(self
+                        .try_optimize_node(new_plan.clone())?
+                        .or(Transformed::yes(new_plan)))
                 } else {
                     Ok(Transformed::no(plan))
                 }

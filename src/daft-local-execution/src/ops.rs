@@ -46,6 +46,7 @@ pub enum NodeType {
     Limit,
     MonotonicallyIncreasingId,
     OuterHashJoinProbe,
+    GPUProject,
 }
 
 #[derive(Clone, Debug)]

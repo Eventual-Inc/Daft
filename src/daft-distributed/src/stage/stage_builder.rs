@@ -41,6 +41,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Sample(_)
             | LogicalPlan::Explode(_)
             | LogicalPlan::UDFProject(_)
+            | LogicalPlan::GPUProject(_)
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
             | LogicalPlan::Distinct(_)

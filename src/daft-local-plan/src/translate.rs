@@ -95,6 +95,21 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 udf_project.stats_state.clone(),
             ))
         }
+        LogicalPlan::GPUProject(gpu_project) => {
+            let input = translate(&gpu_project.input)?;
+
+            let project = BoundExpr::try_new(gpu_project.project.clone(), input.schema())?;
+            let passthrough_columns =
+                BoundExpr::bind_all(&gpu_project.passthrough_columns, input.schema())?;
+
+            Ok(LocalPhysicalPlan::gpu_project(
+                input,
+                project,
+                passthrough_columns,
+                gpu_project.projected_schema.clone(),
+                gpu_project.stats_state.clone(),
+            ))
+        }
         LogicalPlan::Sample(sample) => {
             let input = translate(&sample.input)?;
             Ok(LocalPhysicalPlan::sample(

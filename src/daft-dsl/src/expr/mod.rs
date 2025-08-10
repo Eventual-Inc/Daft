@@ -44,7 +44,7 @@ use crate::{
         BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionEvaluator, FUNCTION_REGISTRY,
     },
     optimization::{get_required_columns, requires_computation},
-    python_udf::{PyScalarFn, RowWisePyFn},
+    python_udf::{GpuUdf, PyScalarFn, RowWisePyFn},
 };
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
@@ -1306,6 +1306,14 @@ impl Expr {
                     .join(",");
                 FieldID::new(format!("ScalarPythonUDF_{name}({children_ids})"))
             }
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::GPU(GpuUdf {
+                function_name: name,
+                arg,
+                ..
+            }))) => {
+                let arg_id = arg.semantic_id(schema);
+                FieldID::new(format!("GPU_UDF_{name}({arg_id})"))
+            }
         }
     }
 
@@ -1346,10 +1354,7 @@ impl Expr {
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
             Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
-            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                args: children,
-                ..
-            }))) => children.clone(),
+            Self::ScalarFn(ScalarFn::Python(f)) => f.args(),
         }
     }
 
@@ -1487,6 +1492,21 @@ impl Expr {
                     args: children,
                 })))
             }
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::GPU(GpuUdf {
+                function_name: name,
+                inner,
+                arg,
+                return_dtype,
+                device,
+                init_arg,
+            }))) => Self::ScalarFn(ScalarFn::Python(PyScalarFn::GPU(GpuUdf {
+                function_name: name.clone(),
+                arg: arg.clone(),
+                return_dtype: return_dtype.clone(),
+                device: device.clone(),
+                init_arg: init_arg.clone(),
+                inner: inner.clone(),
+            }))),
         }
     }
 
@@ -1736,17 +1756,7 @@ impl Expr {
             Self::Exists(subquery) => subquery.name(),
             Self::Over(expr, ..) => expr.name(),
             Self::WindowFunction(expr) => expr.name(),
-            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
-                args: children,
-                ..
-            }))) => {
-                if let Some(first_child) = children.first() {
-                    first_child.name()
-                } else {
-                    name.as_ref()
-                }
-            }
+            Self::ScalarFn(ScalarFn::Python(func)) => func.name(),
         }
     }
 
