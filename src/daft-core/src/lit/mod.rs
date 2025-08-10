@@ -106,10 +106,7 @@ pub enum Literal {
         indices_offset: bool,
     },
     /// Embedding data and size
-    Embedding {
-        data: Series,
-        size: usize,
-    },
+    Embedding(Series),
     /// Map keys and values
     Map {
         keys: Series,
@@ -186,9 +183,8 @@ impl Hash for Literal {
                 shape.hash(state);
                 indices_offset.hash(state);
             }
-            Self::Embedding { data, size } => {
+            Self::Embedding(data) => {
                 Hash::hash(data, state);
-                size.hash(state);
             }
             Self::Map { keys, values } => {
                 Hash::hash(keys, state);
@@ -267,7 +263,7 @@ impl Display for Literal {
                     indices_offset
                 )
             }
-            Self::Embedding { data, .. } => {
+            Self::Embedding(data) => {
                 write!(f, "Embedding{}", display_series_in_literal(data))
             }
             Self::Map { keys, values } => {
@@ -328,8 +324,8 @@ impl Literal {
                 indices_offset,
                 ..
             } => DataType::SparseTensor(Box::new(values.data_type().clone()), *indices_offset),
-            Self::Embedding { data, size } => {
-                DataType::Embedding(Box::new(data.data_type().clone()), *size)
+            Self::Embedding(data) => {
+                DataType::Embedding(Box::new(data.data_type().clone()), data.len())
             }
             Self::Map { keys, values } => DataType::Map {
                 key: Box::new(keys.data_type().clone()),

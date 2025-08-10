@@ -260,13 +260,13 @@ impl_array_get_lit!(IntervalArray, Interval);
 impl_array_get_lit!(DateArray, Date);
 impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);
+impl_array_get_lit!(EmbeddingArray, Embedding);
 
 impl_array_get_lit!(Decimal128Array, DataType::Decimal128(precision, scale) => |v| Literal::Decimal(v, *precision as _, *scale as _));
 impl_array_get_lit!(TimestampArray, DataType::Timestamp(tu, tz) => |v| Literal::Timestamp(v, *tu, tz.clone()));
 impl_array_get_lit!(TimeArray, DataType::Time(tu) => |v| Literal::Time(v, *tu));
 impl_array_get_lit!(DurationArray, DataType::Duration(tu) => |v| Literal::Duration(v, *tu));
 impl_array_get_lit!(FixedShapeTensorArray, DataType::FixedShapeTensor(_, shape) => |data| Literal::Tensor { data, shape: shape.clone() });
-impl_array_get_lit!(EmbeddingArray, DataType::Embedding(_, size) => |data| Literal::Embedding { data, size: *size });
 
 impl_image_array_get_lit!(ImageArray);
 impl_image_array_get_lit!(FixedShapeImageArray);

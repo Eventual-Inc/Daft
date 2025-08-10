@@ -201,7 +201,7 @@ impl TryFrom<Vec<Literal>> for Series {
                 let data = values
                     .into_iter()
                     .map(|v| {
-                        unwrap_inner!(v, Literal::Embedding { data, .. } => data)
+                        unwrap_inner!(v, Embedding)
                             .unwrap_or_else(|| Self::full_null("literal", &inner_dtype, size))
                     })
                     .collect::<Vec<_>>();
@@ -358,8 +358,8 @@ mod test {
         },
     ])]
     #[case(vec![
-        Literal::Embedding { data: series![0, 0, 0, 0], size: 4 },
-        Literal::Embedding { data: series![1, 2, 3, 4], size: 4 },
+        Literal::Embedding(series![0, 0, 0, 0]),
+        Literal::Embedding(series![1, 2, 3, 4]),
     ])]
     #[case(vec![
         Literal::Map { keys: series!["a", "b", "c"], values: series![1, 2, 3] },
