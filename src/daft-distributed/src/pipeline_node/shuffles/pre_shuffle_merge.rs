@@ -1,41 +1,145 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::stats::StatsState;
+use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, make_new_task_from_materialized_outputs,
-        shuffle_exchange::ShuffleExchangeNode, MaterializedOutput, SubmittableTaskStream,
+        make_new_task_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
+        scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
         worker::WorkerId,
     },
-    stage::TaskIDCounter,
-    utils::channel::Sender,
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
+    utils::channel::{create_channel, Sender},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MapReduceWithPreShuffleMerge {
-    pub pre_shuffle_merge_threshold: usize,
+#[derive(Clone)]
+pub(crate) struct PreShuffleMergeNode {
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
+    pre_shuffle_merge_threshold: usize,
+    child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl MapReduceWithPreShuffleMerge {
-    pub fn new(pre_shuffle_merge_threshold: usize) -> Self {
+impl PreShuffleMergeNode {
+    const NODE_NAME: NodeName = "PreShuffleMerge";
+
+    pub fn new(
+        node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
+        pre_shuffle_merge_threshold: usize,
+        schema: SchemaRef,
+        child: Arc<dyn DistributedPipelineNode>,
+    ) -> Self {
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![child.node_id()],
+            vec![child.name()],
+            logical_node_id,
+        );
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
+
         Self {
+            config,
+            context,
             pre_shuffle_merge_threshold,
+            child,
         }
+    }
+
+    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
+        Arc::new(self)
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        vec![format!(
+            "Pre-Shuffle Merge Threshold: {}",
+            self.pre_shuffle_merge_threshold
+        )]
     }
 }
 
-impl MapReduceWithPreShuffleMerge {
-    pub async fn execute(
+impl TreeDisplay for PreShuffleMergeNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.context.node_name).unwrap();
+            }
+            _ => {
+                let multiline_display = self.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+            }
+        }
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.child.as_tree_display()]
+    }
+
+    fn get_name(&self) -> String {
+        self.context.node_name.to_string()
+    }
+}
+
+impl DistributedPipelineNode for PreShuffleMergeNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+        vec![self.child.clone()]
+    }
+
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
+        let self_arc = self.clone();
+
+        let (result_tx, result_rx) = create_channel(1);
+
+        let task_id_counter = stage_context.task_id_counter();
+        let scheduler_handle = stage_context.scheduler_handle();
+
+        let merge_execution = async move {
+            self_arc
+                .execute_merge(input_node, task_id_counter, result_tx, scheduler_handle)
+                .await
+        };
+
+        stage_context.spawn(merge_execution);
+        SubmittableTaskStream::from(result_rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
+    }
+}
+
+impl PreShuffleMergeNode {
+    async fn execute_merge(
         &self,
-        shuffle_exchange_node: Arc<ShuffleExchangeNode>,
         input_stream: SubmittableTaskStream,
         task_id_counter: TaskIDCounter,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
@@ -46,7 +150,7 @@ impl MapReduceWithPreShuffleMerge {
 
         // Bucket materialized outputs by worker ID
         let mut worker_buckets: HashMap<WorkerId, Vec<MaterializedOutput>> = HashMap::new();
-        let mut submitted_tasks: Vec<SubmittedTask> = Vec::new();
+        let self_arc: Arc<dyn DistributedPipelineNode> = Arc::new((*self).clone());
 
         // Iterate through the stream directly
         let mut stream = materialized_stream;
@@ -65,34 +169,17 @@ impl MapReduceWithPreShuffleMerge {
                     .sum::<usize>()
                     >= self.pre_shuffle_merge_threshold
                 {
-                    // Drain the bucket and create a new task
+                    // Drain the bucket and create a merge task (no repartitioning)
                     if let Some(materialized_outputs) = worker_buckets.remove(&worker_id) {
-                        let shuffle_exchange_node_clone = shuffle_exchange_node.clone();
-                        let columns = shuffle_exchange_node_clone.columns().clone();
-                        let num_partitions = shuffle_exchange_node.num_partitions();
-                        let schema = shuffle_exchange_node.config().schema.clone();
                         let task = make_new_task_from_materialized_outputs(
-                            TaskContext::from((
-                                shuffle_exchange_node.context(),
-                                task_id_counter.next(),
-                            )),
+                            TaskContext::from((self.context(), task_id_counter.next())),
                             materialized_outputs,
-                            &(shuffle_exchange_node_clone
-                                as Arc<dyn crate::pipeline_node::DistributedPipelineNode>),
-                            move |plan| {
-                                LocalPhysicalPlan::repartition(
-                                    plan,
-                                    columns,
-                                    num_partitions,
-                                    schema,
-                                    StatsState::NotMaterialized,
-                                )
-                            },
+                            &self_arc,
+                            |plan| plan, // Just pass through the plan without repartitioning
                         )?;
 
-                        // Submit the task to the scheduler and collect it
-                        let submitted_task = task.submit(&scheduler_handle)?;
-                        submitted_tasks.push(submitted_task);
+                        // Send the task directly to result_tx
+                        let _ = result_tx.send(task).await;
                     }
                 }
             }
@@ -101,68 +188,16 @@ impl MapReduceWithPreShuffleMerge {
         // Handle any remaining buckets that haven't reached the threshold
         for (_, materialized_outputs) in worker_buckets {
             if !materialized_outputs.is_empty() {
-                let shuffle_exchange_node_clone = shuffle_exchange_node.clone();
-                let columns = shuffle_exchange_node_clone.columns().clone();
-                let num_partitions = shuffle_exchange_node_clone.num_partitions();
-                let schema = shuffle_exchange_node_clone.config().schema.clone();
                 let task = make_new_task_from_materialized_outputs(
-                    TaskContext::from((
-                        shuffle_exchange_node_clone.context(),
-                        task_id_counter.next(),
-                    )),
+                    TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
-                    &(shuffle_exchange_node_clone
-                        as Arc<dyn crate::pipeline_node::DistributedPipelineNode>),
-                    move |plan| {
-                        LocalPhysicalPlan::repartition(
-                            plan,
-                            columns,
-                            num_partitions,
-                            schema,
-                            StatsState::NotMaterialized,
-                        )
-                    },
+                    &self_arc,
+                    |plan| plan, // Just pass through the plan without repartitioning
                 )?;
 
-                // Submit the task to the scheduler and collect it
-                let submitted_task = task.submit(&scheduler_handle)?;
-                submitted_tasks.push(submitted_task);
+                // Send the task directly to result_tx
+                let _ = result_tx.send(task).await;
             }
-        }
-
-        // Await all submitted tasks to get their materialized outputs
-        let mut all_materialized_outputs = Vec::new();
-        for submitted_task in submitted_tasks {
-            if let Some(materialized_output) = submitted_task.await? {
-                all_materialized_outputs.push(materialized_output);
-            }
-        }
-
-        // Convert Vec to stream for transpose_materialized_outputs
-        let materialized_stream =
-            futures::stream::iter(all_materialized_outputs.into_iter().map(Ok));
-
-        // Transpose the materialized outputs
-        let transposed_outputs = ShuffleExchangeNode::transpose_materialized_outputs(
-            materialized_stream,
-            shuffle_exchange_node.num_partitions(),
-        )
-        .await?;
-
-        // Make each partition group input to an in-memory scan
-        for partition_group in transposed_outputs {
-            let shuffle_exchange_node_clone = shuffle_exchange_node.clone();
-            let task = make_in_memory_scan_from_materialized_outputs(
-                TaskContext::from((
-                    shuffle_exchange_node_clone.context(),
-                    task_id_counter.next(),
-                )),
-                partition_group,
-                &(shuffle_exchange_node_clone
-                    as Arc<dyn crate::pipeline_node::DistributedPipelineNode>),
-            )?;
-
-            let _ = result_tx.send(task).await;
         }
 
         Ok(())

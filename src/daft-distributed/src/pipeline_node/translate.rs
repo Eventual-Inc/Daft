@@ -11,15 +11,29 @@ use daft_dsl::{
 };
 use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
+use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
-        concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        gather::GatherNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
-        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
-        sample::SampleNode, scan_source::ScanSourceNode, shuffle_exchange::ShuffleExchangeNode,
-        sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode,
-        window::WindowNode, DistributedPipelineNode, NodeID,
+        concat::ConcatNode,
+        distinct::DistinctNode,
+        explode::ExplodeNode,
+        filter::FilterNode,
+        gather::GatherNode,
+        in_memory_source::InMemorySourceNode,
+        limit::LimitNode,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode,
+        project::ProjectNode,
+        sample::SampleNode,
+        scan_source::ScanSourceNode,
+        shuffles::{map_reduce::MapReduceNode, pre_shuffle_merge::PreShuffleMergeNode},
+        sink::SinkNode,
+        sort::SortNode,
+        top_n::TopNNode,
+        udf::UDFNode,
+        unpivot::UnpivotNode,
+        window::WindowNode,
+        DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -56,6 +70,83 @@ impl LogicalPlanToPipelineNodeTranslator {
         self.pipeline_node_id_counter
     }
 
+    /// Create shuffle nodes with proper strategy handling
+    pub fn create_shuffle_nodes(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        columns: Vec<BoundExpr>,
+        num_partitions: Option<usize>,
+        schema: SchemaRef,
+        child: Arc<dyn DistributedPipelineNode>,
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let actual_num_partitions =
+            num_partitions.unwrap_or_else(|| child.config().clustering_spec.num_partitions());
+
+        let use_pre_shuffle_merge =
+            self.should_use_pre_shuffle_merge(&child, actual_num_partitions)?;
+
+        if use_pre_shuffle_merge {
+            // Create merge node first
+            let merge_node = PreShuffleMergeNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                self.stage_config.config.pre_shuffle_merge_threshold,
+                schema.clone(),
+                child,
+            )
+            .arced();
+
+            // Create map_reduce node that takes merge node as input
+            Ok(MapReduceNode::new(
+                self.get_next_pipeline_node_id(), // Gets a different node ID
+                logical_node_id,
+                &self.stage_config,
+                columns,
+                actual_num_partitions,
+                schema,
+                merge_node,
+            )
+            .arced())
+        } else {
+            // Just create a simple map_reduce node
+            Ok(MapReduceNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                columns,
+                actual_num_partitions,
+                schema,
+                child,
+            )
+            .arced())
+        }
+    }
+
+    /// Determine if we should use pre-shuffle merge strategy
+    fn should_use_pre_shuffle_merge(
+        &self,
+        child: &Arc<dyn DistributedPipelineNode>,
+        target_num_partitions: usize,
+    ) -> DaftResult<bool> {
+        let input_num_partitions = child.config().clustering_spec.num_partitions();
+
+        match self.stage_config.config.shuffle_algorithm.as_str() {
+            "pre_shuffle_merge" => Ok(true),
+            "map_reduce" => Ok(false),
+            "flight_shuffle" => Err(common_error::DaftError::ValueError(
+                "Flight shuffle not yet implemented for flotilla".to_string(),
+            )),
+            "auto" => {
+                let total_num_partitions = input_num_partitions * target_num_partitions;
+                let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
+                const PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE: usize = 200;
+                Ok(geometric_mean > PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE)
+            }
+            _ => Ok(false), // Default to naive map_reduce for unknown strategies
+        }
+    }
+
     pub fn gen_gather_node(
         &mut self,
         logical_node_id: Option<NodeID>,
@@ -84,16 +175,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         if partition_cols.is_empty() {
             Ok(self.gen_gather_node(logical_node_id, input_node))
         } else {
-            Ok(ShuffleExchangeNode::new(
-                self.get_next_pipeline_node_id(),
+            self.create_shuffle_nodes(
                 logical_node_id,
-                &self.stage_config,
                 partition_cols,
                 None,
                 input_node.config().schema.clone(),
                 input_node,
-            )?
-            .arced())
+            )
         }
     }
 }
@@ -292,16 +380,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
 
                 assert!(!columns.is_empty());
-                ShuffleExchangeNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.stage_config,
-                    columns,
-                    repart_spec.num_partitions,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )?
-                .arced()
+                {
+                    let child = self.curr_node.pop().unwrap();
+                    self.create_shuffle_nodes(
+                        logical_node_id,
+                        columns,
+                        repart_spec.num_partitions,
+                        node.schema(),
+                        child,
+                    )?
+                }
             }
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
@@ -347,16 +435,13 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced();
 
                 // Second stage: Repartition to distribute the dataset
-                let repartition = ShuffleExchangeNode::new(
-                    self.get_next_pipeline_node_id(),
+                let repartition = self.create_shuffle_nodes(
                     logical_node_id,
-                    &self.stage_config,
                     columns.clone(),
                     None,
                     distinct.input.schema(),
                     initial_distinct,
-                )?
-                .arced();
+                )?;
 
                 // Last stage: Redo the distinct to get the final result
                 DistinctNode::new(

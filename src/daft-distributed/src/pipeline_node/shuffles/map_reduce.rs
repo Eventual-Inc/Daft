@@ -1,71 +1,232 @@
 use std::sync::Arc;
 
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
+use daft_schema::schema::SchemaRef;
+use futures::{Stream, StreamExt, TryStreamExt};
+use itertools::Itertools;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, shuffle_exchange::ShuffleExchangeNode,
-        SubmittableTaskStream,
+        make_in_memory_scan_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::TaskIDCounter,
-    utils::channel::Sender,
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
+    utils::channel::{create_channel, Sender},
 };
 
-#[derive(Clone, Debug)]
-pub struct NaiveFullyMaterializingMapReduce;
 
-impl NaiveFullyMaterializingMapReduce {
-    pub async fn execute(
+#[derive(Clone)]
+pub(crate) struct MapReduceNode {
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
+    columns: Vec<BoundExpr>,
+    num_partitions: usize,
+    child: Arc<dyn DistributedPipelineNode>,
+}
+
+impl MapReduceNode {
+    const NODE_NAME: NodeName = "MapReduce";
+
+    pub fn new(
+        node_id: NodeID,
+        logical_node_id: Option<NodeID>,
+        stage_config: &StageConfig,
+        columns: Vec<BoundExpr>,
+        num_partitions: usize,
+        schema: SchemaRef,
+        child: Arc<dyn DistributedPipelineNode>,
+    ) -> Self {
+        let context = PipelineNodeContext::new(
+            stage_config,
+            node_id,
+            Self::NODE_NAME,
+            vec![child.node_id()],
+            vec![child.name()],
+            logical_node_id,
+        );
+        let config = PipelineNodeConfig::new(
+            schema,
+            stage_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
+
+        Self {
+            config,
+            context,
+            columns,
+            num_partitions,
+            child,
+        }
+    }
+
+    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
+        Arc::new(self)
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        use itertools::Itertools;
+        vec![
+            format!(
+                "Repartition: {}",
+                self.columns.iter().map(|e| e.to_string()).join(", ")
+            ),
+            format!("Num partitions = {}", self.num_partitions),
+        ]
+    }
+}
+
+impl TreeDisplay for MapReduceNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.context.node_name).unwrap();
+            }
+            _ => {
+                let multiline_display = self.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+            }
+        }
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.child.as_tree_display()]
+    }
+
+    fn get_name(&self) -> String {
+        self.context.node_name.to_string()
+    }
+}
+
+impl DistributedPipelineNode for MapReduceNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+        vec![self.child.clone()]
+    }
+
+    fn produce_tasks(
+        self: Arc<Self>,
+        stage_context: &mut StageExecutionContext,
+    ) -> SubmittableTaskStream {
+        let input_node = self.child.clone().produce_tasks(stage_context);
+        let self_arc = self.clone();
+
+        let (result_tx, result_rx) = create_channel(1);
+
+        let task_id_counter = stage_context.task_id_counter();
+        let scheduler_handle = stage_context.scheduler_handle();
+
+        let map_reduce_execution = async move {
+            self_arc
+                .execute_map_reduce(input_node, task_id_counter, result_tx, scheduler_handle)
+                .await
+        };
+
+        stage_context.spawn(map_reduce_execution);
+        SubmittableTaskStream::from(result_rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
+    }
+}
+
+impl MapReduceNode {
+    async fn execute_map_reduce(
         &self,
-        shuffle_exchange_node: Arc<ShuffleExchangeNode>,
         input_stream: SubmittableTaskStream,
         task_id_counter: TaskIDCounter,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // Create the repartition instruction pipeline
-        let self_clone = shuffle_exchange_node.clone();
+        let columns = self.columns.clone();
+        let num_partitions = self.num_partitions;
+        let schema = self.config.schema.clone();
+        let context = self.context();
+
+        let self_arc: Arc<dyn DistributedPipelineNode> = Arc::new((*self).clone());
         let local_repartition_node =
-            input_stream.pipeline_instruction(shuffle_exchange_node.clone(), move |input| {
+            input_stream.pipeline_instruction(self_arc.clone(), move |input| {
                 LocalPhysicalPlan::repartition(
                     input,
-                    self_clone.columns().clone(),
-                    self_clone.num_partitions(),
-                    self_clone.config().schema.clone(),
+                    columns.clone(),
+                    num_partitions,
+                    schema.clone(),
                     StatsState::NotMaterialized,
                 )
             });
 
         // Trigger materialization of the partitions
         let materialized_stream = local_repartition_node.materialize(scheduler_handle.clone());
-        let transposed_outputs = ShuffleExchangeNode::transpose_materialized_outputs(
-            materialized_stream,
-            shuffle_exchange_node.num_partitions(),
-        )
-        .await?;
+        let transposed_outputs =
+            Self::transpose_materialized_outputs(materialized_stream, self.num_partitions).await?;
 
         // Make each partition group input to a in-memory scan
         for partition_group in transposed_outputs {
-            let shuffle_exchange_node_clone = shuffle_exchange_node.clone();
             let task = make_in_memory_scan_from_materialized_outputs(
-                TaskContext::from((
-                    shuffle_exchange_node_clone.context(),
-                    task_id_counter.next(),
-                )),
+                TaskContext::from((context, task_id_counter.next())),
                 partition_group,
-                &(shuffle_exchange_node_clone
-                    as Arc<dyn crate::pipeline_node::DistributedPipelineNode>),
+                &self_arc,
             )?;
 
             let _ = result_tx.send(task).await;
         }
 
         Ok(())
+    }
+
+    pub async fn transpose_materialized_outputs(
+        materialized_stream: impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin,
+        num_partitions: usize,
+    ) -> DaftResult<Vec<Vec<MaterializedOutput>>> {
+        let materialized_partitions = materialized_stream
+            .map(|mat| mat.map(|mat| mat.split_into_materialized_outputs()))
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        debug_assert!(
+            materialized_partitions
+                .iter()
+                .all(|mat| mat.len() == num_partitions),
+            "Expected all outputs to have {} partitions, got {}",
+            num_partitions,
+            materialized_partitions
+                .iter()
+                .map(|mat| mat.len())
+                .join(", ")
+        );
+
+        let mut transposed_outputs = Vec::with_capacity(num_partitions);
+        for idx in 0..num_partitions {
+            let mut partition_group = Vec::with_capacity(materialized_partitions.len());
+            for materialized_partition in &materialized_partitions {
+                let part = &materialized_partition[idx];
+                if part.num_rows()? > 0 {
+                    partition_group.push(part.clone());
+                }
+            }
+            transposed_outputs.push(partition_group);
+        }
+
+        assert_eq!(transposed_outputs.len(), num_partitions);
+        Ok(transposed_outputs)
     }
 }

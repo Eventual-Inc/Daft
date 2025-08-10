@@ -48,7 +48,6 @@ mod monotonically_increasing_id;
 mod project;
 mod sample;
 mod scan_source;
-mod shuffle_exchange;
 mod shuffles;
 mod sink;
 mod sort;
@@ -116,6 +115,7 @@ impl MaterializedOutput {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,
@@ -136,6 +136,7 @@ impl PipelineNodeConfig {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct PipelineNodeContext {
     pub plan_id: PlanID,
     pub stage_id: StageID,

@@ -15,8 +15,8 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        shuffle_exchange::ShuffleExchangeNode, translate::LogicalPlanToPipelineNodeTranslator,
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
     },
     scheduling::{
         scheduler::SubmittableTask,
@@ -258,27 +258,21 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.stage_config.config.as_ref(),
         );
 
-        let left = ShuffleExchangeNode::new(
-            self.get_next_pipeline_node_id(),
+        let left = self.create_shuffle_nodes(
             logical_node_id,
-            &self.stage_config,
             left_on.clone(),
             Some(num_partitions),
             left.config().schema.clone(),
             left,
-        )?
-        .arced();
+        )?;
 
-        let right = ShuffleExchangeNode::new(
-            self.get_next_pipeline_node_id(),
+        let right = self.create_shuffle_nodes(
             logical_node_id,
-            &self.stage_config,
             right_on.clone(),
             Some(num_partitions),
             right.config().schema.clone(),
             right,
-        )?
-        .arced();
+        )?;
 
         Ok(HashJoinNode::new(
             self.get_next_pipeline_node_id(),
