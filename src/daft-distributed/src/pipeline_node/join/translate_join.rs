@@ -87,7 +87,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 Some(num_partitions),
                 left_on.iter().map(|e| e.clone().into()).collect(),
             )),
-            Some(num_partitions),
             left.config().schema.clone(),
             left,
         )?;
@@ -98,7 +97,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 Some(num_partitions),
                 right_on.iter().map(|e| e.clone().into()).collect(),
             )),
-            Some(num_partitions),
             right.config().schema.clone(),
             right,
         )?;

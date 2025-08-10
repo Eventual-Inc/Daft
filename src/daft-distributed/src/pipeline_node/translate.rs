@@ -78,15 +78,20 @@ impl LogicalPlanToPipelineNodeTranslator {
         &mut self,
         logical_node_id: Option<NodeID>,
         repartition_spec: RepartitionSpec,
-        num_partitions: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-        let actual_num_partitions =
-            num_partitions.unwrap_or_else(|| child.config().clustering_spec.num_partitions());
+        let num_partitions = match &repartition_spec {
+            RepartitionSpec::Hash(config) => config
+                .num_partitions
+                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
+            RepartitionSpec::Random(config) => config
+                .num_partitions
+                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
+            RepartitionSpec::IntoPartitions(config) => config.num_partitions,
+        };
 
-        let use_pre_shuffle_merge =
-            self.should_use_pre_shuffle_merge(&child, actual_num_partitions)?;
+        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
         if use_pre_shuffle_merge {
             // Create merge node first
@@ -106,7 +111,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 &self.stage_config,
                 repartition_spec,
-                actual_num_partitions,
+                num_partitions,
                 schema,
                 merge_node,
             )
@@ -118,7 +123,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 &self.stage_config,
                 repartition_spec,
-                actual_num_partitions,
+                num_partitions,
                 schema,
                 child,
             )
@@ -185,7 +190,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                     num_partitions,
                     partition_cols.iter().map(|e| e.clone().into()).collect(),
                 )),
-                num_partitions,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -385,14 +389,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             )
             .arced(),
             LogicalPlan::Repartition(repartition) => {
-                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
-                    todo!("FLOTILLA_MS3: Support other types of repartition");
-                };
+                match &repartition.repartition_spec {
+                    RepartitionSpec::Hash(repart_spec) => {
+                        assert!(!repart_spec.by.is_empty());
+                    }
+                    RepartitionSpec::Random(_) => {}
+                    RepartitionSpec::IntoPartitions(_) => {
+                        todo!("FLOTILLA_MS3: Support other types of repartition");
+                    }
+                }
                 let child = self.curr_node.pop().unwrap();
                 self.create_shuffle_nodes(
                     logical_node_id,
                     repartition.repartition_spec.clone(),
-                    repart_spec.num_partitions,
                     node.schema(),
                     child,
                 )?
@@ -447,7 +456,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         None,
                         columns.clone().into_iter().map(|e| e.into()).collect(),
                     )),
-                    None,
                     distinct.input.schema(),
                     initial_distinct,
                 )?;
