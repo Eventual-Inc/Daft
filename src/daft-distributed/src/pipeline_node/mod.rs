@@ -136,7 +136,6 @@ impl PipelineNodeConfig {
     }
 }
 
-#[derive(Clone)]
 pub(super) struct PipelineNodeContext {
     pub plan_id: PlanID,
     pub stage_id: StageID,

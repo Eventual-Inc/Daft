@@ -29,7 +29,7 @@ use crate::{
         project::ProjectNode,
         sample::SampleNode,
         scan_source::ScanSourceNode,
-        shuffles::{map_reduce::MapReduceNode, pre_shuffle_merge::PreShuffleMergeNode},
+        shuffles::{pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode},
         sink::SinkNode,
         sort::SortNode,
         top_n::TopNNode,
@@ -105,9 +105,8 @@ impl LogicalPlanToPipelineNodeTranslator {
             )
             .arced();
 
-            // Create map_reduce node that takes merge node as input
-            Ok(MapReduceNode::new(
-                self.get_next_pipeline_node_id(), // Gets a different node ID
+            Ok(RepartitionNode::new(
+                self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
                 repartition_spec,
@@ -117,8 +116,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             )
             .arced())
         } else {
-            // Just create a simple map_reduce node
-            Ok(MapReduceNode::new(
+            Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,

@@ -21,8 +21,7 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
-#[derive(Clone)]
-pub(crate) struct MapReduceNode {
+pub(crate) struct RepartitionNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
@@ -30,8 +29,8 @@ pub(crate) struct MapReduceNode {
     child: Arc<dyn DistributedPipelineNode>,
 }
 
-impl MapReduceNode {
-    const NODE_NAME: NodeName = "MapReduce";
+impl RepartitionNode {
+    const NODE_NAME: NodeName = "Repartition";
 
     pub fn new(
         node_id: NodeID,
@@ -53,7 +52,9 @@ impl MapReduceNode {
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            repartition_spec
+                .to_clustering_spec(child.config().clustering_spec.num_partitions())
+                .into(),
         );
 
         Self {
@@ -143,7 +144,7 @@ impl MapReduceNode {
     }
 }
 
-impl TreeDisplay for MapReduceNode {
+impl TreeDisplay for RepartitionNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -168,7 +169,7 @@ impl TreeDisplay for MapReduceNode {
     }
 }
 
-impl DistributedPipelineNode for MapReduceNode {
+impl DistributedPipelineNode for RepartitionNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
