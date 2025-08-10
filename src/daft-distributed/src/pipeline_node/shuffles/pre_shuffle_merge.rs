@@ -145,16 +145,14 @@ impl PreShuffleMergeNode {
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        // First, materialize all input data (don't pipeline repartition)
-        let materialized_stream = input_stream.materialize(scheduler_handle.clone());
+        // First, materialize all input data.
+        let mut materialized_stream = input_stream.materialize(scheduler_handle.clone());
 
         // Bucket materialized outputs by worker ID
         let mut worker_buckets: HashMap<WorkerId, Vec<MaterializedOutput>> = HashMap::new();
         let self_arc: Arc<dyn DistributedPipelineNode> = Arc::new((*self).clone());
 
-        // Iterate through the stream directly
-        let mut stream = materialized_stream;
-        while let Some(output) = stream.try_next().await? {
+        while let Some(output) = materialized_stream.try_next().await? {
             let worker_id = output.worker_id().clone();
             worker_buckets
                 .entry(worker_id.clone())
@@ -179,7 +177,9 @@ impl PreShuffleMergeNode {
                         )?;
 
                         // Send the task directly to result_tx
-                        let _ = result_tx.send(task).await;
+                        if result_tx.send(task).await.is_err() {
+                            break;
+                        }
                     }
                 }
             }
@@ -196,7 +196,9 @@ impl PreShuffleMergeNode {
                 )?;
 
                 // Send the task directly to result_tx
-                let _ = result_tx.send(task).await;
+                if result_tx.send(task).await.is_err() {
+                    break;
+                }
             }
         }
 
