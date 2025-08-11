@@ -97,6 +97,10 @@ impl StagePlanBuilder {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)
             }
+            LogicalPlan::IntoBatches(_) => {
+                can_translate = false;
+                Ok(TreeNodeRecursion::Stop)
+            }
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::SubqueryAlias(_)
