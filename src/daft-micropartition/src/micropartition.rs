@@ -566,8 +566,6 @@ impl MicroPartition {
             let total_size: usize = tables
                 .iter()
                 .map(daft_recordbatch::RecordBatch::size_bytes)
-                .collect::<DaftResult<Vec<_>>>()?
-                .iter()
                 .sum();
             Some(total_size)
         } else if let TableState::Unloaded(scan_task) = &*guard {
