@@ -119,20 +119,18 @@ DAFT_CAN_READ_FILES = [
     #     "parquet-testing/data/nested_structs.rust.parquet",
     #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nested_structs.rust.parquet",
     # ),
-    # We currently don't support Map Dtypes
-    # (
-    #     "parquet-testing/data/nonnullable.impala.parquet",
-    #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nonnullable.impala.parquet",
-    # ),
+    (
+        "parquet-testing/data/nonnullable.impala.parquet",
+        "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nonnullable.impala.parquet",
+    ),
     (
         "parquet-testing/data/null_list.parquet",
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/null_list.parquet",
     ),
-    # We currently don't support Map Dtypes
-    # (
-    #     "parquet-testing/data/nullable.impala.parquet",
-    #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nullable.impala.parquet",
-    # ),
+    (
+        "parquet-testing/data/nullable.impala.parquet",
+        "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nullable.impala.parquet",
+    ),
     (
         "parquet-testing/data/nulls.snappy.parquet",
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nulls.snappy.parquet",
@@ -156,10 +154,10 @@ DAFT_CAN_READ_FILES = [
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/rle-dict-snappy-checksum.parquet",
     ),
     # We currently don't support RLE Boolean encodings
-    # (
-    #     "parquet-testing/data/rle_boolean_encoding.parquet",
-    #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/rle_boolean_encoding.parquet",
-    # ),
+    (
+        "parquet-testing/data/rle_boolean_encoding.parquet",
+        "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/rle_boolean_encoding.parquet",
+    ),
     (
         "parquet-testing/data/single_nan.parquet",
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/single_nan.parquet",
@@ -514,6 +512,7 @@ def test_read_timeout_gcs(multithreaded_io):
 
 @pytest.mark.integration()
 def test_parquet_read_large_strings_in_map(public_storage_io_config):
+    # This is a file with a map column that contains 2^30 large strings
     path = "s3://daft-public-data/test_fixtures/parquet/large_strings_in_map.parquet"
     table = daft.read_parquet(path, io_config=public_storage_io_config).collect()
     assert len(table) == 2
