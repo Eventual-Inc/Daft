@@ -1,4 +1,5 @@
 mod detect_monotonic_id;
+mod drop_into_batches;
 mod drop_repartition;
 mod eliminate_cross_join;
 mod eliminate_offsets;
@@ -27,6 +28,7 @@ mod split_udfs;
 mod unnest_subquery;
 
 pub use detect_monotonic_id::DetectMonotonicId;
+pub use drop_into_batches::DropIntoBatches;
 pub use drop_repartition::DropRepartition;
 pub use eliminate_cross_join::EliminateCrossJoin;
 pub use eliminate_offsets::EliminateOffsets;
