@@ -72,6 +72,7 @@ class TestLanceDBCountPushdown:
         """Test count(*) pushdown with CountMode.All."""
         df = daft.read_lance(dataset_path).count()
 
+        _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
 
@@ -99,6 +100,7 @@ class TestLanceDBCountPushdown:
         """Test count(column) does not use pushdown as it's not a count(*)."""
         df = daft.read_lance(dataset_path).count("a")
 
+        _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
 
@@ -126,6 +128,7 @@ class TestLanceDBCountPushdown:
         """Test count(column, CountMode.Valid) does not use pushdown as it's not supported."""
         df = daft.read_lance(dataset_path).select("b").count()
 
+        _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
 
@@ -153,6 +156,7 @@ class TestLanceDBCountPushdown:
         """Test count(column, CountMode.Null) does not use pushdown as it's not supported."""
         df = daft.read_lance(dataset_path).filter(col("b").is_null()).count()
 
+        _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
 
@@ -188,6 +192,7 @@ class TestLanceDBCountPushdown:
 
         df = daft.read_lance(str(tmp_dir)).count()
 
+        _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
 
