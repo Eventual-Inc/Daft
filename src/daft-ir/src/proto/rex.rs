@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::expr::StddevParams;
 
-use super::{ProtoResult, ToFromProto, from_proto, from_proto_arc};
+use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
