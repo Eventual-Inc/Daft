@@ -85,9 +85,10 @@ class GpuUdf:
             arg=arg,
             name=self.name,
             inner=self.inner,
-            init_args=self.init_args,
+            return_dtype=self.return_daft_dtype,
+            init_arg=self.init_args,
             device=self.device,
-            gpu_mem=self.gpu_mem,
+            _gpu_mem=self.gpu_mem,
         )
 
 

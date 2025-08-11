@@ -436,11 +436,12 @@ class Expression:
         arg: Expression,
         name: builtins.str,
         inner,
-        init_args: Callable[[], Any],
+        return_dtype: DataType,
+        init_arg: Callable[[], Any],
         device,
-        gpu_mem: builtins.float,
+        _gpu_mem: builtins.float,
     ) -> Expression:
-        return Expression._from_pyexpr(_gpu_udf(name, inner, init_args, device, gpu_mem))
+        return Expression._from_pyexpr(_gpu_udf(name, inner, arg._expr, return_dtype._dtype, device, init_arg))
 
     @staticmethod
     def to_struct(*fields: Expression | builtins.str) -> Expression:

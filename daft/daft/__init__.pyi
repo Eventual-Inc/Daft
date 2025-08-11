@@ -1267,10 +1267,11 @@ def row_wise_udf(
 ) -> PyExpr: ...
 def gpu_udf(
     name: str,
-    func: Callable[..., Any],
+    inner: Callable[..., Any],
+    arg: PyExpr,
     return_dtype: PyDataType,
     device: Any,
-    init_args: Any,
+    init_arg: Any,
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def try_get_udf_name(expression: PyExpr) -> str | None: ...
