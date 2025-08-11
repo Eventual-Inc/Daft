@@ -3,14 +3,19 @@ from __future__ import annotations
 import pytest
 
 import daft
+from tests.utils import sort_pydict
 
 
 @pytest.mark.integration()
 def test_url_download_http(mock_http_image_urls, image_data):
+    mock_http_image_urls = sorted(mock_http_image_urls)
     data = {"urls": mock_http_image_urls}
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download())
-    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(mock_http_image_urls))]}
+    assert sort_pydict(df.to_pydict(), "urls", ascending=True) == {
+        **data,
+        "data": [image_data for _ in range(len(mock_http_image_urls))],
+    }
 
 
 @pytest.mark.integration()
