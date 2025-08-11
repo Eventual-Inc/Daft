@@ -2623,7 +2623,8 @@ class DataFrame:
         if how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
-
+            if strategy is not None:
+                raise ValueError("In a cross join, `strategy` cannot be set")
             left_on = []
             right_on = []
         elif on is None:
