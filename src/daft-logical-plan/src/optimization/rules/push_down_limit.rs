@@ -47,7 +47,9 @@ impl PushDownLimit {
                     // Naive commuting with unary ops.
                     //
                     // Limit-UnaryOp -> UnaryOp-Limit
-                    LogicalPlan::Repartition(_) | LogicalPlan::Project(_) => {
+                    LogicalPlan::Repartition(_)
+                    | LogicalPlan::Project(_)
+                    | LogicalPlan::IntoBatches(_) => {
                         let new_limit = plan
                             .with_new_children(&[input.arc_children()[0].clone()])
                             .into();
@@ -398,6 +400,32 @@ mod tests {
         )
         .limit(limit, false)?
         .select(proj)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit commutes with IntoBatches.
+    ///
+    /// Limit-IntoBatches-Source -> IntoBatches-Source[with_limit]
+    #[test]
+    fn limit_commutes_with_into_batches() -> DaftResult<()> {
+        let limit = 5;
+        let batch_size = 10usize;
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .into_batches(batch_size)?
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .into_batches(batch_size)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
