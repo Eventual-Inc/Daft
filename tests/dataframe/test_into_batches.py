@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import pytest
-
 import daft
 from tests.conftest import get_tests_daft_runner_name
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="into_batches not yet implemented on Ray runner")
 def test_large_partition_into_batches(make_df):
     """Test splitting a large partition (size 64) into batches of size 8."""
     # Create a dataframe with 64 rows in a single partition
@@ -31,7 +28,6 @@ def test_large_partition_into_batches(make_df):
     assert result_ids == list(range(64))
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="into_batches not yet implemented on Ray runner")
 def test_many_small_partitions_into_batches(make_df):
     """Test coalescing many small partitions (64 partitions of size 1) into batches of size 8."""
     # Create a dataframe with 64 rows split into 64 partitions (1 row each)
@@ -41,22 +37,21 @@ def test_many_small_partitions_into_batches(make_df):
     # Split into batches of size 8
     df = df.into_batches(8)
 
-    # Create a UDF that asserts each batch size is exactly 8
-    @daft.udf(return_dtype=daft.DataType.int64())
-    def check_batch_size(data):
-        batch_size = len(data.to_pylist())
-        assert batch_size == 8, f"Expected batch size 8, got {batch_size}"
-        return data.to_pylist()
+    batch_lengths = [len(batch) for batch in df.to_arrow_iter()]
 
-    # Apply the UDF to verify batch sizes
-    result = df.with_column("checked_id", check_batch_size(df["id"])).collect()
+    test_runner_name = get_tests_daft_runner_name()
+    if test_runner_name == "native":
+        assert batch_lengths == [8] * 8, f"Expected all batches to be size 8, got {batch_lengths}"
+    elif test_runner_name == "ray":
+        # Distributed batching is best effort based on partition outputs
+        for n in batch_lengths[:-1]:
+            assert n >= 8, f"Expected all batches except the last one to be size >= 8, got {batch_lengths}"
+    else:
+        raise ValueError(f"Unknown runner: {test_runner_name}")
 
-    # Verify the data is unchanged (order might be different due to partitioning)
-    result_ids = sorted(result.select("checked_id").to_pydict()["checked_id"])
-    assert result_ids == list(range(64))
+    assert sum(batch_lengths) == 64, f"Expected 64 rows, got {sum(batch_lengths)}"
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="into_batches not yet implemented on Ray runner")
 def test_into_batches_with_remainder():
     """Test into_batches when the total size doesn't evenly divide by batch_size."""
     # Create a dataframe with 70 rows (not evenly divisible by 8)
@@ -80,7 +75,6 @@ def test_into_batches_with_remainder():
     assert result_ids == list(range(70))
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="into_batches not yet implemented on Ray runner")
 def test_into_batches_single_row():
     """Test into_batches with a single row."""
     df = daft.from_pydict({"id": [42]})
@@ -97,7 +91,6 @@ def test_into_batches_single_row():
     assert result.to_pydict()["checked_id"] == [42]
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="into_batches not yet implemented on Ray runner")
 def test_into_batches_empty_dataframe():
     """Test into_batches with an empty dataframe."""
     df = daft.from_pydict({"id": []})
