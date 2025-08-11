@@ -124,6 +124,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .map(|(f, v)| (f.name, v))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
+            Self::File(_) => todo!(),
         }
     }
 }

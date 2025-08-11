@@ -88,6 +88,54 @@ pub enum Literal {
     Python(PyObjectWrapper),
     /// TODO chore: audit struct literal vs. struct expression support.
     Struct(IndexMap<Field, Literal>),
+    File(DaftFile),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum DaftFile {
+    Reference(String),
+    Data(Vec<u8>),
+}
+
+impl DaftFile {
+    pub fn get_type(&self) -> DaftFileType {
+        match self {
+            Self::Reference(_) => DaftFileType::Reference,
+            Self::Data(_) => DaftFileType::Data,
+        }
+    }
+}
+
+#[repr(u8)]
+pub enum DaftFileType {
+    Reference = 0,
+    Data = 1,
+}
+
+impl TryFrom<u8> for DaftFileType {
+    type Error = DaftError;
+
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Reference),
+            1 => Ok(Self::Data),
+            _ => Err(DaftError::ValueError(format!(
+                "Invalid DaftFileType value: {}",
+                value
+            ))),
+        }
+    }
+}
+
+impl Eq for DaftFile {}
+
+impl Hash for DaftFile {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Reference(path) => path.hash(state),
+            Self::Data(bytes) => bytes.hash(state),
+        }
+    }
 }
 
 impl Eq for Literal {}
@@ -148,6 +196,7 @@ impl Hash for Literal {
                     f.hash(state);
                 });
             }
+            Self::File(file) => file.hash(state),
         }
     }
 }
@@ -195,6 +244,8 @@ impl Display for Literal {
                 }
                 write!(f, ")")
             }
+            Self::File(DaftFile::Reference(path)) => write!(f, "File({path:?})"),
+            Self::File(DaftFile::Data(bytes)) => write!(f, "File({bytes:?})"),
         }
     }
 }
@@ -231,6 +282,7 @@ impl Literal {
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
             Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
+            Self::File(_) => DataType::File,
         }
     }
 
@@ -322,6 +374,7 @@ impl Literal {
             #[cfg(feature = "python")]
             Self::Python(..) => display_sql_err,
             Self::Struct(..) => display_sql_err,
+            Self::File(_) => display_sql_err,
         }
     }
 

@@ -325,6 +325,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralDeserializer {
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
             Literal::Struct(_) => Err(LitError::custom("Not implemented: Struct")),
+            Literal::File(_) => Err(LitError::custom("Not implemented: File")),
         }
     }
 
@@ -366,6 +367,7 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
             Literal::List(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
+            Literal::File(_) => Err(LitError::custom("Not implemented: File")),
             Literal::Struct(v) => visitor.visit_map(StructDeserializer::new(v)),
         }
     }

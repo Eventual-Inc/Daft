@@ -341,6 +341,11 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
+    #[staticmethod]
+    pub fn file() -> PyResult<Self> {
+        Ok(DataType::File.into())
+    }
+
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         match &self.dtype {

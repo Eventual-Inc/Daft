@@ -1,4 +1,4 @@
-use crate::{lit::Literal, prelude::*};
+use crate::{datatypes::logical::FileArray, lit::Literal, prelude::*};
 
 impl NullArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
@@ -132,7 +132,17 @@ impl_array_get_lit!(Utf8Array, Utf8);
 impl_array_get_lit!(IntervalArray, Interval);
 impl_array_get_lit!(DateArray, Date);
 impl_array_get_lit!(ListArray, List);
-impl_array_get_lit!(FixedSizeListArray, List);
+impl FixedSizeListArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        map_or_null(self.get(idx), Literal::List)
+    }
+}
 
 impl_array_get_lit!(Decimal128Array, DataType::Decimal128(precision, scale) => |v| Literal::Decimal(v, *precision as _, *scale as _));
 impl_array_get_lit!(TimestampArray, DataType::Timestamp(tu, tz) => |v| Literal::Timestamp(v, *tu, tz.clone()));
@@ -148,3 +158,14 @@ unimplemented_get_lit!(FixedShapeTensorArray);
 unimplemented_get_lit!(SparseTensorArray);
 unimplemented_get_lit!(FixedShapeSparseTensorArray);
 unimplemented_get_lit!(MapArray);
+impl FileArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        map_or_null(self.get(idx), Literal::File)
+    }
+}

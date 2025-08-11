@@ -1,6 +1,10 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::prelude::*;
+use crate::{
+    datatypes::logical::FileArray,
+    lit::{DaftFile, DaftFileType},
+    prelude::*,
+};
 
 impl TryFrom<Vec<Literal>> for Series {
     type Error = DaftError;
@@ -65,7 +69,11 @@ impl TryFrom<Vec<Literal>> for Series {
             DataType::Interval => from_iter_with_str!(IntervalArray, Interval),
             DataType::Float32 => from_iter_with_field!(Float32Array, Float32),
             DataType::Float64 => from_iter_with_field!(Float64Array, Float64),
-            DataType::Decimal128 { .. } => from_iter_with_field!(Decimal128Array, Decimal),
+            DataType::Decimal128 { .. } => <Decimal128Array>::from_iter(
+                field,
+                values.into_iter().map(|lit| unwrap_inner!(lit, Decimal)),
+            )
+            .into_series(),
             DataType::Timestamp(_, _) => {
                 let data = values.into_iter().map(|lit| unwrap_inner!(lit, Timestamp));
                 let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
@@ -138,6 +146,35 @@ impl TryFrom<Vec<Literal>> for Series {
                 });
 
                 PythonArray::from(("literal", data.collect::<Vec<_>>())).into_series()
+            }
+            DataType::File => {
+                let (discriminant, values) = values
+                    .iter()
+                    .map(|v| match v {
+                        Literal::File(DaftFile::Reference(path)) => {
+                            (DaftFileType::Reference as u8, path.clone().into_bytes())
+                        }
+                        Literal::File(DaftFile::Data(bytes)) => {
+                            (DaftFileType::Data as u8, bytes.clone())
+                        }
+                        _ => todo!(),
+                    })
+                    .unzip::<_, _, Vec<u8>, Vec<_>>();
+                let discriminant_field = Field::new("discriminant", DataType::UInt8);
+                let values_field = Field::new("data", DataType::Binary);
+                let discriminant = UInt8Array::from_values_iter(
+                    discriminant_field.clone(),
+                    discriminant.into_iter(),
+                )
+                .into_series();
+                let values =
+                    BinaryArray::from_values(&values_field.name, values.into_iter()).into_series();
+                let fld = Field::new(
+                    "literal",
+                    DataType::Struct(vec![discriminant_field, values_field]),
+                );
+                let sa = StructArray::new(fld, vec![discriminant, values], None);
+                FileArray::new(Field::new("literal", DataType::File), sa).into_series()
             }
             DataType::FixedSizeBinary(..)
             | DataType::FixedSizeList(..)

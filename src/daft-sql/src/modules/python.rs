@@ -69,6 +69,7 @@ fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<PyObject> {
             .into_py_any(py),
             Literal::Python(_) => unreachable_variant!(Python),
             Literal::Struct(_) => todo!(),
+            Literal::File(_) => todo!(),
         },
         _ => Err(
             DaftError::InternalError("expected a literal, found an expression".to_string()).into(),

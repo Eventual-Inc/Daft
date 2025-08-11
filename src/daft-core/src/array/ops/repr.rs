@@ -5,7 +5,7 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FileArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -411,6 +411,11 @@ impl StructArray {
         } else {
             Ok("None".to_string())
         }
+    }
+}
+impl FileArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        Ok(self.get_lit(idx).to_string())
     }
 }
 
