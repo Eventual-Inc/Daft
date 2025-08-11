@@ -198,6 +198,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
+            LogicalPlan::IntoBatches(_into_batches) => {
+                todo!("IntoBatches not yet supported in the distributed pipeline node translator")
+            }
             LogicalPlan::Limit(limit) => {
                 if limit.offset.is_some() {
                     todo!("FLOTILLA_MS3: Implement Offset")
@@ -417,24 +420,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Join(join) => {
-                let (remaining_on, _, _, _) = join.on.split_eq_preds();
-                if !remaining_on.is_empty() {
-                    todo!("FLOTILLA_MS?: Implement non-equality joins")
-                }
-
                 // Visitor appends in in-order
                 // TODO: Just use regular recursion?
                 let right_node = self.curr_node.pop().unwrap();
                 let left_node = self.curr_node.pop().unwrap();
 
-                self.gen_hash_join_nodes(
-                    logical_node_id,
-                    join.on.clone(),
-                    left_node,
-                    right_node,
-                    join.join_type,
-                    join.output_schema.clone(),
-                )?
+                self.translate_join(logical_node_id, join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;

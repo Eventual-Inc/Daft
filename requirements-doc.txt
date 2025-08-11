@@ -14,3 +14,4 @@ mkdocs-gen-files
 griffe
 mkdocs-literate-nav
 Jinja2
+./docs/plugins/

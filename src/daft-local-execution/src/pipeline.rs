@@ -13,8 +13,8 @@ use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
-    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
+    Pivot, Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
@@ -34,8 +34,8 @@ use crate::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
-        unpivot::UnpivotOperator,
+        into_batches::IntoBatchesOperator, project::ProjectOperator, sample::SampleOperator,
+        udf::UdfOperator, unpivot::UnpivotOperator,
     },
     ops::{NodeCategory, NodeInfo, NodeType},
     runtime_stats::RuntimeStats,
@@ -553,6 +553,22 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(filter_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::IntoBatches(IntoBatches {
+            input,
+            batch_size,
+            stats_state,
+            ..
+        }) => {
+            let into_batches_op = IntoBatchesOperator::new(*batch_size);
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            IntermediateNode::new(
+                Arc::new(into_batches_op),
                 vec![child_node],
                 stats_state.clone(),
                 ctx,

@@ -14,8 +14,7 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
     ops::NodeType,
@@ -115,13 +114,15 @@ impl ProjectOperator {
 }
 
 impl IntermediateOperator for ProjectOperator {
+    type State = ();
+
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
         task_spawner
@@ -167,6 +168,10 @@ impl IntermediateOperator for ProjectOperator {
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         self.batch_size.map(MorselSizeRequirement::Flexible)
+    }
+
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
     }
 }
 

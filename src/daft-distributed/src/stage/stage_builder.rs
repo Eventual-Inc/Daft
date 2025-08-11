@@ -66,8 +66,10 @@ impl StagePlanBuilder {
                 }
             },
             LogicalPlan::Join(join) => {
-                // TODO: Support broadcast join
-                if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
+                if join
+                    .join_strategy
+                    .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+                {
                     can_translate = false;
                     Ok(TreeNodeRecursion::Stop)
                 } else {
@@ -92,6 +94,10 @@ impl StagePlanBuilder {
                 }
             }
             LogicalPlan::Pivot(_) => {
+                can_translate = false;
+                Ok(TreeNodeRecursion::Stop)
+            }
+            LogicalPlan::IntoBatches(_) => {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)
             }

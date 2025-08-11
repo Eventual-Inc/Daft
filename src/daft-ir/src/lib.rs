@@ -23,6 +23,7 @@ pub mod rex {
 
     use daft_dsl::{functions::{python::LegacyPythonUDF, scalar::ScalarFn, BuiltinScalarFn, FunctionArgs, FunctionExpr, ScalarUDF}, python_udf::{PyScalarFn, RowWisePyFn}};
     pub use daft_dsl::*;
+    pub use daft_core::lit::Literal;
 
     /// Creates an expression from a python-scalar function
     pub fn from_py_legacy_func<A, E>(func: LegacyPythonUDF, args: A) -> Expr

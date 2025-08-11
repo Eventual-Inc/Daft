@@ -28,6 +28,7 @@ pub enum LogicalPlan {
     Project(Project),
     UDFProject(UDFProject),
     Filter(Filter),
+    IntoBatches(IntoBatches),
     Limit(Limit),
     Offset(Offset),
     Explode(Explode),
@@ -84,6 +85,40 @@ impl SubqueryAlias {
     }
 }
 
+/// Return value of [LogicalPlan::required_columns]
+pub(crate) struct RequiredCols {
+    /// Base required columns for an operator. For operators with 2 sides
+    /// (e.g. join, concat), this is the required columns for the left side.
+    pub(crate) required_cols: IndexSet<String>,
+    /// Optional right side columns for an operator. For operators with 2 sides
+    /// (e.g. join, concat), this is the optional columns for the right side.
+    /// For other operators, this is None.
+    pub(crate) opt_right_cols: Option<IndexSet<String>>,
+}
+
+impl RequiredCols {
+    pub fn new(required_cols: IndexSet<String>, opt_right_cols: Option<IndexSet<String>>) -> Self {
+        Self {
+            required_cols,
+            opt_right_cols,
+        }
+    }
+
+    /// Unwrap and return the required (left) side columns. Intended for 1-side ops.
+    pub fn single(self) -> IndexSet<String> {
+        self.required_cols
+    }
+
+    /// Unwrap and return the required (left) and optional (right) side columns. Intended for 2-side ops.
+    pub fn double(self) -> (IndexSet<String>, IndexSet<String>) {
+        if let Some(opt_right_cols) = self.opt_right_cols {
+            (self.required_cols, opt_right_cols)
+        } else {
+            panic!("Expected 2-side plan node (e.g. join, concat), but got 1-side plan node")
+        }
+    }
+}
+
 impl LogicalPlan {
     pub fn arced(self) -> Arc<Self> {
         Arc::new(self)
@@ -100,6 +135,7 @@ impl LogicalPlan {
                 projected_schema, ..
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
+            Self::IntoBatches(IntoBatches { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Offset(Offset { input, .. }) => input.schema(),
             Self::Explode(Explode {
@@ -126,22 +162,23 @@ impl LogicalPlan {
         }
     }
 
-    pub fn required_columns(&self) -> Vec<IndexSet<String>> {
+    pub(crate) fn required_columns(&self) -> RequiredCols {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
             Self::Shard(..)
             | Self::Limit(..)
+            | Self::IntoBatches(..)
             | Self::Offset(..)
             | Self::Sample(..)
-            | Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
-            Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
+            | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
+            Self::Concat(..) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Project(projection) => {
                 let res = projection
                     .projection
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::UDFProject(UDFProject {
                 project,
@@ -154,17 +191,18 @@ impl LogicalPlan {
                     .collect::<IndexSet<_>>();
 
                 res.extend(get_required_columns(project).into_iter());
-                vec![res]
+                RequiredCols::new(res, None)
             }
-            Self::Filter(filter) => {
-                vec![get_required_columns(&filter.predicate)
+            Self::Filter(filter) => RequiredCols::new(
+                get_required_columns(&filter.predicate)
                     .iter()
                     .cloned()
-                    .collect()]
-            }
+                    .collect(),
+                None,
+            ),
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Repartition(repartition) => {
                 let res = repartition
@@ -173,7 +211,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Explode(explode) => {
                 let res = explode
@@ -181,7 +219,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Unpivot(unpivot) => {
                 let res = unpivot
@@ -190,12 +228,12 @@ impl LogicalPlan {
                     .chain(unpivot.values.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Distinct(distinct) => {
                 if let Some(on) = &distinct.columns {
                     let res = on.iter().flat_map(get_required_columns).collect();
-                    vec![res]
+                    RequiredCols::new(res, None)
                 } else {
                     let res = distinct
                         .input
@@ -203,7 +241,7 @@ impl LogicalPlan {
                         .field_names()
                         .map(ToString::to_string)
                         .collect();
-                    vec![res]
+                    RequiredCols::new(res, None)
                 }
             }
             Self::Aggregate(aggregate) => {
@@ -214,7 +252,7 @@ impl LogicalPlan {
                     .flat_map(|e| get_required_columns(&e))
                     .chain(aggregate.groupby.iter().flat_map(get_required_columns))
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Pivot(pivot) => {
                 let res = pivot
@@ -224,7 +262,7 @@ impl LogicalPlan {
                     .chain(std::iter::once(&pivot.value_column))
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Join(join) => {
                 let mut left = IndexSet::new();
@@ -252,10 +290,10 @@ impl LogicalPlan {
                     })
                     .unwrap();
                 }
-                vec![left, right]
+                RequiredCols::new(left, Some(right))
             }
-            Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
-            Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
+            Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -267,7 +305,7 @@ impl LogicalPlan {
                     .chain(window.window_spec.order_by.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::TopN(top_n) => {
                 let res = top_n
@@ -275,7 +313,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
         }
     }
@@ -287,6 +325,7 @@ impl LogicalPlan {
             Self::Project(..) => "Project",
             Self::UDFProject(..) => "UDFProject",
             Self::Filter(..) => "Filter",
+            Self::IntoBatches(..) => "IntoBatches",
             Self::Limit(..) => "Limit",
             Self::Offset(..) => "Offset",
             Self::Explode(..) => "Explode",
@@ -316,6 +355,7 @@ impl LogicalPlan {
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
+            | Self::IntoBatches(IntoBatches { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Offset(Offset { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -354,6 +394,7 @@ impl LogicalPlan {
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
+            Self::IntoBatches(plan) => Self::IntoBatches(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
@@ -388,6 +429,7 @@ impl LogicalPlan {
             Self::Project(projection) => projection.multiline_display(),
             Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
+            Self::IntoBatches(into_batches) => into_batches.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Offset(offset) => offset.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
@@ -419,6 +461,7 @@ impl LogicalPlan {
             Self::Project(Project { input, .. }) => vec![input],
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
+            Self::IntoBatches(IntoBatches { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Offset(Offset { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
@@ -453,6 +496,7 @@ impl LogicalPlan {
                     ).unwrap()),
                 Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
+                Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size)),
                 Self::Limit(Limit { limit, offset, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
                 Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
@@ -606,6 +650,7 @@ impl LogicalPlan {
             | Self::Project(Project { plan_id, .. })
             | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
+            | Self::IntoBatches(IntoBatches { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Offset(Offset { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
@@ -635,6 +680,7 @@ impl LogicalPlan {
             | Self::Project(Project { node_id, .. })
             | Self::UDFProject(UDFProject { node_id, .. })
             | Self::Filter(Filter { node_id, .. })
+            | Self::IntoBatches(IntoBatches { node_id, .. })
             | Self::Limit(Limit { node_id, .. })
             | Self::Offset(Offset { node_id, .. })
             | Self::Explode(Explode { node_id, .. })
@@ -665,6 +711,9 @@ impl LogicalPlan {
             Self::Project(project) => Self::Project(project.with_plan_id(plan_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
+            Self::IntoBatches(into_batches) => {
+                Self::IntoBatches(into_batches.with_plan_id(plan_id))
+            }
             Self::Limit(limit) => Self::Limit(limit.with_plan_id(plan_id)),
             Self::Offset(offset) => Self::Offset(offset.with_plan_id(plan_id)),
             Self::Explode(explode) => Self::Explode(explode.with_plan_id(plan_id)),
@@ -697,6 +746,9 @@ impl LogicalPlan {
             Self::Project(project) => Self::Project(project.with_node_id(node_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
             Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
+            Self::IntoBatches(into_batches) => {
+                Self::IntoBatches(into_batches.with_node_id(node_id))
+            }
             Self::Limit(limit) => Self::Limit(limit.with_node_id(node_id)),
             Self::Offset(offset) => Self::Offset(offset.with_node_id(node_id)),
             Self::Explode(explode) => Self::Explode(explode.with_node_id(node_id)),
@@ -807,6 +859,7 @@ impl_from_data_struct_for_logical_plan!(Source);
 impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
+impl_from_data_struct_for_logical_plan!(IntoBatches);
 impl_from_data_struct_for_logical_plan!(Limit);
 impl_from_data_struct_for_logical_plan!(Offset);
 impl_from_data_struct_for_logical_plan!(Explode);

@@ -16,8 +16,7 @@ use pyo3::prelude::*;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
     ops::NodeType,
@@ -72,23 +71,17 @@ impl ActorHandle {
 }
 
 #[cfg(feature = "python")]
-impl From<daft_dsl::pyobj_serde::PyObjectWrapper> for ActorHandle {
-    fn from(value: daft_dsl::pyobj_serde::PyObjectWrapper) -> Self {
+impl From<common_py_serde::PyObjectWrapper> for ActorHandle {
+    fn from(value: common_py_serde::PyObjectWrapper) -> Self {
         Self { inner: value.0 }
     }
 }
 
-struct DistributedActorPoolProjectState {
-    pub actor_handle: ActorHandle,
+pub(crate) struct DistributedActorPoolProjectState {
+    actor_handle: ActorHandle,
 }
 
-impl IntermediateOpState for DistributedActorPoolProjectState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-pub struct DistributedActorPoolProjectOperator {
+pub(crate) struct DistributedActorPoolProjectOperator {
     actor_handles: Vec<ActorHandle>,
     batch_size: Option<usize>,
     memory_request: u64,
@@ -128,22 +121,20 @@ impl DistributedActorPoolProjectOperator {
 }
 
 impl IntermediateOperator for DistributedActorPoolProjectOperator {
+    type State = DistributedActorPoolProjectState;
+
     #[instrument(skip_all, name = "DistributedActorPoolProjectOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let distributed_actor_pool_project_state = state
-                    .as_any_mut()
-                    .downcast_mut::<DistributedActorPoolProjectState>()
-                    .expect("DistributedActorPoolProjectState");
-                let res = distributed_actor_pool_project_state
+                let res = state
                     .actor_handle
                     .eval_input(input)
                     .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
@@ -178,13 +169,13 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         let next_actor_handle_idx =
             self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
         let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
-        Ok(Box::new(DistributedActorPoolProjectState {
+        Ok(DistributedActorPoolProjectState {
             actor_handle: next_actor_handle.clone(),
-        }))
+        })
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
