@@ -22,7 +22,7 @@ use daft_core::{
 use daft_dsl::{
     expr::{
         bound_expr::{BoundAggExpr, BoundExpr},
-        BoundColumn,
+        BoundColumn, StddevParams,
     },
     functions::{scalar::ScalarFn, FunctionArgs, FunctionEvaluator},
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
@@ -600,7 +600,7 @@ impl RecordBatch {
             AggExpr::Mean(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .mean(groups),
-            AggExpr::Stddev(expr) => self
+            AggExpr::Stddev(StddevParams { child: expr, .. }) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .stddev(groups),
             AggExpr::Min(expr) => self

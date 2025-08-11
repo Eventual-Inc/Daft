@@ -1171,9 +1171,15 @@ class Expression:
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)
 
-    def stddev(self) -> Expression:
-        """Calculates the standard deviation of the values in the expression."""
-        expr = self._expr.stddev()
+    def stddev(self, ddof: int = 0) -> Expression:
+        """Calculates the standard deviation of the values in the expression.
+
+        Args:
+            ddof: "Delta Degrees of Freedom" - the divisor used in the calculation is N - ddof,
+                where N represents the number of non-null elements. Default is 0 (population standard deviation).
+                Set to 1 for sample standard deviation.
+        """
+        expr = self._expr.stddev(ddof)
         return Expression._from_pyexpr(expr)
 
     def min(self) -> Expression:

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
-use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef};
+use daft_dsl::{expr::StddevParams, lit, unresolved_col, AggExpr, Expr, ExprRef};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -29,8 +29,20 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("max", AggExpr::Max(nil.clone()));
         parent.add_fn("bool_and", AggExpr::BoolAnd(nil.clone()));
         parent.add_fn("bool_or", AggExpr::BoolOr(nil.clone()));
-        parent.add_fn("stddev", AggExpr::Stddev(nil.clone()));
-        parent.add_fn("stddev_samp", AggExpr::Stddev(nil));
+        parent.add_fn(
+            "stddev",
+            AggExpr::Stddev(StddevParams {
+                child: nil.clone(),
+                ddof: 0,
+            }),
+        );
+        parent.add_fn(
+            "stddev_samp",
+            AggExpr::Stddev(StddevParams {
+                child: nil,
+                ddof: 1,
+            }),
+        );
     }
 }
 
@@ -162,9 +174,9 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
         }
-        AggExpr::Stddev(_) => {
+        AggExpr::Stddev(StddevParams { ddof, .. }) => {
             ensure!(args.len() == 1, "stddev takes exactly one argument");
-            Ok(args[0].clone().stddev())
+            Ok(args[0].clone().stddev_with_ddof(*ddof))
         }
         AggExpr::Min(_) => {
             ensure!(args.len() == 1, "min takes exactly one argument");

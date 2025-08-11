@@ -14,6 +14,7 @@ use daft_dsl::{
     expr::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
+        StddevParams,
     },
     functions::agg::merge_mean,
     is_partition_compatible,
@@ -632,7 +633,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
-                AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Stddev(StddevParams { child: e, ddof }) => AggExpr::Stddev(StddevParams { child: Expr::Alias(e, name.clone()).into(), ddof }),
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
                 AggExpr::BoolAnd(e) => AggExpr::BoolAnd(Expr::Alias(e, name.clone()).into()),
@@ -809,14 +810,15 @@ pub fn populate_aggregation_stages_bound_with_schema(
 
                 final_stage(merge_mean(global_sum_col, global_count_col));
             }
-            AggExpr::Stddev(expr) => {
+            AggExpr::Stddev(StddevParams { child: expr, ddof }) => {
                 // The stddev calculation we're performing here is:
-                // stddev(X) = sqrt(E(X^2) - E(X)^2)
+                // For population (ddof=0): stddev(X) = sqrt(E(X^2) - E(X)^2)
+                // For sample (ddof>0): stddev(X) = sqrt((sum(X^2) - sum(X)^2/n) / (n - ddof))
                 // where X is the sub_expr.
                 //
                 // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
                 // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
-                // In the final projection, we then compute `sqrt((global_sqsum / global_count) - (global_sum / global_count) ^ 2)`.
+                // In the final projection, we then compute the appropriate formula based on ddof.
 
                 // This is a workaround since we have different code paths for single stage and two stage aggregations.
                 // Currently all Std Dev types will be computed using floats.
@@ -830,10 +832,21 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
                 let global_count_col = second_stage!(AggExpr::Sum(count_col));
 
-                let left = global_sq_sum_col.div(global_count_col.clone());
-                let right = global_sum_col.div(global_count_col);
-                let right = right.clone().mul(right);
-                let result = sqrt::sqrt(left.sub(right));
+                let result = if *ddof == 0 {
+                    // Population standard deviation: sqrt(E[X²] - E[X]²)
+                    let left = global_sq_sum_col.div(global_count_col.clone());
+                    let right = global_sum_col.div(global_count_col);
+                    let right = right.clone().mul(right);
+                    sqrt::sqrt(left.sub(right))
+                } else {
+                    // Sample standard deviation: sqrt((sum(X²) - sum(X)²/n) / (n - ddof))
+                    let sum_sq = global_sum_col.clone().mul(global_sum_col);
+                    let sum_sq_over_n = sum_sq.div(global_count_col.clone());
+                    let numerator = global_sq_sum_col.sub(sum_sq_over_n);
+                    let ddof_lit = lit(*ddof as f64);
+                    let denominator = global_count_col.sub(ddof_lit);
+                    sqrt::sqrt(numerator.div(denominator))
+                };
 
                 final_stage(result);
             }
@@ -1090,14 +1103,18 @@ pub fn populate_aggregation_stages(
                     .alias(output_name),
                 );
             }
-            AggExpr::Stddev(sub_expr) => {
+            AggExpr::Stddev(StddevParams {
+                child: sub_expr,
+                ddof,
+            }) => {
                 // The stddev calculation we're performing here is:
-                // stddev(X) = sqrt(E(X^2) - E(X)^2)
+                // For population (ddof=0): stddev(X) = sqrt(E(X^2) - E(X)^2)
+                // For sample (ddof>0): stddev(X) = sqrt((sum(X^2) - sum(X)^2/n) / (n - ddof))
                 // where X is the sub_expr.
                 //
                 // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
                 // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
-                // In the final projection, we then compute `sqrt((global_sqsum / global_count) - (global_sum / global_count) ^ 2)`.
+                // In the final projection, we then compute the appropriate formula based on ddof.
 
                 // This is a workaround since we have different code paths for single stage and two stage aggregations.
                 // Currently all Std Dev types will be computed using floats.
@@ -1146,10 +1163,22 @@ pub fn populate_aggregation_stages(
                 let g_sq_sum = resolved_col(global_sq_sum_id);
                 let g_sum = resolved_col(global_sum_id);
                 let g_count = resolved_col(global_count_id);
-                let left = g_sq_sum.div(g_count.clone());
-                let right = g_sum.div(g_count);
-                let right = right.clone().mul(right);
-                let result = sqrt::sqrt(left.sub(right)).alias(output_name);
+
+                let result = if *ddof == 0 {
+                    // Population standard deviation: sqrt(E[X²] - E[X]²)
+                    let left = g_sq_sum.div(g_count.clone());
+                    let right = g_sum.div(g_count);
+                    let right = right.clone().mul(right);
+                    sqrt::sqrt(left.sub(right)).alias(output_name)
+                } else {
+                    // Sample standard deviation: sqrt((sum(X²) - sum(X)²/n) / (n - ddof))
+                    let sum_sq = g_sum.clone().mul(g_sum);
+                    let sum_sq_over_n = sum_sq.div(g_count.clone());
+                    let numerator = g_sq_sum.sub(sum_sq_over_n);
+                    let ddof_lit = lit(*ddof as f64);
+                    let denominator = g_count.sub(ddof_lit);
+                    sqrt::sqrt(numerator.div(denominator)).alias(output_name)
+                };
 
                 final_exprs.push(result);
             }
