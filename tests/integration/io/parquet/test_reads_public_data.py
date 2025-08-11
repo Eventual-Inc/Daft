@@ -119,10 +119,11 @@ DAFT_CAN_READ_FILES = [
     #     "parquet-testing/data/nested_structs.rust.parquet",
     #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nested_structs.rust.parquet",
     # ),
-    (
-        "parquet-testing/data/nonnullable.impala.parquet",
-        "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nonnullable.impala.parquet",
-    ),
+    # We currently don't support Map Dtypes
+    # (
+    #     "parquet-testing/data/nonnullable.impala.parquet",
+    #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nonnullable.impala.parquet",
+    # ),
     (
         "parquet-testing/data/null_list.parquet",
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/null_list.parquet",
