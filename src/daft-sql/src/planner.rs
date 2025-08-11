@@ -14,7 +14,10 @@ use daft_dsl::{
     has_agg, lit, null_lit, resolved_col, unresolved_col, Column, Expr, ExprRef, Operator, PlanRef,
     Subquery, UnresolvedColumn,
 };
-use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions::{
+    invalid_argument_err,
+    numeric::{ceil::ceil, floor::floor},
+};
 use daft_functions_utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
@@ -408,10 +411,7 @@ impl SQLPlanner<'_> {
                         }
                         out
                     }
-                    exprs => exprs
-                        .iter()
-                        .map(|expr| self.plan_expr(expr))
-                        .collect::<SQLPlannerResult<Vec<_>>>()?,
+                    exprs => self.plan_group_by_items(projections.as_slice(), exprs)?,
                 };
             }
         }
@@ -474,6 +474,40 @@ impl SQLPlanner<'_> {
         }
 
         Ok(self.current_plan.clone().unwrap())
+    }
+
+    fn plan_group_by_items(
+        &self,
+        select_items: &[ExprRef],
+        exprs: &[ast::Expr],
+    ) -> SQLPlannerResult<Vec<ExprRef>> {
+        let mut group_by_items = vec![];
+        for expr in exprs {
+            if let ast::Expr::Value(ast::Value::Number(number, _)) = expr {
+                let pos: usize = match number.parse() {
+                    Ok(p) => p,
+                    Err(_) => invalid_argument_err!(
+                        "GROUP BY position '{}' is not a valid non-negative integer",
+                        number
+                    ),
+                };
+                if pos == 0 {
+                    invalid_argument_err!("GROUP BY position must be >= 1 (1-based index)",);
+                }
+                if pos > select_items.len() {
+                    invalid_argument_err!(
+                        "GROUP BY position {} is out of range (only {} select items)",
+                        pos,
+                        select_items.len()
+                    );
+                }
+                group_by_items.push(select_items[pos - 1].clone());
+            } else {
+                let group_by_item = self.plan_expr(expr)?;
+                group_by_items.push(group_by_item);
+            }
+        }
+        Ok(group_by_items)
     }
 
     fn plan_non_agg_query(
