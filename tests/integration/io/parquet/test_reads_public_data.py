@@ -510,3 +510,13 @@ def test_read_timeout_gcs(multithreaded_io):
 
     with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"Read timed out when trying to read {url}"):
         MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
+
+
+@pytest.mark.integration()
+def test_parquet_read_large_strings_in_map(public_storage_io_config):
+    path = "s3://daft-public-data/test_fixtures/parquet/large_strings_in_map.parquet"
+    table = daft.read_parquet(path, io_config=public_storage_io_config).collect()
+    assert len(table) == 2
+    assert table.schema() == daft.Schema.from_field_name_and_types(
+        [("arr", daft.DataType.map(daft.DataType.string(), daft.DataType.int32()))]
+    )
