@@ -26,7 +26,9 @@ def run_gpu(
     init_arg: Any,
     input_batch: torch.Tensor,
 ) -> tuple:
-    """Process a single batch on GPU stream with timing"""
+    """Process a single batch on GPU stream with timing."""
+    import torch
+
     # Create CUDA events for timing
     start_event = torch.cuda.Event(enable_timing=True)
     h2d_event = torch.cuda.Event(enable_timing=True)  # host to device
@@ -101,7 +103,8 @@ def gpu_udf(
     init_args: Callable[[], Any] = _nothing,
     gpu_mem: float = 1.0,
 ) -> Callable[[GPUTorchFunc], GpuUdf]:
-    """TODO"""
+    import torch
+
     if return_torch_dtype == torch.float32:
         ret_inner_dtype = DataType.float32()
     elif return_torch_dtype == torch.float64:
