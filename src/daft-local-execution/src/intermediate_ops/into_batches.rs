@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use tracing::Span;
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
@@ -21,12 +21,14 @@ impl IntoBatchesOperator {
 }
 
 impl IntermediateOperator for IntoBatchesOperator {
+    type State = ();
+
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         task_spawner
             .spawn(
                 async move {
@@ -55,5 +57,8 @@ impl IntermediateOperator for IntoBatchesOperator {
     }
     fn morsel_size_range(&self, _runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
         (self.batch_size, self.batch_size)
+    }
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
     }
 }
