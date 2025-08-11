@@ -44,6 +44,8 @@ jobs:
           os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
+        - python-version: '3.11'
+          pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
