@@ -106,7 +106,7 @@ macro_rules! impl_series_like_for_data_array {
                 self.0.len()
             }
 
-            fn size_bytes(&self) -> DaftResult<usize> {
+            fn size_bytes(&self) -> usize {
                 self.0.size_bytes()
             }
 

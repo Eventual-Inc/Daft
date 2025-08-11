@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from tests.utils import sort_pydict
 
 from .conftest import minio_create_bucket, minio_create_public_bucket
 
@@ -15,7 +16,7 @@ def run_url_upload_roundtrip_test(folder: str, io_config, bytes_data: list[bytes
     df.collect()
 
     df = df.with_column("roundtrip_data", df["file_paths"].url.download(io_config=io_config))
-    results = df.to_pydict()
+    results = sort_pydict(df.to_pydict(), "data", ascending=True)
 
     assert results["data"] == results["roundtrip_data"] == bytes_data
     for path in results["file_paths"]:

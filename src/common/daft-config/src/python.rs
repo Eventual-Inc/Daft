@@ -104,6 +104,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer=None,
         use_experimental_distributed_engine=None,
         min_cpu_per_task=None,
+        url_ops_bytes_buffer=None,
     ))]
     fn with_config_values(
         &self,
@@ -135,6 +136,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer: Option<bool>,
         use_experimental_distributed_engine: Option<bool>,
         min_cpu_per_task: Option<f64>,
+        url_ops_bytes_buffer: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -245,6 +247,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
             config.min_cpu_per_task = min_cpu_per_task;
+        }
+
+        if let Some(url_ops_bytes_buffer) = url_ops_bytes_buffer {
+            config.url_ops_bytes_buffer = url_ops_bytes_buffer;
         }
 
         Ok(Self {

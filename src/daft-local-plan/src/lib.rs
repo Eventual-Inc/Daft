@@ -15,8 +15,8 @@ pub use plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
     PhysicalScan, PhysicalWrite, Pivot, Project, Repartition, Sample, Sort, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    UnGroupedAggregate, Unpivot, UrlDownload, UrlUpload, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use python::{register_modules, PyLocalPhysicalPlan};

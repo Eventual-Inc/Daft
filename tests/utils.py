@@ -21,7 +21,7 @@ def assert_pyarrow_tables_equal(from_daft: pa.Table, expected: pa.Table) -> None
     assert from_daft == expected, f"from_daft = {from_daft}\n\nexpected = {expected}"
 
 
-def sort_pydict(pydict: dict[str, list[Any]], *sort_by: str, ascending: bool = False) -> pa.Table:
+def sort_pydict(pydict: dict[str, list[Any]], *sort_by: str, ascending: bool = False) -> dict[str, list[Any]]:
     return sort_arrow_table(RecordBatch.from_pydict(pydict).to_arrow_table(), *sort_by, ascending=ascending).to_pydict()
 
 

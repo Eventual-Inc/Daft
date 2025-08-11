@@ -4,8 +4,10 @@ pub mod upload;
 
 use daft_dsl::functions::FunctionModule;
 use download::UrlDownload;
+pub use download::UrlDownloadArgs;
 use parse::UrlParse;
 use upload::UrlUpload;
+pub use upload::UrlUploadArgs;
 
 pub struct UriFunctions;
 

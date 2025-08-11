@@ -35,7 +35,7 @@ impl AsyncFileWriter for LanceWriter {
     async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         assert!(!self.is_closed, "Cannot write to a closed LanceWriter");
         self.bytes_written += data
-            .size_bytes()?
+            .size_bytes()
             .expect("MicroPartition should have size_bytes for LanceWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
