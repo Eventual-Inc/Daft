@@ -6,6 +6,7 @@ import pytest
 import daft
 from daft import Catalog, Session
 from daft.catalog import NotFoundError
+from daft.io.partitioning import PartitionField, PartitionTransform
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Field, Schema
 
@@ -154,6 +155,28 @@ def test_create_table(catalog: Catalog):
     # cleanup
     c.drop_table(f"{n}.tbl1")
     c.drop_namespace(n)
+
+
+def test_create_partitioned_table_identity(catalog):
+    c = catalog
+    n = "test_partitioned_identity"
+    c.create_namespace(n)
+    sch = schema({"a": dt.int64(), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.int64()),
+        source_field=Field.create("a", dt.int64()),
+        transform=PartitionTransform.identity(),
+    )
+    c.create_table(f"{n}.tbl", sch, properties={"__partition_fields__": [pf]})
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("identity")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
 
 
 def test_create_table_if_not_exists(catalog: Catalog):
