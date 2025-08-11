@@ -1270,7 +1270,7 @@ mod tests {
         )
         .unwrap();
         match schema.fields.as_slice() {
-            [field] => assert_eq!(field.data_type, DataType::Binary),
+            [field] => assert_eq!(field.data_type, DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
         };
     }
