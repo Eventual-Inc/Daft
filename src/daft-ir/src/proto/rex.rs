@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::expr::StddevParams;
 
-use super::{ProtoResult, ToFromProto, from_proto, from_proto_arc};
+use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
@@ -350,6 +350,10 @@ impl ToFromProto for ir::AggExpr {
                     "count_nulls" => Self::Count(arg, ir::CountMode::Null),
                     "sum" => Self::Sum(arg),
                     "mean" => Self::Mean(arg),
+                    "stddev" => Self::Stddev(StddevParams {
+                        child: arg,
+                        ddof: 0,
+                    }),
                     "min" => Self::Min(arg),
                     "max" => Self::Max(arg),
                     "bool_and" => Self::BoolAnd(arg),
@@ -400,20 +404,6 @@ impl ToFromProto for ir::AggExpr {
                 //     .collect::<ProtoResult<Vec<_>>>()?;
                 // Self::MapGroups { func, inputs }
             }
-            proto::AggVariant::StddevFunction(stddev_function) => {
-                let args = &stddev_function.args;
-                if args.len() != 1 {
-                    return Err(crate::proto::ProtoError::FromProto(format!(
-                        "StddevFunction must have exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let expr = from_proto_arc(Some(Box::new(args[0].clone())))?;
-                Self::Stddev(StddevParams {
-                    child: expr,
-                    ddof: stddev_function.ddof,
-                })
-            }
         };
         Ok(agg)
     }
@@ -456,12 +446,15 @@ impl ToFromProto for ir::AggExpr {
                     is_all: true,
                 })
             }
-            Self::Stddev(StddevParams { child: expr, ddof }) => {
-                // STDDEV with ddof parameter
-                proto::AggVariant::StddevFunction(proto::agg::StddevFunction {
+            Self::Stddev(StddevParams {
+                child: expr,
+                ddof: _,
+            }) => {
+                // STDDEV([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "stddev".to_string(),
                     args: vec![expr.to_proto()?],
                     is_all: true,
-                    ddof: *ddof,
                 })
             }
             Self::Min(expr) => {

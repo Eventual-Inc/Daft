@@ -4,9 +4,9 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
-    expr::StddevParams,
-    functions::{scalar::ScalarFn, FunctionArgs},
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+    functions::{FunctionArgs, scalar::ScalarFn},
+    expr::StddevParams,
     optimization,
     python_udf::{PyScalarFn, RowWisePyFn},
     resolved_col,

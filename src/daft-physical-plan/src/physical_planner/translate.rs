@@ -822,7 +822,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 // where X is the sub_expr.
                 //
                 // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
-                // Second stage, we `global_sq_sum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
+                // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
                 // In the final projection, we then compute the appropriate formula based on ddof.
 
                 // This is a workaround since we have different code paths for single stage and two stage aggregations.
@@ -838,13 +838,13 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let global_count_col = second_stage!(AggExpr::Sum(count_col));
 
                 let result = if *ddof == 0 {
-                    // Population standard deviation: sqrt(E[X^2] - E[X]^2)
+                    // Population standard deviation: sqrt(E[X²] - E[X]²)
                     let left = global_sq_sum_col.div(global_count_col.clone());
                     let right = global_sum_col.div(global_count_col);
                     let right = right.clone().mul(right);
                     sqrt::sqrt(left.sub(right))
                 } else {
-                    // Sample standard deviation: sqrt((sum(X^2) - sum(X)^2/n) / (n - ddof))
+                    // Sample standard deviation: sqrt((sum(X²) - sum(X)²/n) / (n - ddof))
                     let sum_sq = global_sum_col.clone().mul(global_sum_col);
                     let sum_sq_over_n = sum_sq.div(global_count_col.clone());
                     let numerator = global_sq_sum_col.sub(sum_sq_over_n);
