@@ -560,7 +560,7 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
+    pub fn size_bytes(&self) -> Option<usize> {
         let guard = self.state.lock().unwrap();
         let size_bytes = if let TableState::Loaded(tables) = &*guard {
             let total_size: usize = tables
@@ -576,7 +576,7 @@ impl MicroPartition {
             // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
             None
         };
-        Ok(size_bytes)
+        size_bytes
     }
 
     /// Retrieves tables from the MicroPartition, reading data if not already loaded.
@@ -680,7 +680,7 @@ impl MicroPartition {
     }
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let buffer = Vec::with_capacity(self.size_bytes().unwrap_or(0));
         let schema = self.schema.to_arrow()?;
         let options = arrow2::io::ipc::write::WriteOptions { compression: None };
         let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
