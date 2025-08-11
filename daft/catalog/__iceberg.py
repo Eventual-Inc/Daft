@@ -11,6 +11,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids
 from pyiceberg.partitioning import PartitionField as PyIcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as PyIcebergPartitionSpec
+from pyiceberg.schema import Schema as PyIcebergSchema
 from pyiceberg.schema import assign_fresh_schema_ids
 from pyiceberg.table import Table as InnerTable
 from pyiceberg.transforms import (
@@ -63,15 +64,15 @@ class IcebergCatalog(Catalog):
 
     @staticmethod
     def _partition_fields_to_pyiceberg_spec(
-        schema: Schema, partition_fields: list[PartitionField] | None
+        iceberg_schema: PyIcebergSchema, partition_fields: list[PartitionField] | None
     ) -> PyIcebergPartitionSpec | None:
         """Converts Daft partition fields to a PyIceberg PartitionSpec."""
         if not partition_fields:
             return None
 
         # Convert Daft schema → PyArrow schema → PyIceberg schema (with IDs)
-        pa_schema = schema.to_pyarrow_schema()
-        iceberg_schema = assign_fresh_schema_ids(_pyarrow_to_schema_without_ids(pa_schema))
+        # pa_schema = schema.to_pyarrow_schema()
+        # iceberg_schema = assign_fresh_schema_ids(_pyarrow_to_schema_without_ids(pa_schema))
         iceberg_partition_fields = []
         for idx, pf in enumerate(partition_fields):
             if pf.transform is None or pf.transform.is_identity():
@@ -117,7 +118,7 @@ class IcebergCatalog(Catalog):
             partition_fields = properties.pop("__partition_fields__")
         pa_schema = schema.to_pyarrow_schema()
         iceberg_schema = assign_fresh_schema_ids(_pyarrow_to_schema_without_ids(pa_schema))
-        partition_spec = self._partition_fields_to_pyiceberg_spec(schema, partition_fields)
+        partition_spec = self._partition_fields_to_pyiceberg_spec(iceberg_schema, partition_fields)
         t = IcebergTable.__new__(IcebergTable)
         if partition_spec is not None:
             t._inner = self._inner.create_table(
