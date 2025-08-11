@@ -21,8 +21,8 @@ use daft_core::{
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
     expr::{
-        BoundColumn, StddevParams,
         bound_expr::{BoundAggExpr, BoundExpr},
+        BoundColumn, StddevParams,
     },
     functions::{FunctionArgs, FunctionEvaluator, scalar::ScalarFn},
     null_lit, resolved_col,
