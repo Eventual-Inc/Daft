@@ -329,6 +329,10 @@ impl StdoutHandler {
         self.target.store(Arc::new(Some(target)));
     }
 
+    fn reset_target(&self) {
+        self.target.store(Arc::new(None));
+    }
+
     fn print(&self, prefix: &str, message: &str) {
         let message = format!("{} {}", style(prefix).magenta(), message);
 

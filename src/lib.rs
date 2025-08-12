@@ -57,7 +57,7 @@ pub mod pylib {
         let py_logger = Box::new(pyo3_log::Logger::default());
         let handle = py_logger.reset_handle();
 
-        GLOBAL_LOGGER.set_inner_logger(py_logger);
+        GLOBAL_LOGGER.set_base_logger(py_logger);
         log::set_boxed_logger(Box::new(GLOBAL_LOGGER.clone())).unwrap();
         handle
     });

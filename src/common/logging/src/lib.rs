@@ -7,36 +7,58 @@ use log::Log;
 /// Usually, loggers can only be initialized once, but this container can
 /// swap out the internal logger at runtime atomically.
 pub struct SwappableLogger {
-    logger: ArcSwap<Box<dyn Log + Send + Sync + 'static>>,
+    base: ArcSwap<Box<dyn Log + Send + Sync + 'static>>,
+    temp: ArcSwap<Option<Box<dyn Log + Send + Sync + 'static>>>,
 }
 
 impl SwappableLogger {
     pub fn new(logger: Box<dyn Log + Send + Sync + 'static>) -> Self {
         Self {
-            logger: ArcSwap::new(Arc::new(logger)),
+            base: ArcSwap::new(Arc::new(logger)),
+            temp: ArcSwap::new(Arc::new(None)),
         }
     }
 
-    pub fn set_inner_logger(&self, logger: Box<dyn Log + Send + Sync + 'static>) {
-        self.logger.store(Arc::new(logger));
+    pub fn set_base_logger(&self, logger: Box<dyn Log + Send + Sync + 'static>) {
+        self.base.store(Arc::new(logger));
     }
 
-    pub fn get_inner(&self) -> Arc<Box<dyn Log + Send + Sync + 'static>> {
-        self.logger.load().to_owned()
+    pub fn get_base_logger(&self) -> Arc<Box<dyn Log + Send + Sync + 'static>> {
+        self.base.load().to_owned()
+    }
+
+    pub fn set_temp_logger(&self, logger: Box<dyn Log + Send + Sync + 'static>) {
+        self.temp.store(Arc::new(Some(logger)));
+    }
+
+    pub fn reset_temp_logger(&self) {
+        self.temp.store(Arc::new(None));
     }
 }
 
 impl Log for SwappableLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        self.logger.load().enabled(metadata)
+        if let Some(temp) = self.temp.load().as_ref() {
+            temp.enabled(metadata)
+        } else {
+            self.base.load().enabled(metadata)
+        }
     }
 
     fn log(&self, record: &log::Record) {
-        self.logger.load().log(record);
+        if let Some(temp) = self.temp.load().as_ref() {
+            temp.log(record);
+        } else {
+            self.base.load().log(record);
+        }
     }
 
     fn flush(&self) {
-        self.logger.load().flush();
+        if let Some(temp) = self.temp.load().as_ref() {
+            temp.flush();
+        } else {
+            self.base.load().flush();
+        }
     }
 }
 

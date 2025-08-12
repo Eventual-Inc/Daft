@@ -98,9 +98,9 @@ impl IndicatifProgressBarManager {
 
         if cfg!(feature = "python") {
             // Register the IndicatifLogger to redirect Rust logs correctly
-            GLOBAL_LOGGER.set_inner_logger(Box::new(IndicatifLogger::new(
+            GLOBAL_LOGGER.set_temp_logger(Box::new(IndicatifLogger::new(
                 multi_progress.clone(),
-                GLOBAL_LOGGER.get_inner(),
+                GLOBAL_LOGGER.get_base_logger(),
             )));
 
             STDOUT.set_target(Box::new(IndicatifPrintTarget::new(multi_progress.clone())));
@@ -153,6 +153,15 @@ impl IndicatifProgressBarManager {
         self.multi_progress.add(pb.clone());
         // Additional reference for updating bar directly
         self.pbars.push(pb);
+    }
+}
+
+impl Drop for IndicatifProgressBarManager {
+    fn drop(&mut self) {
+        if cfg!(feature = "python") {
+            GLOBAL_LOGGER.reset_temp_logger();
+            STDOUT.reset_target();
+        }
     }
 }
 
