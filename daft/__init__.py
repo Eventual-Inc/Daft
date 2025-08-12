@@ -131,6 +131,7 @@ from daft.sql import sql, sql_expr
 from daft.udf import udf, _DaftFuncDecorator as func
 from daft.viz import register_viz_hook
 from daft.window import Window
+from daft.file import File
 
 import daft.context as context
 import daft.io as io
@@ -144,6 +145,7 @@ __all__ = [
     "DataFrame",
     "DataType",
     "Expression",
+    "File",
     "IOConfig",
     "Identifier",
     "ImageFormat",

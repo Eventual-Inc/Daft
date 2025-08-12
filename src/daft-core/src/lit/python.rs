@@ -292,10 +292,19 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .map(|(f, v)| (f.name, v))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
-            Self::File(DaftFile::Data(data)) => PyDaftFile::from_bytes(data).into_bound_py_any(py),
-            Self::File(DaftFile::Reference(path)) => PyDaftFile::from_reference(path)
-                .expect("Failed to create PyDaftFile from reference")
-                .into_bound_py_any(py),
+            Self::File(f) => {
+                let f = match f {
+                    DaftFile::Data(data) => PyDaftFile::from_bytes(data).into_bound_py_any(py),
+                    DaftFile::Reference(path) => {
+                        PyDaftFile::from_reference(path)?.into_bound_py_any(py)
+                    }
+                }?;
+
+                py.import(intern!(py, "daft.file"))?
+                    .getattr(intern!(py, "File"))?
+                    .getattr(intern!(py, "_from_py_daft_file"))?
+                    .call1((f,))
+            }
         }
     }
 }
