@@ -2566,6 +2566,15 @@ class DataFrame:
     def into_batches(self, batch_size: int) -> "DataFrame":
         """Splits or coalesces DataFrame to partitions of size ``batch_size``.
 
+        Batch sizing in distributed mode is best-effort based on the number of rows in the partitions.
+        The distributed scheduler will greedily send batches whenever it has enough rows to fill a batch,
+        meaning it won't be guaranteed to always be exactly `batch_size`.
+        The heuristic is to emit a batch when we have enough rows to fill `batch_size * 0.8` rows, so
+        tasks will be guaranteed to have at least floor(`batch_size` * 0.8) rows.
+
+        The exception to this in both native and distributed mode is that the last batch will be the remainder
+        of the total number of rows in the DataFrame.
+
         Args:
             batch_size (int): number of target rows per partition.
 
