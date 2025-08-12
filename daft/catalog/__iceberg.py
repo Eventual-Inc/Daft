@@ -71,8 +71,6 @@ class IcebergCatalog(Catalog):
             return None
 
         # Convert Daft schema → PyArrow schema → PyIceberg schema (with IDs)
-        # pa_schema = schema.to_pyarrow_schema()
-        # iceberg_schema = assign_fresh_schema_ids(_pyarrow_to_schema_without_ids(pa_schema))
         iceberg_partition_fields = []
         for idx, pf in enumerate(partition_fields):
             if pf.transform is None or pf.transform.is_identity():
