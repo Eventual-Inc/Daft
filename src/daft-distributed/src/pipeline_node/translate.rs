@@ -15,11 +15,11 @@ use daft_physical_plan::extract_agg_expr;
 use crate::{
     pipeline_node::{
         concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        gather::GatherNode, in_memory_source::InMemorySourceNode, limit::LimitNode,
-        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
-        repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
-        sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode,
-        window::WindowNode, DistributedPipelineNode, NodeID,
+        gather::GatherNode, in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        limit::LimitNode, monotonically_increasing_id::MonotonicallyIncreasingIdNode,
+        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
+        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode,
+        unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -198,9 +198,15 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::IntoBatches(_into_batches) => {
-                todo!("IntoBatches not yet supported in the distributed pipeline node translator")
-            }
+            LogicalPlan::IntoBatches(into_batches) => IntoBatchesNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                into_batches.batch_size,
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )
+            .arced(),
             LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
