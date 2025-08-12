@@ -76,9 +76,10 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
 
-        expected = """* Project: col(0: a) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity
-|     = 1.00 }
+        expected = """== Physical Plan ==
+
+* Project: col(0: a) as count
+|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
 |
 * ScanTaskSource:
 |   Num Scan Tasks = 1
@@ -88,9 +89,9 @@ class TestLanceDBCountPushdown:
 |   Scan Tasks: [
 |   {daft.io.lance.lance_scan:_lancedb_count_result_function}
 |   ]
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity
-|     = 1.00 }
+|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
 """
+        
         assert expected in actual.out
 
         result = df.to_pydict()
@@ -104,9 +105,10 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
 
-        expected = """* Aggregate: count(col(0: a), Valid)
-|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity
-|     = 0.00 }
+        expected = """== Physical Plan ==
+
+* Aggregate: count(col(0: a), Valid)
+|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity = 0.00 }
 |
 * ScanTaskSource:
 |   Num Scan Tasks = 1
@@ -116,15 +118,14 @@ class TestLanceDBCountPushdown:
 |   Scan Tasks: [
 |   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
 |   ]
-|   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity
-|     = 1.00 }
+|   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity = 1.00 }
 """
         assert expected in actual.out
 
         result = df.to_pydict()
         assert result == {"a": [5]}
 
-    def test_count_pushdown_select(self, dataset_path, capsys):
+    def test_count_pushdown_with_select(self, dataset_path, capsys):
         """Test count(column, CountMode.Valid) does not use pushdown as it's not supported."""
         df = daft.read_lance(dataset_path).select("b").count()
 
@@ -132,9 +133,10 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
 
-        expected = """* Project: col(0: b) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity
-|     = 1.00 }
+        expected = """== Physical Plan ==
+
+* Project: col(0: b) as count
+|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
 |
 * ScanTaskSource:
 |   Num Scan Tasks = 1
@@ -144,15 +146,14 @@ class TestLanceDBCountPushdown:
 |   Scan Tasks: [
 |   {daft.io.lance.lance_scan:_lancedb_count_result_function}
 |   ]
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity
-|     = 1.00 }
+|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
 """
         assert expected in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [6]}
 
-    def test_count_no_pushdown_filter(self, dataset_path, capsys):
+    def test_count_no_pushdown_with_filter(self, dataset_path, capsys):
         """Test count(column, CountMode.Null) does not use pushdown as it's not supported."""
         df = daft.read_lance(dataset_path).filter(col("b").is_null()).count()
 
@@ -160,13 +161,13 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
 
-        expected = """* Project: col(0: a) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity
-|     = 0.00 }
+        expected = """== Physical Plan ==
+
+* Project: col(0: a) as count
+|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity = 0.00 }
 |
 * Aggregate: count(col(0: a), All)
-|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity
-|     = 0.00 }
+|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity = 0.00 }
 |
 * ScanTaskSource:
 |   Num Scan Tasks = 1
@@ -176,8 +177,7 @@ class TestLanceDBCountPushdown:
 |   Scan Tasks: [
 |   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
 |   ]
-|   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity
-|     = 0.05 }
+|   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity = 0.05 }
 """
         assert expected in actual.out
 
@@ -196,9 +196,10 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
 
-        expected = """* Project: col(0: a) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity
-|     = 1.00 }
+        expected = """== Physical Plan ==
+
+* Project: col(0: a) as count
+|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
 |
 * ScanTaskSource:
 |   Num Scan Tasks = 1
@@ -208,8 +209,7 @@ class TestLanceDBCountPushdown:
 |   Scan Tasks: [
 |   {daft.io.lance.lance_scan:_lancedb_count_result_function}
 |   ]
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity
-|     = 1.00 }
+|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
 """
         assert expected in actual.out
 

@@ -43,8 +43,7 @@ def _lancedb_count_result_function(
     count = 0
     if filters is None:
         logger.debug("Using metadata for counting all rows (no filters)")
-        for fragment in ds.get_fragments():
-            count += fragment.count_rows()
+        count = ds.count_rows()
     else:
         # TODO: If filters are provided, we need to apply them after counting
         logger.debug("Counting rows with filters applied")
@@ -56,7 +55,6 @@ def _lancedb_count_result_function(
     arrow_array = pa.array([count], type=pa.uint64())
     arrow_batch = pa.RecordBatch.from_arrays([arrow_array], [required_column])
     result_batch = RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema)._recordbatch
-
     return (result_batch for _ in [1])
 
 
