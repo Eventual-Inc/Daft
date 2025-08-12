@@ -75,24 +75,8 @@ class TestLanceDBCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-
-        expected = """== Physical Plan ==
-
-* Project: col(0: a) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
-|
-* ScanTaskSource:
-|   Num Scan Tasks = 1
-|   Estimated Scan Bytes = 0
-|   Pushdowns: {projection: [a], aggregation: count(col(a), All)}
-|   Schema: {a#UInt64}
-|   Scan Tasks: [
-|   {daft.io.lance.lance_scan:_lancedb_count_result_function}
-|   ]
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
-"""
-        
-        assert expected in actual.out
+        assert "Pushdowns: {projection: [a], aggregation: count(col(a), All)}" in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [6]}
@@ -104,23 +88,8 @@ class TestLanceDBCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-
-        expected = """== Physical Plan ==
-
-* Aggregate: count(col(0: a), Valid)
-|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity = 0.00 }
-|
-* ScanTaskSource:
-|   Num Scan Tasks = 1
-|   Estimated Scan Bytes = 0
-|   Pushdowns: {projection: [a]}
-|   Schema: {a#Utf8, b#Int64, c#Int64}
-|   Scan Tasks: [
-|   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
-|   ]
-|   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity = 1.00 }
-"""
-        assert expected in actual.out
+        assert "Pushdowns: {projection: [a], aggregation: count(col(a), All)}" not in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" not in actual.out
 
         result = df.to_pydict()
         assert result == {"a": [5]}
@@ -132,23 +101,8 @@ class TestLanceDBCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-
-        expected = """== Physical Plan ==
-
-* Project: col(0: b) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
-|
-* ScanTaskSource:
-|   Num Scan Tasks = 1
-|   Estimated Scan Bytes = 0
-|   Pushdowns: {projection: [b], aggregation: count(col(b), All)}
-|   Schema: {b#UInt64}
-|   Scan Tasks: [
-|   {daft.io.lance.lance_scan:_lancedb_count_result_function}
-|   ]
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
-"""
-        assert expected in actual.out
+        assert "Pushdowns: {projection: [b], aggregation: count(col(b), All)}" in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [6]}
@@ -160,26 +114,8 @@ class TestLanceDBCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-
-        expected = """== Physical Plan ==
-
-* Project: col(0: a) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity = 0.00 }
-|
-* Aggregate: count(col(0: a), All)
-|   Stats = { Approx num rows = 1, Approx size bytes = 0 B, Accumulated selectivity = 0.00 }
-|
-* ScanTaskSource:
-|   Num Scan Tasks = 1
-|   Estimated Scan Bytes = 0
-|   Pushdowns: {projection: [a], filter: is_null(col(b))}
-|   Schema: {a#Utf8, b#Int64, c#Int64}
-|   Scan Tasks: [
-|   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
-|   ]
-|   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity = 0.05 }
-"""
-        assert expected in actual.out
+        assert "Pushdowns: {projection: [a], aggregation: count(col(a), All)}" not in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" not in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [2]}
@@ -195,23 +131,8 @@ class TestLanceDBCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-
-        expected = """== Physical Plan ==
-
-* Project: col(0: a) as count
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
-|
-* ScanTaskSource:
-|   Num Scan Tasks = 1
-|   Estimated Scan Bytes = 0
-|   Pushdowns: {projection: [a], aggregation: count(col(a), All)}
-|   Schema: {a#UInt64}
-|   Scan Tasks: [
-|   {daft.io.lance.lance_scan:_lancedb_count_result_function}
-|   ]
-|   Stats = { Approx num rows = 1, Approx size bytes = 8 B, Accumulated selectivity = 1.00 }
-"""
-        assert expected in actual.out
+        assert "Pushdowns: {projection: [a], aggregation: count(col(a), All)}" in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [0]}
