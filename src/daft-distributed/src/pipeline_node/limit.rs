@@ -13,8 +13,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{
-        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs, NodeID,
-        NodeName, PipelineNodeConfig, PipelineNodeContext,
+        append_plan_to_existing_task, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -28,6 +27,7 @@ pub(crate) struct LimitNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     limit: usize,
+    offset: Option<usize>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -39,6 +39,7 @@ impl LimitNode {
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
         limit: usize,
+        offset: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -59,6 +60,7 @@ impl LimitNode {
             config,
             context,
             limit,
+            offset,
             child,
         }
     }
@@ -66,32 +68,48 @@ impl LimitNode {
     fn process_materialized_output(
         self: &Arc<Self>,
         materialized_output: MaterializedOutput,
-        remaining_limit: &mut usize,
+        remaining_skip: &mut usize,
+        remaining_take: &mut usize,
         task_id_counter: &TaskIDCounter,
     ) -> DaftResult<Vec<SubmittableTask<SwordfishTask>>> {
         let mut downstream_tasks = vec![];
         for next_input in materialized_output.split_into_materialized_outputs() {
-            let num_rows = next_input.num_rows()?;
+            let mut num_rows = next_input.num_rows()?;
 
-            let task = match num_rows.cmp(remaining_limit) {
-                Ordering::Less => {
-                    *remaining_limit -= num_rows;
-                    make_in_memory_task_from_materialized_outputs(
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                        vec![next_input],
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                    )?
+            let skip_num_rows = (*remaining_skip).min(num_rows);
+            if *remaining_skip > 0 {
+                *remaining_skip -= skip_num_rows;
+                // all input rows are skipped
+                if skip_num_rows >= num_rows {
+                    continue;
                 }
-                Ordering::Equal => {
-                    *remaining_limit = 0;
-                    make_in_memory_task_from_materialized_outputs(
+
+                num_rows -= skip_num_rows;
+            }
+
+            let task = match num_rows.cmp(remaining_take) {
+                Ordering::Less | Ordering::Equal => {
+                    *remaining_take -= num_rows;
+                    make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
                         &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        move |input| {
+                            if skip_num_rows > 0 {
+                                LocalPhysicalPlan::limit(
+                                    input,
+                                    num_rows as u64,
+                                    Some(skip_num_rows as u64),
+                                    StatsState::NotMaterialized,
+                                )
+                            } else {
+                                input
+                            }
+                        },
                     )?
                 }
                 Ordering::Greater => {
-                    let remaining = *remaining_limit;
+                    let remaining = *remaining_take;
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
@@ -100,17 +118,17 @@ impl LimitNode {
                             LocalPhysicalPlan::limit(
                                 input,
                                 remaining as u64,
-                                None, // TODO(zhenchao) support offset
+                                Some(skip_num_rows as u64),
                                 StatsState::NotMaterialized,
                             )
                         },
                     )?;
-                    *remaining_limit = 0;
+                    *remaining_take = 0;
                     task
                 }
             };
             downstream_tasks.push(task);
-            if *remaining_limit == 0 {
+            if *remaining_take == 0 {
                 break;
             }
         }
@@ -124,14 +142,15 @@ impl LimitNode {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
-        let mut remaining_limit = self.limit;
+        let mut remaining_skip = self.offset.unwrap_or(0);
+        let mut remaining_take = self.limit;
         let mut max_concurrent_tasks = 1;
         let mut input_exhausted = false;
 
         // Keep submitting local limit tasks as long as we have remaining limit or we have input
         while !input_exhausted {
             let mut local_limits = VecDeque::new();
-            let local_limit_per_task = remaining_limit;
+            let local_limit_per_task = remaining_skip + remaining_take;
 
             // Submit tasks until we have max_concurrent_tasks or we run out of input
             for _ in 0..max_concurrent_tasks {
@@ -143,7 +162,7 @@ impl LimitNode {
                             LocalPhysicalPlan::limit(
                                 input,
                                 local_limit_per_task as u64,
-                                None,
+                                Some(0),
                                 StatsState::NotMaterialized,
                             )
                         },
@@ -166,7 +185,8 @@ impl LimitNode {
                     // Process the result and check if we should exit early
                     downstream_tasks.extend(self.process_materialized_output(
                         materialized_output,
-                        &mut remaining_limit,
+                        &mut remaining_skip,
+                        &mut remaining_take,
                         &task_id_counter,
                     )?);
                 }
@@ -181,9 +201,9 @@ impl LimitNode {
 
             // Update max_concurrent_tasks based on actual output
             // Only update if we have remaining limit, and we did get some output
-            if remaining_limit > 0 && total_num_rows > 0 && num_local_limits > 0 {
+            if remaining_take > 0 && total_num_rows > 0 && num_local_limits > 0 {
                 let rows_per_task = total_num_rows.div_ceil(num_local_limits);
-                max_concurrent_tasks = remaining_limit.div_ceil(rows_per_task);
+                max_concurrent_tasks = remaining_take.div_ceil(rows_per_task);
             }
         }
 
@@ -191,7 +211,10 @@ impl LimitNode {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!("Limit: {}", self.limit)]
+        match &self.offset {
+            Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
+            None => vec![format!("Limit: {}", self.limit)],
+        }
     }
 }
 

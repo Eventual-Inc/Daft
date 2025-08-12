@@ -24,37 +24,30 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
 
-pub(crate) trait IntermediateOpState: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
-
-struct DefaultIntermediateOperatorState {}
-impl IntermediateOpState for DefaultIntermediateOperatorState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     HasMoreOutput(Arc<MicroPartition>),
 }
 
-pub(crate) type IntermediateOpExecuteResult =
-    OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>;
-pub trait IntermediateOperator: Send + Sync {
+pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
+    DaftResult<(
+        <Op as IntermediateOperator>::State,
+        IntermediateOperatorResult,
+    )>,
+>;
+pub(crate) trait IntermediateOperator: Send + Sync {
+    type State: Send + Sync + Unpin;
+
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult;
+    ) -> IntermediateOpExecuteResult<Self>;
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        Ok(Box::new(DefaultIntermediateOperatorState {}))
-    }
+    fn make_state(&self) -> DaftResult<Self::State>;
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::default())
     }
@@ -84,17 +77,17 @@ pub trait IntermediateOperator: Send + Sync {
     }
 }
 
-pub struct IntermediateNode {
-    intermediate_op: Arc<dyn IntermediateOperator>,
+pub struct IntermediateNode<Op: IntermediateOperator> {
+    intermediate_op: Arc<Op>,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
 }
 
-impl IntermediateNode {
+impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn new(
-        intermediate_op: Arc<dyn IntermediateOperator>,
+        intermediate_op: Arc<Op>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
@@ -121,7 +114,7 @@ impl IntermediateNode {
 
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
     pub async fn run_worker(
-        op: Arc<dyn IntermediateOperator>,
+        op: Arc<Op>,
         receiver: Receiver<Arc<MicroPartition>>,
         sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
@@ -182,7 +175,7 @@ impl IntermediateNode {
     }
 }
 
-impl TreeDisplay for IntermediateNode {
+impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -215,7 +208,7 @@ impl TreeDisplay for IntermediateNode {
     }
 }
 
-impl PipelineNode for IntermediateNode {
+impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children
             .iter()
