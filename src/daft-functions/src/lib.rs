@@ -13,12 +13,21 @@ pub mod numeric;
 pub mod python;
 pub mod to_struct;
 
-use common_error::DaftError;
-use daft_dsl::functions::FunctionModule;
+use common_error::{DaftError, DaftResult};
+use daft_core::{
+    datatypes::logical::FileArray,
+    prelude::{DataType, Field, Schema},
+    series::{IntoSeries, Series},
+};
+use daft_dsl::{
+    functions::{FunctionArgs, FunctionModule, ScalarUDF, UnaryArg},
+    ExprRef,
+};
 use hash::HashFunction;
 use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use to_struct::ToStructFunction;
 
@@ -58,10 +67,47 @@ impl FunctionModule for HashFunctions {
     }
 }
 
-pub struct StructFunctions;
+pub struct ConversionFunctions;
 
-impl FunctionModule for StructFunctions {
+impl FunctionModule for ConversionFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(ToStructFunction);
+        parent.add_fn(ToFile);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ToFile;
+
+#[typetag::serde]
+impl ScalarUDF for ToFile {
+    fn name(&self) -> &'static str {
+        "to_file"
+    }
+
+    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        let UnaryArg { input } = args.try_into()?;
+
+        Ok(match input.data_type() {
+            DataType::Binary => {
+                FileArray::new_from_data_array(input.name(), input.binary()?).into_series()
+            }
+            DataType::Utf8 => {
+                FileArray::new_from_reference_array(input.name(), input.utf8()?).into_series()
+            }
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                "Unsupported data type for to_file function: {}. Expected either String | Binary",
+                input.data_type()
+            )))
+            }
+        })
+    }
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let UnaryArg { input } = args.try_into()?;
+        let input = input.to_field(schema)?;
+
+        Ok(Field::new(input.name, DataType::File))
     }
 }
