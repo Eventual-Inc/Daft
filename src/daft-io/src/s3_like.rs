@@ -1269,7 +1269,7 @@ impl ObjectSource for S3LikeSource {
                 is.mark_list_requests(1);
             }
 
-            if lsr.files.is_empty() && key.ends_with(S3_DELIMITER) {
+            if lsr.files.is_empty() && lsr.continuation_token.is_none() && key.ends_with(S3_DELIMITER) {
                 let permit = self
                     .connection_pool_sema
                     .acquire()
