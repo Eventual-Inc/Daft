@@ -74,31 +74,43 @@ impl PyDaftFile {
     }
 
     // Read bytes from file
-    fn read(&mut self, size: Option<isize>) -> PyResult<Vec<u8>> {
+    #[pyo3(signature=(size=-1))]
+    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
         self.ensure_opened()?;
 
-        let size = match size {
-            Some(s) if s >= 0 => s as usize,
-            Some(_) => usize::MAX, // -1 means read all
-            None => usize::MAX,
-        };
-
         let cursor = self.cursor.as_mut().unwrap();
-        let mut buffer = vec![0u8; size];
+        if size == -1 {
+            let mut buffer = Vec::new();
+            let bytes_read = match cursor {
+                FileCursor::Memory(c) => c
+                    .read_to_end(&mut buffer)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
+                FileCursor::File(f) => f
+                    .read_to_end(&mut buffer)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
+            };
 
-        let bytes_read = match cursor {
-            FileCursor::Memory(c) => c
-                .read(&mut buffer)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?,
-            FileCursor::File(f) => f
-                .read(&mut buffer)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?,
-        };
+            buffer.truncate(bytes_read);
+            self.position += bytes_read;
 
-        buffer.truncate(bytes_read);
-        self.position += bytes_read;
+            Ok(buffer)
+        } else {
+            let mut buffer = vec![0u8; size as usize];
 
-        Ok(buffer)
+            let bytes_read = match cursor {
+                FileCursor::Memory(c) => c
+                    .read(&mut buffer)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
+                FileCursor::File(f) => f
+                    .read(&mut buffer)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
+            };
+
+            buffer.truncate(bytes_read);
+            self.position += bytes_read;
+
+            Ok(buffer)
+        }
     }
 
     // Seek to position
