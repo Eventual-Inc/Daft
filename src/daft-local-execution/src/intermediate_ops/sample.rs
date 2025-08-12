@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
@@ -32,13 +32,15 @@ impl SampleOperator {
 }
 
 impl IntermediateOperator for SampleOperator {
+    type State = ();
+
     #[instrument(skip_all, name = "SampleOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let params = self.params.clone();
         task_spawner
             .spawn(
@@ -71,6 +73,10 @@ impl IntermediateOperator for SampleOperator {
 
     fn name(&self) -> NodeName {
         "Sample".into()
+    }
+
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
     }
 
     fn op_type(&self) -> NodeType {

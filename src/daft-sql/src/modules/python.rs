@@ -1,4 +1,5 @@
 use common_error::DaftResult;
+use daft_core::lit::Literal;
 use daft_dsl::{functions::python::WrappedUDFClass, Expr};
 #[cfg(feature = "python")]
 use {
@@ -42,32 +43,32 @@ fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<PyObject> {
             literals.into_py_any(py)
         }
         Expr::Literal(lit) => match lit {
-            daft_dsl::LiteralValue::Null => Ok(py.None()),
-            daft_dsl::LiteralValue::Boolean(b) => b.into_py_any(py),
-            daft_dsl::LiteralValue::Utf8(s) => s.into_py_any(py),
-            daft_dsl::LiteralValue::Binary(_) => unreachable_variant!(Binary),
-            daft_dsl::LiteralValue::FixedSizeBinary(_, _) => unreachable_variant!(FixedSizeBinary),
-            daft_dsl::LiteralValue::Int8(_) => unreachable_variant!(Int8),
-            daft_dsl::LiteralValue::UInt8(_) => unreachable_variant!(UInt8),
-            daft_dsl::LiteralValue::Int16(_) => unreachable_variant!(Int16),
-            daft_dsl::LiteralValue::UInt16(_) => unreachable_variant!(UInt16),
-            daft_dsl::LiteralValue::Int32(_) => unreachable_variant!(Int32),
-            daft_dsl::LiteralValue::UInt32(_) => unreachable_variant!(UInt32),
-            daft_dsl::LiteralValue::Int64(u) => u.into_py_any(py),
-            daft_dsl::LiteralValue::UInt64(_) => unreachable_variant!(UInt64),
-            daft_dsl::LiteralValue::Timestamp(..) => unreachable_variant!(Timestamp),
-            daft_dsl::LiteralValue::Date(_) => unreachable_variant!(Date),
-            daft_dsl::LiteralValue::Time(..) => unreachable_variant!(Time),
-            daft_dsl::LiteralValue::Duration(..) => unreachable_variant!(Duration),
-            daft_dsl::LiteralValue::Interval(..) => todo!(),
-            daft_dsl::LiteralValue::Float64(f) => f.into_py_any(py),
-            daft_dsl::LiteralValue::Decimal(..) => unreachable_variant!(Decimal),
-            daft_dsl::LiteralValue::List(series) => daft_core::python::PySeries {
+            Literal::Null => Ok(py.None()),
+            Literal::Boolean(b) => b.into_py_any(py),
+            Literal::Utf8(s) => s.into_py_any(py),
+            Literal::Binary(_) => unreachable_variant!(Binary),
+            Literal::Int8(_) => unreachable_variant!(Int8),
+            Literal::UInt8(_) => unreachable_variant!(UInt8),
+            Literal::Int16(_) => unreachable_variant!(Int16),
+            Literal::UInt16(_) => unreachable_variant!(UInt16),
+            Literal::Int32(_) => unreachable_variant!(Int32),
+            Literal::UInt32(_) => unreachable_variant!(UInt32),
+            Literal::Int64(u) => u.into_py_any(py),
+            Literal::UInt64(_) => unreachable_variant!(UInt64),
+            Literal::Timestamp(..) => unreachable_variant!(Timestamp),
+            Literal::Date(_) => unreachable_variant!(Date),
+            Literal::Time(..) => unreachable_variant!(Time),
+            Literal::Duration(..) => unreachable_variant!(Duration),
+            Literal::Interval(..) => todo!(),
+            Literal::Float32(f) => f.into_py_any(py),
+            Literal::Float64(f) => f.into_py_any(py),
+            Literal::Decimal(..) => unreachable_variant!(Decimal),
+            Literal::List(series) => daft_core::python::PySeries {
                 series: series.clone(),
             }
             .into_py_any(py),
-            daft_dsl::LiteralValue::Python(_) => unreachable_variant!(Python),
-            daft_dsl::LiteralValue::Struct(_) => todo!(),
+            Literal::Python(_) => unreachable_variant!(Python),
+            Literal::Struct(_) => todo!(),
         },
         _ => Err(
             DaftError::InternalError("expected a literal, found an expression".to_string()).into(),

@@ -198,19 +198,18 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Limit(limit) => {
-                if limit.offset.is_some() {
-                    todo!("FLOTILLA_MS3: Implement Offset")
-                }
-                Arc::new(LimitNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.stage_config,
-                    limit.limit as usize,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                ))
+            LogicalPlan::IntoBatches(_into_batches) => {
+                todo!("IntoBatches not yet supported in the distributed pipeline node translator")
             }
+            LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                limit.limit as usize,
+                limit.offset.map(|x| x as usize),
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )),
             LogicalPlan::Project(project) => {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
                 ProjectNode::new(
@@ -363,7 +362,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                    RepartitionSpec::Hash(
                         daft_logical_plan::partitioning::HashRepartitionConfig::new(
                             None,
                             columns.clone().into_iter().map(|e| e.into()).collect(),
@@ -417,24 +416,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Join(join) => {
-                let (remaining_on, _, _, _) = join.on.split_eq_preds();
-                if !remaining_on.is_empty() {
-                    todo!("FLOTILLA_MS?: Implement non-equality joins")
-                }
-
                 // Visitor appends in in-order
                 // TODO: Just use regular recursion?
                 let right_node = self.curr_node.pop().unwrap();
                 let left_node = self.curr_node.pop().unwrap();
 
-                self.gen_hash_join_nodes(
-                    logical_node_id,
-                    join.on.clone(),
-                    left_node,
-                    right_node,
-                    join.join_type,
-                    join.output_schema.clone(),
-                )?
+                self.translate_join(logical_node_id, join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
@@ -459,10 +446,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::TopN(top_n) => {
                 let sort_by = BoundExpr::bind_all(&top_n.sort_by, &top_n.input.schema())?;
 
-                if top_n.offset.is_some() {
-                    todo!("FLOTILLA_MS3: Implement Offset")
-                }
-
                 // First stage: Perform a local topN
                 let local_topn = TopNNode::new(
                     self.get_next_pipeline_node_id(),
@@ -471,7 +454,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     sort_by.clone(),
                     top_n.descending.clone(),
                     top_n.nulls_first.clone(),
-                    top_n.limit,
+                    top_n.limit + top_n.offset.unwrap_or(0),
+                    Some(0),
                     top_n.input.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -489,6 +473,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     top_n.descending.clone(),
                     top_n.nulls_first.clone(),
                     top_n.limit,
+                    top_n.offset,
                     top_n.input.schema(),
                     gather,
                 )

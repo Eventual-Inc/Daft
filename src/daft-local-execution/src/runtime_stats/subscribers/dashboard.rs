@@ -145,10 +145,12 @@ impl RuntimeStatsSubscriber for DashboardSubscriber {
         Ok(())
     }
 
-    fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
-        self.event_tx
-            .send((event.clone(), node_info.clone()))
-            .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
+    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_info, event) in events {
+            self.event_tx
+                .send((event.clone(), (*node_info).clone()))
+                .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
+        }
         Ok(())
     }
 

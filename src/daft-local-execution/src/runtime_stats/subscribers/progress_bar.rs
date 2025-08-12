@@ -175,9 +175,11 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         Ok(())
     }
 
-    fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
-        let pb = self.pbars.get(node_info.id).unwrap();
-        pb.set_message(event_to_message(event));
+    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_info, event) in events {
+            let pb = self.pbars.get(node_info.id).unwrap();
+            pb.set_message(event_to_message(event));
+        }
         Ok(())
     }
 
@@ -295,9 +297,12 @@ mod python {
             Ok(())
         }
 
-        fn handle_event(&self, event: &StatSnapshotSend, node_info: &NodeInfo) -> DaftResult<()> {
-            let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
-            self.update_bar(*pb_id, &event_to_message(event))
+        fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+            for (node_info, event) in events {
+                let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
+                self.update_bar(*pb_id, &event_to_message(event))?;
+            }
+            Ok(())
         }
 
         fn finish(self: Box<Self>) -> DaftResult<()> {

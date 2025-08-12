@@ -1,14 +1,14 @@
 use std::fmt::{Display, Formatter};
 
 use common_error::DaftError;
-use daft_core::{prelude::Field, series::Series};
 use indexmap::IndexMap;
 use serde::{
     de::{self, Error},
     forward_to_deserialize_any, Deserializer,
 };
 
-use super::LiteralValue;
+use super::Literal;
+use crate::{prelude::Field, series::Series};
 
 #[derive(Debug)]
 pub struct LitError {
@@ -59,12 +59,10 @@ impl<'de> serde::de::SeqAccess<'de> for SeriesDeserializer<'de> {
             return Ok(None);
         }
 
-        let value = LiteralValue::get_from_series(self.values, self.index)
-            .map_err(|e| LitError::custom(e.to_string()))?;
-
+        let value = self.values.get_lit(self.index);
         self.index += 1;
 
-        let deserializer = OwnedLiteralValueDeserializer { lit: value };
+        let deserializer = OwnedLiteralDeserializer { lit: value };
         seed.deserialize(deserializer).map(Some)
     }
 
@@ -74,13 +72,13 @@ impl<'de> serde::de::SeqAccess<'de> for SeriesDeserializer<'de> {
 }
 
 struct StructDeserializer<'de> {
-    fields: &'de IndexMap<Field, LiteralValue>,
-    iter: indexmap::map::Iter<'de, Field, LiteralValue>,
-    value: Option<&'de LiteralValue>,
+    fields: &'de IndexMap<Field, Literal>,
+    iter: indexmap::map::Iter<'de, Field, Literal>,
+    value: Option<&'de Literal>,
 }
 
 impl<'de> StructDeserializer<'de> {
-    fn new(fields: &'de IndexMap<Field, LiteralValue>) -> Self {
+    fn new(fields: &'de IndexMap<Field, Literal>) -> Self {
         StructDeserializer {
             fields,
             iter: fields.iter(),
@@ -116,7 +114,7 @@ impl<'de> serde::de::MapAccess<'de> for StructDeserializer<'de> {
         match self.value.take() {
             Some(value) => {
                 // Deserialize the stored value
-                seed.deserialize(LiteralValueDeserializer { lit: value })
+                seed.deserialize(LiteralDeserializer { lit: value })
             }
             None => Err(LitError::custom("Value is missing for struct field")),
         }
@@ -147,13 +145,13 @@ impl<'de> Deserializer<'de> for StringDeserializer<'de> {
     }
 }
 
-pub struct LiteralValueDeserializer<'de> {
-    pub(super) lit: &'de LiteralValue,
+pub struct LiteralDeserializer<'de> {
+    pub(super) lit: &'de Literal,
 }
 
 // Owned deserializer
-pub struct OwnedLiteralValueDeserializer {
-    lit: LiteralValue,
+pub struct OwnedLiteralDeserializer {
+    lit: Literal,
 }
 
 // Helper struct for enum deserialization
@@ -230,7 +228,7 @@ impl<'de> serde::de::EnumAccess<'de> for StringEnumAccess<'de> {
 }
 
 pub struct VariantAccess<'de> {
-    value: &'de LiteralValue,
+    value: &'de Literal,
 }
 
 impl<'de> serde::de::VariantAccess<'de> for VariantAccess<'de> {
@@ -238,7 +236,7 @@ impl<'de> serde::de::VariantAccess<'de> for VariantAccess<'de> {
 
     fn unit_variant(self) -> Result<(), Self::Error> {
         match self.value {
-            LiteralValue::Null => Ok(()),
+            Literal::Null => Ok(()),
             _ => Err(LitError::custom("Expected null for unit variant")),
         }
     }
@@ -247,7 +245,7 @@ impl<'de> serde::de::VariantAccess<'de> for VariantAccess<'de> {
     where
         T: serde::de::DeserializeSeed<'de>,
     {
-        seed.deserialize(LiteralValueDeserializer { lit: self.value })
+        seed.deserialize(LiteralDeserializer { lit: self.value })
     }
 
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
@@ -255,8 +253,8 @@ impl<'de> serde::de::VariantAccess<'de> for VariantAccess<'de> {
         V: serde::de::Visitor<'de>,
     {
         match self.value {
-            LiteralValue::List(series) => visitor.visit_seq(SeriesDeserializer::new(series)),
-            _ => LiteralValueDeserializer { lit: self.value }.deserialize_seq(visitor),
+            Literal::List(series) => visitor.visit_seq(SeriesDeserializer::new(series)),
+            _ => LiteralDeserializer { lit: self.value }.deserialize_seq(visitor),
         }
     }
 
@@ -269,7 +267,7 @@ impl<'de> serde::de::VariantAccess<'de> for VariantAccess<'de> {
         V: serde::de::Visitor<'de>,
     {
         match self.value {
-            LiteralValue::Struct(fields) => visitor.visit_map(StructDeserializer::new(fields)),
+            Literal::Struct(fields) => visitor.visit_map(StructDeserializer::new(fields)),
             _ => Err(LitError::custom("Expected struct for struct variant")),
         }
     }
@@ -278,7 +276,7 @@ impl<'de> serde::de::VariantAccess<'de> for VariantAccess<'de> {
 // For struct enum variants (handles all variant types)
 pub struct StructEnumAccess<'de> {
     variant: &'de str,
-    value: &'de LiteralValue,
+    value: &'de Literal,
 }
 
 impl<'de> serde::de::EnumAccess<'de> for StructEnumAccess<'de> {
@@ -295,7 +293,7 @@ impl<'de> serde::de::EnumAccess<'de> for StructEnumAccess<'de> {
     }
 }
 
-impl<'de> Deserializer<'de> for OwnedLiteralValueDeserializer {
+impl<'de> Deserializer<'de> for OwnedLiteralDeserializer {
     type Error = LitError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, LitError>
@@ -303,30 +301,30 @@ impl<'de> Deserializer<'de> for OwnedLiteralValueDeserializer {
         V: serde::de::Visitor<'de>,
     {
         match self.lit {
-            LiteralValue::Null => visitor.visit_none(),
-            LiteralValue::Boolean(b) => visitor.visit_bool(b),
-            LiteralValue::Utf8(s) => visitor.visit_string(s),
-            LiteralValue::Binary(items) => visitor.visit_bytes(&items),
-            LiteralValue::FixedSizeBinary(items, _) => visitor.visit_bytes(&items),
-            LiteralValue::Int8(i8) => visitor.visit_i8(i8),
-            LiteralValue::UInt8(u8) => visitor.visit_u8(u8),
-            LiteralValue::Int16(i16) => visitor.visit_i16(i16),
-            LiteralValue::UInt16(u16) => visitor.visit_u16(u16),
-            LiteralValue::Int32(i32) => visitor.visit_i32(i32),
-            LiteralValue::UInt32(u32) => visitor.visit_u32(u32),
-            LiteralValue::Int64(i64) => visitor.visit_i64(i64),
-            LiteralValue::UInt64(u64) => visitor.visit_u64(u64),
-            LiteralValue::Float64(f64) => visitor.visit_f64(f64),
-            LiteralValue::Timestamp(..) => Err(LitError::custom("Not implemented: Timestamp")),
-            LiteralValue::Date(_) => Err(LitError::custom("Not implemented: Date")),
-            LiteralValue::Time(..) => Err(LitError::custom("Not implemented: Time")),
-            LiteralValue::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
-            LiteralValue::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
-            LiteralValue::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
-            LiteralValue::List(_) => Err(LitError::custom("Not implemented: List")),
+            Literal::Null => visitor.visit_none(),
+            Literal::Boolean(b) => visitor.visit_bool(b),
+            Literal::Utf8(s) => visitor.visit_string(s),
+            Literal::Binary(items) => visitor.visit_bytes(&items),
+            Literal::Int8(i8) => visitor.visit_i8(i8),
+            Literal::UInt8(u8) => visitor.visit_u8(u8),
+            Literal::Int16(i16) => visitor.visit_i16(i16),
+            Literal::UInt16(u16) => visitor.visit_u16(u16),
+            Literal::Int32(i32) => visitor.visit_i32(i32),
+            Literal::UInt32(u32) => visitor.visit_u32(u32),
+            Literal::Int64(i64) => visitor.visit_i64(i64),
+            Literal::UInt64(u64) => visitor.visit_u64(u64),
+            Literal::Float32(f32) => visitor.visit_f32(f32),
+            Literal::Float64(f64) => visitor.visit_f64(f64),
+            Literal::Timestamp(..) => Err(LitError::custom("Not implemented: Timestamp")),
+            Literal::Date(_) => Err(LitError::custom("Not implemented: Date")),
+            Literal::Time(..) => Err(LitError::custom("Not implemented: Time")),
+            Literal::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
+            Literal::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
+            Literal::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
+            Literal::List(_) => Err(LitError::custom("Not implemented: List")),
             #[cfg(feature = "python")]
-            LiteralValue::Python(_) => Err(LitError::custom("Not implemented: Python")),
-            LiteralValue::Struct(_) => Err(LitError::custom("Not implemented: Struct")),
+            Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
+            Literal::Struct(_) => Err(LitError::custom("Not implemented: Struct")),
         }
     }
 
@@ -337,7 +335,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralValueDeserializer {
     }
 }
 
-impl<'de> Deserializer<'de> for LiteralValueDeserializer<'de> {
+impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
     type Error = LitError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, LitError>
@@ -345,30 +343,30 @@ impl<'de> Deserializer<'de> for LiteralValueDeserializer<'de> {
         V: serde::de::Visitor<'de>,
     {
         match self.lit {
-            LiteralValue::Null => visitor.visit_none(),
-            LiteralValue::Boolean(b) => visitor.visit_bool(*b),
-            LiteralValue::Utf8(s) => visitor.visit_str(s),
-            LiteralValue::Binary(items) => visitor.visit_bytes(items),
-            LiteralValue::FixedSizeBinary(items, _) => visitor.visit_bytes(items),
-            LiteralValue::Int8(i8) => visitor.visit_i8(*i8),
-            LiteralValue::UInt8(u8) => visitor.visit_u8(*u8),
-            LiteralValue::Int16(i16) => visitor.visit_i16(*i16),
-            LiteralValue::UInt16(u16) => visitor.visit_u16(*u16),
-            LiteralValue::Int32(i32) => visitor.visit_i32(*i32),
-            LiteralValue::UInt32(u32) => visitor.visit_u32(*u32),
-            LiteralValue::Int64(i64) => visitor.visit_i64(*i64),
-            LiteralValue::UInt64(u64) => visitor.visit_u64(*u64),
-            LiteralValue::Float64(f64) => visitor.visit_f64(*f64),
-            LiteralValue::Timestamp(..) => Err(LitError::custom("Not implemented: Timestamp")),
-            LiteralValue::Date(_) => Err(LitError::custom("Not implemented: Date")),
-            LiteralValue::Time(..) => Err(LitError::custom("Not implemented: Time")),
-            LiteralValue::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
-            LiteralValue::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
-            LiteralValue::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
-            LiteralValue::List(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
+            Literal::Null => visitor.visit_none(),
+            Literal::Boolean(b) => visitor.visit_bool(*b),
+            Literal::Utf8(s) => visitor.visit_str(s),
+            Literal::Binary(items) => visitor.visit_bytes(items),
+            Literal::Int8(i8) => visitor.visit_i8(*i8),
+            Literal::UInt8(u8) => visitor.visit_u8(*u8),
+            Literal::Int16(i16) => visitor.visit_i16(*i16),
+            Literal::UInt16(u16) => visitor.visit_u16(*u16),
+            Literal::Int32(i32) => visitor.visit_i32(*i32),
+            Literal::UInt32(u32) => visitor.visit_u32(*u32),
+            Literal::Int64(i64) => visitor.visit_i64(*i64),
+            Literal::UInt64(u64) => visitor.visit_u64(*u64),
+            Literal::Float32(f32) => visitor.visit_f32(*f32),
+            Literal::Float64(f64) => visitor.visit_f64(*f64),
+            Literal::Timestamp(..) => Err(LitError::custom("Not implemented: Timestamp")),
+            Literal::Date(_) => Err(LitError::custom("Not implemented: Date")),
+            Literal::Time(..) => Err(LitError::custom("Not implemented: Time")),
+            Literal::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
+            Literal::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
+            Literal::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
+            Literal::List(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
             #[cfg(feature = "python")]
-            LiteralValue::Python(_) => Err(LitError::custom("Not implemented: Python")),
-            LiteralValue::Struct(v) => visitor.visit_map(StructDeserializer::new(v)),
+            Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
+            Literal::Struct(v) => visitor.visit_map(StructDeserializer::new(v)),
         }
     }
     // Override option deserialization
@@ -377,7 +375,7 @@ impl<'de> Deserializer<'de> for LiteralValueDeserializer<'de> {
         V: serde::de::Visitor<'de>,
     {
         match self.lit {
-            LiteralValue::Null => visitor.visit_none(),
+            Literal::Null => visitor.visit_none(),
             _ => visitor.visit_some(self),
         }
     }
@@ -393,20 +391,20 @@ impl<'de> Deserializer<'de> for LiteralValueDeserializer<'de> {
     {
         match self.lit {
             // Handle string representation (unit variants like "All")
-            LiteralValue::Utf8(s) => visitor.visit_enum(StringEnumAccess { variant: s }),
+            Literal::Utf8(s) => visitor.visit_enum(StringEnumAccess { variant: s }),
 
             // Handle numeric representation (discriminants)
-            LiteralValue::Int8(i) => visitor.visit_u8(*i as u8),
-            LiteralValue::Int16(i) => visitor.visit_u16(*i as u16),
-            LiteralValue::Int32(i) => visitor.visit_u32(*i as u32),
-            LiteralValue::Int64(i) => visitor.visit_u64(*i as u64),
-            LiteralValue::UInt8(i) => visitor.visit_u8(*i),
-            LiteralValue::UInt16(i) => visitor.visit_u16(*i),
-            LiteralValue::UInt32(i) => visitor.visit_u32(*i),
-            LiteralValue::UInt64(i) => visitor.visit_u64(*i),
+            Literal::Int8(i) => visitor.visit_u8(*i as u8),
+            Literal::Int16(i) => visitor.visit_u16(*i as u16),
+            Literal::Int32(i) => visitor.visit_u32(*i as u32),
+            Literal::Int64(i) => visitor.visit_u64(*i as u64),
+            Literal::UInt8(i) => visitor.visit_u8(*i),
+            Literal::UInt16(i) => visitor.visit_u16(*i),
+            Literal::UInt32(i) => visitor.visit_u32(*i),
+            Literal::UInt64(i) => visitor.visit_u64(*i),
 
             // Handle struct representation (like {"Variant": value} or {"Variant": {"field": value}})
-            LiteralValue::Struct(fields) if fields.len() == 1 => {
+            Literal::Struct(fields) if fields.len() == 1 => {
                 let (field, value) = fields.iter().next().unwrap();
                 visitor.visit_enum(StructEnumAccess {
                     variant: &field.name,
