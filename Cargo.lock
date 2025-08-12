@@ -1798,6 +1798,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-file"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-py-serde",
+ "daft-schema",
+ "pyo3",
+ "serde",
+]
+
+[[package]]
 name = "common-file-formats"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2287,6 +2298,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
+ "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
  "common-metrics",
@@ -2308,6 +2320,7 @@ dependencies = [
  "daft-dashboard",
  "daft-distributed",
  "daft-dsl",
+ "daft-file",
  "daft-functions",
  "daft-functions-binary",
  "daft-functions-json",
@@ -2459,6 +2472,7 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
+ "common-file",
  "common-hashable-float-wrapper",
  "common-io-config",
  "common-py-serde",
@@ -2585,6 +2599,7 @@ name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-file",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
@@ -2599,6 +2614,18 @@ dependencies = [
  "rstest",
  "serde",
  "typetag",
+]
+
+[[package]]
+name = "daft-file"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-file",
+ "common-runtime",
+ "daft-core",
+ "daft-io",
+ "pyo3",
 ]
 
 [[package]]

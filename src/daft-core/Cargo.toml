@@ -21,6 +21,7 @@ comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
+common-file = {path = "../common/file", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -57,6 +58,7 @@ python = [
   "common-arrow-ffi/python",
   "common-display/python",
   "common-error/python",
+  "common-file/python",
   "common-io-config/python",
   "common-py-serde/python",
   "daft-schema/python",

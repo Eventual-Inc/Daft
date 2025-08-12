@@ -6,11 +6,11 @@ use std::{
 };
 
 use common_error::DaftError;
+use common_file::DaftFile;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
 use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
-    lit::DaftFile,
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
@@ -175,6 +175,7 @@ pub fn file_lit(path: &str) -> PyResult<PyExpr> {
     let expr = Expr::Literal(Literal::File(DaftFile::Reference(path.to_string())));
     Ok(expr.into())
 }
+
 #[pyfunction]
 pub fn file_bytes_lit(bytes: &[u8]) -> PyResult<PyExpr> {
     let expr = Expr::Literal(Literal::File(DaftFile::Data(bytes.to_vec())));

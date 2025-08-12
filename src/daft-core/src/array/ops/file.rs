@@ -1,9 +1,9 @@
+use common_file::DaftFileType;
 use daft_schema::{dtype::DataType, field::Field};
 
 use crate::{
     array::StructArray,
     datatypes::logical::FileArray,
-    lit::DaftFileType,
     prelude::{BinaryArray, UInt8Array, Utf8Array},
     series::IntoSeries,
 };

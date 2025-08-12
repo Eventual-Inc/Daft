@@ -1,10 +1,7 @@
 use common_error::{DaftError, DaftResult};
+use common_file::{DaftFile, DaftFileType};
 
-use crate::{
-    datatypes::logical::FileArray,
-    lit::{DaftFile, DaftFileType},
-    prelude::*,
-};
+use crate::{datatypes::logical::FileArray, prelude::*};
 
 impl TryFrom<Vec<Literal>> for Series {
     type Error = DaftError;
@@ -149,15 +146,13 @@ impl TryFrom<Vec<Literal>> for Series {
             }
             DataType::File => {
                 let (discriminant, values) = values
-                    .iter()
+                    .into_iter()
                     .map(|v| match v {
                         Literal::File(DaftFile::Reference(path)) => {
-                            (DaftFileType::Reference as u8, path.clone().into_bytes())
+                            (DaftFileType::Reference as u8, path.into_bytes())
                         }
-                        Literal::File(DaftFile::Data(bytes)) => {
-                            (DaftFileType::Data as u8, bytes.clone())
-                        }
-                        _ => todo!(),
+                        Literal::File(DaftFile::Data(bytes)) => (DaftFileType::Data as u8, bytes),
+                        _ => panic!("should not happen"),
                     })
                     .unzip::<_, _, Vec<u8>, Vec<_>>();
                 let discriminant_field = Field::new("discriminant", DataType::UInt8);

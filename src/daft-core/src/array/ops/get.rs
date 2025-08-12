@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow2::types::months_days_ns;
+use common_file::{DaftFile, DaftFileType};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -13,7 +14,6 @@ use crate::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
-    lit::{DaftFile, DaftFileType},
     series::Series,
 };
 

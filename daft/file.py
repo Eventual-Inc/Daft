@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from daft.daft import PyDaftFile
+
 if TYPE_CHECKING:
     from io import TextIOWrapper, _WrappedBuffer
 
-    from daft.daft import PyDaftFile
+    from daft.io import IOConfig
 
 
 class File:
@@ -20,6 +22,16 @@ class File:
         file._inner = f
         return file
 
+    @staticmethod
+    def _from_path(path: str) -> File:
+        inner = PyDaftFile._from_path(path)
+        return File._from_py_daft_file(inner)
+
+    @staticmethod
+    def _from_bytes(bytes: bytes) -> File:
+        inner = PyDaftFile._from_bytes(bytes)
+        return File._from_py_daft_file(inner)
+
     def read(self, size: int = -1) -> bytes:
         return self._inner.read(size)
 
@@ -31,6 +43,9 @@ class File:
 
     def close(self) -> None:
         self._inner.close()
+
+    def open(self, _io_config: IOConfig | None = None) -> File:
+        raise NotImplementedError("File.open() not yet supported")
 
     def __enter__(self) -> TextIOWrapper[_WrappedBuffer]:
         return open(self._inner)
