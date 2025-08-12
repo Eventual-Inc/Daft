@@ -227,9 +227,11 @@ pub trait ObjectSource: Sync + Send {
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = uri.to_string();
+        let mut found_any = false;
         let s = stream! {
             let lsr = self.ls(&uri, posix, None, page_size, io_stats.clone()).await?;
             for fm in lsr.files {
+                found_any = true;
                 yield Ok(fm);
             }
 
@@ -238,8 +240,16 @@ pub trait ObjectSource: Sync + Send {
                 let lsr = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats.clone()).await?;
                 continuation_token.clone_from(&lsr.continuation_token);
                 for fm in lsr.files {
+                    found_any = true;
                     yield Ok(fm);
                 }
+            }
+
+            if !found_any {
+                yield Err(super::Error::NotFound {
+                    path: uri,
+                    source: Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Path not found")),
+                });
             }
         };
         Ok(s.boxed())
