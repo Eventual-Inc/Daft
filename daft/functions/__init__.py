@@ -20,13 +20,13 @@ from .columnar import (
 from .llm import llm_generate
 
 
-def to_file(expr: Expression) -> Expression:
+def file(expr: Expression) -> Expression:
     """Converts either a string containing a file reference, or a binary column to a `daft.File` reference.
 
     If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
     If the input is a binary column, it is converted to a `daft.File` where the entire contents are buffered in memory.
     """
-    return expr._eval_expressions("to_file")
+    return expr._eval_expressions("file")
 
 
 __all__ = [
@@ -36,10 +36,10 @@ __all__ = [
     "columns_min",
     "columns_sum",
     "dense_rank",
+    "file",
     "format",
     "llm_generate",
     "monotonically_increasing_id",
     "rank",
     "row_number",
-    "to_file",
 ]

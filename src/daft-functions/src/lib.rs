@@ -72,17 +72,17 @@ pub struct ConversionFunctions;
 impl FunctionModule for ConversionFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(ToStructFunction);
-        parent.add_fn(ToFile);
+        parent.add_fn(File);
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ToFile;
+pub struct File;
 
 #[typetag::serde]
-impl ScalarUDF for ToFile {
+impl ScalarUDF for File {
     fn name(&self) -> &'static str {
-        "to_file"
+        "file"
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
