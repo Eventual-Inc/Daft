@@ -1,7 +1,7 @@
 mod conversions;
 mod deserializer;
 #[cfg(feature = "python")]
-mod python;
+pub(crate) mod python;
 use std::{
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},

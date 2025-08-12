@@ -1,10 +1,178 @@
+use std::{
+    fs::File,
+    io::{Cursor, Read, Seek, SeekFrom},
+    path::Path,
+};
+
 use common_error::DaftError;
 use daft_schema::prelude::TimeUnit;
 use indexmap::IndexMap;
-use pyo3::{intern, prelude::*, types::PyNone, IntoPyObjectExt};
+use pyo3::{
+    exceptions::{PyIOError, PyValueError},
+    intern,
+    prelude::*,
+    types::PyNone,
+    IntoPyObjectExt,
+};
 
 use super::Literal;
-use crate::{python::PySeries, utils::display::display_decimal128};
+use crate::{lit::DaftFile, python::PySeries, utils::display::display_decimal128};
+
+#[pyclass]
+pub struct PyDaftFile {
+    inner: DaftFile,
+    cursor: Option<FileCursor>,
+    position: usize,
+}
+
+enum FileCursor {
+    Memory(Cursor<Vec<u8>>),
+    File(std::fs::File),
+}
+
+impl PyDaftFile {
+    // Helper to ensure file is opened
+    fn ensure_opened(&mut self) -> PyResult<()> {
+        if self.cursor.is_none() {
+            match &self.inner {
+                DaftFile::Reference(path) => {
+                    let file = File::open(Path::new(path)).map_err(|e| {
+                        PyIOError::new_err(format!("Failed to open file {}: {}", path, e))
+                    })?;
+                    self.cursor = Some(FileCursor::File(file));
+                }
+                DaftFile::Data(data) => {
+                    let cursor = Cursor::new(data.clone());
+                    self.cursor = Some(FileCursor::Memory(cursor));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+#[pymethods]
+impl PyDaftFile {
+    #[staticmethod]
+    fn from_reference(path: String) -> PyResult<Self> {
+        let path = path.replace("file://", "");
+
+        let file = File::open(Path::new(&path))
+            .map_err(|e| PyIOError::new_err(format!("Failed to open file {}: {}", path, e)))?;
+        Ok(Self {
+            inner: DaftFile::Reference(path),
+            cursor: Some(FileCursor::File(file)),
+            position: 0,
+        })
+    }
+    #[staticmethod]
+    fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self {
+            inner: DaftFile::Data(bytes.clone()), // todo: really bad clone here
+            cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
+            position: 0,
+        }
+    }
+
+    // Read bytes from file
+    fn read(&mut self, size: Option<isize>) -> PyResult<Vec<u8>> {
+        self.ensure_opened()?;
+
+        let size = match size {
+            Some(s) if s >= 0 => s as usize,
+            Some(_) => usize::MAX, // -1 means read all
+            None => usize::MAX,
+        };
+
+        let cursor = self.cursor.as_mut().unwrap();
+        let mut buffer = vec![0u8; size];
+
+        let bytes_read = match cursor {
+            FileCursor::Memory(c) => c
+                .read(&mut buffer)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?,
+            FileCursor::File(f) => f
+                .read(&mut buffer)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?,
+        };
+
+        buffer.truncate(bytes_read);
+        self.position += bytes_read;
+
+        Ok(buffer)
+    }
+
+    // Seek to position
+    fn seek(&mut self, offset: i64, whence: Option<usize>) -> PyResult<u64> {
+        self.ensure_opened()?;
+
+        let whence = match whence.unwrap_or(0) {
+            0 => SeekFrom::Start(offset as u64),
+            1 => SeekFrom::Current(offset),
+            2 => SeekFrom::End(offset),
+            _ => return Err(PyValueError::new_err("Invalid whence value")),
+        };
+
+        let cursor = self.cursor.as_mut().unwrap();
+        let new_pos = match cursor {
+            FileCursor::Memory(c) => c
+                .seek(whence)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?,
+            FileCursor::File(f) => f
+                .seek(whence)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?,
+        };
+
+        self.position = new_pos as usize;
+        Ok(new_pos)
+    }
+
+    // Return current position
+    fn tell(&self) -> PyResult<u64> {
+        if self.cursor.is_none() {
+            return Ok(0);
+        }
+        Ok(self.position as u64)
+    }
+
+    // Close the file
+    fn close(&mut self) -> PyResult<()> {
+        self.cursor = None;
+        self.position = 0;
+        Ok(())
+    }
+
+    // Context manager support
+    fn __enter__(slf: PyRef<Self>) -> PyRef<Self> {
+        slf
+    }
+
+    fn __exit__(
+        &mut self,
+        _exc_type: Option<PyObject>,
+        _exc_value: Option<PyObject>,
+        _traceback: Option<PyObject>,
+    ) -> PyResult<()> {
+        self.close()
+    }
+
+    // Path protocol support
+    fn __fspath__(&self) -> PyResult<String> {
+        match &self.inner {
+            DaftFile::Reference(path) => Ok(path.clone()),
+            DaftFile::Data(_) => Err(PyValueError::new_err(
+                "Cannot convert in-memory data to filesystem path",
+            )),
+        }
+    }
+
+    // String representation
+    fn __str__(&self) -> PyResult<String> {
+        match &self.inner {
+            DaftFile::Reference(path) => Ok(path.clone()),
+            DaftFile::Data(_) => Ok("<DaftFile: in-memory data>".to_string()),
+        }
+    }
+}
 
 impl<'py> IntoPyObject<'py> for Literal {
     type Target = PyAny;
@@ -124,7 +292,10 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .map(|(f, v)| (f.name, v))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
-            Self::File(_) => todo!(),
+            Self::File(DaftFile::Data(data)) => PyDaftFile::from_bytes(data).into_bound_py_any(py),
+            Self::File(DaftFile::Reference(path)) => PyDaftFile::from_reference(path)
+                .expect("Failed to create PyDaftFile from reference")
+                .into_bound_py_any(py),
         }
     }
 }

@@ -52,7 +52,7 @@ impl FileArray {
         )
         .into_series();
         let fld = Field::new(
-            name,
+            "literal",
             DataType::Struct(vec![discriminant_field, values_field]),
         );
         let sa = StructArray::new(
@@ -60,7 +60,7 @@ impl FileArray {
             vec![discriminant, values.clone().into_series().rename("data")],
             values.validity().cloned(),
         );
-        FileArray::new(Field::new("literal", DataType::File), sa)
+        FileArray::new(Field::new(name, DataType::File), sa)
     }
 
     pub fn discriminant_array(&self) -> UInt8Array {
