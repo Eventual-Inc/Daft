@@ -344,15 +344,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
-                let repartition = self.gen_shuffle_node(
-                    logical_node_id,
-                    RepartitionSpec::Hash(HashRepartitionConfig::new(
-                        None,
-                        partition_by.clone().into_iter().map(|e| e.into()).collect(),
-                    )),
-                    window.input.schema(),
-                    input_node,
-                )?;
+                let repartition = if partition_by.is_empty() {
+                    self.gen_gather_node(logical_node_id, input_node)
+                } else {
+                    self.gen_shuffle_node(
+                        logical_node_id,
+                        RepartitionSpec::Hash(HashRepartitionConfig::new(
+                            None,
+                            partition_by.clone().into_iter().map(|e| e.into()).collect(),
+                        )),
+                        window.input.schema(),
+                        input_node,
+                    )?
+                };
 
                 // Final stage: The actual window op
                 WindowNode::new(
