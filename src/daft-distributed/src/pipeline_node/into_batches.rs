@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -28,6 +28,14 @@ pub(crate) struct IntoBatchesNode {
     batch_size: usize,
     child: Arc<dyn DistributedPipelineNode>,
 }
+
+// The threshold at which we will emit a batch of data to the next task.
+// For instance, if the batch size is 100 and the threshold is 0.8, we will emit a batch
+// of data to the next task once we have 80 rows of data.
+// This is a heuristic to avoid creating batches that are too big. For instance, if we had
+// materialized outputs from two partitions that of size 80, we would emit two batches of size 80
+// instead of one batch of size 160.
+const BATCH_SIZE_THRESHOLD: f64 = 0.8;
 
 impl IntoBatchesNode {
     const NODE_NAME: NodeName = "IntoBatches";
@@ -90,8 +98,8 @@ impl IntoBatchesNode {
 
                 current_group.push(mat);
                 current_group_size += rows;
-                if current_group_size >= self.batch_size {
-                    current_group_size = 0;
+                if current_group_size >= (self.batch_size as f64 * BATCH_SIZE_THRESHOLD) as usize {
+                    let group_size = std::mem::take(&mut current_group_size);
 
                     let self_clone = self.clone();
                     let task = make_new_task_from_materialized_outputs(
@@ -101,36 +109,31 @@ impl IntoBatchesNode {
                         move |input| {
                             LocalPhysicalPlan::into_batches(
                                 input,
-                                self_clone.batch_size,
+                                group_size,
                                 StatsState::NotMaterialized,
                             )
                         },
                     )?;
-                    result_tx.send(task).await.map_err(|e| {
-                        DaftError::InternalError(format!("Error sending task: {:?}", e))
-                    })?;
+                    if result_tx.send(task).await.is_err() {
+                        break;
+                    }
                 }
             }
         }
 
         if !current_group.is_empty() {
+            let group_size = std::mem::take(&mut current_group_size);
+
             let self_clone = self.clone();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 current_group,
                 &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
                 move |input| {
-                    LocalPhysicalPlan::into_batches(
-                        input,
-                        self_clone.batch_size,
-                        StatsState::NotMaterialized,
-                    )
+                    LocalPhysicalPlan::into_batches(input, group_size, StatsState::NotMaterialized)
                 },
             )?;
-            result_tx
-                .send(task)
-                .await
-                .map_err(|e| DaftError::InternalError(format!("Error sending task: {:?}", e)))?;
+            let _ = result_tx.send(task).await;
         }
         Ok(())
     }
