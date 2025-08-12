@@ -57,7 +57,7 @@ impl FileArray {
         );
         let sa = StructArray::new(
             fld,
-            vec![discriminant, values.clone().into_series()],
+            vec![discriminant, values.clone().into_series().rename("data")],
             values.validity().cloned(),
         );
         FileArray::new(Field::new("literal", DataType::File), sa)
