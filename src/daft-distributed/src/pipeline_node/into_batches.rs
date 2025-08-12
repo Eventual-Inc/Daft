@@ -122,15 +122,17 @@ impl IntoBatchesNode {
         }
 
         if !current_group.is_empty() {
-            let group_size = std::mem::take(&mut current_group_size);
-
             let self_clone = self.clone();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 current_group,
                 &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
                 move |input| {
-                    LocalPhysicalPlan::into_batches(input, group_size, StatsState::NotMaterialized)
+                    LocalPhysicalPlan::into_batches(
+                        input,
+                        current_group_size,
+                        StatsState::NotMaterialized,
+                    )
                 },
             )?;
             let _ = result_tx.send(task).await;
