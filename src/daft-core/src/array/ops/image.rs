@@ -1,15 +1,16 @@
 use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
+use common_image::CowImage;
 use num_traits::FromPrimitive;
 
-use crate::{array::image_array::ImageArraySidecarData, lit::DaftImageBuffer, prelude::*};
+use crate::{array::image_array::ImageArraySidecarData, prelude::*};
 
 #[allow(clippy::len_without_is_empty)]
 pub trait AsImageObj {
     fn name(&self) -> &str;
     fn len(&self) -> usize;
-    fn as_image_obj(&self, idx: usize) -> Option<DaftImageBuffer<'_>>;
+    fn as_image_obj(&self, idx: usize) -> Option<CowImage<'_>>;
 }
 
 impl AsImageObj for ImageArray {
@@ -21,7 +22,7 @@ impl AsImageObj for ImageArray {
         ImageArray::name(self)
     }
 
-    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
+    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<CowImage<'a>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;
@@ -53,7 +54,7 @@ impl AsImageObj for ImageArray {
         let w = wa.value(idx);
         let m: ImageMode = ImageMode::from_u8(ma.value(idx)).unwrap();
         assert_eq!(m.num_channels(), c);
-        let result = DaftImageBuffer::from_raw(&m, w, h, slice_data);
+        let result = CowImage::from_raw(&m, w, h, slice_data);
 
         assert_eq!(result.height(), h);
         assert_eq!(result.width(), w);
@@ -70,7 +71,7 @@ impl AsImageObj for FixedShapeImageArray {
         FixedShapeImageArray::name(self)
     }
 
-    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
+    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<CowImage<'a>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;
@@ -84,7 +85,7 @@ impl AsImageObj for FixedShapeImageArray {
                 let start = idx * size as usize;
                 let end = (idx + 1) * size as usize;
                 let slice_data = Cow::Borrowed(&arrow_array.values().as_slice()[start..end] as &'a [u8]);
-                let result = DaftImageBuffer::from_raw(mode, *width, *height, slice_data);
+                let result = CowImage::from_raw(mode, *width, *height, slice_data);
 
                 assert_eq!(result.height(), *height);
                 assert_eq!(result.width(), *width);
@@ -97,10 +98,10 @@ impl AsImageObj for FixedShapeImageArray {
 
 pub fn image_array_from_img_buffers(
     name: &str,
-    inputs: &[Option<DaftImageBuffer<'_>>],
+    inputs: &[Option<CowImage<'_>>],
     image_mode: Option<ImageMode>,
 ) -> DaftResult<ImageArray> {
-    use DaftImageBuffer::{L, LA, RGB, RGBA};
+    use CowImage::{L, LA, RGB, RGBA};
     let is_all_u8 = inputs
         .iter()
         .filter_map(|b| b.as_ref())
@@ -152,12 +153,12 @@ pub fn image_array_from_img_buffers(
 
 pub fn fixed_image_array_from_img_buffers(
     name: &str,
-    inputs: &[Option<DaftImageBuffer<'_>>],
+    inputs: &[Option<CowImage<'_>>],
     image_mode: &ImageMode,
     height: u32,
     width: u32,
 ) -> DaftResult<FixedShapeImageArray> {
-    use DaftImageBuffer::{L, LA, RGB, RGBA};
+    use CowImage::{L, LA, RGB, RGBA};
     let is_all_u8 = inputs
         .iter()
         .filter_map(|b| b.as_ref())

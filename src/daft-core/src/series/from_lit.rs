@@ -1,6 +1,7 @@
 use common_error::{DaftError, DaftResult};
+use common_image::CowImage;
 
-use crate::{array::ops::image::image_array_from_img_buffers, lit::DaftImageBuffer, prelude::*};
+use crate::{array::ops::image::image_array_from_img_buffers, prelude::*};
 
 impl TryFrom<Vec<Literal>> for Series {
     type Error = DaftError;
@@ -239,7 +240,7 @@ impl TryFrom<Vec<Literal>> for Series {
             DataType::Image(image_mode) => {
                 let data = values
                     .iter()
-                    .map(|v| unwrap_inner!(v, Image).map(|img| DaftImageBuffer::from(&img.0)))
+                    .map(|v| unwrap_inner!(v, Image).map(|img| CowImage::from(&img.0)))
                     .collect::<Vec<_>>();
 
                 image_array_from_img_buffers("literal", &data, image_mode)?.into_series()
@@ -265,11 +266,12 @@ impl From<Literal> for Series {
 
 #[cfg(test)]
 mod test {
+    use common_image::Image;
     use image::{GrayImage, RgbaImage};
     use indexmap::indexmap;
     use rstest::rstest;
 
-    use crate::{datatypes::IntervalValue, lit::ImageBufferWrapper, prelude::*, series};
+    use crate::{datatypes::IntervalValue, prelude::*, series};
 
     #[rstest]
     #[case(vec![Literal::Null, Literal::Null])]
@@ -367,14 +369,14 @@ mod test {
         Literal::Map { keys: Series::empty("literal", &DataType::Utf8), values: Series::empty("literal", &DataType::Int32) },
     ])]
     #[case(vec![
-        Literal::Image(ImageBufferWrapper(GrayImage::new(1, 1).into())),
-        Literal::Image(ImageBufferWrapper(GrayImage::new(100, 100).into())),
-        Literal::Image(ImageBufferWrapper(GrayImage::from_raw(10, 10, vec![10; 100]).unwrap().into())),
+        Literal::Image(Image(GrayImage::new(1, 1).into())),
+        Literal::Image(Image(GrayImage::new(100, 100).into())),
+        Literal::Image(Image(GrayImage::from_raw(10, 10, vec![10; 100]).unwrap().into())),
     ])]
     #[case(vec![
-        Literal::Image(ImageBufferWrapper(RgbaImage::new(1, 1).into())),
-        Literal::Image(ImageBufferWrapper(RgbaImage::new(100, 100).into())),
-        Literal::Image(ImageBufferWrapper(RgbaImage::from_raw(10, 10, vec![10; 400]).unwrap().into())),
+        Literal::Image(Image(RgbaImage::new(1, 1).into())),
+        Literal::Image(Image(RgbaImage::new(100, 100).into())),
+        Literal::Image(Image(RgbaImage::from_raw(10, 10, vec![10; 400]).unwrap().into())),
     ])]
     fn test_literal_series_roundtrip_basics(#[case] literals: Vec<Literal>) {
         let expected = [vec![Literal::Null], literals, vec![Literal::Null]].concat();

@@ -1,6 +1,5 @@
 mod conversions;
 mod deserializer;
-mod image_buffer;
 #[cfg(feature = "python")]
 mod python;
 
@@ -13,9 +12,9 @@ use std::{
 use common_display::table_display::StrValue;
 use common_error::{ensure, DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
+use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
 use common_py_serde::PyObjectWrapper;
-pub use image_buffer::{DaftImageBuffer, ImageBufferWrapper};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -113,7 +112,7 @@ pub enum Literal {
         values: Series,
     },
     // An image buffer
-    Image(ImageBufferWrapper),
+    Image(Image),
 }
 
 impl Eq for Literal {}
@@ -332,7 +331,7 @@ impl Literal {
                 value: Box::new(values.data_type().clone()),
             },
             Self::Image(image_buffer_wrapper) => {
-                DataType::Image(Some(DaftImageBuffer::from(&image_buffer_wrapper.0).mode()))
+                DataType::Image(Some(CowImage::from(&image_buffer_wrapper.0).mode()))
             }
         }
     }

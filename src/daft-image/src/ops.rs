@@ -1,15 +1,14 @@
 use base64::Engine;
 use common_error::{DaftError, DaftResult};
+use common_image::{BBox, CowImage};
 use daft_core::{
     array::{
-        image_array::BBox,
         ops::image::{
             fixed_image_array_from_img_buffers, image_array_from_img_buffers, AsImageObj,
         },
         prelude::*,
     },
     datatypes::prelude::*,
-    lit::DaftImageBuffer,
     prelude::ImageArray,
 };
 
@@ -71,7 +70,7 @@ impl ImageOps for ImageArray {
     }
 
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self> {
-        let buffers: Vec<Option<DaftImageBuffer>> = ImageBufferIter::new(self)
+        let buffers: Vec<Option<CowImage>> = ImageBufferIter::new(self)
             .map(|img| img.map(|img| img.into_mode(mode)))
             .collect();
         image_array_from_img_buffers(self.name(), &buffers, Some(mode))
@@ -126,7 +125,7 @@ impl ImageOps for FixedShapeImageArray {
     where
         Self: Sized,
     {
-        let buffers: Vec<Option<DaftImageBuffer>> = ImageBufferIter::new(self)
+        let buffers: Vec<Option<CowImage>> = ImageBufferIter::new(self)
             .map(|img| img.map(|img| img.into_mode(mode)))
             .collect();
 
@@ -218,7 +217,7 @@ fn encode_images<Arr: AsImageObj>(
     )
 }
 
-fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>> {
+fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage>> {
     ImageBufferIter::new(images)
         .map(|img| img.map(|img| img.resize(w, h)))
         .collect::<Vec<_>>()
@@ -227,7 +226,7 @@ fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<Da
 fn crop_images<'a, Arr>(
     images: &'a Arr,
     bboxes: &mut dyn Iterator<Item = Option<BBox>>,
-) -> Vec<Option<DaftImageBuffer<'a>>>
+) -> Vec<Option<CowImage<'a>>>
 where
     Arr: AsImageObj,
 {

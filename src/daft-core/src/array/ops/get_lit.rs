@@ -1,8 +1,6 @@
-use crate::{
-    array::ops::image::AsImageObj,
-    lit::{ImageBufferWrapper, Literal},
-    prelude::*,
-};
+use common_image::Image;
+
+use crate::{array::ops::image::AsImageObj, lit::Literal, prelude::*};
 
 fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
 where
@@ -234,9 +232,7 @@ macro_rules! impl_image_array_get_lit {
                     self.len()
                 );
 
-                map_or_null(self.as_image_obj(idx), |obj| {
-                    Literal::Image(ImageBufferWrapper(obj))
-                })
+                map_or_null(self.as_image_obj(idx), |obj| Literal::Image(Image(obj)))
             }
         }
     };
