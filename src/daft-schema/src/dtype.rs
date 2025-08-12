@@ -654,6 +654,15 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_file(&self) -> bool {
+        match self {
+            Self::File => true,
+            Self::Extension(_, inner, _) => inner.is_file(),
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn to_floating_representation(&self) -> DaftResult<Self> {
         let data_type = match self {
             // All numeric types that coerce to `f32`

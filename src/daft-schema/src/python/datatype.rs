@@ -526,6 +526,10 @@ impl PyDataType {
         self.dtype.is_temporal()
     }
 
+    pub fn is_file(&self) -> bool {
+        self.dtype.is_file()
+    }
+
     pub fn fixed_size(&self) -> PyResult<usize> {
         self.dtype
             .fixed_size()

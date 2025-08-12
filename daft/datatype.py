@@ -957,6 +957,16 @@ class DataType:
         """
         return self._dtype.is_temporal()
 
+    def is_file(self) -> builtins.bool:
+        """Check if this is a file type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.file()
+            >>> assert dtype.is_file()
+        """
+        return self._dtype.is_file()
+
     @property
     def size(self) -> int:
         """If this is a fixed size type, return the size, otherwise an attribute error is raised.
