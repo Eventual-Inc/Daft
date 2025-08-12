@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from daft.catalog import Catalog, Identifier, Properties, Table
 from daft.daft import PyCatalog as _PyCatalog
@@ -8,6 +8,9 @@ from daft.daft import PyTable as _PyTable
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.schema import Schema
+
+if TYPE_CHECKING:
+    from daft.io.partitioning import PartitionField
 
 
 class _RustCatalog(Catalog):
@@ -26,7 +29,13 @@ class _RustCatalog(Catalog):
     def _create_namespace(self, ident: Identifier) -> None:
         self.inner.create_namespace(ident._ident)
 
-    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+    def _create_table(
+        self,
+        ident: Identifier,
+        schema: Schema,
+        properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
+    ) -> Table:
         return self.inner.create_table(ident._ident, schema._schema)
 
     def _drop_namespace(self, ident: Identifier) -> None:

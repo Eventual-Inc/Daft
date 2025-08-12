@@ -111,11 +111,14 @@ class IcebergCatalog(Catalog):
         ident = _to_pyiceberg_ident(identifier)
         self._inner.create_namespace(ident)
 
-    def _create_table(self, identifier: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+    def _create_table(
+        self,
+        identifier: Identifier,
+        schema: Schema,
+        properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
+    ) -> Table:
         i = _to_pyiceberg_ident(identifier)
-        partition_fields = None
-        if properties and "__partition_fields__" in properties:
-            partition_fields = properties.pop("__partition_fields__")
         pa_schema = schema.to_pyarrow_schema()
         iceberg_schema = assign_fresh_schema_ids(_pyarrow_to_schema_without_ids(pa_schema))
         partition_spec = self._partition_fields_to_pyiceberg_spec(iceberg_schema, partition_fields)
