@@ -13,7 +13,6 @@ use daft_schema::schema::SchemaRef;
 use super::hash_join::gen_num_partitions;
 use crate::pipeline_node::{
     join::{BroadcastJoinNode, HashJoinNode},
-    repartition::RepartitionNode,
     translate::LogicalPlanToPipelineNodeTranslator,
     DistributedPipelineNode, NodeID,
 };
@@ -82,31 +81,25 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.stage_config.config.as_ref(),
         );
 
-        let left = RepartitionNode::new(
-            self.get_next_pipeline_node_id(),
+        let left = self.gen_shuffle_node(
             logical_node_id,
-            &self.stage_config,
             RepartitionSpec::Hash(HashRepartitionConfig::new(
                 Some(num_partitions),
                 left_on.iter().map(|e| e.clone().into()).collect(),
             )),
             left.config().schema.clone(),
             left,
-        )
-        .arced();
+        )?;
 
-        let right = RepartitionNode::new(
-            self.get_next_pipeline_node_id(),
+        let right = self.gen_shuffle_node(
             logical_node_id,
-            &self.stage_config,
             RepartitionSpec::Hash(HashRepartitionConfig::new(
                 Some(num_partitions),
                 right_on.iter().map(|e| e.clone().into()).collect(),
             )),
             right.config().schema.clone(),
             right,
-        )
-        .arced();
+        )?;
 
         Ok(HashJoinNode::new(
             self.get_next_pipeline_node_id(),

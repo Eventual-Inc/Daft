@@ -10,7 +10,11 @@ use daft_dsl::{
     is_partition_compatible, AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec};
+use daft_logical_plan::{
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    stats::StatsState,
+    ClusteringSpec,
+};
 use daft_schema::{
     dtype::DataType,
     schema::{Schema, SchemaRef},
@@ -242,10 +246,22 @@ impl LogicalPlanToPipelineNodeTranslator {
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
-    ) -> Arc<dyn DistributedPipelineNode> {
-        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone(), None);
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let shuffle = if group_by.is_empty() {
+            self.gen_gather_node(logical_node_id, input_node)
+        } else {
+            self.gen_shuffle_node(
+                logical_node_id,
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    None,
+                    group_by.clone().into_iter().map(|e| e.into()).collect(),
+                )),
+                input_node.config().schema.clone(),
+                input_node,
+            )?
+        };
 
-        AggregateNode::new(
+        Ok(AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
@@ -254,7 +270,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             output_schema,
             shuffle,
         )
-        .arced()
+        .arced())
     }
 
     /// Generate PipelineNodes for aggregates with some pre-aggregation.
@@ -265,7 +281,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
-    ) -> Arc<dyn DistributedPipelineNode> {
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
@@ -285,12 +301,24 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .config
                 .shuffle_aggregation_default_partitions,
         );
-        let shuffle = self.gen_shuffle_node(
-            logical_node_id,
-            initial_agg,
-            split_details.second_stage_group_by.clone(),
-            Some(num_partitions),
-        );
+        let shuffle = if split_details.second_stage_group_by.is_empty() {
+            self.gen_gather_node(logical_node_id, initial_agg)
+        } else {
+            self.gen_shuffle_node(
+                logical_node_id,
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    split_details
+                        .second_stage_group_by
+                        .clone()
+                        .into_iter()
+                        .map(|e| e.into())
+                        .collect(),
+                )),
+                split_details.second_stage_schema.clone(),
+                initial_agg,
+            )?
+        };
 
         // Third stage re-agg to compute the final result
         let final_aggregation = AggregateNode::new(
@@ -305,7 +333,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         .arced();
 
         // Last stage project to get the final result
-        ProjectNode::new(
+        Ok(ProjectNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
             &self.stage_config,
@@ -313,7 +341,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             output_schema,
             final_aggregation,
         )
-        .arced()
+        .arced())
     }
 
     /// Generate PipelineNodes for aggregates
@@ -371,15 +399,15 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .iter()
                 .any(|f| matches!(f.dtype, DataType::Decimal128(_, _)))
         {
-            Ok(self.gen_without_pre_agg(
+            self.gen_without_pre_agg(
                 input_node,
                 logical_node_id,
                 group_by,
                 aggregations,
                 output_schema,
-            ))
+            )
         } else {
-            Ok(self.gen_with_pre_agg(input_node, logical_node_id, split_details, output_schema))
+            self.gen_with_pre_agg(input_node, logical_node_id, split_details, output_schema)
         }
     }
 }
