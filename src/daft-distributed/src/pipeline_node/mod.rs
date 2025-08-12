@@ -39,7 +39,6 @@ mod concat;
 mod distinct;
 mod explode;
 mod filter;
-mod gather;
 mod in_memory_source;
 mod join;
 mod limit;
@@ -115,7 +114,6 @@ impl MaterializedOutput {
     }
 }
 
-#[derive(Clone)]
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,

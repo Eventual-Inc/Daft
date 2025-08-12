@@ -81,7 +81,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.stage_config.config.as_ref(),
         );
 
-        let left = self.create_shuffle_nodes(
+        let left = self.gen_shuffle_node(
             logical_node_id,
             RepartitionSpec::Hash(HashRepartitionConfig::new(
                 Some(num_partitions),
@@ -91,7 +91,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             left,
         )?;
 
-        let right = self.create_shuffle_nodes(
+        let right = self.gen_shuffle_node(
             logical_node_id,
             RepartitionSpec::Hash(HashRepartitionConfig::new(
                 Some(num_partitions),

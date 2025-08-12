@@ -10,7 +10,11 @@ use daft_dsl::{
     is_partition_compatible, AggExpr,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec};
+use daft_logical_plan::{
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    stats::StatsState,
+    ClusteringSpec,
+};
 use daft_schema::{
     dtype::DataType,
     schema::{Schema, SchemaRef},
@@ -243,7 +247,19 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-        let shuffle = self.gen_shuffle_node(logical_node_id, input_node, group_by.clone(), None)?;
+        let shuffle = if group_by.is_empty() {
+            self.gen_gather_node(logical_node_id, input_node)
+        } else {
+            self.gen_shuffle_node(
+                logical_node_id,
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    None,
+                    group_by.clone().into_iter().map(|e| e.into()).collect(),
+                )),
+                input_node.config().schema.clone(),
+                input_node,
+            )?
+        };
 
         Ok(AggregateNode::new(
             self.get_next_pipeline_node_id(),
@@ -285,12 +301,24 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .config
                 .shuffle_aggregation_default_partitions,
         );
-        let shuffle = self.gen_shuffle_node(
-            logical_node_id,
-            initial_agg,
-            split_details.second_stage_group_by.clone(),
-            Some(num_partitions),
-        )?;
+        let shuffle = if split_details.second_stage_group_by.is_empty() {
+            self.gen_gather_node(logical_node_id, initial_agg)
+        } else {
+            self.gen_shuffle_node(
+                logical_node_id,
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    split_details
+                        .second_stage_group_by
+                        .clone()
+                        .into_iter()
+                        .map(|e| e.into())
+                        .collect(),
+                )),
+                split_details.second_stage_schema.clone(),
+                initial_agg,
+            )?
+        };
 
         // Third stage re-agg to compute the final result
         let final_aggregation = AggregateNode::new(

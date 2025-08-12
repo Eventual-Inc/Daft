@@ -7,8 +7,9 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        make_new_task_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        make_in_memory_task_from_materialized_outputs, make_new_task_from_materialized_outputs,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext, SubmittableTaskStream,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -64,10 +65,10 @@ impl PreShuffleMergeNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!(
-            "Pre-Shuffle Merge Threshold: {}",
-            self.pre_shuffle_merge_threshold
-        )]
+        vec![
+            format!("Pre-Shuffle Merge"),
+            format!("Threshold: {}", self.pre_shuffle_merge_threshold),
+        ]
     }
 }
 
@@ -149,34 +150,35 @@ impl PreShuffleMergeNode {
         let mut worker_buckets: HashMap<WorkerId, Vec<MaterializedOutput>> = HashMap::new();
 
         while let Some(output) = materialized_stream.try_next().await? {
+            // Push the output to the appropriate bucket
             let worker_id = output.worker_id().clone();
-            worker_buckets
-                .entry(worker_id.clone())
-                .or_default()
-                .push(output);
+            let bucket = worker_buckets.entry(worker_id.clone()).or_default();
+            bucket.push(output);
 
             // Check if this bucket has reached the threshold
-            if let Some(bucket) = worker_buckets.get(&worker_id) {
-                if bucket
-                    .iter()
-                    .map(|output| output.size_bytes().unwrap_or(0))
-                    .sum::<usize>()
-                    >= self.pre_shuffle_merge_threshold
-                {
-                    // Drain the bucket and create a merge task (no repartitioning)
-                    if let Some(materialized_outputs) = worker_buckets.remove(&worker_id) {
-                        let self_clone = self.clone();
-                        let task = make_new_task_from_materialized_outputs(
-                            TaskContext::from((self.context(), task_id_counter.next())),
-                            materialized_outputs,
-                            &(self_clone as Arc<dyn DistributedPipelineNode>),
-                            |plan| plan, // Just pass through the plan without repartitioning
-                        )?;
+            if bucket
+                .iter()
+                .map(|output| {
+                    output
+                        .size_bytes()
+                        .unwrap_or(self.pre_shuffle_merge_threshold) // If the size is not available, err on the safe side and use the threshold as a fallback
+                })
+                .sum::<usize>()
+                >= self.pre_shuffle_merge_threshold
+            {
+                // Drain the bucket and create a task to merge the outputs
+                if let Some(materialized_outputs) = worker_buckets.remove(&worker_id) {
+                    let self_clone = self.clone();
+                    let task = make_new_task_from_materialized_outputs(
+                        TaskContext::from((self.context(), task_id_counter.next())),
+                        materialized_outputs,
+                        &(self_clone as Arc<dyn DistributedPipelineNode>),
+                        |plan| plan, // Just pass through the plan without repartitioning
+                    )?;
 
-                        // Send the task directly to result_tx
-                        if result_tx.send(task).await.is_err() {
-                            break;
-                        }
+                    // Send the task directly to result_tx
+                    if result_tx.send(task).await.is_err() {
+                        break;
                     }
                 }
             }
@@ -186,14 +188,12 @@ impl PreShuffleMergeNode {
         for (_, materialized_outputs) in worker_buckets {
             if !materialized_outputs.is_empty() {
                 let self_clone = self.clone();
-                let task = make_new_task_from_materialized_outputs(
+                let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
                     &(self_clone as Arc<dyn DistributedPipelineNode>),
-                    |plan| plan, // Just pass through the plan without repartitioning
                 )?;
 
-                // Send the task directly to result_tx
                 if result_tx.send(task).await.is_err() {
                     break;
                 }

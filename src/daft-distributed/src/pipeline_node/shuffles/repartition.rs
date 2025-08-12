@@ -71,10 +71,9 @@ impl RepartitionNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![
-            format!("Repartition: {}", self.repartition_spec.var_name()),
-            self.repartition_spec.multiline_display().join("\n"),
-        ]
+        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
+        res.extend(self.repartition_spec.multiline_display());
+        res
     }
 
     pub(crate) async fn transpose_materialized_outputs(
