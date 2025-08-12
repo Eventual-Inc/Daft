@@ -178,9 +178,6 @@ enum Error {
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
-    #[snafu(display("Not Found: \"{}\"", path))]
-    NotFound { path: String },
-
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
 
@@ -224,8 +221,8 @@ const TOS_THROTTLING_ERRORS: &[&str] = &[
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            InvalidUrl, NotAFile, NotFound, UnableToHeadFile, UnableToListObjects,
-            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+            InvalidUrl, NotAFile, UnableToHeadFile, UnableToListObjects, UnableToLoadCredentials,
+            UnableToOpenFile, UnableToReadBytes,
         };
 
         fn classify_unhandled_error<
@@ -373,10 +370,6 @@ impl From<Error> for super::Error {
             UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: SourceType::S3,
                 source: source.into(),
-            },
-            NotFound { ref path } => Self::NotFound {
-                path: path.into(),
-                source: error.into(),
             },
             err => Self::Generic {
                 store: SourceType::S3,
@@ -1276,7 +1269,7 @@ impl ObjectSource for S3LikeSource {
                 is.mark_list_requests(1);
             }
 
-            if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
+            if lsr.files.is_empty() && key.ends_with(S3_DELIMITER) {
                 let permit = self
                     .connection_pool_sema
                     .acquire()
@@ -1301,11 +1294,6 @@ impl ObjectSource for S3LikeSource {
                 }
                 let target_path = format!("{scheme}://{bucket}/{key}");
                 lsr.files.retain(|f| f.filepath == target_path);
-
-                if lsr.files.is_empty() {
-                    // Isn't a file or a directory
-                    return Err(Error::NotFound { path: path.into() }.into());
-                }
                 Ok(lsr)
             } else {
                 Ok(lsr)
