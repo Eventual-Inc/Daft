@@ -7,7 +7,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use common_file_formats::DatabaseSourceConfig;
@@ -19,8 +18,9 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_parquet::read::{
-    read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
+use daft_parquet::{
+    infer_arrow_schema_from_metadata,
+    read::{read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions},
 };
 use daft_recordbatch::RecordBatch;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
@@ -1153,7 +1153,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = Schema::from(schema);
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1177,7 +1178,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
