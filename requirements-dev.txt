@@ -108,6 +108,7 @@ mkdocs-gen-files
 griffe
 mkdocs-literate-nav
 Jinja2
+./docs/plugins/
 
 # Daft connect testing
 pyspark==3.5.3

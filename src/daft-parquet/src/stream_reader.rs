@@ -3,7 +3,7 @@ use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_compute_runtime, RuntimeTask};
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::prelude::*;
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
@@ -19,8 +19,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use crate::{
     determine_parquet_parallelism,
     file::{build_row_ranges, RowGroupRange},
+    infer_arrow_schema_from_metadata,
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
-    stream_reader::read::schema::infer_schema_with_options,
     PARQUET_MORSEL_SIZE,
 };
 
@@ -72,7 +72,7 @@ fn arrow_chunk_to_table(
                 let offset = row_range_start.saturating_sub(*index_so_far);
                 arr = arr.sliced(offset, arr.len() - offset);
             }
-            let series_result = Series::try_from((f_name, cast_array_for_daft_if_needed(arr)));
+            let series_result = Series::try_from((f_name, arr));
             Some(series_result)
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -274,11 +274,12 @@ pub fn local_parquet_read_into_column_iters(
             })?,
     };
 
-    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
-        .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
-            path: uri.to_string(),
-        })?;
-    let schema = prune_fields_from_schema(schema, columns)?;
+    let inferred_schema =
+        infer_arrow_schema_from_metadata(&metadata, Some(schema_infer_options.into()))
+            .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
+                path: uri.to_string(),
+            })?;
+    let schema = prune_fields_from_schema(inferred_schema.into(), columns)?;
     let daft_schema = Schema::from(&schema);
 
     let row_ranges = build_row_ranges(
@@ -367,11 +368,12 @@ pub fn local_parquet_read_into_arrow(
     };
 
     // and infer a [`Schema`] from the `metadata`.
-    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
-        .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
-            path: uri.to_string(),
-        })?;
-    let schema = prune_fields_from_schema(schema, columns)?;
+    let inferred_schema =
+        infer_arrow_schema_from_metadata(&metadata, Some(schema_infer_options.into()))
+            .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
+                path: uri.to_string(),
+            })?;
+    let schema = prune_fields_from_schema(inferred_schema, columns)?;
     let daft_schema = Schema::from(&schema);
     let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
@@ -495,9 +497,7 @@ pub async fn local_parquet_read_async(
                     } else {
                         let casted_arrays = v
                             .into_iter()
-                            .map(move |a| {
-                                Series::try_from((f_name, cast_array_for_daft_if_needed(a)))
-                            })
+                            .map(move |a| Series::try_from((f_name, a)))
                             .collect::<Result<Vec<_>, _>>()?;
                         Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
                     }

@@ -47,6 +47,8 @@ ignore = [
 preview = true
 
 [lint.isort]
+known-first-party = ["daft"]
+known-third-party = ["lance"]
 required-imports = ["from __future__ import annotations"]
 
 [lint.per-file-ignores]

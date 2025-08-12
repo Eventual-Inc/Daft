@@ -1,13 +1,13 @@
 # daft.functions
 Built-in Daft Functions
 
-{% for category, title in category_titles.items() %}
-## {{ title }}
+{% for category, functions in categories.items() %}
+## {{ category }}
 
 <table>
-  {%- for fn in categories[category] %}
+  {%- for fn in functions %}
   <tr>
-    <td><a href="{{ fn.name }}">{{ fn.name }}</a>({{ fn.signature }})</td>
+    <td><a href="{{ fn.name }}/">{{ fn.name }}</a>({{ fn.signature }})</td>
     <td>{{ fn.description }}</td>
   </tr>
   {%- endfor %}

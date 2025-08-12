@@ -12,6 +12,7 @@ use crate::{
         DataArray,
     },
     datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray, IntervalArray},
+    lit::Literal,
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
 };
@@ -105,7 +106,7 @@ macro_rules! impl_series_like_for_data_array {
                 self.0.len()
             }
 
-            fn size_bytes(&self) -> DaftResult<usize> {
+            fn size_bytes(&self) -> usize {
                 self.0.size_bytes()
             }
 
@@ -170,6 +171,10 @@ macro_rules! impl_series_like_for_data_array {
                         .map(|x| x.into_series()),
                     None => self.0.clone().into_series().set().map(|x| x.into_series()),
                 }
+            }
+
+            fn get_lit(&self, idx: usize) -> Literal {
+                self.0.get_lit(idx)
             }
         }
     };

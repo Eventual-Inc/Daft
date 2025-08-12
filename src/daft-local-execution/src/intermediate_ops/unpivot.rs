@@ -1,15 +1,15 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct UnpivotParams {
     ids: Vec<BoundExpr>,
@@ -40,13 +40,15 @@ impl UnpivotOperator {
 }
 
 impl IntermediateOperator for UnpivotOperator {
+    type State = ();
+
     #[instrument(skip_all, name = "UnpivotOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let params = self.params.clone();
         task_spawner
             .spawn(
@@ -83,6 +85,14 @@ impl IntermediateOperator for UnpivotOperator {
     }
 
     fn name(&self) -> NodeName {
-        Cow::Borrowed("Unpivot")
+        "Unpivot".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Unpivot
+    }
+
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
     }
 }

@@ -31,9 +31,9 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
+from daft.daft import list_lit as _list_lit
 from daft.daft import lit as _lit
 from daft.daft import row_wise_udf as _row_wise_udf
-from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
@@ -108,8 +108,10 @@ def lit(value: object) -> Expression:
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
-        agg_listed = value._series.agg_list()
-        lit_value = _series_lit(agg_listed)
+        lit_value = _list_lit(value._series)
+    elif isinstance(value, list):
+        value_series = Series.from_pylist(value)
+        lit_value = _list_lit(value_series._series)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -128,7 +130,7 @@ def element() -> Expression:
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
-    See [Column Wildcards](https://docs.getdaft.io/en/stable/core_concepts/#selecting-columns-using-wildcards) for details on wildcards.
+    See [Column Wildcards](https://docs.daft.ai/en/stable/core_concepts/#selecting-columns-using-wildcards) for details on wildcards.
 
     Args:
         name: Name of column
@@ -664,7 +666,7 @@ class Expression:
             (Showing first 2 of 2 rows)
 
         Tip: See Also
-            [list.get](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.get) and [struct.get](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStructNamespace.get)
+            [list.get](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.get) and [struct.get](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStructNamespace.get)
 
         """
         if isinstance(key, int):
@@ -751,7 +753,7 @@ class Expression:
 
         Note:
             - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
-            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://docs.getdaft.io/en/stable/sql/datatypes/) for supported datatypes.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://docs.daft.ai/en/stable/sql/datatypes/) for supported datatypes.
             - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
 
         Examples:
@@ -1529,7 +1531,7 @@ class Expression:
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
             series = item_to_series("items", other)
-            other = [Expression._from_pyexpr(_series_lit(series._series))]
+            other = [Expression._from_pyexpr(_list_lit(series._series))]
         else:
             other = [other]
 
@@ -1570,19 +1572,28 @@ class Expression:
         expr = self._expr.between(lower._expr, upper._expr)
         return Expression._from_pyexpr(expr)
 
-    def hash(self, seed: Any | None = None) -> Expression:
+    def hash(
+        self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash"
+    ) -> Expression:
         """Hashes the values in the Expression.
 
-        Uses the [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function to hash the values in the expression.
+        Uses the specified hash function to hash the values in the expression. Default to [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function.
 
         Args:
             seed (optional): Seed used for generating the hash. Defaults to 0.
+            hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
 
         Note:
             Null values will produce a hash value instead of being propagated as null.
 
         """
-        return self._eval_expressions("hash", seed=seed)
+        # Only pass hash_function if explicitly provided to maintain backward compatibility in string representation
+        kwargs = {}
+        if seed is not None:
+            kwargs["seed"] = seed
+        if hash_function is not None:
+            kwargs["hash_function"] = hash_function
+        return self._eval_expressions("hash", **kwargs)
 
     def minhash(
         self,
@@ -3012,7 +3023,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
-        See [daft.datatype.TimeUnit](https://docs.getdaft.io/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
+        See [daft.datatype.TimeUnit](https://docs.daft.ai/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
 
         Examples:
             >>> import daft
@@ -3679,7 +3690,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
 
         Tip: See Also
-            [extract_all](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
+            [extract_all](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
         """
         pattern_expr = Expression._to_expression(pattern)
         idx = Expression._to_expression(index)
@@ -3737,7 +3748,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Tip: See Also
-            [extract](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
+            [extract](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
         """
         pattern_expr = Expression._to_expression(pattern)
         idx = Expression._to_expression(index)
@@ -4584,7 +4595,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             patterns = [patterns]
         if not isinstance(patterns, Expression):
             series = item_to_series("items", patterns)
-            patterns = Expression._from_pyexpr(_series_lit(series._series))
+            patterns = Expression._from_pyexpr(_list_lit(series._series))
 
         whole_words_expr = Expression._to_expression(whole_words)._expr
         case_sensitive_expr = Expression._to_expression(case_sensitive)._expr
@@ -4907,7 +4918,7 @@ class ExpressionListNamespace(ExpressionNamespace):
     def unique(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
-        Alias for [Expression.list.distinct](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct).
+        Alias for [Expression.list.distinct](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct).
 
         Returns:
             Expression: An expression with lists containing only distinct elements
@@ -4951,7 +4962,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Tip: See Also
-            [Expression.list.distinct](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct)
+            [Expression.list.distinct](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct)
 
         """
         return self.distinct()

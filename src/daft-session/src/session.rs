@@ -145,6 +145,16 @@ impl Session {
         Ok(self.state().options.curr_namespace.clone())
     }
 
+    /// Returns the session's current provider.
+    pub fn current_provider(&self) -> CatalogResult<Option<String>> {
+        Ok(self.state().options.curr_provider.clone())
+    }
+
+    /// Returns the session's current model.
+    pub fn current_model(&self) -> CatalogResult<Option<String>> {
+        Ok(self.state().options.curr_model.clone())
+    }
+
     /// Detaches a table from this session, err if does not exist.
     pub fn detach_table(&self, alias: &str) -> CatalogResult<()> {
         if !self.state().tables.contains(alias) {
@@ -260,6 +270,26 @@ impl Session {
             self.state_mut().options.curr_namespace = Some(ident.clone().path());
         } else {
             self.state_mut().options.curr_namespace = None;
+        }
+        Ok(())
+    }
+
+    /// Sets the current_provider session property.
+    pub fn set_provider(&self, ident: Option<&str>) -> CatalogResult<()> {
+        if let Some(ident) = ident {
+            self.state_mut().options.curr_provider = Some(ident.to_string());
+        } else {
+            self.state_mut().options.curr_provider = None;
+        }
+        Ok(())
+    }
+
+    /// Sets the current_model session property.
+    pub fn set_model(&self, ident: Option<&str>) -> CatalogResult<()> {
+        if let Some(ident) = ident {
+            self.state_mut().options.curr_model = Some(ident.to_string());
+        } else {
+            self.state_mut().options.curr_model = None;
         }
         Ok(())
     }

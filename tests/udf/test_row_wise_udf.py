@@ -107,3 +107,16 @@ def test_row_wise_udf_kwargs():
 
     dynamic_repeat_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y"), repeat=col("x")))
     assert dynamic_repeat_df.to_pydict() == {"x": ["5", "77", "999"]}
+
+
+def test_row_wise_async_udf():
+    import asyncio
+
+    @daft.func
+    async def my_async_stringify_and_sum(a: int, b: int) -> str:
+        await asyncio.sleep(0.1)
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
+    assert async_df.to_pydict() == {"x": ["5", "7", "9"]}

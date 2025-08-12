@@ -9,6 +9,7 @@ use crate::{
         FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{BooleanArray, DataType, Field},
+    lit::Literal,
     series::{IntoSeries, Series, SeriesLike},
     with_match_integer_daft_types,
 };
@@ -121,7 +122,7 @@ macro_rules! impl_series_like_for_nested_arrays {
                 self.0.rename(name).into_series()
             }
 
-            fn size_bytes(&self) -> DaftResult<usize> {
+            fn size_bytes(&self) -> usize {
                 self.0.size_bytes()
             }
 
@@ -159,6 +160,10 @@ macro_rules! impl_series_like_for_nested_arrays {
 
             fn str_value(&self, idx: usize) -> DaftResult<String> {
                 self.0.str_value(idx)
+            }
+
+            fn get_lit(&self, idx: usize) -> Literal {
+                self.0.get_lit(idx)
             }
         }
     };

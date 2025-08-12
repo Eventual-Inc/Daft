@@ -14,18 +14,14 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
-    progress_bar::ProgressBarColor,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    pipeline::{NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
-        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+        CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
-
-pub trait StreamingSinkState: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
 
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
@@ -34,35 +30,44 @@ pub enum StreamingSinkOutput {
     Finished(Option<Arc<MicroPartition>>),
 }
 
-pub(crate) type StreamingSinkExecuteResult =
-    OperatorOutput<DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>>;
+pub(crate) type StreamingSinkExecuteResult<Op> =
+    OperatorOutput<DaftResult<(<Op as StreamingSink>::State, StreamingSinkOutput)>>;
 pub(crate) type StreamingSinkFinalizeResult =
     OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
-pub trait StreamingSink: Send + Sync {
+pub(crate) trait StreamingSink: Send + Sync {
+    type State: Send + Sync + Unpin;
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
     /// with the given state.
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn StreamingSinkState>,
+        state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult;
+    ) -> StreamingSinkExecuteResult<Self>;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult;
 
-    /// The name of the StreamingSink operator.
+    /// The name of the StreamingSink operator. Used for display purposes.
     fn name(&self) -> NodeName;
+
+    /// The type of the StreamingSink operator.
+    fn op_type(&self) -> NodeType;
 
     fn multiline_display(&self) -> Vec<String>;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Box<dyn StreamingSinkState>;
+    fn make_state(&self) -> Self::State;
+
+    /// Create a new RuntimeStats for this StreamingSink.
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::default())
+    }
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
@@ -77,29 +82,30 @@ pub trait StreamingSink: Send + Sync {
     ) -> Arc<dyn DispatchSpawner>;
 }
 
-pub struct StreamingSinkNode {
-    op: Arc<dyn StreamingSink>,
+pub struct StreamingSinkNode<Op: StreamingSink> {
+    op: Arc<Op>,
     children: Vec<Box<dyn PipelineNode>>,
-    runtime_stats: Arc<RuntimeStatsContext>,
+    runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
-    node_info: NodeInfo,
+    node_info: Arc<NodeInfo>,
 }
 
-impl StreamingSinkNode {
+impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     pub(crate) fn new(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name().into();
-        let node_info = ctx.next_node_info(name);
+        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
+        let runtime_stats = op.make_runtime_stats();
         Self {
             op,
             children,
-            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
+            runtime_stats,
             plan_stats,
-            node_info,
+            node_info: Arc::new(node_info),
         }
     }
 
@@ -109,22 +115,16 @@ impl StreamingSinkNode {
 
     #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
     async fn run_worker(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         input_receiver: Receiver<Arc<MicroPartition>>,
         output_sender: Sender<Arc<MicroPartition>>,
-        rt_context: Arc<RuntimeStatsContext>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Box<dyn StreamingSinkState>> {
+    ) -> DaftResult<Op::State> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(
-            compute_runtime,
-            memory_manager,
-            rt_context,
-            rt_stats_handler,
-            span,
-        );
+        let spawner =
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats, span);
         let mut state = op.make_state();
         while let Some(morsel) = input_receiver.recv().await {
             loop {
@@ -158,11 +158,10 @@ impl StreamingSinkNode {
     }
 
     fn spawn_workers(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
-        stats: Arc<RuntimeStatsContext>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        task_set: &mut TaskSet<DaftResult<Op::State>>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
@@ -173,8 +172,7 @@ impl StreamingSinkNode {
                 op.clone(),
                 input_receiver,
                 output_sender,
-                stats.clone(),
-                rt_stats_handler.clone(),
+                runtime_stats.clone(),
                 memory_manager.clone(),
             ));
         }
@@ -182,7 +180,7 @@ impl StreamingSinkNode {
     }
 }
 
-impl TreeDisplay for StreamingSinkNode {
+impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -199,7 +197,7 @@ impl TreeDisplay for StreamingSinkNode {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.render();
+                    let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
                         writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
                     }
@@ -216,12 +214,16 @@ impl TreeDisplay for StreamingSinkNode {
     }
 }
 
-impl PipelineNode for StreamingSinkNode {
+impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children
             .iter()
             .map(std::convert::AsRef::as_ref)
             .collect()
+    }
+
+    fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
+        self.children.iter().collect()
     }
 
     fn name(&self) -> Arc<str> {
@@ -233,30 +235,19 @@ impl PipelineNode for StreamingSinkNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let progress_bar = runtime_handle.make_progress_bar(
-            &self.name(),
-            ProgressBarColor::Yellow,
-            self.node_id(),
-            self.runtime_stats.clone(),
-        );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(CountingReceiver::new(
+            child_result_receivers.push(InitializingCountingReceiver::new(
                 child_result_receiver,
+                self.node_id(),
                 self.runtime_stats.clone(),
-                progress_bar.clone(),
-                runtime_handle.runtime_stats_handler(),
+                runtime_handle.stats_manager().clone(),
             ));
         }
 
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender = CountingSender::new(
-            destination_sender,
-            self.runtime_stats.clone(),
-            progress_bar,
-            runtime_handle.runtime_stats_handler(),
-        );
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
@@ -274,7 +265,8 @@ impl PipelineNode for StreamingSinkNode {
         );
 
         let memory_manager = runtime_handle.memory_manager();
-        let rt_stats_handler = runtime_handle.runtime_stats_handler();
+        let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
         runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
@@ -283,7 +275,6 @@ impl PipelineNode for StreamingSinkNode {
                     spawned_dispatch_result.worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
-                    rt_stats_handler.clone(),
                     maintain_order,
                     memory_manager.clone(),
                 );
@@ -305,13 +296,13 @@ impl PipelineNode for StreamingSinkNode {
                     compute_runtime,
                     memory_manager,
                     runtime_stats.clone(),
-                    rt_stats_handler,
                     info_span!("StreamingSink::Finalize"),
                 );
                 let finalized_result = op.finalize(finished_states, &spawner).await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res).await;
                 }
+                stats_manager.finalize_node(node_id);
                 Ok(())
             },
             &self.name(),
@@ -326,5 +317,11 @@ impl PipelineNode for StreamingSinkNode {
     }
     fn plan_id(&self) -> Arc<str> {
         Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
+    }
+    fn node_info(&self) -> Arc<NodeInfo> {
+        self.node_info.clone()
+    }
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        self.runtime_stats.clone()
     }
 }

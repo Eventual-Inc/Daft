@@ -8,11 +8,11 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
-enum PivotState {
+pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
     Done,
 }
@@ -34,12 +34,6 @@ impl PivotState {
         };
         *self = Self::Done;
         res
-    }
-}
-
-impl BlockingSinkState for PivotState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -76,38 +70,30 @@ impl PivotSink {
 }
 
 impl BlockingSink for PivotSink {
+    type State = PivotState;
+
     #[instrument(skip_all, name = "PivotSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
-        state
-            .as_any_mut()
-            .downcast_mut::<PivotState>()
-            .expect("PivotSink should have PivotState")
-            .push(input);
+    ) -> BlockingSinkSinkResult<Self> {
+        state.push(input);
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 
     #[instrument(skip_all, name = "PivotSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let pivot_params = self.pivot_params.clone();
         spawner
             .spawn(
                 async move {
-                    let all_parts = states.into_iter().flat_map(|mut state| {
-                        state
-                            .as_any_mut()
-                            .downcast_mut::<PivotState>()
-                            .expect("PivotSink should have PivotState")
-                            .finalize()
-                    });
+                    let all_parts = states.into_iter().flat_map(|mut state| state.finalize());
                     let concated = MicroPartition::concat(all_parts)?;
                     let group_by_with_pivot = pivot_params
                         .group_by
@@ -134,6 +120,10 @@ impl BlockingSink for PivotSink {
         "Pivot".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::Pivot
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut display = vec![];
         display.push("Pivot:".to_string());
@@ -154,7 +144,7 @@ impl BlockingSink for PivotSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(PivotState::Accumulating(vec![])))
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(PivotState::Accumulating(vec![]))
     }
 }

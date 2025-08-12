@@ -85,12 +85,17 @@ impl LogicalPlanToPipelineNodeTranslator {
         if partition_cols.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
         } else {
+            let repartition_spec = daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                    num_partitions,
+                    partition_cols.into_iter().map(|e| e.into()).collect(),
+                ),
+            );
             RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
                 &self.stage_config,
-                partition_cols,
-                num_partitions,
+                repartition_spec,
                 input_node.config().schema.clone(),
                 input_node,
             )
@@ -193,6 +198,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
+            LogicalPlan::IntoBatches(_into_batches) => {
+                todo!("IntoBatches not yet supported in the distributed pipeline node translator")
+            }
             LogicalPlan::Limit(limit) => {
                 if limit.offset.is_some() {
                     todo!("FLOTILLA_MS3: Implement Offset")
@@ -291,19 +299,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             )
             .arced(),
             LogicalPlan::Repartition(repartition) => {
-                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
-                    todo!("FLOTILLA_MS3: Support other types of repartition");
-                };
-
-                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-
-                assert!(!columns.is_empty());
+                match &repartition.repartition_spec {
+                    RepartitionSpec::Hash(repart_spec) => {
+                        assert!(!repart_spec.by.is_empty());
+                    }
+                    RepartitionSpec::Random(_) => {}
+                    RepartitionSpec::IntoPartitions(_) => {
+                        todo!("FLOTILLA_MS3: Support other types of repartition");
+                    }
+                }
                 RepartitionNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    columns,
-                    repart_spec.num_partitions,
+                    repartition.repartition_spec.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -357,8 +366,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    columns.clone(),
-                    None,
+                    daft_logical_plan::partitioning::RepartitionSpec::Hash(
+                        daft_logical_plan::partitioning::HashRepartitionConfig::new(
+                            None,
+                            columns.clone().into_iter().map(|e| e.into()).collect(),
+                        ),
+                    ),
                     distinct.input.schema(),
                     initial_distinct,
                 )
@@ -407,24 +420,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .arced()
             }
             LogicalPlan::Join(join) => {
-                let (remaining_on, _, _, _) = join.on.split_eq_preds();
-                if !remaining_on.is_empty() {
-                    todo!("FLOTILLA_MS?: Implement non-equality joins")
-                }
-
                 // Visitor appends in in-order
                 // TODO: Just use regular recursion?
                 let right_node = self.curr_node.pop().unwrap();
                 let left_node = self.curr_node.pop().unwrap();
 
-                self.gen_hash_join_nodes(
-                    logical_node_id,
-                    join.on.clone(),
-                    left_node,
-                    right_node,
-                    join.join_type,
-                    join.output_schema.clone(),
-                )?
+                self.translate_join(logical_node_id, join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;

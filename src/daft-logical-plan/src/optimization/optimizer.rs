@@ -6,7 +6,7 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateOffsets,
+        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
         EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
         LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
@@ -139,6 +139,7 @@ impl OptimizerBuilder {
             RuleBatch::new(
                 vec![
                     Box::new(DropRepartition::new()),
+                    Box::new(DropIntoBatches::new()),
                     Box::new(PushDownFilter::new(self.config.strict_pushdown)),
                     Box::new(PushDownProjection::new()),
                     Box::new(EliminateCrossJoin::new()),

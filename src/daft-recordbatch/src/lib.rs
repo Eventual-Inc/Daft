@@ -25,8 +25,7 @@ use daft_dsl::{
         BoundColumn,
     },
     functions::{scalar::ScalarFn, FunctionArgs, FunctionEvaluator},
-    null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
-    SketchType,
+    null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
 };
 use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
@@ -374,10 +373,8 @@ impl RecordBatch {
         self.take(&indices.into_series())
     }
 
-    pub fn size_bytes(&self) -> DaftResult<usize> {
-        let column_sizes: DaftResult<Vec<usize>> =
-            self.columns.iter().map(|s| s.size_bytes()).collect();
-        Ok(column_sizes?.iter().sum())
+    pub fn size_bytes(&self) -> usize {
+        self.columns.iter().map(|s| s.size_bytes()).sum()
     }
 
     pub fn filter(&self, predicate: &[BoundExpr]) -> DaftResult<Self> {
@@ -728,15 +725,15 @@ impl RecordBatch {
 
                 func.udf.call(args)
             }
-            Expr::Literal(lit_value) => Ok(lit_value.to_series()),
+            Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
             Expr::IfElse {
                 if_true,
                 if_false,
                 predicate,
             } => match predicate.as_ref() {
                 // TODO: move this into simplify expression
-                Expr::Literal(LiteralValue::Boolean(true)) => self.eval_expression(&BoundExpr::new_unchecked(if_true.clone())),
-                Expr::Literal(LiteralValue::Boolean(false)) => {
+                Expr::Literal(Literal::Boolean(true)) => self.eval_expression(&BoundExpr::new_unchecked(if_true.clone())),
+                Expr::Literal(Literal::Boolean(false)) => {
                     Ok(self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?.rename(if_true.get_name(&self.schema)?))
                 }
                 _ => {
@@ -748,7 +745,7 @@ impl RecordBatch {
             },
             Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
                 let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
-                python_udf.call(args)
+                python_udf.call(args.as_slice()).map(|(s,_)| s)
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
