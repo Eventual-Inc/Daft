@@ -139,11 +139,7 @@ impl ColumnRangeStatistics {
     pub(crate) fn element_size(&self) -> crate::Result<Option<f64>> {
         match self {
             Self::Missing => Ok(None),
-            Self::Loaded(l, u) => Ok(Some(
-                ((l.size_bytes().context(DaftCoreComputeSnafu)?
-                    + u.size_bytes().context(DaftCoreComputeSnafu)?) as f64)
-                    / 2.,
-            )),
+            Self::Loaded(l, u) => Ok(Some(((l.size_bytes() + u.size_bytes()) as f64) / 2.)),
         }
     }
 
@@ -165,7 +161,6 @@ impl ColumnRangeStatistics {
             .unwrap()
             .get(0)
             .unwrap() as usize;
-        let _num_bytes = series.size_bytes().unwrap();
         Self::Loaded(lower, upper)
     }
 
