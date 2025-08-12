@@ -23,6 +23,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file = {path = "../common/file", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
+common-image = {workspace = true}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-hash = {workspace = true}
@@ -34,6 +35,16 @@ fastrand = "2.1.0"
 fnv = "1.0.7"
 html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
+image = {workspace = true, features = [
+  "gif",
+  "jpeg",
+  "ico",
+  "png",
+  "tiff",
+  "webp",
+  "bmp",
+  "hdr"
+]}
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
 log = {workspace = true}
@@ -52,6 +63,9 @@ version = "0.25.0"
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3", "xxh64"]
 version = "0.8.5"
+
+[dev-dependencies]
+rstest = {workspace = true}
 
 [features]
 python = [

@@ -737,6 +737,11 @@ impl ToFromProto for ir::Literal {
                 }
                 proto::LiteralVariant::Struct(proto::literal::Struct { fields })
             }
+            Self::Tensor { .. } => not_implemented_err!("tensor literal"),
+            Self::SparseTensor { .. } => not_implemented_err!("sparse tensor literal"),
+            Self::Embedding { .. } => not_implemented_err!("embedding literal"),
+            Self::Map { .. } => not_implemented_err!("map literal"),
+            Self::Image(_) => not_implemented_err!("image literal"),
         };
         Ok(proto::Literal {
             variant: Some(variant),
