@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
+from daft.context import get_context
 from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray"
+    and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    reason="requires Native Runner or Flotilla to be in use",
+)
 
 
 def test_large_partition_into_batches(make_df):
@@ -44,8 +53,19 @@ def test_many_small_partitions_into_batches(make_df):
         assert batch_lengths == [8] * 8, f"Expected all batches to be size 8, got {batch_lengths}"
     elif test_runner_name == "ray":
         # Distributed batching is best effort based on partition outputs
-        for n in batch_lengths[:-1]:
-            assert n >= 8, f"Expected all batches except the last one to be size >= 8, got {batch_lengths}"
+        # The scheduler will greedily send batches whenever it has enough rows
+        # to fill a batch, meaning it won't be guaranteed to always be exactly 8.
+        # However, we can guarantee that there will never be two non-8 sized batches in a row,
+        # except for the very last two batches.
+        # e.g., [8, 1, 8, 5, 8, 6, 4] would be an expected output, but [8, 1, 5, 8] would not
+        assert batch_lengths[0] == 8, f"Expected first batch to be size 8, got {batch_lengths[0]}"
+        for i in range(1, len(batch_lengths) - 1):
+            if batch_lengths[i] != 8:
+                assert batch_lengths[i - 1] == 8, f"Expected previous batch to be size 8, got {batch_lengths[i - 1]}"
+        total_full_batches = sum([n == 8 for n in batch_lengths])
+        assert (
+            total_full_batches >= len(batch_lengths) // 2
+        ), f"Expected at least {len(batch_lengths) // 2} full batches, got {total_full_batches}"
     else:
         raise ValueError(f"Unknown runner: {test_runner_name}")
 

@@ -91,8 +91,9 @@ impl IntoBatchesNode {
                 current_group.push(mat);
                 current_group_size += rows;
                 if current_group_size >= self.batch_size {
+                    current_group_size = 0;
+
                     let self_clone = self.clone();
-                    let group_size = std::mem::take(&mut current_group_size);
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self_clone.context, task_id_counter.next())),
                         std::mem::take(&mut current_group),
@@ -100,7 +101,7 @@ impl IntoBatchesNode {
                         move |input| {
                             LocalPhysicalPlan::into_batches(
                                 input,
-                                group_size,
+                                self_clone.batch_size,
                                 StatsState::NotMaterialized,
                             )
                         },
@@ -121,7 +122,7 @@ impl IntoBatchesNode {
                 move |input| {
                     LocalPhysicalPlan::into_batches(
                         input,
-                        current_group_size,
+                        self_clone.batch_size,
                         StatsState::NotMaterialized,
                     )
                 },
