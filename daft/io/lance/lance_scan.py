@@ -142,7 +142,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     "Count mode %s is not supported for pushdown, falling back to original logic",
                     count_mode,
                 )
-                return self._create_regular_scan_tasks(pushdowns, required_columns)
+                yield from self._create_regular_scan_tasks(pushdowns, required_columns)
 
             # TODO: If there are pushed filters, convert them to Arrow expressions
             filters = None
