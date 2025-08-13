@@ -24,7 +24,6 @@ common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-image = {workspace = true}
 common-io-config = {path = "../common/io-config", default-features = false}
-common-ndarray = {workspace = true}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-hash = {workspace = true}
 daft-minhash = {path = "../daft-minhash", default-features = false}
@@ -70,7 +69,6 @@ python = [
   "common-display/python",
   "common-error/python",
   "common-io-config/python",
-  "common-ndarray/python",
   "common-py-serde/python",
   "daft-schema/python",
   "dep:numpy",

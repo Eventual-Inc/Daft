@@ -2485,7 +2485,6 @@ dependencies = [
  "common-hashable-float-wrapper",
  "common-image",
  "common-io-config",
- "common-ndarray",
  "common-py-serde",
  "daft-hash",
  "daft-minhash",

@@ -206,6 +206,12 @@ impl<'py> IntoPyObject<'py> for Literal {
             }
             Self::Image(image) => Ok(image.into_ndarray().into_bound_py_any(py)),
             Self::Extension(series) => {
+                debug_assert_eq!(
+                    series.len(),
+                    1,
+                    "Expected extension literal to have length 1"
+                );
+
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                 ffi::to_py_array(py, series.to_arrow(), &pyarrow)?
                     .call_method0(pyo3::intern!(py, "to_pylist"))?
