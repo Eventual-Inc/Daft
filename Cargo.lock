@@ -1802,9 +1802,6 @@ name = "common-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-py-serde",
- "daft-schema",
- "pyo3",
  "serde",
 ]
 
