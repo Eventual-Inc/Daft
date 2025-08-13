@@ -46,8 +46,14 @@ impl Eq for DaftFile {}
 impl Hash for DaftFile {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Self::Reference(path) => path.hash(state),
-            Self::Data(bytes) => bytes.hash(state),
+            Self::Reference(path) => {
+                0u8.hash(state);
+                path.hash(state);
+            }
+            Self::Data(bytes) => {
+                1u8.hash(state);
+                bytes.hash(state);
+            }
         }
     }
 }
