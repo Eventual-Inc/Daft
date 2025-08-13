@@ -11,8 +11,8 @@ use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{scalar::ScalarFn, ScalarUDF},
-    has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
-    ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
+    has_agg, lit, null_lit, resolved_col, unresolved_col, Column, Expr, ExprRef, Operator, PlanRef,
+    Subquery, UnresolvedColumn,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_functions_utf8::{ilike, like, to_date, to_datetime};
@@ -460,11 +460,11 @@ impl SQLPlanner<'_> {
         if let Some(limit) = &query.limit {
             let limit_expr = self.plan_expr(limit)?;
             match limit_expr.as_ref() {
-                Expr::Literal(LiteralValue::Int64(limit)) if *limit >= 0 => {
+                Expr::Literal(Literal::Int64(limit)) if *limit >= 0 => {
                     // TODO: Should this be eager or not?
                     self.update_plan(|plan| plan.limit(*limit as u64, true))?;
                 }
-                Expr::Literal(LiteralValue::Int64(limit)) => invalid_operation_err!(
+                Expr::Literal(Literal::Int64(limit)) => invalid_operation_err!(
                     "LIMIT <n> must be greater than or equal to 0, instead got: {limit}"
                 ),
                 _ => invalid_operation_err!(
@@ -1153,20 +1153,20 @@ impl SQLPlanner<'_> {
         Ok(Field::new(name.value.clone(), data_type))
     }
 
-    fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<LiteralValue> {
+    fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<Literal> {
         Ok(match value {
-            Value::SingleQuotedString(s) => LiteralValue::Utf8(s.clone()),
+            Value::SingleQuotedString(s) => Literal::Utf8(s.clone()),
             Value::Number(n, _) => n
                 .parse::<i64>()
-                .map(LiteralValue::Int64)
-                .or_else(|_| n.parse::<f64>().map(LiteralValue::Float64))
+                .map(Literal::Int64)
+                .or_else(|_| n.parse::<f64>().map(Literal::Float64))
                 .map_err(|_| {
                     PlannerError::invalid_operation(format!(
                         "could not parse number literal '{n:?}'"
                     ))
                 })?,
-            Value::Boolean(b) => LiteralValue::Boolean(*b),
-            Value::Null => LiteralValue::Null,
+            Value::Boolean(b) => Literal::Boolean(*b),
+            Value::Null => Literal::Null,
             _ => {
                 return Err(PlannerError::invalid_operation(
                     format!("Only string, number, boolean and null literals are supported. Instead found: `{value}`"),
@@ -1476,7 +1476,7 @@ impl SQLPlanner<'_> {
                     })
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
 
-                let s = literals_to_series(&values)?;
+                let s = Series::try_from(values)?;
                 let s = FixedSizeListArray::new(
                     Field::new("tuple", s.data_type().clone())
                         .to_fixed_size_list_field(exprs.len())?,
@@ -1503,7 +1503,7 @@ impl SQLPlanner<'_> {
                     })
                     .collect::<SQLPlannerResult<_>>()?;
 
-                Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+                Ok(Expr::Literal(Literal::Struct(entries)).arced())
             }
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
@@ -1641,7 +1641,7 @@ impl SQLPlanner<'_> {
                             ))),
                         };
 
-                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                        Ok(Arc::new(Expr::Literal(Literal::Interval(
                             daft_core::datatypes::IntervalValue::new(
                                 months as i32,
                                 days as i32,
@@ -1673,7 +1673,7 @@ impl SQLPlanner<'_> {
 
                         let (months, days, nanoseconds) = interval_parts_to_values(parts);
 
-                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                        Ok(Arc::new(Expr::Literal(Literal::Interval(
                             daft_core::datatypes::IntervalValue::new(
                                 months as i32,
                                 days as i32,
@@ -1727,10 +1727,10 @@ impl SQLPlanner<'_> {
         let expr = self.plan_expr(expr)?;
         Ok(match (op, expr.as_ref()) {
             // simplify the parse tree by special-casing common unary +/- ops
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int64(n))) => lit(*n),
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Float64(n))) => lit(*n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Int64(n))) => lit(-n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Float64(n))) => lit(-n),
+            (UnaryOperator::Plus, Expr::Literal(Literal::Int64(n))) => lit(*n),
+            (UnaryOperator::Plus, Expr::Literal(Literal::Float64(n))) => lit(*n),
+            (UnaryOperator::Minus, Expr::Literal(Literal::Int64(n))) => lit(-n),
+            (UnaryOperator::Minus, Expr::Literal(Literal::Float64(n))) => lit(-n),
             // general case
             (UnaryOperator::Plus, _) => lit(0).add(expr),
             (UnaryOperator::Minus, _) => lit(0).sub(expr),

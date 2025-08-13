@@ -2,21 +2,18 @@ use std::{cmp::max, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use common_error::DaftResult;
-use daft_dsl::{expr::bound_expr::BoundExpr, join::normalize_join_keys};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{
-    ops::join::JoinPredicate, partitioning::HashClusteringConfig, stats::StatsState,
-    ClusteringSpec, JoinType,
+    partitioning::HashClusteringConfig, stats::StatsState, ClusteringSpec, JoinType,
 };
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        repartition::RepartitionNode, translate::LogicalPlanToPipelineNodeTranslator, NodeID,
-        NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        SubmittableTaskStream,
     },
     scheduling::{
         scheduler::SubmittableTask,
@@ -201,7 +198,7 @@ impl DistributedPipelineNode for HashJoinNode {
     }
 }
 
-fn gen_num_partitions(
+pub(crate) fn gen_num_partitions(
     left_spec: &ClusteringSpec,
     right_spec: &ClusteringSpec,
     cfg: &DaftExecutionConfig,
@@ -226,81 +223,5 @@ fn gen_num_partitions(
             b
         }
         (_, _, a, b) => max(a, b),
-    }
-}
-
-impl LogicalPlanToPipelineNodeTranslator {
-    pub(crate) fn gen_hash_join_nodes(
-        &mut self,
-        logical_node_id: Option<NodeID>,
-        join_on: JoinPredicate,
-
-        left: Arc<dyn DistributedPipelineNode>,
-        right: Arc<dyn DistributedPipelineNode>,
-
-        join_type: JoinType,
-        output_schema: SchemaRef,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-        let (_, left_on, right_on, null_equals_nulls) = join_on.split_eq_preds();
-
-        let (left_on, right_on) = normalize_join_keys(
-            left_on,
-            right_on,
-            left.config().schema.clone(),
-            right.config().schema.clone(),
-        )?;
-        let left_on = BoundExpr::bind_all(&left_on, &left.config().schema)?;
-        let right_on = BoundExpr::bind_all(&right_on, &right.config().schema)?;
-
-        let num_partitions = gen_num_partitions(
-            left.config().clustering_spec.as_ref(),
-            right.config().clustering_spec.as_ref(),
-            self.stage_config.config.as_ref(),
-        );
-
-        let left = RepartitionNode::new(
-            self.get_next_pipeline_node_id(),
-            logical_node_id,
-            &self.stage_config,
-            daft_logical_plan::partitioning::RepartitionSpec::Hash(
-                daft_logical_plan::partitioning::HashRepartitionConfig::new(
-                    Some(num_partitions),
-                    left_on.clone().into_iter().map(|e| e.into()).collect(),
-                ),
-            ),
-            left.config().schema.clone(),
-            left,
-        )
-        .arced();
-
-        let right = RepartitionNode::new(
-            self.get_next_pipeline_node_id(),
-            logical_node_id,
-            &self.stage_config,
-            daft_logical_plan::partitioning::RepartitionSpec::Hash(
-                daft_logical_plan::partitioning::HashRepartitionConfig::new(
-                    Some(num_partitions),
-                    right_on.clone().into_iter().map(|e| e.into()).collect(),
-                ),
-            ),
-            right.config().schema.clone(),
-            right,
-        )
-        .arced();
-
-        Ok(HashJoinNode::new(
-            self.get_next_pipeline_node_id(),
-            logical_node_id,
-            &self.stage_config,
-            left_on,
-            right_on,
-            Some(null_equals_nulls),
-            join_type,
-            num_partitions,
-            left,
-            right,
-            output_schema,
-        )
-        .arced())
     }
 }

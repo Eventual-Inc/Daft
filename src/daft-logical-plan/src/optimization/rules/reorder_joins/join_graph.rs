@@ -1005,8 +1005,8 @@ mod tests {
 
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
-    use daft_core::prelude::CountMode;
-    use daft_dsl::{resolved_col, unresolved_col, AggExpr, Expr, LiteralValue};
+    use daft_core::prelude::*;
+    use daft_dsl::{resolved_col, unresolved_col, AggExpr, Expr};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::JoinGraphBuilder;
@@ -1315,8 +1315,8 @@ mod tests {
             .add(unresolved_col("c_prime"))
             .alias("double");
         let filter_c_prime =
-            unresolved_col("c_prime").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
-        let filter_c = unresolved_col("c").lt(Arc::new(Expr::Literal(LiteralValue::Int64(5))));
+            unresolved_col("c_prime").gt(Arc::new(Expr::Literal(Literal::Int64(0))));
+        let filter_c = unresolved_col("c").lt(Arc::new(Expr::Literal(Literal::Int64(5))));
         let scan_c = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),

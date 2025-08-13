@@ -11,17 +11,19 @@ use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
 use super::{
-    base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkOutput, StreamingSinkState},
+    base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkOutput},
     outer_hash_join_probe::IndexBitmapBuilder,
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    ops::NodeType,
     pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
+    streaming_sink::base::StreamingSinkFinalizeResult,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-enum AntiSemiProbeState {
+pub(crate) enum AntiSemiProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
     Probing(Arc<ProbeState>, Option<IndexBitmapBuilder>),
 }
@@ -44,12 +46,6 @@ impl AntiSemiProbeState {
             Self::Probing(probe_state, builder) => (probe_state, builder),
             _ => unreachable!(),
         }
-    }
-}
-
-impl StreamingSinkState for AntiSemiProbeState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -158,16 +154,13 @@ impl AntiSemiProbeSink {
 
     // Finalize the anti/semi join where we have a bitmap index, i.e. left side builds.
     async fn finalize_anti_semi(
-        mut states: Vec<Box<dyn StreamingSinkState>>,
+        mut states: Vec<AntiSemiProbeState>,
         is_semi: bool,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let mut states_iter = states.iter_mut();
         let first_state = states_iter
             .next()
-            .expect("at least one state should be present")
-            .as_any_mut()
-            .downcast_mut::<AntiSemiProbeState>()
-            .expect("state should be AntiSemiProbeState");
+            .expect("at least one state should be present");
         let (first_probe_state, first_bitmap_builder) =
             first_state.get_or_await_probe_state(true).await;
         let tables = first_probe_state.get_tables();
@@ -179,12 +172,7 @@ impl AntiSemiProbeSink {
         let mut merged_bitmap = {
             let bitmaps = stream::once(async move { first_bitmap })
                 .chain(stream::iter(states_iter).then(|s| async move {
-                    let state = s
-                        .as_any_mut()
-                        .downcast_mut::<AntiSemiProbeState>()
-                        .expect("state should be AntiSemiProbeState");
-                    state
-                        .get_or_await_probe_state(true)
+                    s.get_or_await_probe_state(true)
                         .await
                         .1
                         .take()
@@ -223,13 +211,14 @@ impl AntiSemiProbeSink {
 }
 
 impl StreamingSink for AntiSemiProbeSink {
+    type State = AntiSemiProbeState;
     #[instrument(skip_all, name = "AntiSemiProbeSink::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn StreamingSinkState>,
+        mut state: AntiSemiProbeState,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult {
+    ) -> StreamingSinkExecuteResult<Self> {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
             return Ok((state, StreamingSinkOutput::NeedMoreInput(Some(empty)))).into();
@@ -240,12 +229,7 @@ impl StreamingSink for AntiSemiProbeSink {
         task_spawner
             .spawn(
                 async move {
-                    let probe_state = state
-                        .as_any_mut()
-                        .downcast_mut::<AntiSemiProbeState>()
-                        .expect("AntiSemiProbeState should be used with AntiSemiProbeSink");
-                    let (ps, bitmap_builder) =
-                        probe_state.get_or_await_probe_state(build_on_left).await;
+                    let (ps, bitmap_builder) = state.get_or_await_probe_state(build_on_left).await;
 
                     if let Some(bm_builder) = bitmap_builder {
                         Self::probe_anti_semi_with_bitmap(
@@ -272,6 +256,10 @@ impl StreamingSink for AntiSemiProbeSink {
 
     fn name(&self) -> NodeName {
         "AntiSemiHashJoinProbe".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::AntiSemiHashJoinProbe
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -302,9 +290,9 @@ impl StreamingSink for AntiSemiProbeSink {
     #[instrument(skip_all, name = "AntiSemiProbeSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn super::base::StreamingSinkState>>,
+        states: Vec<Self::State>,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> super::base::StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult {
         if self.build_on_left {
             let is_semi = self.params.is_semi;
             task_spawner
@@ -318,10 +306,8 @@ impl StreamingSink for AntiSemiProbeSink {
         }
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(AntiSemiProbeState::Building(
-            self.probe_state_bridge.clone(),
-        ))
+    fn make_state(&self) -> Self::State {
+        AntiSemiProbeState::Building(self.probe_state_bridge.clone())
     }
 
     fn dispatch_spawner(

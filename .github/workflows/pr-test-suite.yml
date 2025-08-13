@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.10']
+        python-version: ['3.9', '3.10', '3.11']
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         flotilla: [1, 0]
@@ -44,6 +44,8 @@ jobs:
           os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
+        - python-version: '3.11'
+          pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1

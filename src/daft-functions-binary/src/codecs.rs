@@ -1,8 +1,10 @@
 use std::{fmt::Display, str::FromStr};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::DataType;
-use daft_dsl::{FromLiteral, Literal, LiteralValue};
+use daft_core::{
+    lit::{FromLiteral, Literal},
+    prelude::DataType,
+};
 use serde::{Deserialize, Serialize};
 use simdutf8::basic::from_utf8;
 
@@ -26,15 +28,15 @@ impl Display for Codec {
     }
 }
 
-impl Literal for Codec {
-    fn literal_value(self) -> daft_dsl::LiteralValue {
-        LiteralValue::Utf8(self.to_string())
+impl From<Codec> for Literal {
+    fn from(value: Codec) -> Self {
+        Self::Utf8(value.to_string())
     }
 }
 
 impl FromLiteral for Codec {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        if let LiteralValue::Utf8(s) = lit {
+    fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
+        if let Literal::Utf8(s) = lit {
             s.parse()
         } else {
             Err(DaftError::ValueError(format!(

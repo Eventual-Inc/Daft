@@ -4,8 +4,11 @@ use std::{
     sync::Arc,
 };
 
-use daft_core::array::ops::{DaftCompare, DaftLogical};
-use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_core::{
+    array::ops::{DaftCompare, DaftLogical},
+    lit::Literal,
+};
+use daft_dsl::{Expr, ExprRef};
 use daft_recordbatch::RecordBatch;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -30,7 +33,7 @@ impl PartitionSpec {
                 (
                     column.name(),
                     Arc::new(Expr::Literal(
-                        LiteralValue::try_from_single_value_series(column)
+                        Literal::try_from_single_value_series(column)
                             .expect("column should have one row"),
                     )),
                 )

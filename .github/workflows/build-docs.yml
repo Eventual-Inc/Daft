@@ -45,6 +45,7 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
+          uv pip install -e ./docs/plugins/
           uv sync --no-install-project --all-extras --all-groups
     - name: Build Daft in development mode and generate docs
       run: |

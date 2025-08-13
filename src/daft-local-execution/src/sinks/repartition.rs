@@ -11,14 +11,12 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{
-    pipeline::NodeName, sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner,
-};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
-struct RepartitionState {
+pub(crate) struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
 }
 
@@ -31,12 +29,6 @@ impl RepartitionState {
 
     fn emit(&mut self) -> Option<Vec<MicroPartition>> {
         self.states.pop_front()
-    }
-}
-
-impl BlockingSinkState for RepartitionState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -61,23 +53,21 @@ impl RepartitionSink {
 }
 
 impl BlockingSink for RepartitionSink {
+    type State = RepartitionState;
+
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
         spawner
             .spawn(
                 async move {
-                    let repartition_state = state
-                        .as_any_mut()
-                        .downcast_mut::<RepartitionState>()
-                        .expect("RepartitionSink should have RepartitionState");
                     let partitioned = match repartition_spec {
                         RepartitionSpec::Hash(config) => {
                             let bound_exprs = config
@@ -94,7 +84,7 @@ impl BlockingSink for RepartitionSink {
                             todo!("FLOTILLA_MS3: Support other types of repartition");
                         }
                     };
-                    repartition_state.push(partitioned);
+                    state.push(partitioned);
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -105,26 +95,16 @@ impl BlockingSink for RepartitionSink {
     #[instrument(skip_all, name = "RepartitionSink::finalize")]
     fn finalize(
         &self,
-        mut states: Vec<Box<dyn BlockingSinkState>>,
+        mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
         spawner
             .spawn(
                 async move {
-                    let mut repart_states = states
-                        .iter_mut()
-                        .map(|state| {
-                            let repart_state = state
-                                .as_any_mut()
-                                .downcast_mut::<RepartitionState>()
-                                .expect("RepartitionSink should have RepartitionState");
-
-                            repart_state
-                        })
-                        .collect::<Vec<_>>();
+                    let mut repart_states = states.iter_mut().collect::<Vec<_>>();
 
                     let mut outputs = Vec::new();
                     for _ in 0..num_partitions {
@@ -166,6 +146,10 @@ impl BlockingSink for RepartitionSink {
         "Repartition".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::Repartition
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         match &self.repartition_spec {
             RepartitionSpec::Hash(config) => vec![format!(
@@ -188,9 +172,9 @@ impl BlockingSink for RepartitionSink {
         get_compute_pool_num_threads()
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(RepartitionState {
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(RepartitionState {
             states: (0..self.num_partitions).map(|_| vec![]).collect(),
-        }))
+        })
     }
 }

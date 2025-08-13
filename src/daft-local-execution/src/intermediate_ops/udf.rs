@@ -24,15 +24,14 @@ use rand::Rng;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
 const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
 
-struct UdfHandle {
+pub(crate) struct UdfHandle {
     udf_expr: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
@@ -122,20 +121,34 @@ impl UdfHandle {
     #[cfg(feature = "python")]
     fn eval_input_inline(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         // Extract the udf_expr into a PythonUDF and optional name
+
+        use daft_dsl::{
+            functions::{python::LegacyPythonUDF, scalar::ScalarFn},
+            python_udf::PyScalarFn,
+        };
         let inner_expr = self.udf_expr.inner();
         let (inner_expr, out_name) = inner_expr.unwrap_alias();
-        let Expr::Function {
-            func: FunctionExpr::Python(func),
-            inputs: input_exprs,
-        } = inner_expr.as_ref()
-        else {
-            return Err(DaftError::InternalError(format!(
-                "Expected a Python UDF, got {}",
-                inner_expr
-            )));
+
+        enum UdfImpl<'a> {
+            Legacy(&'a LegacyPythonUDF),
+            PyScalarFn(&'a PyScalarFn),
+        }
+
+        let (func, input_exprs) = match inner_expr.as_ref() {
+            Expr::Function {
+                func: FunctionExpr::Python(func),
+                inputs: input_exprs,
+            } => (UdfImpl::Legacy(func), input_exprs.clone()),
+            Expr::ScalarFn(ScalarFn::Python(f)) => (UdfImpl::PyScalarFn(f), f.args()),
+            _ => {
+                return Err(DaftError::InternalError(format!(
+                    "Expected a Python UDF, got {}",
+                    inner_expr
+                )))
+            }
         };
 
-        let input_exprs = BoundExpr::bind_all(input_exprs, input.schema().as_ref())?;
+        let input_exprs = BoundExpr::bind_all(&input_exprs, input.schema().as_ref())?;
 
         let input_batches = input.get_tables()?;
         let mut output_batches = Vec::with_capacity(input_batches.len());
@@ -148,7 +161,10 @@ impl UdfHandle {
             let func_input = batch.eval_expression_list(input_exprs.as_slice())?;
             // Call the UDF, getting the GIL contention time and total runtime
             let start_time = Instant::now();
-            let (mut result, gil_contention_time) = func.call_udf(func_input.columns())?;
+            let (mut result, gil_contention_time) = match &func {
+                UdfImpl::Legacy(f) => f.call_udf(func_input.columns())?,
+                UdfImpl::PyScalarFn(f) => f.call(func_input.columns())?,
+            };
             let end_time = Instant::now();
             let total_runtime = end_time - start_time;
 
@@ -235,17 +251,11 @@ impl Drop for UdfHandle {
 /// and the local executor handles task scheduling.
 ///
 /// TODO: Implement a work-stealing dispatcher in the executor to improve pipelining.
-struct UdfState {
-    pub udf_handle: UdfHandle,
+pub(crate) struct UdfState {
+    udf_handle: UdfHandle,
 }
 
-impl IntermediateOpState for UdfState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-pub struct UdfOperator {
+pub(crate) struct UdfOperator {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
@@ -320,22 +330,20 @@ impl UdfOperator {
 }
 
 impl IntermediateOperator for UdfOperator {
+    type State = UdfState;
+
     #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn IntermediateOpState>,
+        mut state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let udf_state = state
-                    .as_any_mut()
-                    .downcast_mut::<UdfState>()
-                    .expect("UdfState");
-                let res = udf_state
+                let res = state
                     .udf_handle
                     .eval_input(input)
                     .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
@@ -355,6 +363,10 @@ impl IntermediateOperator for UdfOperator {
         };
 
         format!("UDF {}", udf_name).into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::UDFProject
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -381,7 +393,7 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         let mut rng = rand::thread_rng();
 
         let mut udf_handle = UdfHandle::no_handle(
@@ -397,7 +409,7 @@ impl IntermediateOperator for UdfOperator {
             udf_handle.create_handle()?;
         }
 
-        Ok(Box::new(UdfState { udf_handle }))
+        Ok(UdfState { udf_handle })
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {

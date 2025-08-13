@@ -2519,6 +2519,10 @@ class DataFrame:
             3
 
         """
+        if get_context().get_or_create_runner().name == "native":
+            warnings.warn(
+                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+            )
         if len(partition_by) == 0:
             warnings.warn(
                 "No columns specified for repartition, so doing a random shuffle. If you do not require rebalancing of "
@@ -2550,7 +2554,41 @@ class DataFrame:
             >>> df_with_5_partitions.num_partitions()
             5
         """
+        if get_context().get_or_create_runner().name == "native":
+            warnings.warn(
+                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+            )
+
         builder = self._builder.into_partitions(num)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def into_batches(self, batch_size: int) -> "DataFrame":
+        """Splits or coalesces DataFrame to partitions of size ``batch_size``.
+
+        Note:
+            Batch sizing is performed on a best-effort basis.
+            The heuristic is to emit a batch when we have enough rows to fill `batch_size * 0.8` rows.
+            This approach prioritizes processing efficiency over uniform batch sizes, especially when using the Ray Runner, as batches can be distributed over the cluster.
+            The exception to this is that the last batch will be the remainder of the total number of rows in the DataFrame.
+
+        Args:
+            batch_size (int): number of target rows per partition.
+
+        Returns:
+            DataFrame: Dataframe with `batch_size` rows per partition.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]})
+            >>> df = df.into_batches(2)
+            >>> for i, block in enumerate(df.to_arrow_iter()):
+            ...     assert len(block) == 2, f"Expected batch size 2, got {len(block)}"
+        """
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
+
+        builder = self._builder.into_batches(batch_size)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2614,7 +2652,8 @@ class DataFrame:
         if how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
-
+            if strategy is not None:
+                raise ValueError("In a cross join, `strategy` cannot be set")
             left_on = []
             right_on = []
         elif on is None:

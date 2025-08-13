@@ -31,6 +31,23 @@ use crate::{
 pub struct PySeries {
     pub series: series::Series,
 }
+impl PySeries {
+    pub fn from_pylist_impl(
+        name: &str,
+        vec_pyobj: Vec<Py<PyAny>>,
+        dtype: DataType,
+    ) -> PyResult<Self> {
+        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
+
+        let field = Field::new(name, DataType::Python);
+        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
+        let series = data_array.cast(&dtype)?;
+
+        Ok(series.into())
+    }
+}
 
 #[pymethods]
 impl PySeries {
@@ -60,15 +77,7 @@ impl PySeries {
     pub fn from_pylist(name: &str, pylist: Bound<PyAny>, dtype: PyDataType) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
 
-        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
-
-        let field = Field::new(name, DataType::Python);
-        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = data_array.cast(&dtype.into())?;
-
-        Ok(series.into())
+        Self::from_pylist_impl(name, vec_pyobj, dtype.dtype)
     }
 
     // This is for PythonArrays only,
@@ -314,8 +323,8 @@ impl PySeries {
         Ok(self.series.len())
     }
 
-    pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.series.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.series.size_bytes()
     }
 
     pub fn name(&self) -> PyResult<String> {
