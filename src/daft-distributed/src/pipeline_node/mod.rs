@@ -41,6 +41,7 @@ mod explode;
 mod filter;
 mod gather;
 mod in_memory_source;
+mod into_batches;
 mod into_partitions;
 mod join;
 mod limit;

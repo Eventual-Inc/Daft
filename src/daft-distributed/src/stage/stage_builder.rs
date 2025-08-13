@@ -36,6 +36,7 @@ impl StagePlanBuilder {
             LogicalPlan::Source(_)
             | LogicalPlan::Project(_)
             | LogicalPlan::Filter(_)
+            | LogicalPlan::IntoBatches(_)
             | LogicalPlan::Sink(_)
             | LogicalPlan::Sample(_)
             | LogicalPlan::Explode(_)
@@ -82,10 +83,6 @@ impl StagePlanBuilder {
                 }
             }
             LogicalPlan::Pivot(_) => {
-                can_translate = false;
-                Ok(TreeNodeRecursion::Stop)
-            }
-            LogicalPlan::IntoBatches(_) => {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)
             }
