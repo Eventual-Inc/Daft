@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING, Any
 from daft.daft import PyDaftFile
 
 if TYPE_CHECKING:
-    from io import TextIOWrapper, _WrappedBuffer
-
     from daft.io import IOConfig
 
 
@@ -74,6 +72,11 @@ class File:
     def open(self, _io_config: IOConfig | None = None) -> File:
         raise NotImplementedError("File.open() not yet supported")
 
+    def __enter__(self) -> File:
+        inner = self._inner.__enter__()
+        self._inner = inner
+        return self
+
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self._inner.__exit__(exc_type, exc_val, exc_tb)
 
@@ -108,9 +111,6 @@ class PathFile(File):
     def __fspath__(self) -> str:
         return self._inner.__fspath__()
 
-    def __enter__(self) -> TextIOWrapper[_WrappedBuffer]:
-        return open(self._inner)
-
 
 class MemoryFile(File):
     """File object backed by in-memory data.
@@ -123,6 +123,3 @@ class MemoryFile(File):
 
     def get_bytes(self) -> bytes:
         return self._inner.read()
-
-    def __enter__(self) -> Any:
-        return self._inner.__enter__()

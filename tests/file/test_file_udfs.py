@@ -189,7 +189,7 @@ def test_with_open_syntax_for_path_file(tmp_path: Path):
 
     @daft.func
     def read(file: daft.File) -> str:
-        with file as f:
+        with open(file) as f:
             return f.read()
 
     df = df.select(read(df["path"]).alias("content"))

@@ -56,7 +56,10 @@ impl PyDaftFile {
     // Read bytes from file
     #[pyo3(signature=(size=-1))]
     fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
-        let cursor = self.cursor.as_mut().unwrap();
+        let cursor = self
+            .cursor
+            .as_mut()
+            .ok_or_else(|| PyIOError::new_err("File not open"))?;
 
         if size == -1 {
             let mut buffer = Vec::new();
@@ -95,13 +98,21 @@ impl PyDaftFile {
     // Seek to position
     fn seek(&mut self, offset: i64, whence: Option<usize>) -> PyResult<u64> {
         let whence = match whence.unwrap_or(0) {
-            0 => SeekFrom::Start(offset as u64),
+            0 => {
+                if offset < 0 {
+                    return Err(PyValueError::new_err("Seek offset cannot be negative"));
+                }
+                SeekFrom::Start(offset as u64)
+            }
             1 => SeekFrom::Current(offset),
             2 => SeekFrom::End(offset),
             _ => return Err(PyValueError::new_err("Invalid whence value")),
         };
 
-        let cursor = self.cursor.as_mut().unwrap();
+        let cursor = self
+            .cursor
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("File not open"))?;
         let new_pos = match cursor {
             FileCursor::Memory(c) => c
                 .seek(whence)
