@@ -9,6 +9,7 @@ pyo3 = {workspace = true, optional = true}
 [features]
 python = [
   "common-error/python",
+  "common-file/python",
   "daft-io/python",
   "dep:pyo3"
 ]
