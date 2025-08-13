@@ -237,7 +237,7 @@ comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
-common-file = {path = "src/common/file-formats"}
+common-file = {path = "src/common/file"}
 common-file-formats = {path = "src/common/file-formats"}
 common-image = {path = "src/common/image"}
 common-metrics = {path = "src/common/metrics"}
