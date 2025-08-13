@@ -23,10 +23,9 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeRef, RuntimeTask};
-use runtime_stats::RuntimeStatsManagerHandle;
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
-use runtime_stats::{RuntimeStats, TimedFuture};
+use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 use tracing::Instrument;
 
