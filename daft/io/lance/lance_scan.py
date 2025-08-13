@@ -88,12 +88,11 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             required_columns = None
         else:
             filter_required_column_names = pushdowns.filter_required_column_names()
-            required_columns = (
+            required_columns = list(set((
                 pushdowns.columns
                 if filter_required_column_names is None
                 else pushdowns.columns + filter_required_column_names
-            )
-        required_columns = None if required_columns is None else list(set(required_columns))
+            )))
         # TODO: figure out how to translate Pushdowns into LanceDB filters
         filters = None
         fragments = self._ds.get_fragments()
