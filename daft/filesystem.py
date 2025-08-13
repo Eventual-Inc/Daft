@@ -115,7 +115,7 @@ def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
 ) -> tuple[list[str], pafs.FileSystem]:
-    """Resolves and normalizes the provided path and infers it's filesystem.
+    """Resolves and normalizes the provided path and infers its filesystem.
 
     Also ensures that the inferred filesystem is compatible with the passed filesystem, if provided.
 
