@@ -65,10 +65,6 @@ impl ScanOperator for AnonymousScanOperator {
         false
     }
 
-    fn can_absorb_aggregation(&self) -> bool {
-        false
-    }
-
     fn supports_count_pushdown(&self) -> bool {
         false
     }

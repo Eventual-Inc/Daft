@@ -84,10 +84,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     def can_absorb_select(self) -> bool:
         return False
 
-    def can_absorb_aggregation(self) -> bool:
-        """Returns whether this scan operator can absorb aggregation operations."""
-        return True
-
     def supports_count_pushdown(self) -> bool:
         """Returns whether this scan operator supports count pushdown."""
         return True

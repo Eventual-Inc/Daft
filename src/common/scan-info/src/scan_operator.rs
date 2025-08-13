@@ -37,10 +37,6 @@ pub trait ScanOperator: Send + Sync + Debug {
         false
     }
 
-    fn can_absorb_aggregation(&self) -> bool {
-        false
-    }
-
     fn supported_count_modes(&self) -> Vec<daft_core::count_mode::CountMode> {
         Vec::new()
     }

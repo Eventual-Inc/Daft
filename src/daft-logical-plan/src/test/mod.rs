@@ -22,7 +22,6 @@ pub fn dummy_scan_operator_with_size(
         num_scan_tasks: 1,
         num_rows_per_task,
         supports_count_pushdown_flag: false,
-        can_absorb_aggregation_flag: false,
     }))
 }
 
@@ -43,7 +42,6 @@ pub fn dummy_scan_node_with_pushdowns(
 pub fn dummy_scan_operator_for_aggregation(
     fields: Vec<Field>,
     supports_count_pushdown_flag: bool,
-    can_absorb_aggregation_flag: bool,
 ) -> ScanOperatorRef {
     let schema: Arc<Schema> = Arc::new(Schema::new(fields));
     ScanOperatorRef(Arc::new(DummyScanOperator {
@@ -51,6 +49,5 @@ pub fn dummy_scan_operator_for_aggregation(
         num_scan_tasks: 1,
         num_rows_per_task: None,
         supports_count_pushdown_flag: supports_count_pushdown_flag,
-        can_absorb_aggregation_flag: can_absorb_aggregation_flag,
     }))
 }

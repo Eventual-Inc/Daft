@@ -819,7 +819,6 @@ mod tests {
                 Field::new("b", DataType::Int64),
             ],
             true,
-            true,
         );
 
         // original plan: Scan -> Project -> Aggregation

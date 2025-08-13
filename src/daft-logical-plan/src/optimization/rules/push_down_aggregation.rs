@@ -46,8 +46,7 @@ impl OptimizerRule for PushDownAggregation {
                                     let scan_op = external_info.scan_state.get_scan_op().0.clone();
 
                                     // Check if scan operation supports aggregation pushdown and specific count mode
-                                    if scan_op.can_absorb_aggregation()
-                                        && scan_op.supports_count_pushdown()
+                                    if scan_op.supports_count_pushdown()
                                         && is_count_mode_supported(count_mode)
                                         && external_info.pushdowns.filters.is_none()
                                     {
@@ -137,11 +136,8 @@ mod tests {
 
     #[test]
     fn agg_count_all() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator_for_aggregation(
-            vec![Field::new("a", DataType::UInt64)],
-            true,
-            true,
-        );
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
 
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
@@ -168,7 +164,6 @@ mod tests {
                 Field::new("b", DataType::Int64),
             ],
             true,
-            true,
         );
 
         let plan = dummy_scan_node(scan_op.clone())
@@ -189,7 +184,6 @@ mod tests {
                 Field::new("b", DataType::Int64),
             ],
             true,
-            true,
         );
 
         let plan = dummy_scan_node(scan_op.clone())
@@ -209,7 +203,6 @@ mod tests {
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Int64),
             ],
-            true,
             true,
         );
 
@@ -234,7 +227,6 @@ mod tests {
                 Field::new("b", DataType::Int64),
             ],
             true,
-            true,
         );
 
         let plan = dummy_scan_node(scan_op.clone())
@@ -255,7 +247,6 @@ mod tests {
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Int64),
             ],
-            true,
             true,
         );
 
