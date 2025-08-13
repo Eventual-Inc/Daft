@@ -83,30 +83,39 @@ impl IntoPartitionsNode {
         task_id_counter: &TaskIDCounter,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
-        // Group tasks into num_partitions groups maintaining order
-        // Fill each partition sequentially before moving to the next
-        let mut task_groups: Vec<Vec<SubmittableTask<SwordfishTask>>> =
-            (0..self.num_partitions).map(|_| Vec::new()).collect();
+        assert!(
+            tasks.len() >= self.num_partitions,
+            "Cannot coalesce from {} to {} partitions.",
+            tasks.len(),
+            self.num_partitions
+        );
 
-        let tasks_per_partition = tasks.len().div_ceil(self.num_partitions);
-        for (i, task) in tasks.into_iter().enumerate() {
-            let partition_idx = i / tasks_per_partition;
-            if partition_idx < self.num_partitions {
-                task_groups[partition_idx].push(task);
-            }
-        }
+        // Coalesce partitions evenly with remainder handling
+        // Example: 10 inputs, 3 partitions = 4, 3, 3
+
+        // Base inputs per partition: 10 / 3 = 3 (all tasks get at least 3 inputs)
+        let base_inputs_per_partition = tasks.len() / self.num_partitions;
+        // Remainder: 10 % 3 = 1 (one task gets an extra input)
+        let num_partitions_with_extra_input = tasks.len() % self.num_partitions;
 
         let mut output_futures = OrderedJoinSet::new();
 
-        for task_group in task_groups.into_iter().filter(|x| !x.is_empty()) {
-            // Multiple tasks, materialize and combine
-            let mut output_futures_for_group = Vec::new();
-            for task in task_group {
-                let future = task.submit(scheduler_handle)?;
-                output_futures_for_group.push(future);
+        let mut task_iter = tasks.into_iter();
+        for partition_idx in 0..self.num_partitions {
+            let mut chunk_size = base_inputs_per_partition;
+            // This partition needs an extra input, i.e. partition_idx == 0 and remainder == 1
+            if partition_idx < num_partitions_with_extra_input {
+                chunk_size += 1;
             }
+
+            // Submit all the tasks for this partition
+            let submitted_tasks = task_iter
+                .by_ref()
+                .take(chunk_size)
+                .map(|task| task.submit(scheduler_handle))
+                .collect::<DaftResult<Vec<_>>>()?;
             output_futures.spawn(async move {
-                let materialized_output = futures::future::try_join_all(output_futures_for_group)
+                let materialized_output = futures::future::try_join_all(submitted_tasks)
                     .await?
                     .into_iter()
                     .flatten()
@@ -116,6 +125,7 @@ impl IntoPartitionsNode {
         }
 
         while let Some(result) = output_futures.join_next().await {
+            // Collect all the outputs from this task and coalesce them into a single task.
             let materialized_outputs = result??;
             let self_arc = self.clone();
             let task = make_in_memory_task_from_materialized_outputs(
@@ -138,41 +148,45 @@ impl IntoPartitionsNode {
         task_id_counter: &TaskIDCounter,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
-        // Split tasks into more partitions by splitting each input task into multiple output tasks.
-        // This preserves order and tries to distribute outputs as evenly as possible.
-        let num_input_partitions = tasks.len();
-        let num_output_partitions = self.num_partitions;
         assert!(
-            num_output_partitions >= num_input_partitions,
+            tasks.len() <= self.num_partitions,
             "Cannot split from {} to {} partitions.",
-            num_input_partitions,
-            num_output_partitions
+            tasks.len(),
+            self.num_partitions
         );
 
-        let base_splits_per_partition = num_output_partitions / num_input_partitions;
-        let num_partitions_with_extra_output = num_output_partitions % num_input_partitions;
+        // Split partitions evenly with remainder handling
+        // Example: 3 inputs, 10 partitions = 4, 3, 3
+
+        // Base outputs per partition: 10 / 3 = 3 (all partitions will split into at least 3 outputs)
+        let base_splits_per_partition = tasks.len() / self.num_partitions;
+        // Remainder: 10 % 3 = 1 (one partition will split into 4 outputs)
+        let num_partitions_with_extra_output = tasks.len() % self.num_partitions;
 
         let mut output_futures = OrderedJoinSet::new();
 
         for (input_partition_idx, task) in tasks.into_iter().enumerate() {
-            // Each input partition gets either base_splits_per_partition or base_splits_per_partition+1 outputs
-            let num_out = if input_partition_idx < num_partitions_with_extra_output {
-                base_splits_per_partition + 1
-            } else {
-                base_splits_per_partition
-            };
+            let mut num_outputs = base_splits_per_partition;
+            // This partition will split into one more output, i.e. input_partition_idx == 0 and remainder == 1
+            if input_partition_idx < num_partitions_with_extra_output {
+                num_outputs += 1;
+            }
             let into_partitions_task = append_plan_to_existing_task(
                 task,
                 &(self.clone() as Arc<dyn DistributedPipelineNode>),
                 &move |plan| {
-                    LocalPhysicalPlan::into_partitions(plan, num_out, StatsState::NotMaterialized)
+                    LocalPhysicalPlan::into_partitions(
+                        plan,
+                        num_outputs,
+                        StatsState::NotMaterialized,
+                    )
                 },
             );
             let submitted_task = into_partitions_task.submit(scheduler_handle)?;
             output_futures.spawn(submitted_task);
         }
 
-        // Collect all the split outputs and send as new tasks
+        // Collect all the outputs and emit a new task for each output.
         while let Some(result) = output_futures.join_next().await {
             let materialized_outputs = result??;
             if let Some(output) = materialized_outputs {
@@ -193,7 +207,7 @@ impl IntoPartitionsNode {
         Ok(())
     }
 
-    async fn execution_loop(
+    async fn execute_into_partitions(
         self: Arc<Self>,
         input_stream: SubmittableTaskStream,
         task_id_counter: TaskIDCounter,
@@ -271,13 +285,12 @@ impl DistributedPipelineNode for IntoPartitionsNode {
         let input_stream = self.child.clone().produce_tasks(stage_context);
         let (result_tx, result_rx) = create_channel(1);
 
-        let execution_loop = self.execution_loop(
+        stage_context.spawn(self.execute_into_partitions(
             input_stream,
             stage_context.task_id_counter(),
             result_tx,
             stage_context.scheduler_handle(),
-        );
-        stage_context.spawn(execution_loop);
+        ));
 
         SubmittableTaskStream::from(result_rx)
     }
