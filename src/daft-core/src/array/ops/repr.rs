@@ -598,3 +598,17 @@ impl FixedShapeSparseTensorArray {
             .replace('\n', "<br />")
     }
 }
+
+impl FileArray {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}

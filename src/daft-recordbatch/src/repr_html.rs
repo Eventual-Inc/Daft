@@ -141,7 +141,8 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             arr.html_value(idx, truncate)
         }
         DataType::File => {
-            todo!("Implement File data type HTML representation")
+            let arr = s.file().unwrap();
+            arr.html_value(idx, truncate)
         }
         DataType::Unknown => {
             panic!("Unknown data type")
