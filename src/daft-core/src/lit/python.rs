@@ -1,6 +1,7 @@
 use chrono::{DateTime, TimeZone};
 use common_arrow_ffi as ffi;
 use common_error::DaftError;
+use common_ndarray::NdArray;
 use daft_schema::prelude::TimeUnit;
 use indexmap::IndexMap;
 use ndarray::Array;
@@ -204,7 +205,10 @@ impl<'py> IntoPyObject<'py> for Literal {
                 ffi::to_py_array(py, series.to_arrow(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))
             }
-            Self::Image(image) => Ok(image.into_ndarray().into_bound_py_any(py)),
+            Self::Image(image) => {
+                let img_arr: Box<dyn NdArray> = image.into_ndarray();
+                Ok(img_arr.into_py(py))
+            }
             Self::Extension(series) => {
                 debug_assert_eq!(
                     series.len(),
