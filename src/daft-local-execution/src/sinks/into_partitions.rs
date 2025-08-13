@@ -128,4 +128,8 @@ impl BlockingSink for IntoPartitionsSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(IntoPartitionsState::Building(Vec::new()))
     }
+
+    fn max_concurrency(&self) -> usize {
+        1
+    }
 }
