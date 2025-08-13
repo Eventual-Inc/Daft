@@ -108,7 +108,7 @@ class TestLanceDBCountPushdown:
         assert result == {"count": [6]}
 
     def test_count_no_pushdown_with_filter(self, dataset_path, capsys):
-        """Test count(column, CountMode.Null) does not use pushdown as it's not supported."""
+        """Test count(*) does not use pushdown when filter is present."""
         df = daft.read_lance(dataset_path).filter(col("b").is_null()).count()
 
         _ = capsys.readouterr()
