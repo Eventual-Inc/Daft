@@ -87,7 +87,6 @@ def test_can_open_in_memory_image_with_pil():
     df = daft.from_pydict({"data": [img_bytes]})
 
     df = df.select(file(df["data"]))
-    df.show()
 
     @daft.func(return_dtype=dt.bool())
     def open_with_pil(file: daft.File):

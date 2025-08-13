@@ -97,7 +97,7 @@ impl ScalarUDF for File {
             }
             _ => {
                 return Err(DaftError::ValueError(format!(
-                "Unsupported data type for to_file function: {}. Expected either String | Binary",
+                "Unsupported data type for 'file' function: {}. Expected either String | Binary",
                 input.data_type()
             )))
             }
