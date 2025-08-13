@@ -104,16 +104,16 @@ impl Field {
         }
     }
 
-    pub fn to_list_field(&self) -> DaftResult<Self> {
+    pub fn to_list_field(&self) -> Self {
         if self.dtype.is_python() {
-            return Ok(self.clone());
+            return self.clone();
         }
         let list_dtype = DataType::List(Box::new(self.dtype.clone()));
-        Ok(Self {
+        Self {
             name: self.name.clone(),
             dtype: list_dtype,
             metadata: self.metadata.clone(),
-        })
+        }
     }
 
     pub fn to_fixed_size_list_field(&self, size: usize) -> DaftResult<Self> {

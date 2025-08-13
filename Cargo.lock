@@ -1817,6 +1817,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-image"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "bincode",
+ "common-error",
+ "daft-schema",
+ "image",
+ "serde",
+]
+
+[[package]]
 name = "common-io-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2461,6 +2473,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-image",
  "common-io-config",
  "common-py-serde",
  "daft-hash",
@@ -2472,6 +2485,7 @@ dependencies = [
  "fnv",
  "html-escape",
  "hyperloglog",
+ "image",
  "indexmap 2.9.0",
  "itertools 0.14.0",
  "log",
@@ -2481,6 +2495,7 @@ dependencies = [
  "numpy",
  "pyo3",
  "rand 0.9.1",
+ "rstest",
  "serde",
  "sketches-ddsketch",
  "xxhash-rust",
@@ -2756,11 +2771,10 @@ dependencies = [
  "arrow2",
  "base64 0.22.1",
  "common-error",
+ "common-image",
  "daft-core",
  "daft-dsl",
- "image",
  "log",
- "num-traits",
  "serde",
  "typetag",
 ]

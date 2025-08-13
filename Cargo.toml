@@ -233,6 +233,7 @@ common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
+common-image = {path = "src/common/image"}
 common-metrics = {path = "src/common/metrics"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-algebra = {path = "src/daft-algebra"}
@@ -264,6 +265,7 @@ derive_builder = "0.20.2"
 educe = "0.6.0"
 futures = "0.3.30"
 html-escape = "0.2.13"
+image = {version = "0.25.5", default-features = false}
 indexmap = "2.9.0"
 indicatif = "0.18"
 itertools = "0.14"
