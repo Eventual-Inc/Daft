@@ -95,7 +95,7 @@ class TestLanceDBCountPushdown:
         assert result == {"a": [5]}
 
     def test_count_pushdown_with_select(self, dataset_path, capsys):
-        """Test count(column, CountMode.Valid) does not use pushdown as it's not supported."""
+        """Test count(*) pushdown after select operation."""
         df = daft.read_lance(dataset_path).select("b").count()
 
         _ = capsys.readouterr()
