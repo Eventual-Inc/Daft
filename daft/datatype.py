@@ -142,12 +142,23 @@ class DataType:
 
     @classmethod
     def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
+        import types
         from typing import get_args, get_origin
+
+        from PIL import Image
 
         if isinstance(user_provided_type, DataType):
             return user_provided_type
+        elif (
+            isinstance(user_provided_type, types.ModuleType)
+            and hasattr(user_provided_type.module, "__name__")
+            and user_provided_type.module.__name__ == "PIL.Image"
+        ) or user_provided_type is Image.Image:
+            return DataType.image()
         elif isinstance(user_provided_type, dict):
             return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
+        elif user_provided_type is None:
+            return DataType.null()
         elif get_origin(user_provided_type) is not None:
             origin_type = get_origin(user_provided_type)
             if origin_type is list:
@@ -167,6 +178,8 @@ class DataType:
                 return DataType.float64()
             elif user_provided_type is bytes:
                 return DataType.binary()
+            elif user_provided_type is bool:
+                return DataType.bool()
             elif user_provided_type is object:
                 return DataType.python()
             else:
