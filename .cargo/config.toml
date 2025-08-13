@@ -1,2 +1,2 @@
 [env]
-PYO3_PYTHON = "./.venv/bin/python"
+PYO3_PYTHON = "./.venv/bin/python" 
