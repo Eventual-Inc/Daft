@@ -484,7 +484,7 @@ def test_series_cast_numpy_to_image() -> None:
 
 def test_series_cast_numpy_to_image_infer_mode() -> None:
     data = [
-        np.arange(4, dtype=np.uint8).reshape((2, 2)),
+        np.arange(6, dtype=np.uint8).reshape((2, 3)),
         np.arange(4, 31, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
@@ -497,7 +497,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.length().to_pylist() == [4, 27, None]
+    assert t.list.length().to_pylist() == [6, 27, None]
 
     pydata = t.to_arrow().to_pylist()
     assert pydata[0] == {
@@ -505,7 +505,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
         "mode": ImageMode.L,
         "channel": 1,
         "height": 2,
-        "width": 2,
+        "width": 3,
     }
     assert pydata[1] == {
         "data": data[1].ravel().tolist(),
@@ -816,10 +816,10 @@ def test_series_cast_fixed_shape_list_to_embedding(dtype: np.dtype, size: int):
     for i, (s_lst, t_arr) in enumerate(zip(s, t)):
         assert len(s_lst) == len(t_arr)
         assert len(s_lst) == size
-        assert isinstance(s_lst, list)
+        assert isinstance(s_lst, Series)
         assert isinstance(t_arr, np.ndarray)
         assert t_arr.shape == (size,)
-        assert (np.array(s_lst) == t_arr).all()
+        assert (np.array(s_lst.to_pylist()) == t_arr).all()
 
 
 @pytest.mark.parametrize(
@@ -852,9 +852,9 @@ def test_series_cast_embedding_to_fixed_shape_list(dtype: np.dtype, size: int):
         assert len(s_arr) == len(t_lst)
         assert len(t_lst) == size
         assert isinstance(s_arr, np.ndarray)
-        assert isinstance(t_lst, list)
+        assert isinstance(t_lst, Series)
         assert s_arr.shape == (size,)
-        assert (np.array(t_lst) == s_arr).all()
+        assert (np.array(t_lst.to_pylist()) == s_arr).all()
 
 
 def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
@@ -1225,14 +1225,14 @@ def test_series_cast_list(target_dtype, expected) -> None:
 
     casted = data.cast(target_dtype)
     assert casted.datatype() == target_dtype
-    assert casted.to_pylist() == expected
+    assert [item.to_pylist() for item in casted] == expected
 
 
 def test_series_cast_fixed_size_list_to_list() -> None:
     data = Series.from_pylist([[1, 2], [3, 4], [5, 6]]).cast(DataType.fixed_size_list(DataType.int64(), 2))
     assert data.datatype() == DataType.fixed_size_list(DataType.int64(), 2)
     casted = data.cast(DataType.list(DataType.int64()))
-    assert casted.to_pylist() == [[1, 2], [3, 4], [5, 6]]
+    assert [item.to_pylist() for item in casted] == [[1, 2], [3, 4], [5, 6]]
 
 
 ### Sparse ###
@@ -1406,4 +1406,4 @@ def test_cast_python_to_list_of_structs():
     s = Series.from_pylist(data, pyobj="force")
     s = s.cast(dtype)
     assert s.datatype() == dtype
-    assert s.to_pylist() == data
+    assert [item.to_pylist() for item in s] == data

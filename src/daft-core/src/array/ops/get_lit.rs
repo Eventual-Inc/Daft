@@ -146,7 +146,14 @@ impl FixedShapeSparseTensorArray {
             && let (Some(values), Some(indices)) =
                 (self.values_array().get(idx), self.indices_array().get(idx))
         {
-            let indices = indices.u64().unwrap().as_arrow().values().to_vec();
+            let indices = indices
+                .cast(&DataType::UInt64)
+                .unwrap()
+                .u64()
+                .unwrap()
+                .as_arrow()
+                .values()
+                .to_vec();
 
             Literal::SparseTensor {
                 values,
@@ -180,8 +187,19 @@ impl MapArray {
 }
 
 impl ExtensionArray {
-    pub fn get_lit(&self, _: usize) -> Literal {
-        unimplemented!("Extension array cannot be converted into Daft literal")
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.is_valid(idx) {
+            Literal::Extension(self.slice(idx, idx + 1).unwrap().into_series())
+        } else {
+            Literal::Null
+        }
     }
 }
 

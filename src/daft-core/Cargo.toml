@@ -24,6 +24,7 @@ common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-image = {workspace = true}
 common-io-config = {path = "../common/io-config", default-features = false}
+common-ndarray = {workspace = true}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-hash = {workspace = true}
 daft-minhash = {path = "../daft-minhash", default-features = false}
@@ -48,16 +49,13 @@ indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
 log = {workspace = true}
 mur3 = "0.1.0"
-ndarray = "0.16.1"
+ndarray = {workspace = true}
 num-traits = {workspace = true}
+numpy = {workspace = true, optional = true}
 pyo3 = {workspace = true, optional = true}
 rand = "0.9.1"
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
-
-[dependencies.numpy]
-optional = true
-version = "0.25.0"
 
 [dependencies.xxhash-rust]
 features = ["xxh3", "const_xxh3", "xxh64"]
@@ -72,6 +70,7 @@ python = [
   "common-display/python",
   "common-error/python",
   "common-io-config/python",
+  "common-ndarray/python",
   "common-py-serde/python",
   "daft-schema/python",
   "dep:numpy",

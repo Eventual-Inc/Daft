@@ -1,7 +1,16 @@
+use chrono::{DateTime, TimeZone};
+use common_arrow_ffi as ffi;
 use common_error::DaftError;
 use daft_schema::prelude::TimeUnit;
 use indexmap::IndexMap;
-use pyo3::{intern, prelude::*, types::PyNone, IntoPyObjectExt};
+use ndarray::Array;
+use numpy::IntoPyArray;
+use pyo3::{
+    intern,
+    prelude::*,
+    types::{PyDict, PyNone},
+    IntoPyObjectExt,
+};
 
 use super::Literal;
 use crate::{python::PySeries, utils::display::display_decimal128};
@@ -31,17 +40,45 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::UInt32(val) => val.into_bound_py_any(py),
             Self::Int64(val) => val.into_bound_py_any(py),
             Self::UInt64(val) => val.into_bound_py_any(py),
-            Self::Timestamp(val, time_unit, tz) => {
-                let ts = (val as f64) / (time_unit.to_scale_factor() as f64);
+            Self::Timestamp(val, tu, tz) => {
+                // TODO: store chrono DateTime in timestamp literal directly
+                let naive_dt = match tu {
+                    TimeUnit::Nanoseconds => Some(DateTime::from_timestamp_nanos(val)),
+                    TimeUnit::Microseconds => DateTime::from_timestamp_micros(val),
+                    TimeUnit::Milliseconds => DateTime::from_timestamp_millis(val),
+                    TimeUnit::Seconds => DateTime::from_timestamp(val, 0),
+                }
+                .ok_or_else(||
+                    DaftError::ValueError(format!("Overflow when constructing timestamp from value with time unit {tu}: {val}"))
+                )?
+                .naive_utc();
 
-                py.import(intern!(py, "datetime"))?
-                    .getattr(intern!(py, "datetime"))?
-                    .call_method1(intern!(py, "fromtimestamp"), (ts, tz))
+                match tz {
+                    None => naive_dt.into_bound_py_any(py),
+                    Some(tz_str)
+                        if let Ok(fixed_offset) =
+                            arrow2::temporal_conversions::parse_offset(&tz_str) =>
+                    {
+                        fixed_offset
+                            .from_utc_datetime(&naive_dt)
+                            .into_bound_py_any(py)
+                    }
+                    Some(tz_str)
+                        if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(&tz_str) =>
+                    {
+                        tz.from_utc_datetime(&naive_dt).into_bound_py_any(py)
+                    }
+                    Some(tz_str) => Err(DaftError::ValueError(format!(
+                        "Failed to parse timezone string: {tz_str}"
+                    ))
+                    .into()),
+                }
             }
-            Self::Date(val) => py
-                .import(intern!(py, "datetime"))?
-                .getattr(intern!(py, "date"))?
-                .call_method1(intern!(py, "fromtimestamp"), (val,)),
+            Self::Date(val) => DateTime::from_timestamp((val as i64) * 24 * 60 * 60, 0)
+                .expect("chrono::DateTime from i32 date should not overflow")
+                .naive_utc()
+                .date()
+                .into_bound_py_any(py),
             Self::Time(val, time_unit) => {
                 let (h, m, s, us) = match time_unit {
                     TimeUnit::Nanoseconds => {
@@ -136,17 +173,43 @@ impl<'py> IntoPyObject<'py> for Literal {
                     .collect::<IndexMap<_, _>>()
                     .into_bound_py_any(py)
             }
-            Self::Tensor { .. } => {
-                Err(DaftError::NotImplemented("Tensor literal to Python".to_string()).into())
+            Self::Tensor { data, shape } => {
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                ffi::to_py_array(py, data.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
+                    .call_method1(pyo3::intern!(py, "reshape"), (shape,))
             }
-            Self::SparseTensor { .. } => {
-                Err(DaftError::NotImplemented("Sparse tensor literal to Python".to_string()).into())
+            Self::SparseTensor {
+                values,
+                indices,
+                shape,
+                ..
+            } => {
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                let values_arr = ffi::to_py_array(py, values.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                let indices_arr = Array::from_vec(indices).into_pyarray(py);
+
+                let seq = (
+                    ("values", values_arr),
+                    ("indices", indices_arr),
+                    ("shape", shape),
+                )
+                    .into_bound_py_any(py)?;
+
+                Ok(PyDict::from_sequence(&seq)?.into_any())
             }
-            Self::Embedding { .. } => {
-                Err(DaftError::NotImplemented("Embedding literal to Python".to_string()).into())
+            Self::Embedding(series) => {
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                ffi::to_py_array(py, series.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))
             }
-            Self::Image(_) => {
-                Err(DaftError::NotImplemented("Image literal to Python".to_string()).into())
+            Self::Image(image) => Ok(image.into_ndarray().into_bound_py_any(py)),
+            Self::Extension(series) => {
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                ffi::to_py_array(py, series.to_arrow(), &pyarrow)?
+                    .call_method0(pyo3::intern!(py, "to_pylist"))?
+                    .get_item(0)
             }
         }
     }

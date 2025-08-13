@@ -79,8 +79,8 @@ def test_series_filter_on_list_array(dtype) -> None:
     result = s.filter(mask)
 
     assert s.datatype() == result.datatype()
-    expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
-    assert result.to_pylist() == expected
+    expected = [(None if val is None else val.to_pylist()) for val, keep in zip(s.to_pylist(), pymask) if keep]
+    assert [(None if val is None else val.to_pylist()) for val in result] == expected
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
@@ -94,8 +94,8 @@ def test_series_filter_on_fixed_size_list_array(dtype) -> None:
     result = s.filter(mask)
 
     assert s.datatype() == result.datatype()
-    expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
-    assert result.to_pylist() == expected
+    expected = [(None if val is None else val.to_pylist()) for val, keep in zip(s.to_pylist(), pymask) if keep]
+    assert [(None if val is None else val.to_pylist()) for val in result] == expected
 
 
 def test_series_filter_on_struct_array() -> None:

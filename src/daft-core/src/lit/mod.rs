@@ -113,6 +113,8 @@ pub enum Literal {
     },
     // An image buffer
     Image(Image),
+    // Extension type, stored as a single-element series
+    Extension(Series),
 }
 
 impl Eq for Literal {}
@@ -192,6 +194,7 @@ impl Hash for Literal {
             Self::Image(image_buffer_wrapper) => {
                 image_buffer_wrapper.hash(state);
             }
+            Self::Extension(series) => Hash::hash(series, state),
         }
     }
 }
@@ -281,6 +284,7 @@ impl Display for Literal {
                 )
             }
             Self::Image(image_buffer_wrapper) => write!(f, "Image({image_buffer_wrapper:?})"),
+            Self::Extension(series) => write!(f, "Extension(\n{}\n)", series),
         }
     }
 }
@@ -333,6 +337,7 @@ impl Literal {
             Self::Image(image_buffer_wrapper) => {
                 DataType::Image(Some(CowImage::from(&image_buffer_wrapper.0).mode()))
             }
+            Self::Extension(series) => series.data_type().clone(),
         }
     }
 
@@ -422,7 +427,8 @@ impl Literal {
             | Self::SparseTensor { .. }
             | Self::Embedding { .. }
             | Self::Map { .. }
-            | Self::Image(_) => display_sql_err,
+            | Self::Image(_)
+            | Self::Extension(_) => display_sql_err,
             #[cfg(feature = "python")]
             Self::Python(..) => display_sql_err,
         }
