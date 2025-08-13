@@ -709,6 +709,11 @@ type ArrayPayload<Tgt> = (
     Option<Vec<i64>>,
 );
 
+/// Extract a PythonArray of elements list[T] into set of vectors:
+/// 1) A values Vec<T>
+/// 2) An optional offsets Vec<i64>
+/// 3) An optional shapes Vec<u64>
+/// 4) An optional shape_offsets Vec<i64>
 #[cfg(feature = "python")]
 fn extract_python_to_vec<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
@@ -1178,36 +1183,48 @@ impl PythonArray {
                 pycast_then_arrowcast!(self, dt, "float")
             }
             DataType::List(child_dtype) => {
-                if !child_dtype.is_numeric() {
-                    return Err(DaftError::ValueError(format!(
+                if child_dtype.is_numeric() {
+                    with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
+                        type Tgt = <$T as DaftNumericType>::Native;
+                        pyo3::Python::with_gil(|py| {
+                            let result = extract_python_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
+                            Ok(result.into_series())
+                        })
+                    })
+                } else if child_dtype.is_physical() {
+                    // TODO: This is not fully operational since we can't guarantee that our Series.from_pylist
+                    // implementation (using PyArrow) will cast the values arrays correctly.
+                    pycast_then_arrowcast!(self, dtype, "list")
+                } else {
+                    Err(DaftError::ValueError(format!(
                         "We can only convert numeric python types to List, got {}",
                         child_dtype
-                    )));
+                    )))
                 }
-                with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
-                    type Tgt = <$T as DaftNumericType>::Native;
-                    pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
-                        Ok(result.into_series())
-                    })
-                })
             }
             DataType::FixedSizeList(child_dtype, size) => {
-                if !child_dtype.is_numeric() {
-                    return Err(DaftError::ValueError(format!(
+                if child_dtype.is_numeric() {
+                    with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
+                        type Tgt = <$T as DaftNumericType>::Native;
+                        pyo3::Python::with_gil(|py| {
+                            let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
+                            Ok(result.into_series())
+                        })
+                    })
+                } else if child_dtype.is_physical() {
+                    pycast_then_arrowcast!(self, dtype, "list")
+                } else {
+                    Err(DaftError::ValueError(format!(
                         "We can only convert numeric python types to FixedSizeList, got {}",
                         child_dtype,
-                    )));
+                    )))
                 }
-                with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
-                    type Tgt = <$T as DaftNumericType>::Native;
-                    pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
-                        Ok(result.into_series())
-                    })
-                })
             }
-            DataType::Struct(_) => unimplemented!(),
+            DataType::Struct(_) => {
+                // TODO: This is not fully operational since we can't guarantee that our Series.from_pylist
+                // implementation (using PyArrow) will cast the struct field arrays correctly.
+                pycast_then_arrowcast!(self, dtype, "dict")
+            }
             DataType::Embedding(..) => {
                 let result = self.cast(&dtype.to_physical())?;
                 let embedding_array = EmbeddingArray::new(
