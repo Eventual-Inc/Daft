@@ -4,6 +4,7 @@ use std::{
     path::Path,
 };
 
+use common_error::DaftError;
 use pyo3::{
     exceptions::{PyIOError, PyNotImplementedError, PyValueError},
     prelude::*,
@@ -25,12 +26,14 @@ enum FileCursor {
 impl PyDaftFile {
     #[staticmethod]
     fn _from_path(path: String) -> PyResult<Self> {
-        if !path.starts_with("file://") {
+        let (source, normalized) = daft_io::parse_url(&path).map_err(DaftError::from)?;
+        if !matches!(source, daft_io::SourceType::File) {
             return Err(PyNotImplementedError::new_err(
                 "remote protocols not yet supported!",
             ));
         }
-        let path = path.replace("file://", "");
+
+        let path = normalized.replace("file://", "");
 
         let file = File::open(Path::new(&path))
             .map_err(|e| PyIOError::new_err(format!("Failed to open file {}: {}", path, e)))?;
@@ -155,6 +158,10 @@ impl PyDaftFile {
             Some(path) => Ok(format!("File({})", path)),
             None => Ok("File(None)".to_string()),
         }
+    }
+
+    fn closed(&self) -> PyResult<bool> {
+        Ok(self.cursor.is_none())
     }
 }
 

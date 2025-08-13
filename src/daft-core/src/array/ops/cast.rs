@@ -551,7 +551,7 @@ impl FileArray {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
             dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
-            _ => todo!("cast for FileArray"),
+            dtype => todo!("cast {dtype} for FileArray"),
         }
     }
 }
