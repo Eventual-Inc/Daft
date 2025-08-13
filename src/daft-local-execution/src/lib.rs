@@ -291,7 +291,9 @@ impl StdoutPipe {
 
 /// Set Python stdout / stderr back to original on drop.
 #[cfg(feature = "python")]
-struct PythonStdoutGuard;
+struct PythonStdoutGuard {
+    old_stdout: Option<PyObject>,
+}
 
 #[cfg(feature = "python")]
 impl Drop for PythonStdoutGuard {
@@ -301,10 +303,7 @@ impl Drop for PythonStdoutGuard {
         // Something else has probably gone wrong if we can't reset, so just ignore
         let _ = Python::with_gil(|py| {
             let sys = py.import(intern!(py, "sys"))?;
-            sys.setattr(
-                intern!(py, "stdout"),
-                sys.getattr(intern!(py, "__stdout__"))?,
-            )?;
+            sys.setattr(intern!(py, "stdout"), self.old_stdout.take().unwrap())?;
 
             Ok::<(), PyErr>(())
         });
@@ -352,15 +351,18 @@ impl StdoutHandler {
             buffer: String::new(),
         };
 
-        Python::with_gil(|py| {
+        let old_stdout = Python::with_gil(|py| {
             let sys = py.import(intern!(py, "sys"))?;
-            let py_stdout = stdout_pipe.into_pyobject(py)?;
-            sys.setattr(intern!(py, "stdout"), py_stdout.into_pyobject(py)?)?;
+            let old_stdout = sys.getattr(intern!(py, "stdout"))?;
+            let new_stdout = stdout_pipe.into_pyobject(py)?;
+            sys.setattr(intern!(py, "stdout"), new_stdout)?;
 
-            Ok::<(), PyErr>(())
+            Ok::<_, PyErr>(old_stdout.unbind())
         })?;
 
-        Ok(PythonStdoutGuard)
+        Ok(PythonStdoutGuard {
+            old_stdout: Some(old_stdout),
+        })
     }
 }
 
