@@ -35,9 +35,8 @@ use crate::{
         get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
     },
-    progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
-    runtime_stats::RuntimeStatsEventHandler,
+    runtime_stats::RuntimeStatsManager,
     ExecutionRuntimeContext,
 };
 
@@ -83,7 +82,7 @@ impl LocalPartitionStream {
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "daft.daft", name = "NativeExecutor")
+    pyclass(module = "daft.daft", name = "NativeExecutor", frozen)
 )]
 pub struct PyNativeExecutor {
     executor: NativeExecutor,
@@ -203,36 +202,41 @@ impl PyNativeExecutor {
         Ok(stream.into_pyobject(py)?.into_any())
     }
 
+    #[staticmethod]
     pub fn repr_ascii(
-        &self,
         logical_plan_builder: &PyLogicalPlanBuilder,
         cfg: PyDaftExecutionConfig,
         simple: bool,
     ) -> PyResult<String> {
-        Ok(self
-            .executor
-            .repr_ascii(&logical_plan_builder.builder, cfg.config, simple))
+        Ok(NativeExecutor::repr_ascii(
+            &logical_plan_builder.builder,
+            cfg.config,
+            simple,
+        ))
     }
 
+    #[staticmethod]
     pub fn repr_mermaid(
-        &self,
         logical_plan_builder: &PyLogicalPlanBuilder,
         cfg: PyDaftExecutionConfig,
         options: MermaidDisplayOptions,
     ) -> PyResult<String> {
-        Ok(self
-            .executor
-            .repr_mermaid(&logical_plan_builder.builder, cfg.config, options))
+        Ok(NativeExecutor::repr_mermaid(
+            &logical_plan_builder.builder,
+            cfg.config,
+            options,
+        ))
     }
 
+    #[staticmethod]
     pub fn get_relationship_info(
-        &self,
         logical_plan_builder: &PyLogicalPlanBuilder,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<RelationshipInformation> {
-        Ok(self
-            .executor
-            .get_relationship_info(&logical_plan_builder.builder, cfg.config))
+        Ok(NativeExecutor::get_relationship_info(
+            &logical_plan_builder.builder,
+            cfg.config,
+        ))
     }
 }
 
@@ -240,8 +244,6 @@ impl PyNativeExecutor {
 pub struct NativeExecutor {
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
-    pb_manager: Option<Arc<dyn ProgressBarManager>>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     enable_explain_analyze: bool,
 }
 
@@ -250,10 +252,7 @@ impl Default for NativeExecutor {
         Self {
             cancel: CancellationToken::new(),
             runtime: None,
-            // todo: make progressbar another subscriber instances
-            pb_manager: should_enable_progress_bar().then(make_progress_bar_manager),
             enable_explain_analyze: should_enable_explain_analyze(),
-            rt_stats_handler: Arc::new(RuntimeStatsEventHandler::new()),
         }
     }
 }
@@ -265,11 +264,6 @@ impl NativeExecutor {
 
     pub fn with_runtime(mut self, runtime: Arc<tokio::runtime::Runtime>) -> Self {
         self.runtime = Some(runtime);
-        self
-    }
-
-    pub fn with_progress_bar_manager(mut self, pb_manager: Arc<dyn ProgressBarManager>) -> Self {
-        self.pb_manager = Some(pb_manager);
         self
     }
 
@@ -290,11 +284,10 @@ impl NativeExecutor {
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
+
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
-        let pb_manager = self.pb_manager.clone();
-        let stats_handler = self.rt_stats_handler.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
@@ -307,13 +300,14 @@ impl NativeExecutor {
                         .expect("Failed to create tokio runtime"),
                 )
             });
+
+            let stats_manager = Arc::new(RuntimeStatsManager::new(runtime.handle(), &pipeline));
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle = ExecutionRuntimeContext::new(
                     cfg.default_morsel_size,
                     memory_manager.clone(),
-                    pb_manager,
-                    stats_handler.clone(),
+                    stats_manager.clone(),
                 );
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
@@ -350,13 +344,14 @@ impl NativeExecutor {
                     result = execution_task => result,
                 };
 
-                // Flush remaining stats events
-                if let Err(e) = stats_handler.flush().await {
-                    log::warn!("Failed to flush runtime stats: {}", e);
-                }
-
                 result
             })?;
+
+            // Finish the stats manager
+            let stats_manager = Arc::into_inner(stats_manager)
+                .expect("There should only be 1 stats manager instance by the end");
+            stats_manager.finish(&runtime);
+
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -387,7 +382,6 @@ impl NativeExecutor {
     }
 
     fn repr_ascii(
-        &self,
         logical_plan_builder: &LogicalPlanBuilder,
         cfg: Arc<DaftExecutionConfig>,
         simple: bool,
@@ -407,7 +401,6 @@ impl NativeExecutor {
     }
 
     fn repr_mermaid(
-        &self,
         logical_plan_builder: &LogicalPlanBuilder,
         cfg: Arc<DaftExecutionConfig>,
         options: MermaidDisplayOptions,
@@ -436,7 +429,6 @@ impl NativeExecutor {
         )
     }
     fn get_relationship_info(
-        &self,
         logical_plan_builder: &LogicalPlanBuilder,
         cfg: Arc<DaftExecutionConfig>,
     ) -> RelationshipInformation {
@@ -468,15 +460,6 @@ fn should_enable_explain_analyze() -> bool {
         true
     } else {
         false
-    }
-}
-
-fn should_enable_progress_bar() -> bool {
-    let progress_var_name = "DAFT_PROGRESS_BAR";
-    if let Ok(val) = std::env::var(progress_var_name) {
-        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-    } else {
-        true // Return true when env var is not set
     }
 }
 

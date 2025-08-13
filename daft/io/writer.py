@@ -4,14 +4,18 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.delta_lake.delta_lake_write import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
 from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
     get_protocol_from_path,
 )
-from daft.iceberg.iceberg_write import (
+from daft.io.delta_lake.delta_lake_write import (
+    make_deltalake_add_action,
+    make_deltalake_fs,
+    sanitize_table_for_deltalake,
+)
+from daft.io.iceberg.iceberg_write import (
     coerce_pyarrow_table_to_schema,
     make_iceberg_data_file,
     make_iceberg_record,
@@ -141,6 +145,11 @@ class ParquetFileWriter(FileWriterBase):
             compression=self.compression,
             use_compliant_nested_type=False,
             filesystem=self.fs,
+            # When using Arrow 8, it defaults to parquet version 1.
+            # This hits a known bug where Arrow cannot correctly write u32 values in Parquet files:
+            # https://issues.apache.org/jira/browse/ARROW-12201
+            # The fix is to always use at least Parquet version 2.
+            version="2.6",
             **opts,
         )
 

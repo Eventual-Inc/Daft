@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use daft_core::prelude::CountMode;
-use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_core::prelude::*;
+use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -19,7 +19,7 @@ pub struct SQLModuleAggs;
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
         // HACK TO USE AggExpr as an enum rather than a
-        let nil = Arc::new(Expr::Literal(LiteralValue::Null));
+        let nil = Arc::new(Expr::Literal(Literal::Null));
         parent.add_fn("count", AggExpr::Count(nil.clone(), CountMode::Valid));
         parent.add_fn("count_distinct", AggExpr::CountDistinct(nil.clone()));
         parent.add_fn("sum", AggExpr::Sum(nil.clone()));
@@ -81,7 +81,11 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
             Some(plan) => {
                 let schema = plan.schema();
-                unresolved_col(schema[0].name.clone())
+                let pushdown_col = schema
+                    .min_estimated_size_column()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| schema[0].name.clone());
+                unresolved_col(pushdown_col)
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
@@ -95,7 +99,11 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                     if let Some(schema) =
                         plan.plan.clone().get_schema_for_alias(&ident.to_string())?
                     {
-                        unresolved_col(schema[0].name.clone())
+                        let pushdown_col = schema
+                            .min_estimated_size_column()
+                            .map(|name| name.to_string())
+                            .unwrap_or_else(|| schema[0].name.clone());
+                        unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     } else {
@@ -110,12 +118,16 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
 
             match input.as_literal() {
                 // count(null) always returns 0
-                Some(LiteralValue::Null) => lit(0).alias("count"),
+                Some(Literal::Null) => lit(0).alias("count"),
                 // in SQL, any count(<non null literal>) is functionally the same as count(*)
                 Some(_) => match &planner.current_plan {
                     Some(plan) => {
                         let schema = plan.schema();
-                        unresolved_col(schema[0].name.clone())
+                        let pushdown_col = schema
+                            .min_estimated_size_column()
+                            .map(|name| name.to_string())
+                            .unwrap_or_else(|| schema[0].name.clone());
+                        unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     }

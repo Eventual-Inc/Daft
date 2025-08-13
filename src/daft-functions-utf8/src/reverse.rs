@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ impl ScalarUDF for Reverse {
     fn name(&self) -> &'static str {
         "reverse"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, |s| {
             s.with_utf8_array(|arr| {
                 Ok(arr
@@ -29,7 +29,7 @@ impl ScalarUDF for Reverse {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -44,5 +44,5 @@ impl ScalarUDF for Reverse {
 
 #[must_use]
 pub fn reverse(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Reverse {}, vec![input]).into()
+    ScalarFn::builtin(Reverse {}, vec![input]).into()
 }

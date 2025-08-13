@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub disable_join_reordering: bool,
+    pub enable_strict_filter_pushdown: bool,
 }
 
 impl DaftPlanningConfig {
@@ -22,6 +23,11 @@ impl DaftPlanningConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.disable_join_reordering = true;
+        }
+        if let Ok(val) = std::env::var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN")
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_strict_filter_pushdown = true;
         }
         cfg
     }
@@ -52,6 +58,8 @@ pub struct DaftExecutionConfig {
     pub parquet_inflation_factor: f64,
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
+    pub json_target_filesize: usize,
+    pub json_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
@@ -85,6 +93,8 @@ impl Default for DaftExecutionConfig {
             parquet_inflation_factor: 3.0,
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
+            json_target_filesize: 512 * 1024 * 1024, // 512MB
+            json_inflation_factor: 0.5, // TODO(desmond): This can be tuned with more real world datasets.
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
@@ -134,10 +144,9 @@ impl DaftExecutionConfig {
             cfg.native_parquet_writer = false;
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
-        if let Ok(val) = std::env::var(flotilla_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.use_experimental_distributed_engine = true;
+        if let Ok(val) = std::env::var(flotilla_env_var_name) {
+            cfg.use_experimental_distributed_engine =
+                !matches!(val.trim().to_lowercase().as_str(), "0" | "false");
         }
         let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
         if let Ok(val) = std::env::var(min_cpu_var) {

@@ -8,12 +8,13 @@ from typing import TYPE_CHECKING, Any
 from unitycatalog import NotFoundError as UnityNotFoundError
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
-from daft.io._deltalake import read_deltalake
+from daft.io.delta_lake._deltalake import read_deltalake
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
 
 
 class UnityCatalog(Catalog):
@@ -51,6 +52,7 @@ class UnityCatalog(Catalog):
         identifier: Identifier,
         source: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         raise NotImplementedError("Unity create_table not yet supported.")
 

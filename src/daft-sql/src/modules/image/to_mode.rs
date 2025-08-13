@@ -1,4 +1,4 @@
-use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_dsl::{Expr, ExprRef, Literal};
 use daft_functions::image::to_mode::{image_to_mode, ImageToMode};
 
 use crate::{
@@ -16,7 +16,7 @@ impl TryFrom<SQLFunctionArguments> for ImageToMode {
         let mode = args
             .get_named("mode")
             .map(|arg| match arg.as_ref() {
-                Expr::Literal(LiteralValue::Utf8(s)) => s.parse().map_err(PlannerError::from),
+                Expr::Literal(Literal::Utf8(s)) => s.parse().map_err(PlannerError::from),
                 _ => unsupported_sql_err!("Expected mode to be a string"),
             })
             .transpose()?

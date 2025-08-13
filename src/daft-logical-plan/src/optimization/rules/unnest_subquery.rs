@@ -520,14 +520,16 @@ fn pull_up_correlated_cols(
         LogicalPlan::Distinct(..)
         | LogicalPlan::MonotonicallyIncreasingId(..)
         | LogicalPlan::Repartition(..)
+        | LogicalPlan::IntoBatches(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)
         | LogicalPlan::Sort(..)
         | LogicalPlan::SubqueryAlias(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
-        LogicalPlan::ActorPoolProject(..)
+        LogicalPlan::UDFProject(..)
         | LogicalPlan::Limit(..)
+        | LogicalPlan::Offset(..)
         | LogicalPlan::Shard(..)
         | LogicalPlan::TopN(..)
         | LogicalPlan::Sample(..)

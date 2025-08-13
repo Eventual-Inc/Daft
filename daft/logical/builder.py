@@ -184,6 +184,10 @@ class LogicalPlanBuilder:
         builder = self._builder.limit(num_rows, eager)
         return LogicalPlanBuilder(builder)
 
+    def offset(self, num_rows: int) -> LogicalPlanBuilder:
+        builder = self._builder.offset(num_rows)
+        return LogicalPlanBuilder(builder)
+
     def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder:
         builder = self._builder.shard(strategy, world_size, rank)
         return LogicalPlanBuilder(builder)
@@ -248,6 +252,10 @@ class LogicalPlanBuilder:
 
     def into_partitions(self, num_partitions: int) -> LogicalPlanBuilder:
         builder = self._builder.into_partitions(num_partitions)
+        return LogicalPlanBuilder(builder)
+
+    def into_batches(self, batch_size: int) -> LogicalPlanBuilder:
+        builder = self._builder.into_batches(batch_size)
         return LogicalPlanBuilder(builder)
 
     def agg(
@@ -334,8 +342,6 @@ class LogicalPlanBuilder:
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> LogicalPlanBuilder:
-        if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
-            raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(
             str(root_dir), write_mode, file_format, part_cols_pyexprs, compression, io_config
@@ -343,7 +349,7 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def write_iceberg(self, table: IcebergTable, io_config: IOConfig) -> LogicalPlanBuilder:
-        from daft.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
+        from daft.io.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"

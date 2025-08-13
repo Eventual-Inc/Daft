@@ -144,7 +144,7 @@ pub fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
 }
 
 #[must_use]
-pub fn display_series_literal(series: &Series) -> String {
+pub fn display_series_in_literal(series: &Series) -> String {
     if !series.is_empty() {
         format!(
             "[{}]",

@@ -15,8 +15,8 @@ use crate::{
 /// TopN operator for computing the largest / smallest N rows based on a set of
 /// sort keys and orderings.
 ///
-/// The TopN operator is essentially a Sort followed by a Limit. But it can be
-/// computed more efficiently as a single operator via an O(n) algorithm instead
+/// The TopN operator is essentially a Sort followed by a Limit with optional Offset. But it
+/// can be computed more efficiently as a single operator via an O(n) algorithm instead
 /// of a O(n log n) algorithm for sorting.
 ///
 /// It is currently unavailable in the Python API and only constructed by the
@@ -25,6 +25,7 @@ use crate::{
 pub struct TopN {
     /// An id for the plan.
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     /// Upstream node.
     pub input: Arc<LogicalPlan>,
     /// Sort properties.
@@ -32,7 +33,9 @@ pub struct TopN {
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
     /// Limit on number of rows.
-    pub limit: i64,
+    pub limit: u64,
+    /// Offset on number of rows. This is optional, it's equivalent to offset = 0 if not passed.
+    pub offset: Option<u64>,
     /// The plan statistics.
     pub stats_state: StatsState,
 }
@@ -43,7 +46,8 @@ impl TopN {
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: i64,
+        limit: u64,
+        offset: Option<u64>,
     ) -> Result<Self> {
         if sort_by.is_empty() {
             return Err(DaftError::InternalError(
@@ -68,11 +72,13 @@ impl TopN {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             sort_by,
             descending,
             nulls_first,
             limit,
+            offset,
             stats_state: StatsState::NotMaterialized,
         })
     }
@@ -82,9 +88,14 @@ impl TopN {
         self
     }
 
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
+        self
+    }
+
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let limit = self.limit as usize;
+        let limit = (self.limit + self.offset.unwrap_or(0)) as usize;
         let limit_selectivity = if input_stats.approx_stats.num_rows > limit {
             if input_stats.approx_stats.num_rows == 0 {
                 0.0
@@ -128,10 +139,17 @@ impl TopN {
                 )
             })
             .join(", ");
-        res.push(format!(
-            "TopN: Sort by = {}, Num Rows = {}",
-            pairs, self.limit
-        ));
+
+        res.push(match &self.offset {
+            Some(offset) => {
+                format!(
+                    "TopN: Sort by = {}, Num Rows = {}, Offset = {}",
+                    pairs, self.limit, offset
+                )
+            }
+            None => format!("TopN: Sort by = {}, Num Rows = {}", pairs, self.limit),
+        });
+
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }

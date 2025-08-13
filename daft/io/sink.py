@@ -79,6 +79,23 @@ class DataSink(ABC, Generic[WriteResultType]):
         """
         raise NotImplementedError
 
+    def safe_write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
+        """This method wraps the abstract `write()` method with a try block to reraise potentially unserializable exceptions.
+
+        Args:
+            micropartitions (Iterator[MicroPartition]): An iterator of micropartitions to be written.
+
+        Returns:
+            Iterator[WriteResult[WriteResultType]]: An iterator of write results wrapped in a WriteOutput.
+
+        Raises:
+            Exception: Any exception that occurs during the write operation.
+        """
+        try:
+            yield from self.write(micropartitions)
+        except Exception as e:
+            raise RuntimeError(f"Exception occurred while writing to {self.name()}: {type(e).__name__}: {e!s}") from e
+
     @abstractmethod
     def finalize(self, write_results: list[WriteResult[WriteResultType]]) -> MicroPartition:
         """Finalizes the write process and returns a resulting micropartition.

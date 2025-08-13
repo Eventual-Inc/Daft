@@ -5,14 +5,17 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyExpr, PyRecordBatch, PySeries, series_lit
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
+from daft.schema import Field
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
     from collections.abc import Iterator
+
+    from daft.daft import PyDataType
 
 
 class SeriesIterable:
@@ -67,24 +70,28 @@ class Series:
         return s
 
     @staticmethod
-    def from_arrow(array: pa.Array | pa.ChunkedArray, name: str = "arrow_series") -> Series:
+    def from_arrow(
+        array: pa.Array | pa.ChunkedArray, name: str = "arrow_series", dtype: DataType | None = None
+    ) -> Series:
         """Construct a Series from an pyarrow array or chunked array.
 
         Args:
             array: The pyarrow (chunked) array whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
         """
         _ensure_registered_super_ext_type()
-        if DataType.from_arrow_type(array.type) == DataType.python():
+        if (dtype and dtype.is_python()) or DataType.from_arrow_type(array.type).is_python():
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
-                return series.cast(DataType.from_arrow_type(array.type))
+                return series.cast(dtype or DataType.from_arrow_type(array.type))
             else:
-                pys = PySeries.from_arrow(name, array)
+                pys = PySeries.from_arrow(name, array, dtype=dtype._dtype if dtype else None)
                 return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
             array = ensure_chunked_array(array)
@@ -94,7 +101,7 @@ class Series:
                 combined_array = arr_type.wrap_array(combined_storage_array)
             else:
                 combined_array = array.combine_chunks()
-            return Series.from_arrow(combined_array)
+            return Series.from_arrow(combined_array, name=name, dtype=dtype)
         else:
             raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 
@@ -102,21 +109,23 @@ class Series:
     def from_pylist(
         data: list[Any],
         name: str = "list_series",
+        dtype: DataType | None = None,
         pyobj: Literal["allow", "disallow", "force"] = "allow",
     ) -> Series:
         """Construct a Series from a Python list.
 
-        The resulting type depends on the setting of pyobjects:
+        If `dtype` is not defined, then the resulting type depends on the setting of `pyobj`:
             - ``"allow"``: Arrow-backed types if possible, else PyObject;
             - ``"disallow"``: Arrow-backed types only, raising error if not convertible;
-            - ``"force"``: Store as PyObject types.
+            - ``"force"``: Always store as PyObject types. Equivalent to `dtype=daft.DataType.python()`.
 
         Args:
             data: The Python list whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
             pyobj: Whether we want to ``"allow"`` coercion to Arrow types, ``"disallow"``
-                falling back to Python type representation, or ``"force"`` the data to only
-                have a Python type representation. Default is ``"allow"``.
+                falling back to Python type representation. Default is ``"allow"``.
         """
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
@@ -124,10 +133,12 @@ class Series:
         if pyobj not in {"allow", "disallow", "force"}:
             raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
 
-        if pyobj == "force":
-            pys = PySeries.from_pylist(name, data, pyobj=pyobj)
+        # If output is Python objects, we can just use the Python list directly.
+        if (dtype and dtype == DataType.python()) or pyobj == "force":
+            pys = PySeries.from_pylist(name, data, DataType.python()._dtype)
             return Series._from_pyseries(pys)
 
+        # Otherwise, try to infer from parameters provided
         try:
             # Workaround: wrap list of np.datetime64 in an np.array
             #   - https://github.com/apache/arrow/issues/40580
@@ -136,16 +147,19 @@ class Series:
                 np_arr = np.array(data)
                 arrow_array = pa.array(np_arr)
             else:
-                arrow_array = pa.array(data)
-            return Series.from_arrow(arrow_array, name=name)
-        except pa.lib.ArrowInvalid:
+                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
+            return Series.from_arrow(arrow_array, name=name, dtype=dtype)
+        except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError, pa.lib.ArrowNotImplementedError):
             if pyobj == "disallow":
                 raise
-            pys = PySeries.from_pylist(name, data, pyobj=pyobj)
+            dtype = dtype or DataType._infer_dtype_from_pylist(data) or DataType.python()
+            pys = PySeries.from_pylist(name, data, dtype._dtype)
             return Series._from_pyseries(pys)
 
     @classmethod
-    def from_numpy(cls, data: np.ndarray[Any, Any], name: str = "numpy_series") -> Series:
+    def from_numpy(
+        cls, data: np.ndarray[Any, Any], name: str = "numpy_series", dtype: DataType | None = None
+    ) -> Series:
         """Construct a Series from a NumPy ndarray.
 
         If the provided NumPy ndarray is 1-dimensional, Daft will attempt to store the ndarray
@@ -155,6 +169,8 @@ class Series:
         Args:
             data: The NumPy ndarray whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
         """
         if not isinstance(data, np.ndarray):
             raise TypeError(f"Expected a NumPy ndarray, got {type(data)}")
@@ -164,14 +180,14 @@ class Series:
             except pa.ArrowInvalid:
                 pass
             else:
-                return cls.from_arrow(arrow_array, name=name)
+                return cls.from_arrow(arrow_array, name=name, dtype=dtype)
         # TODO(Clark): Represent the tensor series with an Arrow extension type in order
         # to keep the series data contiguous.
         list_ndarray = [np.asarray(item) for item in data]
-        return cls.from_pylist(list_ndarray, name=name, pyobj="allow")
+        return cls.from_pylist(list_ndarray, name=name, dtype=dtype)
 
     @classmethod
-    def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series") -> Series:
+    def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series", dtype: DataType | None = None) -> Series:
         """Construct a Series from a pandas Series.
 
         This will first try to convert the series into a pyarrow array, then will fall
@@ -182,6 +198,8 @@ class Series:
         Args:
             data: The pandas Series whose data we wish to put in the Daft Series.
             name: The name associated with the Series; this is usually the column name.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
         """
         if not isinstance(data, pd.Series):
             raise TypeError(f"expected a pandas Series, got {type(data)}")
@@ -191,20 +209,20 @@ class Series:
         except pa.ArrowInvalid:
             pass
         else:
-            return cls.from_arrow(arrow_arr, name=name)
+            return cls.from_arrow(arrow_arr, name=name, dtype=dtype)
         # Second, fall back to NumPy path. Note that .from_numpy() does _not_ fall back to
         # the pylist representation for 1D arrays and instead raises an error that we can catch.
         # We do the pylist representation fallback ourselves since the pd.Series.to_list()
         # preserves more type information for types that are not natively representable in Python.
         try:
             ndarray = data.to_numpy()
-            return cls.from_numpy(ndarray, name=name)
+            return cls.from_numpy(ndarray, name=name, dtype=dtype)
         except Exception:
             pass
         # Finally, fall back to pylist path.
         # NOTE: For element types that don't have a native Python representation,
         # a Pandas scalar object will be returned.
-        return cls.from_pylist(data.to_list(), name=name, pyobj="force")
+        return cls.from_pylist(data.to_list(), name=name, dtype=dtype if dtype else DataType.python())
 
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
@@ -220,9 +238,9 @@ class Series:
         Do not call this method directly in Python; call cast() instead.
         """
         pylist = self.to_pylist()
-        return Series.from_pylist(pylist, self.name(), pyobj="force")
+        return Series.from_pylist(pylist, self.name(), dtype=DataType.python())
 
-    def _pycast_to_pynative(self, typefn: type) -> Series:
+    def _pycast_to_pynative(self, typefn: type, dtype: PyDataType) -> Series:
         """Apply Python-level casting to this Series.
 
         Call Series.to_pylist(), apply the Python cast (e.g. str(x)),
@@ -234,8 +252,8 @@ class Series:
         Do not call this method directly in Python; call cast() instead.
         """
         pylist = self.to_pylist()
-        pylist = [typefn(_) if _ is not None else None for _ in pylist]
-        return Series.from_pylist(pylist, self.name(), pyobj="disallow")
+        pylist = [typefn(val) if val is not None else None for val in pylist]
+        return Series.from_pylist(pylist, self.name(), pyobj="disallow", dtype=DataType._from_pydatatype(dtype))
 
     @staticmethod
     def concat(series: list[Series]) -> Series:
@@ -725,25 +743,25 @@ class Series:
                 [
                     builtins.list[Any],
                     builtins.str,
-                    Literal["allow", "disallow", "force"],
+                    DataType,
                 ],
                 Series,
             ],
             tuple[
                 builtins.list[Any],
                 builtins.str,
-                Literal["allow", "disallow", "force"],
+                DataType,
             ],
         ]
         | tuple[
-            Callable[[pa.Array | pa.ChunkedArray, builtins.str], Series],
-            tuple[pa.Array | pa.ChunkedArray, builtins.str],
+            Callable[[pa.Array | pa.ChunkedArray, builtins.str, DataType], Series],
+            tuple[pa.Array | pa.ChunkedArray, builtins.str, DataType],
         ]
     ):
         if self.datatype().is_python():
-            return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
+            return (Series.from_pylist, (self.to_pylist(), self.name(), self.datatype()))
         else:
-            return (Series.from_arrow, (self.to_arrow(), self.name()))
+            return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
 
     def _debug_bincode_serialize(self) -> bytes:
         return self._series._debug_bincode_serialize()
@@ -755,39 +773,45 @@ class Series:
     def _eval_expressions(
         self,
         func_name: builtins.str,
-        *others: Series | None,
+        *args: Any,
         **kwargs: Any,
     ) -> Series:
         from daft.expressions.expressions import lit
 
-        name = self._series.name()
-        s = self._series
-        other_series_list = []
-        col_names = []
-        for i, other in enumerate(others):
-            col_name = f"c{i}"
+        inputs: list[PySeries] = []
+        arg_exprs = []
+        kwarg_exprs = {}
 
-            if other is None:
-                continue
-            if not isinstance(other, Series):
-                try:
-                    other_series_list.append(Series.from_pylist([other])._series.rename(col_name))
-                    col_names.append(col_name)
-                except AttributeError:
-                    raise ValueError(f"expected another Series but got {type(other)}")
+        for arg in [self, *args]:
+            if isinstance(arg, Series):
+                index = len(inputs)
+                field = Field.create(arg.name(), arg.datatype())
+                inputs.append(arg._series)
+
+                arg_exprs.append(native.bound_col(index, field._field))
             else:
-                other_series_list.append(other._series.rename(col_name))
-                col_names.append(col_name)
+                arg_exprs.append(lit(arg)._expr)
 
-        rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
+        for name, arg in kwargs.items():
+            if arg is None:
+                continue
 
-        args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
+            if isinstance(arg, Series):
+                index = len(inputs)
+                field = Field.create(arg.name(), arg.datatype())
+                inputs.append(arg._series)
+
+                kwarg_exprs[name] = native.bound_col(index, field._field)
+            else:
+                kwarg_exprs[name] = lit(arg)._expr
+
+        rb = PyRecordBatch.from_pyseries_list(inputs)
 
         f = native.get_function_from_registry(func_name)
         expr = f(
-            *args,
-            **{name: lit(v)._expr if not isinstance(v, PyExpr) else v for name, v in kwargs.items() if v is not None},
-        ).alias(name)
+            *arg_exprs,
+            **kwarg_exprs,
+        ).alias(self.name())
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(0)
@@ -795,12 +819,14 @@ class Series:
 
 
 def item_to_series(name: str, item: Any) -> Series:
+    # Fast path
+    if isinstance(item, Series):
+        return item
+
     if isinstance(item, list):
         series = Series.from_pylist(item, name)
     elif np.module_available() and isinstance(item, np.ndarray):  # type: ignore[attr-defined]
         series = Series.from_numpy(item, name)
-    elif isinstance(item, Series):
-        series = item
     elif isinstance(item, (pa.Array, pa.ChunkedArray)):
         series = Series.from_arrow(item, name)
     elif pd.module_available() and isinstance(item, pd.Series):  # type: ignore[attr-defined]
@@ -825,9 +851,9 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
-    def _eval_expressions(self, func_name: builtins.str, *others: Series | None, **kwargs: Any) -> Series:
+    def _eval_expressions(self, func_name: builtins.str, *args: Any, **kwargs: Any) -> Series:
         s = Series._from_pyseries(self._series)
-        return s._eval_expressions(func_name, *others, **kwargs)
+        return s._eval_expressions(func_name, *args, **kwargs)
 
 
 class SeriesFloatNamespace(SeriesNamespace):
@@ -952,15 +978,14 @@ class SeriesStringNamespace(SeriesNamespace):
 
     def count_matches(
         self,
-        patterns: Series,
+        patterns: list[str],
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,
     ) -> Series:
-        pattern_expr = series_lit(patterns._series)
         return self._eval_expressions(
             "count_matches",
-            patterns=pattern_expr,
+            patterns=patterns,
             whole_words=whole_words,
             case_sensitive=case_sensitive,
         )
@@ -1085,8 +1110,7 @@ class SeriesListNamespace(SeriesNamespace):
         return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        desc_expr = series_lit(desc._series) if isinstance(desc, Series) else desc
-        return self._eval_expressions("list_sort", desc=desc_expr, nulls_first=nulls_first)
+        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
 
 class SeriesMapNamespace(SeriesNamespace):

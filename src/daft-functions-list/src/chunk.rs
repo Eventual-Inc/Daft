@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ impl ScalarUDF for ListChunk {
     fn name(&self) -> &'static str {
         "list_chunk"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, SchemaMismatch: "Expected 2 input args, got {}", inputs.len());
 
         let input = inputs.required((0, "input"))?;
@@ -30,7 +30,7 @@ impl ScalarUDF for ListChunk {
 
         input.list_chunk(size as _)
     }
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -49,14 +49,14 @@ impl ScalarUDF for ListChunk {
 
         ensure!(size > 0, ValueError: "Expected non zero integer for 'size'");
 
-        input_field
+        Ok(input_field
             .to_exploded_field()?
             .to_fixed_size_list_field(size)?
-            .to_list_field()
+            .to_list_field())
     }
 }
 
 #[must_use]
 pub fn list_chunk(expr: ExprRef, size: usize) -> ExprRef {
-    ScalarFunction::new(ListChunk, vec![expr, lit(size as u64)]).into()
+    ScalarFn::builtin(ListChunk, vec![expr, lit(size as u64)]).into()
 }

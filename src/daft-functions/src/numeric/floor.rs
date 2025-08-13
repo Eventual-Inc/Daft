@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub struct Floor;
 
 #[typetag::serde]
 impl ScalarUDF for Floor {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         input.floor()
     }
@@ -25,7 +25,7 @@ impl ScalarUDF for Floor {
         "floor"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -41,5 +41,5 @@ impl ScalarUDF for Floor {
 
 #[must_use]
 pub fn floor(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Floor {}, vec![input]).into()
+    ScalarFn::builtin(Floor {}, vec![input]).into()
 }

@@ -5,7 +5,9 @@ use super::{
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::MaterializedOutput, scheduling::task::TaskContext, utils::channel::OneshotSender,
+    pipeline_node::MaterializedOutput,
+    scheduling::task::{TaskContext, TaskResourceRequest},
+    utils::channel::OneshotSender,
 };
 
 mod default;
@@ -20,22 +22,22 @@ use tokio_util::sync::CancellationToken;
 
 pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
-    fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>);
-    fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>>;
-    fn get_autoscaling_request(&mut self) -> Option<usize>;
+    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>);
+    fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>>;
+    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;
 }
 
-pub(crate) struct SchedulableTask<T: Task> {
+pub(crate) struct PendingTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
-impl<T: Task> SchedulableTask<T> {
+impl<T: Task> PendingTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -57,14 +59,14 @@ impl<T: Task> SchedulableTask<T> {
         self,
     ) -> (
         T,
-        OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
     }
 }
 
-impl<T: Task> std::fmt::Debug for SchedulableTask<T> {
+impl<T: Task> std::fmt::Debug for PendingTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -75,21 +77,21 @@ impl<T: Task> std::fmt::Debug for SchedulableTask<T> {
     }
 }
 
-impl<T: Task> PartialEq for SchedulableTask<T> {
+impl<T: Task> PartialEq for PendingTask<T> {
     fn eq(&self, other: &Self) -> bool {
         self.task.task_id() == other.task.task_id()
     }
 }
 
-impl<T: Task> Eq for SchedulableTask<T> {}
+impl<T: Task> Eq for PendingTask<T> {}
 
-impl<T: Task> PartialOrd for SchedulableTask<T> {
+impl<T: Task> PartialOrd for PendingTask<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Task> Ord for SchedulableTask<T> {
+impl<T: Task> Ord for PendingTask<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.task.priority().cmp(&other.task.priority())
     }
@@ -97,13 +99,13 @@ impl<T: Task> Ord for SchedulableTask<T> {
 
 pub(super) struct ScheduledTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
 
 impl<T: Task> ScheduledTask<T> {
-    pub fn new(task: SchedulableTask<T>, worker_id: WorkerId) -> Self {
+    pub fn new(task: PendingTask<T>, worker_id: WorkerId) -> Self {
         let (task, result_tx, cancel_token) = task.into_inner();
         Self {
             task,
@@ -130,7 +132,7 @@ impl<T: Task> ScheduledTask<T> {
     ) -> (
         WorkerId,
         T,
-        OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.worker_id, self.task, self.result_tx, self.cancel_token)
@@ -141,10 +143,11 @@ impl<T: Task> std::fmt::Debug for ScheduledTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ScheduledTask(worker_id = {}, {:?}, {:?})",
+            "ScheduledTask(worker_id = {}, {:?}, {:?}, {:?})",
             self.worker_id,
             self.task.task_context(),
-            TaskDetails::from(&self.task)
+            TaskDetails::from(&self.task),
+            self.task.strategy()
         )
     }
 }
@@ -211,6 +214,9 @@ impl WorkerSnapshot {
 
     // TODO: Potentially include memory as well, and also be able to overschedule tasks.
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
+        if task.resource_request().num_gpus() > 0.0 && self.available_num_gpus() == 0.0 {
+            return false;
+        }
         self.available_num_cpus() >= task.resource_request().num_cpus()
     }
 }
@@ -270,15 +276,15 @@ pub(super) mod test_utils {
         scheduler
     }
 
-    pub fn create_schedulable_task(mock_task: MockTask) -> SchedulableTask<MockTask> {
-        SchedulableTask::new(
+    pub fn create_schedulable_task(mock_task: MockTask) -> PendingTask<MockTask> {
+        PendingTask::new(
             mock_task,
             tokio::sync::oneshot::channel().0,
             tokio_util::sync::CancellationToken::new(),
         )
     }
 
-    pub fn create_spread_task(id: Option<TaskID>) -> SchedulableTask<MockTask> {
+    pub fn create_spread_task(id: Option<TaskID>) -> PendingTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::Spread)
             .with_task_id(id.unwrap_or_default())
@@ -290,7 +296,7 @@ pub(super) mod test_utils {
         worker_id: &WorkerId,
         soft: bool,
         id: Option<TaskID>,
-    ) -> SchedulableTask<MockTask> {
+    ) -> PendingTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
                 worker_id: worker_id.clone(),

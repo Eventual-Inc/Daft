@@ -25,6 +25,8 @@ use tracing::instrument;
 
 use crate::{
     channel::{create_channel, Sender},
+    ops::NodeType,
+    pipeline::NodeName,
     sources::source::{Source, SourceStream},
     TaskSet,
 };
@@ -168,8 +170,13 @@ impl Source for ScanTaskSource {
         Ok(Box::pin(result_stream))
     }
 
-    fn name(&self) -> &'static str {
-        "ScanTaskSource"
+    fn name(&self) -> NodeName {
+        let format_name = self.scan_tasks[0].file_format_config.var_name();
+        format!("{} Scan", format_name).into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::ScanTask
     }
 
     fn multiline_display(&self) -> Vec<String> {

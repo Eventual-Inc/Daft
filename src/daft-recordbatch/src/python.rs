@@ -394,8 +394,8 @@ impl PyRecordBatch {
         Ok(self.record_batch.len())
     }
 
-    pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.record_batch.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.record_batch.size_bytes()
     }
 
     pub fn get_column(&self, idx: usize) -> PySeries {
@@ -486,7 +486,7 @@ impl PyRecordBatch {
     pub fn from_pyseries_list(pycolumns: Vec<PySeries>) -> PyResult<Self> {
         if pycolumns.is_empty() {
             return Ok(Self {
-                record_batch: RecordBatch::empty(None)?,
+                record_batch: RecordBatch::empty(None),
             });
         }
 
@@ -501,7 +501,7 @@ impl PyRecordBatch {
 
         if first == 0 {
             return Ok(Self {
-                record_batch: RecordBatch::empty(Some(Arc::new(Schema::new(fields)))).unwrap(),
+                record_batch: RecordBatch::empty(Some(Arc::new(Schema::new(fields)))),
             });
         }
 
@@ -519,12 +519,12 @@ impl PyRecordBatch {
 
     #[staticmethod]
     #[pyo3(signature = (schema=None))]
-    pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
-        Ok(RecordBatch::empty(match schema {
+    pub fn empty(schema: Option<PySchema>) -> Self {
+        RecordBatch::empty(match schema {
             Some(s) => Some(s.schema),
             None => None,
-        })?
-        .into())
+        })
+        .into()
     }
 
     pub fn to_file_infos(&self) -> PyResult<FileInfos> {

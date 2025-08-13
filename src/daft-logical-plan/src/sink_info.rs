@@ -217,17 +217,19 @@ where
 }
 
 impl SinkInfo {
-    pub fn bind(self, schema: &Schema) -> DaftResult<SinkInfo<BoundExpr>> {
+    pub fn bind(&self, schema: &Schema) -> DaftResult<SinkInfo<BoundExpr>> {
         match self {
-            Self::OutputFileInfo(output_file_info) => {
-                Ok(SinkInfo::OutputFileInfo(output_file_info.bind(schema)?))
-            }
+            Self::OutputFileInfo(output_file_info) => Ok(SinkInfo::OutputFileInfo(
+                output_file_info.clone().bind(schema)?,
+            )),
             #[cfg(feature = "python")]
             Self::CatalogInfo(catalog_info) => {
-                Ok(SinkInfo::CatalogInfo(catalog_info.bind(schema)?))
+                Ok(SinkInfo::CatalogInfo(catalog_info.clone().bind(schema)?))
             }
             #[cfg(feature = "python")]
-            Self::DataSinkInfo(data_sink_info) => Ok(SinkInfo::DataSinkInfo(data_sink_info)),
+            Self::DataSinkInfo(data_sink_info) => {
+                Ok(SinkInfo::DataSinkInfo(data_sink_info.clone()))
+            }
         }
     }
 }

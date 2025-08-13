@@ -15,7 +15,7 @@ httpx==0.27.2
 
 # Tracing
 orjson==3.10.12  # orjson recommended for viztracer
-py-spy==0.3.14
+py-spy>=0.3.14
 viztracer==0.15.6
 
 # Testing frameworks
@@ -36,7 +36,7 @@ pandas-stubs==2.2.2.240807
 xxhash>=3.0.0
 Pillow==10.4.0
 opencv-python==4.10.0.84
-tiktoken==0.7.0
+tiktoken==0.9.0
 duckdb==1.1.2
 
 # TQDM
@@ -46,7 +46,7 @@ tqdm
 # Pyarrow 19.0.0 has a forwards compatibility bug so we use pyarrow 19.0.1 instead.
 # Pyarrow 20.0.0 is incompatible with Ray hence we can't use newer versions for now.
 # See: https://github.com/Eventual-Inc/Daft/pull/4301
-pyarrow==19.0.1
+pyarrow==20.0.0
 pyarrow-stubs==19.4
 # Ray
 ray[data, client]==2.34.0
@@ -61,7 +61,7 @@ tenacity==8.2.3
 
 # Delta Lake
 deltalake==0.5.8; platform_system == "Windows"
-deltalake==0.19.2; platform_system != "Windows"
+deltalake==1.0.2; platform_system != "Windows"
 
 # Databricks
 databricks-sdk==0.12.0
@@ -82,7 +82,7 @@ s3fs==2023.12.0
 # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
 # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
 boto3==1.36.20
-boto3-stubs[essential,glue,s3,s3tables]==1.36.20
+boto3-stubs[essential,glue,s3,s3tables]==1.38.46
 moto[glue,s3,s3tables,server]==5.1.1
 
 # Azure
@@ -101,9 +101,14 @@ mkdocs-simple-hooks
 pymdown-extensions
 mkdocs-material[imaging]
 mkdocstrings-python
-ruff
+ruff==0.8.2
 mkdocs-minify-plugin
 mkdocs-redirects
+mkdocs-gen-files
+griffe
+mkdocs-literate-nav
+Jinja2
+./docs/plugins/
 
 # Daft connect testing
 pyspark==3.5.3
@@ -112,3 +117,4 @@ grpcio-status==1.67.0
 
 # ai
 vllm; platform_system == "Linux" and platform_machine == "x86_64" # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html
+openai

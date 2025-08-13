@@ -7,7 +7,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use common_file_formats::DatabaseSourceConfig;
@@ -19,8 +18,9 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_parquet::read::{
-    read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
+use daft_parquet::{
+    infer_arrow_schema_from_metadata,
+    read::{read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions},
 };
 use daft_recordbatch::RecordBatch;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
@@ -55,7 +55,9 @@ impl Display for TableState {
             Self::Loaded(tables) => {
                 writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
                 for tab in tables.iter() {
-                    writeln!(f, "{tab}")?;
+                    if !tab.is_empty() {
+                        writeln!(f, "{tab}")?;
+                    }
                 }
                 Ok(())
             }
@@ -385,7 +387,9 @@ impl MicroPartition {
         for batch in record_batches.iter() {
             assert!(
                 batch.schema == schema,
-                "Loaded MicroPartition's batch schema must match its own schema exactly"
+                "Loaded MicroPartition's batch schema must match its own schema exactly, found {} vs {}",
+                batch.schema,
+                schema,
             );
         }
 
@@ -556,14 +560,12 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
+    pub fn size_bytes(&self) -> Option<usize> {
         let guard = self.state.lock().unwrap();
         let size_bytes = if let TableState::Loaded(tables) = &*guard {
             let total_size: usize = tables
                 .iter()
                 .map(daft_recordbatch::RecordBatch::size_bytes)
-                .collect::<DaftResult<Vec<_>>>()?
-                .iter()
                 .sum();
             Some(total_size)
         } else if let TableState::Unloaded(scan_task) = &*guard {
@@ -574,7 +576,7 @@ impl MicroPartition {
             // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
             None
         };
-        Ok(size_bytes)
+        size_bytes
     }
 
     /// Retrieves tables from the MicroPartition, reading data if not already loaded.
@@ -609,24 +611,32 @@ impl MicroPartition {
         Ok(tables)
     }
 
-    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<RecordBatch>>> {
+    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
         let tables = self.tables_or_read(io_stats)?;
-        if tables.len() <= 1 {
-            return Ok(tables);
+        if tables.is_empty() {
+            Ok(None)
+        } else if tables.len() == 1 {
+            Ok(Some(tables[0].clone()))
+        } else {
+            Ok(Some(
+                RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
+                    .context(DaftCoreComputeSnafu)?,
+            ))
         }
+    }
 
-        let mut guard = self.state.lock().unwrap();
-
-        if tables.len() > 1 {
+    pub fn concat_or_get_update(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
+        let tables = self.tables_or_read(io_stats)?;
+        if tables.is_empty() {
+            Ok(None)
+        } else if tables.len() == 1 {
+            Ok(Some(tables[0].clone()))
+        } else {
+            let mut guard = self.state.lock().unwrap();
             let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
                 .context(DaftCoreComputeSnafu)?;
-            *guard = TableState::Loaded(Arc::new(vec![new_table]));
-        }
-        if let TableState::Loaded(tables) = &*guard {
-            assert_eq!(tables.len(), 1);
-            Ok(tables.clone())
-        } else {
-            unreachable!()
+            *guard = TableState::Loaded(Arc::new(vec![new_table.clone()]));
+            Ok(Some(new_table))
         }
     }
 
@@ -670,7 +680,7 @@ impl MicroPartition {
     }
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let buffer = Vec::with_capacity(self.size_bytes().unwrap_or(0));
         let schema = self.schema.to_arrow()?;
         let options = arrow2::io::ipc::write::WriteOptions { compression: None };
         let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
@@ -1143,7 +1153,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = Schema::from(schema);
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1167,7 +1178,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })

@@ -1,4 +1,4 @@
-use std::{any::Any, ops::Range, sync::Arc};
+use std::{any::Any, sync::Arc};
 
 use async_trait::async_trait;
 use azure_core::auth::TokenCredential;
@@ -18,14 +18,15 @@ use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, GetResult,
+    FileFormat, GetResult, InvalidRangeRequestSnafu,
 };
 
 const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
-const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com";
+const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com/.default";
 const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
 
 #[derive(Debug, Snafu)]
@@ -523,7 +524,7 @@ impl ObjectSource for AzureBlobSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let parsed_uri = parse_azure_uri(uri)?;
@@ -542,7 +543,16 @@ impl ObjectSource for AzureBlobSource {
         let blob_client = container_client.blob_client(key);
         let request_builder = blob_client.get();
         let request_builder = if let Some(range) = range {
-            request_builder.range(range)
+            range.validate().context(InvalidRangeRequestSnafu)?;
+            match range {
+                GetRange::Bounded(u) => request_builder.range(u),
+                // Note: if n is greater than file size, Azure will whole content.
+                GetRange::Offset(n) => request_builder.range(n..),
+                GetRange::Suffix(n) => {
+                    let size = self.get_size(uri, io_stats.clone()).await?;
+                    request_builder.range(size.saturating_sub(n)..)
+                }
+            }
         } else {
             request_builder
         };

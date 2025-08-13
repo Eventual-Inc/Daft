@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub struct Sqrt;
 
 #[typetag::serde]
 impl ScalarUDF for Sqrt {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         let casted_dtype = input.to_floating_data_type()?;
@@ -34,7 +34,7 @@ impl ScalarUDF for Sqrt {
         "sqrt"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -50,5 +50,5 @@ impl ScalarUDF for Sqrt {
 
 #[must_use]
 pub fn sqrt(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Sqrt {}, vec![input]).into()
+    ScalarFn::builtin(Sqrt {}, vec![input]).into()
 }

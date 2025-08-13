@@ -5,7 +5,7 @@ use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
         from_proto_vec,
-        functions::{from_proto_function, function_expr_to_proto},
+        functions::{from_proto_function, function_expr_to_proto, scalar_fn_to_proto},
         to_proto_vec, UNIT,
     },
 };
@@ -113,7 +113,7 @@ impl ToFromProto for ir::Expr {
                 Self::List(values)
             }
             proto::ExprVariant::Literal(literal) => {
-                let literal = ir::LiteralValue::from_proto(literal)?;
+                let literal = ir::Literal::from_proto(literal)?;
                 Self::Literal(literal)
             }
             proto::ExprVariant::IfElse(if_else) => {
@@ -272,10 +272,7 @@ impl ToFromProto for ir::Expr {
                     .into(),
                 )
             }
-            Self::ScalarFunction(scalar_function) => {
-                let function = scalar_function.to_proto()?;
-                proto::ExprVariant::Function(function)
-            }
+            Self::ScalarFn(sf) => proto::ExprVariant::Function(scalar_fn_to_proto(sf)?),
             Self::Subquery(_) => {
                 // todo(conner)
                 not_implemented_err!("subquery")
@@ -617,7 +614,7 @@ impl ToFromProto for ir::Operator {
     }
 }
 
-impl ToFromProto for ir::LiteralValue {
+impl ToFromProto for ir::Literal {
     type Message = proto::Literal;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
@@ -629,9 +626,6 @@ impl ToFromProto for ir::LiteralValue {
             proto::LiteralVariant::Boolean(b) => Self::Boolean(b),
             proto::LiteralVariant::Utf8(s) => Self::Utf8(s.into()),
             proto::LiteralVariant::Binary(items) => Self::Binary(items),
-            proto::LiteralVariant::FixedSizeBinary(fixed_size_binary) => {
-                Self::FixedSizeBinary(fixed_size_binary.value, fixed_size_binary.size as usize)
-            }
             proto::LiteralVariant::Int8(i) => Self::Int8(i as i8),
             proto::LiteralVariant::Uint8(i) => Self::UInt8(i as u8),
             proto::LiteralVariant::Int16(i) => Self::Int16(i as i16),
@@ -642,28 +636,29 @@ impl ToFromProto for ir::LiteralValue {
             proto::LiteralVariant::Uint64(i) => Self::UInt64(i),
             proto::LiteralVariant::Timestamp(_) => {
                 // let unit = daft_ir::schema::TimeUnit::from_proto(timestamp.unit)?;
-                // LiteralValue::Timestamp(timestamp.value, unit, timestamp.timezone)
+                // Literal::Timestamp(timestamp.value, unit, timestamp.timezone)
                 not_implemented_err!("literal_timestamp")
             }
             proto::LiteralVariant::Date(days) => Self::Date(days),
             proto::LiteralVariant::Time(_) => {
                 // let unit = daft_ir::schema::TimeUnit::from_proto(time.unit)?;
-                // LiteralValue::Time(time.value, unit)
+                // Literal::Time(time.value, unit)
                 not_implemented_err!("literal_time")
             }
             proto::LiteralVariant::Duration(_duration) => {
                 // let unit = daft_ir::schema::TimeUnit::from_proto(duration.unit)?;
-                // LiteralValue::Duration(duration.value, unit)
+                // Literal::Duration(duration.value, unit)
                 not_implemented_err!("literal_duration")
             }
             proto::LiteralVariant::Interval(_interval) => {
-                // LiteralValue::Interval(daft_ir::IntervalValue {
+                // Literal::Interval(daft_ir::IntervalValue {
                 //     months: interval.months,
                 //     days: interval.days,
                 //     nanoseconds: interval.nanoseconds,
                 // })
                 not_implemented_err!("literal_interval")
             }
+            proto::LiteralVariant::Float32(f) => Self::Float32(f),
             proto::LiteralVariant::Float64(f) => Self::Float64(f),
             proto::LiteralVariant::Decimal(_decimal) => {
                 // TODO: Implement decimal parsing from string
@@ -688,12 +683,6 @@ impl ToFromProto for ir::LiteralValue {
             Self::Boolean(bool) => proto::LiteralVariant::Boolean(*bool),
             Self::Utf8(s) => proto::LiteralVariant::Utf8(s.to_string()),
             Self::Binary(items) => proto::LiteralVariant::Binary(items.clone()),
-            Self::FixedSizeBinary(items, size) => {
-                proto::LiteralVariant::FixedSizeBinary(proto::literal::FixedSizeBinary {
-                    value: items.clone(),
-                    size: *size as u64,
-                })
-            }
             Self::Int8(i) => proto::LiteralVariant::Int8(*i as i32),
             Self::UInt8(i) => proto::LiteralVariant::Uint8(*i as u32),
             Self::Int16(i) => proto::LiteralVariant::Int16(*i as i32),
@@ -727,13 +716,14 @@ impl ToFromProto for ir::LiteralValue {
                     nanoseconds: interval_value.nanoseconds,
                 })
             }
+            Self::Float32(f) => proto::LiteralVariant::Float32(*f),
             Self::Float64(f) => proto::LiteralVariant::Float64(*f),
             Self::Decimal(value, precision, scale) => {
                 proto::LiteralVariant::Decimal(proto::literal::Decimal {
                     value: display_decimal128(*value, *precision, *scale),
                 })
             }
-            Self::Series(_) => not_implemented_err!("series literal"),
+            Self::List(_) => not_implemented_err!("list literal"),
             #[cfg(feature = "python")]
             Self::Python(_) => todo!("python literal"),
             Self::Struct(struct_) => {
@@ -746,6 +736,11 @@ impl ToFromProto for ir::LiteralValue {
                 }
                 proto::LiteralVariant::Struct(proto::literal::Struct { fields })
             }
+            Self::Tensor { .. } => not_implemented_err!("tensor literal"),
+            Self::SparseTensor { .. } => not_implemented_err!("sparse tensor literal"),
+            Self::Embedding { .. } => not_implemented_err!("embedding literal"),
+            Self::Map { .. } => not_implemented_err!("map literal"),
+            Self::Image(_) => not_implemented_err!("image literal"),
         };
         Ok(proto::Literal {
             variant: Some(variant),

@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub struct Ceil;
 
 #[typetag::serde]
 impl ScalarUDF for Ceil {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         match input.data_type() {
             DataType::Int8
@@ -40,7 +40,7 @@ impl ScalarUDF for Ceil {
         "ceil"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -56,5 +56,5 @@ impl ScalarUDF for Ceil {
 
 #[must_use]
 pub fn ceil(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Ceil {}, vec![input]).into()
+    ScalarFn::builtin(Ceil {}, vec![input]).into()
 }

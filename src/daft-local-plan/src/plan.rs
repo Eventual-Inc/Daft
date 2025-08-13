@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{ensure, DaftError, DaftResult};
 #[cfg(feature = "python")]
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use common_py_serde::{deserialize_py_object, serialize_py_object, PyObjectWrapper};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
@@ -13,9 +13,10 @@ use daft_dsl::{
         BoundColumn,
     },
     functions::python::get_resource_request,
-    Column, WindowExpr, WindowFrame,
+    Column, WindowExpr, WindowFrame, WindowSpec,
 };
 use daft_logical_plan::{
+    partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
 };
@@ -29,10 +30,9 @@ pub enum LocalPhysicalPlan {
     EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
-    ActorPoolProject(ActorPoolProject),
-    #[cfg(feature = "python")]
-    DistributedActorPoolProject(DistributedActorPoolProject),
+    UDFProject(UDFProject),
     Filter(Filter),
+    IntoBatches(IntoBatches),
     Limit(Limit),
     Explode(Explode),
     Unpivot(Unpivot),
@@ -70,6 +70,11 @@ pub enum LocalPhysicalPlan {
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
     WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
     WindowOrderByOnly(WindowOrderByOnly),
+
+    // Flotilla Only Nodes
+    Repartition(Repartition),
+    #[cfg(feature = "python")]
+    DistributedActorPoolProject(DistributedActorPoolProject),
 }
 
 impl LocalPhysicalPlan {
@@ -91,8 +96,9 @@ impl LocalPhysicalPlan {
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
-            | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
+            | Self::IntoBatches(IntoBatches { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
             | Self::Unpivot(Unpivot { stats_state, .. })
@@ -109,6 +115,7 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
+            | Self::Repartition(Repartition { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -183,15 +190,32 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn into_batches(
+        input: LocalPhysicalPlanRef,
+        batch_size: usize,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::IntoBatches(IntoBatches {
+            input,
+            batch_size,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn limit(
         input: LocalPhysicalPlanRef,
-        num_rows: i64,
+        limit: u64,
+        offset: Option<u64>,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Limit(Limit {
             input,
-            num_rows,
+            limit,
+            offset,
             schema,
             stats_state,
         })
@@ -228,15 +252,17 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn actor_pool_project(
+    pub fn udf_project(
         input: LocalPhysicalPlanRef,
-        projection: Vec<BoundExpr>,
+        project: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
-        Self::ActorPoolProject(ActorPoolProject {
+        Self::UDFProject(UDFProject {
             input,
-            projection,
+            project,
+            passthrough_columns,
             schema,
             stats_state,
         })
@@ -246,7 +272,7 @@ impl LocalPhysicalPlan {
     #[cfg(feature = "python")]
     pub fn distributed_actor_pool_project(
         input: LocalPhysicalPlanRef,
-        actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+        actor_objects: Vec<PyObjectWrapper>,
         batch_size: Option<usize>,
         memory_request: u64,
         schema: SchemaRef,
@@ -262,7 +288,7 @@ impl LocalPhysicalPlan {
         })
         .arced()
     }
-    pub(crate) fn ungrouped_aggregate(
+    pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
         schema: SchemaRef,
@@ -277,7 +303,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn hash_aggregate(
+    pub fn hash_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
         group_by: Vec<BoundExpr>,
@@ -294,7 +320,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn dedup(
+    pub fn dedup(
         input: LocalPhysicalPlanRef,
         columns: Vec<BoundExpr>,
         schema: SchemaRef,
@@ -309,7 +335,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn window_partition_only(
+    pub fn window_partition_only(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<BoundExpr>,
         schema: SchemaRef,
@@ -329,7 +355,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_partition_and_order_by(
+    pub fn window_partition_and_order_by(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
@@ -355,7 +381,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_partition_and_dynamic_frame(
+    pub fn window_partition_and_dynamic_frame(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
@@ -385,7 +411,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_order_by_only(
+    pub fn window_order_by_only(
         input: LocalPhysicalPlanRef,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -453,7 +479,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn sort(
+    pub fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -472,12 +498,13 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn top_n(
+    pub fn top_n(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
-        limit: i64,
+        limit: u64,
+        offset: Option<u64>,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
@@ -487,6 +514,7 @@ impl LocalPhysicalPlan {
             descending,
             nulls_first,
             limit,
+            offset,
             schema,
             stats_state,
         })
@@ -512,15 +540,17 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn monotonically_increasing_id(
+    pub fn monotonically_increasing_id(
         input: LocalPhysicalPlanRef,
         column_name: String,
+        starting_offset: Option<u64>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
+            starting_offset,
             schema,
             stats_state,
         })
@@ -528,7 +558,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn hash_join(
+    pub fn hash_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         left_on: Vec<BoundExpr>,
@@ -551,7 +581,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn cross_join(
+    pub fn cross_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         schema: SchemaRef,
@@ -665,15 +695,33 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn repartition(
+        input: LocalPhysicalPlanRef,
+        repartition_spec: RepartitionSpec,
+        num_partitions: usize,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::Repartition(Repartition {
+            input,
+            repartition_spec,
+            num_partitions,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
             | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
+            | Self::IntoBatches(IntoBatches { schema, .. })
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
-            | Self::ActorPoolProject(ActorPoolProject { schema, .. })
+            | Self::UDFProject(UDFProject { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Dedup(Dedup { schema, .. })
@@ -704,6 +752,7 @@ impl LocalPhysicalPlan {
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
+            Self::Repartition(Repartition { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
@@ -712,14 +761,8 @@ impl LocalPhysicalPlan {
     pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
         let mut base = ResourceRequest::default_cpu();
         self.apply(|plan| match plan.as_ref() {
-            Self::Project(Project { projection, .. }) => {
-                if let Some(resource_request) = get_resource_request(projection) {
-                    base = base.max(&resource_request);
-                }
-                Ok(TreeNodeRecursion::Continue)
-            }
-            Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
-                if let Some(resource_request) = get_resource_request(projection) {
+            Self::UDFProject(UDFProject { project, .. }) => {
+                if let Some(resource_request) = get_resource_request([project]) {
                     base = base.max(&resource_request);
                 }
                 Ok(TreeNodeRecursion::Continue)
@@ -748,8 +791,9 @@ impl LocalPhysicalPlan {
             | Self::InMemoryScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
+            | Self::IntoBatches(IntoBatches { input, .. })
             | Self::Project(Project { input, .. })
-            | Self::ActorPoolProject(ActorPoolProject { input, .. })
+            | Self::UDFProject(UDFProject { input, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { input, .. })
             | Self::HashAggregate(HashAggregate { input, .. })
             | Self::Dedup(Dedup { input, .. })
@@ -780,6 +824,7 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { input, .. }) => {
                 vec![input.clone()]
             }
+            Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
         }
@@ -790,10 +835,11 @@ impl LocalPhysicalPlan {
             [new_child] => match self {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
                 | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
-                Self::Filter(Filter {  predicate, schema,..  }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
-                Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
+                Self::Filter(Filter { predicate, .. }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
+                Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::into_batches(new_child.clone(), *batch_size, StatsState::NotMaterialized),
+                Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -803,12 +849,12 @@ impl LocalPhysicalPlan {
                 Self::Explode(Explode {  to_explode, schema, .. }) => Self::explode(new_child.clone(), to_explode.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Unpivot(Unpivot {  ids, values, variable_name, value_name, schema, .. }) => Self::unpivot(new_child.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Concat(Concat {  other, schema, .. }) => Self::concat(new_child.clone(), other.clone(), StatsState::NotMaterialized),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {  column_name, schema, .. }) => Self::monotonically_increasing_id(new_child.clone(), column_name.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {  column_name, starting_offset, schema, .. }) => Self::monotonically_increasing_id(new_child.clone(), column_name.clone(), *starting_offset, schema.clone(), StatsState::NotMaterialized),
                 Self::WindowPartitionOnly(WindowPartitionOnly {  partition_by, schema, aggregations, aliases, .. }) => Self::window_partition_only(new_child.clone(), partition_by.clone(), schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
                 Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {  partition_by, order_by, descending, nulls_first, schema, functions, aliases, .. }) => Self::window_partition_and_order_by(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
                 Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {  partition_by, order_by, descending, nulls_first, frame, min_periods, schema, aggregations, aliases, .. }) => Self::window_partition_and_dynamic_frame(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), frame.clone(), *min_periods, schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
                 Self::WindowOrderByOnly(WindowOrderByOnly {  order_by, descending, nulls_first, schema, functions, aliases, .. }) => Self::window_order_by_only(new_child.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
-                Self::TopN(TopN {  sort_by, descending, nulls_first, limit, schema, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, StatsState::NotMaterialized),
+                Self::TopN(TopN { sort_by, descending, nulls_first, limit, offset, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::PhysicalWrite(PhysicalWrite {  data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(new_child.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
                 Self::CommitWrite(CommitWrite {  input, stats_state, file_schema, file_info, .. }) => Self::commit_write(new_child.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
@@ -819,6 +865,7 @@ impl LocalPhysicalPlan {
                 Self::LanceWrite(LanceWrite {  lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(new_child.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
                 Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
+                Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -913,9 +960,10 @@ pub struct Project {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ActorPoolProject {
+pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
-    pub projection: Vec<BoundExpr>,
+    pub project: BoundExpr,
+    pub passthrough_columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -924,7 +972,7 @@ pub struct ActorPoolProject {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DistributedActorPoolProject {
     pub input: LocalPhysicalPlanRef,
-    pub actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+    pub actor_objects: Vec<PyObjectWrapper>,
     pub batch_size: Option<usize>,
     pub memory_request: u64,
     pub schema: SchemaRef,
@@ -939,9 +987,18 @@ pub struct Filter {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct IntoBatches {
+    pub input: LocalPhysicalPlanRef,
+    pub batch_size: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
-    pub num_rows: i64,
+    pub limit: u64,
+    pub offset: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -970,7 +1027,8 @@ pub struct TopN {
     pub sort_by: Vec<BoundExpr>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
-    pub limit: i64,
+    pub limit: u64,
+    pub offset: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -989,6 +1047,7 @@ pub struct Sample {
 pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
     pub column_name: String,
+    pub starting_offset: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -1163,4 +1222,13 @@ pub struct WindowOrderByOnly {
     pub stats_state: StatsState,
     pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Repartition {
+    pub input: LocalPhysicalPlanRef,
+    pub repartition_spec: RepartitionSpec,
+    pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
 }

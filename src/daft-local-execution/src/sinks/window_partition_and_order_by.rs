@@ -13,11 +13,12 @@ use tracing::{instrument, Span};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
+        BlockingSinkSinkResult, BlockingSinkStatus,
     },
-    window_base::{base_sink, WindowBaseState, WindowSinkParams},
+    window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::ExecutionTaskSpawner;
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 struct WindowPartitionAndOrderByParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -76,27 +77,34 @@ impl WindowPartitionAndOrderBySink {
 }
 
 impl BlockingSink for WindowPartitionAndOrderBySink {
+    type State = WindowBaseState;
+
     #[instrument(skip_all, name = "WindowPartitionAndOrderBySink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
-        base_sink(
-            self.window_partition_and_order_by_params.clone(),
-            input,
-            state,
-            spawner,
-        )
+    ) -> BlockingSinkSinkResult<Self> {
+        let params = self.window_partition_and_order_by_params.clone();
+        let sink_name = params.name().to_string();
+        spawner
+            .spawn(
+                async move {
+                    state.push(input, params.partition_by(), &sink_name)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
+            .into()
     }
 
     #[instrument(skip_all, name = "WindowPartitionAndOrderBySink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.window_partition_and_order_by_params.clone();
         let num_partitions = self.num_partitions();
 
@@ -105,14 +113,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                 async move {
                     let mut state_iters = states
                         .into_iter()
-                        .map(|mut state| {
-                            state
-                                .as_any_mut()
-                                .downcast_mut::<WindowBaseState>()
-                                .expect("WindowPartitionAndOrderBySink should have WindowBaseState")
-                                .finalize(params.name())
-                                .into_iter()
-                        })
+                        .map(|mut state| state.finalize(params.name()).into_iter())
                         .collect::<Vec<_>>();
 
                     let mut per_partition_tasks = tokio::task::JoinSet::new();
@@ -145,7 +146,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             if input_data.is_empty() {
-                                return RecordBatch::empty(Some(params.original_schema.clone()));
+                                return Ok(RecordBatch::empty(Some(
+                                    params.original_schema.clone(),
+                                )));
                             }
 
                             let groupby_table =
@@ -233,7 +236,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                            empty_result,
+                        )]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -241,15 +246,21 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         results.into(),
                         None,
                     );
-                    Ok(Some(Arc::new(final_result)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        final_result,
+                    )]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowPartitionAndOrderBy"
+    fn name(&self) -> NodeName {
+        "WindowPartitionAndOrderBy".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::WindowPartitionAndOrderBy
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -288,7 +299,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         WindowBaseState::make_base_state(self.num_partitions())
     }
 }

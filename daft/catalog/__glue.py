@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
     from daft.unity_catalog import UnityCatalogTable
 else:
     GlueClient = Any
@@ -151,6 +152,7 @@ class GlueCatalog(Catalog):
         identifier: Identifier,
         schema: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         # Table creation implementation will be added later
         raise NotImplementedError("Table creation not yet implemented")
@@ -471,7 +473,7 @@ class GlueIcebergTable(GlueTable):
         return gc._convert_glue_to_iceberg(table)
 
     def read(self, **options: Any) -> DataFrame:
-        from daft.io._iceberg import read_iceberg
+        from daft.io.iceberg._iceberg import read_iceberg
 
         return read_iceberg(
             table=self._pyiceberg_table, snapshot_id=options.get("snapshot_id"), io_config=self._io_config
@@ -532,7 +534,7 @@ class GlueDeltaTable(GlueTable):
         return UnityCatalogTable(table_info, table_uri, io_config)
 
     def read(self, **options: Any) -> DataFrame:
-        from daft.io._deltalake import read_deltalake
+        from daft.io.delta_lake._deltalake import read_deltalake
 
         return read_deltalake(
             table=self._unity_catalog_table,

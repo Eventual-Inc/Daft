@@ -6,31 +6,30 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
-        EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
-        MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
-        PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
-        RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitActorPoolProjects, SplitGranularProjection, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
+        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
+        PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
+        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
+        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
-use crate::{
-    optimization::rules::{PushDownShard, ShardScans},
-    LogicalPlan,
-};
+use crate::LogicalPlan;
 
 /// Config for optimizer.
 #[derive(Debug)]
 pub struct OptimizerConfig {
     // Default maximum number of optimization passes the optimizer will make over a fixed-point RuleBatch.
     pub default_max_optimizer_passes: usize,
+    pub strict_pushdown: bool,
 }
 
 impl OptimizerConfig {
-    fn new(max_optimizer_passes: usize) -> Self {
+    fn new(max_optimizer_passes: usize, strict_pushdown: bool) -> Self {
         Self {
             default_max_optimizer_passes: max_optimizer_passes,
+            strict_pushdown,
         }
     }
 }
@@ -38,7 +37,7 @@ impl OptimizerConfig {
 impl Default for OptimizerConfig {
     fn default() -> Self {
         // Default to a max of 5 optimizer passes for a given batch.
-        Self::new(20)
+        Self::new(20, false)
     }
 }
 
@@ -62,7 +61,7 @@ impl RuleBatch {
     }
 
     /// Get the maximum number of passes the optimizer should make over this rule batch.
-    fn max_passes(&self, config: &OptimizerConfig) -> usize {
+    pub fn max_passes(&self, config: &OptimizerConfig) -> usize {
         use RuleExecutionStrategy::*;
 
         match self.strategy {
@@ -86,117 +85,12 @@ pub enum RuleExecutionStrategy {
     FixedPoint(Option<usize>),
 }
 
+#[derive(Default)]
 pub struct OptimizerBuilder {
     // Batches of rules for the optimizer to apply.
     rule_batches: Vec<RuleBatch>,
     // Config for optimizer.
     config: OptimizerConfig,
-}
-
-impl Default for OptimizerBuilder {
-    fn default() -> Self {
-        Self {
-            rule_batches: vec![
-                // --- Rewrite rules ---
-                RuleBatch::new(
-                    vec![
-                        Box::new(LiftProjectFromAgg::new()),
-                        Box::new(RewriteCountDistinct::new()),
-                        Box::new(UnnestScalarSubquery::new()),
-                        Box::new(UnnestPredicateSubquery::new()),
-                        Box::new(EliminateSubqueryAliasRule::new()),
-                        Box::new(ExtractWindowFunction::new()),
-                    ],
-                    RuleExecutionStrategy::FixedPoint(None),
-                ),
-                // we want to simplify expressions first to make the rest of the rules easier
-                RuleBatch::new(
-                    vec![Box::new(SimplifyExpressionsRule::new())],
-                    RuleExecutionStrategy::FixedPoint(None),
-                ),
-                // --- Filter out null join keys ---
-                // This rule should be run once, before any filter pushdown rules.
-                RuleBatch::new(
-                    vec![Box::new(FilterNullJoinKey::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-                // --- Anti/semi join pushdowns ---
-                // This needs to be separate from PushDownProjection and PushDownFilter
-                // because otherwise they will just keep swapping places.
-                // We ultimately do want filters to go before joins, so we run this rule before PushDownFilter.
-                RuleBatch::new(
-                    vec![Box::new(PushDownAntiSemiJoin::new())],
-                    RuleExecutionStrategy::FixedPoint(None),
-                ),
-                // --- Bulk of our rules ---
-                RuleBatch::new(
-                    vec![
-                        Box::new(DropRepartition::new()),
-                        Box::new(PushDownFilter::new()),
-                        Box::new(PushDownProjection::new()),
-                        Box::new(EliminateCrossJoin::new()),
-                        Box::new(SimplifyNullFilteredJoin::new()),
-                        Box::new(PushDownJoinPredicate::new()),
-                    ],
-                    // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
-                    // at the current node, which would require another batch application in order to have a chance to push
-                    // that Filter node through upstream nodes.
-                    // TODO(Clark): Refine this fixed-point policy.
-                    RuleExecutionStrategy::FixedPoint(None),
-                ),
-                // --- Limit pushdowns ---
-                // This needs to be separate from PushDownProjection because otherwise the limit and
-                // projection just keep swapping places, preventing optimization
-                // (see https://github.com/Eventual-Inc/Daft/issues/2616)
-                RuleBatch::new(
-                    vec![Box::new(PushDownLimit::new())],
-                    RuleExecutionStrategy::FixedPoint(Some(3)),
-                ),
-                // --- Rewrite projections ---
-                // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.
-                // By delaying these rewrite rules, we avoid having to special case optimization rules for
-                // actor pool projects and monotonically increasing ids.
-                RuleBatch::new(
-                    vec![
-                        Box::new(SplitActorPoolProjects::new()),
-                        Box::new(DetectMonotonicId::new()),
-                    ],
-                    RuleExecutionStrategy::Once,
-                ),
-                // Push down projections after rewriting projections.
-                RuleBatch::new(
-                    vec![Box::new(PushDownProjection::new())],
-                    RuleExecutionStrategy::FixedPoint(None),
-                ),
-                // --- Shard pushdowns ---
-                RuleBatch::new(
-                    vec![Box::new(PushDownShard::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-                // --- Simplify expressions before scans are materialized ---
-                RuleBatch::new(
-                    vec![Box::new(SimplifyExpressionsRule::new())],
-                    RuleExecutionStrategy::FixedPoint(None),
-                ),
-                // --- Materialize scan nodes ---
-                RuleBatch::new(
-                    vec![Box::new(MaterializeScans::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-                // --- Shard scans ---
-                RuleBatch::new(
-                    vec![Box::new(ShardScans::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-                // --- Enrich logical plan with stats ---
-                RuleBatch::new(
-                    vec![Box::new(EnrichWithStats::new())],
-                    RuleExecutionStrategy::Once,
-                ),
-            ],
-            config: Default::default(),
-        }
-    }
 }
 
 impl OptimizerBuilder {
@@ -207,11 +101,120 @@ impl OptimizerBuilder {
         }
     }
 
+    pub fn with_default_optimizations(mut self) -> Self {
+        self.rule_batches.extend(vec![
+            // --- Rewrite rules ---
+            RuleBatch::new(
+                vec![
+                    Box::new(LiftProjectFromAgg::new()),
+                    Box::new(RewriteCountDistinct::new()),
+                    Box::new(UnnestScalarSubquery::new()),
+                    Box::new(UnnestPredicateSubquery::new()),
+                    Box::new(EliminateSubqueryAliasRule::new()),
+                    Box::new(ExtractWindowFunction::new()),
+                    Box::new(SplitExplodeFromProject::new()),
+                ],
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // we want to simplify expressions first to make the rest of the rules easier
+            RuleBatch::new(
+                vec![Box::new(SimplifyExpressionsRule::new())],
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Filter out null join keys ---
+            // This rule should be run once, before any filter pushdown rules.
+            RuleBatch::new(
+                vec![Box::new(FilterNullJoinKey::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Anti/semi join pushdowns ---
+            // This needs to be separate from PushDownProjection and PushDownFilter
+            // because otherwise they will just keep swapping places.
+            // We ultimately do want filters to go before joins, so we run this rule before PushDownFilter.
+            RuleBatch::new(
+                vec![Box::new(PushDownAntiSemiJoin::new())],
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Bulk of our rules ---
+            RuleBatch::new(
+                vec![
+                    Box::new(DropRepartition::new()),
+                    Box::new(DropIntoBatches::new()),
+                    Box::new(PushDownFilter::new(self.config.strict_pushdown)),
+                    Box::new(PushDownProjection::new()),
+                    Box::new(EliminateCrossJoin::new()),
+                    Box::new(SimplifyNullFilteredJoin::new()),
+                    Box::new(PushDownJoinPredicate::new()),
+                    Box::new(EliminateOffsets::new()),
+                ],
+                // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
+                // at the current node, which would require another batch application in order to have a chance to push
+                // that Filter node through upstream nodes.
+                // TODO(Clark): Refine this fixed-point policy.
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Rewrite Offset and Pushdown Limit ---
+            // This needs to be separate from PushDownProjection because otherwise the limit and
+            // projection just keep swapping places, preventing optimization
+            // (see https://github.com/Eventual-Inc/Daft/issues/2616)
+            RuleBatch::new(
+                vec![
+                    Box::new(RewriteOffset::new()),
+                    Box::new(PushDownLimit::new()),
+                ],
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
+            // --- Rewrite projections ---
+            // Once optimization rules have been applied, split UDFs and detect monotonic IDs.
+            // By delaying these rewrite rules, we avoid having to special case optimization rules for
+            // UDFs and monotonically increasing ids.
+            RuleBatch::new(
+                vec![
+                    Box::new(SplitUDFs::new()),
+                    Box::new(PushDownProjection::new()),
+                    Box::new(DetectMonotonicId::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            ),
+            // Push down projections after rewriting projections.
+            RuleBatch::new(
+                vec![Box::new(PushDownProjection::new())],
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Shard pushdowns ---
+            RuleBatch::new(
+                vec![Box::new(PushDownShard::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Simplify expressions before scans are materialized ---
+            RuleBatch::new(
+                vec![Box::new(SimplifyExpressionsRule::new())],
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Materialize scan nodes ---
+            RuleBatch::new(
+                vec![Box::new(MaterializeScans::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Shard scans ---
+            RuleBatch::new(
+                vec![Box::new(ShardScans::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Enrich logical plan with stats ---
+            RuleBatch::new(
+                vec![Box::new(EnrichWithStats::new())],
+                RuleExecutionStrategy::Once,
+            ),
+        ]);
+        self
+    }
+
     pub fn reorder_joins(mut self) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new()),
-                Box::new(PushDownFilter::new()),
+                Box::new(PushDownFilter::new(self.config.strict_pushdown)),
                 Box::new(PushDownProjection::new()),
                 Box::new(EnrichWithStats::new()),
             ],
@@ -375,13 +378,13 @@ mod tests {
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
-        functions::{python::PythonUDF, FunctionExpr},
+        functions::{python::LegacyPythonUDF, FunctionExpr},
         lit, resolved_col, unresolved_col, Expr,
     };
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
-        ops::{ActorPoolProject, Filter, Project},
+        ops::{Filter, Project, UDFProject},
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
@@ -396,7 +399,7 @@ mod tests {
                 vec![Box::new(NoOp::new())],
                 RuleExecutionStrategy::Once,
             )],
-            OptimizerConfig::new(5),
+            OptimizerConfig::new(5, false),
         );
         let plan: Arc<LogicalPlan> =
             dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)])).build();
@@ -443,7 +446,7 @@ mod tests {
                 vec![Box::new(RotateProjection::new(false))],
                 RuleExecutionStrategy::FixedPoint(Some(20)),
             )],
-            OptimizerConfig::new(20),
+            OptimizerConfig::new(20, false),
         );
         let proj_exprs = vec![
             unresolved_col("a").add(lit(1)),
@@ -478,7 +481,7 @@ mod tests {
                 vec![Box::new(RotateProjection::new(true))],
                 RuleExecutionStrategy::FixedPoint(Some(20)),
             )],
-            OptimizerConfig::new(20),
+            OptimizerConfig::new(20, false),
         );
         let proj_exprs = vec![
             unresolved_col("a").add(lit(1)),
@@ -529,7 +532,7 @@ mod tests {
                     RuleExecutionStrategy::Once,
                 ),
             ],
-            OptimizerConfig::new(20),
+            OptimizerConfig::new(20, false),
         );
         let proj_exprs = vec![
             unresolved_col("a").add(lit(1)),
@@ -673,7 +676,7 @@ mod tests {
                 ],
                 RuleExecutionStrategy::Once,
             )],
-            OptimizerConfig::new(5),
+            OptimizerConfig::new(5, false),
         )
     }
 
@@ -687,7 +690,7 @@ mod tests {
 
         // Create an actor pool project expression.
         let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::new_testing_udf()),
+            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
             inputs: vec![resolved_col("a").into()],
         });
 
@@ -704,10 +707,11 @@ mod tests {
         )
         .limit(limit, false)?
         .build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            vec![actor_pool_expr.alias("a")],
+            actor_pool_expr.alias("a"),
+            vec![],
         )?)
         .arced();
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
@@ -721,7 +725,9 @@ mod tests {
             .data;
 
         // Check that the limit commutes with the actor pool project.
-        let optimizer = OptimizerBuilder::default().build();
+        let optimizer = OptimizerBuilder::default()
+            .with_default_optimizations()
+            .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
             opt_plan,
@@ -742,7 +748,7 @@ mod tests {
 
         // Create an actor pool project expression.
         let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::new_testing_udf()),
+            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
             inputs: vec![resolved_col("a").into()],
         });
 
@@ -761,10 +767,11 @@ mod tests {
             Pushdowns::default().with_filters(Some(resolved_col("a").lt(lit(2)))),
         )
         .build();
-        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            vec![resolved_col("a"), actor_pool_expr.alias("renamed_col")],
+            actor_pool_expr.alias("renamed_col"),
+            vec![resolved_col("a")],
         )?)
         .arced();
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
@@ -778,7 +785,9 @@ mod tests {
             .data;
 
         // Check that the filter commutes with the actor pool project.
-        let optimizer = OptimizerBuilder::default().build();
+        let optimizer = OptimizerBuilder::default()
+            .with_default_optimizations()
+            .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
             opt_plan,

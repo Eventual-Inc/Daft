@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ impl ScalarUDF for Upper {
         "upper"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, |s| {
             s.with_utf8_array(|arr| {
                 Ok(arr
@@ -30,7 +30,7 @@ impl ScalarUDF for Upper {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -45,5 +45,5 @@ impl ScalarUDF for Upper {
 
 #[must_use]
 pub fn upper(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Upper {}, vec![input]).into()
+    ScalarFn::builtin(Upper {}, vec![input]).into()
 }

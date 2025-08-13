@@ -6,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ impl ScalarUDF for RegexpExtractAll {
     fn aliases(&self) -> &'static [&'static str] {
         &["regexp_extract_all"]
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(
             inputs.len() == 2 || inputs.len() == 3,
             ComputeError: "Expected 2 or 3 input args, got {}",
@@ -46,7 +46,7 @@ impl ScalarUDF for RegexpExtractAll {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -80,7 +80,7 @@ impl ScalarUDF for RegexpExtractAll {
 
 #[must_use]
 pub fn regexp_extract_all(input: ExprRef, pattern: ExprRef, index: ExprRef) -> ExprRef {
-    ScalarFunction::new(RegexpExtractAll, vec![input, pattern, index]).into()
+    ScalarFn::builtin(RegexpExtractAll, vec![input, pattern, index]).into()
 }
 
 fn extract_all_impl(arr: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<ListArray> {
@@ -177,5 +177,5 @@ fn regex_extract_all_matches<'a>(
 
 #[must_use]
 pub fn utf8_extract_all(input: ExprRef, pattern: ExprRef, index: ExprRef) -> ExprRef {
-    ScalarFunction::new(RegexpExtractAll, vec![input, pattern, index]).into()
+    ScalarFn::builtin(RegexpExtractAll, vec![input, pattern, index]).into()
 }

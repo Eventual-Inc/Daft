@@ -6,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ impl ScalarUDF for ToDate {
     fn name(&self) -> &'static str {
         "to_date"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, ValueError: "Expected 2 input args, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "format"))?;
@@ -30,7 +30,7 @@ impl ScalarUDF for ToDate {
         input.with_utf8_array(|arr| Ok(to_date_impl(arr, pattern)?.into_series()))
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -52,7 +52,7 @@ impl ScalarUDF for ToDate {
 
 #[must_use]
 pub fn to_date(input: ExprRef, format: ExprRef) -> ExprRef {
-    ScalarFunction::new(ToDate, vec![input, format]).into()
+    ScalarFn::builtin(ToDate, vec![input, format]).into()
 }
 
 fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {

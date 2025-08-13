@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,11 +19,11 @@ impl ScalarUDF for Capitalize {
     fn name(&self) -> &'static str {
         "capitalize"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, capitalize_impl)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -37,7 +37,7 @@ impl ScalarUDF for Capitalize {
 }
 
 pub fn capitalize(e: ExprRef) -> ExprRef {
-    ScalarFunction::new(Capitalize, vec![e]).into()
+    ScalarFn::builtin(Capitalize, vec![e]).into()
 }
 
 fn capitalize_impl(s: &Series) -> DaftResult<Series> {

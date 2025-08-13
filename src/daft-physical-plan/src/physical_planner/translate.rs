@@ -25,13 +25,12 @@ use daft_functions_list::{count_distinct, distinct};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
-        ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
-        Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-        Join as LogicalJoin, Limit as LogicalLimit,
-        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
-        Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-        Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        Unpivot as LogicalUnpivot,
+        Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
+        Filter as LogicalFilter, IntoBatches as LogicalIntoBatches, Join as LogicalJoin,
+        Limit as LogicalLimit, MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId,
+        Pivot as LogicalPivot, Project as LogicalProject, Repartition as LogicalRepartition,
+        Sample as LogicalSample, Sink as LogicalSink, Sort as LogicalSort, Source,
+        TopN as LogicalTopN, UDFProject as LogicalUDFProject, Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -123,13 +122,28 @@ pub(super) fn translate_single_logical_node(
                     .arced(),
             )
         }
-        LogicalPlan::ActorPoolProject(LogicalActorPoolProject { projection, .. }) => {
+        LogicalPlan::UDFProject(LogicalUDFProject {
+            project,
+            passthrough_columns,
+            udf_properties,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-                input_physical,
-                projection.clone(),
-            )?)
-            .arced())
+            let projection = passthrough_columns
+                .iter()
+                .chain(std::iter::once(&project.clone()))
+                .cloned()
+                .collect();
+            if udf_properties.is_actor_pool_udf() {
+                Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+                    input_physical,
+                    projection,
+                    udf_properties.clone(),
+                )?)
+                .arced())
+            } else {
+                Ok(PhysicalPlan::Project(Project::try_new(input_physical, projection)?).arced())
+            }
         }
         LogicalPlan::Filter(LogicalFilter {
             predicate, input, ..
@@ -143,18 +157,31 @@ pub(super) fn translate_single_logical_node(
             ))
             .arced())
         }
-        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
+        LogicalPlan::IntoBatches(LogicalIntoBatches { .. }) => Err(DaftError::NotImplemented(
+            "IntoBatches is not implemented in the old physical planner".to_string(),
+        )),
+        LogicalPlan::Limit(LogicalLimit {
+            limit,
+            offset,
+            eager,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            Ok(
-                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
-                    .arced(),
-            )
+            Ok(PhysicalPlan::Limit(Limit::new(
+                input_physical,
+                *limit,
+                *offset,
+                *eager,
+                num_partitions,
+            ))
+            .arced())
         }
         LogicalPlan::TopN(LogicalTopN {
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             ..
         }) => {
@@ -166,6 +193,7 @@ pub(super) fn translate_single_logical_node(
                 descending.clone(),
                 nulls_first.clone(),
                 *limit,
+                *offset,
                 num_partitions,
             ))
             .arced())
@@ -541,15 +569,13 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            logical_plan.name()
+        ))),
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),
@@ -644,6 +670,25 @@ pub fn populate_aggregation_stages_bound(
     schema: &Schema,
     group_by: &[BoundExpr],
 ) -> DaftResult<(Vec<BoundAggExpr>, Vec<BoundAggExpr>, Vec<BoundExpr>)> {
+    let (
+        (first_stage_aggs, _first_stage_schema),
+        (second_stage_aggs, _second_stage_schema),
+        final_exprs,
+    ) = populate_aggregation_stages_bound_with_schema(aggregations, schema, group_by)?;
+
+    Ok((first_stage_aggs, second_stage_aggs, final_exprs))
+}
+
+#[allow(clippy::type_complexity)]
+pub fn populate_aggregation_stages_bound_with_schema(
+    aggregations: &[BoundAggExpr],
+    schema: &Schema,
+    group_by: &[BoundExpr],
+) -> DaftResult<(
+    (Vec<BoundAggExpr>, Schema),
+    (Vec<BoundAggExpr>, Schema),
+    Vec<BoundExpr>,
+)> {
     let mut first_stage_aggs = IndexSet::new();
     let mut second_stage_aggs = IndexSet::new();
 
@@ -895,18 +940,28 @@ pub fn populate_aggregation_stages_bound(
                 });
                 final_stage(map_groups_col);
             }
-            AggExpr::ApproxSketch(..) => {
-                unimplemented!("User-facing approx_sketch aggregation is not implemented")
+            // Only necessary for Flotilla
+            AggExpr::ApproxSketch(expr, sketch_type) => {
+                let approx_sketch_col =
+                    first_stage!(AggExpr::ApproxSketch(expr.clone(), *sketch_type));
+                let merged_sketch_col =
+                    second_stage!(AggExpr::MergeSketch(approx_sketch_col, *sketch_type));
+                final_stage(merged_sketch_col);
             }
-            AggExpr::MergeSketch(..) => {
-                unimplemented!("User-facing merge_sketch aggregation is not implemented")
+            AggExpr::MergeSketch(expr, sketch_type) => {
+                // Merging is commutative and associative, so just keep doing it
+                let merge_sketch_col =
+                    first_stage!(AggExpr::MergeSketch(expr.clone(), *sketch_type));
+                let merged_sketch_col =
+                    second_stage!(AggExpr::MergeSketch(merge_sketch_col, *sketch_type));
+                final_stage(merged_sketch_col);
             }
         }
     }
 
     Ok((
-        first_stage_aggs.into_iter().collect(),
-        second_stage_aggs.into_iter().collect(),
+        (first_stage_aggs.into_iter().collect(), first_stage_schema),
+        (second_stage_aggs.into_iter().collect(), second_stage_schema),
         final_exprs,
     ))
 }

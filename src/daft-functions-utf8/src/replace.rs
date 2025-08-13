@@ -1,7 +1,4 @@
-use std::{
-    borrow::Borrow,
-    sync::{Arc, LazyLock},
-};
+use std::{borrow::Borrow, sync::LazyLock};
 
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
@@ -9,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -24,19 +21,19 @@ impl ScalarUDF for RegexpReplace {
     fn name(&self) -> &'static str {
         "regexp_replace"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;
         series_replace(input, pattern, replacement, true)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        function_args_to_field_impl(inputs, schema)
+        get_return_field_impl(inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -52,19 +49,19 @@ impl ScalarUDF for Replace {
     fn name(&self) -> &'static str {
         "replace"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;
         series_replace(input, pattern, replacement, false)
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        function_args_to_field_impl(inputs, schema)
+        get_return_field_impl(inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -74,25 +71,16 @@ impl ScalarUDF for Replace {
 
 #[must_use]
 pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bool) -> ExprRef {
-    ScalarFunction {
-        udf: if regex {
-            Arc::new(RegexpReplace) as _
-        } else {
-            Arc::new(Replace) as _
-        },
-        inputs: FunctionArgs::new_unchecked(vec![
-            FunctionArg::unnamed(input),
-            FunctionArg::unnamed(pattern),
-            FunctionArg::unnamed(replacement),
-        ]),
+    let inputs = vec![input, pattern, replacement];
+
+    if regex {
+        ScalarFn::builtin(RegexpReplace, inputs).into()
+    } else {
+        ScalarFn::builtin(Replace, inputs).into()
     }
-    .into()
 }
 
-fn function_args_to_field_impl(
-    inputs: FunctionArgs<ExprRef>,
-    schema: &Schema,
-) -> DaftResult<Field> {
+fn get_return_field_impl(inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
     ensure!(inputs.len() == 3, "Replace expects 3 arguments");
     let input = inputs.required((0, "input"))?.to_field(schema)?;
     let pattern = inputs.required((1, "pattern"))?.to_field(schema)?;

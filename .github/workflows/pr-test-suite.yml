@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.10']
+        python-version: ['3.9', '3.10', '3.11']
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         flotilla: [1, 0]
@@ -44,6 +44,8 @@ jobs:
           os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
+        - python-version: '3.11'
+          pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -155,10 +157,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   integration-test-build:
@@ -749,10 +751,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   benchmark-codspeed:
@@ -886,10 +888,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
   check-unused-cargo-deps:
@@ -1072,10 +1074,10 @@ jobs:
     if: always()
     steps:
     - name: All tests ok
-      if: ${{ !(contains(needs.*.result, 'failure')) }}
+      if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
       run: exit 0
     - name: Some tests failed
-      if: ${{ contains(needs.*.result, 'failure') }}
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
 

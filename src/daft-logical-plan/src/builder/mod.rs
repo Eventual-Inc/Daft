@@ -39,9 +39,9 @@ use crate::{
     ops::{
         self,
         join::{JoinOptions, JoinPredicate},
-        SetQuantifier, UnionStrategy,
+        Limit, Offset, SetQuantifier, UnionStrategy,
     },
-    optimization::OptimizerBuilder,
+    optimization::{OptimizerBuilder, OptimizerConfig},
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
@@ -132,6 +132,7 @@ impl LogicalPlanBuilder {
     pub fn alias(&self, id: impl Into<Arc<str>>) -> Self {
         self.with_new_plan(LogicalPlan::SubqueryAlias(SubqueryAlias {
             plan_id: None,
+            node_id: None,
             input: self.plan.clone(),
             name: id.into(),
         }))
@@ -220,6 +221,7 @@ impl LogicalPlanBuilder {
         let expr_resolver = ExprResolver::builder()
             .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
+            .allow_explode(true)
             .build();
 
         let to_select = expr_resolver.resolve(to_select, self.plan.clone())?;
@@ -232,6 +234,7 @@ impl LogicalPlanBuilder {
         let expr_resolver = ExprResolver::builder()
             .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
+            .allow_explode(true)
             .build();
 
         let columns = expr_resolver.resolve(columns, self.plan.clone())?;
@@ -321,8 +324,22 @@ impl LogicalPlanBuilder {
         expr_resolver.resolve_window_spec(window_spec, self.plan.clone())
     }
 
-    pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
+    pub fn limit(&self, limit: u64, eager: bool) -> DaftResult<Self> {
+        self.limit_with_offset(limit, None, eager)
+    }
+
+    pub(crate) fn limit_with_offset(
+        &self,
+        limit: u64,
+        offset: Option<u64>,
+        eager: bool,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = Limit::new(self.plan.clone(), limit, offset, eager).into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn offset(&self, offset: u64) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = Offset::new(self.plan.clone(), offset).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -423,6 +440,11 @@ impl LogicalPlanBuilder {
             RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
         )
         .into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn into_batches(&self, batch_size: usize) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::IntoBatches::new(self.plan.clone(), batch_size).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -641,9 +663,17 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            ops::MonotonicallyIncreasingId::try_new(self.plan.clone(), column_name)?.into();
+    pub fn add_monotonically_increasing_id(
+        &self,
+        column_name: Option<&str>,
+        starting_offset: Option<u64>,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::MonotonicallyIncreasingId::try_new(
+            self.plan.clone(),
+            column_name,
+            starting_offset,
+        )?
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -795,6 +825,18 @@ impl LogicalPlanBuilder {
         std::thread::spawn(move || {
             let optimizer = OptimizerBuilder::default()
                 .when(
+                    cfg.as_ref()
+                        .map(|conf| conf.enable_strict_filter_pushdown)
+                        .unwrap_or(false),
+                    |builder| {
+                        builder.with_optimizer_config(OptimizerConfig {
+                            strict_pushdown: true,
+                            ..Default::default()
+                        })
+                    },
+                )
+                .with_default_optimizations()
+                .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
                     |builder| builder.reorder_joins(),
@@ -850,6 +892,18 @@ impl LogicalPlanBuilder {
 
         let optimizer = OptimizerBuilder::default()
             .when(
+                cfg.as_ref()
+                    .map(|conf| conf.enable_strict_filter_pushdown)
+                    .unwrap_or(false),
+                |builder| {
+                    builder.with_optimizer_config(OptimizerConfig {
+                        strict_pushdown: true,
+                        ..Default::default()
+                    })
+                },
+            )
+            .with_default_optimizations()
+            .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
                 |builder| builder.reorder_joins(),
@@ -880,8 +934,53 @@ impl LogicalPlanBuilder {
             },
         )?;
 
-        let builder = Self::new(optimized_plan, cfg);
+        // Assign node IDs to the optimized plan
+        let builder = if std::env::var("DAFT_INSTRUMENT_LOGICAL_PLAN").is_ok() {
+            let optimized_plan_with_node_ids = Self::assign_node_ids(optimized_plan)?;
+            Self::new(optimized_plan_with_node_ids, cfg)
+        } else {
+            Self::new(optimized_plan, cfg)
+        };
         Ok(builder)
+    }
+
+    /// Recursively walk the optimized plan and assign node IDs to each node
+    fn assign_node_ids(plan: Arc<LogicalPlan>) -> DaftResult<Arc<LogicalPlan>> {
+        use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
+
+        struct NodeIdAssigner {
+            node_id_counter: usize,
+        }
+
+        impl NodeIdAssigner {
+            fn new() -> Self {
+                Self { node_id_counter: 0 }
+            }
+
+            fn get_next_node_id(&mut self) -> usize {
+                let id = self.node_id_counter;
+                self.node_id_counter += 1;
+                id
+            }
+        }
+
+        impl TreeNodeRewriter for NodeIdAssigner {
+            type Node = Arc<LogicalPlan>;
+
+            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                Ok(Transformed::no(node))
+            }
+
+            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                let node_id = self.get_next_node_id();
+                let new_node = node.with_node_id(node_id);
+                Ok(Transformed::yes(Arc::new(new_node)))
+            }
+        }
+
+        let mut assigner = NodeIdAssigner::new();
+        let transformed_plan = plan.rewrite(&mut assigner)?;
+        Ok(transformed_plan.data)
     }
 
     pub fn build(&self) -> Arc<LogicalPlan> {
@@ -984,7 +1083,23 @@ impl PyLogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
-        Ok(self.builder.limit(limit, eager)?.into())
+        if limit < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "LIMIT <n> must be greater than or equal to 0, instead got: {}",
+                limit
+            )));
+        }
+        Ok(self.builder.limit(limit as u64, eager)?.into())
+    }
+
+    pub fn offset(&self, offset: i64) -> PyResult<Self> {
+        if offset < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "OFFSET <n> must be greater than or equal to 0, instead got: {}",
+                offset
+            )));
+        }
+        Ok(self.builder.offset(offset as u64)?.into())
     }
 
     pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {
@@ -1047,6 +1162,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn into_partitions(&self, num_partitions: usize) -> PyResult<Self> {
         Ok(self.builder.into_partitions(num_partitions)?.into())
+    }
+
+    pub fn into_batches(&self, batch_size: usize) -> PyResult<Self> {
+        Ok(self.builder.into_batches(batch_size)?.into())
     }
 
     pub fn describe(&self) -> PyResult<Self> {
@@ -1199,7 +1318,7 @@ impl PyLogicalPlanBuilder {
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> PyResult<Self> {
         Ok(self
             .builder
-            .add_monotonically_increasing_id(column_name)?
+            .add_monotonically_increasing_id(column_name, None)?
             .into())
     }
 

@@ -21,11 +21,12 @@ pub use crate::{
 pub mod rex {
     use std::sync::Arc;
 
-    use daft_dsl::functions::{python::PythonUDF, FunctionArgs, FunctionExpr, ScalarFunction, ScalarUDF};
+    use daft_dsl::{functions::{python::LegacyPythonUDF, scalar::ScalarFn, BuiltinScalarFn, FunctionArgs, FunctionExpr, ScalarUDF}, python_udf::{PyScalarFn, RowWisePyFn}};
     pub use daft_dsl::*;
+    pub use daft_core::lit::Literal;
 
     /// Creates an expression from a python-scalar function
-    pub fn from_py_func<A, E>(func: PythonUDF, args: A) -> Expr
+    pub fn from_py_legacy_func<A, E>(func: LegacyPythonUDF, args: A) -> Expr
     where
         A: IntoIterator<Item = E>,
         E: Into<Arc<Expr>>,
@@ -36,10 +37,15 @@ pub mod rex {
     }
 
     /// Creates an expression from a python-scalar function
-    pub fn from_rs_func(func: Arc<dyn ScalarUDF>, args: FunctionArgs<ExprRef>) -> Expr {
+    pub fn from_builtin_func(func: Arc<dyn ScalarUDF>, args: FunctionArgs<ExprRef>) -> Expr {
         // don't use ::new
-        let func = ScalarFunction { udf: func, inputs: args };
-        Expr::ScalarFunction(func)
+        let func = BuiltinScalarFn { udf: func, inputs: args };
+        Expr::ScalarFn(ScalarFn::Builtin(func))
+    }
+
+    /// Creates an expression from a python-scalar function
+    pub fn from_py_rowwise_func(func: RowWisePyFn) -> Expr {
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(func)))
     }
 }
 
@@ -48,6 +54,7 @@ pub mod functions {
     use std::sync::Arc;
 
     pub use daft_dsl::functions::*;
+    pub use daft_dsl::python_udf::*;
 
     // Link the function (infallibly) .. todo(conner): add error handling later.
     pub fn get_function(name: &str) -> Arc<dyn ScalarFunctionFactory + 'static> {
@@ -99,16 +106,17 @@ pub mod rel {
         Project::new(input, projections)
     }
 
-    /// Creates a new projection relational operator where at least one input is an actor pool udf.
-    pub fn new_project_with_actor_pool<I, P, E>(input: I, projections: P) -> DaftResult<ActorPoolProject>
+    /// Creates a new projection relational operator where at least one input is a Udf.
+    pub fn new_project_with_udf<I, P, E>(input: I, project: E, passthrough_columns: P) -> DaftResult<UDFProject>
     where
         I: Into<Arc<LogicalPlan>>,
         P: IntoIterator<Item = E>,
         E: Into<Arc<Expr>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        let projections: Vec<Arc<Expr>> = projections.into_iter().map(|e| e.into()).collect();
-        ActorPoolProject::new(input, projections)
+        let project: Arc<Expr> = project.into();
+        let passthrough_columns: Vec<Arc<Expr>> = passthrough_columns.into_iter().map(|e| e.into()).collect();
+        UDFProject::new(input, project, passthrough_columns)
     }
 
     /// Creates a new filter relational operator.
@@ -119,17 +127,25 @@ pub mod rel {
     {
         let input: Arc<LogicalPlan> = input.into();
         let predicate: Arc<Expr> = predicate.into();
-        Ok(Filter { plan_id: None, input, predicate, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Filter { plan_id: None,
+            node_id: None, input, predicate, stats_state: stats::StatsState::NotMaterialized })
     }
 
     /// Creates a new limit relational operator.
-    pub fn new_limit<I>(input: I, limit: u64) -> DaftResult<Limit>
+    pub fn new_limit<I>(input: I, limit: u64, offset: Option<u64>) -> DaftResult<Limit>
     where
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        let limit: i64 = limit.try_into().map_err(|_| DaftError::ValueError("limit too large".to_string()))?;
-        Ok(Limit { plan_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Limit {
+            plan_id: None,
+            node_id: None,
+            input,
+            limit,
+            offset,
+            eager: false,
+            stats_state: stats::StatsState::NotMaterialized
+        })
     }
 
     /// Creates a new distinct relational operator.
@@ -138,7 +154,8 @@ pub mod rel {
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        Ok(Distinct { plan_id: None, input, stats_state: stats::StatsState::NotMaterialized, columns: None })
+        Ok(Distinct { plan_id: None,
+            node_id: None, input, stats_state: stats::StatsState::NotMaterialized, columns: None })
     }
 
     /// Creates a new concat relational operator.
@@ -148,7 +165,8 @@ pub mod rel {
     {
         let lhs = lhs.into();
         let rhs = rhs.into();
-        Ok(Concat { plan_id: None, input: lhs, other: rhs, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Concat { plan_id: None,
+            node_id: None, input: lhs, other: rhs, stats_state: stats::StatsState::NotMaterialized })
     }
 
     /// Creates a new intersect relational operator.
@@ -158,7 +176,8 @@ pub mod rel {
     {
         let lhs = lhs.into();
         let rhs = rhs.into();
-        Ok(Intersect { plan_id: None, lhs, rhs, is_all })
+        Ok(Intersect { plan_id: None,
+            node_id: None, lhs, rhs, is_all })
     }
 
     /// Creates a new union relational operator.
@@ -170,7 +189,8 @@ pub mod rel {
         let rhs = rhs.into();
         let quantifier = if is_all { SetQuantifier::All } else { SetQuantifier::Distinct};
         let strategy = if is_by_name { UnionStrategy::ByName } else { UnionStrategy::Positional };
-        Ok(Union { plan_id: None, lhs, rhs, quantifier, strategy })
+        Ok(Union { plan_id: None,
+            node_id: None, lhs, rhs, quantifier, strategy })
     }
 
     /// Creates a new except relational operator.
@@ -180,7 +200,8 @@ pub mod rel {
     {
         let lhs = lhs.into();
         let rhs = rhs.into();
-        Ok(Except { plan_id: None, lhs, rhs, is_all })
+        Ok(Except { plan_id: None,
+            node_id: None, lhs, rhs, is_all })
     }
 
     /// Creates a new aggregation relational operator.

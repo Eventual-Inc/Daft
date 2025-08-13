@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ pub struct Cbrt;
 
 #[typetag::serde]
 impl ScalarUDF for Cbrt {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         let casted_dtype = input.to_floating_data_type()?;
         let casted_self = input
@@ -30,7 +30,7 @@ impl ScalarUDF for Cbrt {
         "cbrt"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -42,5 +42,5 @@ impl ScalarUDF for Cbrt {
 
 #[must_use]
 pub fn cbrt(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Cbrt, vec![input]).into()
+    ScalarFn::builtin(Cbrt, vec![input]).into()
 }

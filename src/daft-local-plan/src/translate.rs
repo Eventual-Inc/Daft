@@ -7,7 +7,7 @@ use daft_core::join::JoinStrategy;
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     join::normalize_join_keys,
-    resolved_col, WindowExpr,
+    resolved_col, window_to_agg_exprs,
 };
 use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
@@ -59,11 +59,20 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 filter.stats_state.clone(),
             ))
         }
+        LogicalPlan::IntoBatches(into_batches) => {
+            let input = translate(&into_batches.input)?;
+            Ok(LocalPhysicalPlan::into_batches(
+                input,
+                into_batches.batch_size,
+                into_batches.stats_state.clone(),
+            ))
+        }
         LogicalPlan::Limit(limit) => {
             let input = translate(&limit.input)?;
             Ok(LocalPhysicalPlan::limit(
                 input,
                 limit.limit,
+                limit.offset,
                 limit.stats_state.clone(),
             ))
         }
@@ -79,16 +88,19 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 project.stats_state.clone(),
             ))
         }
-        LogicalPlan::ActorPoolProject(actor_pool_project) => {
-            let input = translate(&actor_pool_project.input)?;
+        LogicalPlan::UDFProject(udf_project) => {
+            let input = translate(&udf_project.input)?;
 
-            let projection = BoundExpr::bind_all(&actor_pool_project.projection, input.schema())?;
+            let project = BoundExpr::try_new(udf_project.project.clone(), input.schema())?;
+            let passthrough_columns =
+                BoundExpr::bind_all(&udf_project.passthrough_columns, input.schema())?;
 
-            Ok(LocalPhysicalPlan::actor_pool_project(
+            Ok(LocalPhysicalPlan::udf_project(
                 input,
-                projection,
-                actor_pool_project.projected_schema.clone(),
-                actor_pool_project.stats_state.clone(),
+                project,
+                passthrough_columns,
+                udf_project.projected_schema.clone(),
+                udf_project.stats_state.clone(),
             ))
         }
         LogicalPlan::Sample(sample) => {
@@ -149,20 +161,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 window.window_spec.frame.is_some(),
             ) {
                 (true, false, false) => {
-                    let aggregations = window_functions
-                        .iter()
-                        .map(|w| {
-                            if let WindowExpr::Agg(agg_expr) = w.as_ref() {
-                                Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
-                            } else {
-                                Err(DaftError::TypeError(format!(
-                                    "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
-                                    w
-                                )))
-                            }
-                        })
-                        .collect::<DaftResult<Vec<_>>>()?;
-
+                    let aggregations = window_to_agg_exprs(window_functions)?;
                     Ok(LocalPhysicalPlan::window_partition_only(
                         input,
                         partition_by,
@@ -184,17 +183,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     window.aliases.clone(),
                 )),
                 (true, true, true) => {
-                    let aggregations = window_functions
-                        .iter()
-                        .map(|w| {
-                            if let WindowExpr::Agg(agg_expr) = w.as_ref() {
-                                BoundAggExpr::new_unchecked(agg_expr.clone())
-                            } else {
-                                panic!("Expected AggExpr")
-                            }
-                        })
-                        .collect::<Vec<_>>();
-
+                    let aggregations = window_to_agg_exprs(window_functions)?;
                     Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
                         input,
                         partition_by,
@@ -286,13 +275,17 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 top_n.descending.clone(),
                 top_n.nulls_first.clone(),
                 top_n.limit,
+                top_n.offset,
                 top_n.stats_state.clone(),
             ))
         }
         LogicalPlan::Join(join) => {
-            if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
+            if join
+                .join_strategy
+                .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+            {
                 return Err(DaftError::not_implemented(
-                    "Only hash join is supported for now",
+                    "Only hash and broadcast join strategies are supported for now",
                 ));
             }
             let left = translate(&join.left)?;
@@ -365,6 +358,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::monotonically_increasing_id(
                 input,
                 monotonically_increasing_id.column_name.clone(),
+                monotonically_increasing_id.starting_offset,
                 monotonically_increasing_id.schema.clone(),
                 monotonically_increasing_id.stats_state.clone(),
             ))
@@ -440,14 +434,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 explode.stats_state.clone(),
             ))
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            plan.name()
+        ))),
     }
 }

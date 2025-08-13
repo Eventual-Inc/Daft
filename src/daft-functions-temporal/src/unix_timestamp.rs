@@ -1,6 +1,9 @@
 use common_error::DaftError;
-use daft_core::prelude::TimeUnit;
-use daft_dsl::{functions::prelude::*, FromLiteral, LiteralValue};
+use daft_core::{
+    lit::{FromLiteral, Literal},
+    prelude::TimeUnit,
+};
+use daft_dsl::functions::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UnixTimestamp;
@@ -9,10 +12,10 @@ pub struct UnixTimestamp;
 struct WrappedTimeUnit(TimeUnit);
 
 impl FromLiteral for WrappedTimeUnit {
-    fn try_from_literal(lit: &daft_dsl::LiteralValue) -> DaftResult<Self> {
+    fn try_from_literal(lit: &daft_core::lit::Literal) -> DaftResult<Self> {
         if let Ok(tu) = TimeUnit::try_from_literal(lit) {
             Ok(Self(tu))
-        } else if let LiteralValue::Utf8(s) = lit {
+        } else if let Literal::Utf8(s) = lit {
             Ok(Self(s.parse()?))
         } else {
             Err(DaftError::type_error(
@@ -34,7 +37,7 @@ impl ScalarUDF for UnixTimestamp {
         "to_unix_epoch"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, time_unit } = inputs.try_into()?;
         let tu = time_unit.map(|tu| tu.0).unwrap_or(TimeUnit::Seconds);
         input
@@ -42,7 +45,7 @@ impl ScalarUDF for UnixTimestamp {
             .and_then(|s| s.cast(&DataType::Int64))
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

@@ -82,15 +82,15 @@ impl RecordBatch {
         group_by: &[BoundExpr],
     ) -> DaftResult<Self> {
         use daft_core::array::ops::IntoGroups;
-        use daft_dsl::functions::python::PythonUDF;
+        use daft_dsl::functions::python::LegacyPythonUDF;
 
         let udf = match func {
             FunctionExpr::Python(
-                udf @ PythonUDF {
+                udf @ LegacyPythonUDF {
                     concurrency: None, ..
                 },
             ) => udf,
-            FunctionExpr::Python(PythonUDF {
+            FunctionExpr::Python(LegacyPythonUDF {
                 concurrency: Some(_),
                 ..
             }) => {
@@ -119,7 +119,7 @@ impl RecordBatch {
 
         // Take fast path short circuit if there is only 1 group
         let (groupkeys_table, grouped_col) = if groupvals_indices.is_empty() {
-            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema))?;
+            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema));
             let empty_udf_output_col = Series::empty(
                 evaluated_inputs
                     .first()
@@ -128,7 +128,7 @@ impl RecordBatch {
             );
             (empty_groupkeys_table, empty_udf_output_col)
         } else if groupvals_indices.len() == 1 {
-            let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
+            let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?.0;
             let groupkeys_table = {
                 let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
                 groupby_table.take(&indices_as_series)?
@@ -151,7 +151,7 @@ impl RecordBatch {
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Call the UDF on the grouped inputs
-                        udf.call_udf(input_groups.as_slice())?
+                        udf.call_udf(input_groups.as_slice())?.0
                     };
 
                     let broadcasted_groupkeys_table = {

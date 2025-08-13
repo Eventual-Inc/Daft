@@ -4,14 +4,15 @@ mod buffer;
 mod channel;
 mod dispatcher;
 mod intermediate_ops;
+mod ops;
 mod pipeline;
-mod progress_bar;
 mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
 mod state_bridge;
+mod streaming_sink;
 
 use std::{
     future::Future,
@@ -22,10 +23,9 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeRef, RuntimeTask};
-use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
-use runtime_stats::{RuntimeStatsContext, TimedFuture};
+use runtime_stats::{RuntimeStats, RuntimeStatsManager, TimedFuture};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 use tracing::Instrument;
 
@@ -129,8 +129,7 @@ pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
-    progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+    stats_manager: Arc<RuntimeStatsManager>,
 }
 
 impl ExecutionRuntimeContext {
@@ -138,17 +137,16 @@ impl ExecutionRuntimeContext {
     pub fn new(
         default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
-        progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        stats_manager: Arc<RuntimeStatsManager>,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
             memory_manager,
-            progress_bar_manager,
-            rt_stats_handler,
+            stats_manager,
         }
     }
+
     pub fn spawn_local(
         &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + 'static,
@@ -172,25 +170,6 @@ impl ExecutionRuntimeContext {
         self.default_morsel_size
     }
 
-    pub fn make_progress_bar(
-        &self,
-        prefix: &str,
-        color: ProgressBarColor,
-        show_received: bool,
-        runtime_stats: Arc<RuntimeStatsContext>,
-    ) -> Option<Arc<OperatorProgressBar>> {
-        if let Some(ref pb_manager) = self.progress_bar_manager {
-            let pb = pb_manager.make_new_bar(color, prefix).unwrap();
-            Some(Arc::new(OperatorProgressBar::new(
-                pb,
-                runtime_stats,
-                show_received,
-            )))
-        } else {
-            None
-        }
-    }
-
     pub(crate) fn handle(&self) -> RuntimeHandle {
         RuntimeHandle(tokio::runtime::Handle::current())
     }
@@ -201,24 +180,15 @@ impl ExecutionRuntimeContext {
     }
 
     #[must_use]
-    pub(crate) fn runtime_stats_handler(&self) -> Arc<RuntimeStatsEventHandler> {
-        self.rt_stats_handler.clone()
-    }
-}
-
-impl Drop for ExecutionRuntimeContext {
-    fn drop(&mut self) {
-        if let Some(pbm) = self.progress_bar_manager.take() {
-            let _ = pbm.close_all();
-        }
+    pub(crate) fn stats_manager(&self) -> Arc<RuntimeStatsManager> {
+        self.stats_manager.clone()
     }
 }
 
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
-    runtime_context: Arc<RuntimeStatsContext>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+    runtime_stats: Arc<dyn RuntimeStats>,
     outer_span: tracing::Span,
 }
 
@@ -226,15 +196,13 @@ impl ExecutionTaskSpawner {
     pub fn new(
         runtime_ref: RuntimeRef,
         memory_manager: Arc<MemoryManager>,
-        runtime_context: Arc<RuntimeStatsContext>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         span: tracing::Span,
     ) -> Self {
         Self {
             runtime_ref,
             memory_manager,
-            runtime_context,
-            rt_stats_handler,
+            runtime_stats,
             outer_span: span,
         }
     }
@@ -252,8 +220,7 @@ impl ExecutionTaskSpawner {
         let instrumented = future.instrument(span);
         let timed_fut = TimedFuture::new(
             instrumented,
-            self.runtime_context.clone(),
-            self.rt_stats_handler.clone(),
+            self.runtime_stats.clone(),
             self.outer_span.clone(),
         );
         let memory_manager = self.memory_manager.clone();
@@ -271,8 +238,7 @@ impl ExecutionTaskSpawner {
         let instrumented = future.instrument(inner_span);
         let timed_fut = TimedFuture::new(
             instrumented,
-            self.runtime_context.clone(),
-            self.rt_stats_handler.clone(),
+            self.runtime_stats.clone(),
             self.outer_span.clone(),
         );
         self.runtime_ref.spawn(timed_fut)
@@ -281,8 +247,6 @@ impl ExecutionTaskSpawner {
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-
-use crate::runtime_stats::RuntimeStatsEventHandler;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

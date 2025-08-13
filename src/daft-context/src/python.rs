@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
 use common_error::DaftError;
-use pyo3::prelude::*;
+use daft_py_runners::{NativeRunner, RayRunner};
+use pyo3::{prelude::*, IntoPyObjectExt};
 
-use crate::{DaftContext, Runner, RunnerConfig};
+use crate::{detect_ray_state, DaftContext, Runner, RunnerConfig};
 
 #[pyclass]
 pub struct PyRunnerConfig {
@@ -13,7 +14,7 @@ pub struct PyRunnerConfig {
 
 #[pyclass]
 pub struct PyDaftContext {
-    inner: crate::DaftContext,
+    inner: DaftContext,
 }
 
 impl Default for PyDaftContext {
@@ -45,6 +46,27 @@ impl PyDaftContext {
             }
         }
     }
+
+    pub fn get_or_infer_runner_type(&self, py: Python) -> PyResult<PyObject> {
+        match self.inner.runner() {
+            Some(runner) => match runner.as_ref() {
+                Runner::Ray(_) => RayRunner::NAME,
+                Runner::Native(_) => NativeRunner::NAME,
+            },
+            None => {
+                if let (true, _) = detect_ray_state() {
+                    RayRunner::NAME
+                } else {
+                    match super::get_runner_config_from_env()? {
+                        RunnerConfig::Ray { .. } => RayRunner::NAME,
+                        RunnerConfig::Native { .. } => NativeRunner::NAME,
+                    }
+                }
+            }
+        }
+        .into_py_any(py)
+    }
+
     #[getter(_daft_execution_config)]
     pub fn get_daft_execution_config(&self, py: Python) -> PyResult<PyDaftExecutionConfig> {
         let config = py.allow_threads(|| self.inner.execution_config());
@@ -133,4 +155,10 @@ pub fn set_runner_ray(
 pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> {
     let ctx = super::set_runner_native(num_threads)?;
     Ok(ctx.into())
+}
+
+#[pyfunction]
+pub fn reset_runner() -> PyResult<()> {
+    super::reset_runner();
+    Ok(())
 }

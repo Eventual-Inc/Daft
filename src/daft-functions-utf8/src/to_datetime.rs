@@ -1,12 +1,12 @@
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     datatypes::{format_string_has_offset, infer_timeunit_from_format_string},
-    prelude::{AsArrow, DataType, Field, Int64Array, Schema, TimeUnit, TimestampArray, Utf8Array},
-    series::{IntoSeries, Series},
+    prelude::*,
+    series::IntoSeries,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
-    lit, ExprRef, LiteralValue,
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
+    lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,7 @@ impl ScalarUDF for ToDatetime {
     fn name(&self) -> &'static str {
         "to_datetime"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
         let format = inputs.required((1, "format"))?;
         ensure!(format.data_type().is_string() && format.len() == 1, ValueError: "format must be a string literal");
@@ -39,7 +39,7 @@ impl ScalarUDF for ToDatetime {
         data.with_utf8_array(|arr| Ok(to_datetime_impl(arr, format, tz)?.into_series()))
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -57,7 +57,7 @@ impl ScalarUDF for ToDatetime {
         let timezone = if let Some(tz_expr) = inputs.optional("timezone")? {
             let lit = tz_expr.as_literal();
 
-            if lit == Some(&LiteralValue::Null) {
+            if lit == Some(&Literal::Null) {
                 None
             } else {
                 Some(
@@ -89,7 +89,7 @@ pub fn to_datetime<S: Into<String>>(input: ExprRef, format: S, timezone: Option<
     } else {
         vec![input, lit(format.into())]
     };
-    ScalarFunction::new(ToDatetime, inputs).into()
+    ScalarFn::builtin(ToDatetime, inputs).into()
 }
 
 fn to_datetime_impl(

@@ -10,7 +10,7 @@ use daft_core::{
     with_match_integer_daft_types,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use num_traits::NumCast;
@@ -35,7 +35,7 @@ impl ScalarUDF for Substr {
         "substr"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let SubstrArgs {
             input: data,
             start,
@@ -71,7 +71,7 @@ impl ScalarUDF for Substr {
             })
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -101,7 +101,7 @@ impl ScalarUDF for Substr {
 
 #[must_use]
 pub fn substr(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
-    ScalarFunction::new(Substr {}, vec![input, start, length]).into()
+    ScalarFn::builtin(Substr {}, vec![input, start, length]).into()
 }
 
 fn substr_impl<I, J>(

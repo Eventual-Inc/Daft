@@ -22,7 +22,7 @@ impl ScalarUDF for Serialize {
         "Serializes the expression as a string using the specified format."
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -30,7 +30,7 @@ impl ScalarUDF for Serialize {
         get_field(inputs, schema)
     }
 
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let SerializeArgs { input, format } = inputs.try_into()?;
         format.serializer()(input).map(|array| array.into_series())
     }
@@ -49,7 +49,7 @@ impl ScalarUDF for TrySerialize {
         "Serializes the expression as a string using the specified format, insert null on failures."
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -57,7 +57,7 @@ impl ScalarUDF for TrySerialize {
         get_field(inputs, schema)
     }
 
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let SerializeArgs { input, format } = inputs.try_into()?;
         format.try_serializer()(input).map(|array| array.into_series())
     }

@@ -232,7 +232,7 @@ pub mod expr {
         #[prost(message, tag = "5")]
         Cast(::prost::alloc::boxed::Box<super::Cast>),
         #[prost(message, tag = "6")]
-        Function(super::Function),
+        Function(super::ScalarFn),
         #[prost(message, tag = "7")]
         Over(::prost::alloc::boxed::Box<super::Over>),
         #[prost(message, tag = "8")]
@@ -275,13 +275,6 @@ pub struct Literal {
 }
 /// Nested message and enum types in `Literal`.
 pub mod literal {
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct FixedSizeBinary {
-        #[prost(bytes = "vec", tag = "1")]
-        pub value: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint64, tag = "2")]
-        pub size: u64,
-    }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Timestamp {
         #[prost(int64, tag = "1")]
@@ -344,34 +337,34 @@ pub mod literal {
         Utf8(::prost::alloc::string::String),
         #[prost(bytes, tag = "4")]
         Binary(::prost::alloc::vec::Vec<u8>),
-        #[prost(message, tag = "5")]
-        FixedSizeBinary(FixedSizeBinary),
-        #[prost(int32, tag = "6")]
+        #[prost(int32, tag = "5")]
         Int8(i32),
-        #[prost(uint32, tag = "7")]
+        #[prost(uint32, tag = "6")]
         Uint8(u32),
-        #[prost(int32, tag = "8")]
+        #[prost(int32, tag = "7")]
         Int16(i32),
-        #[prost(uint32, tag = "9")]
+        #[prost(uint32, tag = "8")]
         Uint16(u32),
-        #[prost(int32, tag = "10")]
+        #[prost(int32, tag = "9")]
         Int32(i32),
-        #[prost(uint32, tag = "11")]
+        #[prost(uint32, tag = "10")]
         Uint32(u32),
-        #[prost(int64, tag = "12")]
+        #[prost(int64, tag = "11")]
         Int64(i64),
-        #[prost(uint64, tag = "13")]
+        #[prost(uint64, tag = "12")]
         Uint64(u64),
-        #[prost(message, tag = "14")]
+        #[prost(message, tag = "13")]
         Timestamp(Timestamp),
-        #[prost(int32, tag = "15")]
+        #[prost(int32, tag = "14")]
         Date(i32),
-        #[prost(message, tag = "16")]
+        #[prost(message, tag = "15")]
         Time(Time),
-        #[prost(message, tag = "17")]
+        #[prost(message, tag = "16")]
         Duration(Duration),
-        #[prost(message, tag = "18")]
+        #[prost(message, tag = "17")]
         Interval(Interval),
+        #[prost(float, tag = "18")]
+        Float32(f32),
         #[prost(double, tag = "19")]
         Float64(f64),
         #[prost(message, tag = "20")]
@@ -463,17 +456,17 @@ pub struct IfElse {
     pub predicate: ::core::option::Option<::prost::alloc::boxed::Box<Expr>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Function {
+pub struct ScalarFn {
     #[prost(message, optional, tag = "3")]
-    pub args: ::core::option::Option<function::Args>,
-    #[prost(oneof = "function::Descriptor", tags = "1, 2")]
-    pub descriptor: ::core::option::Option<function::Descriptor>,
+    pub args: ::core::option::Option<scalar_fn::Args>,
+    #[prost(oneof = "scalar_fn::Descriptor", tags = "1, 2")]
+    pub descriptor: ::core::option::Option<scalar_fn::Descriptor>,
 }
-/// Nested message and enum types in `Function`.
-pub mod function {
+/// Nested message and enum types in `ScalarFn`.
+pub mod scalar_fn {
     /// For rust functions (builtins), we only have simple names.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct RsFunction {
+    pub struct BuiltinFn {
         #[prost(string, tag = "1")]
         pub name: ::prost::alloc::string::String,
     }
@@ -493,40 +486,68 @@ pub mod function {
     }
     /// For python functions (UDF), we need the pickled object and bound args.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct PyFunction {
-        #[prost(string, tag = "1")]
-        pub name: ::prost::alloc::string::String,
-        #[prost(uint64, tag = "2")]
-        pub arity: u64,
-        #[prost(message, optional, tag = "3")]
-        pub return_type: ::core::option::Option<super::DataType>,
-        /// --
-        #[prost(message, optional, tag = "4")]
-        pub callable: ::core::option::Option<super::PyObject>,
-        /// the __init__ args for runtime initialization
-        #[prost(message, optional, tag = "5")]
-        pub callable_init_args: ::core::option::Option<super::PyObject>,
-        /// the (possibly) closed args from decoration
-        #[prost(message, optional, tag = "6")]
-        pub callable_call_args: ::core::option::Option<super::PyObject>,
-        /// --
-        #[prost(uint64, optional, tag = "7")]
-        pub concurrency: ::core::option::Option<u64>,
-        #[prost(uint64, optional, tag = "8")]
-        pub batch_size: ::core::option::Option<u64>,
-        #[prost(uint64, optional, tag = "9")]
-        pub num_cpus: ::core::option::Option<u64>,
-        #[prost(uint64, optional, tag = "10")]
-        pub num_gpus: ::core::option::Option<u64>,
-        #[prost(uint64, optional, tag = "11")]
-        pub max_memory_bytes: ::core::option::Option<u64>,
+    pub struct PyFn {
+        #[prost(oneof = "py_fn::Variant", tags = "1, 2")]
+        pub variant: ::core::option::Option<py_fn::Variant>,
+    }
+    /// Nested message and enum types in `PyFn`.
+    pub mod py_fn {
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct LegacyFn {
+            #[prost(string, tag = "1")]
+            pub name: ::prost::alloc::string::String,
+            #[prost(uint64, tag = "2")]
+            pub arity: u64,
+            #[prost(message, optional, tag = "3")]
+            pub return_type: ::core::option::Option<super::super::DataType>,
+            /// --
+            #[prost(message, optional, tag = "4")]
+            pub callable: ::core::option::Option<super::super::PyObject>,
+            /// the __init__ args for runtime initialization
+            #[prost(message, optional, tag = "5")]
+            pub callable_init_args: ::core::option::Option<super::super::PyObject>,
+            /// the (possibly) closed args from decoration
+            #[prost(message, optional, tag = "6")]
+            pub callable_call_args: ::core::option::Option<super::super::PyObject>,
+            /// --
+            #[prost(uint64, optional, tag = "7")]
+            pub concurrency: ::core::option::Option<u64>,
+            #[prost(uint64, optional, tag = "8")]
+            pub batch_size: ::core::option::Option<u64>,
+            #[prost(uint64, optional, tag = "9")]
+            pub num_cpus: ::core::option::Option<u64>,
+            #[prost(uint64, optional, tag = "10")]
+            pub num_gpus: ::core::option::Option<u64>,
+            #[prost(uint64, optional, tag = "11")]
+            pub max_memory_bytes: ::core::option::Option<u64>,
+            #[prost(bool, optional, tag = "12")]
+            pub use_process: ::core::option::Option<bool>,
+        }
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct RowWiseFn {
+            #[prost(string, tag = "1")]
+            pub name: ::prost::alloc::string::String,
+            #[prost(message, optional, tag = "2")]
+            pub return_dtype: ::core::option::Option<super::super::DataType>,
+            #[prost(message, optional, tag = "3")]
+            pub inner: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "4")]
+            pub original_args: ::core::option::Option<super::super::PyObject>,
+        }
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Variant {
+            #[prost(message, tag = "1")]
+            Legacy(LegacyFn),
+            #[prost(message, tag = "2")]
+            RowWise(RowWiseFn),
+        }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Descriptor {
         #[prost(message, tag = "1")]
-        Rs(RsFunction),
+        Builtin(BuiltinFn),
         #[prost(message, tag = "2")]
-        Py(PyFunction),
+        Py(PyFn),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -707,7 +728,7 @@ pub mod rel {
         Window(::prost::alloc::boxed::Box<super::RelWindow>),
         /// --
         #[prost(message, tag = "15")]
-        ActorPoolProject(::prost::alloc::boxed::Box<super::RelActorPoolProject>),
+        UdfProject(::prost::alloc::boxed::Box<super::RelUdfProject>),
         #[prost(message, tag = "16")]
         Explode(::prost::alloc::boxed::Box<super::RelExplode>),
         #[prost(message, tag = "17")]
@@ -740,13 +761,14 @@ pub struct RelProject {
     #[prost(message, repeated, tag = "2")]
     pub projections: ::prost::alloc::vec::Vec<Expr>,
 }
-/// This does not need to be separate, but it reduces impedance mismatch across the type definitions.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RelActorPoolProject {
+pub struct RelUdfProject {
     #[prost(message, optional, boxed, tag = "1")]
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
-    #[prost(message, repeated, tag = "2")]
-    pub projections: ::prost::alloc::vec::Vec<Expr>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub project: ::core::option::Option<::prost::alloc::boxed::Box<Expr>>,
+    #[prost(message, repeated, tag = "3")]
+    pub passthrough_columns: ::prost::alloc::vec::Vec<Expr>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelFilter {
@@ -761,6 +783,8 @@ pub struct RelLimit {
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
     #[prost(uint64, tag = "2")]
     pub limit: u64,
+    #[prost(uint64, optional, tag = "3")]
+    pub offset: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelExplode {

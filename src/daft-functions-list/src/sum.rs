@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -19,13 +19,13 @@ impl ScalarUDF for ListSum {
     fn name(&self) -> &'static str {
         "list_sum"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         input.list_sum()
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -40,5 +40,5 @@ impl ScalarUDF for ListSum {
 
 #[must_use]
 pub fn list_sum(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListSum {}, vec![expr]).into()
+    ScalarFn::builtin(ListSum {}, vec![expr]).into()
 }

@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ impl ScalarUDF for ListJoin {
     fn aliases(&self) -> &'static [&'static str] {
         &["array_to_string"]
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let delimiter = inputs.required((1, "delimiter"))?;
         ensure!(
@@ -32,7 +32,7 @@ impl ScalarUDF for ListJoin {
 
         Ok(input.join(delimiter.utf8()?)?.into_series())
     }
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -72,5 +72,5 @@ impl ScalarUDF for ListJoin {
 
 #[must_use]
 pub fn list_join(expr: ExprRef, delim: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListJoin {}, vec![expr, delim]).into()
+    ScalarFn::builtin(ListJoin {}, vec![expr, delim]).into()
 }

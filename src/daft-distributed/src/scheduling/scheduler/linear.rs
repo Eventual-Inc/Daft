@@ -1,12 +1,15 @@
 use std::collections::{BinaryHeap, HashMap};
 
-use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
-use crate::scheduling::{task::Task, worker::WorkerId};
+use super::{PendingTask, ScheduledTask, Scheduler, WorkerSnapshot};
+use crate::scheduling::{
+    task::{Task, TaskResourceRequest},
+    worker::WorkerId,
+};
 
 #[allow(dead_code)]
 pub(super) struct LinearScheduler<T: Task> {
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
-    pending_tasks: BinaryHeap<SchedulableTask<T>>,
+    pending_tasks: BinaryHeap<PendingTask<T>>,
 }
 
 impl<T: Task> Default for LinearScheduler<T> {
@@ -39,11 +42,11 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         }
     }
 
-    fn enqueue_tasks(&mut self, _tasks: Vec<SchedulableTask<T>>) {
+    fn enqueue_tasks(&mut self, _tasks: Vec<PendingTask<T>>) {
         todo!("FLOTILLA_MS1: Implement enqueue_tasks for linear scheduler")
     }
 
-    fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>> {
+    fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>> {
         todo!("FLOTILLA_MS1: Implement get_schedulable_tasks for linear scheduler")
     }
 
@@ -51,7 +54,7 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         self.pending_tasks.len()
     }
 
-    fn get_autoscaling_request(&mut self) -> Option<usize> {
+    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
         todo!("FLOTILLA_MS1: Implement get_autoscaling_request for linear scheduler")
     }
 }

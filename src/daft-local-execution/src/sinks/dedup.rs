@@ -24,17 +24,17 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
 #[derive(Default)]
-struct SinglePartitionDedupState {
+pub(crate) struct SinglePartitionDedupState {
     partially_deduped: Vec<MicroPartition>,
 }
 
-enum DedupState {
+pub(crate) enum DedupState {
     Accumulating {
         inner_states: Vec<SinglePartitionDedupState>,
     },
@@ -80,12 +80,6 @@ impl DedupState {
     }
 }
 
-impl BlockingSinkState for DedupState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 pub struct DedupSink {
     columns: Arc<Vec<BoundExpr>>,
 }
@@ -103,23 +97,20 @@ impl DedupSink {
 }
 
 impl BlockingSink for DedupSink {
+    type State = DedupState;
+
     #[instrument(skip_all, name = "DedupSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         let columns = self.columns.clone();
         spawner
             .spawn(
                 async move {
-                    let dedup_state = state
-                        .as_any_mut()
-                        .downcast_mut::<DedupState>()
-                        .expect("DedupSink should have DedupState");
-
-                    dedup_state.push(input, &columns)?;
+                    state.push(input, &columns)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -130,9 +121,9 @@ impl BlockingSink for DedupSink {
     #[instrument(skip_all, name = "DedupSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let columns = self.columns.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -140,14 +131,7 @@ impl BlockingSink for DedupSink {
                 async move {
                     let mut state_iters = states
                         .into_iter()
-                        .map(|mut state| {
-                            state
-                                .as_any_mut()
-                                .downcast_mut::<DedupState>()
-                                .expect("DedupSink should have DedupState")
-                                .finalize()
-                                .into_iter()
-                        })
+                        .map(|mut state| state.finalize().into_iter())
                         .collect::<Vec<_>>();
 
                     let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
@@ -180,15 +164,21 @@ impl BlockingSink for DedupSink {
 
                     // Concatenate the results and return
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(Some(Arc::new(concated)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        concated,
+                    )]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Dedup"
+    fn name(&self) -> NodeName {
+        "Dedup".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Dedup
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -204,7 +194,7 @@ impl BlockingSink for DedupSink {
         get_compute_pool_num_threads()
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(DedupState::new(self.num_partitions())))
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(DedupState::new(self.num_partitions()))
     }
 }

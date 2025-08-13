@@ -5,7 +5,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
+    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ macro_rules! trigonometry {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;
 
                 trigonometry(input, &TrigonometricFunction::$variant)
@@ -28,7 +28,7 @@ macro_rules! trigonometry {
                 TrigonometricFunction::$variant.fn_name()
             }
 
-            fn function_args_to_field(
+            fn get_return_field(
                 &self,
                 inputs: FunctionArgs<ExprRef>,
                 schema: &Schema,
@@ -56,7 +56,7 @@ macro_rules! trigonometry {
 
         #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
-            ScalarFunction::new($variant, vec![input]).into()
+            ScalarFn::builtin($variant, vec![input]).into()
         }
     };
 }
@@ -134,7 +134,7 @@ struct Atan2Args<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Atan2 {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let Atan2Args { x, y } = inputs.try_into()?;
 
         atan2_impl(x, y)
@@ -148,7 +148,7 @@ impl ScalarUDF for Atan2 {
         &["arctan2"]
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -176,7 +176,7 @@ impl ScalarUDF for Atan2 {
 
 #[must_use]
 pub fn atan2(x: ExprRef, y: ExprRef) -> ExprRef {
-    ScalarFunction::new(Atan2 {}, vec![x, y]).into()
+    ScalarFn::builtin(Atan2 {}, vec![x, y]).into()
 }
 
 fn trigonometry(s: Series, trig_function: &TrigonometricFunction) -> DaftResult<Series> {

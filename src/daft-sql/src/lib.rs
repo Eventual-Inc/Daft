@@ -208,6 +208,7 @@ mod tests {
         assert_eq!(plan, expected);
         Ok(())
     }
+
     #[rstest]
     fn test_limit(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
         let sql = "select test as a from tbl1 limit 10";
@@ -220,6 +221,23 @@ mod tests {
             .build();
 
         assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_negative_limit(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 limit -1";
+        let plan = planner.plan_sql(sql);
+        match plan {
+            Err(PlannerError::InvalidOperation { message }) => {
+                assert_eq!(
+                    message,
+                    "LIMIT <n> must be greater than or equal to 0, instead got: -1"
+                );
+            }
+            _ => panic!("Unexpected result"),
+        }
+
         Ok(())
     }
 

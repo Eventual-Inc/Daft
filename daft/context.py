@@ -47,6 +47,21 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
+    def get_or_infer_runner_type(self) -> str:
+        """Get or infer the runner type.
+
+        This API will get or infer the currently used runner type according to the following strategies:
+        1. If the `runner` has been set, return its type directly;
+        2. Try to determine whether it's currently running on a ray cluster. If so, consider it to be a ray type;
+        3. Try to determine based on `DAFT_RUNNER` env variable.
+
+        :return: runner type string ("native" or "ray")
+        """
+        if self._ctx._runner is not None:
+            return self._ctx._runner.name
+
+        return self._ctx.get_or_infer_runner_type()
+
     def get_or_create_runner(self) -> Runner[PartitionT]:
         return self._ctx.get_or_create_runner()
 
@@ -191,7 +206,7 @@ def set_execution_config(
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
     These configuration values
-    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.select)).
+    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.select)).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -235,7 +250,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         use_experimental_distributed_engine: Whether to use the experimental distributed engine on the ray runner. Defaults to `True`.
             Note: Not all operations are currently supported, and daft will fallback to the current engine if necessary.
-        min_cpu_per_task: Minimum CPU used for each task. Defaults to 1.
+        min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 1.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
