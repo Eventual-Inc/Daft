@@ -10,12 +10,12 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        make_in_memory_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs, NodeID,
+        NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, Task, TaskContext},
+        task::{SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
@@ -161,30 +161,15 @@ impl IntoPartitionsNode {
             } else {
                 base_splits_per_partition
             };
-
-            let plan = LocalPhysicalPlan::into_partitions(
-                task.task().plan(),
-                num_out,
-                StatsState::NotMaterialized,
+            let into_partitions_task = append_plan_to_existing_task(
+                task,
+                &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                &move |plan| {
+                    LocalPhysicalPlan::into_partitions(plan, num_out, StatsState::NotMaterialized)
+                },
             );
-            let task_context = task.task().task_context();
-            let context_hashmap = self.context().to_hashmap();
-            let config = self.config.execution_config.clone();
-            let psets = task.task().psets().clone();
-            let scheduling_strategy = task.task().strategy().clone();
-            let task = task.with_new_task(SwordfishTask::new(
-                task_context,
-                plan,
-                config,
-                psets,
-                scheduling_strategy,
-                context_hashmap,
-            ));
-            let submitted_task = task.submit(scheduler_handle)?;
-            output_futures.spawn(async move {
-                let materialized_output = submitted_task.await?;
-                DaftResult::Ok(materialized_output)
-            });
+            let submitted_task = into_partitions_task.submit(scheduler_handle)?;
+            output_futures.spawn(submitted_task);
         }
 
         // Collect all the split outputs and send as new tasks
