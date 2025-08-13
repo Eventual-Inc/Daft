@@ -61,7 +61,7 @@ impl OptimizerRule for PushDownAggregation {
                                         let new_external_info =
                                             external_info.with_pushdowns(new_pushdowns);
                                         let new_source = LogicalPlan::Source(LogicalSource::new(
-                                            new_schema, //new_schema, // source.output_schema.clone(),
+                                            new_schema,
                                             SourceInfo::Physical(new_external_info).into(),
                                         ))
                                         .into();
