@@ -12,8 +12,9 @@ from daft.recordbatch import RecordBatch
 from ..pushdowns import SupportsPushdownFilters
 
 if TYPE_CHECKING:
-    import lance
     import pyarrow
+
+    import lance
 
 
 # TODO support fts and fast_search

@@ -52,3 +52,11 @@ def test_lancedb_read_limit(lance_dataset_path):
 def test_lancedb_with_version(lance_dataset_path):
     df = daft.read_lance(lance_dataset_path, version=1)
     assert df.to_pydict() == data
+
+
+def test_lancedb_read_explain_pushdowns(lance_dataset_path, capsys):
+    df = daft.read_lance(lance_dataset_path)
+    df = df.where(df["lat"] > 45).limit(1)
+    df.explain(show_all=True)
+    captured = capsys.readouterr()
+    assert "Filter: col(lat) > lit(45)" in captured.out

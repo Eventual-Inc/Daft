@@ -5,7 +5,6 @@ from itertools import chain
 from typing import TYPE_CHECKING, Any, Literal
 
 import lance
-
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.io import DataSink
