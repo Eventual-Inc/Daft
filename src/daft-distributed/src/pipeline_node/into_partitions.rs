@@ -159,9 +159,9 @@ impl IntoPartitionsNode {
         // Example: 3 inputs, 10 partitions = 4, 3, 3
 
         // Base outputs per partition: 10 / 3 = 3 (all partitions will split into at least 3 outputs)
-        let base_splits_per_partition = tasks.len() / self.num_partitions;
+        let base_splits_per_partition = self.num_partitions / tasks.len();
         // Remainder: 10 % 3 = 1 (one partition will split into 4 outputs)
-        let num_partitions_with_extra_output = tasks.len() % self.num_partitions;
+        let num_partitions_with_extra_output = self.num_partitions % tasks.len();
 
         let mut output_futures = OrderedJoinSet::new();
 
