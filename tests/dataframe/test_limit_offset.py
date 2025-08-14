@@ -6,7 +6,7 @@ import daft
 from daft import DataType, col
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def input_df():
     df = daft.range(start=0, end=1024, partitions=100)
     df = df.with_columns(
@@ -461,15 +461,14 @@ def test_paging(input_df):
     limit = 100
 
     total = input_df.count_rows()
-    while True:
-        paged_res = input_df.select("id", "name").sort(by=col("id"), desc=False).offset(offset).limit(limit).to_pydict()
-        if len(paged_res["id"]) == 0:
-            break
+    while offset < total:
+        paged_df = input_df.select("id", "name").sort(by=col("id"), desc=False).offset(offset).limit(limit)
 
-        assert paged_res == {
+        assert paged_df.to_pydict() == {
             "id": [i for i in range(offset, min(total, offset + limit))],
             "name": [f"user_{i}" for i in range(offset, min(total, offset + limit))],
         }
+
         offset += limit
 
 

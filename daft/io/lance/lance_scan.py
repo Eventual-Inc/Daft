@@ -123,11 +123,14 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             required_columns = None
         else:
             filter_required_column_names = pushdowns.filter_required_column_names()
-            required_columns = (
-                pushdowns.columns
-                if filter_required_column_names is None
-                else pushdowns.columns + filter_required_column_names
+            required_columns = list(
+                set(
+                    pushdowns.columns
+                    if filter_required_column_names is None
+                    else pushdowns.columns + filter_required_column_names
+                )
             )
+
         # Check if there is a count aggregation pushdown
         if (
             pushdowns.aggregation is not None

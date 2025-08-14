@@ -38,7 +38,7 @@ def test_lancedb_read_column_selection(lance_dataset_path):
 
 def test_lancedb_read_filter(lance_dataset_path):
     df = daft.read_lance(lance_dataset_path)
-    df = df.where(df["lat"] > 45)
+    df = df.where((df["lat"] > 45) & (df["lat"] < 90))
     df = df.select("vector")
     assert df.to_pydict() == {"vector": data["vector"][:1]}
 
