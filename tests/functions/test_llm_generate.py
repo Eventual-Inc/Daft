@@ -7,6 +7,7 @@ import pytest
 from daft import Expression, Series, lit
 from daft.functions.llm import _OpenAIGenerator, _vLLMGenerator, llm_generate
 
+vllm = pytest.importorskip("vllm")
 openai = pytest.importorskip("openai")
 
 
