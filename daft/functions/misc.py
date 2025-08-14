@@ -107,4 +107,9 @@ def file(expr: Expression) -> Expression:
     If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
     If the input is a binary column, it is converted to a `daft.File` where the entire contents are buffered in memory.
     """
-    return expr._eval_expressions("file")
+    from daft.context import get_context
+
+    ctx = get_context()
+    runner_name = ctx._runner.name
+
+    return expr._eval_expressions("file", runner_name=runner_name)

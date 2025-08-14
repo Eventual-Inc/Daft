@@ -20,7 +20,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, FunctionModule, ScalarUDF, UnaryArg},
+    functions::{FunctionArgs, FunctionModule, ScalarUDF},
     ExprRef,
 };
 use hash::HashFunction;
@@ -78,6 +78,11 @@ impl FunctionModule for ConversionFunctions {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct File;
+#[derive(FunctionArgs)]
+struct FileArgs<T> {
+    input: T,
+    runner_name: String,
+}
 
 #[typetag::serde]
 impl ScalarUDF for File {
@@ -86,14 +91,19 @@ impl ScalarUDF for File {
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
-        let UnaryArg { input } = args.try_into()?;
-
+        let FileArgs { input, runner_name } = args.try_into()?;
         Ok(match input.data_type() {
             DataType::Binary => {
                 FileArray::new_from_data_array(input.name(), input.binary()?).into_series()
             }
             DataType::Utf8 => {
-                FileArray::new_from_reference_array(input.name(), input.utf8()?).into_series()
+                if runner_name.as_str() == "ray" {
+                    return Err(DaftError::ValueError(
+                        "Cannot reference local files within this context".to_string(),
+                    ));
+                } else {
+                    FileArray::new_from_reference_array(input.name(), input.utf8()?).into_series()
+                }
             }
             _ => {
                 return Err(DaftError::ValueError(format!(
@@ -105,7 +115,7 @@ impl ScalarUDF for File {
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
-        let UnaryArg { input } = args.try_into()?;
+        let FileArgs { input, .. } = args.try_into()?;
         let input = input.to_field(schema)?;
 
         Ok(Field::new(input.name, DataType::File))

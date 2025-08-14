@@ -167,6 +167,10 @@ impl DaftContext {
     pub fn io_config(&self) -> IOConfig {
         self.with_state(|state| state.config.planning.default_io_config.clone())
     }
+    pub fn is_native_runner(&self) -> bool {
+        let runner = self.runner();
+        runner.is_some_and(|runner| matches!(runner.as_ref(), Runner::Native(_)))
+    }
 }
 
 #[cfg(not(feature = "python"))]
@@ -204,6 +208,10 @@ impl DaftContext {
     where
         F: FnOnce(&mut ContextState) -> R,
     {
+        unimplemented!()
+    }
+
+    pub fn is_native_runner(&self) -> bool {
         unimplemented!()
     }
 }
