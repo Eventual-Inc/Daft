@@ -5,12 +5,14 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::image_array::BBox, datatypes::prelude::*};
+use daft_schema::prelude::{ImageFormat, ImageMode};
 use image::{ColorType, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
+
+use crate::BBox;
 
 #[allow(clippy::upper_case_acronyms, dead_code)]
 #[derive(Debug)]
-pub enum DaftImageBuffer<'a> {
+pub enum CowImage<'a> {
     L(ImageBuffer<Luma<u8>, Cow<'a, [u8]>>),
     LA(ImageBuffer<LumaA<u8>, Cow<'a, [u8]>>),
     RGB(ImageBuffer<Rgb<u8>, Cow<'a, [u8]>>),
@@ -27,26 +29,24 @@ macro_rules! with_method_on_image_buffer {
     (
     $key_type:expr, $method: ident
 ) => {{
-        use DaftImageBuffer::*;
-
         match $key_type {
-            L(img) => img.$method(),
-            LA(img) => img.$method(),
-            RGB(img) => img.$method(),
-            RGBA(img) => img.$method(),
-            L16(img) => img.$method(),
-            LA16(img) => img.$method(),
-            RGB16(img) => img.$method(),
-            RGBA16(img) => img.$method(),
-            RGB32F(img) => img.$method(),
-            RGBA32F(img) => img.$method(),
+            CowImage::L(img) => img.$method(),
+            CowImage::LA(img) => img.$method(),
+            CowImage::RGB(img) => img.$method(),
+            CowImage::RGBA(img) => img.$method(),
+            CowImage::L16(img) => img.$method(),
+            CowImage::LA16(img) => img.$method(),
+            CowImage::RGB16(img) => img.$method(),
+            CowImage::RGBA16(img) => img.$method(),
+            CowImage::RGB32F(img) => img.$method(),
+            CowImage::RGBA32F(img) => img.$method(),
         }
     }};
 }
 
-impl<'a> DaftImageBuffer<'a> {
+impl<'a> CowImage<'a> {
     pub fn from_raw(mode: &ImageMode, width: u32, height: u32, data: Cow<'a, [u8]>) -> Self {
-        use DaftImageBuffer::{L, LA, RGB, RGBA};
+        use CowImage::{L, LA, RGB, RGBA};
         match mode {
             ImageMode::L => L(ImageBuffer::from_raw(width, height, data).unwrap()),
             ImageMode::LA => LA(ImageBuffer::from_raw(width, height, data).unwrap()),
@@ -64,7 +64,7 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn as_u8_slice(&self) -> &[u8] {
-        use DaftImageBuffer::{L, LA, RGB, RGBA};
+        use CowImage::{L, LA, RGB, RGBA};
         match self {
             L(img) => img.as_raw(),
             LA(img) => img.as_raw(),
@@ -74,7 +74,7 @@ impl<'a> DaftImageBuffer<'a> {
         }
     }
     pub fn mode(&self) -> ImageMode {
-        use DaftImageBuffer::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
+        use CowImage::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
 
         match self {
             L(..) => ImageMode::L,
@@ -90,7 +90,7 @@ impl<'a> DaftImageBuffer<'a> {
         }
     }
     pub fn color(&self) -> ColorType {
-        let mode = DaftImageBuffer::mode(self);
+        let mode = CowImage::mode(self);
         use ImageMode::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
         match mode {
             L => ColorType::L8,
@@ -145,27 +145,27 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
-        use DaftImageBuffer::{L, LA, RGB, RGBA};
+        use CowImage::{L, LA, RGB, RGBA};
         match self {
             L(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
-                DaftImageBuffer::L(image_buffer_vec_to_cow(result))
+                CowImage::L(image_buffer_vec_to_cow(result))
             }
             LA(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
-                DaftImageBuffer::LA(image_buffer_vec_to_cow(result))
+                CowImage::LA(image_buffer_vec_to_cow(result))
             }
             RGB(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
-                DaftImageBuffer::RGB(image_buffer_vec_to_cow(result))
+                CowImage::RGB(image_buffer_vec_to_cow(result))
             }
             RGBA(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
-                DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
+                CowImage::RGBA(image_buffer_vec_to_cow(result))
             }
             _ => unimplemented!("Mode {self:?} not implemented"),
         }
@@ -174,28 +174,27 @@ impl<'a> DaftImageBuffer<'a> {
     pub fn crop(&self, bbox: &BBox) -> Self {
         // HACK(jay): The `.to_image()` method on SubImage takes in `'static` references for some reason
         // This hack will ensure that `&self` adheres to that overly prescriptive bound
-        let inner =
-            unsafe { std::mem::transmute::<&DaftImageBuffer<'a>, &DaftImageBuffer<'static>>(self) };
+        let inner = unsafe { std::mem::transmute::<&CowImage<'a>, &CowImage<'static>>(self) };
         match inner {
-            DaftImageBuffer::L(imgbuf) => {
+            CowImage::L(imgbuf) => {
                 let result =
                     image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
-                DaftImageBuffer::L(image_buffer_vec_to_cow(result))
+                CowImage::L(image_buffer_vec_to_cow(result))
             }
-            DaftImageBuffer::LA(imgbuf) => {
+            CowImage::LA(imgbuf) => {
                 let result =
                     image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
-                DaftImageBuffer::LA(image_buffer_vec_to_cow(result))
+                CowImage::LA(image_buffer_vec_to_cow(result))
             }
-            DaftImageBuffer::RGB(imgbuf) => {
+            CowImage::RGB(imgbuf) => {
                 let result =
                     image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
-                DaftImageBuffer::RGB(image_buffer_vec_to_cow(result))
+                CowImage::RGB(image_buffer_vec_to_cow(result))
             }
-            DaftImageBuffer::RGBA(imgbuf) => {
+            CowImage::RGBA(imgbuf) => {
                 let result =
                     image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
-                DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
+                CowImage::RGBA(image_buffer_vec_to_cow(result))
             }
             _ => unimplemented!("Mode {self:?} not implemented"),
         }
@@ -233,6 +232,19 @@ where
     ImageBuffer::from_raw(w, h, owned).unwrap()
 }
 
+fn image_buffer_vec_ref_to_cow<P, T>(input: &ImageBuffer<P, Vec<T>>) -> ImageBuffer<P, Cow<[T]>>
+where
+    P: image::Pixel<Subpixel = T>,
+    Vec<T>: Deref<Target = [P::Subpixel]>,
+    T: ToOwned + std::clone::Clone,
+    [T]: ToOwned,
+{
+    let h = input.height();
+    let w = input.width();
+    let owned: Cow<[T]> = input.as_raw().into();
+    ImageBuffer::from_raw(w, h, owned).unwrap()
+}
+
 fn image_buffer_cow_to_vec<P, T>(input: ImageBuffer<P, Cow<[T]>>) -> ImageBuffer<P, Vec<T>>
 where
     P: image::Pixel<Subpixel = T>,
@@ -246,57 +258,95 @@ where
     ImageBuffer::from_raw(w, h, owned).unwrap()
 }
 
-impl<'a> From<DynamicImage> for DaftImageBuffer<'a> {
+impl<'a> From<DynamicImage> for CowImage<'a> {
     fn from(dyn_img: DynamicImage) -> Self {
         match dyn_img {
             DynamicImage::ImageLuma8(img_buf) => {
-                DaftImageBuffer::<'a>::L(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::L(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageLumaA8(img_buf) => {
-                DaftImageBuffer::<'a>::LA(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::LA(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageRgb8(img_buf) => {
-                DaftImageBuffer::<'a>::RGB(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::RGB(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageRgba8(img_buf) => {
-                DaftImageBuffer::<'a>::RGBA(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::RGBA(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageLuma16(img_buf) => {
-                DaftImageBuffer::<'a>::L16(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::L16(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageLumaA16(img_buf) => {
-                DaftImageBuffer::<'a>::LA16(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::LA16(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageRgb16(img_buf) => {
-                DaftImageBuffer::<'a>::RGB16(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::RGB16(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageRgba16(img_buf) => {
-                DaftImageBuffer::<'a>::RGBA16(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::RGBA16(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageRgb32F(img_buf) => {
-                DaftImageBuffer::<'a>::RGB32F(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::RGB32F(image_buffer_vec_to_cow(img_buf))
             }
             DynamicImage::ImageRgba32F(img_buf) => {
-                DaftImageBuffer::<'a>::RGBA32F(image_buffer_vec_to_cow(img_buf))
+                CowImage::<'a>::RGBA32F(image_buffer_vec_to_cow(img_buf))
             }
             _ => unimplemented!("{dyn_img:?} not implemented"),
         }
     }
 }
 
-impl<'a> From<DaftImageBuffer<'a>> for DynamicImage {
-    fn from(daft_buf: DaftImageBuffer<'a>) -> Self {
+impl<'a> From<&'a DynamicImage> for CowImage<'a> {
+    fn from(dyn_img: &'a DynamicImage) -> Self {
+        match dyn_img {
+            DynamicImage::ImageLuma8(img_buf) => {
+                CowImage::<'a>::L(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageLumaA8(img_buf) => {
+                CowImage::<'a>::LA(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgb8(img_buf) => {
+                CowImage::<'a>::RGB(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgba8(img_buf) => {
+                CowImage::<'a>::RGBA(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageLuma16(img_buf) => {
+                CowImage::<'a>::L16(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageLumaA16(img_buf) => {
+                CowImage::<'a>::LA16(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgb16(img_buf) => {
+                CowImage::<'a>::RGB16(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgba16(img_buf) => {
+                CowImage::<'a>::RGBA16(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgb32F(img_buf) => {
+                CowImage::<'a>::RGB32F(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            DynamicImage::ImageRgba32F(img_buf) => {
+                CowImage::<'a>::RGBA32F(image_buffer_vec_ref_to_cow(img_buf))
+            }
+            _ => unimplemented!("{dyn_img:?} not implemented"),
+        }
+    }
+}
+
+impl<'a> From<CowImage<'a>> for DynamicImage {
+    fn from(daft_buf: CowImage<'a>) -> Self {
         match daft_buf {
-            DaftImageBuffer::L(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::LA(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::RGB(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::RGBA(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::L16(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::LA16(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::RGB16(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::RGBA16(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::RGB32F(buf) => image_buffer_cow_to_vec(buf).into(),
-            DaftImageBuffer::RGBA32F(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::L(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::LA(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::RGB(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::RGBA(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::L16(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::LA16(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::RGB16(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::RGBA16(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::RGB32F(buf) => image_buffer_cow_to_vec(buf).into(),
+            CowImage::RGBA32F(buf) => image_buffer_cow_to_vec(buf).into(),
         }
     }
 }

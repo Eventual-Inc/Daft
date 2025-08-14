@@ -259,7 +259,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                 child_result_receiver,
                 self.node_id(),
                 self.runtime_stats.clone(),
-                runtime_handle.stats_manager().clone(),
+                runtime_handle.stats_manager(),
             ));
         }
         let op = self.intermediate_op.clone();

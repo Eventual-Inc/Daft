@@ -124,6 +124,30 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .map(|(f, v)| (f.name, v))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
+            Self::Map { keys, values } => {
+                assert_eq!(
+                    keys.len(),
+                    values.len(),
+                    "Key and value counts should be equal in map literal"
+                );
+
+                (0..keys.len())
+                    .map(|i| (keys.get_lit(i), values.get_lit(i)))
+                    .collect::<IndexMap<_, _>>()
+                    .into_bound_py_any(py)
+            }
+            Self::Tensor { .. } => {
+                Err(DaftError::NotImplemented("Tensor literal to Python".to_string()).into())
+            }
+            Self::SparseTensor { .. } => {
+                Err(DaftError::NotImplemented("Sparse tensor literal to Python".to_string()).into())
+            }
+            Self::Embedding { .. } => {
+                Err(DaftError::NotImplemented("Embedding literal to Python".to_string()).into())
+            }
+            Self::Image(_) => {
+                Err(DaftError::NotImplemented("Image literal to Python".to_string()).into())
+            }
         }
     }
 }

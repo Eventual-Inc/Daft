@@ -104,7 +104,8 @@ def __call_func(
     fn: Callable[..., Any],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     evaluated_args: list[Any],
-) -> PySeries:
+) -> list[Any]:
+    """Called from Rust to evaluate a Python scalar UDF. Returns a list of Python objects."""
     args, kwargs = original_args
 
     new_args = [evaluated_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]

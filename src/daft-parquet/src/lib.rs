@@ -3,8 +3,9 @@
 
 use std::{cmp::max, num::NonZeroUsize};
 
+use arrow2::io::parquet::read::schema::{infer_schema_with_options, SchemaInferenceOptions};
 use common_error::DaftError;
-use daft_core::prelude::SchemaRef;
+use daft_core::{prelude::SchemaRef, utils::arrow::coerce_to_daft_compatible_schema};
 use snafu::Snafu;
 
 mod file;
@@ -34,6 +35,15 @@ fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
         .get() as f64
         / max(daft_schema.len(), 1) as f64)
         .ceil() as usize
+}
+
+pub fn infer_arrow_schema_from_metadata(
+    metadata: &parquet2::metadata::FileMetaData,
+    options: Option<SchemaInferenceOptions>,
+) -> arrow2::error::Result<arrow2::datatypes::Schema> {
+    let arrow_schema = infer_schema_with_options(metadata, options)?;
+    let coerced_arrow_schema = coerce_to_daft_compatible_schema(arrow_schema);
+    Ok(coerced_arrow_schema)
 }
 
 #[derive(Debug, Snafu)]
