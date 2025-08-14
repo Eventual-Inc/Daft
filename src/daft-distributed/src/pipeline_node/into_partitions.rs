@@ -10,8 +10,9 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs, NodeID,
-        NodeName, PipelineNodeConfig, PipelineNodeContext,
+        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
+        make_new_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -128,10 +129,13 @@ impl IntoPartitionsNode {
             // Collect all the outputs from this task and coalesce them into a single task.
             let materialized_outputs = result??;
             let self_arc = self.clone();
-            let task = make_in_memory_task_from_materialized_outputs(
+            let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self.context, task_id_counter.next())),
                 materialized_outputs,
                 &(self_arc as Arc<dyn DistributedPipelineNode>),
+                move |input| {
+                    LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
+                },
             )?;
             if result_tx.send(task).await.is_err() {
                 break;
