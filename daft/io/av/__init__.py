@@ -58,10 +58,10 @@ def read_video_frames(
         DataFrame: dataframe of images.
 
     Examples:
-        >>> df = daft.read_video_frames("/path/to/file.mp4")
-        >>> df = daft.read_video_frames("/path/to/directory")
-        >>> df = daft.read_video_frames("/path/to/files-*.mp4")
-        >>> df = daft.read_video_frames("s3://path/to/files-*.mp4")
+        >>> df = daft.read_video_frames("/path/to/file.mp4", image_height=480, image_width=640)
+        >>> df = daft.read_video_frames("/path/to/directory", image_height=480, image_width=640)
+        >>> df = daft.read_video_frames("/path/to/files-*.mp4", image_height=480, image_width=640)
+        >>> df = daft.read_video_frames("s3://path/to/files-*.mp4", image_height=480, image_width=640)
     """
     try:
         from daft.io.av._read_video_frames import _VideoFramesSource
