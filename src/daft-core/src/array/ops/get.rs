@@ -195,7 +195,8 @@ impl FileArray {
     pub fn get(&self, idx: usize) -> Option<DaftFile> {
         let discriminant_array = self.discriminant_array();
         let data_array = self.data_array();
-        let discriminant = discriminant_array.get(idx).unwrap();
+        let discriminant = discriminant_array.get(idx)?;
+
         let discriminant: DaftFileType = discriminant.try_into().expect("Invalid discriminant");
         match discriminant {
             // it's a path, we know its valid utf8
