@@ -4,10 +4,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import av
+from typing_extensions import TypeAlias
 
-from daft.datatype import DataType, ImageMode
+from daft.daft import FileInfos, ImageMode
+from daft.datatype import DataType
 from daft.dependencies import np
-from daft.filesystem import FileInfos, _infer_filesystem, glob_path_with_stats
+from daft.filesystem import _infer_filesystem, glob_path_with_stats
 from daft.io import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
@@ -21,8 +23,7 @@ if TYPE_CHECKING:
     from daft.daft import IOConfig
     from daft.io.pushdowns import Pushdowns
 
-
-_VideoFrameData = np.typing.NDArray[Any]
+_VideoFrameData: TypeAlias = np.typing.NDArray[Any]
 
 
 @dataclass
@@ -230,7 +231,7 @@ class _VideoFramesBuffer:
         """Returns the current size of the partition in bytes."""
         return self._size_in_bytes
 
-    def append(self, frame):
+    def append(self, frame: _VideoFrame) -> None:
         """Appends the frame to this partition builder.
 
         Note:
@@ -239,7 +240,7 @@ class _VideoFramesBuffer:
         """
         self._arr_path.append(frame.path)
         self._arr_frame_index.append(frame.frame_index)
-        self._arr_frame_time.append(str(frame.frame_time))
+        self._arr_frame_time.append(frame.frame_time)
         self._arr_frame_time_base.append(str(frame.frame_time_base))
         self._arr_frame_pts.append(frame.frame_pts)
         self._arr_frame_dts.append(frame.frame_dts)

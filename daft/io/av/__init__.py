@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from daft.dataframe.dataframe import DataFrame
     from daft.daft import IOConfig
 
-__all__ = [ 
+__all__ = [
     # TODO: additional video support
     # "read_audio_frames",
     # "read_audio_streams",
