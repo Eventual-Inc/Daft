@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="IntoPartitions requires Ray runner to be in use",
+)
 
 
 def test_into_partitions_some_empty(make_df) -> None:
