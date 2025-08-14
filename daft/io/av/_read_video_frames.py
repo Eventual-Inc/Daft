@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import av
-import requests
 from typing_extensions import TypeAlias
 
 from daft.daft import FileInfos, ImageMode
@@ -170,6 +170,7 @@ class _VideoFramesSourceTask(DataSourceTask):
 
     def _open(self) -> Any:
         if _is_youtube_url(self.path):
+            import requests
             import yt_dlp
 
             with yt_dlp.YoutubeDL({"format": "mp4", "quiet": True}) as ydl:
@@ -309,7 +310,10 @@ def _schema(image_height: int, image_width: int) -> Schema:
 
 
 def _is_youtube_url(url: str) -> bool:
-    return url.startswith("https://www.youtube.com")
+    hostname = urlparse(url).hostname
+    if hostname is None:
+        return False
+    return hostname in {"www.youtube.com", "youtube.com", "youtu.be"}
 
 
 def _assert_youtube_available() -> None:
