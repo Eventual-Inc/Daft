@@ -119,7 +119,7 @@ impl TreeDisplay for SourceNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
-                writeln!(display, "Morsel Size = {:?}", self.morsel_size_requirement).unwrap();
+                writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
 
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();

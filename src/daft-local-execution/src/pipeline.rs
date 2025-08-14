@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt::Display, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -77,6 +77,15 @@ pub enum MorselSizeRequirement {
     Flexible(usize),
 }
 
+impl Display for MorselSizeRequirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Strict(size) => write!(f, "{}", size),
+            Self::Flexible(size) => write!(f, "Range(0, {}]", size),
+        }
+    }
+}
+
 impl Default for MorselSizeRequirement {
     fn default() -> Self {
         Self::Flexible(common_daft_config::DaftExecutionConfig::default().default_morsel_size)
@@ -91,8 +100,7 @@ impl MorselSizeRequirement {
         match (current_requirement, downstream_requirement) {
             // If there is no current requirement, use the downstream requirement
             (None, requirement) => match requirement {
-                Self::Strict(size) => Self::Flexible(size),
-                Self::Flexible(size) => Self::Flexible(size),
+                Self::Strict(size) | Self::Flexible(size) => Self::Flexible(size),
             },
             // If the current requirement is strict use it regardless of the downstream requirement
             (Some(Self::Strict(current_size)), _) => Self::Strict(current_size),

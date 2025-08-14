@@ -63,6 +63,6 @@ impl IntermediateOperator for IntoBatchesOperator {
         Ok(())
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        Some(MorselSizeRequirement::Strict(self.batch_size))
+        Some(MorselSizeRequirement::Flexible(self.batch_size))
     }
 }

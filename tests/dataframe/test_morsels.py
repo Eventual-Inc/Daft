@@ -40,13 +40,13 @@ def test_batch_size_from_udf_propagated_to_scan():
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Strict(10)
+|   Batch Size = 10
 |
 * InMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Strict(10)
+|   Batch Size = 10
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
@@ -79,13 +79,13 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
-|   Morsel Size = Strict(10)
+|   Batch Size = 10
 |
 * Project: col(0: __TruncateRootUDF_0-0-0__) as __TruncateRootUDF_0-0-0__
-|   Morsel Size = Flexible(10)
+|   Batch Size = Range(0, 10]
 |
 * Project: image_decode(col(0: {id_placeholder}), lit("raise"), lit(Null)) as __TruncateRootUDF_0-0-0__, col(1: data)
-|   Morsel Size = Flexible(10)
+|   Batch Size = Range(0, 10]
 |
 * Project: url_download(col(0: data), lit(true), lit("raise"), lit(32), lit(PyObject(IOConfig:
 |   S3Config
@@ -134,13 +134,13 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Connect timeout ms = 30000
 |   Read timeout ms = 30000
 |   Max retries = 5))) as {id_placeholder}, col(0: data)
-|   Morsel Size = Flexible(10)
+|   Batch Size = Range(0, 10]
 |
 * InMemorySource:
 |   Schema = data#Utf8
 |   Size bytes = 156
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
-|   Morsel Size = Flexible(10)
+|   Batch Size = Range(0, 10]
 
 """
     assert clean_explain_output(captured) == clean_explain_output(expected)
@@ -161,7 +161,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Strict(30)
+|   Batch Size = 30
 |
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
@@ -169,7 +169,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Strict(20)
+|   Batch Size = 20
 |
 * UDF Executor:
 |   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as __TruncateRootUDF_1-0-0__
@@ -177,13 +177,13 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Strict(10)
+|   Batch Size = 10
 |
 * InMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Strict(10)
+|   Batch Size = 10
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
@@ -203,18 +203,18 @@ def test_batch_size_from_udf_not_propagated_through_agg():
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 4, Approx size bytes = 32 B, Accumulated selectivity = 0.80 }
-|   Morsel Size = Strict(10)
+|   Batch Size = 10
 |
 * GroupedAggregate:
 |   Group by: col(0: a)
 |   Stats = { Approx num rows = 4, Approx size bytes = 32 B, Accumulated selectivity = 0.80 }
-|   Morsel Size = Flexible(131072)
+|   Batch Size = Range(0, 131072]
 |
 * InMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Flexible(131072)
+|   Batch Size = Range(0, 131072]
 
 """
 
@@ -236,44 +236,119 @@ def test_batch_size_from_udf_not_propagated_through_join():
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
-|   Morsel Size = Strict(10)
+|   Batch Size = 10
 |
 * Project: col(0: a)
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
-|   Morsel Size = Flexible(10)
+|   Batch Size = Range(0, 10]
 |
 * InnerHashJoinProbe:
 |   Probe on: [col(0: b)]
 |   Build on left: true
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
-|   Morsel Size = Flexible(10)
+|   Batch Size = Range(0, 10]
 |\
 | * Filter: not(is_null(col(0: b)))
 | |   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
-| |   Morsel Size = Flexible(10)
+| |   Batch Size = Range(0, 10]
 | |
 | * InMemorySource:
 | |   Schema = b#Int64
 | |   Size bytes = 40
 | |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-| |   Morsel Size = Flexible(10)
+| |   Batch Size = Range(0, 10]
 |
 * HashJoinBuild:
 |   Track Indices: true
 |   Key Schema: a#Int64
 |   Null equals Nulls = [false]
 |   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
-|   Morsel Size = Flexible(131072)
+|   Batch Size = Range(0, 131072]
 |
 * Filter: not(is_null(col(0: a)))
 |   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
-|   Morsel Size = Flexible(131072)
+|   Batch Size = Range(0, 131072]
 |
 * InMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Morsel Size = Flexible(131072)
+|   Batch Size = Range(0, 131072]
+
+"""
+    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+
+
+def test_batch_size_from_into_batches():
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
+    df = df.into_batches(10)
+    string_io = io.StringIO()
+    df.explain(True, file=string_io)
+    expected = """
+
+* IntoBatches: 10
+|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+|   Batch Size = Range(0, 10]
+|
+* InMemorySource:
+|   Schema = a#Int64
+|   Size bytes = 40
+|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+|   Batch Size = Range(0, 10]
+
+"""
+    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+
+
+def test_batch_size_consecutive_into_batches():
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
+    df = df.into_batches(10)
+    df = df.into_batches(20)
+    df = df.into_batches(30)
+    string_io = io.StringIO()
+    df.explain(True, file=string_io)
+    expected = """
+
+* IntoBatches: 30
+|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+|   Batch Size = Range(0, 30]
+|
+* InMemorySource:
+|   Schema = a#Int64
+|   Size bytes = 40
+|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+|   Batch Size = Range(0, 30]
+
+"""
+    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+
+
+def test_batch_size_from_into_batches_before_udf():
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
+    df = df.into_batches(10)
+    df = df.select(make_noop_udf(10)(daft.col("a")))
+    string_io = io.StringIO()
+    df.explain(True, file=string_io)
+    print(string_io.getvalue())
+    expected = """
+
+* UDF Executor:
+|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
+|   Passthrough Columns = []
+|   Concurrency = 1
+|   Resource request = None
+|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+|   Batch Size = 10
+|
+* IntoBatches: 10
+|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+|   Batch Size = Range(0, 10]
+|
+* InMemorySource:
+|   Schema = a#Int64
+|   Size bytes = 40
+|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+|   Batch Size = Range(0, 10]
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
