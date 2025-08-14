@@ -3319,7 +3319,11 @@ class DataFrame:
         """
         # Special case: treat this as a COUNT(*) operation which is likely what most people would expect
         # If user passes in "*", also do this behavior (by default it would count each column individually)
-        if len(cols) == 0 or (len(cols) == 1 and isinstance(cols[0], str) and cols[0] == "*"):
+        if (
+            len(cols) == 0
+            or (len(cols) == 1 and isinstance(cols[0], str) and cols[0] == "*")
+            or (len(cols) == 1 and isinstance(cols[0], int))
+        ):
             builder = self._builder.count()
             return DataFrame(builder)
 
