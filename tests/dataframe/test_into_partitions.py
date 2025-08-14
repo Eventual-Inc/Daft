@@ -6,7 +6,7 @@ import daft
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray",
+    get_tests_daft_runner_name() != "ray",
     reason="IntoPartitions requires Ray runner to be in use",
 )
 
