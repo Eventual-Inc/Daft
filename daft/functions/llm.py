@@ -165,7 +165,7 @@ class _OpenAIGenerator:
             return await asyncio.gather(*tasks)
 
         try:
-            outputs = asyncio.run_coroutine_threadsafe(gather_completions(), self.loop).result()
+            outputs = self.loop.run_until_complete(gather_completions())
         except Exception as e:
             import logging
 
