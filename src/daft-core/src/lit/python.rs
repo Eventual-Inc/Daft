@@ -4,17 +4,18 @@ use common_error::DaftError;
 use common_ndarray::NdArray;
 use daft_schema::prelude::TimeUnit;
 use indexmap::IndexMap;
-use ndarray::Array;
-use numpy::IntoPyArray;
 use pyo3::{
     intern,
     prelude::*,
-    types::{PyDict, PyNone},
+    types::{PyDict, PyList, PyNone},
     IntoPyObjectExt,
 };
 
 use super::Literal;
-use crate::{python::PySeries, utils::display::display_decimal128};
+use crate::{
+    python::PySeries,
+    utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
+};
 
 impl<'py> IntoPyObject<'py> for Literal {
     type Target = PyAny;
@@ -165,10 +166,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Key and value counts should be equal in map literal"
                 );
 
-                (0..keys.len())
-                    .map(|i| (keys.get_lit(i), values.get_lit(i)))
-                    .collect::<IndexMap<_, _>>()
-                    .into_bound_py_any(py)
+                Ok(PyList::new(py, keys.to_literals().zip(values.to_literals()))?.into_any())
             }
             Self::Tensor { data, shape } => {
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
@@ -185,7 +183,8 @@ impl<'py> IntoPyObject<'py> for Literal {
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
                 let values_arr = ffi::to_py_array(py, values.to_arrow(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                let indices_arr = Array::from_vec(indices).into_pyarray(py);
+                let indices_arr = ffi::to_py_array(py, indices.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
 
                 let seq = (
                     ("values", values_arr),
@@ -213,7 +212,11 @@ impl<'py> IntoPyObject<'py> for Literal {
                 );
 
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                ffi::to_py_array(py, series.to_arrow(), &pyarrow)?
+
+                let arrow_array = series.to_arrow();
+                let arrow_array = cast_array_from_daft_if_needed(arrow_array);
+
+                ffi::to_py_array(py, arrow_array, &pyarrow)?
                     .call_method0(pyo3::intern!(py, "to_pylist"))?
                     .get_item(0)
             }

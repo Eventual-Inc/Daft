@@ -100,7 +100,7 @@ pub enum Literal {
     /// A sparse tensor (values, indices, shape, indices_offset)
     SparseTensor {
         values: Series,
-        indices: Vec<u64>,
+        indices: Series,
         shape: Vec<u64>,
         indices_offset: bool,
     },
@@ -180,7 +180,7 @@ impl Hash for Literal {
                 indices_offset,
             } => {
                 Hash::hash(values, state);
-                indices.hash(state);
+                Hash::hash(indices, state);
                 shape.hash(state);
                 indices_offset.hash(state);
             }

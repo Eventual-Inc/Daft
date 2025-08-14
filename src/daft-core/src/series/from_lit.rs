@@ -174,7 +174,7 @@ impl TryFrom<Vec<Literal>> for Series {
                     .iter()
                     .map(|v| {
                         match unwrap_inner!(v, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
-                            Some((v, i, s)) => (Some(v), Some(i.as_slice()), Some(s.as_slice())),
+                            Some((v, i, s)) => (Some(v), Some(i), Some(s.as_slice())),
                             None => (None, None, None)
                         }
                     })
@@ -182,7 +182,8 @@ impl TryFrom<Vec<Literal>> for Series {
 
                 let values_array =
                     ListArray::try_from(("values", values.as_slice()))?.into_series();
-                let indices_array = ListArray::from(("indices", indices.as_slice())).into_series();
+                let indices_array =
+                    ListArray::try_from(("indices", indices.as_slice()))?.into_series();
                 let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
 
                 let validity = values_array.validity().cloned();
@@ -334,13 +335,13 @@ mod test {
     #[case(vec![
         Literal::SparseTensor {
             values: series![0],
-            indices: vec![0],
+            indices: series![0],
             shape: vec![1, 2],
             indices_offset: false
         },
         Literal::SparseTensor {
             values: series![1, 2, 3, 4],
-            indices: vec![1, 2, 3, 4],
+            indices: series![1, 2, 3, 4],
             shape: vec![1, 2, 3],
             indices_offset: false
         },
@@ -348,13 +349,13 @@ mod test {
     #[case(vec![
         Literal::SparseTensor {
             values: series![0],
-            indices: vec![0],
+            indices: series![0],
             shape: vec![1, 2],
             indices_offset: true
         },
         Literal::SparseTensor {
             values: series![1, 2, 3, 4],
-            indices: vec![1, 1, 1, 1],
+            indices: series![1, 1, 1, 1],
             shape: vec![1, 2, 3],
             indices_offset: true
         },

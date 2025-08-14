@@ -105,8 +105,8 @@ def test_series_concat_map_array(chunks) -> None:
     counter = 0
     for i in range(chunks):
         for j in range(i):
-            assert concated_list[counter]["a"] == i + j
-            assert concated_list[counter]["b"] == float(i * j)
+            assert concated_list[counter][0][1] == i + j
+            assert concated_list[counter][1][1] == float(i * j)
             counter += 1
 
 

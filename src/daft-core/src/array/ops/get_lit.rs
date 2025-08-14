@@ -39,6 +39,7 @@ impl StructArray {
             Literal::Struct(
                 self.children
                     .iter()
+                    .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
                     .map(|child| (child.field().clone(), child.get_lit(idx)))
                     .collect(),
             )
@@ -111,7 +112,6 @@ impl SparseTensorArray {
                 self.shape_array().get(idx),
             )
         {
-            let indices = indices.u64().unwrap().as_arrow().values().to_vec();
             let shape = shape.u64().unwrap().as_arrow().values().to_vec();
 
             Literal::SparseTensor {
@@ -146,15 +146,6 @@ impl FixedShapeSparseTensorArray {
             && let (Some(values), Some(indices)) =
                 (self.values_array().get(idx), self.indices_array().get(idx))
         {
-            let indices = indices
-                .cast(&DataType::UInt64)
-                .unwrap()
-                .u64()
-                .unwrap()
-                .as_arrow()
-                .values()
-                .to_vec();
-
             Literal::SparseTensor {
                 values,
                 indices,
