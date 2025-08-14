@@ -8,6 +8,52 @@ from daft import DataType as dt
 from daft.functions import file
 
 
+def test_bytes_file_is_readable_and_seekable():
+    data = b"hello world"
+    file = daft.File(data)
+    assert file.seekable()
+    assert file.readable()
+    assert not file.isatty()
+    assert not file.writable()
+
+
+def test_path_file_is_readable_and_seekable(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("hello world")
+    file = daft.File(str(temp_file.absolute()))
+    assert file.seekable()
+    assert file.readable()
+    assert not file.isatty()
+    assert not file.writable()
+
+
+def test_path_to_file(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("hello world")
+    file = daft.File(str(temp_file.absolute()))
+    data = file.read()
+    assert data == b"hello world"
+    file.seek(0)
+    data = file.read(5)
+    assert data == b"hello"
+    file.seek(0)
+    data = file.read()
+    assert data == b"hello world"
+
+
+def test_bytes_to_file():
+    data = b"hello world"
+    file = daft.File(data)
+    data = file.read(1)
+    assert data == b"h"
+    file.seek(0)
+    data = file.read()
+    assert data == b"hello world"
+
+
+# ------------------
+# dataframe operations
+# ------------------
 def test_can_convert_string_to_file_type():
     df = daft.from_pydict({"paths": ["./some_file.txt"]})
     assert df.schema() == daft.Schema.from_pydict({"paths": dt.string()})

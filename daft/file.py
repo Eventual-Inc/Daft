@@ -34,8 +34,13 @@ class File:
 
     _inner: PyDaftFile
 
-    def __init__(self) -> None:
-        raise NotImplementedError("We do not support creating a File via __init__ ")
+    def __init__(self, str_or_bytes: str | bytes) -> None:
+        if isinstance(str_or_bytes, str):
+            self._inner = PyDaftFile._from_path(str_or_bytes)
+        elif isinstance(str_or_bytes, bytes):
+            self._inner = PyDaftFile._from_bytes(str_or_bytes)
+        else:
+            raise TypeError("str_or_bytes must be a string or bytes")
 
     @staticmethod
     def _from_py_daft_file(f: PyDaftFile) -> File:
