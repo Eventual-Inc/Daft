@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import cv2
+import av
+from av import VideoFrame
 
 from daft.datatype import DataType, ImageMode
+from daft.dependencies import np
+from daft.filesystem import FileInfos, _infer_filesystem, glob_path_with_stats
 from daft.io import DataSource, DataSourceTask, IOConfig
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
+    from fractions import Fraction
 
     from daft.io.pushdowns import Pushdowns
 
@@ -20,16 +24,21 @@ if TYPE_CHECKING:
 class VideoSource(DataSource):
     """DataSource for streaming video files into rows of images.
 
+    Note:
+        This API requires [PyAV](https://github.com/PyAV-Org/PyAV), please do `pip install av`.
+
     Attributes:
         path (str|list[str]): Path(s) to the video file(s).
         image_height (int): Height to which each frame will be resized.
         image_width (int): Width to which each frame will be resized.
+        is_key_frame (bool|None): Filter if is_key_frame is True or False, else no filter.
         io_config (IOConfig|None): Optional IOConfig.
     """
 
     path: str | list[str]
     image_height: int
     image_width: int
+    is_key_frame: bool | None = None
     io_config: IOConfig | None = None
 
     @property
@@ -43,15 +52,27 @@ class VideoSource(DataSource):
             image_width=self.image_width,
         )
 
+    def _list_file_paths(self) -> Generator[str]:
+        if isinstance(self.path, str):
+            yield self.path
+        else:
+            yield from self.path
+
+    def _list_file_infos(self) -> Generator[FileInfos]:
+        for file_paths in self._list_file_paths():
+            yield glob_path_with_stats(file_paths, file_format=None, io_config=self.io_config)
+
+    def _list_files(self) -> Generator[str]:
+        for file_infos in self._list_file_infos():
+            yield from file_infos.file_paths
+
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
-
-        paths: list[str] = [self.path] if isinstance(self.path, str) else self.path
-
-        for path in paths:
+        for path in self._list_files():
             yield VideoSourceTask(
                 path=path,
                 image_height=self.image_height,
                 image_width=self.image_width,
+                is_key_frame=self.is_key_frame,
                 io_config=self.io_config,
             )
 
@@ -63,9 +84,10 @@ class VideoSourceTask(DataSourceTask):
     path: str
     image_height: int
     image_width: int
-    io_config: IOConfig | None = None
+    is_key_frame: bool | None 
+    io_config: IOConfig | None
 
-    _max_partition_size = 10 * 1024 * 1024 # 10 MB
+    _max_partition_size = 10 * 1024 * 1024  # 10 MB
 
     @property
     def schema(self) -> Schema:
@@ -74,29 +96,65 @@ class VideoSourceTask(DataSourceTask):
             image_width=self.image_width,
         )
 
-    def _new_partition(self) -> _VideoPartition:
-        return _VideoPartition(
+    def _new_partition_buffer(self) -> _VideoPartitionBuffer:
+        return _VideoPartitionBuffer(
             image_height=self.image_height,
             image_width=self.image_width,
         )
+
+    def _list_frames(self, path: str, file: Any) -> Generator[_VideoFrame]:
+        try:
+            container = av.open(file)
+
+            stream = next((s for s in container.streams if s.type == "video"), None)
+            if stream is None:
+                container.close()
+                raise RuntimeError(f"No video stream found in file: {path}")
+
+            frame_number: int
+            frame: VideoFrame
+            frame_number = 0
+            while True:
+                try:
+                    frame = next(container.decode(stream))
+                except StopIteration:
+                    break
+                except Exception:
+                    continue # skip decoding errors
+                frame = frame.reformat(width=self.image_width, height=self.image_height)
+                yield _VideoFrame(
+                    path=path,
+                    frame_number=frame_number,
+                    frame_time=frame.time,
+                    frame_time_base=frame.time_base,
+                    frame_pts=frame.pts,
+                    frame_dts=frame.dts,
+                    frame_duration=frame.duration,
+                    is_key_frame=frame.key_frame,
+                    data=frame.to_ndarray(format="rgb24"),
+                )
+                frame_number += 1
+        finally:
+            container.close()
 
     def get_micro_partitions(self) -> Iterator[MicroPartition]:
+        fp, fs, _ = _infer_filesystem(self.path, io_config=self.io_config)
+        with fs.open_input_file(fp) as file:
+            buff = self._new_partition_buffer()
+            for frame in self._list_frames(self.path, file):
+                buff.append(frame)
 
-        # TODO switch to PyAV for file-like objects.
+                # yield when full
+                if buff.size() >= self._max_partition_size:
+                    yield buff.to_micropartition()
+                    buff.clear()
 
-        frames = _frames(
-            path=self.path,
-            image_height=self.image_height,
-            image_width=self.image_width,
-        )
-        curr_partition = self._new_partition()
-        for frame in frames:
-            curr_partition.append(frame)
-            if curr_partition.size() >= self._max_partition_size:
-                yield curr_partition.to_micropartition()
-                curr_partition = self._new_partition()
-        if curr_partition and curr_partition.size() > 0:
-            yield curr_partition.to_micropartition()
+            # yield if non-empty
+            if buff and buff.size() > 0:
+                yield buff.to_micropartition()
+
+
+_VideoFrameType = np.typing.NDArray[Any]
 
 
 @dataclass
@@ -114,12 +172,17 @@ class _VideoFrame:
 
     path: str
     frame_number: int
-    frame_timestamp_ms: int
-    data: cv2.UMat
+    frame_time: float
+    frame_time_base: Fraction
+    frame_pts: int
+    frame_dts: int | None
+    frame_duration: int | None
+    is_key_frame: bool
+    data: _VideoFrameType
 
 
-class _VideoPartition:
-    """A micropartition builder for video frames.
+class _VideoPartitionBuffer:
+    """A micropartition buffer/builder for video frames.
 
     Note:
         This enables decoupling the video source from a particular
@@ -135,17 +198,30 @@ class _VideoPartition:
 
     _arr_path: list[str]
     _arr_frame_number: list[int]
-    _arr_frame_timestamp_ms: list[int]
-    _arr_data: list[cv2.UMat]
+    _arr_frame_time: list[float]
+    _arr_frame_time_base: list[str]
+    _arr_frame_pts: list[int]
+    _arr_frame_dts: list[int | None]
+    _arr_frame_duration: list[int | None]
+    _arr_is_key_frame: list[bool]
+    _arr_data: list[_VideoFrameType]
     _size_in_bytes: int
     _size_of_metad = 64
 
     def __init__(self, image_height: int, image_width: int):
         self.image_height = image_height
         self.image_width = image_width
+        self.clear()
+
+    def clear(self) -> None:
         self._arr_path = []
         self._arr_frame_number = []
-        self._arr_frame_timestamp_ms = []
+        self._arr_frame_time = []
+        self._arr_frame_time_base = []
+        self._arr_frame_pts = []
+        self._arr_frame_dts = []
+        self._arr_frame_duration = []
+        self._arr_is_key_frame = []
         self._arr_data = []
         self._size_in_bytes = 0
 
@@ -153,13 +229,23 @@ class _VideoPartition:
         """Returns the current size of the partition in bytes."""
         return self._size_in_bytes
 
-    def append(self, frame: _VideoFrame):
-        """Appends the frame to this partition builder."""
+    def append(self, frame):
+        """Appends the frame to this partition builder.
+
+        Note:
+            We encode the time_base as a fraction string.
+            See: https://github.com/Eventual-Inc/Daft/issues/4971
+        """
         self._arr_path.append(frame.path)
         self._arr_frame_number.append(frame.frame_number)
-        self._arr_frame_timestamp_ms.append(frame.frame_timestamp_ms)
+        self._arr_frame_time.append(str(frame.frame_time))
+        self._arr_frame_time_base.append(str(frame.frame_time_base))
+        self._arr_frame_pts.append(frame.frame_pts)
+        self._arr_frame_dts.append(frame.frame_dts)
+        self._arr_frame_duration.append(frame.frame_duration)
+        self._arr_is_key_frame.append(frame.is_key_frame)
         self._arr_data.append(frame.data)
-        self._size_in_bytes += frame.data.nbytes + self._size_of_metad # type: ignore
+        self._size_in_bytes += frame.data.nbytes + self._size_of_metad
 
     def to_micropartition(self) -> MicroPartition:
         """Returns a MicroPartition for this builder."""
@@ -167,7 +253,12 @@ class _VideoPartition:
             {
                 "path": self._arr_path,
                 "frame_number": self._arr_frame_number,
-                "frame_timestamp_ms": self._arr_frame_timestamp_ms,
+                "frame_time": self._arr_frame_time,
+                "frame_time_base": self._arr_frame_time_base,
+                "frame_pts": self._arr_frame_pts,
+                "frame_dts": self._arr_frame_dts,
+                "frame_duration": self._arr_frame_duration,
+                "is_key_frame": self._arr_is_key_frame,
                 "data": self._arr_data,
             }
         )
@@ -179,7 +270,12 @@ def _schema(image_height: int, image_width: int) -> Schema:
         {
             "path": DataType.string(),
             "frame_number": DataType.int64(),
-            "frame_timestamp_ms": DataType.int64(),
+            "frame_time": DataType.float64(),
+            "frame_time_base": DataType.string(),
+            "frame_pts": DataType.int64(),
+            "frame_dts": DataType.int64(),
+            "frame_duration": DataType.int64(),
+            "is_key_frame": DataType.bool(),
             "data": DataType.image(
                 height=image_height,
                 width=image_width,
@@ -187,38 +283,3 @@ def _schema(image_height: int, image_width: int) -> Schema:
             ),
         }
     )
-
-
-def _frames(path: str, image_height: int, image_width: int) -> Generator[_VideoFrame]:
-    """An open-cv backed _VideoFrame generator."""
-    cap = cv2.VideoCapture(path)
-    if not cap.isOpened():
-        return
-    try:
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = 0
-        while True:
-            curr_pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC) # current timestamp
-            ret, frame = cap.read()
-            if not ret:
-                break
-            try:
-                if curr_pos_ms > 0:
-                    timestamp_ms = int(curr_pos_ms)
-                else:
-                    timestamp_ms = (int(frame_count * (1000.0 / fps)) if fps > 0 else 0)
-                frame_rgb = frame # already RGB
-                frame_resized = cv2.resize(frame_rgb, (image_width, image_height), interpolation=cv2.INTER_AREA)
-                yield _VideoFrame(
-                    path=path,
-                    frame_number=frame_count,
-                    frame_timestamp_ms=timestamp_ms,
-                    data=frame_resized,
-                )
-                frame_count += 1
-            except Exception:
-                # skip frame
-                frame_count += 1
-                continue
-    finally:
-        cap.release()
