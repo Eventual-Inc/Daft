@@ -41,6 +41,7 @@ mod explode;
 mod filter;
 mod gather;
 mod in_memory_source;
+mod into_batches;
 mod join;
 mod limit;
 pub(crate) mod materialize;

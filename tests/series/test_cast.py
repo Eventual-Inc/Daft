@@ -1387,3 +1387,23 @@ def test_cast_list_list_to_list_tensor():
     cast_to = DataType.list(DataType.tensor(DataType.int64(), shape=(4,)))
     s = s.cast(cast_to)
     assert s.datatype() == cast_to
+
+
+def test_cast_python_to_struct():
+    data = [{"a": 1, "b": True}, {"a": 3, "b": False}]
+    dtype = DataType.struct({"a": DataType.int64(), "b": DataType.bool()})
+
+    s = Series.from_pylist(data, pyobj="force")
+    s = s.cast(dtype)
+    assert s.datatype() == dtype
+    assert s.to_pylist() == data
+
+
+def test_cast_python_to_list_of_structs():
+    data = [[{"a": 1, "b": True}, {"a": 3, "b": False}]]
+    dtype = DataType.list(DataType.struct({"a": DataType.int64(), "b": DataType.bool()}))
+
+    s = Series.from_pylist(data, pyobj="force")
+    s = s.cast(dtype)
+    assert s.datatype() == dtype
+    assert s.to_pylist() == data
