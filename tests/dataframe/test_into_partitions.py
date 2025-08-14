@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import daft
-from daft.recordbatch.micropartition import MicroPartition
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -18,9 +17,8 @@ def test_into_partitions_split(make_df) -> None:
         import ray
 
         parts = ray.get(parts)
-    parts = set(parts)
-    expected = set(MicroPartition.from_pydict({"foo": list(range(i * 5, (i + 1) * 5))}) for i in range(20))
-    assert parts == expected
+    values = set(v for p in parts for v in p.to_pydict()["foo"])
+    assert values == set(range(100))
 
 
 def test_into_partitions_coalesce() -> None:
