@@ -23,7 +23,7 @@ from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
-from daft.io.video import read_video
+from daft.io.video import read_video_frames
 
 __all__ = [
     "AzureConfig",
@@ -48,6 +48,6 @@ __all__ = [
     "read_lance",
     "read_parquet",
     "read_sql",
-    "read_video",
+    "read_video_frames",
     "read_warc",
 ]

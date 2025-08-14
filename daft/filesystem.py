@@ -200,6 +200,8 @@ def _infer_filesystem(
     """
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
+    resolved_filesystem: pafs.FileSystem
+    expiry: datetime | None = None
 
     def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None) -> None:
         """Helper method used when setting kwargs for pyarrow."""
@@ -228,7 +230,6 @@ def _infer_filesystem(
                 except ImportError:
                     pass  # Config does not exist in pyarrow 7.0.0
 
-            expiry = None
             if (s3_creds := s3_config.provide_cached_credentials()) is not None:
                 _set_if_not_none(translated_kwargs, "access_key", s3_creds.key_id)
                 _set_if_not_none(translated_kwargs, "secret_key", s3_creds.access_key)
@@ -277,8 +278,8 @@ def _infer_filesystem(
     elif protocol in {"http", "https"}:
         fsspec_fs_cls = fsspec.get_filesystem_class(protocol)
         fsspec_fs = fsspec_fs_cls()
-        resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
-        resolved_path = resolved_filesystem.normalize_path(resolved_path)
+        resolved_filesystem = pafs.PyFileSystem(fsspec_fs)
+        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem, None
 
     ###
@@ -300,8 +301,8 @@ def _infer_filesystem(
             )
         else:
             fsspec_fs = fsspec_fs_cls()
-        resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
-        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
+        resolved_filesystem = pafs.PyFileSystem(fsspec_fs)
+        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem, None
 
     else:

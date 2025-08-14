@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import av
-from av import VideoFrame
 
 from daft.datatype import DataType, ImageMode
 from daft.dependencies import np
 from daft.filesystem import FileInfos, _infer_filesystem, glob_path_with_stats
-from daft.io import DataSource, DataSourceTask, IOConfig
+from daft.io import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
@@ -17,11 +16,37 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
     from fractions import Fraction
 
+    from av.video import VideoFrame
+
+    from daft.daft import IOConfig
     from daft.io.pushdowns import Pushdowns
 
 
+_VideoFrameData = np.typing.NDArray[Any]
+
+
 @dataclass
-class VideoSource(DataSource):
+class _VideoFrame:
+    """Represents a single video frame.
+
+    Note:
+        The field name 'data' is required due to a casting bug.
+        See: https://github.com/Eventual-Inc/Daft/issues/4872
+    """
+
+    path: str
+    frame_number: int
+    frame_time: float
+    frame_time_base: Fraction
+    frame_pts: int
+    frame_dts: int | None
+    frame_duration: int | None
+    is_key_frame: bool
+    data: _VideoFrameData
+
+
+@dataclass
+class _VideoFramesSource(DataSource):
     """DataSource for streaming video files into rows of images.
 
     Note:
@@ -31,7 +56,7 @@ class VideoSource(DataSource):
         path (str|list[str]): Path(s) to the video file(s).
         image_height (int): Height to which each frame will be resized.
         image_width (int): Width to which each frame will be resized.
-        is_key_frame (bool|None): Filter if is_key_frame is True or False, else no filter.
+        is_key_frame (bool|None): If True, only include key frames; if False, only non-key frames; if None, include all frames.
         io_config (IOConfig|None): Optional IOConfig.
     """
 
@@ -43,7 +68,7 @@ class VideoSource(DataSource):
 
     @property
     def name(self) -> str:
-        return "VideoSource"
+        return "VideoFramesSource"
 
     @property
     def schema(self) -> Schema:
@@ -52,23 +77,17 @@ class VideoSource(DataSource):
             image_width=self.image_width,
         )
 
-    def _list_file_paths(self) -> Generator[str]:
-        if isinstance(self.path, str):
-            yield self.path
-        else:
-            yield from self.path
-
     def _list_file_infos(self) -> Generator[FileInfos]:
-        for file_paths in self._list_file_paths():
+        for file_paths in [self.path] if isinstance(self.path, str) else self.path:
             yield glob_path_with_stats(file_paths, file_format=None, io_config=self.io_config)
 
-    def _list_files(self) -> Generator[str]:
+    def _list_file_paths(self) -> Generator[str]:
         for file_infos in self._list_file_infos():
             yield from file_infos.file_paths
 
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
-        for path in self._list_files():
-            yield VideoSourceTask(
+        for path in self._list_file_paths():
+            yield _VideoFramesSourceTask(
                 path=path,
                 image_height=self.image_height,
                 image_width=self.image_width,
@@ -78,13 +97,13 @@ class VideoSource(DataSource):
 
 
 @dataclass
-class VideoSourceTask(DataSourceTask):
+class _VideoFramesSourceTask(DataSourceTask):
     """DataSourceTask which yields micropartitions of images from a video file."""
 
     path: str
     image_height: int
     image_width: int
-    is_key_frame: bool | None 
+    is_key_frame: bool | None
     io_config: IOConfig | None
 
     _max_partition_size = 10 * 1024 * 1024  # 10 MB
@@ -96,8 +115,8 @@ class VideoSourceTask(DataSourceTask):
             image_width=self.image_width,
         )
 
-    def _new_partition_buffer(self) -> _VideoPartitionBuffer:
-        return _VideoPartitionBuffer(
+    def _new_partition_buffer(self) -> _VideoFramesBuffer:
+        return _VideoFramesBuffer(
             image_height=self.image_height,
             image_width=self.image_width,
         )
@@ -106,22 +125,30 @@ class VideoSourceTask(DataSourceTask):
         try:
             container = av.open(file)
 
+            # TODO support reading frames for multiple video streams
             stream = next((s for s in container.streams if s.type == "video"), None)
             if stream is None:
                 container.close()
                 raise RuntimeError(f"No video stream found in file: {path}")
 
-            frame_number: int
+            frame_number: int = 0
             frame: VideoFrame
-            frame_number = 0
             while True:
                 try:
                     frame = next(container.decode(stream))
                 except StopIteration:
                     break
                 except Exception:
-                    continue # skip decoding errors
-                frame = frame.reformat(width=self.image_width, height=self.image_height)
+                    continue  # skip decoding errors
+
+                if self.is_key_frame is not None and self.is_key_frame != frame.key_frame:
+                    continue  # skip based on is_key_frame filter
+
+                frame = frame.reformat(
+                    width=self.image_width,
+                    height=self.image_height,
+                )
+
                 yield _VideoFrame(
                     path=path,
                     frame_number=frame_number,
@@ -154,34 +181,7 @@ class VideoSourceTask(DataSourceTask):
                 yield buff.to_micropartition()
 
 
-_VideoFrameType = np.typing.NDArray[Any]
-
-
-@dataclass
-class _VideoFrame:
-    """Represents a single video frame.
-
-    Note:
-        The field name 'data' is required due to a casting bug.
-        See: https://github.com/Eventual-Inc/Daft/issues/4872
-
-        This could also be _VideoFrame(Generic[T]) to accomodate
-        other video libraries, but for now we just use open-cv.
-        This implementation may graduate to PyAV if/when needed.
-    """
-
-    path: str
-    frame_number: int
-    frame_time: float
-    frame_time_base: Fraction
-    frame_pts: int
-    frame_dts: int | None
-    frame_duration: int | None
-    is_key_frame: bool
-    data: _VideoFrameType
-
-
-class _VideoPartitionBuffer:
+class _VideoFramesBuffer:
     """A micropartition buffer/builder for video frames.
 
     Note:
@@ -204,7 +204,7 @@ class _VideoPartitionBuffer:
     _arr_frame_dts: list[int | None]
     _arr_frame_duration: list[int | None]
     _arr_is_key_frame: list[bool]
-    _arr_data: list[_VideoFrameType]
+    _arr_data: list[_VideoFrameData]
     _size_in_bytes: int
     _size_of_metad = 64
 

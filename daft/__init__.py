@@ -88,7 +88,7 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
-    read_video,
+    read_video_frames,
     read_warc,
 )
 from daft.series import Series
