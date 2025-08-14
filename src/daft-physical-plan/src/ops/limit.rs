@@ -7,6 +7,7 @@ pub struct Limit {
     // Upstream node.
     pub input: PhysicalPlanRef,
     pub limit: u64,
+    pub offset: Option<u64>,
     pub eager: bool,
     pub num_partitions: usize,
 }
@@ -15,20 +16,24 @@ impl Limit {
     pub(crate) fn new(
         input: PhysicalPlanRef,
         limit: u64,
+        offset: Option<u64>,
         eager: bool,
         num_partitions: usize,
     ) -> Self {
         Self {
             input,
             limit,
+            offset,
             eager,
             num_partitions,
         }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push(format!("Limit: {}", self.limit));
+        let mut res = vec![match &self.offset {
+            Some(offset) => format!("Limit: Num Rows = {}, Offset = {}", self.limit, offset),
+            None => format!("Limit: {}", self.limit),
+        }];
         res.push(format!("Eager = {}", self.eager));
         res.push(format!("Num partitions = {}", self.num_partitions));
         res

@@ -94,7 +94,7 @@ impl<B: StorageBackend> JsonWriter<B> {
     /// Estimates the number of bytes that will be written for the given data.
     /// This is a temporary workaround since arrow-json doesn't provide bytes written or access to the underlying writer.
     fn estimate_bytes_to_write(&self, data: &MicroPartition) -> DaftResult<usize> {
-        let base_size = data.size_bytes()?.unwrap_or(0);
+        let base_size = data.size_bytes().unwrap_or(0);
         let estimated_size = (base_size as f64 * Self::INFLATION_FACTOR) as usize;
         Ok(estimated_size)
     }

@@ -1,6 +1,13 @@
-use std::sync::Arc;
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use common_error::DaftResult;
+use common_metrics::{snapshot, Stat, StatSnapshotSend};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -10,11 +17,17 @@ use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType,
+    pipeline::NodeName,
+    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_RECEIVED_KEY},
+    state_bridge::BroadcastStateBridgeRef,
+    ExecutionTaskSpawner,
+};
 
-enum ProbeTableState {
+pub(crate) enum ProbeTableState {
     Building {
         probe_table_builder: Option<Box<dyn ProbeableBuilder>>,
         projection: Vec<BoundExpr>,
@@ -84,9 +97,34 @@ impl ProbeTableState {
     }
 }
 
-impl BlockingSinkState for ProbeTableState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+#[derive(Default)]
+struct HashJoinBuildRuntimeStats {
+    cpu_us: AtomicU64,
+    rows_received: AtomicU64,
+}
+
+impl RuntimeStats for HashJoinBuildRuntimeStats {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
+    }
+
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+            ROWS_RECEIVED_KEY; Stat::Count(self.rows_received.load(ordering)),
+        ]
+    }
+
+    fn add_rows_received(&self, rows: u64) {
+        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_rows_emitted(&self, _: u64) {
+        unreachable!("HashJoinBuildSink shouldn't emit rows")
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
     }
 }
 
@@ -117,8 +155,14 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
+    type State = ProbeTableState;
+
     fn name(&self) -> NodeName {
         "HashJoinBuild".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::HashJoinBuild
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -138,17 +182,13 @@ impl BlockingSink for HashJoinBuildSink {
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         spawner
             .spawn(
                 async move {
-                    let probe_table_state: &mut ProbeTableState = state
-                        .as_any_mut()
-                        .downcast_mut::<ProbeTableState>()
-                        .expect("HashJoinBuildSink should have ProbeTableState");
-                    probe_table_state.add_tables(&input)?;
+                    state.add_tables(&input)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 info_span!("HashJoinBuildSink::sink"),
@@ -159,16 +199,12 @@ impl BlockingSink for HashJoinBuildSink {
     #[instrument(skip_all, name = "HashJoinBuildSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();
-        let probe_table_state = state
-            .as_any_mut()
-            .downcast_mut::<ProbeTableState>()
-            .expect("State type mismatch");
-        let finalized_probe_state = probe_table_state.finalize();
+        let finalized_probe_state = state.finalize();
         self.probe_state_bridge
             .set_state(finalized_probe_state.into());
         Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
@@ -178,12 +214,16 @@ impl BlockingSink for HashJoinBuildSink {
         1
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(ProbeTableState::new(
+    fn make_state(&self) -> DaftResult<Self::State> {
+        ProbeTableState::new(
             &self.key_schema,
             self.projection.clone(),
             self.nulls_equal_aware.as_ref(),
             self.track_indices,
-        )?))
+        )
+    }
+
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(HashJoinBuildRuntimeStats::default())
     }
 }

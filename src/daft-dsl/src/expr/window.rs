@@ -1,6 +1,7 @@
 use std::{fmt, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+use daft_core::lit::Literal;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,7 @@ use crate::{
         bound_expr::{BoundAggExpr, BoundWindowExpr},
         Expr,
     },
-    LiteralValue, WindowExpr,
+    WindowExpr,
 };
 
 /// Represents a window frame boundary
@@ -30,7 +31,7 @@ pub enum WindowBoundary {
     /// - 0 for CURRENT VALUE
     /// - Negative for CURRENT VALUE - N
     /// - Positive for CURRENT VALUE + N
-    RangeOffset(LiteralValue),
+    RangeOffset(Literal),
 }
 
 #[derive(Clone)]

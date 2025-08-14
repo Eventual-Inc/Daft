@@ -1,12 +1,13 @@
 mod array_impl;
 mod from;
+mod from_lit;
 mod ops;
 mod serdes;
 mod series_like;
 mod utils;
-use std::{ops::Sub, sync::Arc};
+use std::{hash::Hash, ops::Sub, sync::Arc};
 
-pub use array_impl::IntoSeries;
+pub use array_impl::{ArrayWrapper, IntoSeries};
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::DaftResult;
 use derive_more::Display;
@@ -22,6 +23,7 @@ use crate::{
         DataArray,
     },
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
+    lit::Literal,
     prelude::AsArrow,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
     with_match_daft_types,
@@ -38,6 +40,16 @@ impl PartialEq for Series {
         match self.equal(other) {
             Ok(arr) => arr.into_iter().all(|x| x.unwrap_or(false)),
             Err(_) => false,
+        }
+    }
+}
+
+impl Hash for Series {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let hash_result = self.hash(None);
+        match hash_result {
+            Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
+            Err(..) => panic!("Failed to hash series"),
         }
     }
 }
@@ -229,4 +241,28 @@ impl Series {
             _ => self == other,
         }
     }
+
+    /// Get the value at `idx` as a [`Literal`]
+    ///
+    /// Panics if `idx` is out of bounds
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.inner.get_lit(idx)
+    }
+
+    pub fn to_literals(&self) -> impl Iterator<Item = Literal> + use<'_> {
+        (0..self.len()).map(|i| self.get_lit(i))
+    }
+}
+
+#[macro_export]
+/// Convenient macro to create a Series from elements for testing purposes. Works for any types that implement `Into<Literal>`.
+macro_rules! series {
+    ($($element:expr),+) => {
+        {
+            // put into a vec first for compile-time type consistency checking
+            let elements = vec![$($element),+];
+            let elements_lit = elements.into_iter().map(Literal::from).collect::<Vec<_>>();
+            Series::try_from(elements_lit).unwrap()
+        }
+    };
 }

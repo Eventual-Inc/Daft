@@ -1,31 +1,29 @@
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
-use daft_core::python::{PyDataType, PyTimeUnit};
-use daft_core::{
+use pyo3::{PyClass, Python};
+
+use super::{deserializer::LiteralDeserializer, FromLiteral, Literal};
+#[cfg(feature = "python")]
+use crate::python::{PyDataType, PyTimeUnit};
+use crate::{
     datatypes::IntervalValue,
     prelude::{CountMode, DataType, ImageFormat, ImageMode, TimeUnit},
     series::Series,
 };
-#[cfg(feature = "python")]
-use pyo3::{PyClass, Python};
-
-use super::{deserializer::LiteralValueDeserializer, FromLiteral, Literal, LiteralValue};
-#[cfg(feature = "python")]
-use crate::pyobj_serde::PyObjectWrapper;
 
 macro_rules! impl_literal {
     ($TYPE:ty, $SCALAR:ident) => {
-        impl Literal for $TYPE {
-            fn literal_value(self) -> LiteralValue {
-                LiteralValue::$SCALAR(self)
+        impl From<$TYPE> for Literal {
+            fn from(value: $TYPE) -> Self {
+                Literal::$SCALAR(value)
             }
         }
     };
     ($TYPE:ty, $SCALAR:ident, $TRANSFORM:expr) => {
-        impl Literal for $TYPE {
-            fn literal_value(self) -> LiteralValue {
-                LiteralValue::$SCALAR($TRANSFORM(self))
+        impl From<$TYPE> for Literal {
+            fn from(value: $TYPE) -> Self {
+                Literal::$SCALAR($TRANSFORM(value))
             }
         }
     };
@@ -40,6 +38,7 @@ impl_literal!(i32, Int32);
 impl_literal!(u32, UInt32);
 impl_literal!(i64, Int64);
 impl_literal!(u64, UInt64);
+impl_literal!(f32, Float32);
 impl_literal!(f64, Float64);
 impl_literal!(IntervalValue, Interval);
 impl_literal!(String, Utf8);
@@ -47,18 +46,18 @@ impl_literal!(Series, List);
 impl_literal!(&'_ str, Utf8, |s: &'_ str| s.to_owned());
 impl_literal!(&'_ [u8], Binary, |s: &'_ [u8]| s.to_vec());
 #[cfg(feature = "python")]
-impl_literal!(pyo3::PyObject, Python, |s: pyo3::PyObject| PyObjectWrapper(
-    std::sync::Arc::new(s)
-));
+impl_literal!(pyo3::PyObject, Python, |s: pyo3::PyObject| {
+    common_py_serde::PyObjectWrapper(std::sync::Arc::new(s))
+});
 
-impl<T> Literal for Option<T>
+impl<T> From<Option<T>> for Literal
 where
-    T: Literal,
+    T: Into<Self>,
 {
-    fn literal_value(self) -> LiteralValue {
-        match self {
-            Some(val) => val.literal_value(),
-            None => LiteralValue::Null,
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(v) => v.into(),
+            None => Self::Null,
         }
     }
 }
@@ -66,8 +65,8 @@ where
 macro_rules! impl_strict_fromliteral {
     ($TYPE:ty, $SCALAR:ident) => {
         impl FromLiteral for $TYPE {
-            fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-                if let LiteralValue::$SCALAR(v) = lit {
+            fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
+                if let Literal::$SCALAR(v) = lit {
                     Ok(v.clone())
                 } else {
                     Err(DaftError::TypeError(format!(
@@ -84,17 +83,24 @@ macro_rules! impl_strict_fromliteral {
 macro_rules! impl_int_fromliteral {
     ($TYPE:ty) => {
         impl FromLiteral for $TYPE {
-            fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+            fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
                 let casted = match lit {
-                    LiteralValue::Int8(v) => num_traits::cast(*v),
-                    LiteralValue::UInt8(v) => num_traits::cast(*v),
-                    LiteralValue::Int16(v) => num_traits::cast(*v),
-                    LiteralValue::UInt16(v) => num_traits::cast(*v),
-                    LiteralValue::Int32(v) => num_traits::cast(*v),
-                    LiteralValue::UInt32(v) => num_traits::cast(*v),
-                    LiteralValue::Int64(v) => num_traits::cast(*v),
-                    LiteralValue::UInt64(v) => num_traits::cast(*v),
-                    LiteralValue::Float64(v) => {
+                    Literal::Int8(v) => num_traits::cast(*v),
+                    Literal::UInt8(v) => num_traits::cast(*v),
+                    Literal::Int16(v) => num_traits::cast(*v),
+                    Literal::UInt16(v) => num_traits::cast(*v),
+                    Literal::Int32(v) => num_traits::cast(*v),
+                    Literal::UInt32(v) => num_traits::cast(*v),
+                    Literal::Int64(v) => num_traits::cast(*v),
+                    Literal::UInt64(v) => num_traits::cast(*v),
+                    Literal::Float32(v) => {
+                        if v.fract() == 0.0 {
+                            num_traits::cast(*v)
+                        } else {
+                            None
+                        }
+                    }
+                    Literal::Float64(v) => {
                         if v.fract() == 0.0 {
                             num_traits::cast(*v)
                         } else {
@@ -123,17 +129,18 @@ macro_rules! impl_int_fromliteral {
 macro_rules! impl_float_fromliteral {
     ($TYPE:ty) => {
         impl FromLiteral for $TYPE {
-            fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+            fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
                 let casted = match lit {
-                    LiteralValue::Int8(v) => num_traits::cast(*v),
-                    LiteralValue::UInt8(v) => num_traits::cast(*v),
-                    LiteralValue::Int16(v) => num_traits::cast(*v),
-                    LiteralValue::UInt16(v) => num_traits::cast(*v),
-                    LiteralValue::Int32(v) => num_traits::cast(*v),
-                    LiteralValue::UInt32(v) => num_traits::cast(*v),
-                    LiteralValue::Int64(v) => num_traits::cast(*v),
-                    LiteralValue::UInt64(v) => num_traits::cast(*v),
-                    LiteralValue::Float64(v) => num_traits::cast(*v),
+                    Literal::Int8(v) => num_traits::cast(*v),
+                    Literal::UInt8(v) => num_traits::cast(*v),
+                    Literal::Int16(v) => num_traits::cast(*v),
+                    Literal::UInt16(v) => num_traits::cast(*v),
+                    Literal::Int32(v) => num_traits::cast(*v),
+                    Literal::UInt32(v) => num_traits::cast(*v),
+                    Literal::Int64(v) => num_traits::cast(*v),
+                    Literal::UInt64(v) => num_traits::cast(*v),
+                    Literal::Float32(v) => num_traits::cast(*v),
+                    Literal::Float64(v) => num_traits::cast(*v),
                     _ => {
                         return Err(DaftError::ValueError(format!(
                             "Expected floating point number, received: {lit}"
@@ -154,11 +161,11 @@ macro_rules! impl_float_fromliteral {
 }
 
 #[cfg(feature = "python")]
-fn try_extract_py_lit<T>(value: &LiteralValue) -> Option<T>
+fn try_extract_py_lit<T>(value: &Literal) -> Option<T>
 where
     T: Clone + PyClass,
 {
-    if let LiteralValue::Python(py_value) = value {
+    if let Literal::Python(py_value) = value {
         Python::with_gil(|py| py_value.0.extract::<T>(py).ok())
     } else {
         None
@@ -168,7 +175,7 @@ where
 macro_rules! impl_pyobj_fromliteral {
     ($TYPE:ty, $PY_TYPE:ty) => {
         impl FromLiteral for $TYPE {
-            fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+            fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
                 use serde::Deserialize;
 
                 #[cfg(feature = "python")]
@@ -176,7 +183,7 @@ macro_rules! impl_pyobj_fromliteral {
                     return Ok(py_val.into());
                 }
 
-                let deserializer = LiteralValueDeserializer { lit };
+                let deserializer = LiteralDeserializer { lit };
                 Ok(Deserialize::deserialize(deserializer)?)
             }
         }
@@ -187,8 +194,8 @@ impl<T> FromLiteral for Option<T>
 where
     T: FromLiteral,
 {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        if *lit == LiteralValue::Null {
+    fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
+        if *lit == Literal::Null {
             Ok(None)
         } else {
             T::try_from_literal(lit).map(Some)
