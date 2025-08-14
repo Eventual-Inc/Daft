@@ -37,7 +37,7 @@ use crate::{
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::RuntimeStatsManager,
-    ExecutionRuntimeContext, STDOUT,
+    ExecutionRuntimeContext, PythonStdoutGuard, STDOUT,
 };
 
 #[cfg(feature = "python")]
@@ -309,14 +309,20 @@ impl NativeExecutor {
 
             let stats_manager = Arc::new(RuntimeStatsManager::new(runtime.handle(), &pipeline));
             let execution_task = async {
-                // Override Python stdout / stderr to handle Rust side effects
+                // Override Python stdout / stderr to pass through Rust
+                #[allow(clippy::collection_is_never_read)]
+                let _stdout_guard: Option<PythonStdoutGuard>;
                 #[cfg(feature = "python")]
                 {
-                    let _stdout_guard = if flotilla {
-                        None
-                    } else {
+                    _stdout_guard = if !flotilla {
                         Some(STDOUT.clone().override_python_stdout()?)
+                    } else {
+                        None
                     };
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    _stdout_guard = None;
                 }
 
                 let memory_manager = get_or_init_memory_manager();

@@ -290,8 +290,8 @@ impl StdoutPipe {
 }
 
 /// Set Python stdout / stderr back to original on drop.
-#[cfg(feature = "python")]
 struct PythonStdoutGuard {
+    #[cfg(feature = "python")]
     old_stdout: Option<PyObject>,
 }
 
