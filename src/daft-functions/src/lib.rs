@@ -91,19 +91,13 @@ impl ScalarUDF for File {
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
-        let FileArgs { input, runner_name } = args.try_into()?;
+        let FileArgs { input, .. } = args.try_into()?;
         Ok(match input.data_type() {
             DataType::Binary => {
                 FileArray::new_from_data_array(input.name(), input.binary()?).into_series()
             }
             DataType::Utf8 => {
-                if runner_name.as_str() == "ray" {
-                    return Err(DaftError::ValueError(
-                        "Cannot reference local files within this context".to_string(),
-                    ));
-                } else {
-                    FileArray::new_from_reference_array(input.name(), input.utf8()?).into_series()
-                }
+                FileArray::new_from_reference_array(input.name(), input.utf8()?).into_series()
             }
             _ => {
                 return Err(DaftError::ValueError(format!(
@@ -115,8 +109,13 @@ impl ScalarUDF for File {
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
-        let FileArgs { input, .. } = args.try_into()?;
+        let FileArgs { input, runner_name } = args.try_into()?;
         let input = input.to_field(schema)?;
+        if input.dtype == DataType::Utf8 && runner_name.as_str() == "ray" {
+            return Err(DaftError::ValueError(
+                "Cannot reference local files within this context".to_string(),
+            ));
+        }
 
         Ok(Field::new(input.name, DataType::File))
     }

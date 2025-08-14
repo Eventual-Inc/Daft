@@ -3,9 +3,12 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
+
 import daft
 from daft import DataType as dt
 from daft.functions import file
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_bytes_file_is_readable_and_seekable():
@@ -252,3 +255,12 @@ def test_with_open_syntax_for_memory_file():
 
     df = df.select(read(df["data"]).alias("content"))
     assert df.to_pydict()["content"] == ["Hello from memory"]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="ray only test")
+def test_does_not_work_with_file_and_ray(tmp_path: Path):
+    test_file = tmp_path / "test.txt"
+
+    df = daft.from_pydict({"path": [str(test_file.absolute())]})
+    with pytest.raises(Exception, match="Cannot reference local files within this context"):
+        df.select(file(df["path"])).collect()
