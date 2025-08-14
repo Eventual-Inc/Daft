@@ -4,6 +4,8 @@
 
 ### Daft to Python
 
+<!-- Note: the conversions here should match the behavior of the Rust `impl IntoPyObject for Literal`: `src/daft-core/src-lit/python.rs` -->
+
 This table shows the mapping from Daft DataTypes to Python types, as done in places such as [`Series.to_pylist`][daft.series.Series.to_pylist], [`Expression.cast`][daft.expressions.Expression.cast] to Python type, and arguments passed into functions decorated with `@daft.func`.
 
 | Daft DataType                                                        | Python Type                                                                         |

@@ -17,6 +17,9 @@ use crate::{
     utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
 };
 
+/// All Daft to Python type conversion logic should go through this implementation.
+///
+/// The behavior here should be documented in `docs/api/datatypes.md`
 impl<'py> IntoPyObject<'py> for Literal {
     type Target = PyAny;
 
