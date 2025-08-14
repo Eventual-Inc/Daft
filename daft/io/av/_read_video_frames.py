@@ -35,7 +35,7 @@ class _VideoFrame:
     """
 
     path: str
-    frame_number: int
+    frame_index: int
     frame_time: float
     frame_time_base: Fraction
     frame_pts: int
@@ -131,7 +131,7 @@ class _VideoFramesSourceTask(DataSourceTask):
                 container.close()
                 raise RuntimeError(f"No video stream found in file: {path}")
 
-            frame_number: int = 0
+            frame_index: int = 0
             frame: VideoFrame
             while True:
                 try:
@@ -151,7 +151,7 @@ class _VideoFramesSourceTask(DataSourceTask):
 
                 yield _VideoFrame(
                     path=path,
-                    frame_number=frame_number,
+                    frame_index=frame_index,
                     frame_time=frame.time,
                     frame_time_base=frame.time_base,
                     frame_pts=frame.pts,
@@ -160,25 +160,26 @@ class _VideoFramesSourceTask(DataSourceTask):
                     is_key_frame=frame.key_frame,
                     data=frame.to_ndarray(format="rgb24"),
                 )
-                frame_number += 1
+                frame_index += 1
         finally:
             container.close()
 
     def get_micro_partitions(self) -> Iterator[MicroPartition]:
         fp, fs, _ = _infer_filesystem(self.path, io_config=self.io_config)
         with fs.open_input_file(fp) as file:
-            buff = self._new_partition_buffer()
+            buffer = _VideoFramesBuffer(
+                image_height=self.image_height,
+                image_width=self.image_width,
+            )
             for frame in self._list_frames(self.path, file):
-                buff.append(frame)
-
+                buffer.append(frame)
                 # yield when full
-                if buff.size() >= self._max_partition_size:
-                    yield buff.to_micropartition()
-                    buff.clear()
-
+                if buffer.size() >= self._max_partition_size:
+                    yield buffer.to_micropartition()
+                    buffer.clear()
             # yield if non-empty
-            if buff and buff.size() > 0:
-                yield buff.to_micropartition()
+            if buffer and buffer.size() > 0:
+                yield buffer.to_micropartition()
 
 
 class _VideoFramesBuffer:
@@ -197,7 +198,7 @@ class _VideoFramesBuffer:
     image_width: int
 
     _arr_path: list[str]
-    _arr_frame_number: list[int]
+    _arr_frame_index: list[int]
     _arr_frame_time: list[float]
     _arr_frame_time_base: list[str]
     _arr_frame_pts: list[int]
@@ -215,7 +216,7 @@ class _VideoFramesBuffer:
 
     def clear(self) -> None:
         self._arr_path = []
-        self._arr_frame_number = []
+        self._arr_frame_index = []
         self._arr_frame_time = []
         self._arr_frame_time_base = []
         self._arr_frame_pts = []
@@ -237,7 +238,7 @@ class _VideoFramesBuffer:
             See: https://github.com/Eventual-Inc/Daft/issues/4971
         """
         self._arr_path.append(frame.path)
-        self._arr_frame_number.append(frame.frame_number)
+        self._arr_frame_index.append(frame.frame_index)
         self._arr_frame_time.append(str(frame.frame_time))
         self._arr_frame_time_base.append(str(frame.frame_time_base))
         self._arr_frame_pts.append(frame.frame_pts)
@@ -252,7 +253,7 @@ class _VideoFramesBuffer:
         return MicroPartition.from_pydict(
             {
                 "path": self._arr_path,
-                "frame_number": self._arr_frame_number,
+                "frame_index": self._arr_frame_index,
                 "frame_time": self._arr_frame_time,
                 "frame_time_base": self._arr_frame_time_base,
                 "frame_pts": self._arr_frame_pts,
@@ -269,7 +270,7 @@ def _schema(image_height: int, image_width: int) -> Schema:
     return Schema.from_pydict(
         {
             "path": DataType.string(),
-            "frame_number": DataType.int64(),
+            "frame_index": DataType.int64(),
             "frame_time": DataType.float64(),
             "frame_time_base": DataType.string(),
             "frame_pts": DataType.int64(),

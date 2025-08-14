@@ -31,7 +31,7 @@ def read_video_frames(
 
     This produces a DataFrame with the following fields:
         * path (string): path to the video file that produced this frame.
-        * frame_number (int): frame number in the video.
+        * frame_index (int): frame index in the video.
         * frame_time (float): frame time in fractioanl seconds as a floating point.
         * frame_time_base (str): fractional unit of seconds in which timestamps are expressed.
         * frame_pts (int): frame presentation timestamp in time_base units.
@@ -58,13 +58,13 @@ def read_video_frames(
         DataFrame: dataframe of images.
 
     Examples:
-        >>> df = daft.read_video("/path/to/file.")
-        >>> df = daft.read_video("/path/to/directory")
-        >>> df = daft.read_video("/path/to/files-*.csv")
-        >>> df = daft.read_video("s3://path/to/files-*.csv")
+        >>> df = daft.read_video_frames("/path/to/file.mp4")
+        >>> df = daft.read_video_frames("/path/to/directory")
+        >>> df = daft.read_video_frames("/path/to/files-*.mp4")
+        >>> df = daft.read_video_frames("s3://path/to/files-*.mp4")
     """
     try:
-        from daft.io.video._read_video_frames import _VideoFramesSource
+        from daft.io.av._read_video_frames import _VideoFramesSource
     except ImportError as e:
         raise ImportError("read_video_frames requires PyAV. Please install it with `pip install av`.") from e
     return _VideoFramesSource(
