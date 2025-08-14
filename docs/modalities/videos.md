@@ -1,14 +1,12 @@
 # Working with Videos
 
-Daft has various APIs for working with videos.
-
 ## Examples
 
 <!-- include more examples as more daft.io.av functions are added. -->
 
 ### Reading Video Frames
 
-This example shows reading a videos frames into a DataFrame.
+This example shows reading a video's frames into a DataFrame.
 
 === "🐍 Python"
 
@@ -53,3 +51,17 @@ This example shows reading a videos frames into a DataFrame.
 !!! note "Note"
 
     You can specify multiple paths and use globs like `daft.read_video_frames("/path/to/file.mp4")` and `daft.read_video_frames("/path/to/files-*.mp4")`
+
+
+### Reading from YouTube
+
+This example shows reading the key frames of a youtube video, you can also pass in a list of video urls.
+
+```python
+df = daft.read_video_frames(
+    path="https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    image_height=480,
+    image_width=640,
+    is_key_frame=True,
+)
+```

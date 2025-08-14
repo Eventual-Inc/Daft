@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import av
+import requests
 from typing_extensions import TypeAlias
 
 from daft.daft import FileInfos, ImageMode
@@ -54,14 +55,14 @@ class _VideoFramesSource(DataSource):
         This API requires [PyAV](https://github.com/PyAV-Org/PyAV), please do `pip install av`.
 
     Attributes:
-        path (str|list[str]): Path(s) to the video file(s).
+        paths (list[str]): Path(s) to the video file(s).
         image_height (int): Height to which each frame will be resized.
         image_width (int): Width to which each frame will be resized.
         is_key_frame (bool|None): If True, only include key frames; if False, only non-key frames; if None, include all frames.
         io_config (IOConfig|None): Optional IOConfig.
     """
 
-    path: str | list[str]
+    paths: list[str]
     image_height: int
     image_width: int
     is_key_frame: bool | None = None
@@ -79,12 +80,20 @@ class _VideoFramesSource(DataSource):
         )
 
     def _list_file_infos(self) -> Generator[FileInfos]:
-        for file_paths in [self.path] if isinstance(self.path, str) else self.path:
+        for file_paths in self.paths:
             yield glob_path_with_stats(file_paths, file_format=None, io_config=self.io_config)
 
     def _list_file_paths(self) -> Generator[str]:
-        for file_infos in self._list_file_infos():
-            yield from file_infos.file_paths
+        all_youtube = all(_is_youtube_url(p) for p in self.paths)
+        any_youtube = any(_is_youtube_url(p) for p in self.paths)
+        if all_youtube:
+            _assert_youtube_available()
+            yield from self.paths
+        elif any_youtube:
+            raise ValueError("Either all or none of the paths must be YouTube URLs.")
+        else:
+            for file_infos in self._list_file_infos():
+                yield from file_infos.file_paths
 
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
         for path in self._list_file_paths():
@@ -112,12 +121,6 @@ class _VideoFramesSourceTask(DataSourceTask):
     @property
     def schema(self) -> Schema:
         return _schema(
-            image_height=self.image_height,
-            image_width=self.image_width,
-        )
-
-    def _new_partition_buffer(self) -> _VideoFramesBuffer:
-        return _VideoFramesBuffer(
             image_height=self.image_height,
             image_width=self.image_width,
         )
@@ -165,9 +168,27 @@ class _VideoFramesSourceTask(DataSourceTask):
         finally:
             container.close()
 
+    def _open(self) -> Any:
+        if _is_youtube_url(self.path):
+            import yt_dlp
+
+            with yt_dlp.YoutubeDL({"format": "mp4", "quiet": True}) as ydl:
+                info = ydl.extract_info(self.path, download=False)
+                if "url" in info:
+                    direct_url = info["url"]
+                elif "entries" in info and len(info["entries"]) > 0 and "url" in info["entries"][0]:
+                    direct_url = info["entries"][0]["url"]
+                else:
+                    raise ValueError("Could not extract URL from youtube video.")
+                response = requests.get(direct_url, stream=True)
+                response.raise_for_status()
+                return response.raw
+        else:
+            fp, fs, _ = _infer_filesystem(self.path, io_config=self.io_config)
+            return fs.open_input_file(fp)
+
     def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        fp, fs, _ = _infer_filesystem(self.path, io_config=self.io_config)
-        with fs.open_input_file(fp) as file:
+        with self._open() as file:
             buffer = _VideoFramesBuffer(
                 image_height=self.image_height,
                 image_width=self.image_width,
@@ -208,7 +229,7 @@ class _VideoFramesBuffer:
     _arr_is_key_frame: list[bool]
     _arr_data: list[_VideoFrameData]
     _size_in_bytes: int
-    _size_of_metad = 64
+    _size_of_metadata = 64
 
     def __init__(self, image_height: int, image_width: int):
         self.image_height = image_height
@@ -247,7 +268,7 @@ class _VideoFramesBuffer:
         self._arr_frame_duration.append(frame.frame_duration)
         self._arr_is_key_frame.append(frame.is_key_frame)
         self._arr_data.append(frame.data)
-        self._size_in_bytes += frame.data.nbytes + self._size_of_metad
+        self._size_in_bytes += frame.data.nbytes + self._size_of_metadata
 
     def to_micropartition(self) -> MicroPartition:
         """Returns a MicroPartition for this builder."""
@@ -285,3 +306,16 @@ def _schema(image_height: int, image_width: int) -> Schema:
             ),
         }
     )
+
+
+def _is_youtube_url(url: str) -> bool:
+    return url.startswith("https://www.youtube.com")
+
+
+def _assert_youtube_available() -> None:
+    try:
+        import yt_dlp  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            "YouTube video support requires the 'yt-dlp' package. Please install it with `pip install yt-dlp`."
+        ) from e

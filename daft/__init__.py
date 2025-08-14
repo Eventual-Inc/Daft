@@ -210,6 +210,7 @@ __all__ = [
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_video_frames",
     "read_warc",
     "refresh_logger",
     "register_viz_hook",

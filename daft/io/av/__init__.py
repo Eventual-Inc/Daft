@@ -32,7 +32,7 @@ def read_video_frames(
     This produces a DataFrame with the following fields:
         * path (string): path to the video file that produced this frame.
         * frame_index (int): frame index in the video.
-        * frame_time (float): frame time in fractioanl seconds as a floating point.
+        * frame_time (float): frame time in fractional seconds as a floating point.
         * frame_time_base (str): fractional unit of seconds in which timestamps are expressed.
         * frame_pts (int): frame presentation timestamp in time_base units.
         * frame_dts (int): frame decoding timestamp in time_base units.
@@ -68,7 +68,7 @@ def read_video_frames(
     except ImportError as e:
         raise ImportError("read_video_frames requires PyAV. Please install it with `pip install av`.") from e
     return _VideoFramesSource(
-        path=path,
+        paths=[path] if isinstance(path, str) else path,
         image_height=image_height,
         image_width=image_width,
         is_key_frame=is_key_frame,

@@ -8,6 +8,7 @@
         * [URLs and Files](modalities/urls.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
+        * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
     * Data Connectors
         * [Overview](connectors/index.md)
