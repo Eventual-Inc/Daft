@@ -953,6 +953,7 @@ mod tests {
                 filters: None,
                 sharder: None,
                 pushed_filters: None,
+                aggregation: None,
             },
         )
         .build();

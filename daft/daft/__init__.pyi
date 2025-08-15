@@ -868,6 +868,7 @@ class PyPushdowns:
     filters: PyExpr | None
     partition_filters: PyExpr | None
     limit: int | None
+    aggregation: PyExpr | None
 
     def __init__(
         self,
@@ -875,9 +876,18 @@ class PyPushdowns:
         filters: PyExpr | None = None,
         partition_filters: PyExpr | None = None,
         limit: int | None = None,
+        aggregation: PyExpr | None = None,
     ) -> None: ...
     def filter_required_column_names(self) -> list[str]:
         """List of field names that are required by the filter predicate."""
+        ...
+
+    def aggregation_required_column_names(self) -> list[str]:
+        """List of field names that are required by the aggregation predicate."""
+        ...
+
+    def aggregation_count_mode(self) -> CountMode:
+        """Count mode of the aggregation predicate."""
         ...
 
 PyArrowParquetType = tuple[pa.Field, dict[str, str], pa.Array, int]
