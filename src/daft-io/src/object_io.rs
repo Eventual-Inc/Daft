@@ -237,6 +237,7 @@ pub trait ObjectSource: Sync + Send {
             while continuation_token.is_some() {
                 // Note: There might some race conditions here that the list response is empty
                 // even though the continuation token of previous response is not empty, so skip NotFound error here.
+                // TODO(desmond): Ideally we should patch how `ls` produces NotFound errors. See issue #4982
                 let lsr_result = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats.clone()).await;
                 match lsr_result {
                     Ok(lsr) => {
