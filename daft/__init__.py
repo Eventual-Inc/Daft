@@ -88,6 +88,7 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
+    read_video_frames,
     read_warc,
 )
 from daft.series import Series
@@ -211,6 +212,7 @@ __all__ = [
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_video_frames",
     "read_warc",
     "refresh_logger",
     "register_viz_hook",
