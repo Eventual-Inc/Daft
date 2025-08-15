@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use common_treenode::{Transformed, TreeNode};
 use daft_algebra::simplify_expr;
+use log::Log;
 
 use super::OptimizerRule;
 use crate::LogicalPlan;
@@ -20,8 +21,34 @@ impl AutomaticRepartitionRule {
     }
 }
 
+fn is_single_source_with_single_partition(plan: &LogicalPlan) -> bool {
+    todo!()
+}
+
+fn is_map_only(plan: &LogicalPlan) -> bool {
+    todo!()
+}
+
+fn in_distributed_context_with_multiple_workers() -> bool {
+    todo!()
+}
+
+fn insert_repartition_after_source(plan: Arc<LogicalPlan>) -> Arc<LogicalPlan> {
+    todo!()
+}
+
 impl OptimizerRule for AutomaticRepartitionRule {
-    fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {}
+    fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        if !(is_single_source_with_single_partition(&plan)
+            && is_map_only(&plan)
+            && in_distributed_context_with_multiple_workers())
+        {
+            return Ok(Transformed::no(plan));
+        }
+
+        let updated = insert_repartition_after_source(plan);
+        Ok(Transformed::yes(updated))
+    }
 }
 
 #[cfg(test)]
