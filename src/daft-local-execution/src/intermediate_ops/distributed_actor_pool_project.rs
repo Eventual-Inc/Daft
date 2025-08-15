@@ -27,14 +27,34 @@ pub(crate) struct ActorHandle {
 }
 
 impl ActorHandle {
-    fn is_on_current_node(&self) -> DaftResult<bool> {
+    fn get_actors_on_current_node(
+        actor_handles: Vec<Self>,
+        timeout: usize,
+    ) -> DaftResult<(Vec<Self>, Vec<Self>)> {
         #[cfg(feature = "python")]
         {
             Python::with_gil(|py| {
-                let py_actor_handle = self.inner.bind(py);
-                let is_on_current_node =
-                    py_actor_handle.call_method0(pyo3::intern!(py, "is_on_current_node"))?;
-                Ok(is_on_current_node.extract::<bool>()?)
+                let actor_handles = actor_handles
+                    .into_iter()
+                    .map(|e| e.inner.as_ref().clone_ref(py))
+                    .collect::<Vec<_>>();
+                let ray_actor_pool_udf_module =
+                    py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+                let (local_actors, remote_actors) = ray_actor_pool_udf_module
+                    .call_method1(
+                        pyo3::intern!(py, "get_ready_actors_by_location"),
+                        (actor_handles, timeout),
+                    )?
+                    .extract::<(Vec<PyObject>, Vec<PyObject>)>()?;
+                let local_actors = local_actors
+                    .into_iter()
+                    .map(|e| Self { inner: Arc::new(e) })
+                    .collect::<Vec<_>>();
+                let remote_actors = remote_actors
+                    .into_iter()
+                    .map(|e| Self { inner: Arc::new(e) })
+                    .collect::<Vec<_>>();
+                Ok((local_actors, remote_actors))
             })
         }
         #[cfg(not(feature = "python"))]
@@ -89,20 +109,17 @@ impl DistributedActorPoolProjectOperator {
         actor_handles: Vec<impl Into<ActorHandle>>,
         batch_size: Option<usize>,
         memory_request: u64,
+        actor_ready_timeout: usize,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
 
         // Filter for actors on the current node
-        let mut local_actor_handles = Vec::new();
-        for handle in &actor_handles {
-            if handle.is_on_current_node()? {
-                local_actor_handles.push(handle.clone());
-            }
-        }
+        let (local_actor_handles, non_local_actor_handles) =
+            ActorHandle::get_actors_on_current_node(actor_handles, actor_ready_timeout)?;
 
         // If no actors are on the current node, use all actors as fallback
         let actor_handles = if local_actor_handles.is_empty() {
-            actor_handles
+            non_local_actor_handles
         } else {
             local_actor_handles
         };

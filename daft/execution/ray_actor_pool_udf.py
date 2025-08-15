@@ -35,18 +35,46 @@ class UDFActor:
 
 
 class UDFActorHandle:
-    def __init__(self, node_id: str, actor_ref: ray.ObjectRef) -> None:
-        self.node_id = node_id
+    def __init__(self, actor_ref: ray.ObjectRef) -> None:
         self.actor = actor_ref
+
+    def actor_ref(self) -> ray.ObjectRef:
+        return self.actor
 
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
         return ray.get(self.actor.eval_input.remote(input))
 
-    def is_on_current_node(self) -> bool:
-        return self.node_id == ray.get_runtime_context().get_node_id()
-
     def teardown(self) -> None:
         ray.kill(self.actor)
+
+
+def get_ready_actors_by_location(
+    actor_handles: list[UDFActorHandle],
+    timeout: int,
+) -> tuple[list[UDFActorHandle], list[UDFActorHandle]]:
+    current_node_id = ray.get_runtime_context().get_node_id()
+
+    # Wait for actors to be ready
+    ready_futures = [handle.actor_ref().__ray_ready__.remote() for handle in actor_handles]
+    ready_refs, _ = ray.wait(ready_futures, num_returns=len(ready_futures), timeout=timeout)
+
+    if not ready_refs:
+        raise RuntimeError(
+            f"UDF actors failed to start within {timeout} seconds, please increase the actor_udf_ready_timeout config via daft.set_execution_config(actor_udf_ready_timeout=timeout)"
+        )
+
+    # Get ready actor handles
+    ready_indices = [ready_futures.index(ref) for ref in ready_refs]
+    ready_handles = [actor_handles[i] for i in ready_indices]
+
+    # Get node IDs for ready actors
+    actor_node_ids = ray.get([actor_handles[i].actor_ref().get_node_id.remote() for i in ready_indices])
+
+    # Categorize by location
+    local_actors = [handle for handle, node_id in zip(ready_handles, actor_node_ids) if node_id == current_node_id]
+    remote_actors = [handle for handle, node_id in zip(ready_handles, actor_node_ids) if node_id != current_node_id]
+
+    return local_actors, remote_actors
 
 
 def start_udf_actors(
@@ -55,6 +83,7 @@ def start_udf_actors(
     num_gpus_per_actor: float,
     num_cpus_per_actor: float,
     memory_per_actor: float,
+    timeout: int,
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
@@ -67,6 +96,14 @@ def start_udf_actors(
         ).remote(expr_projection)
         for _ in range(num_actors)
     ]
-    node_ids = ray.get([actor.get_node_id.remote() for actor in actors])
-    handles = [UDFActorHandle(node_id, actor) for actor, node_id in zip(actors, node_ids)]
+
+    # Wait for actors to be ready
+    ready, _ = ray.wait([actor.__ray_ready__.remote() for actor in actors], num_returns=1, timeout=timeout)
+    if not ready:
+        raise RuntimeError(
+            f"UDF actors failed to start within {timeout} seconds, please increase the actor_udf_ready_timeout config via daft.set_execution_config(actor_udf_ready_timeout=timeout)"
+        )
+
+    # Return all actors as long as at least one is ready, as some might come up later
+    handles = [UDFActorHandle(actor) for actor in actors]
     return handles

@@ -74,6 +74,7 @@ pub struct DaftExecutionConfig {
     pub native_parquet_writer: bool,
     pub use_experimental_distributed_engine: bool,
     pub min_cpu_per_task: f64,
+    pub actor_udf_ready_timeout: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -109,6 +110,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_experimental_distributed_engine: true,
             min_cpu_per_task: 0.5,
+            actor_udf_ready_timeout: 60,
         }
     }
 }

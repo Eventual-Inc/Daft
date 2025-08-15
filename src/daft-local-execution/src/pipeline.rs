@@ -447,6 +447,7 @@ pub fn physical_plan_to_pipeline(
                 batch_size,
                 memory_request,
                 stats_state,
+                actor_ready_timeout,
                 ..
             },
         ) => {
@@ -454,6 +455,7 @@ pub fn physical_plan_to_pipeline(
                 actor_objects.clone(),
                 *batch_size,
                 *memory_request,
+                *actor_ready_timeout,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
