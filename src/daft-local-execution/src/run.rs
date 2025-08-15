@@ -301,13 +301,14 @@ impl NativeExecutor {
                 )
             });
 
-            let stats_manager = Arc::new(RuntimeStatsManager::new(runtime.handle(), &pipeline));
+            let stats_manager = RuntimeStatsManager::new(runtime.handle(), &pipeline);
+            let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle = ExecutionRuntimeContext::new(
                     cfg.default_morsel_size,
                     memory_manager.clone(),
-                    stats_manager.clone(),
+                    stats_manager_handle,
                 );
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
@@ -348,8 +349,6 @@ impl NativeExecutor {
             })?;
 
             // Finish the stats manager
-            let stats_manager = Arc::into_inner(stats_manager)
-                .expect("There should only be 1 stats manager instance by the end");
             stats_manager.finish(&runtime);
 
             if enable_explain_analyze {

@@ -1390,7 +1390,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
                 if self.flotilla_plan_runner is None:
-                    self.flotilla_plan_runner = FlotillaRunner(self.ray_client_mode)
+                    self.flotilla_plan_runner = FlotillaRunner()
                 yield from self.flotilla_plan_runner.stream_plan(
                     distributed_plan, self._part_set_cache.get_all_partition_sets()
                 )

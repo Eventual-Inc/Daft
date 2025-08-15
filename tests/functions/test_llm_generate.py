@@ -55,7 +55,7 @@ def test_llm_generate_generate(mock_sampling_params: MagicMock, mock_llm: MagicM
     assert mock_llm.call_count == 1
 
 
-@patch("openai.OpenAI")
+@patch("openai.AsyncOpenAI")
 def test_init_with_client_params_openai(mock_llm: MagicMock):
     """Test that _OpenAIGenerator initializes with client parameters correctly."""
     config = {"api_key": "test_key", "base_url": "http://test.url", "timeout": 30, "max_retries": 3, "temperature": 0.5}
@@ -66,12 +66,18 @@ def test_init_with_client_params_openai(mock_llm: MagicMock):
     assert generator.generation_config == {"temperature": 0.5}
 
 
-@patch("openai.OpenAI")
+@patch("openai.AsyncOpenAI")
 def test_llm_generate_generate_openai(mock_llm: MagicMock):
     # Create mock components
-    mock_llm.return_value.chat.completions.create.return_value = MagicMock(
-        choices=[MagicMock(message=MagicMock(content="This is a mocked response"))]
-    )
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content="This is a mocked response"))]
+
+    # Create an async mock that returns the completion
+    async def async_mock(*args, **kwargs):
+        return mock_completion
+
+    mock_llm.return_value.chat.completions.create = async_mock
+
     llm_generator = _OpenAIGenerator(generation_config={"temperature": 0.5})
     series = Series.from_pylist(["This is a test prompt"])
     res = llm_generator(series)

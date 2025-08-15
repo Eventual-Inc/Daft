@@ -50,6 +50,23 @@ fn should_enable_progress_bar() -> bool {
     }
 }
 
+#[derive(Clone)]
+pub struct RuntimeStatsManagerHandle(Arc<mpsc::UnboundedSender<(usize, bool)>>);
+
+impl RuntimeStatsManagerHandle {
+    pub fn activate_node(&self, node_id: usize) {
+        if let Err(e) = self.0.send((node_id, true)) {
+            log::warn!("Unable to activate node: {node_id} because RuntimeStatsManager was already finished: {e}");
+        }
+    }
+
+    pub fn finalize_node(&self, node_id: usize) {
+        if let Err(e) = self.0.send((node_id, false)) {
+            log::warn!("Unable to finalize node: {node_id} because RuntimeStatsManager was already finished: {e}");
+        }
+    }
+}
+
 /// Event handler for RuntimeStats
 /// The event handler contains a vector of subscribers
 /// When a new event is broadcast, `RuntimeStatsEventHandler` manages notifying the subscribers.
@@ -59,7 +76,7 @@ fn should_enable_progress_bar() -> bool {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<()>,
-    handle: RuntimeTask<()>,
+    stats_manager_task: RuntimeTask<()>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -202,22 +219,14 @@ impl RuntimeStatsManager {
 
         let task_handle = RuntimeTask::new(handle, event_loop);
         Self {
-            finish_tx,
             node_tx,
-            handle: task_handle,
+            finish_tx,
+            stats_manager_task: task_handle,
         }
     }
 
-    pub fn activate_node(&self, node_id: usize) {
-        self.node_tx
-            .send((node_id, true))
-            .expect("The node_tx channel was closed");
-    }
-
-    pub fn finalize_node(&self, node_id: usize) {
-        self.node_tx
-            .send((node_id, false))
-            .expect("The node_tx channel was closed");
+    pub fn handle(&self) -> RuntimeStatsManagerHandle {
+        RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
     pub fn finish(self, runtime: &Runtime) {
@@ -225,7 +234,9 @@ impl RuntimeStatsManager {
             .send(())
             .expect("The finish_tx channel was closed");
         runtime.block_on(async move {
-            self.handle.await.expect("The finish_tx channel was closed");
+            self.stats_manager_task
+                .await
+                .expect("The finish_tx channel was closed");
         });
     }
 }
@@ -293,7 +304,7 @@ pub struct InitializingCountingReceiver {
 
     first_receive: AtomicBool,
     node_id: usize,
-    stats_manager: Arc<RuntimeStatsManager>,
+    stats_manager: RuntimeStatsManagerHandle,
 }
 
 impl InitializingCountingReceiver {
@@ -301,7 +312,7 @@ impl InitializingCountingReceiver {
         receiver: Receiver<Arc<MicroPartition>>,
         node_id: usize,
         rt: Arc<dyn RuntimeStats>,
-        stats_manager: Arc<RuntimeStatsManager>,
+        stats_manager: RuntimeStatsManagerHandle,
     ) -> Self {
         Self {
             receiver,
@@ -417,15 +428,16 @@ mod tests {
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl(
+        let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
-        ));
+        );
+        let handle = stats_manager.handle();
 
         // Activate the node
-        handler.activate_node(0);
+        handle.activate_node(0);
 
         // Send first event
         node_stat.add_rows_received(100);
@@ -476,14 +488,15 @@ mod tests {
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl(
+        let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![subscriber1, subscriber2],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
-        ));
+        );
+        let handle = stats_manager.handle();
 
-        handler.activate_node(0);
+        handle.activate_node(0);
 
         node_stat.add_rows_received(100);
         sleep(Duration::from_millis(50)).await;
@@ -526,14 +539,15 @@ mod tests {
         let node_info = create_node_info("test_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl(
+        let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![failing_subscriber, mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
-        ));
+        );
+        let handle = stats_manager.handle();
 
-        handler.activate_node(0);
+        handle.activate_node(0);
         node_stat.add_rows_received(100);
         sleep(Duration::from_millis(50)).await;
 
@@ -569,12 +583,13 @@ mod tests {
         let node_info = create_node_info("uninitialized_node", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
         let throttle_interval = Duration::from_millis(50);
-        let handler = Arc::new(RuntimeStatsManager::new_impl(
+        let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
-        ));
+        );
+        let handle = stats_manager.handle();
 
         // No events yet because no nodes are initialized
         node_stat.add_rows_received(100);
@@ -582,7 +597,7 @@ mod tests {
         assert_eq!(state.get_total_calls(), 0);
 
         // Activate the node
-        handler.activate_node(0);
+        handle.activate_node(0);
         sleep(Duration::from_millis(50)).await;
 
         // Now we should get an event
@@ -600,21 +615,22 @@ mod tests {
         let throttle_interval = Duration::from_millis(500);
         let node_info = create_node_info("fast_query", 0);
         let node_stat = Arc::new(DefaultRuntimeStats::default());
-        let handler = Arc::new(RuntimeStatsManager::new_impl(
+        let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
             vec![(node_info, node_stat.clone())],
             throttle_interval,
-        ));
+        );
+        let handle = stats_manager.handle();
 
-        handler.activate_node(0);
+        handle.activate_node(0);
 
         // Simulate a fast query that completes within the throttle interval (500ms)
         node_stat.add_rows_received(100);
         node_stat.add_rows_emitted(50);
         node_stat.add_cpu_us(1000);
 
-        handler.finalize_node(0);
+        handle.finalize_node(0);
 
         // Wait less than throttle interval (500ms) but enough for processing (1ms)
         sleep(Duration::from_millis(10)).await;

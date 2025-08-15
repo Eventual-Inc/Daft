@@ -24,12 +24,10 @@ pub(crate) struct FlotillaProgressBar {
 }
 
 impl FlotillaProgressBar {
-    pub fn try_new(py: Python, use_ray_tqdm: bool) -> PyResult<Self> {
+    pub fn try_new(py: Python) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
-        let progress_bar = progress_bar_class
-            .call1((use_ray_tqdm,))?
-            .extract::<PyObject>()?;
+        let progress_bar = progress_bar_class.call1((true,))?.extract::<PyObject>()?;
         Ok(Self {
             progress_bar_pyobject: progress_bar,
         })
