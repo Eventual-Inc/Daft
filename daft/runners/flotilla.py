@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from daft.daft import (
     DistributedPhysicalPlan,
-    DistributedPhysicalPlanRunner,
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
@@ -16,7 +15,6 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
-    set_compute_runtime_num_worker_threads,
 )
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -46,6 +44,8 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
+        from daft.daft import set_compute_runtime_num_worker_threads
+
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
@@ -190,6 +190,8 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
 )
 class RemoteFlotillaRunner:
     def __init__(self) -> None:
+        from daft.daft import DistributedPhysicalPlanRunner
+
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
