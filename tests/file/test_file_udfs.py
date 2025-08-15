@@ -56,6 +56,7 @@ def test_bytes_to_file():
     assert data == b"hello world"
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
 def test_can_convert_string_to_file_type():
     df = daft.from_pydict({"paths": ["./some_file.txt"]})
     assert df.schema() == daft.Schema.from_pydict({"paths": dt.string()})

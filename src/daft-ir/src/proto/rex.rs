@@ -742,6 +742,7 @@ impl ToFromProto for ir::Literal {
             Self::Embedding { .. } => not_implemented_err!("embedding literal"),
             Self::Map { .. } => not_implemented_err!("map literal"),
             Self::Image(_) => not_implemented_err!("image literal"),
+            Self::Extension(_) => not_implemented_err!("extension literal"),
         };
         Ok(proto::Literal {
             variant: Some(variant),

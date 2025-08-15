@@ -484,7 +484,7 @@ def test_series_cast_numpy_to_image() -> None:
 
 def test_series_cast_numpy_to_image_infer_mode() -> None:
     data = [
-        np.arange(4, dtype=np.uint8).reshape((2, 2)),
+        np.arange(6, dtype=np.uint8).reshape((2, 3)),
         np.arange(4, 31, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
@@ -497,7 +497,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.length().to_pylist() == [4, 27, None]
+    assert t.list.length().to_pylist() == [6, 27, None]
 
     pydata = t.to_arrow().to_pylist()
     assert pydata[0] == {
@@ -505,7 +505,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
         "mode": ImageMode.L,
         "channel": 1,
         "height": 2,
-        "width": 2,
+        "width": 3,
     }
     assert pydata[1] == {
         "data": data[1].ravel().tolist(),

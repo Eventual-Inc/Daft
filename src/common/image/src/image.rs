@@ -1,12 +1,46 @@
 use core::slice;
 use std::{hash::Hash, ops::Deref};
 
-use image::{DynamicImage, ImageBuffer};
+use common_ndarray::NdArray;
+use image::{flat::SampleLayout, DynamicImage, ImageBuffer, Pixel};
+use ndarray::{Array3, ShapeBuilder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Wrapper around image::DynamicImage to implement certain traits
 #[derive(Debug, Clone, PartialEq)]
 pub struct Image(pub DynamicImage);
+
+impl Image {
+    pub fn into_ndarray(self) -> Box<dyn NdArray> {
+        fn into_ndarray3<P: Pixel>(buf: ImageBuffer<P, Vec<P::Subpixel>>) -> Array3<P::Subpixel> {
+            let SampleLayout {
+                channels,
+                channel_stride,
+                height,
+                height_stride,
+                width,
+                width_stride,
+            } = buf.sample_layout();
+            let shape = (height as usize, width as usize, channels as usize);
+            let strides = (height_stride, width_stride, channel_stride);
+            Array3::from_shape_vec(shape.strides(strides), buf.into_raw()).unwrap()
+        }
+
+        match self.0 {
+            DynamicImage::ImageLuma8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLumaA8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLuma16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLumaA16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb32F(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba32F(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            _ => unimplemented!("unsupported DynamicImage variant"),
+        }
+    }
+}
 
 impl Deref for Image {
     type Target = DynamicImage;
@@ -51,7 +85,7 @@ impl Hash for Image {
                 };
                 buffer_slice.hash(state);
             }
-            _ => todo!(),
+            _ => unimplemented!("unsupported DynamicImage variant"),
         }
     }
 }

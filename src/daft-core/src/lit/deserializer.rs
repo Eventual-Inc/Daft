@@ -331,6 +331,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralDeserializer {
             Literal::Embedding { .. } => Err(LitError::custom("Not implemented: Embedding")),
             Literal::Map { .. } => Err(LitError::custom("Not implemented: Map")),
             Literal::Image(_) => Err(LitError::custom("Not implemented: Image")),
+            Literal::Extension(_) => Err(LitError::custom("Not implemented: Extension")),
         }
     }
 
@@ -379,6 +380,7 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
             Literal::Embedding { .. } => Err(LitError::custom("Not implemented: Embedding")),
             Literal::Map { .. } => Err(LitError::custom("Not implemented: Map")),
             Literal::Image(_) => Err(LitError::custom("Not implemented: Image")),
+            Literal::Extension(_) => Err(LitError::custom("Not implemented: Extension")),
         }
     }
     // Override option deserialization

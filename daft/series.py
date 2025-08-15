@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.schema import Field
@@ -13,41 +13,8 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import Iterator
 
     from daft.daft import PyDataType
-
-
-class SeriesIterable:
-    """Iterable wrapper for Series that efficiently handles different data types."""
-
-    def __init__(self, series: Series):
-        self.series = series
-
-    def __iter__(self) -> Iterator[Any]:
-        dt = self.series.datatype()
-        if dt == DataType.python():
-
-            def yield_pylist() -> Iterator[Any]:
-                yield from self.series._series.to_pylist()
-
-            return yield_pylist()
-        elif dt._should_cast_to_python():
-
-            def yield_pylist() -> Iterator[Any]:
-                yield from self.series._series.cast(DataType.python()._dtype).to_pylist()
-
-            return yield_pylist()
-        else:
-
-            def arrow_to_py() -> Iterator[Any]:
-                # We directly call .to_arrow() on the internal PySeries object since the case
-                # above has already captured the fixed shape tensor case.
-                arrow_data = self.series._series.to_arrow()
-                for item in arrow_data:
-                    yield None if item is None else item.as_py()
-
-            return arrow_to_py()
 
 
 class Series:
@@ -58,10 +25,9 @@ class Series:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Series via __init__ ")
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> PySeriesIterator:
         """Return an iterator over the elements of the Series."""
-        iterable = SeriesIterable(self)
-        return iterable.__iter__()
+        return self._series.__iter__()
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:
@@ -227,19 +193,6 @@ class Series:
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
 
-    def _cast_to_python(self) -> Series:
-        """Convert this Series into a Series of Python objects.
-
-        Call Series.to_pylist() and create a new Series from the raw Pylist directly.
-
-        This logic is needed by the Rust implementation of cast(),
-        but is written here (i.e. not in Rust) for conciseness.
-
-        Do not call this method directly in Python; call cast() instead.
-        """
-        pylist = self.to_pylist()
-        return Series.from_pylist(pylist, self.name(), dtype=DataType.python())
-
     def _pycast_to_pynative(self, typefn: type, dtype: PyDataType) -> Series:
         """Apply Python-level casting to this Series.
 
@@ -290,12 +243,7 @@ class Series:
 
     def to_pylist(self) -> list[Any]:
         """Convert this Series to a Python list."""
-        if self.datatype().is_python():
-            return self._series.to_pylist()
-        elif self.datatype()._should_cast_to_python():
-            return self._series.cast(DataType.python()._dtype).to_pylist()
-        else:
-            return self._series.to_arrow().to_pylist()
+        return self._series.to_pylist()
 
     def filter(self, mask: Series) -> Series:
         if not isinstance(mask, Series):
@@ -339,9 +287,12 @@ class Series:
     def __repr__(self) -> str:
         return repr(self._series)
 
+    def __getitem__(self, index: int) -> Any:
+        return self._series[index]
+
     def __bool__(self) -> bool:
         raise ValueError(
-            "Series don't have a truth value." "If you reached this error using `and` / `or`, use `&` / `|` instead."
+            "Series don't have a truth value. If you reached this error using `and` / `or`, use `&` / `|` instead."
         )
 
     def __len__(self) -> int:

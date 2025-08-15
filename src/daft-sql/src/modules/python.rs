@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_core::lit::Literal;
 use daft_dsl::{functions::python::WrappedUDFClass, Expr};
 #[cfg(feature = "python")]
 use {
@@ -28,12 +27,6 @@ impl SQLModule for SQLModulePython {
 
 #[cfg(feature = "python")]
 fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<PyObject> {
-    macro_rules! unreachable_variant {
-        ($variant:ident) => {
-            unreachable!("{} can't be created directly in SQL", stringify!($variant))
-        };
-    }
-
     match expr {
         Expr::List(exprs) => {
             let literals = exprs
@@ -42,40 +35,7 @@ fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<PyObject> {
                 .collect::<PyResult<Vec<PyObject>>>()?;
             literals.into_py_any(py)
         }
-        Expr::Literal(lit) => match lit {
-            Literal::Null => Ok(py.None()),
-            Literal::Boolean(b) => b.into_py_any(py),
-            Literal::Utf8(s) => s.into_py_any(py),
-            Literal::Binary(_) => unreachable_variant!(Binary),
-            Literal::Int8(_) => unreachable_variant!(Int8),
-            Literal::UInt8(_) => unreachable_variant!(UInt8),
-            Literal::Int16(_) => unreachable_variant!(Int16),
-            Literal::UInt16(_) => unreachable_variant!(UInt16),
-            Literal::Int32(_) => unreachable_variant!(Int32),
-            Literal::UInt32(_) => unreachable_variant!(UInt32),
-            Literal::Int64(u) => u.into_py_any(py),
-            Literal::UInt64(_) => unreachable_variant!(UInt64),
-            Literal::Timestamp(..) => unreachable_variant!(Timestamp),
-            Literal::Date(_) => unreachable_variant!(Date),
-            Literal::Time(..) => unreachable_variant!(Time),
-            Literal::Duration(..) => unreachable_variant!(Duration),
-            Literal::Interval(..) => todo!(),
-            Literal::Float32(f) => f.into_py_any(py),
-            Literal::Float64(f) => f.into_py_any(py),
-            Literal::Decimal(..) => unreachable_variant!(Decimal),
-            Literal::List(series) => daft_core::python::PySeries {
-                series: series.clone(),
-            }
-            .into_py_any(py),
-            Literal::Python(_) => unreachable_variant!(Python),
-            Literal::Struct(_) => todo!(),
-            Literal::File(_) => todo!(),
-            Literal::Tensor { .. } => todo!(),
-            Literal::SparseTensor { .. } => todo!(),
-            Literal::Embedding { .. } => todo!(),
-            Literal::Map { .. } => todo!(),
-            Literal::Image(_) => todo!(),
-        },
+        Expr::Literal(lit) => lit.clone().into_py_any(py),
         _ => Err(
             DaftError::InternalError("expected a literal, found an expression".to_string()).into(),
         ),

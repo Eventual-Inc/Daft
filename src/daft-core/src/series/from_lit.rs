@@ -204,7 +204,7 @@ impl TryFrom<Vec<Literal>> for Series {
                     .iter()
                     .map(|v| {
                         match unwrap_inner!(v, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
-                            Some((v, i, s)) => (Some(v), Some(i.as_slice()), Some(s.as_slice())),
+                            Some((v, i, s)) => (Some(v), Some(i), Some(s.as_slice())),
                             None => (None, None, None)
                         }
                     })
@@ -212,7 +212,8 @@ impl TryFrom<Vec<Literal>> for Series {
 
                 let values_array =
                     ListArray::try_from(("values", values.as_slice()))?.into_series();
-                let indices_array = ListArray::from(("indices", indices.as_slice())).into_series();
+                let indices_array =
+                    ListArray::try_from(("indices", indices.as_slice()))?.into_series();
                 let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
 
                 let validity = values_array.validity().cloned();
@@ -304,106 +305,106 @@ mod test {
     use crate::{datatypes::IntervalValue, prelude::*, series};
 
     #[rstest]
-    #[case(vec![Literal::Null, Literal::Null])]
-    #[case(vec![Literal::Boolean(true), Literal::Boolean(false)])]
-    #[case(vec![Literal::Utf8("foo".to_string()), Literal::Utf8("bar".to_string())])]
-    #[case(vec![Literal::Binary(vec![]), Literal::Binary(vec![1]), Literal::Binary(vec![2, 3])])]
-    #[case(vec![Literal::Int8(0), Literal::Int8(1), Literal::Int8(-2)])]
-    #[case(vec![Literal::UInt8(0), Literal::UInt8(1)])]
-    #[case(vec![Literal::Int16(0), Literal::Int16(1), Literal::Int16(-2)])]
-    #[case(vec![Literal::UInt16(0), Literal::UInt16(1)])]
-    #[case(vec![Literal::Int32(0), Literal::Int32(1), Literal::Int32(-2)])]
-    #[case(vec![Literal::UInt32(0), Literal::UInt32(1)])]
-    #[case(vec![Literal::Int64(0), Literal::Int64(1), Literal::Int64(-2)])]
-    #[case(vec![Literal::UInt64(0), Literal::UInt64(1)])]
-    #[case(vec![
+    #[case::null(vec![Literal::Null, Literal::Null])]
+    #[case::bool(vec![Literal::Boolean(true), Literal::Boolean(false)])]
+    #[case::utf8(vec![Literal::Utf8("foo".to_string()), Literal::Utf8("bar".to_string())])]
+    #[case::binary(vec![Literal::Binary(vec![]), Literal::Binary(vec![1]), Literal::Binary(vec![2, 3])])]
+    #[case::int8(vec![Literal::Int8(0), Literal::Int8(1), Literal::Int8(-2)])]
+    #[case::uint8(vec![Literal::UInt8(0), Literal::UInt8(1)])]
+    #[case::int16(vec![Literal::Int16(0), Literal::Int16(1), Literal::Int16(-2)])]
+    #[case::uint16(vec![Literal::UInt16(0), Literal::UInt16(1)])]
+    #[case::int32(vec![Literal::Int32(0), Literal::Int32(1), Literal::Int32(-2)])]
+    #[case::uint32(vec![Literal::UInt32(0), Literal::UInt32(1)])]
+    #[case::int64(vec![Literal::Int64(0), Literal::Int64(1), Literal::Int64(-2)])]
+    #[case::uint64(vec![Literal::UInt64(0), Literal::UInt64(1)])]
+    #[case::ts_us(vec![
         Literal::Timestamp(0, TimeUnit::Microseconds, None),
         Literal::Timestamp(1, TimeUnit::Microseconds, None),
         Literal::Timestamp(-2, TimeUnit::Microseconds, None)
     ])]
-    #[case(vec![
+    #[case::ts_s_tz(vec![
         Literal::Timestamp(0, TimeUnit::Seconds, Some("America/Los_Angeles".to_string())),
         Literal::Timestamp(1, TimeUnit::Seconds, Some("America/Los_Angeles".to_string())),
         Literal::Timestamp(-2, TimeUnit::Seconds, Some("America/Los_Angeles".to_string()))
     ])]
-    #[case(vec![Literal::Date(0), Literal::Date(1), Literal::Date(-2)])]
-    #[case(vec![
+    #[case::date(vec![Literal::Date(0), Literal::Date(1), Literal::Date(-2)])]
+    #[case::time_us(vec![
         Literal::Time(0, TimeUnit::Microseconds),
         Literal::Time(1, TimeUnit::Microseconds),
         Literal::Time(-2, TimeUnit::Microseconds)
     ])]
-    #[case(vec![
+    #[case::time_s(vec![
         Literal::Time(0, TimeUnit::Seconds),
         Literal::Time(1, TimeUnit::Seconds),
         Literal::Time(-2, TimeUnit::Seconds)
     ])]
-    #[case(vec![
+    #[case::duration_us(vec![
         Literal::Duration(0, TimeUnit::Microseconds),
         Literal::Duration(1, TimeUnit::Microseconds),
         Literal::Duration(-2, TimeUnit::Microseconds)
     ])]
-    #[case(vec![
+    #[case::duration_s(vec![
         Literal::Duration(0, TimeUnit::Seconds),
         Literal::Duration(1, TimeUnit::Seconds),
         Literal::Duration(-2, TimeUnit::Seconds)
     ])]
-    #[case(vec![Literal::Interval(IntervalValue::new(0, 0, 0)), Literal::Interval(IntervalValue::new(1, -2, 3))])]
-    #[case(vec![Literal::Float32(0.0), Literal::Float32(0.5), Literal::Float32(-1.5)])]
-    #[case(vec![Literal::Float64(0.0), Literal::Float64(0.5), Literal::Float64(-1.5)])]
-    #[case(vec![Literal::Decimal(0, 0, 1), Literal::Decimal(1, 0, 1), Literal::Decimal(-2, 0, 1)])]
-    #[case(vec![Literal::Decimal(0, 5, 10), Literal::Decimal(1, 5, 10), Literal::Decimal(-2, 5, 10)])]
-    #[case(vec![Literal::List(Series::empty("literal", &DataType::Int32)), Literal::List(series![1, 2, 3])])]
-    #[case(vec![
+    #[case::interval(vec![Literal::Interval(IntervalValue::new(0, 0, 0)), Literal::Interval(IntervalValue::new(1, -2, 3))])]
+    #[case::float32(vec![Literal::Float32(0.0), Literal::Float32(0.5), Literal::Float32(-1.5)])]
+    #[case::float64(vec![Literal::Float64(0.0), Literal::Float64(0.5), Literal::Float64(-1.5)])]
+    #[case::decimal_1(vec![Literal::Decimal(0, 0, 1), Literal::Decimal(1, 0, 1), Literal::Decimal(-2, 0, 1)])]
+    #[case::decimal_2(vec![Literal::Decimal(0, 5, 10), Literal::Decimal(1, 5, 10), Literal::Decimal(-2, 5, 10)])]
+    #[case::list(vec![Literal::List(Series::empty("literal", &DataType::Int32)), Literal::List(series![1, 2, 3])])]
+    #[case::struct_(vec![
         Literal::Struct(indexmap!{Field::new("a", DataType::Boolean) => Literal::Boolean(true)}),
         Literal::Struct(indexmap!{Field::new("a", DataType::Boolean) => Literal::Boolean(false)}),
     ])]
-    #[case(vec![
+    #[case::tensor(vec![
         Literal::Tensor { data: series![0, 0], shape: vec![1, 2] },
         Literal::Tensor { data: series![1, 2, 3, 4, 5, 6], shape: vec![1, 2, 3] },
     ])]
-    #[case(vec![
+    #[case::sparse_tensor_no_offset(vec![
         Literal::SparseTensor {
             values: series![0],
-            indices: vec![0],
+            indices: series![0].cast(&DataType::UInt64).unwrap(),
             shape: vec![1, 2],
             indices_offset: false
         },
         Literal::SparseTensor {
             values: series![1, 2, 3, 4],
-            indices: vec![1, 2, 3, 4],
+            indices: series![1, 2, 3, 4].cast(&DataType::UInt64).unwrap(),
             shape: vec![1, 2, 3],
             indices_offset: false
         },
     ])]
-    #[case(vec![
+    #[case::sparse_tensor_with_offset(vec![
         Literal::SparseTensor {
             values: series![0],
-            indices: vec![0],
+            indices: series![0].cast(&DataType::UInt64).unwrap(),
             shape: vec![1, 2],
             indices_offset: true
         },
         Literal::SparseTensor {
             values: series![1, 2, 3, 4],
-            indices: vec![1, 1, 1, 1],
+            indices: series![1, 1, 1, 1].cast(&DataType::UInt64).unwrap(),
             shape: vec![1, 2, 3],
             indices_offset: true
         },
     ])]
-    #[case(vec![
+    #[case::embedding(vec![
         Literal::Embedding(series![0, 0, 0, 0]),
         Literal::Embedding(series![1, 2, 3, 4]),
     ])]
-    #[case(vec![
+    #[case::map(vec![
         Literal::Map { keys: series!["a", "b", "c"], values: series![1, 2, 3] },
         Literal::Map { keys: series!["d", "e"], values: series![4, 5] },
         Literal::Map { keys: Series::empty("literal", &DataType::Utf8), values: Series::empty("literal", &DataType::Int32) },
     ])]
-    #[case(vec![
+    #[case::image_gray(vec![
         Literal::Image(Image(GrayImage::new(1, 1).into())),
         Literal::Image(Image(GrayImage::new(100, 100).into())),
         Literal::Image(Image(GrayImage::from_raw(10, 10, vec![10; 100]).unwrap().into())),
     ])]
-    #[case(vec![
+    #[case::image_rgba(vec![
         Literal::Image(Image(RgbaImage::new(1, 1).into())),
         Literal::Image(Image(RgbaImage::new(100, 100).into())),
         Literal::Image(Image(RgbaImage::from_raw(10, 10, vec![10; 400]).unwrap().into())),
