@@ -235,6 +235,7 @@ common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
 common-image = {path = "src/common/image"}
 common-metrics = {path = "src/common/metrics"}
+common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-algebra = {path = "src/daft-algebra"}
 daft-context = {path = "src/daft-context"}
@@ -273,9 +274,11 @@ jaq-core = "2.2.0"
 jaq-json = {version = "1.1.2", features = ["serde_json"]}
 jaq-std = "2.1.1"
 mur3 = "0.1.0"
+ndarray = "0.16.1"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
+numpy = "0.25.0"
 opentelemetry = {version = "0.29", features = ["trace", "metrics"]}
 opentelemetry-otlp = {version = "0.29", features = ["grpc-tonic"]}
 opentelemetry_sdk = "0.29"
@@ -348,7 +351,7 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono"]
+features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono", "chrono-tz"]
 version = "0.25.1"
 
 [workspace.dependencies.pyo3-async-runtimes]

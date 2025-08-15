@@ -1823,8 +1823,10 @@ dependencies = [
  "arrow2",
  "bincode",
  "common-error",
+ "common-ndarray",
  "daft-schema",
  "image",
+ "ndarray",
  "serde",
 ]
 
@@ -1862,6 +1864,15 @@ dependencies = [
  "indicatif 0.17.11",
  "serde",
  "smallvec",
+]
+
+[[package]]
+name = "common-ndarray"
+version = "0.3.0-dev0"
+dependencies = [
+ "ndarray",
+ "numpy",
+ "pyo3",
 ]
 
 [[package]]
@@ -2475,6 +2486,7 @@ dependencies = [
  "common-hashable-float-wrapper",
  "common-image",
  "common-io-config",
+ "common-ndarray",
  "common-py-serde",
  "daft-hash",
  "daft-minhash",
@@ -2490,7 +2502,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "mur3",
- "ndarray",
  "num-traits",
  "numpy",
  "pyo3",
@@ -6337,6 +6348,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8970a78afe0628a3e3430376fc5fd76b6b45c4d43360ffd6cdd40bdde72b682a"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "indexmap 2.9.0",
  "indoc",
  "inventory",
