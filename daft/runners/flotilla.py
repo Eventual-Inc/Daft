@@ -46,20 +46,6 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
-        if "COV_CORE_SOURCE" in os.environ:
-            try:
-                from pytest_cov.embed import init
-
-                init()
-            except Exception as exc:
-                import sys
-
-                sys.stderr.write(
-                    "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
-                        {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
-                    )
-                )
-
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
@@ -204,20 +190,6 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
 )
 class RemoteFlotillaRunner:
     def __init__(self) -> None:
-        if "COV_CORE_SOURCE" in os.environ:
-            try:
-                from pytest_cov.embed import init
-
-                init()
-            except Exception as exc:
-                import sys
-
-                sys.stderr.write(
-                    "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
-                        {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
-                    )
-                )
-
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
