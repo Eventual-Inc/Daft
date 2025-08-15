@@ -1,6 +1,8 @@
 use common_image::Image;
 
-use crate::{array::ops::image::AsImageObj, lit::Literal, prelude::*};
+use crate::{
+    array::ops::image::AsImageObj, datatypes::logical::FileArray, lit::Literal, prelude::*,
+};
 
 fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
 where
@@ -275,3 +277,15 @@ impl_array_get_lit!(FixedShapeTensorArray, DataType::FixedShapeTensor(_, shape) 
 
 impl_image_array_get_lit!(ImageArray);
 impl_image_array_get_lit!(FixedShapeImageArray);
+
+impl FileArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        map_or_null(self.get(idx), Literal::File)
+    }
+}

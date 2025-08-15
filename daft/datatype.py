@@ -584,6 +584,11 @@ class DataType:
         """Create a Python DataType: a type which refers to an arbitrary Python object."""
         return cls._from_pydatatype(PyDataType.python())
 
+    @classmethod
+    def file(cls) -> DataType:
+        """Create a File DataType: a type which refers to a file object."""
+        return cls._from_pydatatype(PyDataType.file())
+
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.
 
@@ -964,6 +969,16 @@ class DataType:
             >>> assert dtype.is_temporal()
         """
         return self._dtype.is_temporal()
+
+    def is_file(self) -> builtins.bool:
+        """Check if this is a file type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.file()
+            >>> assert dtype.is_file()
+        """
+        return self._dtype.is_file()
 
     @property
     def size(self) -> int:

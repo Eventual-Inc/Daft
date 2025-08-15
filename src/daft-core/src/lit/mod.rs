@@ -1,8 +1,7 @@
 mod conversions;
 mod deserializer;
 #[cfg(feature = "python")]
-mod python;
-
+pub(crate) mod python;
 use std::{
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
@@ -11,6 +10,7 @@ use std::{
 
 use common_display::table_display::StrValue;
 use common_error::{ensure, DaftError, DaftResult};
+use common_file::DaftFile;
 use common_hashable_float_wrapper::FloatWrapper;
 use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
@@ -92,6 +92,7 @@ pub enum Literal {
     Python(PyObjectWrapper),
     /// TODO chore: audit struct literal vs. struct expression support.
     Struct(IndexMap<Field, Literal>),
+    File(DaftFile),
     /// A tensor
     Tensor {
         data: Series,
@@ -169,6 +170,7 @@ impl Hash for Literal {
                     f.hash(state);
                 });
             }
+            Self::File(file) => file.hash(state),
             Self::Tensor { data, shape } => {
                 Hash::hash(data, state);
                 shape.hash(state);
@@ -242,6 +244,8 @@ impl Display for Literal {
                 }
                 write!(f, ")")
             }
+            Self::File(DaftFile::Reference(path)) => write!(f, "File({path:?})"),
+            Self::File(DaftFile::Data(bytes)) => write!(f, "File({bytes:?})"),
             Self::Tensor { data, shape } => {
                 write!(
                     f,
@@ -321,6 +325,7 @@ impl Literal {
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
             Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
+            Self::File(_) => DataType::File,
             Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
             Self::SparseTensor {
                 values,
@@ -431,6 +436,7 @@ impl Literal {
             | Self::Extension(_) => display_sql_err,
             #[cfg(feature = "python")]
             Self::Python(..) => display_sql_err,
+            Self::File(_) => display_sql_err,
         }
     }
 

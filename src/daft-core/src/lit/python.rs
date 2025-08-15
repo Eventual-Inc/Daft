@@ -13,6 +13,7 @@ use pyo3::{
 
 use super::Literal;
 use crate::{
+    lit::DaftFile,
     python::PySeries,
     utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
 };
@@ -162,6 +163,20 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .map(|(f, v)| (f.name, v))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
+            Self::File(f) => {
+                let py_file = py
+                    .import(intern!(py, "daft.file"))?
+                    .getattr(intern!(py, "File"))?;
+
+                match f {
+                    DaftFile::Data(data) => {
+                        py_file.getattr(intern!(py, "_from_bytes"))?.call1((data,))
+                    }
+                    DaftFile::Reference(path) => {
+                        py_file.getattr(intern!(py, "_from_path"))?.call1((path,))
+                    }
+                }
+            }
             Self::Map { keys, values } => {
                 assert_eq!(
                     keys.len(),

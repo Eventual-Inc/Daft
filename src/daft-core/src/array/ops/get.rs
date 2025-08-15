@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use arrow2::types::months_days_ns;
+use common_file::{DaftFile, DaftFileType};
 
 use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{
-            DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
+            DateArray, DurationArray, FileArray, LogicalArrayImpl, MapArray, TimeArray,
+            TimestampArray,
         },
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
@@ -185,6 +187,30 @@ impl MapArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Series> {
         self.physical.get(idx)
+    }
+}
+
+impl FileArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<DaftFile> {
+        let discriminant_array = self.discriminant_array();
+        let data_array = self.data_array();
+        let discriminant = discriminant_array.get(idx)?;
+
+        let discriminant: DaftFileType = discriminant.try_into().expect("Invalid discriminant");
+        match discriminant {
+            // it's a path, we know its valid utf8
+            DaftFileType::Reference => {
+                let data = data_array.get(idx)?;
+                let data = data.to_vec();
+                Some(DaftFile::Reference(String::from_utf8(data).unwrap()))
+            }
+            DaftFileType::Data => {
+                let data = data_array.get(idx)?;
+                let data = data.to_vec();
+                Some(DaftFile::Data(data))
+            }
+        }
     }
 }
 

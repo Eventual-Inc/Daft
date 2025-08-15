@@ -726,6 +726,7 @@ impl ToFromProto for ir::Literal {
             Self::List(_) => not_implemented_err!("list literal"),
             #[cfg(feature = "python")]
             Self::Python(_) => todo!("python literal"),
+            Self::File(_) => todo!("file literal"),
             Self::Struct(struct_) => {
                 let mut fields = vec![];
                 for field in struct_ {
