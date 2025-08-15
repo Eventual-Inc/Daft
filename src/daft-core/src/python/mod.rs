@@ -6,6 +6,7 @@ pub use series::PySeries;
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<series::PySeries>()?;
+    parent.add_class::<series::PySeriesIterator>()?;
     daft_schema::python::register_modules(parent)?;
     Ok(())
 }

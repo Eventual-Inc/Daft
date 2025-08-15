@@ -1,11 +1,25 @@
+use chrono::{DateTime, TimeZone};
+use common_arrow_ffi as ffi;
 use common_error::DaftError;
+use common_ndarray::NdArray;
 use daft_schema::prelude::TimeUnit;
 use indexmap::IndexMap;
-use pyo3::{intern, prelude::*, types::PyNone, IntoPyObjectExt};
+use pyo3::{
+    intern,
+    prelude::*,
+    types::{PyDict, PyList, PyNone},
+    IntoPyObjectExt,
+};
 
 use super::Literal;
-use crate::{python::PySeries, utils::display::display_decimal128};
+use crate::{
+    python::PySeries,
+    utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
+};
 
+/// All Daft to Python type conversion logic should go through this implementation.
+///
+/// The behavior here should be documented in `docs/api/datatypes.md`
 impl<'py> IntoPyObject<'py> for Literal {
     type Target = PyAny;
 
@@ -31,17 +45,45 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::UInt32(val) => val.into_bound_py_any(py),
             Self::Int64(val) => val.into_bound_py_any(py),
             Self::UInt64(val) => val.into_bound_py_any(py),
-            Self::Timestamp(val, time_unit, tz) => {
-                let ts = (val as f64) / (time_unit.to_scale_factor() as f64);
+            Self::Timestamp(val, tu, tz) => {
+                // TODO: store chrono DateTime in timestamp literal directly
+                let naive_dt = match tu {
+                    TimeUnit::Nanoseconds => Some(DateTime::from_timestamp_nanos(val)),
+                    TimeUnit::Microseconds => DateTime::from_timestamp_micros(val),
+                    TimeUnit::Milliseconds => DateTime::from_timestamp_millis(val),
+                    TimeUnit::Seconds => DateTime::from_timestamp(val, 0),
+                }
+                .ok_or_else(||
+                    DaftError::ValueError(format!("Overflow when constructing timestamp from value with time unit {tu}: {val}"))
+                )?
+                .naive_utc();
 
-                py.import(intern!(py, "datetime"))?
-                    .getattr(intern!(py, "datetime"))?
-                    .call_method1(intern!(py, "fromtimestamp"), (ts, tz))
+                match tz {
+                    None => naive_dt.into_bound_py_any(py),
+                    Some(tz_str)
+                        if let Ok(fixed_offset) =
+                            arrow2::temporal_conversions::parse_offset(&tz_str) =>
+                    {
+                        fixed_offset
+                            .from_utc_datetime(&naive_dt)
+                            .into_bound_py_any(py)
+                    }
+                    Some(tz_str)
+                        if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(&tz_str) =>
+                    {
+                        tz.from_utc_datetime(&naive_dt).into_bound_py_any(py)
+                    }
+                    Some(tz_str) => Err(DaftError::ValueError(format!(
+                        "Failed to parse timezone string: {tz_str}"
+                    ))
+                    .into()),
+                }
             }
-            Self::Date(val) => py
-                .import(intern!(py, "datetime"))?
-                .getattr(intern!(py, "date"))?
-                .call_method1(intern!(py, "fromtimestamp"), (val,)),
+            Self::Date(val) => DateTime::from_timestamp((val as i64) * 24 * 60 * 60, 0)
+                .expect("chrono::DateTime from i32 date should not overflow")
+                .naive_utc()
+                .date()
+                .into_bound_py_any(py),
             Self::Time(val, time_unit) => {
                 let (h, m, s, us) = match time_unit {
                     TimeUnit::Nanoseconds => {
@@ -113,11 +155,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .import(intern!(py, "decimal"))?
                 .getattr(intern!(py, "Decimal"))?
                 .call1((display_decimal128(val, p, s),)),
-            Self::List(series) => py
-                .import(intern!(py, "daft.series"))?
-                .getattr(intern!(py, "Series"))?
-                .getattr(intern!(py, "_from_pyseries"))?
-                .call1((PySeries { series },)),
+            Self::List(series) => Ok(PySeries { series }.to_pylist(py)?.into_any()),
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
             Self::Struct(entries) => entries
                 .into_iter()
@@ -131,22 +169,59 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Key and value counts should be equal in map literal"
                 );
 
-                (0..keys.len())
-                    .map(|i| (keys.get_lit(i), values.get_lit(i)))
-                    .collect::<IndexMap<_, _>>()
-                    .into_bound_py_any(py)
+                Ok(PyList::new(py, keys.to_literals().zip(values.to_literals()))?.into_any())
             }
-            Self::Tensor { .. } => {
-                Err(DaftError::NotImplemented("Tensor literal to Python".to_string()).into())
+            Self::Tensor { data, shape } => {
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                ffi::to_py_array(py, data.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
+                    .call_method1(pyo3::intern!(py, "reshape"), (shape,))
             }
-            Self::SparseTensor { .. } => {
-                Err(DaftError::NotImplemented("Sparse tensor literal to Python".to_string()).into())
+            Self::SparseTensor {
+                values,
+                indices,
+                shape,
+                ..
+            } => {
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                let values_arr = ffi::to_py_array(py, values.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                let indices_arr = ffi::to_py_array(py, indices.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+
+                let seq = (
+                    ("values", values_arr),
+                    ("indices", indices_arr),
+                    ("shape", shape),
+                )
+                    .into_bound_py_any(py)?;
+
+                Ok(PyDict::from_sequence(&seq)?.into_any())
             }
-            Self::Embedding { .. } => {
-                Err(DaftError::NotImplemented("Embedding literal to Python".to_string()).into())
+            Self::Embedding(series) => {
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                ffi::to_py_array(py, series.to_arrow(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))
             }
-            Self::Image(_) => {
-                Err(DaftError::NotImplemented("Image literal to Python".to_string()).into())
+            Self::Image(image) => {
+                let img_arr: Box<dyn NdArray> = image.into_ndarray();
+                Ok(img_arr.into_py(py))
+            }
+            Self::Extension(series) => {
+                debug_assert_eq!(
+                    series.len(),
+                    1,
+                    "Expected extension literal to have length 1"
+                );
+
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+
+                let arrow_array = series.to_arrow();
+                let arrow_array = cast_array_from_daft_if_needed(arrow_array);
+
+                ffi::to_py_array(py, arrow_array, &pyarrow)?
+                    .call_method0(pyo3::intern!(py, "to_pylist"))?
+                    .get_item(0)
             }
         }
     }
