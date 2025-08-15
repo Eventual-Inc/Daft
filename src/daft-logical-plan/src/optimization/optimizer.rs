@@ -181,6 +181,9 @@ impl OptimizerBuilder {
                 vec![Box::new(PushDownProjection::new())],
                 RuleExecutionStrategy::FixedPoint(None),
             ),
+
+            # TODO: add the work here ==> look at the logical plan and do the optimization!
+
             // --- Shard pushdowns ---
             RuleBatch::new(
                 vec![Box::new(PushDownShard::new())],
