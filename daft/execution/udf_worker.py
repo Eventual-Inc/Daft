@@ -31,25 +31,26 @@ def udf_event_loop(
     name, expr_projection_bytes = conn.recv()
     if name != _ENTER:
         raise ValueError(f"Expected '{_ENTER}' but got {name}")
-    uninitialized_projection: ExpressionsProjection = pickle.loads(expr_projection_bytes)
 
     transport = SharedMemoryTransport()
     try:
-        initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
-
-        print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
-        sys.stdout.flush()
-        sys.stderr.flush()
         conn.send(_READY)
 
+        expression_projection = None
         while True:
             name, size = conn.recv()
             if (name, size) == _SENTINEL:
                 break
 
+            # We initialize after ready to avoid blocking the main thread
+            if expression_projection is None:
+                uninitialized_projection: ExpressionsProjection = pickle.loads(expr_projection_bytes)
+                initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
+                expression_projection = initialized_projection
+
             input_bytes = transport.read_and_release(name, size)
             input = MicroPartition.from_ipc_stream(input_bytes)
-            evaluated = input.eval_expression_list(initialized_projection)
+            evaluated = input.eval_expression_list(expression_projection)
 
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)

@@ -55,8 +55,9 @@ pub(crate) struct UdfHandle {
     // Optional for stateless UDFs
     //   - Starts as None indicating that the UDF is run in-line with the thread
     //   - If excessive GIL contention is detected, the UDF will be moved to an external worker
+    // Second bool indicates if the UDF was initialized
     #[cfg(feature = "python")]
-    inner: Option<PyObject>,
+    handle: Option<PyObject>,
     // Data used to track GIL contention
     check_gil_contention: bool,
     min_num_test_iterations: usize,
@@ -76,7 +77,7 @@ impl UdfHandle {
             params,
             worker_idx,
             #[cfg(feature = "python")]
-            inner: None,
+            handle: None,
             check_gil_contention,
             min_num_test_iterations,
             total_runtime: Duration::from_secs(0),
@@ -88,8 +89,6 @@ impl UdfHandle {
     fn create_handle(&mut self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
-            use crate::STDOUT;
-
             let py_expr = PyExpr::from(self.params.udf_expr.as_ref().clone());
             let passthrough_exprs = self
                 .params
@@ -98,7 +97,7 @@ impl UdfHandle {
                 .map(|expr| PyExpr::from(expr.as_ref().clone()))
                 .collect::<Vec<_>>();
 
-            let inner = Python::with_gil(|py| {
+            let handle = Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
                     py.import(pyo3::intern!(py, "daft.execution.udf"))?
@@ -108,21 +107,7 @@ impl UdfHandle {
                 )
             })?;
 
-            Python::with_gil(|py| {
-                let log_lines = inner
-                    .bind(py)
-                    .call_method0(pyo3::intern!(py, "trace_output"))?
-                    .extract::<Vec<String>>()?;
-                let label = format!(
-                    "[`{}` Worker #{} Init]",
-                    self.params.udf_name, self.worker_idx
-                );
-                for line in log_lines {
-                    STDOUT.print(&label, &line);
-                }
-                Ok::<(), PyErr>(())
-            })?;
-            self.inner = Some(inner);
+            self.handle = Some(handle);
         }
 
         #[cfg(not(feature = "python"))]
@@ -137,12 +122,12 @@ impl UdfHandle {
     fn eval_input_with_handle(
         &self,
         input: Arc<MicroPartition>,
-        inner: &PyObject,
+        handle: &PyObject,
     ) -> DaftResult<Arc<MicroPartition>> {
         use crate::STDOUT;
 
         let (micropartition, outs) = Python::with_gil(|py| {
-            inner
+            handle
                 .bind(py)
                 .call_method1(
                     pyo3::intern!(py, "eval_input"),
@@ -246,8 +231,8 @@ impl UdfHandle {
 
         #[cfg(feature = "python")]
         {
-            if let Some(inner) = &self.inner {
-                self.eval_input_with_handle(input, inner)
+            if let Some(handle) = &self.handle {
+                self.eval_input_with_handle(input, handle)
             } else {
                 self.eval_input_inline(input)
             }
@@ -257,12 +242,14 @@ impl UdfHandle {
     fn teardown(&self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
-            let Some(inner) = &self.inner else {
+            let Some(handle) = &self.handle else {
                 return Ok(());
             };
 
             Python::with_gil(|py| {
-                inner.bind(py).call_method0(pyo3::intern!(py, "teardown"))?;
+                handle
+                    .bind(py)
+                    .call_method0(pyo3::intern!(py, "teardown"))?;
                 Ok(())
             })
         }

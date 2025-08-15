@@ -1837,7 +1837,6 @@ class NativeExecutor:
         psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
-        flotilla: bool = False,
     ) -> Iterator[PyMicroPartition]: ...
     def run_async(
         self,
@@ -1845,7 +1844,6 @@ class NativeExecutor:
         psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
-        flotilla: bool = False,
         context: dict[str, str] | None = None,
     ) -> AsyncIterator[PyMicroPartition]: ...
     @staticmethod

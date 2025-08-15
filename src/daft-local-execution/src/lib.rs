@@ -254,62 +254,6 @@ trait PythonPrintTarget: Send + Sync + 'static {
     fn println(&self, message: &str);
 }
 
-/// Class that mimics Python sys.stdout / sys.stderr
-#[cfg(feature = "python")]
-#[cfg_attr(feature = "python", pyclass)]
-struct StdoutPipe {
-    printer: Arc<StdoutHandler>,
-    buffer: String,
-}
-
-#[cfg(feature = "python")]
-#[cfg_attr(feature = "python", pymethods)]
-/// Methods that mimic Python sys.stdout / sys.stderr
-impl StdoutPipe {
-    pub fn write(&mut self, message: &str) {
-        self.buffer.push_str(message);
-
-        // Check if the buffer contains a newline
-        if let Some(newline_pos) = self.buffer.find('\n') {
-            // Split at the newline and write the complete lines
-            let (complete_lines, remaining) = self.buffer.split_at(newline_pos + 1);
-            self.printer
-                .print("[UDF on Thread]", complete_lines.trim_end_matches('\n'));
-
-            // Keep the remaining content in the buffer
-            self.buffer = remaining.to_string();
-        }
-    }
-
-    pub fn flush(&mut self) {
-        if !self.buffer.is_empty() {
-            self.printer.print("[UDF on Thread]", &self.buffer);
-            self.buffer.clear();
-        }
-    }
-}
-
-/// Set Python stdout / stderr back to original on drop.
-struct PythonStdoutGuard {
-    #[cfg(feature = "python")]
-    old_stdout: Option<PyObject>,
-}
-
-#[cfg(feature = "python")]
-impl Drop for PythonStdoutGuard {
-    fn drop(&mut self) {
-        use pyo3::{intern, Python};
-
-        // Something else has probably gone wrong if we can't reset, so just ignore
-        let _ = Python::with_gil(|py| {
-            let sys = py.import(intern!(py, "sys"))?;
-            sys.setattr(intern!(py, "stdout"), self.old_stdout.take().unwrap())?;
-
-            Ok::<(), PyErr>(())
-        });
-    }
-}
-
 /// A static entity that redirects Python sys.stdout / sys.stderr to handle Rust side effects.
 /// Tracks internal tags to reduce interweaving of user prints
 /// Can also register callbacks, for example for suspending the progress bar before prints.
@@ -340,29 +284,6 @@ impl StdoutHandler {
         } else {
             println!("{message}");
         }
-    }
-
-    #[cfg(feature = "python")]
-    pub fn override_python_stdout(self: Arc<Self>) -> DaftResult<PythonStdoutGuard> {
-        use pyo3::{intern, PyErr, Python};
-
-        let stdout_pipe = StdoutPipe {
-            printer: self,
-            buffer: String::new(),
-        };
-
-        let old_stdout = Python::with_gil(|py| {
-            let sys = py.import(intern!(py, "sys"))?;
-            let old_stdout = sys.getattr(intern!(py, "stdout"))?;
-            let new_stdout = stdout_pipe.into_pyobject(py)?;
-            sys.setattr(intern!(py, "stdout"), new_stdout)?;
-
-            Ok::<_, PyErr>(old_stdout.unbind())
-        })?;
-
-        Ok(PythonStdoutGuard {
-            old_stdout: Some(old_stdout),
-        })
     }
 }
 

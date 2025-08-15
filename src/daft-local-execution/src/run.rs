@@ -37,7 +37,7 @@ use crate::{
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::RuntimeStatsManager,
-    ExecutionRuntimeContext, PythonStdoutGuard, STDOUT,
+    ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -105,7 +105,7 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, flotilla=false))]
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
     pub fn run<'a>(
         &self,
         py: Python<'a>,
@@ -113,7 +113,6 @@ impl PyNativeExecutor {
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
-        flotilla: bool,
     ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
@@ -138,7 +137,6 @@ impl PyNativeExecutor {
                     &psets,
                     cfg.config,
                     results_buffer_size,
-                    flotilla,
                     None,
                 )
                 .map(|res| res.into_iter())
@@ -156,7 +154,7 @@ impl PyNativeExecutor {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, flotilla=false, context=None))]
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, context=None))]
     pub fn run_async<'a>(
         &self,
         py: Python<'a>,
@@ -164,7 +162,6 @@ impl PyNativeExecutor {
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
-        flotilla: bool,
         context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
@@ -189,7 +186,6 @@ impl PyNativeExecutor {
                 &psets,
                 cfg.config,
                 results_buffer_size,
-                flotilla,
                 context,
             )
         })?;
@@ -283,7 +279,6 @@ impl NativeExecutor {
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
-        flotilla: bool,
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         start_chrome_trace();
@@ -309,22 +304,6 @@ impl NativeExecutor {
 
             let stats_manager = Arc::new(RuntimeStatsManager::new(runtime.handle(), &pipeline));
             let execution_task = async {
-                // Override Python stdout / stderr to pass through Rust
-                #[allow(clippy::collection_is_never_read)]
-                let _stdout_guard: Option<PythonStdoutGuard>;
-                #[cfg(feature = "python")]
-                {
-                    _stdout_guard = if !flotilla {
-                        Some(STDOUT.clone().override_python_stdout()?)
-                    } else {
-                        None
-                    };
-                }
-                #[cfg(not(feature = "python"))]
-                {
-                    _stdout_guard = None;
-                }
-
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle = ExecutionRuntimeContext::new(
                     cfg.default_morsel_size,

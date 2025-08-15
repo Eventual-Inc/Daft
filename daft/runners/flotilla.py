@@ -65,7 +65,7 @@ class RaySwordfishActor:
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, config, None, True, context):
+            async for partition in native_executor.run_async(plan, psets_mp, config, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
