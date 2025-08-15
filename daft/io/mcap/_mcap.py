@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from daft.api_annotations import PublicAPI
+from daft.dependencies import pafs
+from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
 from daft.recordbatch.micropartition import MicroPartition
 
 if TYPE_CHECKING:
+    import pathlib
     from collections.abc import Iterator
 
     from daft import DataFrame
@@ -18,6 +21,56 @@ if TYPE_CHECKING:
 
 # mcap format details see: https://github.com/foxglove/mcap
 # reader: https://github.com/foxglove/mcap/blob/17d9324367ab7486ce4a3cd300e40a0b09cfb799/python/mcap-ros2-support/mcap_ros2/reader.py
+
+
+def normalize_storage_path(path: str, io_config: IOConfig | None = None) -> str:
+    """Normalize storage path: infer and add protocol prefix based on IO configuration.
+
+    1. Keep existing protocol paths unchanged
+    2. Add protocol prefix for protocol-less paths based on io_config
+    3. Preserve local paths as-is
+    """
+    protocol = get_protocol_from_path(path)
+    if protocol != "file":
+        return path
+
+    if io_config:
+        if io_config.s3:
+            return f"s3://{path.lstrip('/')}"
+        elif io_config.azure:
+            return f"abfs://{path.lstrip('/')}"
+        elif io_config.gcs:
+            return f"gs://{path.lstrip('/')}"
+
+    return path
+
+
+def list_files(
+    root_dir: str | pathlib.Path,
+    io_config: IOConfig | None,
+    resolved_path: str | None = None,
+    fs: pafs.FileSystem | None = None,
+) -> list[str]:
+    if resolved_path is None or fs is None:
+        [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+
+    try:
+        file_info = fs.get_file_info(resolved_path)
+        if file_info.type == pafs.FileType.File:
+            return [resolved_path]
+    except FileNotFoundError:
+        return []
+
+    selector = pafs.FileSelector(resolved_path, recursive=True)
+
+    try:
+        file_infos = fs.get_file_info(selector)
+    except NotADirectoryError:
+        return [resolved_path]
+    except FileNotFoundError:
+        return []
+
+    return [file_info.path for file_info in file_infos if file_info.type == pafs.FileType.File]
 
 
 @PublicAPI
@@ -61,8 +114,6 @@ class MCAPSource(DataSource):
         batch_size: int = 1000,
         io_config: IOConfig | None = None,
     ):
-        from daft.filesystem import list_files, normalize_storage_path
-
         self._start_time = start_time
         self._end_time = end_time
         self._topics = topics
