@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from daft.daft import (
     DistributedPhysicalPlan,
+    DistributedPhysicalPlanRunner,
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
@@ -15,6 +16,7 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
+    set_compute_runtime_num_worker_threads,
 )
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -44,7 +46,19 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
-        from daft.daft import set_compute_runtime_num_worker_threads
+        if "COV_CORE_SOURCE" in os.environ:
+            try:
+                from pytest_cov.embed import init
+
+                init()
+            except Exception as exc:
+                import sys
+
+                sys.stderr.write(
+                    "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
+                        {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
+                    )
+                )
 
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
@@ -190,7 +204,19 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
 )
 class RemoteFlotillaRunner:
     def __init__(self) -> None:
-        from daft.daft import DistributedPhysicalPlanRunner
+        if "COV_CORE_SOURCE" in os.environ:
+            try:
+                from pytest_cov.embed import init
+
+                init()
+            except Exception as exc:
+                import sys
+
+                sys.stderr.write(
+                    "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
+                        {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
+                    )
+                )
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
