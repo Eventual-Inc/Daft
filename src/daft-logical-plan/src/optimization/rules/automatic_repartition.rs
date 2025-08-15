@@ -26,7 +26,7 @@ fn is_single_source_with_single_partition(plan: &LogicalPlan) -> bool {
 }
 
 fn is_map_only(plan: &LogicalPlan) -> bool {
-    todo!()
+    plan.with_new_children(children)
 }
 
 fn in_distributed_context_with_multiple_workers() -> bool {
