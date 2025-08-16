@@ -8,6 +8,7 @@ import lance
 
 from daft.context import get_context
 from daft.datatype import DataType
+from daft.dependencies import pa
 from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
@@ -91,7 +92,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         lance = self._import_lance()
 
         for micropartition in micropartitions:
-            arrow_table = micropartition.to_arrow()
+            arrow_table = pa.Table.from_batches(micropartition.to_arrow().to_batches(), self._pyarrow_schema)
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows
 
@@ -110,8 +111,6 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
     def finalize(self, write_results: list[WriteResult[list[lance.FragmentMetadata]]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
-        from daft.dependencies import pa
-
         lance = self._import_lance()
 
         fragments = list(chain.from_iterable(write_result.result for write_result in write_results))
