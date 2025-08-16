@@ -57,6 +57,7 @@ def get_ready_actors_by_location(
     # Wait for actors to be ready
     ready_futures = [handle.actor_ref().__ray_ready__.remote() for handle in actor_handles]
     ready_refs, _ = ray.wait(ready_futures, num_returns=len(ready_futures), timeout=timeout)
+    ray.get(ready_refs)
 
     if not ready_refs:
         raise RuntimeError(
@@ -99,6 +100,7 @@ def start_udf_actors(
 
     # Wait for actors to be ready
     ready, _ = ray.wait([actor.__ray_ready__.remote() for actor in actors], num_returns=1, timeout=timeout)
+    ray.get(ready)
     if not ready:
         raise RuntimeError(
             f"UDF actors failed to start within {timeout} seconds, please increase the actor_udf_ready_timeout config via daft.set_execution_config(actor_udf_ready_timeout=timeout)"
