@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
-use common_treenode::{Transformed, TreeNode};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_algebra::simplify_expr;
 use log::Log;
 
@@ -21,12 +21,77 @@ impl AutomaticRepartitionRule {
     }
 }
 
-fn is_single_source_with_single_partition(plan: &LogicalPlan) -> bool {
+impl TreeNodeVisitor for LogicalPlan {
+    type Node = Self;
+
+    // calls this first on the node, before visiting children
+    fn f_down(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
+        match node {}
+
+        Ok(TreeNodeRecursion::Continue)
+    }
+
+    // calls this on the node after the node's children have been visisted
+    fn f_up(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
+}
+
+fn is_ok(plan: Arc<LogicalPlan>) -> bool {
+    // plan.visit(visitor)
+    let mut n_sources = 0;
+    let mut non_map_node_found = false;
+    let mut n_partitions = 0;
+
+    plan.apply(|node| match node.as_ref() {
+        // sources
+        (
+            LogicalPlan::Source(_)
+            | LogicalPlan::Shard(_)
+        ) => Ok(TreeNodeRecursion::Continue),
+        // map-only nodes
+        (
+            LogicalPlan::Project(_)
+            | LogicalPlan::UDFProject(_)
+            | LogicalPlan::Filter(_)
+            | LogicalPlan::Explode(_)
+            | LogicalPlan::Limit(_)
+            // MAYBE these???
+            | LogicalPlan::Offset(_)
+            | LogicalPlan::Concat(_)
+            | LogicalPlan::Sink(_)
+            | LogicalPlan::Sample(_)
+            | LogicalPlan::MonotonicallyIncreasingId(_)
+            | LogicalPlan::SubqueryAlias(_)
+            // | LogicalPlan::Window(_)
+            | LogicalPlan::TopN(_)
+        ) => Ok(TreeNodeRecursion::Continue),
+        // NOT a map-only node => we cannot perform this optimization!
+        (
+            LogicalPlan::Unpivot(_)
+            | LogicalPlan::IntoBatches(_)
+            | LogicalPlan::Sort(_)
+            | LogicalPlan::Repartition(_)
+            | LogicalPlan::Distinct(_)
+            | LogicalPlan::Aggregate(_)
+            | LogicalPlan::Pivot(_)
+
+            | LogicalPlan::Intersect(_)
+            | LogicalPlan::Union(_)
+            | LogicalPlan::Join(_)
+            | LogicalPlan::Window(_)
+        ) => Ok(TreeNodeRecursion::Stop)
+    });
+
+    panic!()
+}
+
+fn is_single_source_with_single_partition(plan: Arc<LogicalPlan>) -> bool {
     todo!()
 }
 
-fn is_map_only(plan: &LogicalPlan) -> bool {
-    plan.with_new_children(children)
+fn is_map_only(plan: Arc<LogicalPlan>) -> bool {
+    todo!()
 }
 
 fn in_distributed_context_with_multiple_workers() -> bool {
@@ -34,7 +99,7 @@ fn in_distributed_context_with_multiple_workers() -> bool {
 }
 
 fn insert_repartition_after_source(plan: Arc<LogicalPlan>) -> Arc<LogicalPlan> {
-    todo!()
+    plan.transform_up(f)
 }
 
 impl OptimizerRule for AutomaticRepartitionRule {
