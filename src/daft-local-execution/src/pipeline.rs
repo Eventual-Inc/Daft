@@ -47,6 +47,7 @@ use crate::{
         dedup::DedupSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
+        into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
         sort::SortSink,
@@ -1107,6 +1108,22 @@ pub fn physical_plan_to_pipeline(
                 RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
             BlockingSinkNode::new(
                 Arc::new(repartition_op),
+                child_node,
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::IntoPartitions(daft_local_plan::IntoPartitions {
+            input,
+            num_partitions,
+            stats_state,
+            schema,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let into_partitions_op = IntoPartitionsSink::new(*num_partitions, schema.clone());
+            BlockingSinkNode::new(
+                Arc::new(into_partitions_op),
                 child_node,
                 stats_state.clone(),
                 ctx,

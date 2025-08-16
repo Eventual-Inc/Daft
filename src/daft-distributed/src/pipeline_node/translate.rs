@@ -16,10 +16,11 @@ use crate::{
     pipeline_node::{
         concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
         gather::GatherNode, in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
-        limit::LimitNode, monotonically_increasing_id::MonotonicallyIncreasingIdNode,
-        project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode,
-        unpivot::UnpivotNode, window::WindowNode, DistributedPipelineNode, NodeID,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
+        repartition::RepartitionNode, sample::SampleNode, scan_source::ScanSourceNode,
+        sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode,
+        window::WindowNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -300,17 +301,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 self.curr_node.pop().unwrap(), // Child
             )
             .arced(),
-            LogicalPlan::Repartition(repartition) => {
-                match &repartition.repartition_spec {
-                    RepartitionSpec::Hash(repart_spec) => {
-                        assert!(!repart_spec.by.is_empty());
-                    }
-                    RepartitionSpec::Random(_) => {}
-                    RepartitionSpec::IntoPartitions(_) => {
-                        todo!("FLOTILLA_MS3: Support other types of repartition");
-                    }
+            LogicalPlan::Repartition(repartition) => match &repartition.repartition_spec {
+                RepartitionSpec::Hash(repart_spec) => {
+                    assert!(!repart_spec.by.is_empty());
+                    RepartitionNode::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.stage_config,
+                        repartition.repartition_spec.clone(),
+                        node.schema(),
+                        self.curr_node.pop().unwrap(),
+                    )
+                    .arced()
                 }
-                RepartitionNode::new(
+                RepartitionSpec::Random(_) => RepartitionNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
@@ -318,8 +322,17 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
-                .arced()
-            }
+                .arced(),
+                RepartitionSpec::IntoPartitions(into_partitions_spec) => IntoPartitionsNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    into_partitions_spec.num_partitions,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced(),
+            },
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
                 let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;

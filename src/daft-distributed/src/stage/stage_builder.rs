@@ -52,10 +52,7 @@ impl StagePlanBuilder {
             LogicalPlan::Repartition(repartition) => match &repartition.repartition_spec {
                 RepartitionSpec::Hash(_) => Ok(TreeNodeRecursion::Continue),
                 RepartitionSpec::Random(_) => Ok(TreeNodeRecursion::Continue),
-                RepartitionSpec::IntoPartitions(_) => {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                }
+                RepartitionSpec::IntoPartitions(_) => Ok(TreeNodeRecursion::Continue),
             },
             LogicalPlan::Join(join) => {
                 if join
