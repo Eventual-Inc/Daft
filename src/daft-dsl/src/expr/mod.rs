@@ -305,6 +305,12 @@ pub struct ApproxPercentileParams {
     pub force_list_output: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
+pub struct StddevParams {
+    pub child: ExprRef,
+    pub ddof: u64,
+}
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
@@ -331,8 +337,8 @@ pub enum AggExpr {
     #[display("mean({_0})")]
     Mean(ExprRef),
 
-    #[display("stddev({_0})")]
-    Stddev(ExprRef),
+    #[display("stddev({}, ddof={})", _0.child, _0.ddof)]
+    Stddev(StddevParams),
 
     #[display("min({_0})")]
     Min(ExprRef),
@@ -452,7 +458,7 @@ impl AggExpr {
             Self::ApproxSketch(_, _) => "Approx Sketch",
             Self::MergeSketch(_, _) => "Merge Sketch",
             Self::Mean(_) => "Mean",
-            Self::Stddev(_) => "Stddev",
+            Self::Stddev(StddevParams { child: _, ddof: _ }) => "Stddev",
             Self::Min(_) => "Min",
             Self::Max(_) => "Max",
             Self::BoolAnd(_) => "Bool And",
@@ -476,7 +482,6 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
-            | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -486,6 +491,7 @@ impl AggExpr {
             | Self::Set(expr)
             | Self::Concat(expr)
             | Self::Skew(expr) => expr.name(),
+            Self::Stddev(StddevParams { child: expr, .. }) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
@@ -535,7 +541,7 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
             }
-            Self::Stddev(expr) => {
+            Self::Stddev(StddevParams { child: expr, .. }) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_stddev()"))
             }
@@ -591,7 +597,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
-            | Self::Stddev(expr)
+            | Self::Stddev(StddevParams { child: expr, .. })
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -617,7 +623,10 @@ impl AggExpr {
             Self::CountDistinct(_) => Self::CountDistinct(first_child()),
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
-            Self::Stddev(_) => Self::Stddev(first_child()),
+            Self::Stddev(StddevParams { child: _, ddof }) => Self::Stddev(StddevParams {
+                child: first_child(),
+                ddof: *ddof,
+            }),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
             Self::BoolAnd(_) => Self::BoolAnd(first_child()),
@@ -727,7 +736,7 @@ impl AggExpr {
                     try_mean_aggregation_supertype(&field.dtype)?,
                 ))
             }
-            Self::Stddev(expr) => {
+            Self::Stddev(StddevParams { child: expr, .. }) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
@@ -1012,7 +1021,11 @@ impl Expr {
     }
 
     pub fn stddev(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Stddev(self)).into()
+        Self::stddev_with_ddof(self, 0)
+    }
+
+    pub fn stddev_with_ddof(self: ExprRef, ddof: u64) -> ExprRef {
+        Self::Agg(AggExpr::Stddev(StddevParams { child: self, ddof })).into()
     }
 
     pub fn min(self: ExprRef) -> ExprRef {

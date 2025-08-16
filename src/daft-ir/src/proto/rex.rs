@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use daft_dsl::expr::StddevParams;
+
 use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
@@ -348,7 +350,10 @@ impl ToFromProto for ir::AggExpr {
                     "count_nulls" => Self::Count(arg, ir::CountMode::Null),
                     "sum" => Self::Sum(arg),
                     "mean" => Self::Mean(arg),
-                    "stddev" => Self::Stddev(arg),
+                    "stddev" => Self::Stddev(StddevParams {
+                        child: arg,
+                        ddof: 0,
+                    }),
                     "min" => Self::Min(arg),
                     "max" => Self::Max(arg),
                     "bool_and" => Self::BoolAnd(arg),
@@ -441,7 +446,10 @@ impl ToFromProto for ir::AggExpr {
                     is_all: true,
                 })
             }
-            Self::Stddev(expr) => {
+            Self::Stddev(StddevParams {
+                child: expr,
+                ddof: _,
+            }) => {
                 // STDDEV([ALL] <expr>)
                 proto::AggVariant::SetFunction(proto::agg::SetFunction {
                     name: "stddev".to_string(),

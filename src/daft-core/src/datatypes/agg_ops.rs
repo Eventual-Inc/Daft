@@ -60,6 +60,7 @@ pub fn try_stddev_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType
     match dtype {
         d if d.is_numeric() => Ok(DataType::Float64),
         DataType::Decimal128(..) => Ok(DataType::Float64),
+        DataType::Null => Ok(DataType::Float64), // Stddev of empty data
         _ => Err(DaftError::TypeError(format!(
             "StdDev is not supported for: {}",
             dtype
