@@ -18,6 +18,7 @@ from daft.io._json import read_json
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
+from daft.io.mcap._mcap import read_mcap
 from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
@@ -46,6 +47,7 @@ __all__ = [
     "read_iceberg",
     "read_json",
     "read_lance",
+    "read_mcap",
     "read_parquet",
     "read_sql",
     "read_video_frames",

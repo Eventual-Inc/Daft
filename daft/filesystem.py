@@ -377,23 +377,13 @@ def overwrite_files(
 
         written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths)
         for dir in written_dirs:
-            file_selector = pafs.FileSelector(dir, recursive=True)
-            try:
-                all_file_paths.extend(
-                    [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-                )
-            except FileNotFoundError:
-                continue
+            all_file_paths.extend(list_files(dir, io_config, resolved_path=dir, fs=fs))
+
     else:
         # Get all files in the root directory.
-
-        file_selector = pafs.FileSelector(resolved_path, recursive=True)
-        try:
-            all_file_paths.extend(
-                [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-            )
-        except FileNotFoundError:
-            # The root directory does not exist, so there are no files to delete.
+        all_file_paths = list_files(root_dir, io_config, resolved_path=resolved_path, fs=fs)
+        if all_file_paths is None:
+            # If the root directory does not exist, there are no files to delete.
             return
 
     all_file_paths_df = MicroPartition.from_pydict({"path": all_file_paths})
