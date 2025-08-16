@@ -12,6 +12,7 @@ on:
 env:
   DAFT_ANALYTICS_ENABLED: '0'
   RUST_BACKTRACE: 1
+  DAFT_PROGRESS_BAR: 0
 
 # Cancel in-progress CI runs for outdated PR pushes to save resources.
 # For pull requests, use the PR number to group runs.
