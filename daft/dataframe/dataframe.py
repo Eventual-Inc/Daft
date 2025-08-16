@@ -1594,6 +1594,57 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    @DataframePublicAPI
+    def write_clickhouse(
+        self,
+        table: str,
+        *,
+        host: str,
+        port: Optional[int] = None,
+        user: Optional[str] = None,
+        password: Optional[str] = None,
+        database: Optional[str] = None,
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame to a ClickHouse table.
+
+        Args:
+            table: Name of the ClickHouse table to write to.
+            host: ClickHouse host.
+            port: ClickHouse port.
+            user: ClickHouse user.
+            password: ClickHouse password.
+            database: ClickHouse database.
+            client_kwargs: Optional dictionary of arguments to pass to the ClickHouse client constructor.
+            write_kwargs: Optional dictionary of arguments to pass to the ClickHouse write() method.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})  # doctest: +SKIP
+            >>> df.write_clickhouse(table="", host="", port=8123, user="", password="")  # doctest: +SKIP
+            ╭────────────────────┬─────────────────────╮
+            │ total_written_rows ┆ total_written_bytes │
+            │ ---                ┆ ---                 │
+            │ Int64              ┆ Int64               │
+            ╞════════════════════╪═════════════════════╡
+            │ 4                  ┆ 32                  │
+            ╰────────────────────┴─────────────────────╯
+        """
+        from daft.io.clickhouse.clickhouse_data_sink import ClickHouseDataSink
+
+        sink = ClickHouseDataSink(
+            table,
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            database=database,
+            client_kwargs=client_kwargs,
+            write_kwargs=write_kwargs,
+        )
+        return self.write_sink(sink)
+
     ###
     # DataFrame operations
     ###
