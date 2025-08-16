@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::datatype::PyDataType;
 use crate::field::Field;
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyField {
     pub field: Field,

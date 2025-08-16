@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{DaftExecutionConfig, DaftPlanningConfig};
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 pub struct PyDaftPlanningConfig {
     pub config: Arc<DaftPlanningConfig>,
 }
@@ -30,7 +30,7 @@ impl PyDaftPlanningConfig {
     }
 
     #[pyo3(signature = (default_io_config=None))]
-    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
+    fn with_config_values(&self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
@@ -53,7 +53,7 @@ impl PyDaftPlanningConfig {
 impl_bincode_py_state_serialization!(PyDaftPlanningConfig);
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 pub struct PyDaftExecutionConfig {
     pub config: Arc<DaftExecutionConfig>,
 }
