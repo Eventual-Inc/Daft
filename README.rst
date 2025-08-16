@@ -32,7 +32,7 @@ About Daft
 
 Daft was designed with the following principles in mind:
 
-1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex or nested multimodal data such as Images, Embeddings and Python objects efficiently with it's Arrow based memory representation. Ingestion and basic transformations of multimodal data is extremely easy and performant in Daft.
+1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex or nested multimodal data such as Images, Embeddings and Python objects efficiently with its Arrow based memory representation. Ingestion and basic transformations of multimodal data is extremely easy and performant in Daft.
 2. **Interactive Computing**: Daft is built for the interactive developer experience through notebooks or REPLs - intelligent caching/query optimizations accelerates your experimentation and data exploration.
 3. **Distributed Computing**: Some workloads can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
 
