@@ -256,7 +256,7 @@ impl<T: Task> SchedulerHandle<T> {
         (schedulable_task, submitted_task)
     }
 
-    fn submit_task(&self, submittable_task: SubmittableTask<T>) -> DaftResult<SubmittedTask> {
+    pub fn submit_task(&self, submittable_task: SubmittableTask<T>) -> DaftResult<SubmittedTask> {
         let (schedulable_task, submitted_task) =
             Self::prepare_task_for_submission(submittable_task);
         self.scheduler_sender.send(schedulable_task).map_err(|_| {

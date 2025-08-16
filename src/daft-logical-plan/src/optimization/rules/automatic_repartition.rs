@@ -118,6 +118,8 @@ impl OptimizerRule for AutomaticRepartitionRule {
             return Ok(Transformed::no(plan));
         }
 
+        // call daft.infer or get runner context
+
         let updated = insert_repartition_after_source(plan);
         Ok(Transformed::yes(updated))
     }
