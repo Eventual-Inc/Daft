@@ -48,7 +48,14 @@ fn is_ok(plan: Arc<LogicalPlan>) -> bool {
         (
             LogicalPlan::Source(_)
             | LogicalPlan::Shard(_)
-        ) => Ok(TreeNodeRecursion::Continue),
+        ) => {
+            n_sources += 1;
+            if n_sources > 1 {
+                Ok(TreeNodeRecursion::Stop)
+            } else {
+                Ok(TreeNodeRecursion::Continue)
+            }
+        },
         // map-only nodes
         (
             LogicalPlan::Project(_)
