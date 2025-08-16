@@ -20,7 +20,7 @@ Below we discuss some other data engines and compare them to Daft.
 | Daft                                           | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Pandas](https://github.com/pandas-dev/pandas) | ❌ | Python object | ❌ | optional >= 2.0 | some (Numpy) | ❌ |
 | [Polars](https://github.com/pola-rs/polars)    | ✅ | Python object | ❌ | ✅ | ✅ | ✅ |
-| [Modin](https://github.com/modin-project/modin)| Eagar | Python object | ✅ | ❌ | some (Pandas) | ✅ |
+| [Modin](https://github.com/modin-project/modin)| ✅ | Python object | ✅ | ❌ | some (Pandas) | ✅ |
 | [PySpark](https://github.com/apache/spark)     | ✅ | ❌ | ✅ | Pandas UDF/IO | Pandas UDF | ✅ |
 | [Dask](https://github.com/dask/dask)           | ❌ | Python object| ✅ | ❌ | some (Pandas) | ✅ |
 
