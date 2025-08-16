@@ -13,9 +13,9 @@ use crate::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
-    dispatcher::DispatchSpawner,
+    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
-    pipeline::{NodeName, PipelineNode, RuntimeContext},
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -75,11 +75,21 @@ pub(crate) trait StreamingSink: Send + Sync {
         get_compute_pool_num_threads()
     }
 
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        None
+    }
+
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner>;
+    ) -> Arc<dyn DispatchSpawner> {
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
+        } else {
+            Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+        }
+    }
 }
 
 pub struct StreamingSinkNode<Op: StreamingSink> {
@@ -88,6 +98,7 @@ pub struct StreamingSinkNode<Op: StreamingSink> {
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
+    morsel_size_requirement: MorselSizeRequirement,
 }
 
 impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
@@ -100,12 +111,14 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let name = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
         let runtime_stats = op.make_runtime_stats();
+        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             children,
             runtime_stats,
             plan_stats,
             node_info: Arc::new(node_info),
+            morsel_size_requirement,
         }
     }
 
@@ -196,6 +209,7 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
@@ -230,6 +244,25 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         self.node_info.name.clone()
     }
 
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        _default_morsel_size: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.op.morsel_size_requirement();
+        let combined_morsel_size_requirement = MorselSizeRequirement::combine_requirements(
+            operator_morsel_size_requirement,
+            downstream_requirement,
+        );
+        self.morsel_size_requirement = combined_morsel_size_requirement;
+        for child in &mut self.children {
+            child.propagate_morsel_size_requirement(
+                combined_morsel_size_requirement,
+                _default_morsel_size,
+            );
+        }
+    }
+
     fn start(
         &self,
         maintain_order: bool,
@@ -253,7 +286,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle, maintain_order);
+        let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,

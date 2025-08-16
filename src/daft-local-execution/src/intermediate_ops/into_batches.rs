@@ -8,7 +8,11 @@ use tracing::Span;
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType,
+    pipeline::{MorselSizeRequirement, NodeName},
+    ExecutionTaskSpawner,
+};
 
 pub struct IntoBatchesOperator {
     batch_size: usize,
@@ -55,10 +59,10 @@ impl IntermediateOperator for IntoBatchesOperator {
     fn multiline_display(&self) -> Vec<String> {
         vec![format!("IntoBatches: {}", self.batch_size)]
     }
-    fn morsel_size_range(&self, _runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        (self.batch_size, self.batch_size)
-    }
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
+    }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        Some(MorselSizeRequirement::Flexible(self.batch_size))
     }
 }
