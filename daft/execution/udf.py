@@ -9,7 +9,7 @@ import sys
 import tempfile
 from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Listener
-from typing import TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, cast
 
 from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
@@ -21,9 +21,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ENTER = "__ENTER__"
+_READY = "ready"
 _SUCCESS = "success"
 _UDF_ERROR = "udf_error"
 _ERROR = "error"
+_OUTPUT_DIVIDER = b"_DAFT_OUTPUT_DIVIDER_\n"
 _SENTINEL = ("__EXIT__", 0)
 
 
@@ -66,7 +68,11 @@ class UdfHandle:
                 "daft.execution.udf_worker",
                 self.socket_path,
                 secret.hex(),
-            ]
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            # Python auto-buffers stdout by default, so disable
+            env={"PYTHONUNBUFFERED": "1"},
         )
 
         # Initialize communication
@@ -79,8 +85,22 @@ class UdfHandle:
         )
         expr_projection_bytes = pickle.dumps(expr_projection)
         self.handle_conn.send((_ENTER, expr_projection_bytes))
+        response = self.handle_conn.recv()
+        if response != _READY:
+            raise RuntimeError(f"Expected '{_READY}' but got {response}")
 
-    def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
+    def trace_output(self) -> list[str]:
+        lines = []
+        while True:
+            line = cast("IO[bytes]", self.process.stdout).readline()
+            # UDF process is expected to return the divider
+            # after initialization and every iteration
+            if line == b"" or line == _OUTPUT_DIVIDER or self.process.poll() is not None:
+                break
+            lines.append(line.decode().rstrip())
+        return lines
+
+    def eval_input(self, input: PyMicroPartition) -> tuple[PyMicroPartition, list[str]]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
@@ -89,6 +109,7 @@ class UdfHandle:
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
+        stdout = self.trace_output()
         if response[0] == _UDF_ERROR:
             base_exc: Exception = pickle.loads(response[3])
             if sys.version_info >= (3, 11):
@@ -100,7 +121,7 @@ class UdfHandle:
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = MicroPartition.from_ipc_stream(output_bytes)
-            return deserialized._micropartition
+            return (deserialized._micropartition, stdout)
         else:
             raise RuntimeError(f"Unknown response from actor: {response}")
 

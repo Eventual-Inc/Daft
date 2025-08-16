@@ -27,7 +27,7 @@ impl Drop for IOStatsContext {
         let num_puts = self.load_put_requests();
         let mean_get_size = (bytes_read as f64) / (num_gets as f64);
         let mean_put_size = (bytes_uploaded as f64) / (num_puts as f64);
-        log::info!(
+        log::debug!(
             "IOStatsContext: {}, Gets: {}, Heads: {}, Lists: {}, BytesRead: {}, AvgGetSize: {}, BytesUploaded: {}, AvgPutSize: {}",
             self.name,
             num_gets,
