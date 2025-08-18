@@ -7,9 +7,8 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_task_from_materialized_outputs, make_new_task_from_materialized_outputs,
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, SubmittableTaskStream,
+        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -169,11 +168,10 @@ impl PreShuffleMergeNode {
                 // Drain the bucket and create a task to merge the outputs
                 if let Some(materialized_outputs) = worker_buckets.remove(&worker_id) {
                     let self_clone = self.clone();
-                    let task = make_new_task_from_materialized_outputs(
+                    let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
                         &(self_clone as Arc<dyn DistributedPipelineNode>),
-                        |plan| plan, // Just pass through the plan without repartitioning
                     )?;
 
                     // Send the task directly to result_tx
