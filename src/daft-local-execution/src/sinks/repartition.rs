@@ -176,7 +176,7 @@ impl BlockingSink for RepartitionSink {
                     .iter()
                     .zip(config.descending.iter())
                     .map(|(sb, d)| {
-                        format!("({}, {})", sb, if *d { "descending" } else { "ascending" },)
+                        format!("({}, {})", sb, if *d { "descending" } else { "ascending" })
                     })
                     .join(", ");
                 vec![

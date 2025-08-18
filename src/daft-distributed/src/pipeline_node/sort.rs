@@ -122,10 +122,10 @@ impl SortNode {
     #[cfg(feature = "python")]
     fn get_partition_boundaries(
         &self,
-        sampled_output: MaterializedOutput,
+        input: MaterializedOutput,
         num_partitions: usize,
     ) -> DaftResult<RecordBatch> {
-        let py_sampled_outputs = sampled_output
+        let ray_partition_refs = input
             .into_inner()
             .0
             .into_iter()
@@ -143,7 +143,7 @@ impl SortNode {
         let boundaries = Python::with_gil(|py| {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
 
-            let py_sampled_outputs = py_sampled_outputs
+            let py_object_refs = ray_partition_refs
                 .into_iter()
                 .map(|pr| pr.get_object_ref(py))
                 .collect::<Vec<_>>();
@@ -159,7 +159,7 @@ impl SortNode {
             let boundaries = flotilla_module.call_method1(
                 pyo3::intern!(py, "get_boundaries"),
                 (
-                    py_sampled_outputs,
+                    py_object_refs,
                     py_sort_by,
                     self.descending.clone(),
                     self.nulls_first.clone(),
@@ -185,10 +185,12 @@ impl SortNode {
     #[cfg(not(feature = "python"))]
     fn get_partition_boundaries(
         &self,
-        sampled_output: MaterializedOutput,
+        output: MaterializedOutput,
         num_partitions: usize,
     ) -> DaftResult<RecordBatch> {
-        unimplemented!()
+        Err(DaftError::InternalError(
+            "Distributed sort requires Python feature to be enabled".to_string(),
+        ))
     }
 
     async fn execution_loop(

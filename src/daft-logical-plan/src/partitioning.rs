@@ -137,7 +137,16 @@ impl RangeRepartitionConfig {
 
 impl RangeRepartitionConfig {
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!("Num partitions = {:?}", self.num_partitions)]
+        let mut res = vec![];
+        let pairs = self
+            .by
+            .iter()
+            .zip(self.descending.iter())
+            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .join(", ");
+        res.push(format!("Num partitions = {:?}", self.num_partitions));
+        res.push(format!("By = {}", pairs));
+        res
     }
 }
 
