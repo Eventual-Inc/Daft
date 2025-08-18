@@ -5,7 +5,7 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FileArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -413,6 +413,11 @@ impl StructArray {
         }
     }
 }
+impl FileArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        Ok(self.get_lit(idx).to_string())
+    }
+}
 
 // Truncate strings so they do not crash the browser when rendering HTML
 fn truncate_for_html(s: &str) -> String {
@@ -581,6 +586,20 @@ impl SparseTensorArray {
 }
 
 impl FixedShapeSparseTensorArray {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl FileArray {
     pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
         let truncated = if truncate {

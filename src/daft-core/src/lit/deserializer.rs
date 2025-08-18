@@ -325,11 +325,13 @@ impl<'de> Deserializer<'de> for OwnedLiteralDeserializer {
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
             Literal::Struct(_) => Err(LitError::custom("Not implemented: Struct")),
+            Literal::File(_) => Err(LitError::custom("Not implemented: File")),
             Literal::Tensor { .. } => Err(LitError::custom("Not implemented: Tensor")),
             Literal::SparseTensor { .. } => Err(LitError::custom("Not implemented: SparseTensor")),
             Literal::Embedding { .. } => Err(LitError::custom("Not implemented: Embedding")),
             Literal::Map { .. } => Err(LitError::custom("Not implemented: Map")),
             Literal::Image(_) => Err(LitError::custom("Not implemented: Image")),
+            Literal::Extension(_) => Err(LitError::custom("Not implemented: Extension")),
         }
     }
 
@@ -371,12 +373,14 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
             Literal::List(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
+            Literal::File(_) => Err(LitError::custom("Not implemented: File")),
             Literal::Struct(v) => visitor.visit_map(StructDeserializer::new(v)),
             Literal::Tensor { .. } => Err(LitError::custom("Not implemented: Tensor")),
             Literal::SparseTensor { .. } => Err(LitError::custom("Not implemented: SparseTensor")),
             Literal::Embedding { .. } => Err(LitError::custom("Not implemented: Embedding")),
             Literal::Map { .. } => Err(LitError::custom("Not implemented: Map")),
             Literal::Image(_) => Err(LitError::custom("Not implemented: Image")),
+            Literal::Extension(_) => Err(LitError::custom("Not implemented: Extension")),
         }
     }
     // Override option deserialization

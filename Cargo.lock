@@ -1798,6 +1798,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-file"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "serde",
+]
+
+[[package]]
 name = "common-file-formats"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1823,8 +1831,10 @@ dependencies = [
  "arrow2",
  "bincode",
  "common-error",
+ "common-ndarray",
  "daft-schema",
  "image",
+ "ndarray",
  "serde",
 ]
 
@@ -1862,6 +1872,15 @@ dependencies = [
  "indicatif 0.17.11",
  "serde",
  "smallvec",
+]
+
+[[package]]
+name = "common-ndarray"
+version = "0.3.0-dev0"
+dependencies = [
+ "ndarray",
+ "numpy",
+ "pyo3",
 ]
 
 [[package]]
@@ -1915,6 +1934,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "daft-algebra",
+ "daft-core",
  "daft-dsl",
  "daft-schema",
  "fnv",
@@ -2299,6 +2319,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
+ "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
  "common-metrics",
@@ -2320,6 +2341,7 @@ dependencies = [
  "daft-dashboard",
  "daft-distributed",
  "daft-dsl",
+ "daft-file",
  "daft-functions",
  "daft-functions-binary",
  "daft-functions-json",
@@ -2471,9 +2493,11 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
+ "common-file",
  "common-hashable-float-wrapper",
  "common-image",
  "common-io-config",
+ "common-ndarray",
  "common-py-serde",
  "daft-hash",
  "daft-minhash",
@@ -2489,7 +2513,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "mur3",
- "ndarray",
  "num-traits",
  "numpy",
  "pyo3",
@@ -2600,6 +2623,7 @@ name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-file",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
@@ -2614,6 +2638,15 @@ dependencies = [
  "rstest",
  "serde",
  "typetag",
+]
+
+[[package]]
+name = "daft-file"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-io",
+ "pyo3",
 ]
 
 [[package]]
@@ -6336,6 +6369,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8970a78afe0628a3e3430376fc5fd76b6b45c4d43360ffd6cdd40bdde72b682a"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "indexmap 2.9.0",
  "indoc",
  "inventory",

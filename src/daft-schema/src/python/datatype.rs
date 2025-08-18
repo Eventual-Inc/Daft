@@ -341,6 +341,11 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
+    #[staticmethod]
+    pub fn file() -> PyResult<Self> {
+        Ok(DataType::File.into())
+    }
+
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         match &self.dtype {
@@ -519,6 +524,10 @@ impl PyDataType {
 
     pub fn is_temporal(&self) -> bool {
         self.dtype.is_temporal()
+    }
+
+    pub fn is_file(&self) -> bool {
+        self.dtype.is_file()
     }
 
     pub fn fixed_size(&self) -> PyResult<usize> {

@@ -74,6 +74,7 @@ mod tests {
             )])),
             num_scan_tasks,
             num_rows_per_task: Some(1000),
+            supports_count_pushdown_flag: false,
         });
 
         let scan_tasks = scan_operator.to_scan_tasks(Pushdowns::default())?;
