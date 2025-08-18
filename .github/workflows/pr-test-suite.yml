@@ -27,7 +27,7 @@ on:
     - 'benchmarking/**'
     - 'ci/**'
     - 'docs/**'
-    - '.git-glame-ignore-revs'
+    - '.git-blame-ignore-revs'
     - '.gitignore'
     - '.lldbinit'
     - '.readthedocs.yaml'
