@@ -12,9 +12,10 @@ use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
-    InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
-    Pivot, Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightShuffleSink,
+    FlightShuffleSource, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample, Sort,
+    TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
@@ -45,6 +46,7 @@ use crate::{
         commit_write::CommitWriteSink,
         cross_join_collect::CrossJoinCollectSink,
         dedup::DedupSink,
+        flight_shuffle::FlightShuffleSink as FlightShuffleSinkOp,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
         into_partitions::IntoPartitionsSink,
@@ -58,7 +60,10 @@ use crate::{
         window_partition_only::WindowPartitionOnlySink,
         write::{WriteFormat, WriteSink},
     },
-    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
+    sources::{
+        empty_scan::EmptyScanSource, flight_shuffle::FlightShuffleSource as FlightShuffleSourceOp,
+        in_memory::InMemorySource, source::SourceNode,
+    },
     state_bridge::BroadcastStateBridge,
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
@@ -1129,6 +1134,48 @@ pub fn physical_plan_to_pipeline(
                 ctx,
             )
             .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleSink(FlightShuffleSink {
+            input,
+            repartition_spec,
+            num_partitions,
+            schema,
+            stats_state,
+            shuffle_dirs,
+            node_id,
+            shuffle_stage_id,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let flight_shuffle_sink = FlightShuffleSinkOp::new(
+                repartition_spec.clone(),
+                *num_partitions,
+                schema.clone(),
+                shuffle_dirs.clone(),
+                node_id.clone(),
+                *shuffle_stage_id,
+            );
+            BlockingSinkNode::new(
+                Arc::new(flight_shuffle_sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleSource(FlightShuffleSource {
+            server_address,
+            server_port,
+            partition_idx,
+            schema,
+            stats_state,
+        }) => {
+            let flight_shuffle_source = FlightShuffleSourceOp::new(
+                server_address.clone(),
+                *server_port,
+                *partition_idx,
+                schema.clone(),
+            );
+            SourceNode::new(Arc::new(flight_shuffle_source), stats_state.clone(), ctx).boxed()
         }
     };
 

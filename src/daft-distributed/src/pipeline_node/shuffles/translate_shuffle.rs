@@ -6,7 +6,8 @@ use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
     shuffles::{
-        gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
+        flight_repartition::FlightRepartitionNode, gather::GatherNode, 
+        pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
     },
     translate::LogicalPlanToPipelineNodeTranslator,
     DistributedPipelineNode, NodeID,
@@ -29,6 +30,24 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
             RepartitionSpec::IntoPartitions(config) => config.num_partitions,
         };
+
+        // Check if we should use flight shuffle
+        if self.stage_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+            // Get flight shuffle directories from config
+            let shuffle_dirs = self.stage_config.config.flight_shuffle_dirs.clone();
+
+            return Ok(FlightRepartitionNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                repartition_spec,
+                num_partitions,
+                schema,
+                shuffle_dirs,
+                child,
+            )
+            .arced());
+        }
 
         let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
@@ -79,9 +98,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         match self.stage_config.config.shuffle_algorithm.as_str() {
             "pre_shuffle_merge" => Ok(true),
             "map_reduce" => Ok(false),
-            "flight_shuffle" => Err(common_error::DaftError::ValueError(
-                "Flight shuffle not yet implemented for flotilla".to_string(),
-            )),
+            "flight_shuffle" => Ok(false), // Flight shuffle doesn't use pre-shuffle merge
             "auto" => {
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;

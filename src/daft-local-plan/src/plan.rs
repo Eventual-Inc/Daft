@@ -74,6 +74,8 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     Repartition(Repartition),
     IntoPartitions(IntoPartitions),
+    FlightShuffleSink(FlightShuffleSink),
+    FlightShuffleSource(FlightShuffleSource),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
 }
@@ -118,6 +120,8 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
+            | Self::FlightShuffleSink(FlightShuffleSink { stats_state, .. })
+            | Self::FlightShuffleSource(FlightShuffleSource { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -729,6 +733,47 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn flight_shuffle_sink(
+        input: LocalPhysicalPlanRef,
+        repartition_spec: RepartitionSpec,
+        num_partitions: usize,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        shuffle_dirs: Vec<String>,
+        node_id: String,
+        shuffle_stage_id: usize,
+    ) -> LocalPhysicalPlanRef {
+        Self::FlightShuffleSink(FlightShuffleSink {
+            input,
+            repartition_spec,
+            num_partitions,
+            schema,
+            stats_state,
+            shuffle_dirs,
+            node_id,
+            shuffle_stage_id,
+        })
+        .arced()
+    }
+
+    pub fn flight_shuffle_source(
+        server_address: String,
+        server_port: u16,
+        partition_idx: usize,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::FlightShuffleSource(FlightShuffleSource {
+            server_address,
+            server_port,
+            partition_idx,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -771,8 +816,8 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::Repartition(Repartition { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
-            Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
-            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
+            Self::FlightShuffleSink(FlightShuffleSink { schema, .. }) => schema,
+            Self::FlightShuffleSource(FlightShuffleSource { schema, .. }) => schema,
         }
     }
 
@@ -844,6 +889,8 @@ impl LocalPhysicalPlan {
             }
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
+            Self::FlightShuffleSink(FlightShuffleSink { input, .. }) => vec![input.clone()],
+            Self::FlightShuffleSource(_) => vec![], // No children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
         }
@@ -853,7 +900,7 @@ impl LocalPhysicalPlan {
         match children {
             [new_child] => match self {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
+                | Self::InMemoryScan(_) | Self::FlightShuffleSource(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, InMemoryScan, and FlightShuffleSource do not have children"),
                 Self::Filter(Filter { predicate, .. }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
                 Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::into_batches(new_child.clone(), *batch_size, StatsState::NotMaterialized),
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
@@ -886,6 +933,8 @@ impl LocalPhysicalPlan {
                 Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
                 Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
                 Self::IntoPartitions(IntoPartitions {  num_partitions, .. }) => Self::into_partitions(new_child.clone(), *num_partitions, StatsState::NotMaterialized),
+                Self::FlightShuffleSink(FlightShuffleSink { repartition_spec, num_partitions, schema, shuffle_dirs, node_id, shuffle_stage_id, .. }) => Self::flight_shuffle_sink(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized, shuffle_dirs.clone(), node_id.clone(), *shuffle_stage_id),
+                Self::FlightShuffleSource(_) => panic!("LocalPhysicalPlan::with_new_children: FlightShuffleSource should not have children"),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -1257,6 +1306,27 @@ pub struct Repartition {
 pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlightShuffleSink {
+    pub input: LocalPhysicalPlanRef,
+    pub repartition_spec: RepartitionSpec,
+    pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub shuffle_dirs: Vec<String>,
+    pub node_id: String,
+    pub shuffle_stage_id: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlightShuffleSource {
+    pub server_address: String,
+    pub server_port: u16,
+    pub partition_idx: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
