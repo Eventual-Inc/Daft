@@ -1,0 +1,14 @@
+[dependencies]
+common-error = {path = "../error", default-features = false}
+serde = {workspace = true}
+
+[features]
+python = ["common-error/python"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-file"
+version = {workspace = true}

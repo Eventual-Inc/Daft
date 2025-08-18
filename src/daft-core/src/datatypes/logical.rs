@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     array::{ListArray, StructArray},
-    datatypes::{DaftLogicalType, DateType, Field},
+    datatypes::{DaftLogicalType, DateType, Field, FileType},
     with_match_daft_logical_primitive_types,
 };
 
@@ -195,6 +195,7 @@ pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
+pub type FileArray = LogicalArray<FileType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 

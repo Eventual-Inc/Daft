@@ -1,0 +1,19 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = [
+  "common-error/python",
+  "daft-io/python",
+  "dep:pyo3"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-file"
+edition.workspace = true
+version.workspace = true

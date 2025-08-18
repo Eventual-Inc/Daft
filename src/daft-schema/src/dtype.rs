@@ -155,6 +155,8 @@ pub enum DataType {
     Python,
 
     Unknown,
+
+    File,
 }
 
 fn format_struct(fields: &[Field]) -> std::result::Result<String, std::fmt::Error> {
@@ -286,6 +288,9 @@ impl DataType {
             Self::Unknown => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
+            Self::File => Err(DaftError::TypeError(format!(
+                "Can not convert {self:?} into arrow type"
+            ))),
         }
     }
 
@@ -349,6 +354,10 @@ impl DataType {
                     };
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
+            ]),
+            File => Struct(vec![
+                Field::new("discriminant", UInt8),
+                Field::new("data", Binary),
             ]),
             _ => {
                 assert!(self.is_physical());
@@ -645,6 +654,15 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_file(&self) -> bool {
+        match self {
+            Self::File => true,
+            Self::Extension(_, inner, _) => inner.is_file(),
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn to_floating_representation(&self) -> DaftResult<Self> {
         let data_type = match self {
             // All numeric types that coerce to `f32`
@@ -725,6 +743,7 @@ impl DataType {
                 | Self::SparseTensor(..)
                 | Self::FixedShapeSparseTensor(..)
                 | Self::Map { .. }
+                | Self::File
         )
     }
 

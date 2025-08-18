@@ -11,6 +11,7 @@ pub fn dummy_scan_operator(fields: Vec<Field>) -> ScanOperatorRef {
         schema,
         num_scan_tasks: 1,
         num_rows_per_task: None,
+        supports_count_pushdown_flag: false,
     }))
 }
 

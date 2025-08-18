@@ -29,6 +29,7 @@ pub enum NodeType {
     Dedup,
     GroupByAgg,
     HashJoinBuild,
+    IntoPartitions,
     Pivot,
     Repartition,
     Sort,

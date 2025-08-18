@@ -65,6 +65,10 @@ impl ScanOperator for AnonymousScanOperator {
         false
     }
 
+    fn supports_count_pushdown(&self) -> bool {
+        false
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![
             "AnonymousScanOperator".to_string(),
