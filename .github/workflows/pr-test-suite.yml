@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths-ignore:
     - '.vscode/**'
-    - 'benchmarking/**'
     - 'ci/**'
     - 'docs/**'
     - '.git-blame-ignore-revs'
@@ -24,7 +23,6 @@ on:
     branches: [main]
     paths-ignore:
     - '.vscode/**'
-    - 'benchmarking/**'
     - 'ci/**'
     - 'docs/**'
     - '.git-blame-ignore-revs'
