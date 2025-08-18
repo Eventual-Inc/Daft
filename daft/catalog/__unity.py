@@ -14,6 +14,7 @@ from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
 
 
 class UnityCatalog(Catalog):
@@ -51,6 +52,7 @@ class UnityCatalog(Catalog):
         identifier: Identifier,
         source: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         raise NotImplementedError("Unity create_table not yet supported.")
 

@@ -18,6 +18,7 @@ Some of Daft's supported modalities include:
 - **[URLs and Files](urls.md)**: Handle file paths, URLs, and remote resources.
 - **[Text](text.md)**: Process and analyze textual content.
 - **[Images](images.md)**: Work with visual data and image processing.
+- **[Videos](videos.md)**: Working with videos.
 - **[JSON and Nested Data](json.md)**: Handle semi-structured and hierarchical data.
 - **PDFs (user guide coming soon)**: Extract text and image data from PDF documents.
 - **Embeddings (user guide coming soon)**: Generate vector representations for similarity search and machine learning.

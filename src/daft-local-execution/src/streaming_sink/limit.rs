@@ -8,7 +8,6 @@ use tracing::{instrument, Span};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
-    StreamingSinkState,
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
@@ -17,7 +16,7 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-struct LimitSinkState {
+pub(crate) struct LimitSinkState {
     // The remaining number of rows to skip
     remaining_skip: usize,
     // The remaining number of rows to fetch
@@ -37,12 +36,6 @@ impl LimitSinkState {
     }
 }
 
-impl StreamingSinkState for LimitSinkState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 pub struct LimitSink {
     limit: usize,
     offset: Option<usize>,
@@ -55,20 +48,18 @@ impl LimitSink {
 }
 
 impl StreamingSink for LimitSink {
+    type State = LimitSinkState;
+
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
         mut input: Arc<MicroPartition>,
-        mut state: Box<dyn StreamingSinkState>,
+        mut state: LimitSinkState,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult {
+    ) -> StreamingSinkExecuteResult<Self> {
         let mut input_num_rows = input.len();
 
-        let (remaining_skip, remaining_take) = state
-            .as_any_mut()
-            .downcast_mut::<LimitSinkState>()
-            .expect("Limit sink should have LimitSinkState")
-            .get_state_mut();
+        let (remaining_skip, remaining_take) = state.get_state_mut();
 
         if *remaining_skip > 0 {
             let skip_num_rows = (*remaining_skip).min(input_num_rows);
@@ -129,14 +120,14 @@ impl StreamingSink for LimitSink {
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn StreamingSinkState>>,
+        _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(LimitSinkState::new(self.limit, self.offset))
+    fn make_state(&self) -> Self::State {
+        LimitSinkState::new(self.limit, self.offset)
     }
 
     fn max_concurrency(&self) -> usize {

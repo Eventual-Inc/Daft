@@ -281,7 +281,7 @@ impl PushDownFilter {
                     post_projection_filter.into()
                 }
             }
-            LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) => {
+            LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) | LogicalPlan::IntoBatches(_) => {
                 // Naive commuting with unary ops.
                 let new_filter = plan
                     .with_new_children(&[child_plan.arc_children()[0].clone()])
@@ -392,7 +392,25 @@ impl PushDownFilter {
                     return Ok(Transformed::no(plan));
                 }
             }
-            _ => return Ok(Transformed::no(plan)),
+            LogicalPlan::Limit(_)
+            | LogicalPlan::Offset(_)
+            | LogicalPlan::TopN(..)
+            | LogicalPlan::Sample(..)
+            | LogicalPlan::Explode(..)
+            | LogicalPlan::Shard(..)
+            | LogicalPlan::UDFProject(..)
+            | LogicalPlan::Unpivot(..)
+            | LogicalPlan::Pivot(..)
+            | LogicalPlan::Aggregate(..)
+            | LogicalPlan::Intersect(..)
+            | LogicalPlan::Union(..)
+            | LogicalPlan::Sink(..)
+            | LogicalPlan::MonotonicallyIncreasingId(..)
+            | LogicalPlan::SubqueryAlias(..)
+            | LogicalPlan::Window(..)
+            | LogicalPlan::Distinct(..) => {
+                return Ok(Transformed::no(plan));
+            }
         };
         Ok(Transformed::yes(new_plan))
     }
@@ -673,6 +691,35 @@ mod tests {
         let expected = expected_filter_scan
             .hash_repartition(Some(num_partitions), repartition_by)?
             .build();
+        assert_optimized_plan_eq(plan, expected, false)?;
+        Ok(())
+    }
+
+    /// Tests that Filter commutes with IntoBatches.
+    #[rstest]
+    fn filter_commutes_with_into_batches(
+        #[values(false, true)] push_into_scan: bool,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
+        );
+        let pred = resolved_col("a").lt(lit(2));
+        let batch_size = 5usize;
+        let plan = scan_plan
+            .into_batches(batch_size)?
+            .filter(pred.clone())?
+            .build();
+        let expected_filter_scan = if push_into_scan {
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_filters(Some(pred)))
+        } else {
+            scan_plan.filter(pred)?
+        };
+        let expected = expected_filter_scan.into_batches(batch_size)?.build();
         assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }

@@ -130,8 +130,6 @@ def element() -> Expression:
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
-    See [Column Wildcards](https://docs.daft.ai/en/stable/core_concepts/#selecting-columns-using-wildcards) for details on wildcards.
-
     Args:
         name: Name of column
 

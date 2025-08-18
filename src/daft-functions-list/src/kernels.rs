@@ -53,7 +53,7 @@ pub fn list_fill(elem: &Series, num_array: &Int64Array) -> DaftResult<ListArray>
         Series::concat(&generated_refs)?
     };
     Ok(ListArray::new(
-        elem.field().to_list_field()?,
+        elem.field().to_list_field(),
         flat_child,
         offsets.into(),
         None,
@@ -650,7 +650,7 @@ impl ListArrayExtension for FixedSizeListArray {
             Some(end) => create_iter(end, self.len()),
             None => Box::new(repeat_n(list_size as i64, self.len())),
         };
-        let new_field = Arc::new(self.field.to_exploded_field()?.to_list_field()?);
+        let new_field = Arc::new(self.field.to_exploded_field()?.to_list_field());
         get_slices_helper(
             (0..=((self.len() * list_size) as i64)).step_by(list_size),
             new_field,
@@ -893,7 +893,7 @@ fn get_chunks_helper(
                   // This reasoning applies to the places that follow where validity is set.
         );
         Ok(ListArray::new(
-            inner_list_field.to_list_field()?,
+            inner_list_field.to_list_field(),
             inner_list.into_series(),
             arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.
@@ -917,7 +917,7 @@ fn get_chunks_helper(
         let inner_list_field = field.to_exploded_field()?.to_fixed_size_list_field(size)?;
         let inner_list = FixedSizeListArray::new(inner_list_field.clone(), growable.build()?, None);
         Ok(ListArray::new(
-            inner_list_field.to_list_field()?,
+            inner_list_field.to_list_field(),
             inner_list.into_series(),
             arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.

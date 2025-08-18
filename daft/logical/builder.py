@@ -254,6 +254,10 @@ class LogicalPlanBuilder:
         builder = self._builder.into_partitions(num_partitions)
         return LogicalPlanBuilder(builder)
 
+    def into_batches(self, batch_size: int) -> LogicalPlanBuilder:
+        builder = self._builder.into_batches(batch_size)
+        return LogicalPlanBuilder(builder)
+
     def agg(
         self,
         to_agg: list[Expression],

@@ -142,12 +142,23 @@ class DataType:
 
     @classmethod
     def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
+        import types
         from typing import get_args, get_origin
+
+        from PIL import Image
 
         if isinstance(user_provided_type, DataType):
             return user_provided_type
+        elif (
+            isinstance(user_provided_type, types.ModuleType)
+            and hasattr(user_provided_type.module, "__name__")
+            and user_provided_type.module.__name__ == "PIL.Image"
+        ) or user_provided_type is Image.Image:
+            return DataType.image()
         elif isinstance(user_provided_type, dict):
             return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
+        elif user_provided_type is None:
+            return DataType.null()
         elif get_origin(user_provided_type) is not None:
             origin_type = get_origin(user_provided_type)
             if origin_type is list:
@@ -167,6 +178,8 @@ class DataType:
                 return DataType.float64()
             elif user_provided_type is bytes:
                 return DataType.binary()
+            elif user_provided_type is bool:
+                return DataType.bool()
             elif user_provided_type is object:
                 return DataType.python()
             else:
@@ -571,6 +584,11 @@ class DataType:
         """Create a Python DataType: a type which refers to an arbitrary Python object."""
         return cls._from_pydatatype(PyDataType.python())
 
+    @classmethod
+    def file(cls) -> DataType:
+        """Create a File DataType: a type which refers to a file object."""
+        return cls._from_pydatatype(PyDataType.file())
+
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.
 
@@ -952,6 +970,16 @@ class DataType:
         """
         return self._dtype.is_temporal()
 
+    def is_file(self) -> builtins.bool:
+        """Check if this is a file type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.file()
+            >>> assert dtype.is_file()
+        """
+        return self._dtype.is_file()
+
     @property
     def size(self) -> int:
         """If this is a fixed size type, return the size, otherwise an attribute error is raised.
@@ -1175,6 +1203,29 @@ _EXT_TYPE_REGISTERED = False
 _STATIC_DAFT_EXTENSION: pa.ExtensionType | None = None
 
 
+class DaftExtension(pa.ExtensionType):  # type: ignore[misc]
+    def __init__(self, dtype: pa.DataType, metadata: bytes = b"") -> None:
+        # attributes need to be set first before calling
+        # super init (as that calls serialize)
+        self._metadata = metadata
+        super().__init__(dtype, "daft.super_extension")
+
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[[pa.DataType, bytes], DaftExtension], tuple[pa.DataType, bytes]]:
+        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
+
+    def __arrow_ext_serialize__(self) -> bytes:
+        return self._metadata
+
+    @classmethod
+    def __arrow_ext_deserialize__(cls, storage_type: pa.DataType, serialized: bytes) -> DaftExtension:
+        return cls(storage_type, serialized)
+
+    def __arrow_ext_equals__(self, other: pa.ExtensionType) -> bool:
+        return self.storage_type == other.storage_type and self._metadata == other._metadata
+
+
 def _ensure_registered_super_ext_type() -> None:
     global _EXT_TYPE_REGISTERED
     global _STATIC_DAFT_EXTENSION
@@ -1184,26 +1235,6 @@ def _ensure_registered_super_ext_type() -> None:
     if not _EXT_TYPE_REGISTERED:
         with _EXT_TYPE_REGISTRATION_LOCK:
             if not _EXT_TYPE_REGISTERED:
-
-                class DaftExtension(pa.ExtensionType):  # type: ignore[misc]
-                    def __init__(self, dtype: pa.DataType, metadata: bytes = b"") -> None:
-                        # attributes need to be set first before calling
-                        # super init (as that calls serialize)
-                        self._metadata = metadata
-                        super().__init__(dtype, "daft.super_extension")
-
-                    def __reduce__(
-                        self,
-                    ) -> tuple[Callable[[pa.DataType, bytes], DaftExtension], tuple[pa.DataType, bytes]]:
-                        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
-
-                    def __arrow_ext_serialize__(self) -> bytes:
-                        return self._metadata
-
-                    @classmethod
-                    def __arrow_ext_deserialize__(cls, storage_type: pa.DataType, serialized: bytes) -> DaftExtension:
-                        return cls(storage_type, serialized)
-
                 _STATIC_DAFT_EXTENSION = DaftExtension
                 pa.register_extension_type(DaftExtension(pa.null()))
                 import atexit

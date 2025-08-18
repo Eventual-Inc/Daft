@@ -143,6 +143,7 @@ pub mod pylib {
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
         daft_shuffles::python::register_modules(m)?;
+        daft_file::python::register_modules(m)?;
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;
         m.add_submodule(&testing_module)?;
@@ -173,7 +174,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions_serde::SerdeFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
         functions_registry.register::<daft_functions::HashFunctions>();
-        functions_registry.register::<daft_functions::StructFunctions>();
+        functions_registry.register::<daft_functions::ConversionFunctions>();
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
 
