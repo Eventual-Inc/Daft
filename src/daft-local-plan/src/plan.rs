@@ -73,6 +73,7 @@ pub enum LocalPhysicalPlan {
 
     // Flotilla Only Nodes
     Repartition(Repartition),
+    IntoPartitions(IntoPartitions),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
 }
@@ -116,6 +117,7 @@ impl LocalPhysicalPlan {
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
+            | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -712,6 +714,21 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn into_partitions(
+        input: LocalPhysicalPlanRef,
+        num_partitions: usize,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::IntoPartitions(IntoPartitions {
+            input,
+            num_partitions,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -753,6 +770,7 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::Repartition(Repartition { schema, .. }) => schema,
+            Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
@@ -825,6 +843,7 @@ impl LocalPhysicalPlan {
                 vec![input.clone()]
             }
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
+            Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
         }
@@ -866,6 +885,7 @@ impl LocalPhysicalPlan {
                 #[cfg(feature = "python")]
                 Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
                 Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
+                Self::IntoPartitions(IntoPartitions {  num_partitions, .. }) => Self::into_partitions(new_child.clone(), *num_partitions, StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -1228,6 +1248,14 @@ pub struct WindowOrderByOnly {
 pub struct Repartition {
     pub input: LocalPhysicalPlanRef,
     pub repartition_spec: RepartitionSpec,
+    pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IntoPartitions {
+    pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

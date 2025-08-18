@@ -17,12 +17,9 @@ use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use {
-    crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::PythonArray,
-    common_arrow_ffi as ffi,
-    ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
-    numpy::{PyArray3, PyReadonlyArrayDyn, PyUntypedArrayMethods},
+    numpy::{PyReadonlyArrayDyn, PyUntypedArrayMethods},
     pyo3::prelude::*,
     std::iter,
 };
@@ -37,17 +34,32 @@ use crate::{
     },
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
+            DateArray, DurationArray, EmbeddingArray, FileArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
-        Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
+        DaftArrayType, DaftArrowBackedType, DataType, Field, ImageMode, Int64Array, NullArray,
+        TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
     with_match_numeric_daft_types,
 };
+
+#[cfg(feature = "python")]
+impl Series {
+    fn cast_to_python(&self) -> DaftResult<Self> {
+        let py_values = Python::with_gil(|py| {
+            use pyo3::IntoPyObjectExt;
+
+            self.to_literals()
+                .map(|lit| lit.into_py_any(py).map(Arc::new))
+                .collect::<PyResult<Vec<_>>>()
+        })?;
+
+        Ok(PythonArray::from((self.name(), py_values)).into_series())
+    }
+}
 
 impl<T> DataArray<T>
 where
@@ -57,26 +69,7 @@ where
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => {
-                use pyo3::prelude::*;
-
-                use crate::python::PySeries;
-                // Convert something to Python.
-
-                // Use the existing logic on the Python side of the PyO3 layer
-                // to create a Python list out of this series.
-                let old_pyseries =
-                    PySeries::from(Series::try_from((self.name(), self.data.clone()))?);
-
-                let new_pyseries: PySeries = Python::with_gil(|py| -> PyResult<PySeries> {
-                    PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-                        .getattr(pyo3::intern!(py, "Series"))?
-                        .getattr(pyo3::intern!(py, "_from_pyseries"))?
-                        .call1((old_pyseries,))?
-                        .call_method0(pyo3::intern!(py, "_cast_to_python"))?
-                        .getattr(pyo3::intern!(py, "_series"))?
-                        .extract()
-                })?;
-                Ok(new_pyseries.into())
+                Series::try_from((self.name(), self.data.clone()))?.cast_to_python()
             }
             _ => {
                 // Cast from DataArray to the target DataType
@@ -194,7 +187,7 @@ impl DateArray {
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
-            DataType::Python => cast_logical_to_python_array(self, dtype),
+            DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot cast Date to {}",
                 dtype
@@ -299,7 +292,7 @@ impl TimestampArray {
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
-            DataType::Python => cast_logical_to_python_array(self, dtype),
+            DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot cast Timestamp to {}",
                 dtype
@@ -351,7 +344,7 @@ impl TimeArray {
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
-            DataType::Python => cast_logical_to_python_array(self, dtype),
+            DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot cast Time to {}",
                 dtype
@@ -370,7 +363,7 @@ impl DurationArray {
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             DataType::Int64 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
-            DataType::Python => cast_logical_to_python_array(self, dtype),
+            DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot cast Duration to {}",
                 dtype
@@ -544,6 +537,18 @@ impl DurationArray {
     }
 }
 
+impl FileArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            dtype => todo!("cast {dtype} for FileArray"),
+        }
+    }
+}
+
 // impl Decimal128Array {
 //     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
 //         match dtype {
@@ -697,6 +702,11 @@ type ArrayPayload<Tgt> = (
     Option<Vec<i64>>,
 );
 
+/// Extract a PythonArray of elements list[T] into set of vectors:
+/// 1) A values Vec<T>
+/// 2) An optional offsets Vec<i64>
+/// 3) An optional shapes Vec<u64>
+/// 4) An optional shape_offsets Vec<i64>
 #[cfg(feature = "python")]
 fn extract_python_to_vec<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
@@ -1166,36 +1176,48 @@ impl PythonArray {
                 pycast_then_arrowcast!(self, dt, "float")
             }
             DataType::List(child_dtype) => {
-                if !child_dtype.is_numeric() {
-                    return Err(DaftError::ValueError(format!(
+                if child_dtype.is_numeric() {
+                    with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
+                        type Tgt = <$T as DaftNumericType>::Native;
+                        pyo3::Python::with_gil(|py| {
+                            let result = extract_python_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
+                            Ok(result.into_series())
+                        })
+                    })
+                } else if child_dtype.is_physical() {
+                    // TODO: This is not fully operational since we can't guarantee that our Series.from_pylist
+                    // implementation (using PyArrow) will cast the values arrays correctly.
+                    pycast_then_arrowcast!(self, dtype, "list")
+                } else {
+                    Err(DaftError::ValueError(format!(
                         "We can only convert numeric python types to List, got {}",
                         child_dtype
-                    )));
+                    )))
                 }
-                with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
-                    type Tgt = <$T as DaftNumericType>::Native;
-                    pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
-                        Ok(result.into_series())
-                    })
-                })
             }
             DataType::FixedSizeList(child_dtype, size) => {
-                if !child_dtype.is_numeric() {
-                    return Err(DaftError::ValueError(format!(
+                if child_dtype.is_numeric() {
+                    with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
+                        type Tgt = <$T as DaftNumericType>::Native;
+                        pyo3::Python::with_gil(|py| {
+                            let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
+                            Ok(result.into_series())
+                        })
+                    })
+                } else if child_dtype.is_physical() {
+                    pycast_then_arrowcast!(self, dtype, "list")
+                } else {
+                    Err(DaftError::ValueError(format!(
                         "We can only convert numeric python types to FixedSizeList, got {}",
                         child_dtype,
-                    )));
+                    )))
                 }
-                with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
-                    type Tgt = <$T as DaftNumericType>::Native;
-                    pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
-                        Ok(result.into_series())
-                    })
-                })
             }
-            DataType::Struct(_) => unimplemented!(),
+            DataType::Struct(_) => {
+                // TODO: This is not fully operational since we can't guarantee that our Series.from_pylist
+                // implementation (using PyArrow) will cast the struct field arrays correctly.
+                pycast_then_arrowcast!(self, dtype, "dict")
+            }
             DataType::Embedding(..) => {
                 let result = self.cast(&dtype.to_physical())?;
                 let embedding_array = EmbeddingArray::new(
@@ -1250,29 +1272,7 @@ impl EmbeddingArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::Embedding(_, size)) => Python::with_gil(|py| {
-                let physical_arrow = self.physical.flat_child.to_arrow();
-                let shape = (self.len(), *size);
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                // Only go through FFI layer once instead of for every embedding.
-                // We create an ndarray view on the entire embeddings array
-                // buffer sans the validity mask, and then create a subndarray view
-                // for each embedding ndarray in the PythonArray.
-                let py_array = ffi::to_py_array(py, physical_arrow.with_validity(None), &pyarrow)?
-                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                    .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
-                let ndarrays = py_array
-                    .try_iter()?
-                    .map(|a| Arc::new(a.unwrap().unbind()))
-                    .collect::<Vec<_>>();
-                let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
-                Ok(PythonArray::new(
-                    Field::new(self.name(), dtype.clone()).into(),
-                    values_array.to_boxed(),
-                )?
-                .into_series())
-            }),
+            (DataType::Python, _) => self.clone().into_series().cast_to_python(),
             (DataType::Tensor(_), DataType::Embedding(inner_dtype, size)) => {
                 let image_shape = vec![*size as u64];
                 let fixed_shape_tensor_dtype =
@@ -1292,36 +1292,7 @@ impl ImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             #[cfg(feature = "python")]
-            DataType::Python => Python::with_gil(|py| {
-                let mut ndarrays = Vec::with_capacity(self.len());
-                let da = self.data_array();
-                let ca = self.channel_array();
-                let ha = self.height_array();
-                let wa = self.width_array();
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                for i in 0..da.len() {
-                    let element = da.get(i);
-                    let shape = (
-                        ha.value(i) as usize,
-                        wa.value(i) as usize,
-                        ca.value(i) as usize,
-                    );
-                    let py_array = match element {
-                        Some(element) => ffi::to_py_array(py, element.to_arrow(), &pyarrow)?
-                            .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                            .call_method1(pyo3::intern!(py, "reshape"), (shape,))?,
-                        None => PyArray3::<u8>::zeros(py, shape.into_dimension(), false).into_any(),
-                    };
-                    ndarrays.push(Arc::new(py_array.unbind()));
-                }
-                let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
-                Ok(PythonArray::new(
-                    Field::new(self.name(), dtype.clone()).into(),
-                    values_array.to_boxed(),
-                )?
-                .into_series())
-            }),
+            DataType::Python => self.clone().into_series().cast_to_python(),
             DataType::FixedShapeImage(mode, height, width) => {
                 let num_channels = mode.num_channels();
                 let image_shape = vec![*height as u64, *width as u64, num_channels as u64];
@@ -1401,37 +1372,7 @@ impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeImage(mode, height, width)) => {
-                let physical_arrow = self.physical.flat_child.to_arrow();
-                pyo3::Python::with_gil(|py| {
-                    let shape = (
-                        self.len(),
-                        *height as usize,
-                        *width as usize,
-                        mode.num_channels() as usize,
-                    );
-                    let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                    // Only go through FFI layer once instead of for every image.
-                    // We create an (N, H, W, C) ndarray view on the entire image array
-                    // buffer sans the validity mask, and then create a subndarray view
-                    // for each image ndarray in the PythonArray.
-                    let py_array =
-                        ffi::to_py_array(py, physical_arrow.with_validity(None), &pyarrow)?
-                            .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                            .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
-                    let ndarrays = py_array
-                        .try_iter()?
-                        .map(|a| Arc::new(a.unwrap().unbind()))
-                        .collect::<Vec<_>>();
-                    let values_array =
-                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
-                    Ok(PythonArray::new(
-                        Field::new(self.name(), dtype.clone()).into(),
-                        values_array.to_boxed(),
-                    )?
-                    .into_series())
-                })
-            }
+            (DataType::Python, _) => self.clone().into_series().cast_to_python(),
             (DataType::Tensor(_), DataType::FixedShapeImage(mode, height, width)) => {
                 let num_channels = mode.num_channels();
                 let image_shape = vec![*height as u64, *width as u64, num_channels as u64];
@@ -1470,31 +1411,7 @@ impl TensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             #[cfg(feature = "python")]
-            DataType::Python => Python::with_gil(|py| {
-                let mut ndarrays = Vec::with_capacity(self.len());
-                let da = self.data_array();
-                let sa = self.shape_array();
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                for (arrow_array, shape_array) in (0..self.len()).map(|i| (da.get(i), sa.get(i))) {
-                    if let (Some(arrow_array), Some(shape_array)) = (arrow_array, shape_array) {
-                        let shape_array = shape_array.u64().unwrap().as_arrow();
-                        let shape = shape_array.values().to_vec();
-                        let py_array = ffi::to_py_array(py, arrow_array.to_arrow(), &pyarrow)?
-                            .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                            .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
-                        ndarrays.push(Arc::new(py_array.unbind()));
-                    } else {
-                        ndarrays.push(Arc::new(py.None()));
-                    }
-                }
-                let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
-                Ok(PythonArray::new(
-                    Field::new(self.name(), dtype.clone()).into(),
-                    values_array.to_boxed(),
-                )?
-                .into_series())
-            }),
+            DataType::Python => self.clone().into_series().cast_to_python(),
             DataType::FixedShapeTensor(inner_dtype, shape) => {
                 let da = self.data_array();
                 let sa = self.shape_array();
@@ -1880,43 +1797,7 @@ impl SparseTensorArray {
                 Ok(sparse_tensor_array.into_series())
             }
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::SparseTensor(_, _)) => Python::with_gil(|py| {
-                let mut pydicts: Vec<Arc<PyObject>> = Vec::with_capacity(self.len());
-                let sa = self.shape_array();
-                let va = self.values_array();
-                let ia = self.indices_array();
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                for ((shape_array, values_array), indices_array) in
-                    sa.into_iter().zip(va.into_iter()).zip(ia.into_iter())
-                {
-                    if let (Some(shape_array), Some(values_array), Some(indices_array)) =
-                        (shape_array, values_array, indices_array)
-                    {
-                        let shape_array = shape_array.u64().unwrap().as_arrow();
-                        let shape = shape_array.values().to_vec();
-                        let py_values_array =
-                            ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
-                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                        let py_indices_array =
-                            ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
-                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                        let pydict = pyo3::types::PyDict::new(py);
-                        pydict.set_item("values", py_values_array)?;
-                        pydict.set_item("indices", py_indices_array)?;
-                        pydict.set_item("shape", shape)?;
-                        pydicts.push(Arc::new(pydict.unbind().into()));
-                    } else {
-                        pydicts.push(Arc::new(py.None()));
-                    }
-                }
-                let py_objects_array =
-                    PseudoArrowArray::new(pydicts.into(), self.physical.validity().cloned());
-                Ok(PythonArray::new(
-                    Field::new(self.name(), dtype.clone()).into(),
-                    py_objects_array.to_boxed(),
-                )?
-                .into_series())
-            }),
+            (DataType::Python, _) => self.clone().into_series().cast_to_python(),
             (_, _) => self.physical.cast(dtype),
         }
     }
@@ -2011,40 +1892,7 @@ impl FixedShapeSparseTensorArray {
                 Ok(fixed_shape_tensor_array.into_series())
             }
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeSparseTensor(_, tensor_shape, _)) => {
-                Python::with_gil(|py| {
-                    let mut pydicts: Vec<Arc<PyObject>> = Vec::with_capacity(self.len());
-                    let va = self.values_array();
-                    let ia = self.indices_array();
-                    let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                    for (values_array, indices_array) in va.into_iter().zip(ia.into_iter()) {
-                        if let (Some(values_array), Some(indices_array)) =
-                            (values_array, indices_array)
-                        {
-                            let py_values_array =
-                                ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
-                                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                            let py_indices_array =
-                                ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
-                                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                            let pydict = pyo3::types::PyDict::new(py);
-                            pydict.set_item("values", py_values_array)?;
-                            pydict.set_item("indices", py_indices_array)?;
-                            pydict.set_item("shape", tensor_shape)?;
-                            pydicts.push(Arc::new(pydict.unbind().into()));
-                        } else {
-                            pydicts.push(Arc::new(py.None()));
-                        }
-                    }
-                    let py_objects_array =
-                        PseudoArrowArray::new(pydicts.into(), self.physical.validity().cloned());
-                    Ok(PythonArray::new(
-                        Field::new(self.name(), dtype.clone()).into(),
-                        py_objects_array.to_boxed(),
-                    )?
-                    .into_series())
-                })
-            }
+            (DataType::Python, _) => self.clone().into_series().cast_to_python(),
             (_, _) => self.physical.cast(dtype),
         }
     }
@@ -2054,33 +1902,7 @@ impl FixedShapeTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeTensor(_, shape)) => {
-                let physical_arrow = self.physical.flat_child.to_arrow();
-                pyo3::Python::with_gil(|py| {
-                    let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                    let mut np_shape: Vec<u64> = vec![self.len() as u64];
-                    np_shape.extend(shape);
-                    // Only go through FFI layer once instead of for every tensor element.
-                    // We create an (N, [shape..]) ndarray view on the entire tensor array buffer
-                    // sans the validity mask, and then create a subndarray view for each ndarray
-                    // element in the PythonArray.
-                    let py_array =
-                        ffi::to_py_array(py, physical_arrow.with_validity(None), &pyarrow)?
-                            .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                            .call_method1(pyo3::intern!(py, "reshape"), (np_shape,))?;
-                    let ndarrays = py_array
-                        .try_iter()?
-                        .map(|a| Arc::new(a.unwrap().unbind()))
-                        .collect::<Vec<_>>();
-                    let values_array =
-                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
-                    Ok(PythonArray::new(
-                        Field::new(self.name(), dtype.clone()).into(),
-                        values_array.to_boxed(),
-                    )?
-                    .into_series())
-                })
-            }
+            (DataType::Python, _) => self.clone().into_series().cast_to_python(),
             (DataType::Tensor(_), DataType::FixedShapeTensor(inner_dtype, tensor_shape)) => {
                 let ndim = tensor_shape.len();
                 let shapes = tensor_shape
@@ -2498,36 +2320,6 @@ impl StructArray {
             ),
         }
     }
-}
-
-#[cfg(feature = "python")]
-fn cast_logical_to_python_array<T>(array: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
-where
-    T: DaftLogicalType,
-    T::PhysicalType: DaftArrowBackedType,
-    LogicalArray<T>: AsArrow,
-    <LogicalArray<T> as AsArrow>::Output: arrow2::array::Array,
-{
-    Python::with_gil(|py| {
-        let arrow_dtype = array.data_type().to_arrow()?;
-        let arrow_array = array
-            .as_arrow()
-            .convert_logical_type(arrow_dtype)
-            .with_validity(None);
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-        let py_array = ffi::to_py_array(py, arrow_array.to_boxed(), &pyarrow)?
-            .call_method0(pyo3::intern!(py, "to_pylist"))?
-            .try_iter()?
-            .map(|a| Arc::new(a.unwrap().unbind()))
-            .collect::<Vec<_>>();
-        let values_array =
-            PseudoArrowArray::new(py_array.into(), array.as_arrow().validity().cloned());
-        Ok(PythonArray::new(
-            Field::new(array.name(), dtype.clone()).into(),
-            values_array.to_boxed(),
-        )?
-        .into_series())
-    })
 }
 
 #[cfg(test)]

@@ -2566,6 +2566,12 @@ class DataFrame:
     def into_batches(self, batch_size: int) -> "DataFrame":
         """Splits or coalesces DataFrame to partitions of size ``batch_size``.
 
+        Note:
+            Batch sizing is performed on a best-effort basis.
+            The heuristic is to emit a batch when we have enough rows to fill `batch_size * 0.8` rows.
+            This approach prioritizes processing efficiency over uniform batch sizes, especially when using the Ray Runner, as batches can be distributed over the cluster.
+            The exception to this is that the last batch will be the remainder of the total number of rows in the DataFrame.
+
         Args:
             batch_size (int): number of target rows per partition.
 
@@ -2579,9 +2585,6 @@ class DataFrame:
             >>> for i, block in enumerate(df.to_arrow_iter()):
             ...     assert len(block) == 2, f"Expected batch size 2, got {len(block)}"
         """
-        if get_context().get_or_create_runner().name == "ray":
-            raise NotImplementedError("DataFrame.into_batches not yet implemented on the RayRunner")
-
         if batch_size <= 0:
             raise ValueError("batch_size must be greater than 0")
 

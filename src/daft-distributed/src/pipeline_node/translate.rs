@@ -18,7 +18,8 @@ use daft_physical_plan::extract_agg_expr;
 use crate::{
     pipeline_node::{
         concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        in_memory_source::InMemorySourceNode, limit::LimitNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
         top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
@@ -154,9 +155,15 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::IntoBatches(_into_batches) => {
-                todo!("IntoBatches not yet supported in the distributed pipeline node translator")
-            }
+            LogicalPlan::IntoBatches(into_batches) => IntoBatchesNode::new(
+                self.get_next_pipeline_node_id(),
+                logical_node_id,
+                &self.stage_config,
+                into_batches.batch_size,
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )
+            .arced(),
             LogicalPlan::Limit(limit) => Arc::new(LimitNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
@@ -250,24 +257,26 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 self.curr_node.pop().unwrap(), // Child
             )
             .arced(),
-            LogicalPlan::Repartition(repartition) => {
-                match &repartition.repartition_spec {
-                    RepartitionSpec::Hash(repart_spec) => {
-                        assert!(!repart_spec.by.is_empty());
-                    }
-                    RepartitionSpec::Random(_) => {}
-                    RepartitionSpec::IntoPartitions(_) => {
-                        todo!("FLOTILLA_MS3: Support other types of repartition");
-                    }
+            LogicalPlan::Repartition(repartition) => match &repartition.repartition_spec {
+                RepartitionSpec::Hash(_) | RepartitionSpec::Random(_) => {
+                    let child = self.curr_node.pop().unwrap();
+                    self.gen_shuffle_node(
+                        logical_node_id,
+                        repartition.repartition_spec.clone(),
+                        node.schema(),
+                        child,
+                    )?
                 }
-                let child = self.curr_node.pop().unwrap();
-                self.gen_shuffle_node(
+                RepartitionSpec::IntoPartitions(into_partitions_spec) => IntoPartitionsNode::new(
+                    self.get_next_pipeline_node_id(),
                     logical_node_id,
-                    repartition.repartition_spec.clone(),
+                    &self.stage_config,
+                    into_partitions_spec.num_partitions,
                     node.schema(),
-                    child,
-                )?
-            }
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced(),
+            },
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
                 let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;

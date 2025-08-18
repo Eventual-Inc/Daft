@@ -36,6 +36,7 @@ impl StagePlanBuilder {
             LogicalPlan::Source(_)
             | LogicalPlan::Project(_)
             | LogicalPlan::Filter(_)
+            | LogicalPlan::IntoBatches(_)
             | LogicalPlan::Sink(_)
             | LogicalPlan::Sample(_)
             | LogicalPlan::Explode(_)
@@ -51,10 +52,7 @@ impl StagePlanBuilder {
             LogicalPlan::Repartition(repartition) => match &repartition.repartition_spec {
                 RepartitionSpec::Hash(_) => Ok(TreeNodeRecursion::Continue),
                 RepartitionSpec::Random(_) => Ok(TreeNodeRecursion::Continue),
-                RepartitionSpec::IntoPartitions(_) => {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                }
+                RepartitionSpec::IntoPartitions(_) => Ok(TreeNodeRecursion::Continue),
             },
             LogicalPlan::Join(join) => {
                 if join
@@ -85,10 +83,6 @@ impl StagePlanBuilder {
                 }
             }
             LogicalPlan::Pivot(_) => {
-                can_translate = false;
-                Ok(TreeNodeRecursion::Stop)
-            }
-            LogicalPlan::IntoBatches(_) => {
                 can_translate = false;
                 Ok(TreeNodeRecursion::Stop)
             }

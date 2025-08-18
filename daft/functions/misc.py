@@ -99,3 +99,17 @@ def format(f_string: str, *args: Expression | str) -> Expression:
         result = result + expr
 
     return result
+
+
+def file(expr: Expression) -> Expression:
+    """Converts either a string containing a file reference, or a binary column to a `daft.File` reference.
+
+    If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
+    If the input is a binary column, it is converted to a `daft.File` where the entire contents are buffered in memory.
+    """
+    from daft.context import get_context
+
+    ctx = get_context()
+    runner_name = ctx._runner.name
+
+    return expr._eval_expressions("file", runner_name=runner_name)
