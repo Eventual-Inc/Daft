@@ -3,8 +3,41 @@ name: PR test suite
 on:
   push:
     branches: [main]
+    paths-ignore:
+    - '.vscode/**'
+    - 'benchmarking/**'
+    - 'ci/**'
+    - 'docs/**'
+    - '.git-glame-ignore-revs'
+    - '.gitignore'
+    - '.lldbinit'
+    - '.readthedocs.yaml'
+    - 'CODE_OF_CONDUCT.md'
+    - 'CONTRIBUTING.md'
+    - 'LICENSE'
+    - 'README.rst'
+    - 'SECURITY.md'
+    - 'codecov.yml'
+    - 'mkdocs.yml'
+
   pull_request:
     branches: [main]
+    paths-ignore:
+    - '.vscode/**'
+    - 'benchmarking/**'
+    - 'ci/**'
+    - 'docs/**'
+    - '.git-glame-ignore-revs'
+    - '.gitignore'
+    - '.lldbinit'
+    - '.readthedocs.yaml'
+    - 'CODE_OF_CONDUCT.md'
+    - 'CONTRIBUTING.md'
+    - 'LICENSE'
+    - 'README.rst'
+    - 'SECURITY.md'
+    - 'codecov.yml'
+    - 'mkdocs.yml'
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
