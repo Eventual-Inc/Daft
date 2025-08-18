@@ -707,12 +707,11 @@ def test_udf_with_unschedulable_actors():
     reason="Ray runner will always run UDFs on separate processes",
 )
 def test_udf_with_some_unschedulable_actors():
-    with execution_config_ctx(actor_udf_ready_timeout=1):
-        df = daft.from_pydict({"a": [1, 2, 3]})
+    df = daft.from_pydict({"a": [1, 2, 3]})
 
-        @udf(return_dtype=DataType.int64(), concurrency=100, num_cpus=1)  # no way there's gonna be 100 on ci
-        def udf_1(data):
-            return data
+    @udf(return_dtype=DataType.int64(), concurrency=100, num_cpus=1)  # no way there's gonna be 100 on ci
+    def udf_1(data):
+        return data
 
-        result = df.select(udf_1(col("a")).alias("udf_1")).to_pydict()
-        assert result == {"udf_1": [1, 2, 3]}
+    result = df.select(udf_1(col("a")).alias("udf_1")).to_pydict()
+    assert result == {"udf_1": [1, 2, 3]}
