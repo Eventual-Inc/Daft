@@ -8,7 +8,6 @@ pip install daft soundfile openai-whisper
 
 ## Example 1: Transcribing Audio Bytes from a Dataset
 
-
 ```py
 import daft
 from daft.functions import file
