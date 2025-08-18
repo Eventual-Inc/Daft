@@ -188,9 +188,7 @@ impl SortNode {
         output: MaterializedOutput,
         num_partitions: usize,
     ) -> DaftResult<RecordBatch> {
-        Err(DaftError::InternalError(
-            "Distributed sort requires Python feature to be enabled".to_string(),
-        ))
+        unimplemented!()
     }
 
     async fn execution_loop(
