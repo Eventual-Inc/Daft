@@ -12,12 +12,14 @@ from daft.daft import (
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
+    PyMicroPartition,
     RayPartitionRef,
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
 )
+from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     PartitionMetadata,
@@ -72,6 +74,35 @@ class RaySwordfishActor:
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
             yield metas
+
+
+@ray.remote  # type: ignore[misc]
+def get_boundaries_remote(
+    materialized_outputs: list[ray.ObjectRef],
+    sort_by: list[Expression],
+    descending: list[bool],
+    nulls_first: list[bool] | None,
+    num_quantiles: int,
+) -> PyMicroPartition:
+    sort_by_exprs = ExpressionsProjection(sort_by)
+
+    mps = ray.get(materialized_outputs)
+    mp = MicroPartition.concat(mps)
+    nulls_first = nulls_first if nulls_first is not None else descending
+    merged_sorted = mp.sort(sort_by_exprs.to_column_expressions(), descending=descending, nulls_first=nulls_first)
+
+    result = merged_sorted.quantiles(num_quantiles)
+    return result._micropartition
+
+
+def get_boundaries(
+    materialized_outputs: list[ray.ObjectRef],
+    sort_by: list[Expression],
+    descending: list[bool],
+    nulls_first: list[bool] | None,
+    num_quantiles: int,
+) -> PyMicroPartition:
+    return ray.get(get_boundaries_remote.remote(materialized_outputs, sort_by, descending, nulls_first, num_quantiles))
 
 
 @dataclass
