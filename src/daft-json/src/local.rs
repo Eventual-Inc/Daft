@@ -43,6 +43,7 @@ pub fn read_json_local(
         .into());
     }
     if bytes[0] == b'[' {
+        println!("reading json array");
         let schema = infer_schema(bytes, None, None)?;
 
         let predicate = convert_options
@@ -50,6 +51,7 @@ pub fn read_json_local(
             .and_then(|options| options.predicate.clone());
         read_json_array_impl(bytes, schema.into(), predicate)
     } else {
+        println!("reading json object");
         let reader = JsonReader::try_new(
             bytes,
             convert_options,
@@ -104,9 +106,7 @@ pub fn read_json_array_impl(
                                     deserialize_into(inner, &[value]);
                                 }
                                 None => {
-                                    Err(super::Error::JsonDeserializationError {
-                                        string: "Field not found in schema".to_string(),
-                                    })?;
+                                    inner.push_null();
                                 }
                             }
                         }
@@ -125,9 +125,7 @@ pub fn read_json_array_impl(
                             deserialize_into(inner, &[value]);
                         }
                         None => {
-                            Err(super::Error::JsonDeserializationError {
-                                string: "Field not found in schema".to_string(),
-                            })?;
+                            inner.push_null();
                         }
                     }
                 }
@@ -317,9 +315,7 @@ impl<'a> JsonReader<'a> {
                                 deserialize_into(inner, &[value]);
                             }
                             None => {
-                                Err(super::Error::JsonDeserializationError {
-                                    string: "Field not found in schema".to_string(),
-                                })?;
+                                inner.push_null();
                             }
                         }
                     }
@@ -343,7 +339,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
+        let tbl = RecordBatch::new_with_size(self.schema.clone(), columns, num_rows)?;
 
         if let Some(pred) = &self.predicate {
             let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;
