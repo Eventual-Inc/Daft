@@ -917,9 +917,6 @@ impl RecordBatch {
             })
             .map(|expr| BoundExpr::try_new(expr, &self.schema))
             .try_collect()?;
-        println!("exprs: {:#?}", exprs);
-        println!("self.schema: {:#?}", self.schema);
-        println!("self.columns: {:#?}", self.columns);
         self.eval_expression_list(&exprs)
     }
 
