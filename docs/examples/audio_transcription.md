@@ -6,12 +6,16 @@ Let's install some dependencies.
 pip install daft soundfile openai-whisper
 ```
 
+## Example 1: Transcribing Audio Bytes from a Dataset
+
+
 ```py
 import daft
 from daft.functions import file
 import soundfile as sf
 import whisper
 
+model = whisper.load_model("tiny")  # Use "tiny" for quick demos, "base" or "small" for better quality
 
 # this dataset contains all of the audio inside a binary column within a parquet file. such as
 # | ------------------------  | ----   |
@@ -23,7 +27,6 @@ import whisper
 # | {bytes: b"...", path: ""} | <text> |
 #
 df = daft.read_parquet("hf://datasets/MrDragonFox/Elise")
-model = whisper.load_model("turbo")
 
 @daft.func
 def transcribe(file: daft.File) -> str:
@@ -36,7 +39,7 @@ def transcribe(file: daft.File) -> str:
 
     return result['text']
 
-# unnest the data into a single column
+# Extract bytes from struct column
 df = df.select(df["audio"].struct.get("bytes").alias("bytes"))
 # | ---------- |
 # | bytes      |
@@ -45,7 +48,7 @@ df = df.select(df["audio"].struct.get("bytes").alias("bytes"))
 # | b"..."     |
 
 
-# convert the bytes into a file like interface
+# Convert bytes to file-like interface
 df = df.select(file(df["bytes"]).alias("file"))
 # | ---------- |
 # | file       |
@@ -54,7 +57,7 @@ df = df.select(file(df["bytes"]).alias("file"))
 # | <file>     |
 
 
-# transcribe the audio
+# Transcribe audio
 df = df.select(transcribe(df["file"]))
 # | ---------- |
 # | text       |
@@ -62,24 +65,68 @@ df = df.select(transcribe(df["file"]))
 # | <text>     |
 # | <text>     |
 
-# materialize the dataframe
-df.collect()
+# write to csv
+df.write_csv("transcriptions")
 ```
 
-Note, these operations are broken out to make it easier to understand. One could just as easily combine them all in to a single operation.
+You can also combine these operations into a single pipeline:
 
-```py
-df.select(transcribe(file(df["audio"].struct.get("bytes").alias("bytes")))).collect()
+```python
+df = daft.read_parquet("hf://datasets/MrDragonFox/Elise")
+df.select(
+    transcribe(file(df["audio"].struct.get("bytes")))
+).write_csv("transcriptions.csv")
 ```
 
-The `daft.File` datatype can just as easily take in a file path instead of a `bytes` object.
+## Example 2: Transcribing Local Audio Files
 
-Imagine you want to transcribe all files in a local directory:
 
-```py
-df = daft.from_glob_paths("path/to/audio_files/**/*.wav")
+The same `daft.File` datatype works just as well with file paths. Let's transcribe a directory of audio files:
 
-df = df.select(transcribe(file(df["file"])))
 
-df.collect()
+```bash
+# Download sample audio files
+wget https://www.openslr.org/resources/12/dev-clean.tar.gz
+tar -xzf dev-clean.tar.gz
+# This will create a LibriSpeech directory with Flac files
+```
+
+
+Now we can easily transcribe an entire directory of audio!
+
+```python
+import daft
+from daft.functions import file
+import soundfile as sf
+import whisper
+
+# Load model
+model = whisper.load_model("tiny")
+
+@daft.func
+def transcribe(file: daft.File) -> str:
+    """Transcribes an audio file using OpenAI Whisper"""
+    audio, _ = sf.read(file, dtype='float32')
+    result = model.transcribe(audio)
+    return result['text']
+
+# Create dataframe from all flac files in directory
+df = daft.from_glob_paths("./LibriSpeech/dev-clean/**/*.flac")
+
+# Process all files
+df = df.select(
+    df["path"],
+    transcribe(file(df["path"])).alias("transcription")
+)
+
+# Write results
+df.write_csv("transcriptions.csv")
+```
+
+Output:
+```csv
+"path","transcription"
+"file://./LibriSpeech/dev-clean/8297/275154/8297-275154-0023.flac"," Let me hear what it is first."
+"file://./LibriSpeech/dev-clean/8297/275154/8297-275154-0019.flac"," I tried it yesterday. It set my brains on fire. I'm feeling that glass I took just now."
+"file://./LibriSpeech/dev-clean/8297/275154/8297-275154-0015.flac"," I'm alone. Do you hear that? Alone."
 ```
