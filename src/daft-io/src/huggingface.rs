@@ -177,9 +177,9 @@ impl HFPathParts {
     // https://github.com/huggingface/datasets/issues/7685
     //
     // So to bypass this, we add a unique parameter to the url to prevent CDN caching.
-    fn get_file_uri(&self, cache_bust: bool, endpoint: &str) -> String {
+    fn get_file_uri(&self, cache_bust: bool) -> String {
         let base = format!(
-            "{endpoint}/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
+            "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
             REVISION = self.revision,
@@ -194,10 +194,10 @@ impl HFPathParts {
         }
     }
 
-    fn get_api_uri(&self, endpoint: &str) -> String {
+    fn get_api_uri(&self) -> String {
         // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
         format!(
-            "{endpoint}/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
+            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
             REVISION = self.revision,
@@ -205,9 +205,9 @@ impl HFPathParts {
         )
     }
 
-    fn get_parquet_api_uri(&self, endpoint: &str) -> String {
+    fn get_parquet_api_uri(&self) -> String {
         format!(
-            "{endpoint}/api/{BUCKET}/{REPOSITORY}/parquet",
+            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
             BUCKET = self.bucket,
             REPOSITORY = self.repository,
         )
@@ -216,7 +216,6 @@ impl HFPathParts {
 
 pub struct HFSource {
     http_source: HttpSource,
-    endpoint: String,
 }
 
 impl From<Error> for super::Error {
@@ -263,7 +262,6 @@ impl HFSource {
         let client = http_source.client;
         Ok(Self {
             http_source: HttpSource { client },
-            endpoint: hf_config.endpoint.clone(),
         }
         .into())
     }
@@ -282,10 +280,9 @@ impl ObjectSource for HFSource {
             cache_bust: bool,
             client: &reqwest_middleware::ClientWithMiddleware,
             range: Option<&GetRange>,
-            endpoint: &str,
         ) -> super::Result<reqwest_middleware::RequestBuilder> {
             let path_parts = uri.parse::<HFPathParts>()?;
-            let uri = &path_parts.get_file_uri(cache_bust, endpoint);
+            let uri = &path_parts.get_file_uri(cache_bust);
 
             let req = client.get(uri);
             Ok(match range {
@@ -296,13 +293,7 @@ impl ObjectSource for HFSource {
                 }
             })
         }
-        let request = make_request(
-            uri,
-            false,
-            &self.http_source.client,
-            range.as_ref(),
-            &self.endpoint,
-        )?;
+        let request = make_request(uri, false, &self.http_source.client, range.as_ref())?;
 
         let response = request
             .send()
@@ -320,13 +311,8 @@ impl ObjectSource for HFSource {
                     // Retry once with cache busting to bypass the improperly cached response and get correct file metadata.
                     // If it fails again, we'll return the error.
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
-                        let request = make_request(
-                            uri,
-                            true,
-                            &self.http_source.client,
-                            range.as_ref(),
-                            &self.endpoint,
-                        )?;
+                        let request =
+                            make_request(uri, true, &self.http_source.client, range.as_ref())?;
 
                         let response = request.send().await.context(UnableToConnectSnafu::<
                             String,
@@ -386,7 +372,7 @@ impl ObjectSource for HFSource {
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let path_parts = uri.parse::<HFPathParts>()?;
-        let uri = &path_parts.get_file_uri(false, &self.endpoint);
+        let uri = &path_parts.get_file_uri(false);
 
         let request = self.http_source.client.head(uri);
         let response = request
@@ -444,14 +430,8 @@ impl ObjectSource for HFSource {
         // but not
         // hf://datasets/user/repo/file.parquet
         if file_format == Some(FileFormat::Parquet) {
-            let res = try_parquet_api(
-                glob_path,
-                limit,
-                io_stats.clone(),
-                &self.http_source.client,
-                &self.endpoint,
-            )
-            .await;
+            let res =
+                try_parquet_api(glob_path, limit, io_stats.clone(), &self.http_source.client).await;
             match res {
                 Ok(Some(stream)) => return Ok(stream),
                 Err(e) => return Err(e.into()),
@@ -478,7 +458,7 @@ impl ObjectSource for HFSource {
         }
         let path_parts = path.parse::<HFPathParts>()?;
 
-        let api_uri = path_parts.get_api_uri(&self.endpoint);
+        let api_uri = path_parts.get_api_uri();
 
         let request = self.http_source.client.get(api_uri.clone());
         let response = request
@@ -553,11 +533,10 @@ async fn try_parquet_api(
     limit: Option<usize>,
     io_stats: Option<IOStatsRef>,
     client: &ClientWithMiddleware,
-    endpoint: &str,
 ) -> Result<Option<BoxStream<'static, super::Result<FileMetadata>>>, Error> {
     let hf_glob_path = glob_path.parse::<HFPathParts>()?;
     if hf_glob_path.path.is_empty() {
-        let api_path = hf_glob_path.get_parquet_api_uri(endpoint);
+        let api_path = hf_glob_path.get_parquet_api_uri();
 
         let response = client
             .get(api_path.clone())

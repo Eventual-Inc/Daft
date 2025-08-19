@@ -1172,30 +1172,23 @@ impl UnityConfig {
 #[pymethods]
 impl HuggingFaceConfig {
     #[new]
-    #[pyo3(signature = (token=None, anonymous=None, endpoint=None))]
-    pub fn new(token: Option<String>, anonymous: Option<bool>, endpoint: Option<String>) -> Self {
+    #[pyo3(signature = (token=None, anonymous=None))]
+    pub fn new(token: Option<String>, anonymous: Option<bool>) -> Self {
         let default = crate::HuggingFaceConfig::default();
         Self {
             config: crate::HuggingFaceConfig {
                 token: token.map(Into::into).or(default.token),
                 anonymous: anonymous.unwrap_or(default.anonymous),
-                endpoint: endpoint.unwrap_or(default.endpoint),
             },
         }
     }
 
-    #[pyo3(signature = (token=None, anonymous=None, endpoint=None))]
-    pub fn replace(
-        &self,
-        token: Option<String>,
-        anonymous: Option<bool>,
-        endpoint: Option<String>,
-    ) -> Self {
+    #[pyo3(signature = (token=None, anonymous=None))]
+    pub fn replace(&self, token: Option<String>, anonymous: Option<bool>) -> Self {
         Self {
             config: crate::HuggingFaceConfig {
                 token: token.map(Into::into).or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
-                endpoint: endpoint.unwrap_or_else(|| self.config.endpoint.clone()),
             },
         }
     }
@@ -1212,11 +1205,6 @@ impl HuggingFaceConfig {
     #[getter]
     pub fn anonymous(&self) -> bool {
         self.config.anonymous
-    }
-
-    #[getter]
-    pub fn endpoint(&self) -> String {
-        self.config.endpoint.clone()
     }
 }
 

@@ -4,21 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::ObfuscatedString;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct HuggingFaceConfig {
     pub token: Option<ObfuscatedString>,
     pub anonymous: bool,
-    pub endpoint: String,
-}
-
-impl Default for HuggingFaceConfig {
-    fn default() -> Self {
-        Self {
-            token: None,
-            anonymous: false,
-            endpoint: "https://huggingface.co".to_string(),
-        }
-    }
 }
 
 impl HuggingFaceConfig {
@@ -28,7 +17,6 @@ impl HuggingFaceConfig {
             res.push(format!("Token = {token}"));
         }
         res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!("Endpoint = {}", self.endpoint));
         res
     }
 }

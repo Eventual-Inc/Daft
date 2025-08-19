@@ -709,17 +709,13 @@ class HuggingFaceConfig:
     Args:
         token (str, optional): Your Hugging Face access token, generated from https://huggingface.co/settings/tokens.
         anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Hugging Face without any credentials. Defaults to False.
-        endpoint (str, optional): The base Hugging Face URL. Defaults to "https://huggingface.co".
     """
 
     token: str | None
     anonymous: bool
-    endpoint: str
 
-    def __init__(self, token: str | None = None, anonymous: bool | None = None, endpoint: str | None = None): ...
-    def replace(
-        self, token: str | None = None, anonymous: bool | None = None, endpoint: str | None = None
-    ) -> HuggingFaceConfig:
+    def __init__(self, token: str | None = None, anonymous: bool | None = None): ...
+    def replace(self, token: str | None = None, anonymous: bool | None = None) -> HuggingFaceConfig:
         """Replaces values if provided, returning a new HuggingFaceConfig."""
         ...
 
