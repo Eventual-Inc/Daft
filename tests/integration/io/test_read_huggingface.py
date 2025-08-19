@@ -6,7 +6,7 @@ from datasets import load_dataset
 import daft
 
 
-@pytest.skip("Failing due to parquet read bug. See: https://github.com/Eventual-Inc/Daft/issues/5003")
+@pytest.mark.skip("Failing due to parquet read bug. See: https://github.com/Eventual-Inc/Daft/issues/5003")
 @pytest.mark.integration()
 def test_read_huggingface_datasets_doesnt_fail():
     from daft import DataType as dt
