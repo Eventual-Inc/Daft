@@ -243,7 +243,7 @@ impl TryFrom<Vec<Literal>> for Series {
                         let sa_field = Field::new(
                             "literal",
                             DataType::Struct(vec![
-                                discriminant_field.clone(),
+                                discriminant_field,
                                 Field::new("data", DataType::Binary),
                                 urls.field().clone(),
                                 io_configs.field().clone(),

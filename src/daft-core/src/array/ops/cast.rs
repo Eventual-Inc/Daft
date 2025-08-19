@@ -539,7 +539,13 @@ impl DurationArray {
 
 impl FileArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        todo!()
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            dtype => todo!("cast {dtype} for FileArray"),
+        }
     }
 }
 

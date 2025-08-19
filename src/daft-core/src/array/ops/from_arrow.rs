@@ -7,7 +7,7 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
-        FieldRef, FileArray, FileType,
+        FieldRef, FileArray,
     },
     prelude::*,
     series::Series,

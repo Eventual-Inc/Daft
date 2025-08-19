@@ -1,9 +1,14 @@
+#[cfg(feature = "python")]
 use common_file::DaftFileType;
 use common_io_config::IOConfig;
+#[cfg(feature = "python")]
 use daft_schema::{dtype::DataType, field::Field};
 
-use crate::{array::prelude::*, datatypes::FileType, series::IntoSeries};
-
+#[cfg(feature = "python")]
+use crate::series::IntoSeries;
+use crate::{array::prelude::*, datatypes::FileType};
+/// FileArray is a logical array that represents a collection of files.
+///
 /// FileArray's underlying representation implements a tagged union pattern through a struct
 /// containing all possible fields (discriminant, data, url, io_config), though they're
 /// mutually exclusive in usage:
@@ -39,7 +44,7 @@ impl FileArray {
         let sa_field = Field::new(
             "literal",
             DataType::Struct(vec![
-                discriminant_field.clone(),
+                discriminant_field,
                 Field::new("data", DataType::Binary),
                 Field::new("url", DataType::Utf8),
                 Field::new("io_config", DataType::Python),
@@ -87,7 +92,7 @@ impl FileArray {
     pub fn new_from_reference_array(
         name: &str,
         urls: &Utf8Array,
-        io_config: &PythonObject,
+        io_config: Option<IOConfig>,
     ) -> Self {
         unimplemented!()
     }

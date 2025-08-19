@@ -169,7 +169,6 @@ impl Series {
         self.downcast()
     }
     pub fn file(&self) -> DaftResult<&FileArray> {
-        todo!()
-        // self.downcast()
+        self.downcast()
     }
 }

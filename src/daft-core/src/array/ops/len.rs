@@ -1,7 +1,5 @@
 use std::cmp::min;
 
-use arrow2::Either;
-use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::pickle_dumps;
 use rand::{rngs::StdRng, SeedableRng};

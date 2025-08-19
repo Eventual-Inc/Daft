@@ -23,7 +23,9 @@ impl<'py> IntoPyObject<'py> for DaftFile {
                     .getattr(intern!(py, "_from_path"))?
                     .call1((url, io_config))
             }
-            crate::FileValue::Data(data) => py_file.getattr(intern!(py, "_from_bytes"))?.call1((data,)),
+            crate::FileValue::Data(data) => {
+                py_file.getattr(intern!(py, "_from_bytes"))?.call1((data,))
+            }
         }
     }
 }

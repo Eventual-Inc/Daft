@@ -22,7 +22,7 @@ impl DaftFile {
     pub fn new_from_reference(reference: String, io_config: Option<IOConfig>) -> Self {
         Self {
             file_type: DaftFileType::Reference,
-            value: FileValue::Reference(reference, io_config),
+            value: FileValue::Reference(reference, Box::new(io_config)),
         }
     }
 }
@@ -36,10 +36,10 @@ impl std::fmt::Display for DaftFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FileValue {
     /// A reference to a file.
-    Reference(String, Option<IOConfig>),
+    Reference(String, Box<Option<IOConfig>>),
     /// In memory data.
     Data(Vec<u8>),
 }
@@ -53,7 +53,7 @@ impl DaftFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DaftFileType {
     Reference = 0,
@@ -79,8 +79,8 @@ impl Eq for DaftFile {}
 impl Hash for DaftFileType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            DaftFileType::Reference => 0u8.hash(state),
-            DaftFileType::Data => 1u8.hash(state),
+            Self::Reference => 0u8.hash(state),
+            Self::Data => 1u8.hash(state),
         }
     }
 }

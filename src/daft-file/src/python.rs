@@ -26,14 +26,14 @@ enum FileCursor {
 impl Read for FileCursor {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            FileCursor::ObjectReader(cursor) => cursor.read(buf),
-            FileCursor::Memory(cursor) => cursor.read(buf),
+            Self::ObjectReader(cursor) => cursor.read(buf),
+            Self::Memory(cursor) => cursor.read(buf),
         }
     }
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
         match self {
-            FileCursor::ObjectReader(cursor) => cursor.read_to_end(buf),
-            FileCursor::Memory(cursor) => cursor.read_to_end(buf),
+            Self::ObjectReader(cursor) => cursor.read_to_end(buf),
+            Self::Memory(cursor) => cursor.read_to_end(buf),
         }
     }
 }
@@ -41,8 +41,8 @@ impl Read for FileCursor {
 impl Seek for FileCursor {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
-            FileCursor::ObjectReader(cursor) => cursor.seek(pos),
-            FileCursor::Memory(cursor) => cursor.seek(pos),
+            Self::ObjectReader(cursor) => cursor.seek(pos),
+            Self::Memory(cursor) => cursor.seek(pos),
         }
     }
 }

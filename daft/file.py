@@ -39,7 +39,7 @@ class File:
         if isinstance(str_or_bytes, str):
             self._inner = PyDaftFile._from_path(str_or_bytes, io_config)
         elif isinstance(str_or_bytes, bytes):
-            self._inner = PyDaftFile._from_bytes(str_or_bytes, io_config)
+            self._inner = PyDaftFile._from_bytes(str_or_bytes)
         else:
             raise TypeError("str_or_bytes must be a string or bytes")
 
@@ -106,8 +106,8 @@ class File:
 
 
 class PathFile(File):
-    """File object backed by a filesystem or object store path.
-    """
+    """File object backed by a filesystem or object store path."""
+
     ...
 
 

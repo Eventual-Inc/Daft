@@ -6,7 +6,6 @@ use std::{
 };
 
 use common_error::DaftError;
-use common_file::DaftFile;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
 use daft_core::{
