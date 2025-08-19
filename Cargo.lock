@@ -2646,9 +2646,17 @@ dependencies = [
 name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
+ "bytes",
  "common-error",
+ "common-runtime",
+ "daft-core",
+ "daft-dsl",
  "daft-io",
+ "futures",
  "pyo3",
+ "serde",
+ "tokio",
+ "typetag",
 ]
 
 [[package]]
