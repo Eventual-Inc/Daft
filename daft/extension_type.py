@@ -6,6 +6,7 @@ from daft.dependencies import pa
 
 
 class DaftExtension(pa.ExtensionType):  # type: ignore[misc]
+    # Never directly import this! Always use the _ensure_registered_super_ext_type function in daft.datatype.
     def __init__(self, dtype: pa.DataType, metadata: bytes = b"") -> None:
         # attributes need to be set first before calling
         # super init (as that calls serialize)
