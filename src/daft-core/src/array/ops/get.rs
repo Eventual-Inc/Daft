@@ -193,7 +193,7 @@ impl MapArray {
 impl FileArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<DaftFile> {
-        todo!()
+        self.physical.get(idx)
     }
 }
 

@@ -64,15 +64,6 @@ impl_dataarray_take!(NullArray);
 impl_dataarray_take!(ExtensionArray);
 impl_dataarray_take!(IntervalArray);
 impl_dataarray_take!(Decimal128Array);
-impl FileArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
-    {
-        todo!()
-    }
-}
 
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
@@ -86,6 +77,7 @@ impl_logicalarray_take!(SparseTensorArray);
 impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
+impl_logicalarray_take!(FileArray);
 
 impl FixedSizeBinaryArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>

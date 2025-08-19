@@ -37,7 +37,7 @@ impl std::fmt::Display for DaftFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-enum Value {
+pub enum Value {
     /// A reference to a file.
     Reference(String, Option<IOConfig>),
     /// In memory data.
@@ -47,6 +47,9 @@ enum Value {
 impl DaftFile {
     pub fn get_type(&self) -> DaftFileType {
         self.file_type.clone()
+    }
+    pub fn get_value(&self) -> &Value {
+        &self.value
     }
 }
 

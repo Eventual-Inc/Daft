@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     array::{ListArray, StructArray},
-    datatypes::{DaftLogicalType, DateType, Field, FileType},
+    datatypes::{DaftLogicalType, DateType, Field},
     with_match_daft_logical_primitive_types,
 };
 

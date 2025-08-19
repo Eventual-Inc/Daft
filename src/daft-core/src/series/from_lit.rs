@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 use common_file::{DaftFile, DaftFileType};
 use common_image::CowImage;
 
-use crate::{array::ops::image::image_array_from_img_buffers, prelude::*};
+use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
 
 impl TryFrom<Vec<Literal>> for Series {
     type Error = DaftError;
@@ -154,29 +154,97 @@ impl TryFrom<Vec<Literal>> for Series {
                 PythonArray::from(("literal", data.collect::<Vec<_>>())).into_series()
             }
             DataType::File => {
-                todo!()
-                // let  values = values
-                //     .into_iter()
-                //     .map(|v| match v {
-                //         Literal::File(file) => file,
-                //         _ => panic!("should not happen"),
-                //     }).collect::<Vec<_>>();
+                let file_type = match &values[0] {
+                    Literal::File(f) => f.get_type(),
+                    _ => panic!("should not happen"),
+                };
+                let discriminant_field = Field::new("discriminant", DataType::UInt8);
+                let discriminant_values = vec![DaftFileType::Reference as u8; values.len()];
+                let discriminant = UInt8Array::from_values_iter(
+                    discriminant_field.clone(),
+                    discriminant_values.into_iter(),
+                )
+                .into_series();
 
-                // let discriminant_field = Field::new("discriminant", DataType::UInt8);
-                // let values_field = Field::new("data", DataType::Binary);
-                // let discriminant = UInt8Array::from_values_iter(
-                //     discriminant_field.clone(),
-                //     discriminant.into_iter(),
-                // )
-                // .into_series();
-                // let values =
-                //     BinaryArray::from_values(&values_field.name, values.into_iter()).into_series();
-                // let fld = Field::new(
-                //     "literal",
-                //     DataType::Struct(vec![discriminant_field, values_field]),
-                // );
-                // let sa = StructArray::new(fld, vec![discriminant, values], None);
-                // FileArray::new(Field::new("literal", DataType::File), sa).into_series()
+                match file_type {
+                    DaftFileType::Reference => {
+                        let (values, io_configs): (Vec<_>, Vec<_>) = values
+                            .into_iter()
+                            .map(|v| match v {
+                                Literal::File(f) => match f.get_value() {
+                                    common_file::Value::Reference(path, ioconfig) => (
+                                        path.clone(),
+                                        bincode::serialize(ioconfig)
+                                            .expect("Failed to serialize ioconfig"),
+                                    ),
+                                    common_file::Value::Data(_) => {
+                                        unreachable!("should not happen")
+                                    }
+                                },
+                                _ => unreachable!("should not happen"),
+                            })
+                            .unzip();
+                        let io_configs =
+                            BinaryArray::from_values("io_config", io_configs.into_iter());
+                        let urls = Utf8Array::from_values("url", values.into_iter());
+                        let data = BinaryArray::full_null("data", &DataType::Binary, urls.len())
+                            .into_series();
+
+                        let sa_field = Field::new(
+                            "literal",
+                            DataType::Struct(vec![
+                                discriminant.field().clone(),
+                                data.field().clone(),
+                                urls.field().clone(),
+                                io_configs.field().clone(),
+                            ]),
+                        );
+                        let validity = urls.validity().cloned();
+                        let sa = StructArray::new(
+                            sa_field,
+                            vec![
+                                discriminant,
+                                data,
+                                urls.into_series(),
+                                io_configs.into_series(),
+                            ],
+                            validity,
+                        );
+                        FileArray::new(Field::new("literal", DataType::File), sa)
+                    }
+                    DaftFileType::Data => {
+                        let values = values.into_iter().map(|v| match v {
+                            Literal::File(f) => match f.get_value() {
+                                common_file::Value::Reference(_, _) => unreachable!(),
+                                common_file::Value::Data(items) => items.clone(),
+                            },
+                            _ => panic!("should not happen"),
+                        });
+                        let values = BinaryArray::from_values("data", values).into_series();
+                        let urls = Utf8Array::full_null("urls", &DataType::Utf8, values.len())
+                            .into_series();
+                        let io_configs =
+                            BinaryArray::full_null("io_config", &DataType::Binary, values.len())
+                                .into_series();
+                        let sa_field = Field::new(
+                            "literal",
+                            DataType::Struct(vec![
+                                discriminant_field.clone(),
+                                Field::new("data", DataType::Binary),
+                                urls.field().clone(),
+                                io_configs.field().clone(),
+                            ]),
+                        );
+                        let validity = values.validity().cloned();
+                        let sa = StructArray::new(
+                            sa_field,
+                            vec![discriminant, values, urls, io_configs],
+                            validity,
+                        );
+                        FileArray::new(Field::new("literal", DataType::File), sa)
+                    }
+                }
+                .into_series()
             }
             DataType::Tensor(_) => {
                 let (data, shapes) = values

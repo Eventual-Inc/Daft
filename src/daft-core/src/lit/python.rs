@@ -13,7 +13,6 @@ use pyo3::{
 
 use super::Literal;
 use crate::{
-    lit::DaftFile,
     python::PySeries,
     utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
 };

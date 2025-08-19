@@ -8,8 +8,8 @@ use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType,
-        DataType, ExtensionArray, FileArray, FixedSizeBinaryArray, Int64Array, IntervalArray,
-        NullArray, Utf8Array,
+        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
+        Utf8Array,
     },
     series::{IntoSeries, Series},
 };
