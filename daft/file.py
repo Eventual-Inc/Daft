@@ -75,7 +75,7 @@ class File:
     def close(self) -> None:
         self._inner.close()
 
-    def open(self, _io_config: IOConfig | None = None) -> File:
+    def open(self) -> File:
         raise NotImplementedError("File.open() not yet supported")
 
     def __enter__(self) -> File:

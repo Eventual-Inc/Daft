@@ -27,7 +27,7 @@ impl FileArray {
             DataType::Struct(vec![
                 discriminant_field.clone(),
                 Field::new("data", DataType::Binary),
-                Field::new("urls", DataType::Utf8),
+                Field::new("url", DataType::Utf8),
                 Field::new("io_config", DataType::Binary),
             ]),
         );
@@ -44,7 +44,7 @@ impl FileArray {
             vec![
                 discriminant,
                 data,
-                urls.clone().into_series().rename("urls"),
+                urls.clone().into_series().rename("url"),
                 io_configs.into_series(),
             ],
             urls.validity().cloned(),
@@ -68,11 +68,11 @@ impl FileArray {
             DataType::Struct(vec![
                 discriminant_field,
                 values_field,
-                Field::new("urls", DataType::Utf8),
+                Field::new("url", DataType::Utf8),
                 Field::new("io_config", DataType::Binary),
             ]),
         );
-        let urls = Utf8Array::full_null("urls", &DataType::Utf8, values.len()).into_series();
+        let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
             BinaryArray::full_null("io_config", &DataType::Binary, values.len()).into_series();
         let sa = StructArray::new(

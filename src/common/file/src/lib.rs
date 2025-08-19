@@ -13,7 +13,7 @@ pub struct DaftFile {
 }
 
 impl DaftFile {
-    pub fn new_from_bytes(data: Vec<u8>) -> Self {
+    pub fn new_from_data(data: Vec<u8>) -> Self {
         Self {
             file_type: DaftFileType::Data,
             value: Value::Data(data),

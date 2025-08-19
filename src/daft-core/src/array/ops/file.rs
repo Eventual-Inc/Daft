@@ -1,11 +1,19 @@
-use common_file::DaftFileType;
-use daft_schema::{dtype::DataType, field::Field};
-
 use crate::{
-    array::StructArray,
     datatypes::FileArray,
-    prelude::{BinaryArray, UInt8Array, Utf8Array},
-    series::IntoSeries,
+    prelude::{BinaryArray, UInt8Array},
 };
 
-impl FileArray {}
+impl FileArray {
+    pub fn discriminant_array(&self) -> UInt8Array {
+        self.physical
+            .get("discriminant")
+            .unwrap()
+            .u8()
+            .unwrap()
+            .clone()
+    }
+
+    pub fn data_array(&self) -> BinaryArray {
+        self.physical.get("data").unwrap().binary().unwrap().clone()
+    }
+}

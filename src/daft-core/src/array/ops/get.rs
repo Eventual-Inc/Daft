@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use arrow2::types::months_days_ns;
 use common_file::{DaftFile, DaftFileType};
+use common_io_config::IOConfig;
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -13,7 +14,6 @@ use crate::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
-    lit::{FromLiteral, Literal},
     series::Series,
 };
 
@@ -193,7 +193,32 @@ impl MapArray {
 impl FileArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<DaftFile> {
-        self.physical.get(idx)
+        let discriminant_array = self.discriminant_array();
+        let discriminant = discriminant_array.get(idx)?;
+
+        let discriminant: DaftFileType = discriminant.try_into().expect("Invalid discriminant");
+        match discriminant {
+            // it's a path, we know its valid utf8
+            DaftFileType::Reference => {
+                let url_array = self.physical.get("url").expect("url exists");
+                let io_config_array = self.physical.get("io_config").expect("io_config exists");
+                let url_array = url_array.utf8().expect("url is utf8");
+                let io_config_array = io_config_array.binary().expect("io_config is binary");
+
+                let data = url_array.get(idx)?;
+                let io_config = io_config_array.get(idx)?;
+                let io_config: Option<IOConfig> =
+                    bincode::deserialize(io_config).expect("io_config is valid");
+                Some(DaftFile::new_from_reference(data.to_string(), io_config))
+            }
+            DaftFileType::Data => {
+                let data_array = self.physical.get("data").expect("data exists");
+                let data_array = data_array.binary().expect("data is binary");
+                let data = data_array.get(idx)?;
+                let data = data.to_vec();
+                Some(DaftFile::new_from_data(data))
+            }
+        }
     }
 }
 

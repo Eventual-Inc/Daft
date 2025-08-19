@@ -358,7 +358,7 @@ impl DataType {
             File => Struct(vec![
                 Field::new("discriminant", UInt8),
                 Field::new("data", Binary),
-                Field::new("urls", Utf8),
+                Field::new("url", Utf8),
                 Field::new("io_config", Binary),
             ]),
             _ => {
