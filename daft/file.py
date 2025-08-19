@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from daft.daft import PyDaftFile
+from daft.io import IOConfig
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -34,11 +35,11 @@ class File:
 
     _inner: PyDaftFile
 
-    def __init__(self, str_or_bytes: str | bytes) -> None:
+    def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
         if isinstance(str_or_bytes, str):
-            self._inner = PyDaftFile._from_path(str_or_bytes)
+            self._inner = PyDaftFile._from_path(str_or_bytes, io_config)
         elif isinstance(str_or_bytes, bytes):
-            self._inner = PyDaftFile._from_bytes(str_or_bytes)
+            self._inner = PyDaftFile._from_bytes(str_or_bytes, io_config)
         else:
             raise TypeError("str_or_bytes must be a string or bytes")
 
@@ -49,8 +50,8 @@ class File:
         return file
 
     @staticmethod
-    def _from_path(path: str) -> File:
-        inner = PyDaftFile._from_path(path)
+    def _from_path(path: str, io_config: IOConfig | None = None) -> File:
+        inner = PyDaftFile._from_path(path, io_config)
         file = PathFile.__new__(PathFile)
         file._inner = inner
         return file
@@ -105,16 +106,9 @@ class File:
 
 
 class PathFile(File):
-    """File object backed by a filesystem path.
-
-    A concrete implementation of File that represents data stored in the filesystem.
-    In addition to the standard file interface, PathFile implements the os.PathLike
-    protocol via __fspath__, allowing it to be used with functions that expect file paths.
-
+    """File object backed by a filesystem or object store path.
     """
-
-    def __fspath__(self) -> str:
-        return self._inner.__fspath__()
+    ...
 
 
 class MemoryFile(File):

@@ -37,7 +37,7 @@ use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
 use futures::stream::BoxStream;
 use object_io::StreamingRetryParams;
-pub use object_io::{FileMetadata, GetResult};
+pub use object_io::{FileMetadata, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use s3_like::{s3_config_from_env, S3LikeSource, S3MultipartWriter, S3PartBuffer};
@@ -45,7 +45,7 @@ use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
-use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
+use self::{http::HttpSource, local::LocalSource};
 pub use crate::range::GetRange;
 
 #[derive(Debug, Snafu)]

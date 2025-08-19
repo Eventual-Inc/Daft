@@ -1,16 +1,34 @@
-use std::vec;
+use std::sync::Arc;
 
-use common_error::DaftResult;
+use arrow2::Either;
+use common_io_config::IOConfig;
+use daft_schema::field::Field;
 
-use crate::{
-    array::prelude::*,
-    datatypes::{logical::FileArray, prelude::*},
-    series::{IntoSeries, Series},
-};
+use crate::array::prelude::*;
+
+#[derive(Debug)]
+pub struct FileArray {
+    pub field: Arc<Field>,
+    pub data: Either<Utf8Array, BinaryArray>,
+    pub io_configs: Vec<Option<IOConfig>>,
+}
 
 impl FileArray {
+    pub fn new_from_data_array(name: &str, data: &BinaryArray) -> Self {
+        todo!()
+    }
+
+    pub fn new_from_reference_array(
+        name: &str,
+        urls: &Utf8Array,
+        io_config: Option<IOConfig>,
+    ) -> Self {
+        todo!()
+    }
+
     pub fn data_array(&self) -> BinaryArray {
-        self.physical.get("data").unwrap().binary().unwrap().clone()
+        todo!()
+        // self.physical.get("data").unwrap().binary().unwrap().clone()
     }
 
     // pub fn from_list_array(

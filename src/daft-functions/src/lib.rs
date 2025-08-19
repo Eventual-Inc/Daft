@@ -15,7 +15,6 @@ pub mod to_struct;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::logical::FileArray,
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
 };

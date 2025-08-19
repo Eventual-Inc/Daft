@@ -8,8 +8,8 @@ use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType,
-        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
-        Utf8Array,
+        DataType, ExtensionArray, FileArray, FixedSizeBinaryArray, Int64Array, IntervalArray,
+        NullArray, Utf8Array,
     },
     series::{IntoSeries, Series},
 };
@@ -246,5 +246,13 @@ impl serde::Serialize for IntervalArray {
         s.serialize_entry("field", self.field())?;
         s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
         s.end()
+    }
+}
+impl serde::Serialize for FileArray {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        todo!("impl daft.file")
     }
 }

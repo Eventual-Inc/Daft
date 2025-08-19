@@ -8,10 +8,9 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{
-            DateArray, DurationArray, FileArray, LogicalArrayImpl, MapArray, TimeArray,
-            TimestampArray,
+            DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     lit::{FromLiteral, Literal},
@@ -194,13 +193,7 @@ impl MapArray {
 impl FileArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<DaftFile> {
-        let lit = self.physical.get_lit(idx);
-
-        if Literal::Null == lit {
-            None
-        } else {
-            DaftFile::try_from_literal(&lit).ok()
-        }
+        todo!()
     }
 }
 

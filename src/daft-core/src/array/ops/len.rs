@@ -9,7 +9,7 @@ use super::as_arrow::AsArrow;
 use crate::datatypes::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
-    datatypes::DaftArrowBackedType,
+    datatypes::{DaftArrowBackedType, FileArray},
 };
 
 impl<T> DataArray<T>
@@ -107,5 +107,11 @@ impl StructArray {
     pub fn size_bytes(&self) -> usize {
         let children_size_bytes: usize = self.children.iter().map(|s| s.size_bytes()).sum();
         children_size_bytes + validity_size(self.validity())
+    }
+}
+
+impl FileArray {
+    pub fn size_bytes(&self) -> usize {
+        arrow2::compute::aggregate::estimated_bytes_size(self.data())
     }
 }

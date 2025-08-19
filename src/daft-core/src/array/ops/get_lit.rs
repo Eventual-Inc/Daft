@@ -1,8 +1,6 @@
 use common_image::Image;
 
-use crate::{
-    array::ops::image::AsImageObj, datatypes::logical::FileArray, lit::Literal, prelude::*,
-};
+use crate::{array::ops::image::AsImageObj, datatypes::FileArray, lit::Literal, prelude::*};
 
 fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
 where

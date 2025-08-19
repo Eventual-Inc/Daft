@@ -195,7 +195,6 @@ pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
-pub type FileArray = LogicalArray<FileType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 

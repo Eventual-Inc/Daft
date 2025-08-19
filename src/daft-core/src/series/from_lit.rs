@@ -2,9 +2,7 @@ use common_error::{DaftError, DaftResult};
 use common_file::{DaftFile, DaftFileType};
 use common_image::CowImage;
 
-use crate::{
-    array::ops::image::image_array_from_img_buffers, datatypes::logical::FileArray, prelude::*,
-};
+use crate::{array::ops::image::image_array_from_img_buffers, prelude::*};
 
 impl TryFrom<Vec<Literal>> for Series {
     type Error = DaftError;

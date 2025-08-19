@@ -34,12 +34,12 @@ use crate::{
     },
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FileArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DataType, Field, ImageMode, Int64Array, NullArray,
-        TimeUnit, UInt64Array, Utf8Array,
+        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
+        NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -539,13 +539,7 @@ impl DurationArray {
 
 impl FileArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
-            DataType::Null => {
-                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
-            }
-            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
-            dtype => todo!("cast {dtype} for FileArray"),
-        }
+        todo!()
     }
 }
 

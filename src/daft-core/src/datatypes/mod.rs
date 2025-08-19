@@ -26,8 +26,8 @@ pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 
+pub use crate::array::{file_array::FileArray, DataArray, FixedSizeListArray};
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
-pub use crate::array::{DataArray, FixedSizeListArray};
 
 pub mod interval;
 pub mod logical;
@@ -246,7 +246,6 @@ impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(FixedShapeSparseTensorType, Unknown, StructType);
-impl_daft_logical_data_array_datatype!(FileType, File, StructType);
 impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
@@ -254,6 +253,7 @@ impl_daft_logical_list_datatype!(MapType, Unknown);
 
 #[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);
+impl_daft_non_arrow_datatype!(FileType, File);
 
 pub trait NumericNative:
     PartialOrd

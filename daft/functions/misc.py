@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import daft.daft as native
 from daft.expressions import Expression, col, lit
-
+from daft.io import IOConfig
 
 def monotonically_increasing_id() -> Expression:
     """Generates a column of monotonically increasing unique ids.
@@ -101,15 +101,11 @@ def format(f_string: str, *args: Expression | str) -> Expression:
     return result
 
 
-def file(expr: Expression) -> Expression:
+def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
     """Converts either a string containing a file reference, or a binary column to a `daft.File` reference.
 
     If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
     If the input is a binary column, it is converted to a `daft.File` where the entire contents are buffered in memory.
     """
-    from daft.context import get_context
 
-    ctx = get_context()
-    runner_name = ctx._runner.name
-
-    return expr._eval_expressions("file", runner_name=runner_name)
+    return expr._eval_expressions("file", io_config=io_config)
