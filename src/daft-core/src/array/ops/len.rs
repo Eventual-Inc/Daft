@@ -112,6 +112,6 @@ impl StructArray {
 
 impl FileArray {
     pub fn size_bytes(&self) -> usize {
-        todo!()
+        self.physical.size_bytes()
     }
 }
