@@ -39,13 +39,13 @@ pub fn assert_optimized_plan_with_rules_repr_eq(
     rule_batches: Vec<RuleBatch>,
 ) -> DaftResult<()> {
     let unoptimized_plan = plan.clone();
-    let optimized_plan = optimize_with_rules(plan, rule_batches)?.repr_ascii(false);
+    let optimized_plan = optimize_with_rules(plan, rule_batches)?.repr_indent();
 
     assert_eq!(
         optimized_plan,
         expected_repr,
         "\n\nOptimized plan not equal to expected.\n\nBefore Optimization:\n{}\n\nOptimized:\n{}\n\nExpected:\n{}",
-        unoptimized_plan.repr_ascii(false),
+        unoptimized_plan.repr_indent(),
         optimized_plan,
         expected_repr
     );
