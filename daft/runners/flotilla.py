@@ -78,16 +78,15 @@ class RaySwordfishActor:
 
 @ray.remote  # type: ignore[misc]
 def get_boundaries_remote(
-    materialized_outputs: list[ray.ObjectRef],
     sort_by: list[Expression],
     descending: list[bool],
     nulls_first: list[bool] | None,
     num_quantiles: int,
+    *samples: MicroPartition,
 ) -> PyMicroPartition:
     sort_by_exprs = ExpressionsProjection(sort_by)
 
-    mps = ray.get(materialized_outputs)
-    mp = MicroPartition.concat(mps)
+    mp = MicroPartition.concat(list(samples))
     nulls_first = nulls_first if nulls_first is not None else descending
     merged_sorted = mp.sort(sort_by_exprs.to_column_expressions(), descending=descending, nulls_first=nulls_first)
 
@@ -96,13 +95,13 @@ def get_boundaries_remote(
 
 
 def get_boundaries(
-    materialized_outputs: list[ray.ObjectRef],
+    samples: list[ray.ObjectRef],
     sort_by: list[Expression],
     descending: list[bool],
     nulls_first: list[bool] | None,
     num_quantiles: int,
 ) -> PyMicroPartition:
-    return ray.get(get_boundaries_remote.remote(materialized_outputs, sort_by, descending, nulls_first, num_quantiles))
+    return ray.get(get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples))
 
 
 @dataclass
