@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hints, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hints
+
+from daft.utils import column_input_to_expression, is_column_input
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
@@ -45,25 +47,20 @@ class RowWiseUdf(Generic[P, T]):
         else:
             self.return_dtype = DataType._infer_type(return_dtype)
 
-    @overload
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
-    @overload
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression: ...
+    def compute(self, *args: P.args, **kwargs: P.kwargs) -> T:
+        """Run the decorated function eagerly and return the result immediately."""
+        return self._inner(*args, **kwargs)
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         expr_args = []
         for arg in args:
-            if isinstance(arg, Expression):
-                expr_args.append(arg)
+            if is_column_input(arg):
+                expr_args.append(column_input_to_expression(arg))
         for arg in kwargs.values():
-            if isinstance(arg, Expression):
-                expr_args.append(arg)
+            if is_column_input(arg):
+                expr_args.append(column_input_to_expression(arg))
 
-        if len(expr_args) == 0:
-            # all inputs are Python literals, evaluate immediately
-            return self._inner(*args, **kwargs)
-        else:
-            return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), expr_args)
+        return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), expr_args)
 
 
 def __call_async_batch(
@@ -78,10 +75,8 @@ def __call_async_batch(
 
     tasks = []
     for evaluated_args in evaluated_args_list:
-        new_args = [evaluated_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
-        new_kwargs = {
-            key: (evaluated_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()
-        }
+        new_args = [evaluated_args.pop(0) if is_column_input(arg) else arg for arg in args]
+        new_kwargs = {key: (evaluated_args.pop(0) if is_column_input(arg) else arg) for key, arg in kwargs.items()}
         coroutine = fn(*new_args, **new_kwargs)
         tasks.append(coroutine)
 
@@ -108,8 +103,8 @@ def __call_func(
     """Called from Rust to evaluate a Python scalar UDF. Returns a list of Python objects."""
     args, kwargs = original_args
 
-    new_args = [evaluated_args.pop(0) if isinstance(arg, Expression) else arg for arg in args]
-    new_kwargs = {key: (evaluated_args.pop(0) if isinstance(arg, Expression) else arg) for key, arg in kwargs.items()}
+    new_args = [evaluated_args.pop(0) if is_column_input(arg) else arg for arg in args]
+    new_kwargs = {key: (evaluated_args.pop(0) if is_column_input(arg) else arg) for key, arg in kwargs.items()}
 
     output = fn(*new_args, **new_kwargs)
     return output

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft import DataType, col
+from daft import DataType
 
 
 def test_row_wise_udf():
@@ -12,7 +12,7 @@ def test_row_wise_udf():
         return f"{a + b}"
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    actual = df.select(my_stringify_and_sum(col("x"), col("y"))).to_pydict()
+    actual = df.select(my_stringify_and_sum("x", "y")).to_pydict()
 
     expected = {"x": ["5", "7", "9"]}
 
@@ -25,7 +25,7 @@ def test_row_wise_udf_alternative_signature():
         return f"{a + b}"
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    actual = df.select(my_stringify_and_sum(col("x"), col("y"))).to_pydict()
+    actual = df.select(my_stringify_and_sum("x", "y")).to_pydict()
 
     expected = {"x": ["5", "7", "9"]}
 
@@ -38,7 +38,7 @@ def test_row_wise_udf_with_literal():
         return f"{a + b}"
 
     df = daft.from_pydict({"x": [1, 2, 3]})
-    actual = df.select(my_stringify_and_sum(col("x"), 4)).to_pydict()
+    actual = df.select(my_stringify_and_sum("x", 4)).to_pydict()
 
     expected = {"x": ["5", "6", "7"]}
 
@@ -51,7 +51,7 @@ def test_row_wise_udf_should_infer_dtype_from_function():
         return [f"{a + b}"]
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    df = df.select(list_string_return_type(col("x"), col("y")))
+    df = df.select(list_string_return_type("x", "y"))
 
     schema = df.schema()
     expected_schema = daft.Schema.from_pydict({"x": daft.DataType.list(daft.DataType.string())})
@@ -73,7 +73,7 @@ def test_row_wise_udf_override_return_dtype():
         return a + b
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    actual = df.select(my_sum(col("x"), col("y")))
+    actual = df.select(my_sum("x", "y"))
 
     assert actual.schema()["x"].dtype == DataType.int16()
 
@@ -82,12 +82,12 @@ def test_row_wise_udf_override_return_dtype():
     assert actual.to_pydict() == expected
 
 
-def test_row_wise_udf_literal_eval():
+def test_row_wise_udf_compute():
     @daft.func
     def my_stringify_and_sum(a: int, b: int) -> str:
         return f"{a + b}"
 
-    assert my_stringify_and_sum(1, 2) == "3"
+    assert my_stringify_and_sum.compute(1, 2) == "3"
 
 
 def test_row_wise_udf_kwargs():
@@ -95,17 +95,17 @@ def test_row_wise_udf_kwargs():
     def my_stringify_and_sum_repeat(a: int, b: int, repeat: int = 1) -> str:
         return f"{a + b}" * repeat
 
-    assert my_stringify_and_sum_repeat(1, 2) == "3"
-    assert my_stringify_and_sum_repeat(1, 2, 3) == "333"
+    assert my_stringify_and_sum_repeat.compute(1, 2) == "3"
+    assert my_stringify_and_sum_repeat.compute(1, 2, 3) == "333"
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    default_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y")))
+    default_df = df.select(my_stringify_and_sum_repeat("x", "y"))
     assert default_df.to_pydict() == {"x": ["5", "7", "9"]}
 
-    constant_repeat_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y"), repeat=2))
+    constant_repeat_df = df.select(my_stringify_and_sum_repeat("x", "y", repeat=2))
     assert constant_repeat_df.to_pydict() == {"x": ["55", "77", "99"]}
 
-    dynamic_repeat_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y"), repeat=col("x")))
+    dynamic_repeat_df = df.select(my_stringify_and_sum_repeat("x", "y", repeat="x"))
     assert dynamic_repeat_df.to_pydict() == {"x": ["5", "77", "999"]}
 
 
@@ -118,5 +118,5 @@ def test_row_wise_async_udf():
         return f"{a + b}"
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
+    async_df = df.select(my_async_stringify_and_sum("x", "y"))
     assert async_df.to_pydict() == {"x": ["5", "7", "9"]}
