@@ -26,7 +26,7 @@ class _DaftFuncDecorator:
 
     The `@daft.func` decorator transforms regular Python functions into Daft User-Defined Functions (UDFs) that operate on individual values.
 
-    Decorated functions accept their original argument types, Expressions, or strings, which are converted into column references. Additionally, they return lazily-evaluated Expressions. If you want to run the function directly, call `<your_function>.compute(...)`.
+    Decorated functions accept their original argument types or Expressions. Additionally, they return lazily-evaluated Expressions. If you want to run the function directly, call `<your_function>.eval(<args>)`.
 
     It accepts both synchronous and asynchronous functions.
 
@@ -44,7 +44,7 @@ class _DaftFuncDecorator:
         ...     return a + b
         >>>
         >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-        >>> df.select(my_sum("x", "y")).collect()
+        >>> df.select(my_sum(col("x"), col("y"))).collect()
         ╭───────╮
         │ x     │
         │ ---   │
@@ -69,7 +69,7 @@ class _DaftFuncDecorator:
         >>>
         >>> daft_tokenize = daft.func(tokenize)
         >>> df = daft.from_pydict({"text": ["hello", "world", "daft"]})
-        >>> df.select(daft_tokenize("text")).collect()
+        >>> df.select(daft_tokenize(df["text"])).collect()
         ╭─────────────────╮
         │ text            │
         │ ---             │
@@ -93,7 +93,7 @@ class _DaftFuncDecorator:
         ...     return [vocab[char] for char in text]
         >>> daft_tokenize = daft.func(tokenize, return_dtype=list[int])
         >>> df = daft.from_pydict({"text": ["hello", "world", "daft"]})
-        >>> df.select(daft_tokenize("text")).collect()
+        >>> df.select(daft_tokenize(df["text"])).collect()
         ╭─────────────────╮
         │ text            │
         │ ---             │
@@ -119,7 +119,7 @@ class _DaftFuncDecorator:
         ...     return a + b
         >>>
         >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-        >>> df.select(my_sum("x", "y")).collect()
+        >>> df.select(my_sum(col("x"), col("y"))).collect()
         ╭───────╮
         │ x     │
         │ ---   │
