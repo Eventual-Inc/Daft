@@ -2614,6 +2614,35 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def into_batches(self, batch_size: int) -> "DataFrame":
+        """Splits or coalesces DataFrame to partitions of size ``batch_size``.
+
+        Note:
+            Batch sizing is performed on a best-effort basis.
+            The heuristic is to emit a batch when we have enough rows to fill `batch_size * 0.8` rows.
+            This approach prioritizes processing efficiency over uniform batch sizes, especially when using the Ray Runner, as batches can be distributed over the cluster.
+            The exception to this is that the last batch will be the remainder of the total number of rows in the DataFrame.
+
+        Args:
+            batch_size (int): number of target rows per partition.
+
+        Returns:
+            DataFrame: Dataframe with `batch_size` rows per partition.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]})
+            >>> df = df.into_batches(2)
+            >>> for i, block in enumerate(df.to_arrow_iter()):
+            ...     assert len(block) == 2, f"Expected batch size 2, got {len(block)}"
+        """
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
+
+        builder = self._builder.into_batches(batch_size)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def join(
         self,
         other: "DataFrame",
@@ -2674,7 +2703,8 @@ class DataFrame:
         if how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
-
+            if strategy is not None:
+                raise ValueError("In a cross join, `strategy` cannot be set")
             left_on = []
             right_on = []
         elif on is None:

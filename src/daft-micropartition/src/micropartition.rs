@@ -7,7 +7,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use common_file_formats::DatabaseSourceConfig;
@@ -19,8 +18,9 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_parquet::read::{
-    read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
+use daft_parquet::{
+    infer_arrow_schema_from_metadata,
+    read::{read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions},
 };
 use daft_recordbatch::RecordBatch;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
@@ -560,14 +560,12 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
+    pub fn size_bytes(&self) -> Option<usize> {
         let guard = self.state.lock().unwrap();
         let size_bytes = if let TableState::Loaded(tables) = &*guard {
             let total_size: usize = tables
                 .iter()
                 .map(daft_recordbatch::RecordBatch::size_bytes)
-                .collect::<DaftResult<Vec<_>>>()?
-                .iter()
                 .sum();
             Some(total_size)
         } else if let TableState::Unloaded(scan_task) = &*guard {
@@ -578,7 +576,7 @@ impl MicroPartition {
             // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
             None
         };
-        Ok(size_bytes)
+        size_bytes
     }
 
     /// Retrieves tables from the MicroPartition, reading data if not already loaded.
@@ -682,7 +680,7 @@ impl MicroPartition {
     }
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let buffer = Vec::with_capacity(self.size_bytes().unwrap_or(0));
         let schema = self.schema.to_arrow()?;
         let options = arrow2::io::ipc::write::WriteOptions { compression: None };
         let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
@@ -1155,7 +1153,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = Schema::from(schema);
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1179,7 +1178,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1297,6 +1297,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                     )
                 }),
                 num_rows,
+                None,
                 None,
             ),
             generated_fields,

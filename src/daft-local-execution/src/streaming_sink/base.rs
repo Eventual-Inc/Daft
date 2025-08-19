@@ -23,10 +23,6 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 
-pub trait StreamingSinkState: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
-
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
@@ -34,25 +30,26 @@ pub enum StreamingSinkOutput {
     Finished(Option<Arc<MicroPartition>>),
 }
 
-pub(crate) type StreamingSinkExecuteResult =
-    OperatorOutput<DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>>;
+pub(crate) type StreamingSinkExecuteResult<Op> =
+    OperatorOutput<DaftResult<(<Op as StreamingSink>::State, StreamingSinkOutput)>>;
 pub(crate) type StreamingSinkFinalizeResult =
     OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
-pub trait StreamingSink: Send + Sync {
+pub(crate) trait StreamingSink: Send + Sync {
+    type State: Send + Sync + Unpin;
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
     /// with the given state.
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn StreamingSinkState>,
+        state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult;
+    ) -> StreamingSinkExecuteResult<Self>;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult;
 
@@ -65,7 +62,7 @@ pub trait StreamingSink: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Box<dyn StreamingSinkState>;
+    fn make_state(&self) -> Self::State;
 
     /// Create a new RuntimeStats for this StreamingSink.
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
@@ -85,17 +82,17 @@ pub trait StreamingSink: Send + Sync {
     ) -> Arc<dyn DispatchSpawner>;
 }
 
-pub struct StreamingSinkNode {
-    op: Arc<dyn StreamingSink>,
+pub struct StreamingSinkNode<Op: StreamingSink> {
+    op: Arc<Op>,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
 }
 
-impl StreamingSinkNode {
+impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     pub(crate) fn new(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
@@ -118,12 +115,12 @@ impl StreamingSinkNode {
 
     #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
     async fn run_worker(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         input_receiver: Receiver<Arc<MicroPartition>>,
         output_sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Box<dyn StreamingSinkState>> {
+    ) -> DaftResult<Op::State> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
         let spawner =
@@ -161,9 +158,9 @@ impl StreamingSinkNode {
     }
 
     fn spawn_workers(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
+        task_set: &mut TaskSet<DaftResult<Op::State>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
@@ -183,7 +180,7 @@ impl StreamingSinkNode {
     }
 }
 
-impl TreeDisplay for StreamingSinkNode {
+impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -217,7 +214,7 @@ impl TreeDisplay for StreamingSinkNode {
     }
 }
 
-impl PipelineNode for StreamingSinkNode {
+impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children
             .iter()
@@ -245,7 +242,7 @@ impl PipelineNode for StreamingSinkNode {
                 child_result_receiver,
                 self.node_id(),
                 self.runtime_stats.clone(),
-                runtime_handle.stats_manager().clone(),
+                runtime_handle.stats_manager(),
             ));
         }
 

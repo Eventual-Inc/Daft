@@ -6,11 +6,10 @@ use daft_logical_plan::partitioning::UnknownClusteringConfig;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, NodeID, NodeName,
+        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -80,7 +79,7 @@ impl GatherNode {
             .await?;
 
         let self_clone = self.clone();
-        let task = make_in_memory_scan_from_materialized_outputs(
+        let task = make_in_memory_task_from_materialized_outputs(
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
             &(self_clone as Arc<dyn DistributedPipelineNode>),

@@ -8,7 +8,7 @@ use self::logical::{DurationArray, ImageArray, MapArray};
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{
-        logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
+        logical::{DateArray, FileArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
     series::{array_impl::ArrayWrapper, Series},
@@ -166,6 +166,9 @@ impl Series {
     }
 
     pub fn fixed_shape_sparse_tensor(&self) -> DaftResult<&FixedShapeSparseTensorArray> {
+        self.downcast()
+    }
+    pub fn file(&self) -> DaftResult<&FileArray> {
         self.downcast()
     }
 }

@@ -8,11 +8,10 @@ use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, MaterializedOutput, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext,
+        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -33,25 +32,15 @@ pub(crate) struct RepartitionNode {
 impl RepartitionNode {
     const NODE_NAME: NodeName = "Repartition";
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
         repartition_spec: RepartitionSpec,
+        num_partitions: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
-        let num_partitions = match &repartition_spec {
-            RepartitionSpec::Hash(config) => config
-                .num_partitions
-                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
-            RepartitionSpec::Random(config) => config
-                .num_partitions
-                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
-            RepartitionSpec::IntoPartitions(config) => config.num_partitions,
-        };
-
         let context = PipelineNodeContext::new(
             stage_config,
             node_id,
@@ -63,7 +52,9 @@ impl RepartitionNode {
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            Arc::new(repartition_spec.to_clustering_spec(num_partitions)),
+            repartition_spec
+                .to_clustering_spec(child.config().clustering_spec.num_partitions())
+                .into(),
         );
 
         Self {
@@ -80,10 +71,8 @@ impl RepartitionNode {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push(format!("Repartition: {}", self.repartition_spec.var_name(),));
+        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
         res.extend(self.repartition_spec.multiline_display());
-        res.push(format!("Num partitions = {}", self.num_partitions));
         res
     }
 
@@ -141,7 +130,7 @@ impl RepartitionNode {
         // Make each partition group (partitions equal by (hash % num_partitions)) input to a in-memory scan
         for partition_group in transposed_outputs {
             let self_clone = self.clone();
-            let task = make_in_memory_scan_from_materialized_outputs(
+            let task = make_in_memory_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
                 &(self_clone as Arc<dyn DistributedPipelineNode>),
@@ -197,6 +186,7 @@ impl DistributedPipelineNode for RepartitionNode {
         stage_context: &mut StageExecutionContext,
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(stage_context);
+        let self_arc = self.clone();
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
@@ -211,14 +201,22 @@ impl DistributedPipelineNode for RepartitionNode {
         });
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(
-            local_repartition_node,
-            stage_context.task_id_counter(),
-            result_tx,
-            stage_context.scheduler_handle(),
-        );
-        stage_context.spawn(execution_loop);
 
+        let task_id_counter = stage_context.task_id_counter();
+        let scheduler_handle = stage_context.scheduler_handle();
+
+        let map_reduce_execution = async move {
+            self_arc
+                .execution_loop(
+                    local_repartition_node,
+                    task_id_counter,
+                    result_tx,
+                    scheduler_handle,
+                )
+                .await
+        };
+
+        stage_context.spawn(map_reduce_execution);
         SubmittableTaskStream::from(result_rx)
     }
 

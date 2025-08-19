@@ -39,16 +39,17 @@ mod concat;
 mod distinct;
 mod explode;
 mod filter;
-mod gather;
-mod hash_join;
 mod in_memory_source;
+mod into_batches;
+mod into_partitions;
+mod join;
 mod limit;
 pub(crate) mod materialize;
 mod monotonically_increasing_id;
 mod project;
-mod repartition;
 mod sample;
 mod scan_source;
+mod shuffles;
 mod sink;
 mod sort;
 mod top_n;
@@ -115,6 +116,7 @@ impl MaterializedOutput {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,
@@ -135,6 +137,7 @@ impl PipelineNodeConfig {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct PipelineNodeContext {
     pub plan_id: PlanID,
     pub stage_id: StageID,
@@ -280,30 +283,23 @@ impl Stream for SubmittableTaskStream {
     }
 }
 
-fn make_new_task_from_materialized_outputs<F>(
-    task_context: TaskContext,
-    materialized_outputs: Vec<MaterializedOutput>,
-    node: &Arc<dyn DistributedPipelineNode>,
-    plan_builder: F,
-) -> DaftResult<SubmittableTask<SwordfishTask>>
-where
-    F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
-{
+fn make_in_memory_scan_from_materialized_outputs(
+    materialized_outputs: &[MaterializedOutput],
+    schema: SchemaRef,
+    node_id: NodeID,
+) -> DaftResult<LocalPhysicalPlanRef> {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
     let mut total_num_rows = 0;
-    let mut partition_refs = vec![];
 
     for materialized_output in materialized_outputs {
         total_size_bytes += materialized_output.size_bytes()?;
         total_num_rows += materialized_output.num_rows()?;
-        let (output_refs, _) = materialized_output.into_inner();
-        partition_refs.extend(output_refs);
     }
 
     let info = InMemoryInfo::new(
-        node.config().schema.clone(),
-        node.context().node_id.to_string(),
+        schema,
+        node_id.to_string(),
         None,
         num_partitions,
         total_size_bytes,
@@ -313,6 +309,27 @@ where
     );
     let in_memory_source_plan =
         LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+    Ok(in_memory_source_plan)
+}
+
+fn make_new_task_from_materialized_outputs<F>(
+    task_context: TaskContext,
+    materialized_outputs: Vec<MaterializedOutput>,
+    node: &Arc<dyn DistributedPipelineNode>,
+    plan_builder: F,
+) -> DaftResult<SubmittableTask<SwordfishTask>>
+where
+    F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
+{
+    let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
+        &materialized_outputs,
+        node.config().schema.clone(),
+        node.node_id(),
+    )?;
+    let partition_refs = materialized_outputs
+        .into_iter()
+        .flat_map(|output| output.into_inner().0)
+        .collect::<Vec<_>>();
     let plan = plan_builder(in_memory_source_plan);
     let psets = HashMap::from([(node.node_id().to_string(), partition_refs)]);
 
@@ -327,7 +344,7 @@ where
     Ok(SubmittableTask::new(task))
 }
 
-fn make_in_memory_scan_from_materialized_outputs(
+fn make_in_memory_task_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,

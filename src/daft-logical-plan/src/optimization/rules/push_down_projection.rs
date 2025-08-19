@@ -269,6 +269,7 @@ impl PushDownProjection {
             LogicalPlan::Sort(..)
             | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
+            | LogicalPlan::IntoBatches(..)
             | LogicalPlan::Limit(..)
             | LogicalPlan::Offset(..)
             | LogicalPlan::TopN(..)
@@ -952,6 +953,7 @@ mod tests {
                 filters: None,
                 sharder: None,
                 pushed_filters: None,
+                aggregation: None,
             },
         )
         .build();

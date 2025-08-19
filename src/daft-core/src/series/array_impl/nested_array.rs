@@ -122,7 +122,7 @@ macro_rules! impl_series_like_for_nested_arrays {
                 self.0.rename(name).into_series()
             }
 
-            fn size_bytes(&self) -> DaftResult<usize> {
+            fn size_bytes(&self) -> usize {
                 self.0.size_bytes()
             }
 

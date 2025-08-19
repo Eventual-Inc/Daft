@@ -3,8 +3,39 @@ name: PR test suite
 on:
   push:
     branches: [main]
+    paths-ignore:
+    - '.vscode/**'
+    - 'ci/**'
+    - 'docs/**'
+    - '.git-blame-ignore-revs'
+    - '.gitignore'
+    - '.lldbinit'
+    - '.readthedocs.yaml'
+    - 'CODE_OF_CONDUCT.md'
+    - 'CONTRIBUTING.md'
+    - 'LICENSE'
+    - 'README.rst'
+    - 'SECURITY.md'
+    - 'codecov.yml'
+    - 'mkdocs.yml'
+
   pull_request:
     branches: [main]
+    paths-ignore:
+    - '.vscode/**'
+    - 'ci/**'
+    - 'docs/**'
+    - '.git-blame-ignore-revs'
+    - '.gitignore'
+    - '.lldbinit'
+    - '.readthedocs.yaml'
+    - 'CODE_OF_CONDUCT.md'
+    - 'CONTRIBUTING.md'
+    - 'LICENSE'
+    - 'README.rst'
+    - 'SECURITY.md'
+    - 'codecov.yml'
+    - 'mkdocs.yml'
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
@@ -12,6 +43,7 @@ on:
 env:
   DAFT_ANALYTICS_ENABLED: '0'
   RUST_BACKTRACE: 1
+  DAFT_PROGRESS_BAR: 0
 
 # Cancel in-progress CI runs for outdated PR pushes to save resources.
 # For pull requests, use the PR number to group runs.
@@ -27,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.10']
+        python-version: ['3.9', '3.10', '3.11']
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         flotilla: [1, 0]
@@ -44,6 +76,8 @@ jobs:
           os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
+        - python-version: '3.11'
+          pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1

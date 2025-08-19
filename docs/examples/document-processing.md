@@ -10,14 +10,14 @@
 
 👋 Hello and welcome to [Daft](http://www.daft.ai/)! This tutorial shows how to use Daft to create a typical PDF processing pipeline. By the end of the tutorial, we will have a fully functional pipeline that:
 
-- [starts with downloading PDFs from an S3](https://colab.research.google.com/drive/1QeYdSz87DBauPsokN3RNBLXOVB1zexD5#scrollTo=Pg8UgK_3XqWN)
-- [extracts text boxes either using OCR or by reading the file format](https://colab.research.google.com/drive/1QeYdSz87DBauPsokN3RNBLXOVB1zexD5#scrollTo=Bilsa6-2zCk5)
-- [performs spatial layout analysis to group text boxes into either lines or paragraphs](https://colab.research.google.com/drive/1QeYdSz87DBauPsokN3RNBLXOVB1zexD5#scrollTo=ycj_Q7tA8dBf)
-- [computes embeddings using a lightweight LLM, running locally](https://colab.research.google.com/drive/1QeYdSz87DBauPsokN3RNBLXOVB1zexD5#scrollTo=YWzrR3sY8tBo)
-- [saves everything as Parquet files](https://colab.research.google.com/drive/1QeYdSz87DBauPsokN3RNBLXOVB1zexD5#scrollTo=wvl_Our9-N4o)
+- [Starts with downloading PDFs from an S3](#downloading-pdfs)
+- [Extracts text boxes either using OCR or by reading the file format](#loading-and-parsing-pdfs-using-udfs)
+- [Performs spatial layout analysis to group text boxes into either lines or paragraphs](#document-processing)
+- [Computes embeddings using a lightweight LLM, running locally](#text-embedding)
+- [Saves everything as Parquet files](#writing-to-parquet)
 
 
-**tl;dr**: If you'd like, you can [jump to the end to see the full pipeline](https://colab.research.google.com/drive/1QeYdSz87DBauPsokN3RNBLXOVB1zexD5#scrollTo=R1_rosls8ykn).
+**tl;dr**: If you'd like, you can [jump to the end to see the full pipeline](#entire-end-to-end-pipeline).
 
 ## Installing and Importing Dependencies
 
@@ -224,7 +224,7 @@ def pyarrow_datatype(f_type: type[Any]) -> pyarrow.DataType:
 
 We will use daft_pyarrow_datatype when we define the return_dtype in our upcoming user-defined functions (UDF)!
 
-## Loading & Parsing PDFs using UDFs
+## Loading and Parsing PDFs using UDFs
 
 The first part of our pipeline is to load the PDF's contents, locate all text, and put these results into our `ParsedPdf` class.
 

@@ -65,6 +65,9 @@ impl AsyncFileWriter for PartitionedWriter {
             !self.is_closed,
             "Cannot write to a closed PartitionedWriter"
         );
+        if input.is_empty() {
+            return Ok(0);
+        }
 
         let (split_tables, partition_values) =
             Self::partition(self.partition_by.as_slice(), input)?;

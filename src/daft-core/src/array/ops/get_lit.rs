@@ -1,4 +1,19 @@
-use crate::{lit::Literal, prelude::*};
+use common_image::Image;
+
+use crate::{
+    array::ops::image::AsImageObj, datatypes::logical::FileArray, lit::Literal, prelude::*,
+};
+
+fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
+where
+    F: FnOnce(U) -> Literal,
+    U: From<T>,
+{
+    match o {
+        Some(v) => f(v.into()),
+        None => Literal::Null,
+    }
+}
 
 impl NullArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
@@ -26,6 +41,7 @@ impl StructArray {
             Literal::Struct(
                 self.children
                     .iter()
+                    .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
                     .map(|child| (child.field().clone(), child.get_lit(idx)))
                     .collect(),
             )
@@ -56,14 +72,127 @@ impl PythonArray {
     }
 }
 
-fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
-where
-    F: FnOnce(U) -> Literal,
-    U: From<T>,
-{
-    match o {
-        Some(v) => f(v.into()),
-        None => Literal::Null,
+impl TensorArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.physical.is_valid(idx)
+            && let (Some(data), Some(shape)) =
+                (self.data_array().get(idx), self.shape_array().get(idx))
+        {
+            let shape = shape.u64().unwrap().as_arrow().values().to_vec();
+            Literal::Tensor { data, shape }
+        } else {
+            Literal::Null
+        }
+    }
+}
+
+impl SparseTensorArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        let indices_offset = match self.data_type() {
+            DataType::SparseTensor(_, indices_offset) => *indices_offset,
+            dtype => unreachable!("Unexpected data type for SparseTensorArray: {dtype}"),
+        };
+
+        if self.physical.is_valid(idx)
+            && let (Some(values), Some(indices), Some(shape)) = (
+                self.values_array().get(idx),
+                self.indices_array().get(idx),
+                self.shape_array().get(idx),
+            )
+        {
+            let shape = shape.u64().unwrap().as_arrow().values().to_vec();
+
+            Literal::SparseTensor {
+                values,
+                indices,
+                shape,
+                indices_offset,
+            }
+        } else {
+            Literal::Null
+        }
+    }
+}
+
+impl FixedShapeSparseTensorArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        let (shape, indices_offset) = match self.data_type() {
+            DataType::FixedShapeSparseTensor(_, shape, indices_offset) => {
+                (shape.clone(), *indices_offset)
+            }
+            dtype => unreachable!("Unexpected data type for FixedShapeSparseTensorArray: {dtype}",),
+        };
+
+        if self.physical.is_valid(idx)
+            && let (Some(values), Some(indices)) =
+                (self.values_array().get(idx), self.indices_array().get(idx))
+        {
+            Literal::SparseTensor {
+                values,
+                indices,
+                shape,
+                indices_offset,
+            }
+        } else {
+            Literal::Null
+        }
+    }
+}
+
+impl MapArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        map_or_null(self.get(idx), |entry: Series| {
+            let entry = entry.struct_().unwrap();
+            let keys = entry.get("key").unwrap();
+            let values = entry.get("value").unwrap();
+
+            Literal::Map { keys, values }
+        })
+    }
+}
+
+impl ExtensionArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.is_valid(idx) {
+            Literal::Extension(self.slice(idx, idx + 1).unwrap().into_series())
+        } else {
+            Literal::Null
+        }
     }
 }
 
@@ -91,25 +220,30 @@ macro_rules! impl_array_get_lit {
                     idx,
                     self.len()
                 );
-                let $dtype = self.data_type() else {
-                    unreachable!(
-                        "Unexpected data type for {}: {}",
-                        stringify!($type),
-                        self.data_type()
-                    )
-                };
 
-                map_or_null(self.get(idx), $mapper)
+                match self.data_type() {
+                    $dtype => map_or_null(self.get(idx), $mapper),
+                    other => {
+                        unreachable!("Unexpected data type for {}: {}", stringify!($type), other)
+                    }
+                }
             }
         }
     };
 }
 
-macro_rules! unimplemented_get_lit {
+macro_rules! impl_image_array_get_lit {
     ($type:ty) => {
         impl $type {
-            pub fn get_lit(&self, _: usize) -> Literal {
-                unimplemented!("Unsupported data type: {}", self.data_type())
+            pub fn get_lit(&self, idx: usize) -> Literal {
+                assert!(
+                    idx < self.len(),
+                    "Out of bounds: {} vs len: {}",
+                    idx,
+                    self.len()
+                );
+
+                map_or_null(self.as_image_obj(idx), |obj| Literal::Image(Image(obj)))
             }
         }
     };
@@ -133,18 +267,25 @@ impl_array_get_lit!(IntervalArray, Interval);
 impl_array_get_lit!(DateArray, Date);
 impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);
+impl_array_get_lit!(EmbeddingArray, Embedding);
 
 impl_array_get_lit!(Decimal128Array, DataType::Decimal128(precision, scale) => |v| Literal::Decimal(v, *precision as _, *scale as _));
 impl_array_get_lit!(TimestampArray, DataType::Timestamp(tu, tz) => |v| Literal::Timestamp(v, *tu, tz.clone()));
 impl_array_get_lit!(TimeArray, DataType::Time(tu) => |v| Literal::Time(v, *tu));
 impl_array_get_lit!(DurationArray, DataType::Duration(tu) => |v| Literal::Duration(v, *tu));
+impl_array_get_lit!(FixedShapeTensorArray, DataType::FixedShapeTensor(_, shape) => |data| Literal::Tensor { data, shape: shape.clone() });
 
-unimplemented_get_lit!(ExtensionArray);
-unimplemented_get_lit!(ImageArray);
-unimplemented_get_lit!(FixedShapeImageArray);
-unimplemented_get_lit!(TensorArray);
-unimplemented_get_lit!(EmbeddingArray);
-unimplemented_get_lit!(FixedShapeTensorArray);
-unimplemented_get_lit!(SparseTensorArray);
-unimplemented_get_lit!(FixedShapeSparseTensorArray);
-unimplemented_get_lit!(MapArray);
+impl_image_array_get_lit!(ImageArray);
+impl_image_array_get_lit!(FixedShapeImageArray);
+
+impl FileArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        map_or_null(self.get(idx), Literal::File)
+    }
+}

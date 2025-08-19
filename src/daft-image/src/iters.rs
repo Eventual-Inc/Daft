@@ -1,4 +1,5 @@
-use crate::{ops::AsImageObj, DaftImageBuffer};
+use common_image::CowImage;
+use daft_core::array::ops::image::AsImageObj;
 
 pub struct ImageBufferIter<'a, Arr>
 where
@@ -24,7 +25,7 @@ impl<'a, Arr> Iterator for ImageBufferIter<'a, Arr>
 where
     Arr: AsImageObj,
 {
-    type Item = Option<DaftImageBuffer<'a>>;
+    type Item = Option<CowImage<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.cursor >= self.image_array.len() {
