@@ -12,7 +12,6 @@ use daft_logical_plan::{
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{future::try_join_all, TryStreamExt};
-use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::{prelude::*, Python};
 
@@ -28,7 +27,10 @@ use crate::{
         task::{SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::{
+        channel::{create_channel, Sender},
+        transpose::transpose_materialized_outputs_from_vec,
+    },
 };
 
 pub(crate) struct SortNode {
@@ -81,42 +83,6 @@ impl SortNode {
 
     pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
         Arc::new(self)
-    }
-
-    fn transpose_materialized_outputs(
-        materialized_partitions: Vec<MaterializedOutput>,
-        num_partitions: usize,
-    ) -> DaftResult<Vec<Vec<MaterializedOutput>>> {
-        let materialized_partitions = materialized_partitions
-            .into_iter()
-            .map(|mat| mat.split_into_materialized_outputs())
-            .collect::<Vec<_>>();
-        debug_assert!(
-            materialized_partitions
-                .iter()
-                .all(|mat| mat.len() == num_partitions),
-            "Expected all outputs to have {} partitions, got {}",
-            num_partitions,
-            materialized_partitions
-                .iter()
-                .map(|mat| mat.len())
-                .join(", ")
-        );
-
-        let mut transposed_outputs = vec![];
-        for idx in 0..num_partitions {
-            let mut partition_group = vec![];
-            for materialized_partition in &materialized_partitions {
-                let part = &materialized_partition[idx];
-                if part.num_rows()? > 0 {
-                    partition_group.push(part.clone());
-                }
-            }
-            transposed_outputs.push(partition_group);
-        }
-
-        assert_eq!(transposed_outputs.len(), num_partitions);
-        Ok(transposed_outputs)
     }
 
     #[cfg(feature = "python")]
@@ -300,7 +266,7 @@ impl SortNode {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let transposed_outputs =
-            Self::transpose_materialized_outputs(partitioned_outputs, num_partitions)?;
+            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions)?;
 
         for partition_group in transposed_outputs {
             let self_clone = self.clone();
