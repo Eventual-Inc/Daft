@@ -182,7 +182,6 @@ impl BlockingSink for RepartitionSink {
                 vec![
                     format!("Repartition: Range into {} partitions", self.num_partitions),
                     format!("By: {:?}", pairs),
-                    format!("Boundaries: {:?}", config.boundaries),
                 ]
             }
         }

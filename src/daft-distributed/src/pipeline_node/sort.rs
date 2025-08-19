@@ -154,7 +154,7 @@ impl SortNode {
         output: MaterializedOutput,
         num_partitions: usize,
     ) -> DaftResult<RecordBatch> {
-        unimplemented!()
+        unimplemented!("Distributed sort requires Python feature to be enabled")
     }
 
     async fn execution_loop(
@@ -258,12 +258,8 @@ impl SortNode {
         let partitioned_outputs = try_join_all(partition_tasks)
             .await?
             .into_iter()
-            .map(|result| {
-                result.ok_or(DaftError::InternalError(
-                    "Failed to submit task".to_string(),
-                ))
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+            .flatten()
+            .collect::<Vec<_>>();
 
         let transposed_outputs =
             transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions)?;
