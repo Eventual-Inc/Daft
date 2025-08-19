@@ -193,6 +193,7 @@ class RemoteFlotillaRunner:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
+        ray._private.worker.blocking_get_inside_async_warned = True
 
     def run_plan(
         self,
