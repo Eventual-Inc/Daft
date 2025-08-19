@@ -26,7 +26,7 @@ class _DaftFuncDecorator:
 
     The `@daft.func` decorator transforms regular Python functions into Daft User-Defined Functions (UDFs) that operate on individual values.
 
-    Decorated functions accept their original argument types, Expressions, or strings, which are converted into column references. Additionally, they return lazily-evaluted Expressions. If you want to run the function directly, call `<your_function>.compute(...)`.
+    Decorated functions accept their original argument types, Expressions, or strings, which are converted into column references. Additionally, they return lazily-evaluated Expressions. If you want to run the function directly, call `<your_function>.compute(...)`.
 
     It accepts both synchronous and asynchronous functions.
 
