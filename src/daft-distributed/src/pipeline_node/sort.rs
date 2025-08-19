@@ -202,7 +202,7 @@ impl SortNode {
             move |input| {
                 let sample = LocalPhysicalPlan::sample(
                     input,
-                    0.001,
+                    self_clone.config.execution_config.sample_fraction_for_sort,
                     false,
                     None,
                     StatsState::NotMaterialized,
