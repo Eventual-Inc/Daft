@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datasets import load_dataset
+
 import daft
 
 
@@ -12,3 +14,14 @@ def test_read_huggingface_datasets_doesnt_flae():
         schema = df.schema()
         expected = daft.Schema.from_pydict({"image": dt.struct({"bytes": dt.binary(), "path": dt.string()})})
         assert schema == expected
+
+
+def test_read_huggingface():
+    ds = load_dataset("Eventual-Inc/sample-parquet")
+    ds = ds.with_format("arrow")
+    expected = ds["train"][:].to_pydict()
+
+    df = daft.read_huggingface("Eventual-Inc/sample-parquet")
+    actual = df.to_pydict()
+
+    assert actual == expected

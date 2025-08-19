@@ -703,6 +703,26 @@ class UnityConfig:
         """Replaces values if provided, returning a new UnityConfig."""
         ...
 
+class HuggingFaceConfig:
+    """I/O configuration for accessing Hugging Face datasets.
+
+    Args:
+        token (str, optional): Your Hugging Face access token, generated from https://huggingface.co/settings/tokens.
+        anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Hugging Face without any credentials. Defaults to False.
+        endpoint (str, optional): The base Hugging Face URL. Defaults to "https://huggingface.co".
+    """
+
+    token: str | None
+    anonymous: bool
+    endpoint: str
+
+    def __init__(self, token: str | None = None, anonymous: bool | None = None, endpoint: str | None = None): ...
+    def replace(
+        self, token: str | None = None, anonymous: bool | None = None, endpoint: str | None = None
+    ) -> HuggingFaceConfig:
+        """Replaces values if provided, returning a new HuggingFaceConfig."""
+        ...
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -711,6 +731,7 @@ class IOConfig:
     gcs: GCSConfig
     http: HTTPConfig
     unity: UnityConfig
+    hf: HuggingFaceConfig
 
     def __init__(
         self,
@@ -719,6 +740,7 @@ class IOConfig:
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
+        hf: HuggingFaceConfig | None = None,
     ): ...
     def replace(
         self,
@@ -727,6 +749,7 @@ class IOConfig:
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
+        hf: HuggingFaceConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
