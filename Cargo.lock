@@ -3006,6 +3006,7 @@ dependencies = [
  "daft-schema",
  "educe",
  "indexmap 2.9.0",
+ "indoc",
  "itertools 0.14.0",
  "log",
  "num-format",
