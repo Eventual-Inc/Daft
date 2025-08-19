@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pytest
 from datasets import load_dataset
 
 import daft
 
 
+@pytest.mark.integration()
 def test_read_huggingface_datasets_doesnt_flae():
     from daft import DataType as dt
 
@@ -16,6 +18,7 @@ def test_read_huggingface_datasets_doesnt_flae():
         assert schema == expected
 
 
+@pytest.mark.integration()
 def test_read_huggingface():
     ds = load_dataset("Eventual-Inc/sample-parquet")
     ds = ds.with_format("arrow")
