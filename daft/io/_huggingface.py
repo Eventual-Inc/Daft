@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 def read_huggingface(repo: str, io_config: IOConfig | None = None) -> DataFrame:
     """Create a DataFrame from a Hugging Face dataset.
 
-    Currently only supports Parquet datasets.
+    Currently supports all public datasets and all private Parquet datasets. See [the Hugging Face docs](https://huggingface.co/docs/dataset-viewer/en/parquet) for more details.
 
     Args:
         repo (str): repository to read in the form `username/dataset_name`
