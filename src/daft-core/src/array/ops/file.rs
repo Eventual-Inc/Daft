@@ -20,6 +20,7 @@ impl FileArray {
             discriminant_values.into_iter(),
         )
         .into_series();
+
         let fld = Field::new(
             "literal",
             DataType::Struct(vec![discriminant_field, values_field]),
@@ -70,9 +71,5 @@ impl FileArray {
             .u8()
             .unwrap()
             .clone()
-    }
-
-    pub fn data_array(&self) -> BinaryArray {
-        self.physical.get("data").unwrap().binary().unwrap().clone()
     }
 }

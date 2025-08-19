@@ -156,31 +156,29 @@ impl TryFrom<Vec<Literal>> for Series {
                 PythonArray::from(("literal", data.collect::<Vec<_>>())).into_series()
             }
             DataType::File => {
-                let (discriminant, values) = values
-                    .into_iter()
-                    .map(|v| match v {
-                        Literal::File(DaftFile::Reference(path)) => {
-                            (DaftFileType::Reference as u8, path.into_bytes())
-                        }
-                        Literal::File(DaftFile::Data(bytes)) => (DaftFileType::Data as u8, bytes),
-                        _ => panic!("should not happen"),
-                    })
-                    .unzip::<_, _, Vec<u8>, Vec<_>>();
-                let discriminant_field = Field::new("discriminant", DataType::UInt8);
-                let values_field = Field::new("data", DataType::Binary);
-                let discriminant = UInt8Array::from_values_iter(
-                    discriminant_field.clone(),
-                    discriminant.into_iter(),
-                )
-                .into_series();
-                let values =
-                    BinaryArray::from_values(&values_field.name, values.into_iter()).into_series();
-                let fld = Field::new(
-                    "literal",
-                    DataType::Struct(vec![discriminant_field, values_field]),
-                );
-                let sa = StructArray::new(fld, vec![discriminant, values], None);
-                FileArray::new(Field::new("literal", DataType::File), sa).into_series()
+                todo!()
+                // let  values = values
+                //     .into_iter()
+                //     .map(|v| match v {
+                //         Literal::File(file) => file,
+                //         _ => panic!("should not happen"),
+                //     }).collect::<Vec<_>>();
+
+                // let discriminant_field = Field::new("discriminant", DataType::UInt8);
+                // let values_field = Field::new("data", DataType::Binary);
+                // let discriminant = UInt8Array::from_values_iter(
+                //     discriminant_field.clone(),
+                //     discriminant.into_iter(),
+                // )
+                // .into_series();
+                // let values =
+                //     BinaryArray::from_values(&values_field.name, values.into_iter()).into_series();
+                // let fld = Field::new(
+                //     "literal",
+                //     DataType::Struct(vec![discriminant_field, values_field]),
+                // );
+                // let sa = StructArray::new(fld, vec![discriminant, values], None);
+                // FileArray::new(Field::new("literal", DataType::File), sa).into_series()
             }
             DataType::Tensor(_) => {
                 let (data, shapes) = values

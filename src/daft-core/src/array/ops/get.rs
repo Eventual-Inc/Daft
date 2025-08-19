@@ -14,6 +14,7 @@ use crate::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
+    lit::{FromLiteral, Literal},
     series::Series,
 };
 
@@ -193,23 +194,12 @@ impl MapArray {
 impl FileArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<DaftFile> {
-        let discriminant_array = self.discriminant_array();
-        let data_array = self.data_array();
-        let discriminant = discriminant_array.get(idx)?;
+        let lit = self.physical.get_lit(idx);
 
-        let discriminant: DaftFileType = discriminant.try_into().expect("Invalid discriminant");
-        match discriminant {
-            // it's a path, we know its valid utf8
-            DaftFileType::Reference => {
-                let data = data_array.get(idx)?;
-                let data = data.to_vec();
-                Some(DaftFile::Reference(String::from_utf8(data).unwrap()))
-            }
-            DaftFileType::Data => {
-                let data = data_array.get(idx)?;
-                let data = data.to_vec();
-                Some(DaftFile::Data(data))
-            }
+        if Literal::Null == lit {
+            None
+        } else {
+            DaftFile::try_from_literal(&lit).ok()
         }
     }
 }

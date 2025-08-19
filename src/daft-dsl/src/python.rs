@@ -171,18 +171,6 @@ pub fn decimal_lit(sign: bool, digits: Vec<u8>, exp: i32) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn file_lit(path: &str) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(Literal::File(DaftFile::Reference(path.to_string())));
-    Ok(expr.into())
-}
-
-#[pyfunction]
-pub fn file_bytes_lit(bytes: &[u8]) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(Literal::File(DaftFile::Data(bytes.to_vec())));
-    Ok(expr.into())
-}
-
-#[pyfunction]
 pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
     let expr = Expr::Literal(Literal::List(series.series));
     Ok(expr.into())
