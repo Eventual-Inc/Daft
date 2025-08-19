@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use common_file::{DaftFile, DaftFileType};
+use common_file::DaftFileType;
 use common_image::CowImage;
 
 use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
@@ -153,6 +153,7 @@ impl TryFrom<Vec<Literal>> for Series {
 
                 PythonArray::from(("literal", data.collect::<Vec<_>>())).into_series()
             }
+            #[cfg(feature = "python")]
             DataType::File => {
                 let file_type = match &values[0] {
                     Literal::File(f) => f.get_type(),
@@ -168,24 +169,36 @@ impl TryFrom<Vec<Literal>> for Series {
 
                 match file_type {
                     DaftFileType::Reference => {
-                        let (values, io_configs): (Vec<_>, Vec<_>) = values
-                            .into_iter()
-                            .map(|v| match v {
-                                Literal::File(f) => match f.get_value() {
-                                    common_file::Value::Reference(path, ioconfig) => (
-                                        path.clone(),
-                                        bincode::serialize(ioconfig)
-                                            .expect("Failed to serialize ioconfig"),
-                                    ),
-                                    common_file::Value::Data(_) => {
-                                        unreachable!("should not happen")
-                                    }
-                                },
-                                _ => unreachable!("should not happen"),
-                            })
-                            .unzip();
-                        let io_configs =
-                            BinaryArray::from_values("io_config", io_configs.into_iter());
+                        let (values, io_configs): (Vec<_>, Vec<_>) = pyo3::Python::with_gil(|py| {
+                            values
+                                .into_iter()
+                                .map(|v| match v {
+                                    Literal::File(f) => match f.get_value() {
+                                        common_file::FileValue::Reference(path, ioconfig) => {
+                                            use std::sync::Arc;
+
+                                            use pyo3::IntoPyObjectExt;
+
+                                            let io_conf = ioconfig
+                                                .clone()
+                                                .map(common_io_config::python::IOConfig::from);
+                                            let io_conf = io_conf
+                                                .into_py_any(py)
+                                                .expect("Failed to convert ioconfig to PyObject");
+                                            let io_conf = Arc::new(io_conf);
+
+                                            (path.clone(), io_conf)
+                                        }
+                                        common_file::FileValue::Data(_) => {
+                                            unreachable!("should not happen")
+                                        }
+                                    },
+                                    _ => unreachable!("should not happen"),
+                                })
+                                .unzip()
+                        });
+
+                        let io_configs = PythonArray::from(("io_config", io_configs));
                         let urls = Utf8Array::from_values("url", values.into_iter());
                         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len())
                             .into_series();
@@ -212,11 +225,12 @@ impl TryFrom<Vec<Literal>> for Series {
                         );
                         FileArray::new(Field::new("literal", DataType::File), sa)
                     }
+
                     DaftFileType::Data => {
                         let values = values.into_iter().map(|v| match v {
                             Literal::File(f) => match f.get_value() {
-                                common_file::Value::Reference(_, _) => unreachable!(),
-                                common_file::Value::Data(items) => items.clone(),
+                                common_file::FileValue::Reference(_, _) => unreachable!(),
+                                common_file::FileValue::Data(items) => items.clone(),
                             },
                             _ => panic!("should not happen"),
                         });
@@ -224,7 +238,7 @@ impl TryFrom<Vec<Literal>> for Series {
                         let urls = Utf8Array::full_null("urls", &DataType::Utf8, values.len())
                             .into_series();
                         let io_configs =
-                            BinaryArray::full_null("io_config", &DataType::Binary, values.len())
+                            PythonArray::full_null("io_config", &DataType::Python, values.len())
                                 .into_series();
                         let sa_field = Field::new(
                             "literal",
@@ -246,6 +260,9 @@ impl TryFrom<Vec<Literal>> for Series {
                 }
                 .into_series()
             }
+            #[cfg(not(feature = "python"))]
+            DataType::File => unreachable!("File type is only supported with the python feature"),
+
             DataType::Tensor(_) => {
                 let (data, shapes) = values
                     .iter()

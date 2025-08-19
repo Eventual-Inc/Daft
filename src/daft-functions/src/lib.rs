@@ -13,20 +13,12 @@ pub mod numeric;
 pub mod python;
 pub mod to_struct;
 
-use common_error::{DaftError, DaftResult};
-use daft_core::{
-    prelude::{DataType, Field, Schema},
-    series::{IntoSeries, Series},
-};
-use daft_dsl::{
-    functions::{FunctionArgs, FunctionModule, ScalarUDF},
-    ExprRef,
-};
+use common_error::DaftError;
+use daft_dsl::functions::FunctionModule;
 use hash::HashFunction;
 use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
-use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use to_struct::ToStructFunction;
 

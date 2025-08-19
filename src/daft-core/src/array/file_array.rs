@@ -4,15 +4,29 @@ use daft_schema::{dtype::DataType, field::Field};
 
 use crate::{array::prelude::*, datatypes::FileType, series::IntoSeries};
 
+/// FileArray's underlying representation implements a tagged union pattern through a struct
+/// containing all possible fields (discriminant, data, url, io_config), though they're
+/// mutually exclusive in usage:
+///
+/// - Reference files: Use url and io_config fields (data is null)
+/// - Data files: Use only the data field (url and io_config are null)
+///
+/// The discriminant field serves as the "tag" that determines which fields are active/valid.
+/// This manual union implementation is necessary because our type system lacks native
+/// union types, requiring a consistent struct schema regardless of which variant is active.
+///
+/// The io_config field contains bincode-serialized IOConfig objects, as this was the most
+/// straightforward approach to store these configuration objects in our array structure.
 pub type FileArray = LogicalArray<FileType>;
 
 impl FileArray {
+    #[cfg(feature = "python")]
     pub fn new_from_reference_array(
         name: &str,
         urls: &Utf8Array,
         io_config: Option<IOConfig>,
     ) -> Self {
-        use crate::series::IntoSeries;
+        use crate::{prelude::PythonArray, series::IntoSeries};
 
         let discriminant_field = Field::new("discriminant", DataType::UInt8);
         let discriminant_values = vec![DaftFileType::Reference as u8; urls.len()];
@@ -28,12 +42,29 @@ impl FileArray {
                 discriminant_field.clone(),
                 Field::new("data", DataType::Binary),
                 Field::new("url", DataType::Utf8),
-                Field::new("io_config", DataType::Binary),
+                Field::new("io_config", DataType::Python),
             ]),
         );
-        let io_config = bincode::serialize(&io_config).expect("Failed to serialize data");
-        let io_configs =
-            BinaryArray::from_values("io_config", std::iter::repeat(io_config).take(urls.len()));
+
+        let io_conf = io_config.map(common_io_config::python::IOConfig::from);
+        let io_conf = pyo3::Python::with_gil(|py| {
+            use std::sync::Arc;
+
+            use pyo3::IntoPyObjectExt;
+
+            Arc::new(
+                io_conf
+                    .into_py_any(py)
+                    .expect("Failed to convert ioconfig to PyObject"),
+            )
+        });
+        let io_configs = PythonArray::from((
+            "io_config",
+            std::iter::repeat(io_conf)
+                .take(urls.len())
+                .collect::<Vec<_>>(),
+        ));
+
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
         let io_configs = io_configs
             .with_validity(urls.validity().cloned())
@@ -52,6 +83,16 @@ impl FileArray {
         FileArray::new(Field::new(name, DataType::File), sa)
     }
 
+    #[cfg(not(feature = "python"))]
+    pub fn new_from_reference_array(
+        name: &str,
+        urls: &Utf8Array,
+        io_config: &PythonObject,
+    ) -> Self {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "python")]
     pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
         let discriminant_field = Field::new("discriminant", DataType::UInt8);
         let values_field = Field::new("data", DataType::Binary);
@@ -74,7 +115,8 @@ impl FileArray {
         );
         let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
-            BinaryArray::full_null("io_config", &DataType::Binary, values.len()).into_series();
+            crate::prelude::PythonArray::full_null("io_config", &DataType::Python, values.len())
+                .into_series();
         let sa = StructArray::new(
             fld,
             vec![
@@ -86,5 +128,10 @@ impl FileArray {
             values.validity().cloned(),
         );
         FileArray::new(Field::new(name, DataType::File), sa)
+    }
+
+    #[cfg(not(feature = "python"))]
+    pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
+        unimplemented!()
     }
 }
