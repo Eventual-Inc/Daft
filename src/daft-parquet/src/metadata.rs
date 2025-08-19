@@ -279,7 +279,6 @@ pub(crate) async fn read_parquet_metadata(
             (start..size).into()
         }
     };
-    println!("range: {range}");
     let mut data = fetch_data(io_client.clone(), uri, range, io_stats.clone()).await?;
     let buffer = data.as_ref();
     validate_footer_magic(uri, buffer)?;

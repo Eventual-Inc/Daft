@@ -47,7 +47,7 @@ For authenticated datasets:
     ```python
     from daft.io import IOConfig, HuggingFaceConfig
 
-    io_config = IoConfig(hf=HuggingFaceConfig(token="your_token"))
+    io_config = IOConfig(hf=HuggingFaceConfig(token="your_token"))
     df = daft.read_parquet("hf://datasets/username/dataset_name", io_config=io_config)
     ```
 
