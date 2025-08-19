@@ -4,7 +4,7 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -205,7 +205,9 @@ impl SortNode {
                     move |input| {
                         let sample = LocalPhysicalPlan::sample(
                             input,
-                            self_clone.config.execution_config.sample_fraction_for_sort,
+                            SamplingMethod::Size(
+                                self_clone.config.execution_config.sample_size_for_sort,
+                            ),
                             false,
                             None,
                             StatsState::NotMaterialized,

@@ -51,7 +51,6 @@ pub struct DaftExecutionConfig {
     pub sort_merge_join_sort_with_aligned_boundaries: bool,
     pub hash_join_partition_size_leniency: f64,
     pub sample_size_for_sort: usize,
-    pub sample_fraction_for_sort: f64,
     pub parquet_split_row_groups_max_files: usize,
     pub num_preview_rows: usize,
     pub parquet_target_filesize: usize,
@@ -87,7 +86,6 @@ impl Default for DaftExecutionConfig {
             sort_merge_join_sort_with_aligned_boundaries: false,
             hash_join_partition_size_leniency: 0.5,
             sample_size_for_sort: 20,
-            sample_fraction_for_sort: 0.001,
             parquet_split_row_groups_max_files: 10,
             num_preview_rows: 8,
             parquet_target_filesize: 512 * 1024 * 1024, // 512MB
