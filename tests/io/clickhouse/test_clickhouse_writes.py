@@ -55,7 +55,6 @@ class TestWriteClickHouse:
             client_kwargs={"timeout": 10},
             write_kwargs={"batch_size": 1000},
         )
-        print(result.collect())
 
         mock_clickhouse_sink.assert_called_once_with(
             "test_table",
