@@ -14,6 +14,7 @@ def test_daft_import_does_not_import_pyarrow():
         del sys.modules[module_name]
 
     # Import daft
+    import daft  # noqa: F401
 
     # Check that no pyarrow modules were imported (including nested ones)
     pyarrow_modules = [name for name in sys.modules.keys() if name.startswith("pyarrow")]
