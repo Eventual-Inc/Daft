@@ -248,11 +248,3 @@ impl serde::Serialize for IntervalArray {
         s.end()
     }
 }
-impl serde::Serialize for FileArray {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        todo!("impl daft.file")
-    }
-}

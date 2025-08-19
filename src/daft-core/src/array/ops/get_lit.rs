@@ -278,12 +278,13 @@ impl_image_array_get_lit!(FixedShapeImageArray);
 
 impl FileArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
-        assert!(
-            idx < self.len(),
-            "Out of bounds: {} vs len: {}",
-            idx,
-            self.len()
-        );
-        map_or_null(self.get(idx), Literal::File)
+        todo!()
+        // assert!(
+        //     idx < self.len(),
+        //     "Out of bounds: {} vs len: {}",
+        //     idx,
+        //     self.len()
+        // );
+        // map_or_null(self.get(idx), Literal::File)
     }
 }

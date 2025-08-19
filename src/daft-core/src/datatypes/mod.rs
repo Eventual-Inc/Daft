@@ -250,10 +250,10 @@ impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
+impl_daft_logical_data_array_datatype!(FileType, File, StructType);
 
 #[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);
-impl_daft_non_arrow_datatype!(FileType, File);
 
 pub trait NumericNative:
     PartialOrd
