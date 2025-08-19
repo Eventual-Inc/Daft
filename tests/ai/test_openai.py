@@ -2,11 +2,37 @@ from __future__ import annotations
 
 import pytest
 
+import daft
+
 # Skip if openai package is not available
 pytest.importorskip("openai")
 
 from daft.ai.openai import OpenAIProvider
 from daft.ai.openai.text_embedder import OpenAITextEmbedderDescriptor
+from daft.ai.provider import load_openai
+
+
+def test_openai_provider():
+
+
+    # sets to openai with defaults
+    daft.set_provider("openai")
+
+    # sets to openai with options
+    daft.set_provider("openai", **{
+        "project": "my_project",
+    })
+
+    provider = load_openai(
+        name="my_custom_openai",
+        project="foo",
+    )
+
+    daft.attach_provider(provider)
+    daft.set_provider("my_custom_openai")
+
+
+    pass
 
 
 def test_openai_text_embedder_default():

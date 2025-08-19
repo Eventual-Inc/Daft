@@ -8,7 +8,7 @@ from sentence_transformers import SentenceTransformer
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options
+from daft.ai.typing import Any, EmbeddingDimensions, Options
 
 if TYPE_CHECKING:
     from daft.ai.typing import Embedding
@@ -39,7 +39,7 @@ class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
 class SentenceTransformersTextEmbedder(TextEmbedder):
     model: SentenceTransformer
 
-    def __init__(self, model_name_or_path: str, **options: str):
+    def __init__(self, model_name_or_path: str, **options: Any):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = SentenceTransformer(model_name_or_path, trust_remote_code=True, backend="torch")
         self.model.eval()

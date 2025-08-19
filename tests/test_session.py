@@ -256,3 +256,63 @@ def test_exception_surfacing():
     # some internal error should be surfaced in the runtime exception
     with pytest.raises(Exception, match="something went wrong"):
         sess.read_table("boom")
+
+
+#
+# PROVIDERS
+#
+
+class TestProvider:
+    def __init__(self, name):
+        self._name = name
+
+    @property
+    def name(self):
+        return self._name
+
+
+def test_attach_provider():
+    sess = Session()
+
+    provider = TestProvider("test_provider")
+    expect = sess.attach_provider(provider)
+    actual = sess.get_provider("test_provider")
+
+    assert expect is actual
+
+
+def test_attach_provider_with_alias():
+    sess = Session()
+
+    provider = TestProvider("test_provider")
+    expect = sess.attach_provider(provider, alias="alias")
+    actual = sess.get_provider("alias")
+
+    assert expect is actual
+    with pytest.raises(Exception):
+        sess.get_provider("test_provider")
+
+
+def test_detach_provider():
+    sess = Session()
+
+    provider = TestProvider("test_provider")
+    sess.attach_provider(provider)
+    sess.detach_provider("test_provider")
+
+    with pytest.raises(Exception):
+        sess.get_provider("test_provider")
+
+
+def test_set_provider_and_current_provider(monkeypatch):
+    sess = Session()
+    created = {}
+
+    def fake_load_provider(identifier, alias=None, **options):
+        created["provider"] = TestProvider(identifier)
+        return created["provider"]
+
+    monkeypatch.setattr("daft.session.load_provider", fake_load_provider)
+    sess.set_provider("test_provider")
+    assert sess.current_provider() is created["provider"]
+

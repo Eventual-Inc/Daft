@@ -7,7 +7,7 @@ from typing import Any, Generic, TypeVar
 from daft.datatype import DataType
 from daft.dependencies import np
 
-Options = dict[str, str]
+Options = dict[str, Any]
 
 T = TypeVar("T")
 
