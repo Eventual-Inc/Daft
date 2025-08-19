@@ -88,13 +88,12 @@ impl SortNode {
     #[cfg(feature = "python")]
     fn get_partition_boundaries(
         &self,
-        input: MaterializedOutput,
+        input: Vec<MaterializedOutput>,
         num_partitions: usize,
     ) -> DaftResult<RecordBatch> {
         let ray_partition_refs = input
-            .into_inner()
-            .0
             .into_iter()
+            .flat_map(|mo| mo.into_inner().0)
             .map(|pr| {
                 let ray_partition_ref = pr
                     .as_any()
@@ -151,7 +150,7 @@ impl SortNode {
     #[cfg(not(feature = "python"))]
     fn get_partition_boundaries(
         &self,
-        output: MaterializedOutput,
+        input: Vec<MaterializedOutput>,
         num_partitions: usize,
     ) -> DaftResult<RecordBatch> {
         unimplemented!("Distributed sort requires Python feature to be enabled")
@@ -194,37 +193,43 @@ impl SortNode {
             return Ok(());
         }
 
-        let self_clone = self.clone();
-        let sample_task = make_new_task_from_materialized_outputs(
-            TaskContext::from((&self.context, task_id_counter.next())),
-            materialized_outputs.clone(),
-            &(self.clone() as Arc<dyn DistributedPipelineNode>),
-            move |input| {
-                let sample = LocalPhysicalPlan::sample(
-                    input,
-                    self_clone.config.execution_config.sample_fraction_for_sort,
-                    false,
-                    None,
-                    StatsState::NotMaterialized,
-                );
-                LocalPhysicalPlan::project(
-                    sample,
-                    self_clone.sort_by.clone(),
-                    self_clone.config.schema.clone(),
-                    StatsState::NotMaterialized,
-                )
-            },
-        )?;
-        let sampled_output =
-            sample_task
-                .submit(&scheduler_handle)?
-                .await?
-                .ok_or(DaftError::InternalError(
-                    "Failed to get sampled outputs".to_string(),
-                ))?;
+        let submitted_sample_tasks = materialized_outputs
+            .clone()
+            .into_iter()
+            .map(|mo| {
+                let self_clone = self.clone();
+                let task = make_new_task_from_materialized_outputs(
+                    TaskContext::from((&self.context, task_id_counter.next())),
+                    vec![mo],
+                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    move |input| {
+                        let sample = LocalPhysicalPlan::sample(
+                            input,
+                            self_clone.config.execution_config.sample_fraction_for_sort,
+                            false,
+                            None,
+                            StatsState::NotMaterialized,
+                        );
+                        LocalPhysicalPlan::project(
+                            sample,
+                            self_clone.sort_by.clone(),
+                            self_clone.config.schema.clone(),
+                            StatsState::NotMaterialized,
+                        )
+                    },
+                )?;
+                let submitted_task = task.submit(&scheduler_handle)?;
+                Ok(submitted_task)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        let sampled_outputs = try_join_all(submitted_sample_tasks)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
         let num_partitions = self.child.config().clustering_spec.num_partitions();
-        let boundaries = self.get_partition_boundaries(sampled_output, num_partitions)?;
+        let boundaries = self.get_partition_boundaries(sampled_outputs, num_partitions)?;
 
         let partition_tasks = materialized_outputs
             .into_iter()
