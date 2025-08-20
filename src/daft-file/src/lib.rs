@@ -23,7 +23,9 @@ impl ScalarUDF for File {
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
-        let FileArgs { input, io_config } = args.try_into()?;
+        let FileArgs {
+            input, io_config, ..
+        } = args.try_into()?;
         Ok(match input.data_type() {
             DataType::Binary => {
                 FileArray::new_from_data_array(input.name(), input.binary()?).into_series()
@@ -43,6 +45,7 @@ impl ScalarUDF for File {
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let FileArgs { input, .. } = args.try_into()?;
+
         let input = input.to_field(schema)?;
 
         Ok(Field::new(input.name, DataType::File))

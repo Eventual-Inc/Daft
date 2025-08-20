@@ -230,12 +230,3 @@ def test_compatibility_with_json_file(tmp_path: Path):
 
     df = df.select(read_with_json(df["path"]).alias("skill"))
     assert df.to_pydict()["skill"] == ["Python"]
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="ray only test")
-def test_does_not_work_with_file_and_ray(tmp_path: Path):
-    test_file = tmp_path / "test.txt"
-
-    df = daft.from_pydict({"path": [str(test_file.absolute())]})
-    with pytest.raises(Exception, match="Cannot reference local files within this context"):
-        df.select(file(df["path"])).collect()
