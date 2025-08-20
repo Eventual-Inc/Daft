@@ -145,15 +145,13 @@ class DataType:
         import types
         from typing import get_args, get_origin
 
-        from PIL import Image
-
         if isinstance(user_provided_type, DataType):
             return user_provided_type
         elif (
             isinstance(user_provided_type, types.ModuleType)
             and hasattr(user_provided_type.module, "__name__")
             and user_provided_type.module.__name__ == "PIL.Image"
-        ) or user_provided_type is Image.Image:
+        ) or (pil_image.module_available() and user_provided_type is pil_image.Image):
             return DataType.image()
         elif isinstance(user_provided_type, dict):
             return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
