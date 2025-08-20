@@ -23,7 +23,7 @@ class OpenAIProvider(Provider):
 
     def __init__(self, name: str | None = None, **options: Unpack[OpenAIProviderOptions]):
         self._name = name if name else "openai"
-        self._options = options  # type: ignore
+        self._options = options
 
     @property
     def name(self) -> str:

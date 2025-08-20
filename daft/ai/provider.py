@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import TextEmbedderDescriptor
 
+
 class ProviderImportError(ImportError):
     def __init__(self, dependencies: list[str]):
         deps = ", ".join(f"'{d}'" for d in dependencies)

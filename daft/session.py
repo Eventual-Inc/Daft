@@ -176,7 +176,7 @@ class Session:
         Returns:
             Provider: the provider instance
         """
-        p = provider # TODO: support attaching provider-like objects e.g. OpenAI client.
+        p = provider  # TODO: support attaching provider-like objects e.g. OpenAI client.
         a = alias if alias else p.name
         self._session.attach_provider(p, a)
         return p

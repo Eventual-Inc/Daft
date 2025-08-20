@@ -3,7 +3,7 @@ pyo3 = {workspace = true, optional = true}
 
 [features]
 python = [
-  "dep:pyo3",
+  "dep:pyo3"
 ]
 
 [package]

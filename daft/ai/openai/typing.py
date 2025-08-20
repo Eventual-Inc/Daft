@@ -17,4 +17,3 @@ class OpenAIProviderOptions(TypedDict, total=False):
     max_retries: int
     default_headers: Mapping[str, str] | None
     default_query: Mapping[str, object] | None
-

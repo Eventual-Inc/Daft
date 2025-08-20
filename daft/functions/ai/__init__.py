@@ -23,11 +23,13 @@ def _get_provider(provider: str | None, default: str) -> Provider:
         This simply checks if the user has configured anything, then uses the provided default.
         We can choose to improve (or not) the smart's of this method like looking for the OPENAI_API_KEY
         or seeing which dependencies are available. For now, this is explicit in how the provider is resolved.
-
-        There are also no options being passed to the provider loading. This will need to be modified
-        when necessary.
     """
-    return load_provider(provider or current_provider() or default)
+    if provider is not None:
+        return load_provider(provider)
+    elif curr_provider := current_provider():
+        return curr_provider
+    else:
+        return load_provider(default)
 
 
 ##
@@ -62,6 +64,7 @@ def embed_text(
     # convert all arguments to expressions
     text = _as_expr(text)
 
+    # load a TextEmbedderDescriptor from the resolved provider
     text_embedder = _get_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
     # implemented as class-based UDF for now

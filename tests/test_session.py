@@ -262,6 +262,7 @@ def test_exception_surfacing():
 # PROVIDERS
 #
 
+
 class TestProvider:
     def __init__(self, name):
         self._name = name
@@ -315,4 +316,3 @@ def test_set_provider_and_current_provider(monkeypatch):
     monkeypatch.setattr("daft.session.load_provider", fake_load_provider)
     sess.set_provider("test_provider")
     assert sess.current_provider() is created["provider"]
-

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from sentence_transformers import SentenceTransformer
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import Any, EmbeddingDimensions, Options
+from daft.ai.typing import EmbeddingDimensions, Options
 
 if TYPE_CHECKING:
     from daft.ai.typing import Embedding

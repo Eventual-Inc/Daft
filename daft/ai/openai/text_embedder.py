@@ -8,8 +8,11 @@ from openai import OpenAI
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, Options
+from daft.dependencies import np
 
 if TYPE_CHECKING:
+    from openai.types.create_embedding_response import CreateEmbeddingResponse
+
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.typing import Embedding
 
@@ -47,6 +50,13 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     model_name: str
     model_options: Options
 
+    def __post_init__(self) -> None:
+        if self.model_name not in _profiles:
+            supported_models = ", ".join(_profiles.keys())
+            raise ValueError(
+                f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
+            )
+
     def get_provider(self) -> str:
         return "openai"
 
@@ -63,55 +73,85 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return OpenAITextEmbedder(
             client=OpenAI(**self.provider_options),
             model=self.model_name,
+            insert_none_on_failure=True,  # TODO: determine how we want this to be configurable
         )
 
 
 class OpenAITextEmbedder(TextEmbedder):
+    """The OpenAI TextEmbedder will batch across rows, and split a large row into a batch request when necessary.
+
+    Note:
+        This limits us to 300k tokens per row which is a reasonable start.
+        This implementation also uses len(text)*5 to estimate token count
+        which is conservative and O(1) rather than being perfect with tiktoken.
+    """
+
     _client: OpenAI
     _model: str
 
-    def __init__(self, client: OpenAI, model: str):
+    def __init__(self, client: OpenAI, model: str, insert_none_on_failure: bool):
         self._client = client
         self._model = model
+        self._insert_none_on_failure = insert_none_on_failure
 
     def embed_text(self, text: list[str]) -> list[Embedding]:
-        # OpenAI has a limit of 300,000 tokens per request and 8192 tokens per input
-        # We'll process in batches to handle large inputs
-        batch_size = 100  # Conservative batch size
-        all_embeddings = []
+        embeddings: list[Embedding] = []
+        curr_batch: list[str] = []
+        curr_batch_token_count: int = 0
 
-        for i in range(0, len(text), batch_size):
-            batch_text = text[i : i + batch_size]
+        batch_token_limit = 300_000
+        approx_tokens_per_char = 5  # rounding up from "1 token ≈ 4 characters"
+        input_text_token_limit = 8192
+        input_text_chars_limit = 1638  # rounding down from 8192 / 5
 
-            try:
-                response = self.client.embeddings.create(model=self.model, input=batch_text, encoding_format="float")
+        def flush() -> None:
+            nonlocal curr_batch
+            nonlocal curr_batch_token_count
+            embeddings_result = self._embed_text_batch(curr_batch)
+            embeddings.extend(embeddings_result)
+            curr_batch = []
+            curr_batch_token_count = 0
 
-                # Extract embeddings from response
-                batch_embeddings = [embedding.embedding for embedding in response.data]
-                all_embeddings.extend(batch_embeddings)
+        for input_text in text:
+            input_text_token_count = len(input_text) * approx_tokens_per_char
+            if input_text_token_count > input_text_token_limit:
+                flush()  # must process previous inputs first
+                chunked_batch = chunk(input_text, input_text_chars_limit)
+                chunked_result = self._embed_text_batch(chunked_batch)
+                embeddings.extend(np.concatenate(chunked_result))
+            elif input_text_token_count + curr_batch_token_count >= batch_token_limit:
+                flush()
+            else:
+                curr_batch += input_text
+                curr_batch_token_count += input_text_token_count
+        if len(curr_batch) > 0:
+            flush()
 
-            except Exception:
-                # If batch fails, try processing one by one
-                for single_text in batch_text:
-                    try:
-                        response = self.client.embeddings.create(
-                            model=self.model, input=[single_text], encoding_format="float"
-                        )
-                        all_embeddings.append(response.data[0].embedding)
-                    except Exception:
-                        # dim = _profiles[self.]
+        return embeddings
 
-                        # If individual text fails, add a zero vector as fallback
-                        # Use the expected dimensions for the model
-                        if "ada-002" in self.model or "3-small" in self.model:
-                            fallback_dim = 1536
-                        elif "3-large" in self.model:
-                            fallback_dim = 3072
-                        else:
-                            fallback_dim = 1536
+    def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
+        response = self._client.embeddings.create(
+            input=input_batch,
+            model=self._model,
+            encoding_format="float",
+        )
+        return [np.array(embedding.embedding) for embedding in response.data]
 
-                        import numpy as np
+    def _embed_text(self, input_text: str) -> Embedding:
+        try:
+            response: CreateEmbeddingResponse = self._client.embeddings.create(
+                input=[input_text],
+                model=self._model,
+                encoding_format="float",
+            )
+            return np.array(response.data[0].embedding)
+        except Exception as ex:
+            if self._insert_none_on_failure:
+                size = _profiles[self._model].dimensions.size
+                return np.zeros(size, dtype=np.float32)
+            else:
+                raise ex
 
-                        all_embeddings.append(np.zeros(fallback_dim, dtype=np.float32))
 
-        return all_embeddings
+def chunk(text: str, size: int) -> list[str]:
+    return [text[i : i + size] for i in range(0, len(text), size)]

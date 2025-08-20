@@ -4,12 +4,20 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
+from typing_extensions import TypeAlias
+
 from daft.datatype import DataType
 from daft.dependencies import np
 
 Options = dict[str, Any]
 
 T = TypeVar("T")
+
+__all__ = [
+    "Descriptor",
+    "Embedding",
+    "EmbeddingDimensions",
+]
 
 
 class Descriptor(ABC, Generic[T]):
@@ -36,7 +44,7 @@ class Descriptor(ABC, Generic[T]):
 
 
 # temp definition to defer complexity of a more generic embedding type to later PRs
-Embedding = np.typing.NDArray[Any]
+Embedding: TypeAlias = np.typing.NDArray[Any]
 
 
 @dataclass
