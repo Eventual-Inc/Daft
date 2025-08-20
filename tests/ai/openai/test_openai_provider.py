@@ -31,7 +31,7 @@ def test_openai_text_embedder_other():
 def test_openai_text_embedder_instantiation():
     descriptor = OpenAITextEmbedderDescriptor(
         provider_name="openai",
-        provider_options={},
+        provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
         model_options={},
     )
@@ -44,7 +44,7 @@ def test_openai_text_embedder_instantiation():
 def test_openai_text_embedder_dimensions():
     descriptor_ada = OpenAITextEmbedderDescriptor(
         provider_name="openai",
-        provider_options={},
+        provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
         model_options={},
     )
@@ -52,7 +52,7 @@ def test_openai_text_embedder_dimensions():
 
     descriptor_small = OpenAITextEmbedderDescriptor(
         provider_name="openai",
-        provider_options={},
+        provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-small",
         model_options={},
     )
@@ -60,7 +60,7 @@ def test_openai_text_embedder_dimensions():
 
     descriptor_large = OpenAITextEmbedderDescriptor(
         provider_name="openai",
-        provider_options={},
+        provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-large",
         model_options={},
     )
