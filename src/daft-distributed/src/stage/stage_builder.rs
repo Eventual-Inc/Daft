@@ -47,6 +47,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Window(_)
             | LogicalPlan::Concat(_)
             | LogicalPlan::Limit(_)
+            | LogicalPlan::Sort(_)
             | LogicalPlan::Repartition(_)
             | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Join(join) => {
@@ -64,17 +65,6 @@ impl StagePlanBuilder {
                     } else {
                         Ok(TreeNodeRecursion::Continue)
                     }
-                }
-            }
-            LogicalPlan::Sort(_) => {
-                if plan.materialized_stats().approx_stats.num_rows <= 1_000 {
-                    // Max 1GB with 1KB per row and off by 3 orders of magnitude
-                    Ok(TreeNodeRecursion::Continue)
-                } else {
-                    // TODO: Implement a distributed sort algorithm that can handle
-                    // a large number of rows without OOMing.
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
                 }
             }
             LogicalPlan::Pivot(_) => {
