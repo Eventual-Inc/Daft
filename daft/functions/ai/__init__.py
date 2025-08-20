@@ -11,14 +11,14 @@ from daft import (
     current_provider,
 )
 from daft.ai.provider import load_provider
+from daft.ai.provider import Provider
 
 if TYPE_CHECKING:
     from daft.ai.protocols import TextEmbedderDescriptor
-    from daft.ai.provider import Provider
     from daft.utils import ColumnInputType
 
 
-def _resolve_provider(provider: str | None, default: str) -> Provider:
+def _resolve_provider(provider: str | Provider | None, default: str) -> Provider:
     """Attempts to resolve a provider based upon the active session and environment variables.
 
     Note:
@@ -26,6 +26,9 @@ def _resolve_provider(provider: str | None, default: str) -> Provider:
         We can choose to improve (or not) the smart's of this method like looking for the OPENAI_API_KEY
         or seeing which dependencies are available. For now, this is explicit in how the provider is resolved.
     """
+    if provider is not None and isinstance(provider, Provider):
+        # 0. Given a provider..
+        return provider
     if provider is not None and (curr_sess := current_session()) and (curr_sess.has_provider(provider)):
         # 1. Load the provider from the active session.
         return curr_sess.get_provider(provider)
@@ -48,7 +51,7 @@ def _resolve_provider(provider: str | None, default: str) -> Provider:
 def embed_text(
     text: Expression,
     *,
-    provider: str | None = None,
+    provider: str | Provider | None = None,
     model: str | None = None,
     **options: str,
 ) -> Expression:
@@ -56,8 +59,8 @@ def embed_text(
 
     Args:
         text (ColumnInputType): The input text column, expression, or string to embed.
+        provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
         model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
-        provider (str | None): The provider to use for the embedding model. If None, the default provider is used.
         **options: Any additional options to pass for the model.
 
     Note:

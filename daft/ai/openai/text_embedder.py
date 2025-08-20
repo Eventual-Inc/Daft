@@ -88,10 +88,10 @@ class OpenAITextEmbedder(TextEmbedder):
     _client: OpenAI
     _model: str
 
-    def __init__(self, client: OpenAI, model: str, insert_none_on_failure: bool = True):
+    def __init__(self, client: OpenAI, model: str, zero_on_failure: bool = True):
         self._client = client
         self._model = model
-        self._insert_none_on_failure = insert_none_on_failure
+        self._zero_on_failure = zero_on_failure
 
     def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
@@ -106,6 +106,8 @@ class OpenAITextEmbedder(TextEmbedder):
         def flush() -> None:
             nonlocal curr_batch
             nonlocal curr_batch_token_count
+            if len(curr_batch) == 0:
+                return None
             embeddings_result = self._embed_text_batch(curr_batch)
             embeddings.extend(embeddings_result)
             curr_batch = []
@@ -114,21 +116,22 @@ class OpenAITextEmbedder(TextEmbedder):
         for input_text in text:
             input_text_token_count = len(input_text) * approx_tokens_per_char
             if input_text_token_count > input_text_token_limit:
-                flush()  # must process previous inputs first
-                chunked_batch = chunk(input_text, input_text_chars_limit)
+                flush()  # must process previous inputs first, if any.
+                chunked_batch = chunk_text(input_text, input_text_chars_limit)
                 chunked_result = self._embed_text_batch(chunked_batch)
-                embeddings.extend(np.average(chunked_result, axis=0))
+                chunked_weights = [len(chunk) for chunk in chunked_batch]
+                embeddings.append(np.average(chunked_result, axis=0, weights=chunked_weights))
             elif input_text_token_count + curr_batch_token_count >= batch_token_limit:
                 flush()
             else:
-                curr_batch += input_text
+                curr_batch.append(input_text)
                 curr_batch_token_count += input_text_token_count
-        if len(curr_batch) > 0:
-            flush()
+        flush()
 
         return embeddings
 
     def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
+        """Embeds text as a batch call, consider falling back to _embed_text."""
         response = self._client.embeddings.create(
             input=input_batch,
             model=self._model,
@@ -145,12 +148,12 @@ class OpenAITextEmbedder(TextEmbedder):
             )
             return np.array(response.data[0].embedding)
         except Exception as ex:
-            if self._insert_none_on_failure:
+            if self._zero_on_failure:
                 size = _profiles[self._model].dimensions.size
                 return np.zeros(size, dtype=np.float32)
             else:
                 raise ex
 
 
-def chunk(text: str, size: int) -> list[str]:
+def chunk_text(text: str, size: int) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
