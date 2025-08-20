@@ -1127,6 +1127,8 @@ impl PartialEq for RecordBatch {
     }
 }
 
+impl Eq for RecordBatch {}
+
 impl Display for RecordBatch {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
