@@ -90,6 +90,7 @@ from daft.io import (
     read_lance,
     read_video_frames,
     read_warc,
+    read_huggingface,
 )
 from daft.series import Series
 from daft.session import (
@@ -206,6 +207,7 @@ __all__ = [
     "read_csv",
     "read_deltalake",
     "read_hudi",
+    "read_huggingface",
     "read_iceberg",
     "read_json",
     "read_lance",

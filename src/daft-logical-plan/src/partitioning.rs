@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use daft_dsl::{
+    expr::bound_expr::BoundExpr,
     functions::{scalar::ScalarFn, FunctionArgs},
     python_udf::{PyScalarFn, RowWisePyFn},
     Column, ExprRef, ResolvedColumn,
 };
+use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,7 @@ pub enum RepartitionSpec {
     Hash(HashRepartitionConfig),
     Random(RandomShuffleConfig),
     IntoPartitions(IntoPartitionsConfig),
+    Range(RangeRepartitionConfig),
 }
 
 impl RepartitionSpec {
@@ -23,6 +26,7 @@ impl RepartitionSpec {
             Self::Hash(_) => "Hash",
             Self::Random(_) => "Random",
             Self::IntoPartitions(_) => "IntoPartitions",
+            Self::Range(_) => "Range",
         }
     }
 
@@ -38,6 +42,7 @@ impl RepartitionSpec {
             Self::Hash(conf) => conf.multiline_display(),
             Self::Random(conf) => conf.multiline_display(),
             Self::IntoPartitions(conf) => conf.multiline_display(),
+            Self::Range(conf) => conf.multiline_display(),
         }
     }
 
@@ -55,6 +60,16 @@ impl RepartitionSpec {
             Self::IntoPartitions(IntoPartitionsConfig { num_partitions }) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(*num_partitions))
             }
+            Self::Range(RangeRepartitionConfig {
+                num_partitions,
+                by,
+                descending,
+                ..
+            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
+                num_partitions.unwrap_or(upstream_num_partitions),
+                by.iter().map(|e| e.inner().clone()).collect(),
+                descending.clone(),
+            )),
         }
     }
 }
@@ -93,6 +108,45 @@ impl RandomShuffleConfig {
 
     pub fn multiline_display(&self) -> Vec<String> {
         vec![format!("Num partitions = {:?}", self.num_partitions)]
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct RangeRepartitionConfig {
+    pub num_partitions: Option<usize>,
+    pub boundaries: RecordBatch,
+    pub by: Vec<BoundExpr>,
+    pub descending: Vec<bool>,
+}
+
+impl RangeRepartitionConfig {
+    pub fn new(
+        num_partitions: Option<usize>,
+        boundaries: RecordBatch,
+        by: Vec<BoundExpr>,
+        descending: Vec<bool>,
+    ) -> Self {
+        Self {
+            num_partitions,
+            boundaries,
+            by,
+            descending,
+        }
+    }
+}
+
+impl RangeRepartitionConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        let pairs = self
+            .by
+            .iter()
+            .zip(self.descending.iter())
+            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .join(", ");
+        res.push(format!("Num partitions = {:?}", self.num_partitions));
+        res.push(format!("By = {}", pairs));
+        res
     }
 }
 
