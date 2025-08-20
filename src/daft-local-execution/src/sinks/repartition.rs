@@ -80,6 +80,11 @@ impl BlockingSink for RepartitionSink {
                         RepartitionSpec::Random(_) => {
                             input.partition_by_random(num_partitions, 0)?
                         }
+                        RepartitionSpec::Range(config) => input.partition_by_range(
+                            &config.by,
+                            &config.boundaries,
+                            &config.descending,
+                        )?,
                         RepartitionSpec::IntoPartitions(_) => {
                             todo!("FLOTILLA_MS3: Support other types of repartition");
                         }
@@ -165,6 +170,20 @@ impl BlockingSink for RepartitionSink {
                 "Repartition: Into {} partitions",
                 config.num_partitions
             )],
+            RepartitionSpec::Range(config) => {
+                let pairs = config
+                    .by
+                    .iter()
+                    .zip(config.descending.iter())
+                    .map(|(sb, d)| {
+                        format!("({}, {})", sb, if *d { "descending" } else { "ascending" })
+                    })
+                    .join(", ");
+                vec![
+                    format!("Repartition: Range into {} partitions", self.num_partitions),
+                    format!("By: {:?}", pairs),
+                ]
+            }
         }
     }
 

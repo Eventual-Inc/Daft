@@ -14,8 +14,9 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
-    Pivot, Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    Pivot, Project, Sample, SamplingMethod, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -470,13 +471,20 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Sample(Sample {
             input,
-            fraction,
+            sampling_method,
             with_replacement,
             seed,
             stats_state,
             ..
         }) => {
-            let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
+            let sample_op = match sampling_method {
+                SamplingMethod::Fraction(fraction) => {
+                    SampleOperator::new(*fraction, *with_replacement, *seed)
+                }
+                SamplingMethod::Size(size) => {
+                    SampleOperator::new_size(*size, *with_replacement, *seed)
+                }
+            };
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(sample_op),

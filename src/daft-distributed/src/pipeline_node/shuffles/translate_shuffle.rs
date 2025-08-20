@@ -27,6 +27,9 @@ impl LogicalPlanToPipelineNodeTranslator {
             RepartitionSpec::Random(config) => config
                 .num_partitions
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
+            RepartitionSpec::Range(config) => config
+                .num_partitions
+                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
             RepartitionSpec::IntoPartitions(config) => config.num_partitions,
         };
 
