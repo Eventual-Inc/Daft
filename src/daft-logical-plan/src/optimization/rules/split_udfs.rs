@@ -13,9 +13,65 @@ use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Project, UDFProject},
+    ops::{Filter, Project, UDFProject},
     LogicalPlan,
 };
+
+/// Simple optimizer rule that checks if filters contain a UDF and if so, pulls it out of the filter.
+/// Expectation is that this rule will run before SplitUDFs, so that the UDFs are split out of the filter expression.
+#[derive(Default, Debug)]
+pub struct SplitUDFsFromFilters {}
+
+impl SplitUDFsFromFilters {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn try_optimize_filter(
+        &self,
+        count: &mut usize,
+        filter: &Filter,
+        plan: &Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        if is_udf(&filter.predicate) {
+            let col_name = format!("__SplitUDFsFromFilters_udf_{}__", count);
+            *count += 1;
+
+            let predicate_node = LogicalPlan::Project(Project::try_new(
+                filter.input.clone(),
+                filter
+                    .input
+                    .schema()
+                    .field_names()
+                    .map(resolved_col)
+                    .chain(std::iter::once(
+                        filter.predicate.clone().alias(col_name.as_str()),
+                    ))
+                    .collect(),
+            )?)
+            .into();
+
+            let new_filter = Arc::new(LogicalPlan::Filter(Filter::try_new(
+                predicate_node,
+                resolved_col(col_name.as_str()),
+            )?));
+
+            Ok(Transformed::yes(new_filter))
+        } else {
+            Ok(Transformed::no(plan.clone()))
+        }
+    }
+}
+
+impl OptimizerRule for SplitUDFsFromFilters {
+    fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        let mut udf_count = 0;
+        plan.transform_down(|node| match node.as_ref() {
+            LogicalPlan::Filter(filter) => self.try_optimize_filter(&mut udf_count, filter, &node),
+            _ => Ok(Transformed::no(node)),
+        })
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct SplitUDFs {}
