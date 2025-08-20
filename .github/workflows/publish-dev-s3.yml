@@ -78,6 +78,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        runner: [native, ray]
         arch: [x86_64]
         python-version: ['3.11']
     env:
@@ -106,12 +107,12 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source venv/bin/activate
-          pip install pytest dist/*${{ matrix.arch }}*.whl --force-reinstall
+          pip install pytest pandas dist/*${{ matrix.arch }}*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |
         source venv/bin/activate
-        pytest tests/dataframe/ --durations=50
+        DAFT_RUNNER=${{ matrix.runner }} pytest tests/dataframe/ --durations=50
 
   publish:
     name: Publish wheels to S3
