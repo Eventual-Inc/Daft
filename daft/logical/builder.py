@@ -211,9 +211,13 @@ class LogicalPlanBuilder:
 
     def count(self) -> LogicalPlanBuilder:
         # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
-        first_col = col(self.schema().column_names()[0])
-        builder = self._builder.aggregate([first_col.count(CountMode.All)._expr], [])
-        builder = builder.select([first_col.alias("count")._expr])
+        cheapest_col_name = self.schema()._schema.min_estimated_size_column()
+        if cheapest_col_name is None:
+            # Fallback to old behavior if no column with a size estimate is found
+            cheapest_col_name = self.schema().column_names()[0]
+        cheapest_col = col(cheapest_col_name)
+        builder = self._builder.aggregate([cheapest_col.count(CountMode.All)._expr], [])
+        builder = builder.select([cheapest_col.alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
     def distinct(self, on: list[Expression]) -> LogicalPlanBuilder:
