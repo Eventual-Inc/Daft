@@ -78,6 +78,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        arch: [x86_64]
         python-version: ['3.11']
     env:
       package-name: daft
@@ -104,11 +105,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          # Install pytest and the wheel
-          # Note: We only test x86_64 wheels due to GitHub Actions runner limitations.
-          # Pattern matches both daft-*.whl and daft_lts-*.whl (LTS builds)
-          pip install pytest dist/*.whl --force-reinstall
-          # Remove source code to ensure we're testing the wheel
+          source venv/bin/activate
+          pip install pytest dist/*${{ matrix.arch }}*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |
