@@ -225,11 +225,9 @@ def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]
     assert df.to_arrow() == expected
 
 
-@pytest.mark.skipif(
-    not hasattr(pa, "PyExtensionType"),
-    reason="Arrow version doesn't support the py_ext_type extension type.",
-)
-def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]]) -> None:
+# Define PyExtType class conditionally at module level to avoid import errors
+if hasattr(pa, "PyExtensionType"):
+
     class PyExtType(pa.PyExtensionType):
         def __init__(self):
             pa.PyExtensionType.__init__(self, pa.binary())
@@ -237,6 +235,12 @@ def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, fl
         def __reduce__(self):
             return PyExtType, ()
 
+
+@pytest.mark.skipif(
+    not hasattr(pa, "PyExtensionType"),
+    reason="Arrow version doesn't support the py_ext_type extension type.",
+)
+def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     uuid_type = PyExtType()
     storage_array = pa.array([f"foo-{i}".encode() for i in range(len(valid_data))], pa.binary())
