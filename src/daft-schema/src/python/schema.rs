@@ -109,7 +109,7 @@ impl PySchema {
     }
 
     #[pyo3(name = "min_estimated_size_column")]
-    pub fn min_estimated_size_column(&self) -> Option<&str>  {
+    pub fn min_estimated_size_column(&self) -> Option<&str> {
         self.schema.min_estimated_size_column()
     }
 }
