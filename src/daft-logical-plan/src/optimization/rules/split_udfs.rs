@@ -535,7 +535,6 @@ mod tests {
 
     use common_error::DaftResult;
     use common_resource_request::ResourceRequest;
-    use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{
         functions::{
@@ -544,30 +543,27 @@ mod tests {
         },
         resolved_col, Expr, ExprRef,
     };
+    use indoc::indoc;
     use test_log::test;
 
     use super::SplitUDFs;
     use crate::{
-        ops::{Project, UDFProject},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownProjection,
-            test::assert_optimized_plan_with_rules_eq,
+            test::assert_optimized_plan_with_rules_repr_eq,
         },
-        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
+        test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the SplitExprByUDF rule registered, optimizes
     /// the provided plan with said optimizer, and compares the optimized plan with
     /// the provided expected plan.
-    fn assert_optimized_plan_eq(
-        plan: Arc<LogicalPlan>,
-        expected: Arc<LogicalPlan>,
-    ) -> DaftResult<()> {
-        assert_optimized_plan_with_rules_eq(
+    fn assert_optimized_plan_eq(plan: Arc<LogicalPlan>, expected_repr: &str) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_repr_eq(
             plan,
-            expected,
+            expected_repr,
             vec![RuleBatch::new(
                 vec![Box::new(SplitUDFs::new())],
                 RuleExecutionStrategy::Once,
@@ -580,11 +576,11 @@ mod tests {
     /// the provided expected plan.
     fn assert_optimized_plan_eq_with_projection_pushdown(
         plan: Arc<LogicalPlan>,
-        expected: Arc<LogicalPlan>,
+        expected_repr: &str,
     ) -> DaftResult<()> {
-        assert_optimized_plan_with_rules_eq(
+        assert_optimized_plan_with_rules_repr_eq(
             plan,
-            expected,
+            expected_repr,
             vec![
                 RuleBatch::new(
                     vec![
@@ -638,21 +634,22 @@ mod tests {
             .build();
 
         // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
-        let expected = scan_plan.select(vec![resolved_col("a")])?.build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            actor_pool_project_expr.alias("b"),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq(project_plan, expected)?;
-
+        assert_optimized_plan_eq(
+            project_plan,
+            indoc! { "
+            Project: col(a), col(b)
+              UDFProject:
+              UDF foo = py_udf(col(a)) as b
+              Passthrough Columns = col(a)
+              Concurrency = Some(8)
+              Resource request = { num_cpus = 8, num_gpus = 1 }
+                Project: col(a)
+                  DummyScanOperator
+                  File schema = a#Utf8
+                  Partitioning keys = []
+                  Output schema = a#Utf8
+        "},
+        )?;
         Ok(())
     }
 
@@ -672,81 +669,39 @@ mod tests {
             ])?
             .build();
 
-        let intermediate_column_name_0 = "__TruncateRootUDF_0-2-0__";
-        let intermediate_column_name_1 = "__TruncateRootUDF_0-3-0__";
-        let expected = scan_plan
-            .select(vec![resolved_col("a"), resolved_col("b")])?
-            .build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_column_name_0),
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_column_name_1),
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                resolved_col(intermediate_column_name_0),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                resolved_col(intermediate_column_name_0),
-                resolved_col(intermediate_column_name_1),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col(intermediate_column_name_0),
-                resolved_col(intermediate_column_name_1),
-                resolved_col("a"),
-                resolved_col("b"),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_column_name_0)]).alias("a_prime"),
-            vec![
-                resolved_col(intermediate_column_name_0),
-                resolved_col(intermediate_column_name_1),
-                resolved_col("a"),
-                resolved_col("b"),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_column_name_1)]).alias("b_prime"),
-            vec![
-                resolved_col(intermediate_column_name_0),
-                resolved_col(intermediate_column_name_1),
-                resolved_col("a"),
-                resolved_col("b"),
-                resolved_col("a_prime"),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                resolved_col("a_prime"),
-                resolved_col("b_prime"),
-            ],
-        )?)
-        .arced();
-        assert_optimized_plan_eq(project_plan, expected)?;
+        assert_optimized_plan_eq(
+            project_plan,
+            indoc! {"
+            Project: col(a), col(b), col(a_prime), col(b_prime)
+              UDFProject:
+              UDF foo = py_udf(col(__TruncateRootUDF_0-3-0__)) as b_prime
+              Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b), col(a_prime)
+              Concurrency = Some(8)
+              Resource request = { num_cpus = 8, num_gpus = 1 }
+                UDFProject:
+                UDF foo = py_udf(col(__TruncateRootUDF_0-2-0__)) as a_prime
+                Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
+                Concurrency = Some(8)
+                Resource request = { num_cpus = 8, num_gpus = 1 }
+                  Project: col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
+                    Project: col(a), col(b), col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__)
+                      UDFProject:
+                      UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-3-0__
+                      Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-2-0__)
+                      Concurrency = Some(8)
+                      Resource request = { num_cpus = 8, num_gpus = 1 }
+                        UDFProject:
+                        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-2-0__
+                        Passthrough Columns = col(a), col(b)
+                        Concurrency = Some(8)
+                        Resource request = { num_cpus = 8, num_gpus = 1 }
+                          Project: col(a), col(b)
+                            DummyScanOperator
+                            File schema = a#Utf8, b#Utf8
+                            Partitioning keys = []
+                            Output schema = a#Utf8, b#Utf8
+        "},
+        )?;
         Ok(())
     }
 
@@ -763,59 +718,53 @@ mod tests {
             .with_columns(vec![stacked_actor_pool_project_expr.alias("b")])?
             .build();
 
-        let intermediate_name = "__TruncateRootUDF_0-1-0__";
-        let expected = scan_plan.select(vec![resolved_col("a")])?.build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col(intermediate_name)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name), resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("b"),
-            vec![resolved_col(intermediate_name), resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-        assert_optimized_plan_eq(project_plan.clone(), expected)?;
+        assert_optimized_plan_eq(
+            project_plan.clone(),
+            indoc! {"
+Project: col(a), col(b)
+  UDFProject:
+  UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
+  Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
+  Concurrency = Some(8)
+  Resource request = { num_cpus = 8, num_gpus = 1 }
+    Project: col(__TruncateRootUDF_0-1-0__), col(a)
+      Project: col(a), col(__TruncateRootUDF_0-1-0__)
+        UDFProject:
+        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
+        Passthrough Columns = col(a)
+        Concurrency = Some(8)
+        Resource request = { num_cpus = 8, num_gpus = 1 }
+          Project: col(a)
+            DummyScanOperator
+            File schema = a#Utf8
+            Partitioning keys = []
+            Output schema = a#Utf8
+"},
+        )?;
 
         // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
-        let expected = scan_plan.build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        // We can't get rid of this Project without a projection push-up style rule because
+        // We can't get rid of the extra Project without a projection push-up style rule because
         // pushdown rules don't have downstream context about reordering
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name), resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("b"),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
+        assert_optimized_plan_eq_with_projection_pushdown(
+            project_plan,
+            indoc! {"
+UDFProject:
+UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
+Passthrough Columns = col(a)
+Concurrency = Some(8)
+Resource request = { num_cpus = 8, num_gpus = 1 }
+  Project: col(__TruncateRootUDF_0-1-0__), col(a)
+    UDFProject:
+    UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
+    Passthrough Columns = col(a)
+    Concurrency = Some(8)
+    Resource request = { num_cpus = 8, num_gpus = 1 }
+      DummyScanOperator
+      File schema = a#Utf8
+      Partitioning keys = []
+      Output schema = a#Utf8
+"},
+        )?;
         Ok(())
     }
 
@@ -831,49 +780,49 @@ mod tests {
             .select(vec![stacked_actor_pool_project_expr])?
             .build();
 
-        let intermediate_name = "__TruncateRootUDF_0-0-0__";
+        assert_optimized_plan_eq(
+            project_plan.clone(),
+            indoc! {"
+Project: col(a)
+  UDFProject:
+  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
+  Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
+  Concurrency = Some(8)
+  Resource request = { num_cpus = 8, num_gpus = 1 }
+    Project: col(__TruncateRootUDF_0-0-0__)
+      Project: col(__TruncateRootUDF_0-0-0__)
+        UDFProject:
+        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+        Passthrough Columns = col(a)
+        Concurrency = Some(8)
+        Resource request = { num_cpus = 8, num_gpus = 1 }
+          Project: col(a)
+            DummyScanOperator
+            File schema = a#Utf8
+            Partitioning keys = []
+            Output schema = a#Utf8
+"},
+        )?;
 
-        let expected = scan_plan.select(vec![resolved_col("a")])?.build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("a"),
-            vec![resolved_col(intermediate_name)],
-        )?)
-        .arced();
-        let expected =
-            LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();
-        assert_optimized_plan_eq(project_plan.clone(), expected)?;
-
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            scan_plan.build(),
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            vec![], // No additional
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("a"),
-            vec![],
-        )?)
-        .arced();
-        assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
-
+        assert_optimized_plan_eq_with_projection_pushdown(
+            project_plan,
+            indoc! {"
+UDFProject:
+UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
+Passthrough Columns = None
+Concurrency = Some(8)
+Resource request = { num_cpus = 8, num_gpus = 1 }
+  UDFProject:
+  UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+  Passthrough Columns = None
+  Concurrency = Some(8)
+  Resource request = { num_cpus = 8, num_gpus = 1 }
+    DummyScanOperator
+    File schema = a#Utf8
+    Partitioning keys = []
+    Output schema = a#Utf8
+"},
+        )?;
         Ok(())
     }
 
@@ -895,85 +844,60 @@ mod tests {
             .select(vec![stacked_actor_pool_project_expr.alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__TruncateRootUDF_0-0-0__";
-        let intermediate_name_1 = "__TruncateRootUDF_0-0-1__";
-        let expected = scan_plan
-            .select(vec![resolved_col("a"), resolved_col("b")])?
-            .build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                resolved_col(intermediate_name_0),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                resolved_col(intermediate_name_1),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                resolved_col(intermediate_name_1),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![
-                resolved_col(intermediate_name_0),
-                resolved_col(intermediate_name_1),
-            ])
-            .alias("c"),
-            vec![
-                resolved_col(intermediate_name_0),
-                resolved_col(intermediate_name_1),
-            ],
-        )?)
-        .arced();
-        let expected =
-            LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("c")])?).arced();
-        assert_optimized_plan_eq(project_plan.clone(), expected)?;
+        assert_optimized_plan_eq(
+            project_plan.clone(),
+            indoc! {"
+Project: col(c)
+  UDFProject:
+  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
+  Passthrough Columns = col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
+  Concurrency = Some(8)
+  Resource request = { num_cpus = 8, num_gpus = 1 }
+    Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
+      Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
+        UDFProject:
+        UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
+        Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-0-0__)
+        Concurrency = Some(8)
+        Resource request = { num_cpus = 8, num_gpus = 1 }
+          UDFProject:
+          UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+          Passthrough Columns = col(a), col(b)
+          Concurrency = Some(8)
+          Resource request = { num_cpus = 8, num_gpus = 1 }
+            Project: col(a), col(b)
+              DummyScanOperator
+              File schema = a#Utf8, b#Utf8
+              Partitioning keys = []
+              Output schema = a#Utf8, b#Utf8
+"},
+        )?;
 
         // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
-        let expected = scan_plan.build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            vec![resolved_col("b")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
-            vec![resolved_col(intermediate_name_0)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![
-                resolved_col(intermediate_name_0),
-                resolved_col(intermediate_name_1),
-            ])
-            .alias("c"),
-            vec![],
-        )?)
-        .arced();
-        assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
+        assert_optimized_plan_eq_with_projection_pushdown(
+            project_plan,
+            indoc! {"
+UDFProject:
+UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
+Passthrough Columns = None
+Concurrency = Some(8)
+Resource request = { num_cpus = 8, num_gpus = 1 }
+  UDFProject:
+  UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
+  Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
+  Concurrency = Some(8)
+  Resource request = { num_cpus = 8, num_gpus = 1 }
+    UDFProject:
+    UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+    Passthrough Columns = col(b)
+    Concurrency = Some(8)
+    Resource request = { num_cpus = 8, num_gpus = 1 }
+      DummyScanOperator
+      File schema = a#Utf8, b#Utf8
+      Partitioning keys = []
+      Output schema = a#Utf8, b#Utf8
+"},
+        )?;
         Ok(())
     }
 
@@ -994,95 +918,63 @@ mod tests {
             .select(vec![stacked_actor_pool_project_expr.alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyUDFChildren_1-0-0__";
-        let intermediate_name_1 = "__TruncateAnyUDFChildren_1-0-1__";
-        let intermediate_name_2 = "__TruncateRootUDF_0-0-0__";
-        let expected = scan_plan
-            .select(vec![resolved_col("a"), resolved_col("b")])?
-            .build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
-            vec![
-                resolved_col("a"),
-                resolved_col("b"),
-                resolved_col(intermediate_name_0),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                resolved_col(intermediate_name_1),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                resolved_col(intermediate_name_1),
-                resolved_col(intermediate_name_0)
-                    .add(resolved_col(intermediate_name_1))
-                    .alias(intermediate_name_2),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name_2)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name_2)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_name_2)]).alias("c"),
-            vec![resolved_col(intermediate_name_2)],
-        )?)
-        .arced();
-        let expected =
-            LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("c")])?).arced();
-        assert_optimized_plan_eq(project_plan.clone(), expected)?;
+        assert_optimized_plan_eq(
+            project_plan.clone(),
+            indoc! {"
+Project: col(c)
+  UDFProject:
+  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
+  Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
+  Concurrency = Some(8)
+  Resource request = { num_cpus = 8, num_gpus = 1 }
+    Project: col(__TruncateRootUDF_0-0-0__)
+      Project: col(__TruncateRootUDF_0-0-0__)
+        Project: col(__TruncateAnyUDFChildren_1-0-0__), col(__TruncateAnyUDFChildren_1-0-1__), col(__TruncateAnyUDFChildren_1-0-0__) + col(__TruncateAnyUDFChildren_1-0-1__) as __TruncateRootUDF_0-0-0__
+          Project: col(__TruncateAnyUDFChildren_1-0-0__), col(__TruncateAnyUDFChildren_1-0-1__)
+            UDFProject:
+            UDF foo = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
+            Passthrough Columns = col(a), col(b), col(__TruncateAnyUDFChildren_1-0-0__)
+            Concurrency = Some(8)
+            Resource request = { num_cpus = 8, num_gpus = 1 }
+              UDFProject:
+              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
+              Passthrough Columns = col(a), col(b)
+              Concurrency = Some(8)
+              Resource request = { num_cpus = 8, num_gpus = 1 }
+                Project: col(a), col(b)
+                  DummyScanOperator
+                  File schema = a#Int64, b#Int64
+                  Partitioning keys = []
+                  Output schema = a#Int64, b#Int64
+"},
+        )?;
 
         // With Projection Pushdown, elide intermediate Projects and also perform column pushdown
-        let expected = scan_plan.build();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            vec![resolved_col("b")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("b")]).alias(intermediate_name_1),
-            vec![resolved_col(intermediate_name_0)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name_0)
-                .add(resolved_col(intermediate_name_1))
-                .alias(intermediate_name_2)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_name_2)]).alias("c"),
-            vec![],
-        )?)
-        .arced();
-        assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
+        assert_optimized_plan_eq_with_projection_pushdown(
+            project_plan,
+            indoc! {"
+UDFProject:
+UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
+Passthrough Columns = None
+Concurrency = Some(8)
+Resource request = { num_cpus = 8, num_gpus = 1 }
+  Project: col(__TruncateAnyUDFChildren_1-0-0__) + col(__TruncateAnyUDFChildren_1-0-1__) as __TruncateRootUDF_0-0-0__
+    UDFProject:
+    UDF foo = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
+    Passthrough Columns = col(__TruncateAnyUDFChildren_1-0-0__)
+    Concurrency = Some(8)
+    Resource request = { num_cpus = 8, num_gpus = 1 }
+      UDFProject:
+      UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
+      Passthrough Columns = col(b)
+      Concurrency = Some(8)
+      Resource request = { num_cpus = 8, num_gpus = 1 }
+        DummyScanOperator
+        File schema = a#Int64, b#Int64
+        Partitioning keys = []
+        Output schema = a#Int64, b#Int64
+"},
+        )?;
         Ok(())
     }
 
@@ -1103,57 +995,31 @@ mod tests {
             ])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyUDFChildren_1-1-0__";
-        let intermediate_name_1 = "__TruncateRootUDF_0-1-0__";
-        let expected = scan_plan.build();
-        let expected =
-            LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col(intermediate_name_0)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                resolved_col("a"),
-                resolved_col("a")
-                    .add(resolved_col(intermediate_name_0))
-                    .alias(intermediate_name_1),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col(intermediate_name_1)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col(intermediate_name_1), resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col(intermediate_name_1)]).alias("c"),
-            vec![resolved_col(intermediate_name_1), resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col("c")],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq(project_plan, expected)?;
-
+        assert_optimized_plan_eq(
+            project_plan,
+            indoc! {"
+Project: col(a), col(c)
+  UDFProject:
+  UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as c
+  Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
+  Concurrency = Some(8)
+  Resource request = { num_cpus = 8, num_gpus = 1 }
+    Project: col(__TruncateRootUDF_0-1-0__), col(a)
+      Project: col(a), col(__TruncateRootUDF_0-1-0__)
+        Project: col(__TruncateAnyUDFChildren_1-1-0__), col(a), col(a) + col(__TruncateAnyUDFChildren_1-1-0__) as __TruncateRootUDF_0-1-0__
+          Project: col(a), col(__TruncateAnyUDFChildren_1-1-0__)
+            UDFProject:
+            UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-1-0__
+            Passthrough Columns = col(a)
+            Concurrency = Some(8)
+            Resource request = { num_cpus = 8, num_gpus = 1 }
+              Project: col(a)
+                DummyScanOperator
+                File schema = a#Int64
+                Partitioning keys = []
+                Output schema = a#Int64
+"},
+        )?;
         Ok(())
     }
 
@@ -1171,42 +1037,24 @@ mod tests {
             .select(vec![resolved_col("a"), actor_pool_project_expr])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyUDFChildren_0-1-0__";
-        // let intermediate_name_1 = "__TruncateRootUDF_0-1-0__";
-        let expected = scan_plan.build();
-        let expected =
-            LogicalPlan::Project(Project::try_new(expected, vec![resolved_col("a")])?).arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name_0),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col(intermediate_name_0)],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![
-                resolved_col(intermediate_name_0),
-                resolved_col("a"),
-                resolved_col("a")
-                    .add(resolved_col("a"))
-                    .add(resolved_col(intermediate_name_0))
-                    .alias("result"),
-            ],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            expected,
-            vec![resolved_col("a"), resolved_col("result")],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq(project_plan, expected)?;
-
+        assert_optimized_plan_eq(
+            project_plan,
+            indoc! {"
+        Project: col(a), col(result)
+          Project: col(__TruncateAnyUDFChildren_0-1-0__), col(a), [col(a) + col(a)] + col(__TruncateAnyUDFChildren_0-1-0__) as result
+            Project: col(a), col(__TruncateAnyUDFChildren_0-1-0__)
+              UDFProject:
+              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
+              Passthrough Columns = col(a)
+              Concurrency = Some(8)
+              Resource request = { num_cpus = 8, num_gpus = 1 }
+                Project: col(a)
+                  DummyScanOperator
+                  File schema = a#Int64
+                  Partitioning keys = []
+                  Output schema = a#Int64
+        "},
+        )?;
         Ok(())
     }
 
@@ -1236,18 +1084,21 @@ mod tests {
         )?)
         .arced();
 
-        let expected_udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_columns(Some(Arc::new(vec!["c".to_string()]))),
-            )
-            .build(),
-            mock_udf.alias("udf_results"),
-            vec![],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq_with_projection_pushdown(project, expected_udf_project)?;
+        assert_optimized_plan_eq_with_projection_pushdown(
+            project,
+            indoc! {"
+        UDFProject:
+        UDF foo = py_udf(col(c)) as udf_results
+        Passthrough Columns = None
+        Concurrency = Some(8)
+        Resource request = { num_cpus = 8, num_gpus = 1 }
+          DummyScanOperator
+          File schema = a#Int64, b#Boolean, c#Int64
+          Partitioning keys = []
+          Projection pushdown = [c]
+          Output schema = c#Int64
+        "},
+        )?;
         Ok(())
     }
 
@@ -1289,28 +1140,26 @@ mod tests {
         )?)
         .arced();
 
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            dummy_scan_node_with_pushdowns(
-                scan_op,
-                Pushdowns::default().with_columns(Some(Arc::new(vec!["a".to_string()]))),
-            )
-            .build(),
-            // col("b") is pruned
-            mock_udf.alias("udf_results_0"),
-            vec![resolved_col("a")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected,
-            mock_udf.alias("udf_results_1"),
-            vec![
-                // Absorbed a non-computational expression (alias) from the Projection
-                resolved_col("udf_results_0"),
-            ],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq_with_projection_pushdown(plan, expected)?;
+        assert_optimized_plan_eq_with_projection_pushdown(
+            plan,
+            indoc! {"
+        UDFProject:
+        UDF foo = py_udf(col(a)) as udf_results_1
+        Passthrough Columns = col(udf_results_0)
+        Concurrency = Some(8)
+        Resource request = { num_cpus = 8, num_gpus = 1 }
+          UDFProject:
+          UDF foo = py_udf(col(a)) as udf_results_0
+          Passthrough Columns = col(a)
+          Concurrency = Some(8)
+          Resource request = { num_cpus = 8, num_gpus = 1 }
+            DummyScanOperator
+            File schema = a#Int64, b#Boolean, c#Int64
+            Partitioning keys = []
+            Projection pushdown = [a]
+            Output schema = a#Int64
+        "},
+        )?;
         Ok(())
     }
 
@@ -1330,21 +1179,16 @@ mod tests {
             .build();
 
         // Optimized plan will push the projection all the way down into the scan
-        let expected_scan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
-            Pushdowns {
-                limit: None,
-                partition_filters: None,
-                columns: Some(Arc::new(vec!["a".to_string()])),
-                filters: None,
-                sharder: None,
-                pushed_filters: None,
-                aggregation: None,
-            },
-        )
-        .build();
-
-        assert_optimized_plan_eq_with_projection_pushdown(plan, expected_scan)?;
+        assert_optimized_plan_eq_with_projection_pushdown(
+            plan,
+            indoc! {"
+            DummyScanOperator
+            File schema = a#Int64, b#Boolean, c#Int64
+            Partitioning keys = []
+            Projection pushdown = [a]
+            Output schema = a#Int64
+        "},
+        )?;
         Ok(())
     }
 
@@ -1366,31 +1210,23 @@ mod tests {
             ])?
             .build();
 
-        // Expect a Scan -> UDFProject -> Reorder
-        let scan_node = dummy_scan_node(scan_op).build();
-        let reorder = LogicalPlan::Project(Project::try_new(
-            scan_node,
-            // This is dumb but we don't have a way to cleanup reorders
-            vec![resolved_col("c"), resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-        let udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
-            reorder,
-            mock_udf.alias("udf_results"),
-            vec![resolved_col("a"), resolved_col("b")],
-        )?)
-        .arced();
-        let expected = LogicalPlan::Project(Project::try_new(
-            udf_project,
-            vec![
-                resolved_col("a"),
-                resolved_col("udf_results"),
-                resolved_col("b"),
-            ],
-        )?)
-        .arced();
-
-        assert_optimized_plan_eq_with_projection_pushdown(plan, expected)?;
+        assert_optimized_plan_eq(
+            plan,
+            indoc! {"
+            Project: col(a), col(udf_results), col(b)
+              Project: col(a), col(b), col(c), col(udf_results)
+                UDFProject:
+                UDF foo = py_udf(col(c)) as udf_results
+                Passthrough Columns = col(a), col(b), col(c)
+                Concurrency = Some(8)
+                Resource request = { num_cpus = 8, num_gpus = 1 }
+                  Project: col(a), col(b), col(c)
+                    DummyScanOperator
+                    File schema = a#Int64, b#Int64, c#Int64
+                    Partitioning keys = []
+                    Output schema = a#Int64, b#Int64, c#Int64
+        "},
+        )?;
         Ok(())
     }
 }

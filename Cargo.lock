@@ -1855,6 +1855,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-logging"
+version = "0.3.0-dev0"
+dependencies = [
+ "arc-swap",
+ "log",
+]
+
+[[package]]
 name = "common-macros"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2322,6 +2330,7 @@ dependencies = [
  "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-logging",
  "common-metrics",
  "common-partitioning",
  "common-resource-request",
@@ -2607,9 +2616,12 @@ dependencies = [
  "common-scan-info",
  "common-treenode",
  "daft-dsl",
+ "daft-io",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-micropartition",
  "daft-physical-plan",
+ "daft-recordbatch",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
@@ -2921,12 +2933,14 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "capitalize",
  "common-daft-config",
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-logging",
  "common-metrics",
  "common-py-serde",
  "common-resource-request",
@@ -2934,6 +2948,7 @@ dependencies = [
  "common-scan-info",
  "common-system-info",
  "common-tracing",
+ "console 0.16.0",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3011,9 +3026,11 @@ dependencies = [
  "daft-functions-list",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-recordbatch",
  "daft-schema",
  "educe",
  "indexmap 2.9.0",
+ "indoc",
  "itertools 0.14.0",
  "log",
  "num-format",
