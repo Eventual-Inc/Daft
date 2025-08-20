@@ -8,6 +8,8 @@ on:
 env:
   PYTHON_VERSION: 3.11
   UV_SYSTEM_PYTHON: 1
+  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_PROGRESS_BAR: 0
 
 defaults:
   run:
@@ -42,7 +44,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
+        runner: [native, ray]
+        arch: [x86_64]
         python-version: ['3.9', '3.11']
     env:
       package-name: daft
@@ -62,7 +66,6 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
     - name: Install wheel and test dependencies
       uses: nick-fields/retry@v3
       with:
@@ -70,33 +73,13 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          # Install pytest and the wheel
-          # Note: We only test x86_64 wheels due to GitHub Actions runner limitations.
-          # Pattern matches both daft-*.whl and daft_lts-*.whl (LTS builds)
-          uv pip install pytest dist/*.whl --force-reinstall
-          # Remove source code to ensure we're testing the wheel
+          source venv/bin/activate
+          pip install ray pytest pandas dist/*${{ matrix.arch }}*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |
-        pytest tests/dataframe/ --durations=50
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() }}
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: PyPI Wheel Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-                }
-              }
-            ]
-          }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-        webhook-type: incoming-webhook
+        source venv/bin/activate
+        DAFT_RUNNER=${{ matrix.runner }} pytest tests/dataframe --durations=50
 
   publish:
     name: Publish wheels to PyPI

@@ -24,6 +24,8 @@ env:
   S3_KEY: builds/dev/${{ github.sha }}
   AWS_REGION: us-west-2
   CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
+  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_PROGRESS_BAR: 0
 
 jobs:
   check-exists:
