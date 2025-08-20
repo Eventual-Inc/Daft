@@ -97,7 +97,6 @@ jobs:
       run: |
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
     - name: Install wheel and test dependencies
       uses: nick-fields/retry@v3
       with:
@@ -108,12 +107,13 @@ jobs:
           # Install pytest and the wheel
           # Note: We only test x86_64 wheels due to GitHub Actions runner limitations.
           # Pattern matches both daft-*.whl and daft_lts-*.whl (LTS builds)
-          uv pip install pytest dist/*.whl --force-reinstall
+          pip install pytest dist/*.whl --force-reinstall
           # Remove source code to ensure we're testing the wheel
           rm -rf daft
     - name: Run dataframe tests
       run: |
-        uv run pytest tests/dataframe/ --durations=50
+        source venv/bin/activate
+        pytest tests/dataframe/ --durations=50
 
   publish:
     name: Publish wheels to S3
