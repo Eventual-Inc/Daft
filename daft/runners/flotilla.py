@@ -94,14 +94,14 @@ def get_boundaries_remote(
     return result._micropartition
 
 
-def get_boundaries(
+async def get_boundaries(
     samples: list[ray.ObjectRef],
     sort_by: list[Expression],
     descending: list[bool],
     nulls_first: list[bool] | None,
     num_quantiles: int,
 ) -> PyMicroPartition:
-    return ray.get(get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples))
+    return await get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples)
 
 
 @dataclass
