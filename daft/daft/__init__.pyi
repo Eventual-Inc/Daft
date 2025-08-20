@@ -1884,8 +1884,8 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: int | None,
-        context: dict[str, str] | None,
+        results_buffer_size: int | None = None,
+        context: dict[str, str] | None = None,
     ) -> AsyncIterator[PyMicroPartition]: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
