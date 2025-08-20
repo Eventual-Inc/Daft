@@ -15,6 +15,11 @@ on:
         type: boolean
         default: true
         required: false
+      run_tests:
+        description: Run tests
+        type: boolean
+        default: false
+        required: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -74,8 +79,8 @@ jobs:
   test-wheels:
     name: Test built wheels
     runs-on: ${{ matrix.os }}
-    needs: [check-exists, build]
-    if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
+    needs: [build, check-exists]
+    if: ${{ needs.check-exists.outputs.build_exists == 'false' && inputs.run_tests }}
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +123,7 @@ jobs:
 
   publish:
     name: Publish wheels to S3
-    needs: [check-exists, test-wheels]
+    needs: ${{ inputs.run_tests && 'check-exists, test-wheels' || 'check-exists, build' }}
     if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     runs-on: ubuntu-latest
     permissions:
