@@ -35,6 +35,79 @@ jobs:
         - lts: true
           arch: aarch64
 
+  test-wheels:
+    name: Test built wheels
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.9', '3.11']
+    env:
+      package-name: daft
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
+    - name: Install wheel and test dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          # Install pytest first
+          uv pip install pytest
+          # Install the appropriate wheel based on platform
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            # Use x86_64 Linux wheel for Ubuntu
+            uv pip install dist/${{ env.package-name }}-*x86_64*linux*.whl --force-reinstall
+          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            # Use universal2 or x86_64 macOS wheel for macOS
+            if ls dist/${{ env.package-name }}-*universal2*.whl 1> /dev/null 2>&1; then
+              uv pip install dist/${{ env.package-name }}-*universal2*.whl --force-reinstall
+            else
+              uv pip install dist/${{ env.package-name }}-*x86_64*macos*.whl --force-reinstall
+            fi
+          fi
+          # Remove source code to ensure we're testing the wheel
+          rm -rf daft
+    - name: Run dataframe tests
+      run: |
+        pytest tests/dataframe/ --durations=50
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: PyPI Wheel Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
   publish:
     name: Publish wheels to PyPI
     runs-on: ubuntu-latest
@@ -42,7 +115,7 @@ jobs:
       name: pypi
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing. It is also tied to the name of the workflow file, so do not change the file name without changing the OIDC config.
-    needs: build
+    needs: test-wheels
     steps:
     - uses: actions/download-artifact@v4
       with:
@@ -57,7 +130,7 @@ jobs:
   on-failure:
     name: Send Slack notification on failure
     runs-on: ubuntu-latest
-    needs: [build, publish]
+    needs: [build, test-wheels, publish]
     if: ${{ failure() }}
 
     steps:
