@@ -1,5 +1,5 @@
 mod progress_bar;
-mod ray;
+pub mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
