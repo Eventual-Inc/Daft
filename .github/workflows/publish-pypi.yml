@@ -72,8 +72,8 @@ jobs:
         command: |
           # Install pytest and the wheel
           # Note: We only test x86_64 wheels due to GitHub Actions runner limitations.
-          # Let pip choose the appropriate wheel for the current platform
-          uv pip install pytest dist/${{ env.package-name }}-*.whl --force-reinstall
+          # Pattern matches both daft-*.whl and daft_lts-*.whl (LTS builds)
+          uv pip install pytest dist/*.whl --force-reinstall
           # Remove source code to ensure we're testing the wheel
           rm -rf daft
     - name: Run dataframe tests
