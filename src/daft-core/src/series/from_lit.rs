@@ -160,7 +160,7 @@ impl TryFrom<Vec<Literal>> for Series {
                     _ => panic!("should not happen"),
                 };
                 let discriminant_field = Field::new("discriminant", DataType::UInt8);
-                let discriminant_values = vec![DaftFileType::Reference as u8; values.len()];
+                let discriminant_values = vec![file_type as u8; values.len()];
                 let discriminant = UInt8Array::from_values_iter(
                     discriminant_field.clone(),
                     discriminant_values.into_iter(),

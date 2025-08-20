@@ -1,3 +1,5 @@
+use std::iter::repeat;
+
 #[cfg(feature = "python")]
 use common_file::DaftFileType;
 use common_io_config::IOConfig;
@@ -7,6 +9,7 @@ use daft_schema::{dtype::DataType, field::Field};
 #[cfg(feature = "python")]
 use crate::series::IntoSeries;
 use crate::{array::prelude::*, datatypes::FileType};
+
 /// FileArray is a logical array that represents a collection of files.
 ///
 /// FileArray's underlying representation implements a tagged union pattern through a struct
@@ -33,23 +36,13 @@ impl FileArray {
     ) -> Self {
         use crate::{prelude::PythonArray, series::IntoSeries};
 
-        let discriminant_field = Field::new("discriminant", DataType::UInt8);
-        let discriminant_values = vec![DaftFileType::Reference as u8; urls.len()];
-        let discriminant = UInt8Array::from_values_iter(
-            discriminant_field.clone(),
-            discriminant_values.into_iter(),
+        let discriminant = UInt8Array::from_values(
+            "discriminant",
+            repeat(DaftFileType::Reference as u8).take(urls.len()),
         )
         .into_series();
 
-        let sa_field = Field::new(
-            "literal",
-            DataType::Struct(vec![
-                discriminant_field,
-                Field::new("data", DataType::Binary),
-                Field::new("url", DataType::Utf8),
-                Field::new("io_config", DataType::Python),
-            ]),
-        );
+        let sa_field = Field::new("literal", DataType::File.to_physical());
 
         let io_conf = io_config.map(common_io_config::python::IOConfig::from);
         let io_conf = pyo3::Python::with_gil(|py| {
@@ -65,9 +58,7 @@ impl FileArray {
         });
         let io_configs = PythonArray::from((
             "io_config",
-            std::iter::repeat(io_conf)
-                .take(urls.len())
-                .collect::<Vec<_>>(),
+            repeat(io_conf).take(urls.len()).collect::<Vec<_>>(),
         ));
 
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
@@ -99,25 +90,13 @@ impl FileArray {
 
     #[cfg(feature = "python")]
     pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
-        let discriminant_field = Field::new("discriminant", DataType::UInt8);
-        let values_field = Field::new("data", DataType::Binary);
-
-        let discriminant_values = vec![DaftFileType::Data as u8; values.len()];
-
-        let discriminant = UInt8Array::from_values_iter(
-            discriminant_field.clone(),
-            discriminant_values.into_iter(),
+        let discriminant = UInt8Array::from_values(
+            "discriminant",
+            repeat(DaftFileType::Data as u8).take(values.len()),
         )
         .into_series();
-        let fld = Field::new(
-            "literal",
-            DataType::Struct(vec![
-                discriminant_field,
-                values_field,
-                Field::new("url", DataType::Utf8),
-                Field::new("io_config", DataType::Binary),
-            ]),
-        );
+
+        let fld = Field::new("literal", DataType::File.to_physical());
         let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
             crate::prelude::PythonArray::full_null("io_config", &DataType::Python, values.len())

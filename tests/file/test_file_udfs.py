@@ -86,8 +86,7 @@ def test_can_open_local_file(tmp_path: Path):
 
     @daft.func
     def read_text(file: daft.File) -> str:
-        with open(file) as f:
-            return f.read()
+        return file.read().decode("utf-8")
 
     df = df.select(read_text(df["path"]).alias("text"))
     assert df.to_pydict()["text"] == ["test content"]
@@ -231,38 +230,6 @@ def test_compatibility_with_json_file(tmp_path: Path):
 
     df = df.select(read_with_json(df["path"]).alias("skill"))
     assert df.to_pydict()["skill"] == ["Python"]
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
-def test_with_open_syntax_for_path_file(tmp_path: Path):
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("Hello from file")
-
-    df = daft.from_pydict({"path": [str(test_file.absolute())]})
-    df = df.select(file(df["path"]))
-
-    @daft.func
-    def read(file: daft.File) -> str:
-        with open(file) as f:
-            return f.read()
-
-    df = df.select(read(df["path"]).alias("content"))
-    assert df.to_pydict()["content"] == ["Hello from file"]
-
-
-def test_with_open_syntax_for_memory_file():
-    data = "Hello from memory"
-
-    df = daft.from_pydict({"data": [data.encode()]})
-    df = df.select(file(df["data"]))
-
-    @daft.func
-    def read(file: daft.File) -> str:
-        with file as f:
-            return f.read().decode("utf-8")
-
-    df = df.select(read(df["data"]).alias("content"))
-    assert df.to_pydict()["content"] == ["Hello from memory"]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="ray only test")

@@ -46,14 +46,14 @@ pub enum FileValue {
 
 impl DaftFile {
     pub fn get_type(&self) -> DaftFileType {
-        self.file_type.clone()
+        self.file_type
     }
     pub fn get_value(&self) -> &FileValue {
         &self.value
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DaftFileType {
     Reference = 0,

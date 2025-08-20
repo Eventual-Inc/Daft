@@ -57,11 +57,9 @@ impl PyDaftFile {
         let io_client = daft_io::get_io_client(true, Arc::new(io_config.config))?;
         let rt = common_runtime::get_io_runtime(true);
 
-        let path_clone = path.clone();
-
-        let source = rt.block_within_async_context(async move {
+        let (source, path) = rt.block_within_async_context(async move {
             io_client
-                .get_source(&path_clone)
+                .get_source_and_path(&path)
                 .await
                 .map_err(DaftError::from)
         })??;
@@ -69,9 +67,9 @@ impl PyDaftFile {
         // Default to 8MB buffer
         const DEFAULT_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 
-        let reader = ObjectSourceReader::new(source, path.to_string(), None);
+        let reader = ObjectSourceReader::new(source, path.clone(), None);
 
-        // we wrap it in a BufReader so we are not making many network requests for each byte read
+        // we wrap it in a BufReader so we are not making so many network requests for each byte read
         let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
         Ok(Self {
@@ -99,14 +97,9 @@ impl PyDaftFile {
 
         if size == -1 {
             let mut buffer = Vec::new();
-            let bytes_read = match cursor {
-                FileCursor::Memory(c) => c
-                    .read_to_end(&mut buffer)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
-                FileCursor::ObjectReader(r) => r
-                    .read_to_end(&mut buffer)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
-            };
+            let bytes_read = cursor
+                .read_to_end(&mut buffer)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
             buffer.truncate(bytes_read);
             self.position = bytes_read;
@@ -115,14 +108,9 @@ impl PyDaftFile {
         } else {
             let mut buffer = vec![0u8; size as usize];
 
-            let bytes_read = match cursor {
-                FileCursor::Memory(c) => c
-                    .read(&mut buffer)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
-                FileCursor::ObjectReader(r) => r
-                    .read(&mut buffer)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
-            };
+            let bytes_read = cursor
+                .read(&mut buffer)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
             buffer.truncate(bytes_read);
             self.position += bytes_read;
@@ -149,14 +137,10 @@ impl PyDaftFile {
             .cursor
             .as_mut()
             .ok_or_else(|| PyValueError::new_err("File not open"))?;
-        let new_pos = match cursor {
-            FileCursor::Memory(c) => c
-                .seek(whence)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?,
-            FileCursor::ObjectReader(r) => r
-                .seek(whence)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?,
-        };
+
+        let new_pos = cursor
+            .seek(whence)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         self.position = new_pos as usize;
         Ok(new_pos)

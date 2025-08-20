@@ -35,7 +35,7 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
-use futures::stream::BoxStream;
+use futures::{stream::BoxStream, FutureExt};
 use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, GetResult, ObjectSource};
 #[cfg(feature = "python")]
@@ -206,19 +206,21 @@ impl IOClient {
             config,
         })
     }
-
-    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source_and_path(
+        &self,
+        input: &str,
+    ) -> Result<(Arc<dyn ObjectSource>, String)> {
         let (source_type, path) = parse_url(input)?;
 
         {
             if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
-                return Ok(client.clone());
+                return Ok((client.clone(), path.to_string()));
             }
         }
         let mut w_handle = self.source_type_to_store.write().await;
 
         if let Some(client) = w_handle.get(&source_type) {
-            return Ok(client.clone());
+            return Ok((client.clone(), path.to_string()));
         }
 
         let new_source = match source_type {
@@ -255,7 +257,13 @@ impl IOClient {
         if w_handle.get(&source_type).is_none() {
             w_handle.insert(source_type, new_source.clone());
         }
-        Ok(new_source)
+        Ok((new_source, path.to_string()))
+    }
+
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+        self.get_source_and_path(input)
+            .map(|f| f.map(|(source, _)| source))
+            .await
     }
 
     pub async fn glob(
