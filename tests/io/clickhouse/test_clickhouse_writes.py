@@ -45,7 +45,7 @@ class TestWriteClickHouse:
     @patch.object(DataFrame, "write_sink")
     def test_write_clickhouse_all_params(self, mock_write_sink, mock_clickhouse_sink, sample_data):
         """Test all parameters for write_clickhouse."""
-        result = sample_data.write_clickhouse(
+        sample_data.write_clickhouse(
             table="test_table",
             host="localhost",
             port=8123,
