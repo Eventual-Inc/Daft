@@ -236,6 +236,7 @@ def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, fl
 
         def __reduce__(self):
             return PyExtType, ()
+
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     uuid_type = PyExtType()
     storage_array = pa.array([f"foo-{i}".encode() for i in range(len(valid_data))], pa.binary())

@@ -125,6 +125,7 @@ def minio_create_bucket(
     Yields a s3fs FileSystem
     """
     import s3fs
+
     fs = s3fs.S3FileSystem(
         key=minio_io_config.s3.key_id,
         password=minio_io_config.s3.access_key,
