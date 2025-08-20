@@ -70,20 +70,10 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          # Install pytest first
-          uv pip install pytest
-          # Install the appropriate wheel based on platform
-          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-            # Use x86_64 Linux wheel for Ubuntu
-            uv pip install dist/${{ env.package-name }}-*x86_64*linux*.whl --force-reinstall
-          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            # Use universal2 or x86_64 macOS wheel for macOS
-            if ls dist/${{ env.package-name }}-*universal2*.whl 1> /dev/null 2>&1; then
-              uv pip install dist/${{ env.package-name }}-*universal2*.whl --force-reinstall
-            else
-              uv pip install dist/${{ env.package-name }}-*x86_64*macos*.whl --force-reinstall
-            fi
-          fi
+          # Install pytest and the wheel
+          # Note: We only test x86_64 wheels due to GitHub Actions runner limitations.
+          # Let pip choose the appropriate wheel for the current platform
+          uv pip install pytest dist/${{ env.package-name }}-*.whl --force-reinstall
           # Remove source code to ensure we're testing the wheel
           rm -rf daft
     - name: Run dataframe tests
