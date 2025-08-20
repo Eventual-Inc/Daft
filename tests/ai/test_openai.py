@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-# Skip if openai package is not available
 pytest.importorskip("openai")
 
 from daft.ai.openai import OpenAIProvider
@@ -15,7 +14,7 @@ def test_openai_text_embedder_default():
 
     assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
     assert descriptor.get_provider() == "openai"
-    assert descriptor.get_model() == "text-embedding-ada-002"
+    assert descriptor.get_model() == "text-embedding-3-small"
     assert descriptor.get_dimensions().size == 1536
 
 
@@ -30,26 +29,27 @@ def test_openai_text_embedder_other():
 
 
 def test_openai_text_embedder_instantiation():
-    descriptor = OpenAITextEmbedderDescriptor(model="text-embedding-ada-002", options={})
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai", provider_options={}, model_name="text-embedding-ada-002", model_options={}
+    )
 
     embedder = descriptor.instantiate()
-    assert embedder.model == "text-embedding-ada-002"
-    assert hasattr(embedder, "client")
+    assert embedder._model == "text-embedding-ada-002"
+    assert hasattr(embedder, "_client")
 
 
 def test_openai_text_embedder_dimensions():
-    # Test ada-002 dimensions
-    descriptor_ada = OpenAITextEmbedderDescriptor(model="text-embedding-ada-002", options={})
+    descriptor_ada = OpenAITextEmbedderDescriptor(
+        provider_name="openai", provider_options={}, model_name="text-embedding-ada-002", model_options={}
+    )
     assert descriptor_ada.get_dimensions().size == 1536
 
-    # Test 3-small dimensions
-    descriptor_small = OpenAITextEmbedderDescriptor(model="text-embedding-3-small", options={})
+    descriptor_small = OpenAITextEmbedderDescriptor(
+        provider_name="openai", provider_options={}, model_name="text-embedding-3-small", model_options={}
+    )
     assert descriptor_small.get_dimensions().size == 1536
 
-    # Test 3-large dimensions
-    descriptor_large = OpenAITextEmbedderDescriptor(model="text-embedding-3-large", options={})
+    descriptor_large = OpenAITextEmbedderDescriptor(
+        provider_name="openai", provider_options={}, model_name="text-embedding-3-large", model_options={}
+    )
     assert descriptor_large.get_dimensions().size == 3072
-
-    # Test unknown model defaults to ada-002 dimensions
-    descriptor_unknown = OpenAITextEmbedderDescriptor(model="unknown-model", options={})
-    assert descriptor_unknown.get_dimensions().size == 1536

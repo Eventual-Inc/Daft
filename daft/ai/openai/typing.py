@@ -7,6 +7,8 @@ if TYPE_CHECKING:
 
 
 class OpenAIProviderOptions(TypedDict, total=False):
+    """These are OpenAI client constructor parameters."""
+
     api_key: str | None
     organization: str | None
     project: str | None
@@ -14,6 +16,6 @@ class OpenAIProviderOptions(TypedDict, total=False):
     base_url: str | None
     websocket_base_url: str | None
     timeout: float | None
-    max_retries: int
+    max_retries: int | None
     default_headers: Mapping[str, str] | None
     default_query: Mapping[str, object] | None

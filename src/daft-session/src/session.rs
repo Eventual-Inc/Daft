@@ -6,6 +6,7 @@ use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
+    ambiguous_identifier_err,
     error::CatalogResult,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
@@ -392,28 +393,28 @@ impl Session {
 impl SessionState {
     /// Get an attached catalog by name using the session's identifier mode.
     pub fn get_attached_catalog(&self, name: &str) -> CatalogResult<Option<CatalogRef>> {
-        match self.catalogs.lookup(name, self.options.find_mode()) {
+        match self.catalogs.lookup(name, self.options.lookup_mode()) {
             catalogs if catalogs.is_empty() => Ok(None),
             catalogs if catalogs.len() == 1 => Ok(Some(catalogs[0].clone())),
-            _ => panic!("ambiguous catalog identifier"),
+            catalogs => ambiguous_identifier_err!("Catalog", catalogs.iter().map(|c| c.name())),
         }
     }
 
     /// Get an attached provider by name using the session's identifier mode.
     pub fn get_attached_provider(&self, name: &str) -> CatalogResult<Option<ProviderRef>> {
-        match self.providers.lookup(name, self.options.find_mode()) {
+        match self.providers.lookup(name, self.options.lookup_mode()) {
             providers if providers.is_empty() => Ok(None),
             providers if providers.len() == 1 => Ok(Some(providers[0].clone())),
-            _ => panic!("ambiguous provider identifier"),
+            providers => ambiguous_identifier_err!("Provider", providers.iter().map(|p| p.name())),
         }
     }
 
     /// Get an attached table by name using the session's identifier mode.
     pub fn get_attached_table(&self, name: &str) -> CatalogResult<Option<TableRef>> {
-        match self.tables.lookup(name, self.options.find_mode()) {
+        match self.tables.lookup(name, self.options.lookup_mode()) {
             tables if tables.is_empty() => Ok(None),
             tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
-            _ => panic!("ambiguous table identifier"),
+            tables => ambiguous_identifier_err!("Table", tables.iter().map(|t| t.name())),
         }
     }
 
