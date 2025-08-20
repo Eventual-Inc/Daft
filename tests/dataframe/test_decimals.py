@@ -8,6 +8,7 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.context import get_context
 
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
@@ -88,6 +89,10 @@ def test_decimal_stddev(prec, partitions) -> None:
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_decimal_grouped_sum(prec, partitions) -> None:
     python_decimals = [decimal.Decimal("-1.010"), decimal.Decimal("99.001"), decimal.Decimal("10.010"), None]
     group = [0, 1, 0, 1]
@@ -102,6 +107,10 @@ def test_decimal_grouped_sum(prec, partitions) -> None:
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_decimal_grouped_mean(prec, partitions) -> None:
     python_decimals = [decimal.Decimal("-1.010"), decimal.Decimal("99.001"), decimal.Decimal("10.010"), None]
     group = [0, 1, 0, 1]

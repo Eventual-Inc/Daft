@@ -258,7 +258,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             )
             .arced(),
             LogicalPlan::Repartition(repartition) => match &repartition.repartition_spec {
-                RepartitionSpec::Hash(_) | RepartitionSpec::Random(_) => {
+                RepartitionSpec::Hash(_)
+                | RepartitionSpec::Random(_)
+                | RepartitionSpec::Range(_) => {
                     let child = self.curr_node.pop().unwrap();
                     self.gen_shuffle_node(
                         logical_node_id,
@@ -395,11 +397,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
 
-                // First stage: Gather all data to a single node
-                let input_node = self.curr_node.pop().unwrap();
-                let gather = self.gen_gather_node(logical_node_id, input_node);
-
-                // Second stage: Perform a local sort
                 SortNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
@@ -408,7 +405,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     sort.descending.clone(),
                     sort.nulls_first.clone(),
                     sort.input.schema(),
-                    gather,
+                    self.curr_node.pop().unwrap(),
                 )
                 .arced()
             }

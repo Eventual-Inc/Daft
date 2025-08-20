@@ -30,7 +30,7 @@ impl ScalarUDF for ListMin {
         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         let field = input.to_field(schema)?.to_exploded_field()?;
-        ensure!(field.dtype.is_numeric(), TypeError: "Expected input to be numeric, got {}", field.dtype);
+        ensure!(field.dtype.is_numeric() || field.dtype.is_boolean(), TypeError: "Expected input to be numeric or boolean, got {}", field.dtype);
         Ok(field)
     }
 }

@@ -4,7 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_io_config::HTTPConfig;
+use common_io_config::{HTTPConfig, HuggingFaceConfig};
 use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
@@ -218,12 +218,6 @@ pub struct HFSource {
     http_source: HttpSource,
 }
 
-impl From<HttpSource> for HFSource {
-    fn from(http_source: HttpSource) -> Self {
-        Self { http_source }
-    }
-}
-
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{UnableToDetermineSize, UnableToOpenFile};
@@ -248,8 +242,22 @@ impl From<Error> for super::Error {
 }
 
 impl HFSource {
-    pub async fn get_client(config: &HTTPConfig) -> super::Result<Arc<Self>> {
-        let http_source = HttpSource::get_client(config).await?;
+    pub async fn get_client(
+        hf_config: &HuggingFaceConfig,
+        http_config: &HTTPConfig,
+    ) -> super::Result<Arc<Self>> {
+        if http_config.bearer_token.is_some() {
+            log::warn!("Using `HttpConfig.bearer_token` to authenticate Hugging Face requests is deprecated and will be removed in Daft v0.6. Instead, specify your Hugging Face token in `daft.io.HuggingFaceConfig`.");
+        }
+
+        let mut combined_config = http_config.clone();
+        if hf_config.anonymous {
+            combined_config.bearer_token = None;
+        } else if hf_config.token.is_some() {
+            combined_config.bearer_token.clone_from(&hf_config.token);
+        };
+
+        let http_source = HttpSource::get_client(&combined_config).await?;
         let http_source = Arc::try_unwrap(http_source).expect("Could not unwrap Arc<HttpSource>");
         let client = http_source.client;
         Ok(Self {
@@ -595,7 +603,7 @@ async fn try_parquet_api(
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
-    use common_io_config::HTTPConfig;
+    use common_io_config::{HTTPConfig, HuggingFaceConfig};
 
     use crate::{
         huggingface::{HFPathParts, HFSource},
@@ -608,7 +616,8 @@ mod tests {
         let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
         let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
 
-        let client = HFSource::get_client(&HTTPConfig::default()).await?;
+        let client =
+            HFSource::get_client(&HuggingFaceConfig::default(), &HTTPConfig::default()).await?;
         let parquet_file = client.get(test_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();
