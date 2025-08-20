@@ -8,6 +8,11 @@ on:
         type: boolean
         default: true
         required: false
+      run_tests:
+        description: Run tests
+        type: boolean
+        default: false
+        required: false
   workflow_call:
     inputs:
       use_lto:
