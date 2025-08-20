@@ -80,7 +80,7 @@ jobs:
     name: Test built wheels
     runs-on: ${{ matrix.os }}
     needs: [build, check-exists]
-    if: ${{ needs.check-exists.outputs.build_exists == 'false' && inputs.run_tests }}
+    if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +98,11 @@ jobs:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Skip if tests not requested
+      if: ${{ inputs.run_tests == false }}
+      run: |
+        echo "Tests not requested, skipping test execution"
+        exit 0
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
@@ -123,7 +128,7 @@ jobs:
 
   publish:
     name: Publish wheels to S3
-    needs: ${{ inputs.run_tests && 'check-exists, test-wheels' || 'check-exists, build' }}
+    needs: [check-exists, test-wheels]
     if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     runs-on: ubuntu-latest
     permissions:
