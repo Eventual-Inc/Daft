@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Union
 
-from daft import DataType, Expression, col, udf, current_session
+from daft import (
+    DataType,
+    Expression,
+    col,
+    udf,
+    current_session,
+    current_provider,
+)
 from daft.ai.provider import load_provider
-from daft.session import current_provider
 
 if TYPE_CHECKING:
     from daft.ai.protocols import TextEmbedderDescriptor
@@ -12,11 +18,7 @@ if TYPE_CHECKING:
     from daft.utils import ColumnInputType
 
 
-def _as_expr(column: ColumnInputType) -> Expression:
-    return col(column) if isinstance(column, str) else column
-
-
-def _get_provider(provider: str | None, default: str) -> Provider:
+def _resolve_provider(provider: str | None, default: str) -> Provider:
     """Attempts to resolve a provider based upon the active session and environment variables.
 
     Note:
@@ -24,11 +26,17 @@ def _get_provider(provider: str | None, default: str) -> Provider:
         We can choose to improve (or not) the smart's of this method like looking for the OPENAI_API_KEY
         or seeing which dependencies are available. For now, this is explicit in how the provider is resolved.
     """
-    if provider is not None:
+    if provider is not None and (curr_sess := current_session()) and (curr_sess.has_provider(provider)):
+        # 1. Load the provider from the active session.
+        return curr_sess.get_provider(provider)
+    elif provider is not None:
+        # 2. Load a known provider.
         return load_provider(provider)
     elif curr_provider := current_provider():
+        # 3. Use the session's current provider, if any.
         return curr_provider
     else:
+        # 4. Load the default provider for this API.
         return load_provider(default)
 
 
@@ -38,7 +46,7 @@ def _get_provider(provider: str | None, default: str) -> Provider:
 
 
 def embed_text(
-    text: ColumnInputType,
+    text: Expression,
     *,
     provider: str | None = None,
     model: str | None = None,
@@ -61,11 +69,8 @@ def embed_text(
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder
 
-    # convert all arguments to expressions
-    text = _as_expr(text)
-
     # load a TextEmbedderDescriptor from the resolved provider
-    text_embedder = _get_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
+    text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
     # implemented as class-based UDF for now
     expr = udf(return_dtype=text_embedder.get_dimensions().as_dtype(), concurrency=1)(_TextEmbedderExpression)

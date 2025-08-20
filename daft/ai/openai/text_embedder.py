@@ -73,7 +73,6 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return OpenAITextEmbedder(
             client=OpenAI(**self.provider_options),
             model=self.model_name,
-            insert_none_on_failure=True,  # TODO: determine how we want this to be configurable
         )
 
 
@@ -89,7 +88,7 @@ class OpenAITextEmbedder(TextEmbedder):
     _client: OpenAI
     _model: str
 
-    def __init__(self, client: OpenAI, model: str, insert_none_on_failure: bool):
+    def __init__(self, client: OpenAI, model: str, insert_none_on_failure: bool = True):
         self._client = client
         self._model = model
         self._insert_none_on_failure = insert_none_on_failure
@@ -118,7 +117,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 flush()  # must process previous inputs first
                 chunked_batch = chunk(input_text, input_text_chars_limit)
                 chunked_result = self._embed_text_batch(chunked_batch)
-                embeddings.extend(np.concatenate(chunked_result))
+                embeddings.extend(np.average(chunked_result, axis=0))
             elif input_text_token_count + curr_batch_token_count >= batch_token_limit:
                 flush()
             else:

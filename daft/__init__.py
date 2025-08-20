@@ -60,7 +60,14 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
+from daft.context import (
+    current_context,
+    set_execution_config,
+    set_planning_config,
+    execution_config_ctx,
+    planning_config_ctx,
+    use_context,
+)
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -176,6 +183,7 @@ __all__ = [
     "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
+    "current_context",
     "current_model",
     "current_namespace",
     "current_provider",
@@ -236,5 +244,6 @@ __all__ = [
     "struct",
     "to_struct",
     "udf",
+    "use_context",
     "write_table",
 ]

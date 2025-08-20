@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
+import contextvars
 import logging
+import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -12,16 +14,70 @@ from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from types import TracebackType
 
     from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
+    from daft.session import Session
 
 logger = logging.getLogger(__name__)
 
-import threading
+
+_current_context: contextvars.ContextVar[DaftContextState | None] = contextvars.ContextVar(
+    "current_current", default=None
+)
 
 
-@dataclasses.dataclass
+def use_context(session: Session | None = None) -> DaftContextManager:
+    """Creates a new daft context to be use as `with daft.use_context(...):`.
+
+    Note:
+        The usage `with daft.context(..)` would be nice, but is either a
+        breaking (or confusing) change since `daft.context` is already
+        a module. This also does not touch the global singleton context,
+        but ideally we could converge these two in the near future. This
+        would enable doing `with daft.context(runner="flotilla")` or similar
+        in a scoped way, while maintaining a default global context.
+
+    Args:
+        session: Optional Daft session to set in the context state.
+            If None, no session will be set.
+    """
+    return DaftContextManager(DaftContextState(session))
+
+
+def current_context() -> DaftContextState | None:
+    """Returns the scoped daft context if any."""
+    return _current_context.get()
+
+
+@dataclass
+class DaftContextState:
+    session: Session | None
+
+
+class DaftContextManager:
+    """Scoped context for the daft environment."""
+
+    def __init__(self, state: DaftContextState) -> None:
+        self._state = state
+        self._token: contextvars.Token[DaftContextState | None] | None = None
+
+    def __enter__(self) -> DaftContextState:
+        self._token = _current_context.set(self._state)
+        return self._state
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self._token is not None:
+            _current_context.reset(self._token)
+
+
+@dataclass
 class DaftContext:
     """Global context for the current Daft execution environment."""
 
@@ -75,6 +131,7 @@ class DaftContext:
 
 
 def get_context() -> DaftContext:
+    """Returns the global singleton daft context."""
     return DaftContext(_get_context())
 
 

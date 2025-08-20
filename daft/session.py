@@ -608,13 +608,21 @@ _SESSION: Session | None = None
 
 
 def _session() -> Session:
-    # Consider registering into the global context
-    # ```
-    # ctx = get_context()
-    # if not ctx._session
-    #     set_session(Session.from_env())
-    # return ctx._session
-    # ```
+    """Returns the active session for this scope.
+
+    Note:
+        The daft context is a global singleton, but sessions
+        can be scoped. For convenience, there is an implicit
+        global session, but sessions can also be used with the
+        scoped daft context via `with daft.use_context(session)`.
+    """
+    from daft.context import current_context
+
+    # this implies we're within a daft.context context manager
+    if (ctx := current_context()) and (sess := ctx.session):
+        return sess
+
+    # fallback to the global active session, consider registering to the context.
     global _SESSION
     if not _SESSION:
         _SESSION = Session._from_env()
@@ -722,22 +730,22 @@ def drop_table(identifier: Identifier | str) -> None:
 
 
 def current_catalog() -> Catalog | None:
-    """Returns the active session's current catalog or None."""
+    """Returns the global context's current catalog or None."""
     return _session().current_catalog()
 
 
 def current_namespace() -> Identifier | None:
-    """Returns the active session's current namespace or None."""
+    """Returns the global context's current namespace or None."""
     return _session().current_namespace()
 
 
 def current_model() -> str | None:
-    """Returns the active session's current model or None."""
+    """Returns the global context's current model or None."""
     return _session().current_model()
 
 
 def current_provider() -> Provider | None:
-    """Returns the active session's current provider or None."""
+    """Returns the global context's current provider or None."""
     return _session().current_provider()
 
 

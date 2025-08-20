@@ -30,7 +30,10 @@ def test_openai_text_embedder_other():
 
 def test_openai_text_embedder_instantiation():
     descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai", provider_options={}, model_name="text-embedding-ada-002", model_options={}
+        provider_name="openai",
+        provider_options={},
+        model_name="text-embedding-ada-002",
+        model_options={},
     )
 
     embedder = descriptor.instantiate()
@@ -40,16 +43,25 @@ def test_openai_text_embedder_instantiation():
 
 def test_openai_text_embedder_dimensions():
     descriptor_ada = OpenAITextEmbedderDescriptor(
-        provider_name="openai", provider_options={}, model_name="text-embedding-ada-002", model_options={}
+        provider_name="openai",
+        provider_options={},
+        model_name="text-embedding-ada-002",
+        model_options={},
     )
     assert descriptor_ada.get_dimensions().size == 1536
 
     descriptor_small = OpenAITextEmbedderDescriptor(
-        provider_name="openai", provider_options={}, model_name="text-embedding-3-small", model_options={}
+        provider_name="openai",
+        provider_options={},
+        model_name="text-embedding-3-small",
+        model_options={},
     )
     assert descriptor_small.get_dimensions().size == 1536
 
     descriptor_large = OpenAITextEmbedderDescriptor(
-        provider_name="openai", provider_options={}, model_name="text-embedding-3-large", model_options={}
+        provider_name="openai",
+        provider_options={},
+        model_name="text-embedding-3-large",
+        model_options={},
     )
     assert descriptor_large.get_dimensions().size == 3072

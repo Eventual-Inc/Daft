@@ -52,6 +52,7 @@
     * [Window Functions](examples/window-functions.md)
 * Python API
     * [Overview](api/index.md)
+    * [AI](api/ai.md)
     * [I/O](api/io.md)
     * [DataFrame](api/dataframe.md)
     * [Expressions](api/expressions.md)

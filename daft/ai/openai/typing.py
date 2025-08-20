@@ -16,6 +16,6 @@ class OpenAIProviderOptions(TypedDict, total=False):
     base_url: str | None
     websocket_base_url: str | None
     timeout: float | None
-    max_retries: int | None
+    max_retries: int
     default_headers: Mapping[str, str] | None
     default_query: Mapping[str, object] | None
