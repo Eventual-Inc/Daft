@@ -1172,23 +1172,64 @@ impl UnityConfig {
 #[pymethods]
 impl HuggingFaceConfig {
     #[new]
-    #[pyo3(signature = (token=None, anonymous=None))]
-    pub fn new(token: Option<String>, anonymous: Option<bool>) -> Self {
+    #[pyo3(signature = (
+        token=None,
+        anonymous=None,
+        use_content_defined_chunking=None,
+        row_group_size=None,
+        target_filesize=None,
+        max_operations_per_commit=None
+    ))]
+    pub fn new(
+        token: Option<String>,
+        anonymous: Option<bool>,
+        use_content_defined_chunking: Option<bool>,
+        row_group_size: Option<usize>,
+        target_filesize: Option<usize>,
+        max_operations_per_commit: Option<usize>,
+    ) -> Self {
         let default = crate::HuggingFaceConfig::default();
         Self {
             config: crate::HuggingFaceConfig {
                 token: token.map(Into::into).or(default.token),
                 anonymous: anonymous.unwrap_or(default.anonymous),
+                use_content_defined_chunking: use_content_defined_chunking
+                    .or(default.use_content_defined_chunking),
+                row_group_size: row_group_size.or(default.row_group_size),
+                target_filesize: target_filesize.unwrap_or(default.target_filesize),
+                max_operations_per_commit: max_operations_per_commit
+                    .unwrap_or(default.max_operations_per_commit),
             },
         }
     }
 
-    #[pyo3(signature = (token=None, anonymous=None))]
-    pub fn replace(&self, token: Option<String>, anonymous: Option<bool>) -> Self {
+    #[pyo3(signature = (
+        token=None,
+        anonymous=None,
+        use_content_defined_chunking=None,
+        row_group_size=None,
+        target_filesize=None,
+        max_operations_per_commit=None
+    ))]
+    pub fn replace(
+        &self,
+        token: Option<String>,
+        anonymous: Option<bool>,
+        use_content_defined_chunking: Option<bool>,
+        row_group_size: Option<usize>,
+        target_filesize: Option<usize>,
+        max_operations_per_commit: Option<usize>,
+    ) -> Self {
         Self {
             config: crate::HuggingFaceConfig {
                 token: token.map(Into::into).or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
+                use_content_defined_chunking: use_content_defined_chunking
+                    .or(self.config.use_content_defined_chunking),
+                row_group_size: row_group_size.or(self.config.row_group_size),
+                target_filesize: target_filesize.unwrap_or(self.config.target_filesize),
+                max_operations_per_commit: max_operations_per_commit
+                    .unwrap_or(self.config.max_operations_per_commit),
             },
         }
     }
@@ -1205,6 +1246,26 @@ impl HuggingFaceConfig {
     #[getter]
     pub fn anonymous(&self) -> bool {
         self.config.anonymous
+    }
+
+    #[getter]
+    pub fn use_content_defined_chunking(&self) -> Option<bool> {
+        self.config.use_content_defined_chunking
+    }
+
+    #[getter]
+    pub fn row_group_size(&self) -> Option<usize> {
+        self.config.row_group_size
+    }
+
+    #[getter]
+    pub fn target_filesize(&self) -> usize {
+        self.config.target_filesize
+    }
+
+    #[getter]
+    pub fn max_operations_per_commit(&self) -> usize {
+        self.config.max_operations_per_commit
     }
 }
 

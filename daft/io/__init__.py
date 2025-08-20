@@ -19,7 +19,7 @@ from daft.io._json import read_json
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
-from daft.io._huggingface import read_huggingface
+from daft.io.huggingface import read_huggingface
 from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path

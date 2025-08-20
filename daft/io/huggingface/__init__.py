@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from daft.api_annotations import PublicAPI
 
-from ._parquet import read_parquet
+from daft.io._parquet import read_parquet
 
 if TYPE_CHECKING:
     from daft.daft import IOConfig
