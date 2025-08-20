@@ -3,31 +3,33 @@ use std::sync::{Arc, LazyLock};
 use arc_swap::ArcSwap;
 use log::Log;
 
+type BoxedLogger = Box<dyn Log + Send + Sync + 'static>;
+
 /// A logger that can be internally modified at runtime.
 /// Usually, loggers can only be initialized once, but this container can
 /// swap out the internal logger at runtime atomically.
 pub struct SwappableLogger {
-    base: ArcSwap<Box<dyn Log + Send + Sync + 'static>>,
-    temp: ArcSwap<Option<Box<dyn Log + Send + Sync + 'static>>>,
+    base: ArcSwap<BoxedLogger>,
+    temp: ArcSwap<Option<BoxedLogger>>,
 }
 
 impl SwappableLogger {
-    pub fn new(logger: Box<dyn Log + Send + Sync + 'static>) -> Self {
+    pub fn new(logger: BoxedLogger) -> Self {
         Self {
             base: ArcSwap::new(Arc::new(logger)),
             temp: ArcSwap::new(Arc::new(None)),
         }
     }
 
-    pub fn set_base_logger(&self, logger: Box<dyn Log + Send + Sync + 'static>) {
+    pub fn set_base_logger(&self, logger: BoxedLogger) {
         self.base.store(Arc::new(logger));
     }
 
-    pub fn get_base_logger(&self) -> Arc<Box<dyn Log + Send + Sync + 'static>> {
+    pub fn get_base_logger(&self) -> Arc<BoxedLogger> {
         self.base.load().to_owned()
     }
 
-    pub fn set_temp_logger(&self, logger: Box<dyn Log + Send + Sync + 'static>) {
+    pub fn set_temp_logger(&self, logger: BoxedLogger) {
         self.temp.store(Arc::new(Some(logger)));
     }
 

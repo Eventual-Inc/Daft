@@ -153,7 +153,6 @@ impl PyNativeExecutor {
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, context=None))]
     pub fn run_async<'a>(
         &self,

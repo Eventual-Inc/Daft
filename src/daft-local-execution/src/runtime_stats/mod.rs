@@ -143,7 +143,7 @@ impl RuntimeStatsManager {
                     biased;
                     _ = &mut finish_rx => {
                         if !active_nodes.is_empty() {
-                            log::warn!(
+                            log::debug!(
                                 "RuntimeStatsManager finished with active nodes {{{}}}",
                                 active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
                             );
