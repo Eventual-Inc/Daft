@@ -112,7 +112,7 @@ jobs:
     - name: Run dataframe tests
       run: |
         source venv/bin/activate
-        DAFT_RUNNER=${{ matrix.runner }} pytest tests/dataframe/ --durations=50
+        DAFT_RUNNER=${{ matrix.runner }} pytest tests/dataframe --durations=50
 
   publish:
     name: Publish wheels to S3
