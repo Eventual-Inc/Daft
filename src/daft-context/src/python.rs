@@ -7,12 +7,12 @@ use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::{detect_ray_state, DaftContext, Runner, RunnerConfig};
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyRunnerConfig {
     _inner: RunnerConfig,
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyDaftContext {
     inner: DaftContext,
 }

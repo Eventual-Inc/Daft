@@ -21,7 +21,7 @@ use crate::{
     RecordBatch,
 };
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyRecordBatch {
     pub record_batch: RecordBatch,
