@@ -238,7 +238,8 @@ impl IOClient {
                 GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
             }
             SourceType::HF => {
-                HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+                HFSource::get_client(&self.config.hf, &self.config.http).await?
+                    as Arc<dyn ObjectSource>
             }
             SourceType::Unity => {
                 #[cfg(feature = "python")]
