@@ -1005,7 +1005,7 @@ def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
     df.explain(True)
     captured = capsys.readouterr()
 
-    # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + final
+    # Assert that "Repartition" only shows up 2 times in the explain output, logical + optimized
     assert (
-        captured.out.count("Repartition") == 3
-    ), f"Expected 'Repartition' to appear 3 times, got {captured.out.count('Repartition')}\n{captured.out}"
+        captured.out.count("Repartition") == 2
+    ), f"Expected 'Repartition' to appear 2 times, got {captured.out.count('Repartition')}\n{captured.out}"

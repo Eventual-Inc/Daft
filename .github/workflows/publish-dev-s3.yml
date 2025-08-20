@@ -107,7 +107,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source venv/bin/activate
-          pip install pytest pandas dist/*${{ matrix.arch }}*.whl --force-reinstall
+          pip install ray pytest pandas dist/*${{ matrix.arch }}*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |

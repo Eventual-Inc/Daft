@@ -278,6 +278,19 @@ class MyObj:
         return "myobj-custom-repr"
 
 
+def has_pil():
+    try:
+        from PIL import Image  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+@pytest.mark.skipif(
+    not has_pil(),
+    reason="Skip if PIL is not installed",
+)
 def test_repr_html_custom_hooks():
     td_style = dataframe_td_style(3)
 

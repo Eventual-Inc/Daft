@@ -29,7 +29,20 @@ def test_embedding_type_df() -> None:
     assert isinstance(arrow_table["embeddings"].type, DaftExtension)
 
 
+def has_pil():
+    try:
+        from PIL import Image  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 @pytest.mark.parametrize("from_pil_imgs", [True, False])
+@pytest.mark.skipif(
+    not has_pil(),
+    reason="Skip if PIL is not installed",
+)
 def test_image_type_df(from_pil_imgs) -> None:
     from PIL import Image
 
