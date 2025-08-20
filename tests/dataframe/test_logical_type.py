@@ -29,22 +29,9 @@ def test_embedding_type_df() -> None:
     assert isinstance(arrow_table["embeddings"].type, DaftExtension)
 
 
-def has_pil():
-    try:
-        from PIL import Image  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
 @pytest.mark.parametrize("from_pil_imgs", [True, False])
-@pytest.mark.skipif(
-    not has_pil(),
-    reason="Skip if PIL is not installed",
-)
 def test_image_type_df(from_pil_imgs) -> None:
-    from PIL import Image
+    PIL = pytest.importorskip("PIL")
 
     data = [
         np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
@@ -52,7 +39,7 @@ def test_image_type_df(from_pil_imgs) -> None:
         None,
     ]
     if from_pil_imgs:
-        data = [Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
+        data = [PIL.Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="allow")})
 
     image_expr = col("image")
