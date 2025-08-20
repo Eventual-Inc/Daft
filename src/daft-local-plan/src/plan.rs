@@ -73,6 +73,7 @@ pub enum LocalPhysicalPlan {
 
     // Flotilla Only Nodes
     Repartition(Repartition),
+    IntoPartitions(IntoPartitions),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
 }
@@ -116,6 +117,7 @@ impl LocalPhysicalPlan {
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
+            | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -523,7 +525,7 @@ impl LocalPhysicalPlan {
 
     pub fn sample(
         input: LocalPhysicalPlanRef,
-        fraction: f64,
+        sampling_method: SamplingMethod,
         with_replacement: bool,
         seed: Option<u64>,
         stats_state: StatsState,
@@ -531,7 +533,7 @@ impl LocalPhysicalPlan {
         let schema = input.schema().clone();
         Self::Sample(Sample {
             input,
-            fraction,
+            sampling_method,
             with_replacement,
             seed,
             schema,
@@ -712,6 +714,21 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn into_partitions(
+        input: LocalPhysicalPlanRef,
+        num_partitions: usize,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::IntoPartitions(IntoPartitions {
+            input,
+            num_partitions,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -753,6 +770,7 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::Repartition(Repartition { schema, .. }) => schema,
+            Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
@@ -825,6 +843,7 @@ impl LocalPhysicalPlan {
                 vec![input.clone()]
             }
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
+            Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
         }
@@ -845,7 +864,9 @@ impl LocalPhysicalPlan {
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Pivot(Pivot {  group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(new_child.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Sort(Sort {  sort_by, descending, nulls_first, schema, .. }) => Self::sort(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), StatsState::NotMaterialized),
-                Self::Sample(Sample {  fraction, with_replacement, seed, schema, .. }) => Self::sample(new_child.clone(), *fraction, *with_replacement, *seed, StatsState::NotMaterialized),
+                Self::Sample(Sample {  sampling_method, with_replacement, seed, schema, .. }) => {
+                    Self::sample(new_child.clone(), sampling_method.clone(), *with_replacement, *seed, StatsState::NotMaterialized)
+                },
                 Self::Explode(Explode {  to_explode, schema, .. }) => Self::explode(new_child.clone(), to_explode.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Unpivot(Unpivot {  ids, values, variable_name, value_name, schema, .. }) => Self::unpivot(new_child.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Concat(Concat {  other, schema, .. }) => Self::concat(new_child.clone(), other.clone(), StatsState::NotMaterialized),
@@ -866,6 +887,7 @@ impl LocalPhysicalPlan {
                 #[cfg(feature = "python")]
                 Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
                 Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
+                Self::IntoPartitions(IntoPartitions {  num_partitions, .. }) => Self::into_partitions(new_child.clone(), *num_partitions, StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -1033,10 +1055,16 @@ pub struct TopN {
     pub stats_state: StatsState,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum SamplingMethod {
+    Fraction(f64),
+    Size(usize),
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
-    pub fraction: f64,
+    pub sampling_method: SamplingMethod,
     pub with_replacement: bool,
     pub seed: Option<u64>,
     pub schema: SchemaRef,
@@ -1228,6 +1256,14 @@ pub struct WindowOrderByOnly {
 pub struct Repartition {
     pub input: LocalPhysicalPlanRef,
     pub repartition_spec: RepartitionSpec,
+    pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IntoPartitions {
+    pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

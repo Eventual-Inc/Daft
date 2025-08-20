@@ -9,13 +9,10 @@ fn fmt_tree_indent_style<'a, W: fmt::Write + 'a>(
     s: &'a mut W,
 ) -> fmt::Result {
     // Print the current node.
-    if indent > 0 {
-        writeln!(s)?;
-        write!(s, "{:indent$}", "", indent = 2 * indent)?;
-    }
-
     let node_str = node.display_as(DisplayLevel::Default);
-    s.write_str(&node_str)?;
+    for line in node_str.lines() {
+        writeln!(s, "{:indent$}{}", "", line, indent = 2 * indent)?;
+    }
 
     // Recursively handle children.
     let children = node.get_children();

@@ -166,6 +166,12 @@ pub struct UnityConfig {
     pub config: crate::UnityConfig,
 }
 
+#[derive(Clone, Default)]
+#[pyclass]
+pub struct HuggingFaceConfig {
+    pub config: crate::HuggingFaceConfig,
+}
+
 #[pymethods]
 impl IOConfig {
     #[new]
@@ -175,7 +181,8 @@ impl IOConfig {
         azure=None,
         gcs=None,
         http=None,
-        unity=None
+        unity=None,
+        hf=None
     ))]
     pub fn new(
         s3: Option<S3Config>,
@@ -183,6 +190,7 @@ impl IOConfig {
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
+        hf: Option<HuggingFaceConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -191,6 +199,7 @@ impl IOConfig {
                 gcs: gcs.unwrap_or_default().config,
                 http: http.unwrap_or_default().config,
                 unity: unity.unwrap_or_default().config,
+                hf: hf.unwrap_or_default().config,
             },
         }
     }
@@ -201,7 +210,8 @@ impl IOConfig {
         azure=None,
         gcs=None,
         http=None,
-        unity=None
+        unity=None,
+        hf=None
     ))]
     pub fn replace(
         &self,
@@ -210,6 +220,7 @@ impl IOConfig {
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
+        hf: Option<HuggingFaceConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -228,6 +239,9 @@ impl IOConfig {
                 unity: unity
                     .map(|unity| unity.config)
                     .unwrap_or_else(|| self.config.unity.clone()),
+                hf: hf
+                    .map(|hf| hf.config)
+                    .unwrap_or_else(|| self.config.hf.clone()),
             },
         }
     }
@@ -272,6 +286,13 @@ impl IOConfig {
     pub fn unity(&self) -> PyResult<UnityConfig> {
         Ok(UnityConfig {
             config: self.config.unity.clone(),
+        })
+    }
+
+    #[getter]
+    pub fn hf(&self) -> PyResult<HuggingFaceConfig> {
+        Ok(HuggingFaceConfig {
+            config: self.config.hf.clone(),
         })
     }
 
@@ -1148,6 +1169,45 @@ impl UnityConfig {
     }
 }
 
+#[pymethods]
+impl HuggingFaceConfig {
+    #[new]
+    #[pyo3(signature = (token=None, anonymous=None))]
+    pub fn new(token: Option<String>, anonymous: Option<bool>) -> Self {
+        let default = crate::HuggingFaceConfig::default();
+        Self {
+            config: crate::HuggingFaceConfig {
+                token: token.map(Into::into).or(default.token),
+                anonymous: anonymous.unwrap_or(default.anonymous),
+            },
+        }
+    }
+
+    #[pyo3(signature = (token=None, anonymous=None))]
+    pub fn replace(&self, token: Option<String>, anonymous: Option<bool>) -> Self {
+        Self {
+            config: crate::HuggingFaceConfig {
+                token: token.map(Into::into).or_else(|| self.config.token.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
+            },
+        }
+    }
+
+    #[getter]
+    pub fn token(&self) -> Option<String> {
+        self.config
+            .token
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned()
+    }
+
+    #[getter]
+    pub fn anonymous(&self) -> bool {
+        self.config.anonymous
+    }
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
@@ -1155,6 +1215,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
     parent.add_class::<UnityConfig>()?;
+    parent.add_class::<HuggingFaceConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }

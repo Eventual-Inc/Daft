@@ -1,6 +1,8 @@
 use common_image::Image;
 
-use crate::{array::ops::image::AsImageObj, lit::Literal, prelude::*};
+use crate::{
+    array::ops::image::AsImageObj, datatypes::logical::FileArray, lit::Literal, prelude::*,
+};
 
 fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
 where
@@ -39,6 +41,7 @@ impl StructArray {
             Literal::Struct(
                 self.children
                     .iter()
+                    .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
                     .map(|child| (child.field().clone(), child.get_lit(idx)))
                     .collect(),
             )
@@ -111,7 +114,6 @@ impl SparseTensorArray {
                 self.shape_array().get(idx),
             )
         {
-            let indices = indices.u64().unwrap().as_arrow().values().to_vec();
             let shape = shape.u64().unwrap().as_arrow().values().to_vec();
 
             Literal::SparseTensor {
@@ -146,8 +148,6 @@ impl FixedShapeSparseTensorArray {
             && let (Some(values), Some(indices)) =
                 (self.values_array().get(idx), self.indices_array().get(idx))
         {
-            let indices = indices.u64().unwrap().as_arrow().values().to_vec();
-
             Literal::SparseTensor {
                 values,
                 indices,
@@ -180,8 +180,19 @@ impl MapArray {
 }
 
 impl ExtensionArray {
-    pub fn get_lit(&self, _: usize) -> Literal {
-        unimplemented!("Extension array cannot be converted into Daft literal")
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.is_valid(idx) {
+            Literal::Extension(self.slice(idx, idx + 1).unwrap().into_series())
+        } else {
+            Literal::Null
+        }
     }
 }
 
@@ -266,3 +277,15 @@ impl_array_get_lit!(FixedShapeTensorArray, DataType::FixedShapeTensor(_, shape) 
 
 impl_image_array_get_lit!(ImageArray);
 impl_image_array_get_lit!(FixedShapeImageArray);
+
+impl FileArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        map_or_null(self.get(idx), Literal::File)
+    }
+}
