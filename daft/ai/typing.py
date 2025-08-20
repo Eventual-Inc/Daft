@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from typing_extensions import TypeAlias
 
 from daft.datatype import DataType
-from daft.dependencies import np
 
 Options = dict[str, Any]
 
@@ -44,7 +43,12 @@ class Descriptor(ABC, Generic[T]):
 
 
 # temp definition to defer complexity of a more generic embedding type to later PRs
-Embedding: TypeAlias = np.typing.NDArray[Any]
+if TYPE_CHECKING:
+    from daft.dependencies import np
+
+    Embedding: TypeAlias = np.typing.NDArray[Any]
+else:
+    Embedding: TypeAlias = Any
 
 
 @dataclass

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 _current_context: contextvars.ContextVar[DaftContextState | None] = contextvars.ContextVar(
-    "current_current", default=None
+    "current_context", default=None
 )
 
 

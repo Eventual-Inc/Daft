@@ -149,7 +149,7 @@ def test_embed_text_batch_splitting(mock_text_embedder, mock_client):
 
 def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
     """Test that very large inputs are chunked appropriately."""
-    input_lg = "x" * 2000  # exceeds 8192 tokens and should be chunked.
+    input_lg = "x" * 2000  # ~10k tokens
 
     def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
@@ -184,9 +184,9 @@ def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
 
 def test_embed_text_mixed_batch_and_chunking(mock_text_embedder, mock_client):
     """Test complex scenario with both batch splitting and input chunking."""
-    text_sm = "a" * 1000  # 5k tokens
-    text_lg = "b" * 2000  # 10k tokens, will be chunked
-    text_xl = "c" * 50000  # 250k tokens, will be chunked
+    text_sm = "a" * 1000  # ~5k tokens
+    text_lg = "b" * 2000  # ~10k tokens, will be chunked
+    text_xl = "c" * 50000  # ~250k tokens, will be chunked
 
     def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
@@ -214,7 +214,7 @@ def test_embed_text_empty_input(mock_text_embedder, mock_client):
     mock_client.embeddings.create.assert_not_called()
 
 
-def test_embed_text_failure_with_insert_none(mock_text_embedder, mock_client):
+def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client):
     """Test that failures are handled when zero_on_failure is True."""
     mock_client.embeddings.create.side_effect = Exception("API Error")
 
@@ -225,7 +225,7 @@ def test_embed_text_failure_with_insert_none(mock_text_embedder, mock_client):
     assert np.all(result == 0)  # Should be zero array
 
 
-def test_embed_text_failure_without_insert_none(mock_client):
+def test_embed_text_failure_without_zero_on_failure(mock_client):
     """Test that failures are re-raised when zero_on_failure is False."""
     embedder = OpenAITextEmbedder(
         client=mock_client,

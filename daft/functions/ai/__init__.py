@@ -58,7 +58,7 @@ def embed_text(
     """Returns an expression that embeds text using the specified embedding model and provider.
 
     Args:
-        text (ColumnInputType): The input text column, expression, or string to embed.
+        text (Expression): The input text column expression.
         provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
         model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
