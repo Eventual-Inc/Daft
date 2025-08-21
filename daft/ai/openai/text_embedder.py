@@ -141,15 +141,12 @@ class OpenAITextEmbedder(TextEmbedder):
 
     def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
         """Embeds text as a batch call, consider falling back to _embed_text."""
-        try:
-            response = self._client.embeddings.create(
-                input=input_batch,
-                model=self._model,
-                encoding_format="float",
-            )
-            return [np.array(embedding.embedding) for embedding in response.data]
-        except Exception as ex:
-            raise ValueError("Failed to embed_text via OpenAI") from ex
+        response = self._client.embeddings.create(
+            input=input_batch,
+            model=self._model,
+            encoding_format="float",
+        )
+        return [np.array(embedding.embedding) for embedding in response.data]
 
     def _embed_text(self, input_text: str) -> Embedding:
         try:

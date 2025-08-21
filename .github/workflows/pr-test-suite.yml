@@ -798,7 +798,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
