@@ -106,6 +106,7 @@ impl LimitNode {
                                 input
                             }
                         },
+                        None,
                     )?
                 }
                 Ordering::Greater => {
@@ -122,6 +123,7 @@ impl LimitNode {
                                 StatsState::NotMaterialized,
                             )
                         },
+                        None,
                     )?;
                     *remaining_take = 0;
                     task

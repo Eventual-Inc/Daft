@@ -136,6 +136,7 @@ impl IntoPartitionsNode {
                 move |input| {
                     LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
                 },
+                None,
             )?;
             if result_tx.send(task).await.is_err() {
                 break;
@@ -200,6 +201,7 @@ impl IntoPartitionsNode {
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![output],
                         &(self_arc as Arc<dyn DistributedPipelineNode>),
+                        None,
                     )?;
                     if result_tx.send(task).await.is_err() {
                         break;
