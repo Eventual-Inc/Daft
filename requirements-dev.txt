@@ -90,6 +90,9 @@ azure-storage-blob==12.24.0
 # GCS
 gcsfs==2023.12.0
 
+# Hugging Face
+huggingface-hub==0.34.4
+
 # Documentation
 markdown-exec
 mkdocs-jupyter
