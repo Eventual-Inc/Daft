@@ -29,7 +29,6 @@ mod split_explode_from_project;
 mod split_udfs;
 mod unnest_subquery;
 
-pub use automatic_repartition::AutomaticRepartitionRule;
 pub use detect_monotonic_id::DetectMonotonicId;
 pub use drop_into_batches::DropIntoBatches;
 pub use drop_repartition::DropRepartition;

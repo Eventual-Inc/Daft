@@ -15,7 +15,7 @@ use super::{
         SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
-use crate::{optimization::rules::AutomaticRepartitionRule, LogicalPlan};
+use crate::LogicalPlan;
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -180,17 +180,6 @@ impl OptimizerBuilder {
             RuleBatch::new(
                 vec![Box::new(PushDownProjection::new())],
                 RuleExecutionStrategy::FixedPoint(None),
-            ),
-
-            // TODO: add the work here ==> look at the logical plan and do the optimization!
-
-            // --- Automatic re-partitioning ---
-            // Automatically re-partition if (a) the query is "map-only", (b) there
-            // is more than one worker available.
-            // Note: a map-only query is a query that doesn't have any joins or group by operations.
-            // These pipelines have selects, filters, projections, UDF applications, etc.
-            RuleBatch::new(
-                vec![Box::new(AutomaticRepartitionRule::new())],
             ),
             // --- Push down aggregations ---
             RuleBatch::new(
