@@ -99,7 +99,7 @@ impl ScanSourceNode {
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         batch_size: usize,
-    ) -> DaftResult<usize> {
+    ) -> DaftResult<()> {
         if batch_size == 0 {
             return Err(
                 DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
@@ -124,8 +124,6 @@ impl ScanSourceNode {
 
         let maybe_materialized_output = submit_single_scan_task.submit(&scheduler_handle)?.await?;
 
-        let mut batch_count = 0;
-
         if let Some(materialized_output) = maybe_materialized_output {
             // Step 2: Split the materialized output into batches of size 'k'
             let materialized_outputs = materialized_output.split_into_materialized_outputs();
@@ -149,12 +147,10 @@ impl ScanSourceNode {
                 )?;
 
                 match result_tx.send(task).await {
-                    Ok(_) => {
-                        batch_count += 1;
-                    }
+                    Ok(_) => (),
                     Err(e) => {
                         return Err(DaftError::InternalError(format!(
-                            "Failed to send internal batch {batch_count} to result channel: {e:?}"
+                            "Failed to send internal batch to result channel: {e:?}"
                         ))
                         .into());
                     }
@@ -162,7 +158,7 @@ impl ScanSourceNode {
             }
         }
 
-        Ok(batch_count)
+        Ok(())
     }
 
     fn make_source_tasks(
@@ -268,19 +264,17 @@ impl DistributedPipelineNode for ScanSourceNode {
     ) -> SubmittableTaskStream {
         let (result_tx, result_rx) = create_channel(1);
 
-        if self.scan_tasks.len() == 1 {
-            // Check if this is a map-only pipeline by examining the stage type
-
-            if self.context.stage_type().is_map_pipeline() {}
-
-            // Since we're in a MapPipeline stage, we know the rest is map-only
-            let batch_size = 1000; // Your fixed batch size 'k'
+        // Check if this is a map-only pipeline by examining the stage type
+        // And make sure that we only have 1 scan task
+        if self.context.stage_type().is_map_pipeline() && self.scan_tasks.len() == 1 {
+            let batch_size = 1000;
 
             // Spawn the optimization execution loop
             let self_clone = self.clone();
             let execution_future = async move {
                 self_clone
                     .execute_optimized_scan(
+                        self.scan_tasks[0].clone(),
                         stage_context.task_id_counter(),
                         result_tx,
                         stage_context.scheduler_handle(),

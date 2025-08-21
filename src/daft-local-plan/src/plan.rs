@@ -194,6 +194,7 @@ impl LocalPhysicalPlan {
 
     pub fn into_batches(
         input: LocalPhysicalPlanRef,
+        // TODO: this shouldn't be a platform dependent type! It should be an explicit size ==> u64.
         batch_size: usize,
         strict: bool,
         stats_state: StatsState,
