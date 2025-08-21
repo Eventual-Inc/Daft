@@ -16,7 +16,7 @@ def skip_no_credential(pytestconfig):
 
 
 def token():
-    return os.environ["HF_TOKEN"]
+    return os.environ.get("HF_TOKEN")
 
 
 def load(repo, split):

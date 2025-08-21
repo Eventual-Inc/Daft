@@ -52,6 +52,13 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
         self.commit_description = commit_description
         self.config = config
 
+        from importlib.util import find_spec
+
+        if find_spec("huggingface_hub") is None:
+            raise ImportError(
+                "huggingface-hub must be installed to run `write_huggingface`. Install it with `pip install -U 'daft[huggingface]'`"
+            )
+
         if self.config.anonymous:
             raise ValueError("Cannot write to Hugging Face dataset in anonymous mode.")
 

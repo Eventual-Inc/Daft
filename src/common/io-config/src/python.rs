@@ -155,19 +155,19 @@ pub struct IOConfig {
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct HTTPConfig {
     pub config: crate::HTTPConfig,
 }
 
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct UnityConfig {
     pub config: crate::UnityConfig,
 }
 
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct HuggingFaceConfig {
     pub config: crate::HuggingFaceConfig,
 }
