@@ -19,6 +19,8 @@ pub struct IntoBatchesOperator {
 }
 
 impl IntoBatchesOperator {
+    const BATCH_SIZE_LOWER_BOUND_THRESHOLD: f64 = 0.8;
+
     pub fn new(batch_size: usize) -> Self {
         Self { batch_size }
     }
@@ -63,6 +65,11 @@ impl IntermediateOperator for IntoBatchesOperator {
         Ok(())
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        Some(MorselSizeRequirement::Flexible(self.batch_size))
+        let lower_bound =
+            (self.batch_size as f64 * Self::BATCH_SIZE_LOWER_BOUND_THRESHOLD) as usize;
+        Some(MorselSizeRequirement::Flexible(
+            lower_bound,
+            self.batch_size,
+        ))
     }
 }

@@ -516,7 +516,7 @@ async fn stream_scan_task(
                 cfg.escape_char,
                 cfg.comment,
             )?;
-            let csv_chunk_size = chunk_size.or(cfg.chunk_size);
+            let csv_chunk_size = cfg.chunk_size.or(chunk_size);
             let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
             daft_csv::stream_csv(
                 url.to_string(),
@@ -541,7 +541,7 @@ async fn stream_scan_task(
                 scan_task.pushdowns.filters.clone(),
             );
             let parse_options = JsonParseOptions::new_internal();
-            let json_chunk_size = chunk_size.or(cfg.chunk_size);
+            let json_chunk_size = cfg.chunk_size.or(chunk_size);
             let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
 
             daft_json::read::stream_json(

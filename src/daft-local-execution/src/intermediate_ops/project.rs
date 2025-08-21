@@ -167,7 +167,8 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        self.batch_size.map(MorselSizeRequirement::Flexible)
+        self.batch_size
+            .map(|batch_size| MorselSizeRequirement::Flexible(0, batch_size))
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

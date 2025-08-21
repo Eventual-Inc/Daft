@@ -47,7 +47,7 @@ impl RoundRobinDispatcher {
     pub(crate) fn new(morsel_size_requirement: MorselSizeRequirement) -> Self {
         let (lower_bound, upper_bound) = match morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => (size, size),
-            MorselSizeRequirement::Flexible(size) => (0, size),
+            MorselSizeRequirement::Flexible(lower, upper) => (lower, upper),
         };
         Self {
             morsel_size_lower_bound: lower_bound,
@@ -132,7 +132,7 @@ impl UnorderedDispatcher {
     pub(crate) fn new(morsel_size_requirement: MorselSizeRequirement) -> Self {
         let (lower_bound, upper_bound) = match morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => (size, size),
-            MorselSizeRequirement::Flexible(size) => (0, size),
+            MorselSizeRequirement::Flexible(lower, upper) => (lower, upper),
         };
         Self {
             morsel_size_lower_bound: lower_bound,

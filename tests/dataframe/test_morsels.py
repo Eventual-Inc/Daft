@@ -27,6 +27,9 @@ def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64())
     return noop
 
 
+# TODO: Add snapshot tests in Rust for the explain output of the following tests.
+
+
 def test_batch_size_from_udf_propagated_to_scan():
     df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
     df = df.select(make_noop_udf(10)(daft.col("a")))
@@ -342,13 +345,13 @@ def test_batch_size_from_into_batches_before_udf():
 |
 * IntoBatches: 10
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = Range(0, 10]
+|   Batch Size = Range(8, 10]
 |
 * InMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = Range(0, 10]
+|   Batch Size = Range(8, 10]
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)

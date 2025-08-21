@@ -73,22 +73,25 @@ pub type NodeName = Cow<'static, str>;
 pub enum MorselSizeRequirement {
     // Fixed size morsel
     Strict(usize),
-    // Flexible size morsel, between 0 and the given size
-    Flexible(usize),
+    // Flexible size morsel, between lower and upper bound
+    Flexible(usize, usize),
 }
 
 impl Display for MorselSizeRequirement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Strict(size) => write!(f, "{}", size),
-            Self::Flexible(size) => write!(f, "Range(0, {}]", size),
+            Self::Flexible(lower, upper) => write!(f, "Range({lower}, {upper}]"),
         }
     }
 }
 
 impl Default for MorselSizeRequirement {
     fn default() -> Self {
-        Self::Flexible(common_daft_config::DaftExecutionConfig::default().default_morsel_size)
+        Self::Flexible(
+            0,
+            common_daft_config::DaftExecutionConfig::default().default_morsel_size,
+        )
     }
 }
 
@@ -98,20 +101,28 @@ impl MorselSizeRequirement {
         downstream_requirement: Self,
     ) -> Self {
         match (current_requirement, downstream_requirement) {
-            // If there is no current requirement, use the downstream requirement
-            (None, requirement) => match requirement {
-                Self::Strict(size) | Self::Flexible(size) => Self::Flexible(size),
-            },
+            // If there is no current requirement and the downstream requirement is strict, use flexible with 0 as lower bound
+            (None, Self::Strict(size)) => Self::Flexible(0, size),
+            // If there is no current requirement and the downstream requirement is flexible, use flexible with 0 as lower bound
+            (None, Self::Flexible(_, upper)) => Self::Flexible(0, upper),
             // If the current requirement is strict use it regardless of the downstream requirement
             (Some(Self::Strict(current_size)), _) => Self::Strict(current_size),
             // If the current requirement is flexible and the downstream requirement is strict, use the minimum of the two sizes
-            (Some(Self::Flexible(current_size)), Self::Strict(other_size)) => {
-                Self::Flexible(current_size.min(other_size))
-            }
+            (
+                Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
+                Self::Strict(strict_size),
+            ) => Self::Flexible(
+                lower_flexible_size.min(strict_size),
+                strict_size.min(upper_flexible_size),
+            ),
             // If the current requirement is flexible and the downstream requirement is flexible, use the minimum of the two sizes
-            (Some(Self::Flexible(current_size)), Self::Flexible(other_size)) => {
-                Self::Flexible(current_size.min(other_size))
-            }
+            (
+                Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
+                Self::Flexible(lower_other_size, upper_other_size),
+            ) => Self::Flexible(
+                lower_flexible_size.min(lower_other_size),
+                upper_flexible_size.min(upper_other_size),
+            ),
         }
     }
 }
@@ -290,8 +301,8 @@ pub fn translate_physical_plan_to_pipeline(
 ) -> crate::Result<Box<dyn PipelineNode>> {
     let mut pipeline_node = physical_plan_to_pipeline(physical_plan, psets, cfg, ctx)?;
     pipeline_node.propagate_morsel_size_requirement(
-        MorselSizeRequirement::Flexible(cfg.default_morsel_size),
-        MorselSizeRequirement::Flexible(cfg.default_morsel_size),
+        MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
+        MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
     );
     Ok(pipeline_node)
 }

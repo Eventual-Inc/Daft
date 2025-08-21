@@ -172,7 +172,7 @@ impl PipelineNode for SourceNode {
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => Some(size),
-            MorselSizeRequirement::Flexible(size) => Some(size),
+            MorselSizeRequirement::Flexible(_, upper) => Some(upper),
         };
 
         runtime_handle.spawn_local(
