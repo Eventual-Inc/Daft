@@ -18,8 +18,8 @@ use crate::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{self, StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, create_oneshot_channel, Sender},
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
+    utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct ScanSourceNode {
@@ -107,16 +107,6 @@ impl ScanSourceNode {
         }
 
         // Step 1: Materialize the scan task to get ray data pointers
-        // let scan_task = SubmittableTask::new(SwordfishTask::new(
-        //     TaskContext::from((&self.context, task_id_counter.next())),
-        //     // self.scan_tasks[0].clone(), // Use the single scan task
-        //     single_scan_task.clone(),
-        //     self.config.execution_config.clone(),
-        //     HashMap::from([(self.node_id().to_string(), vec![single_scan_task])]),
-        //     SchedulingStrategy::Spread,
-        //     self.context.to_hashmap(),
-        // ));
-
         let submit_single_scan_task = SubmittableTask::new(self.make_source_tasks(
             vec![single_scan_task].into(),
             TaskContext::from((&self.context, task_id_counter.next())),
@@ -147,7 +137,7 @@ impl ScanSourceNode {
                 )?;
 
                 match result_tx.send(task).await {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(e) => {
                         return Err(DaftError::InternalError(format!(
                             "Failed to send internal batch to result channel: {e:?}"
@@ -269,8 +259,8 @@ impl DistributedPipelineNode for ScanSourceNode {
         if self.scan_tasks.len() == 1 {
             let batch_size = 1000;
             let self_clone = self.clone();
-            let task_id_counter = stage_context.task_id_counter().clone();
-            let scheduler_handle = stage_context.scheduler_handle().clone();
+            let task_id_counter = stage_context.task_id_counter();
+            let scheduler_handle = stage_context.scheduler_handle();
             let execution_future = async move {
                 self_clone
                     .execute_optimized_scan(
