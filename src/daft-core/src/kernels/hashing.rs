@@ -495,6 +495,25 @@ pub fn hash(
         }
     }
 
+    // Check for Time types first (logical type check)
+    match array.data_type() {
+        DataType::Time32(_) => {
+            let time_array = array.as_any().downcast_ref::<PrimitiveArray<i32>>()
+                .ok_or_else(|| Error::InvalidArgumentError(
+                    "Expected Time32 array to be PrimitiveArray<i32>".to_string()
+                ))?;
+            return Ok(hash_primitive::<i32>(time_array, seed, hash_function));
+        }
+        DataType::Time64(_) => {
+            let time_array = array.as_any().downcast_ref::<PrimitiveArray<i64>>()
+                .ok_or_else(|| Error::InvalidArgumentError(
+                    "Expected Time64 array to be PrimitiveArray<i64>".to_string()
+                ))?;
+            return Ok(hash_primitive::<i64>(time_array, seed, hash_function));
+        }
+        _ => {}
+    }
+
     Ok(match array.data_type().to_physical_type() {
         PhysicalType::Null => {
             hash_null(array.as_any().downcast_ref().unwrap(), seed, hash_function)
@@ -540,4 +559,3 @@ pub fn hash(
         }
     })
 }
-

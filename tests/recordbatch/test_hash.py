@@ -264,10 +264,141 @@ def test_table_expr_decimal_hash_max_precision():
     }).with_column("dec", col("dec"))
 
     df3 = daft.from_pydict({
-        "dec": [decimal.Decimal("1234567890123456789012345678.0019012345678")],
+        "dec": [decimal.Decimal("1234567890123456789012345.0019012345678")],
     }).with_column("dec", col("dec"))
 
     # Hash with default precision
     res_default1 = df1.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
     res_default2 = df2.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
     res_default3 = df3.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+
+
+def test_table_expr_time_hash_basic():
+    """Test basic time hashing functionality."""
+    import datetime
+    
+    df = daft.from_pydict({
+        "time": [
+            datetime.time(10, 30, 45, 123456),  # 10:30:45.123456
+            datetime.time(14, 15, 30, 789012),  # 14:15:30.789012
+            None,
+            datetime.time(0, 0, 0, 0),          # 00:00:00.000000
+        ],
+    })
+    
+    res = df.select(col("time").hash()).to_pydict()["time"]
+    
+    assert len(res) == 4
+    assert res[0] is not None
+    assert res[1] is not None
+    assert res[2] is not None  # None should have a deterministic hash
+    assert res[3] is not None
+    
+    # Different times should have different hashes
+    assert res[0] != res[1]
+    assert res[0] != res[3]
+    assert res[1] != res[3]
+
+
+def test_table_expr_time_hash_with_seed():
+    """Test time hashing with seed."""
+    import datetime
+    
+    df = daft.from_pydict({
+        "time": [
+            datetime.time(12, 0, 0, 0),
+            datetime.time(18, 30, 15, 500000),
+        ],
+    })
+    
+    unseeded = df.select(col("time").hash()).to_pydict()["time"]
+    seeded = df.select(col("time").hash(seed=42)).to_pydict()["time"]
+    
+    assert len(unseeded) == 2 and len(seeded) == 2
+    # Seeded hashes should be different from unseeded
+    assert unseeded[0] != seeded[0]
+    assert unseeded[1] != seeded[1]
+
+
+def test_table_expr_time_hash_with_seed_array():
+    """Test time hashing with seed array."""
+    import datetime
+    
+    df = daft.from_pydict({
+        "time": [
+            datetime.time(9, 0, 0, 0),
+            datetime.time(9, 0, 0, 0),  # Same time
+            datetime.time(15, 45, 30, 250000),
+        ],
+        "seed": [1, 2, 3],
+    })
+    
+    res = df.select(col("time").hash(seed=col("seed"))).to_pydict()["time"]
+    assert len(res) == 3
+    
+    # Same time with different seeds should yield different hashes
+    assert res[0] != res[1]
+
+
+def test_table_expr_time_hash_different_algorithms():
+    """Test time hashing with different algorithms."""
+    import datetime
+    
+    df = daft.from_pydict({
+        "time": [
+            datetime.time(8, 15, 45, 123000),
+            datetime.time(20, 30, 0, 456000),
+            datetime.time(12, 0, 0, 0),
+        ],
+    })
+    
+    xx = df.select(col("time").hash(hash_function="xxhash")).to_pydict()["time"]
+    mm = df.select(col("time").hash(hash_function="murmurhash3")).to_pydict()["time"]
+    sh = df.select(col("time").hash(hash_function="sha1")).to_pydict()["time"]
+    
+    assert len(xx) == len(mm) == len(sh) == 3
+    
+    # Different algorithms should generally produce different results
+    assert xx != mm
+    assert xx != sh
+
+
+def test_table_expr_time_hash_microsecond_precision():
+    """Test that time hashing preserves microsecond precision."""
+    import datetime
+    
+    df = daft.from_pydict({
+        "time": [
+            datetime.time(10, 30, 45, 123456),  # .123456 seconds
+            datetime.time(10, 30, 45, 123457),  # .123457 seconds (1 microsecond diff)
+            datetime.time(10, 30, 45, 123000),  # .123000 seconds
+        ],
+    })
+    
+    res = df.select(col("time").hash()).to_pydict()["time"]
+    
+    assert len(res) == 3
+    # Times differing by 1 microsecond should have different hashes
+    assert res[0] != res[1]
+    assert res[0] != res[2]
+    assert res[1] != res[2]
+
+
+def test_table_expr_time_hash_edge_cases():
+    """Test time hashing edge cases."""
+    import datetime
+    
+    df = daft.from_pydict({
+        "time": [
+            datetime.time(0, 0, 0, 0),          # Midnight
+            datetime.time(23, 59, 59, 999999),  # Just before midnight
+            datetime.time(12, 0, 0, 0),         # Noon
+            datetime.time(12, 0, 0, 1),         # Noon + 1 microsecond
+        ],
+    })
+    
+    res = df.select(col("time").hash()).to_pydict()["time"]
+    
+    assert len(res) == 4
+    # All times should have different hashes
+    assert len(set(res)) == 4
