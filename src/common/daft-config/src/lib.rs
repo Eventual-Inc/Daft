@@ -1,4 +1,6 @@
 #![feature(let_chains)]
+use std::num::{IntErrorKind, ParseIntError};
+
 pub use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +76,7 @@ pub struct DaftExecutionConfig {
     pub native_parquet_writer: bool,
     pub use_experimental_distributed_engine: bool,
     pub min_cpu_per_task: f64,
+    pub suggested_batch_size: u64,
 }
 
 impl Default for DaftExecutionConfig {
@@ -109,6 +112,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_experimental_distributed_engine: true,
             min_cpu_per_task: 0.5,
+            suggested_batch_size: 1000,
         }
     }
 }
@@ -155,6 +159,25 @@ impl DaftExecutionConfig {
                 Err(_) => eprintln!(
                     "Invalid {} value: {}, using default {}",
                     min_cpu_var, val, cfg.min_cpu_per_task
+                ),
+            }
+        }
+        let suggested_batch_size_var = "DAFT_SUGGESTED_BATCH_SIZE";
+        if let Ok(val) = std::env::var(suggested_batch_size_var) {
+            match val
+                .parse::<u64>()
+                .map_err(|e| format!("{e}"))
+                .and_then(|bs| {
+                    if bs == 0 {
+                        Err("Batch size must be greater than 0".to_string())
+                    } else {
+                        Ok(bs)
+                    }
+                }) {
+                Ok(parsed) => cfg.suggested_batch_size = parsed,
+                Err(e) => eprintln!(
+                    "Invalid {} value: {} ({e}), using default {}",
+                    suggested_batch_size_var, val, cfg.suggested_batch_size
                 ),
             }
         }
