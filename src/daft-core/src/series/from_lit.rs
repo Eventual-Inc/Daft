@@ -173,26 +173,23 @@ impl TryFrom<Vec<Literal>> for Series {
                             values
                                 .into_iter()
                                 .map(|v| match v {
-                                    Literal::File(f) => match f.get_value() {
-                                        common_file::FileValue::Reference(path, ioconfig) => {
-                                            use std::sync::Arc;
+                                    Literal::File(common_file::DaftFile::Reference(
+                                        path,
+                                        ioconfig,
+                                    )) => {
+                                        use std::sync::Arc;
 
-                                            use pyo3::IntoPyObjectExt;
+                                        use pyo3::IntoPyObjectExt;
 
-                                            let io_conf = ioconfig
-                                                .clone()
-                                                .map(common_io_config::python::IOConfig::from);
-                                            let io_conf = io_conf
-                                                .into_py_any(py)
-                                                .expect("Failed to convert ioconfig to PyObject");
-                                            let io_conf = Arc::new(io_conf);
+                                        let io_conf =
+                                            ioconfig.map(common_io_config::python::IOConfig::from);
+                                        let io_conf = io_conf
+                                            .into_py_any(py)
+                                            .expect("Failed to convert ioconfig to PyObject");
+                                        let io_conf = Arc::new(io_conf);
 
-                                            (path.clone(), io_conf)
-                                        }
-                                        common_file::FileValue::Data(_) => {
-                                            unreachable!("should not happen")
-                                        }
-                                    },
+                                        (path, io_conf)
+                                    }
                                     _ => unreachable!("should not happen"),
                                 })
                                 .unzip()
@@ -228,10 +225,7 @@ impl TryFrom<Vec<Literal>> for Series {
 
                     DaftFileType::Data => {
                         let values = values.into_iter().map(|v| match v {
-                            Literal::File(f) => match f.get_value() {
-                                common_file::FileValue::Reference(_, _) => unreachable!(),
-                                common_file::FileValue::Data(items) => items.clone(),
-                            },
+                            Literal::File(common_file::DaftFile::Data(items)) => items,
                             _ => panic!("should not happen"),
                         });
                         let values = BinaryArray::from_values("data", values).into_series();

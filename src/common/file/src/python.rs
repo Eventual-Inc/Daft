@@ -15,17 +15,15 @@ impl<'py> IntoPyObject<'py> for DaftFile {
             .import(intern!(py, "daft.file"))?
             .getattr(intern!(py, "File"))?;
 
-        match self.value {
-            crate::FileValue::Reference(url, ioconfig) => {
+        match self {
+            Self::Reference(url, ioconfig) => {
                 let io_config: Option<IOConfig> = ioconfig.map(|cfg| cfg.into());
 
                 py_file
                     .getattr(intern!(py, "_from_path"))?
                     .call1((url, io_config))
             }
-            crate::FileValue::Data(data) => {
-                py_file.getattr(intern!(py, "_from_bytes"))?.call1((data,))
-            }
+            Self::Data(data) => py_file.getattr(intern!(py, "_from_bytes"))?.call1((data,)),
         }
     }
 }
