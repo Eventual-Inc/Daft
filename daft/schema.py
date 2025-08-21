@@ -186,6 +186,10 @@ class Schema:
         """Returns a string representation of the schema, optionally including metadata."""
         return self._schema.display_with_metadata(include_metadata)
 
+    def min_estimated_size_column(self) -> str | None:
+        """Returns the name of the column with the minimum estimated size."""
+        return self._schema.min_estimated_size_column()
+
     def _repr_html_(self) -> str:
         return self._schema._repr_html_()
 
