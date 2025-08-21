@@ -8,20 +8,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DaftFile {
-    file_type: DaftFileType,
     value: FileValue,
 }
 
 impl DaftFile {
     pub fn new_from_data(data: Vec<u8>) -> Self {
         Self {
-            file_type: DaftFileType::Data,
             value: FileValue::Data(data),
         }
     }
     pub fn new_from_reference(reference: String, io_config: Option<IOConfig>) -> Self {
         Self {
-            file_type: DaftFileType::Reference,
             value: FileValue::Reference(reference, Box::new(io_config)),
         }
     }
@@ -29,7 +26,7 @@ impl DaftFile {
 
 impl std::fmt::Display for DaftFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.file_type {
+        match self.get_type() {
             DaftFileType::Reference => write!(f, "File({:?})", self.value),
             DaftFileType::Data => write!(f, "File({:?})", self.value),
         }
@@ -46,7 +43,10 @@ pub enum FileValue {
 
 impl DaftFile {
     pub fn get_type(&self) -> DaftFileType {
-        self.file_type
+        match self.value {
+            FileValue::Reference(_, _) => DaftFileType::Reference,
+            FileValue::Data(_) => DaftFileType::Data,
+        }
     }
     pub fn get_value(&self) -> &FileValue {
         &self.value
@@ -87,7 +87,6 @@ impl Hash for DaftFileType {
 
 impl Hash for DaftFile {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.file_type.hash(state);
         match &self.value {
             FileValue::Reference(s, io_conf) => {
                 s.hash(state);
