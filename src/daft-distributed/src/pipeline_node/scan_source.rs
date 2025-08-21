@@ -98,13 +98,22 @@ impl ScanSourceNode {
         task_id_counter: TaskIDCounter,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        batch_size: usize,
+        batch_size: u64,
     ) -> DaftResult<()> {
         if batch_size == 0 {
             return Err(
                 DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
             );
         }
+        let batch_size = match batch_size.try_into() {
+            Ok(bs) => bs,
+            Err(e) => {
+                return Err(DaftError::InternalError(format!(
+                "Batch size {batch_size} is too large to convert to usize on this platform: {e:?}"
+            ))
+                .into())
+            }
+        };
 
         // Step 1: Materialize the scan task to get ray data pointers
         let submit_single_scan_task = SubmittableTask::new(self.make_source_tasks(
@@ -257,7 +266,6 @@ impl DistributedPipelineNode for ScanSourceNode {
         // Check if this is a map-only pipeline by examining the stage type
         // And make sure that we only have 1 scan task
         if self.scan_tasks.len() == 1 {
-            let batch_size = 1000;
             let self_clone = self.clone();
             let task_id_counter = stage_context.task_id_counter();
             let scheduler_handle = stage_context.scheduler_handle();
@@ -268,7 +276,7 @@ impl DistributedPipelineNode for ScanSourceNode {
                         task_id_counter,
                         result_tx,
                         scheduler_handle,
-                        batch_size,
+                        self.config.execution_config.suggested_batch_size,
                     )
                     .await
             };
