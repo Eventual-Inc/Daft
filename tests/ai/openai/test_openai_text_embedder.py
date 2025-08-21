@@ -14,7 +14,7 @@ from daft import DataType
 from daft.ai.openai.text_embedder import (
     OpenAITextEmbedder,
     OpenAITextEmbedderDescriptor,
-    _profiles,
+    _models,
     chunk_text,
 )
 from daft.ai.protocols import TextEmbedder
@@ -33,7 +33,7 @@ def mock_text_embedder(mock_client) -> TextEmbedder:
 
 def test_valid_model_names():
     """Test that valid model names are accepted."""
-    for model_name in _profiles.keys():
+    for model_name in _models.keys():
         descriptor = OpenAITextEmbedderDescriptor(
             provider_name="openai",
             provider_options={"api_key": "test-key"},
@@ -43,7 +43,7 @@ def test_valid_model_names():
         assert descriptor.get_provider() == "openai"
         assert descriptor.get_model() == model_name
         assert descriptor.get_options() == {}
-        assert descriptor.get_dimensions() == _profiles[model_name].dimensions
+        assert descriptor.get_dimensions() == _models[model_name].dimensions
 
 
 def test_invalid_model_name():
@@ -312,14 +312,14 @@ def test_profile_dimensions():
     }
 
     for model_name, expected_size in expected_dimensions.items():
-        profile = _profiles[model_name]
+        profile = _models[model_name]
         assert profile.dimensions.size == expected_size
         assert profile.dimensions.dtype == DataType.float32()
 
 
 def test_profile_immutability():
     """Test that profiles are frozen dataclasses."""
-    profile = _profiles["text-embedding-3-small"]
+    profile = _models["text-embedding-3-small"]
     with pytest.raises(Exception):  # Should raise when trying to modify
         profile.dimensions = EmbeddingDimensions(size=100, dtype=DataType.float32())
 

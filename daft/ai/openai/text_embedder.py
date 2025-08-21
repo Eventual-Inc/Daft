@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class _Profile:
+class _ModelProfile:
     """Model profiles contain various model-specific metadata.
 
     Note:
@@ -30,15 +30,24 @@ class _Profile:
     dimensions: EmbeddingDimensions
 
 
-_profiles: dict[str, _Profile] = {
-    "text-embedding-ada-002": _Profile(
-        dimensions=EmbeddingDimensions(size=1536, dtype=DataType.float32()),
+_models: dict[str, _ModelProfile] = {
+    "text-embedding-ada-002": _ModelProfile(
+        dimensions=EmbeddingDimensions(
+            size=1536,
+            dtype=DataType.float32(),
+        ),
     ),
-    "text-embedding-3-small": _Profile(
-        dimensions=EmbeddingDimensions(size=1536, dtype=DataType.float32()),
+    "text-embedding-3-small": _ModelProfile(
+        dimensions=EmbeddingDimensions(
+            size=1536,
+            dtype=DataType.float32(),
+        ),
     ),
-    "text-embedding-3-large": _Profile(
-        dimensions=EmbeddingDimensions(size=3072, dtype=DataType.float32()),
+    "text-embedding-3-large": _ModelProfile(
+        dimensions=EmbeddingDimensions(
+            size=3072,
+            dtype=DataType.float32(),
+        ),
     ),
 }
 
@@ -51,8 +60,8 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     model_options: Options
 
     def __post_init__(self) -> None:
-        if self.model_name not in _profiles:
-            supported_models = ", ".join(_profiles.keys())
+        if self.model_name not in _models:
+            supported_models = ", ".join(_models.keys())
             raise ValueError(
                 f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
             )
@@ -67,7 +76,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_options
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        return _profiles[self.model_name].dimensions
+        return _models[self.model_name].dimensions
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
@@ -132,12 +141,15 @@ class OpenAITextEmbedder(TextEmbedder):
 
     def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
         """Embeds text as a batch call, consider falling back to _embed_text."""
-        response = self._client.embeddings.create(
-            input=input_batch,
-            model=self._model,
-            encoding_format="float",
-        )
-        return [np.array(embedding.embedding) for embedding in response.data]
+        try:
+            response = self._client.embeddings.create(
+                input=input_batch,
+                model=self._model,
+                encoding_format="float",
+            )
+            return [np.array(embedding.embedding) for embedding in response.data]
+        except Exception as ex:
+            raise ValueError("Failed to embed_text via OpenAI") from ex
 
     def _embed_text(self, input_text: str) -> Embedding:
         try:
@@ -149,7 +161,7 @@ class OpenAITextEmbedder(TextEmbedder):
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = _profiles[self._model].dimensions.size
+                size = _models[self._model].dimensions.size
                 return np.zeros(size, dtype=np.float32)
             else:
                 raise ex
