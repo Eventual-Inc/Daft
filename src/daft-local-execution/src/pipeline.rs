@@ -115,14 +115,21 @@ impl MorselSizeRequirement {
                 lower_flexible_size.min(strict_size),
                 strict_size.min(upper_flexible_size),
             ),
-            // If the current requirement is flexible and the downstream requirement is flexible, use the minimum of the two sizes
+            // If the current requirement is flexible and the downstream requirement is flexible, use the intersection of ranges
             (
                 Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
                 Self::Flexible(lower_other_size, upper_other_size),
-            ) => Self::Flexible(
-                lower_flexible_size.min(lower_other_size),
-                upper_flexible_size.min(upper_other_size),
-            ),
+            ) => {
+                let lower = lower_flexible_size.max(lower_other_size);
+                let upper = upper_flexible_size.min(upper_other_size);
+
+                // If ranges don't overlap, fall back to downstream requirement
+                if lower > upper {
+                    Self::Flexible(lower_other_size, upper_other_size)
+                } else {
+                    Self::Flexible(lower, upper)
+                }
+            }
         }
     }
 }

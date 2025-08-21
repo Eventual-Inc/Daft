@@ -291,13 +291,13 @@ def test_batch_size_from_into_batches():
 
 * IntoBatches: 10
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = Range(0, 10]
+|   Batch Size = Range(8, 10]
 |
 * InMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = Range(0, 10]
+|   Batch Size = Range(8, 10]
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
@@ -314,13 +314,13 @@ def test_batch_size_consecutive_into_batches():
 
 * IntoBatches: 30
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = Range(0, 30]
+|   Batch Size = Range(24, 30]
 |
 * InMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = Range(0, 30]
+|   Batch Size = Range(24, 30]
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)

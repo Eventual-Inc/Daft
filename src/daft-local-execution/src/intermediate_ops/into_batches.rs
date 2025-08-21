@@ -67,6 +67,7 @@ impl IntermediateOperator for IntoBatchesOperator {
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         let lower_bound =
             (self.batch_size as f64 * Self::BATCH_SIZE_LOWER_BOUND_THRESHOLD) as usize;
+        println!("lower_bound: {}", lower_bound);
         Some(MorselSizeRequirement::Flexible(
             lower_bound,
             self.batch_size,

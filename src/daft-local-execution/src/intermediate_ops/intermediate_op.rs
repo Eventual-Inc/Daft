@@ -67,6 +67,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
+        println!("morsel_size_requirement: {}", morsel_size_requirement);
         if maintain_order {
             Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
         } else {
