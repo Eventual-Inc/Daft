@@ -266,18 +266,18 @@ impl DistributedPipelineNode for ScanSourceNode {
 
         // Check if this is a map-only pipeline by examining the stage type
         // And make sure that we only have 1 scan task
-        if self.context.stage_type().is_map_pipeline() && self.scan_tasks.len() == 1 {
+        if self.scan_tasks.len() == 1 {
             let batch_size = 1000;
-
-            // Spawn the optimization execution loop
             let self_clone = self.clone();
+            let task_id_counter = stage_context.task_id_counter().clone();
+            let scheduler_handle = stage_context.scheduler_handle().clone();
             let execution_future = async move {
                 self_clone
                     .execute_optimized_scan(
                         self.scan_tasks[0].clone(),
-                        stage_context.task_id_counter(),
+                        task_id_counter,
                         result_tx,
-                        stage_context.scheduler_handle(),
+                        scheduler_handle,
                         batch_size,
                     )
                     .await
