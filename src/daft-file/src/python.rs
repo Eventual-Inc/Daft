@@ -232,16 +232,13 @@ impl Read for ObjectSourceReader {
 
         let bytes = rt
             .block_within_async_context(async move {
-                let result = source.get(&uri, range, io_stats).await.map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("Get failed: {}", e))
-                })?;
-                result.bytes().await.map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("Bytes failed: {}", e))
-                })
+                let result = source
+                    .get(&uri, range, io_stats)
+                    .await
+                    .map_err(map_get_error)?;
+                result.bytes().await.map_err(map_bytes_error)
             })
-            .map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("Async context failed: {}", e))
-            })??;
+            .map_err(map_async_error)??;
 
         if bytes.is_empty() {
             return Ok(0);
@@ -264,11 +261,12 @@ impl Read for ObjectSourceReader {
 
         let size = rt
             .block_within_async_context(async move {
-                source.get_size(&uri, io_stats.clone()).await.map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("Failed to get size: {}", e))
-                })
+                source
+                    .get_size(&uri, io_stats.clone())
+                    .await
+                    .map_err(map_get_error)
             })
-            .unwrap()?;
+            .map_err(map_async_error)??;
 
         let source = self.source.clone();
         let uri = self.uri.clone();
@@ -279,17 +277,14 @@ impl Read for ObjectSourceReader {
             .block_within_async_context(async move {
                 let range = Some(GetRange::Bounded(position..size));
 
-                let result = source.get(&uri, range, io_stats).await.map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("Get failed: {}", e))
-                })?;
+                let result = source
+                    .get(&uri, range, io_stats)
+                    .await
+                    .map_err(map_get_error)?;
 
-                result.bytes().await.map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("Bytes failed: {}", e))
-                })
+                result.bytes().await.map_err(map_bytes_error)
             })
-            .map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("Async context failed: {}", e))
-            })??;
+            .map_err(map_async_error)??;
 
         buf.reserve(bytes.len());
 
@@ -315,14 +310,9 @@ impl Seek for ObjectSourceReader {
 
                 let size = rt
                     .block_within_async_context(async move {
-                        source
-                            .get_size(&uri, io_stats)
-                            .await
-                            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))
+                        source.get_size(&uri, io_stats).await.map_err(map_get_error)
                     })
-                    .map_err(|e| {
-                        io::Error::new(io::ErrorKind::Other, format!("Async context failed: {}", e))
-                    })??;
+                    .map_err(map_async_error)??;
 
                 if offset < 0 {
                     size.saturating_sub((-offset) as usize)
@@ -344,4 +334,13 @@ impl Seek for ObjectSourceReader {
 
         Ok(self.position as u64)
     }
+}
+fn map_get_error(e: daft_io::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, format!("Get failed: {}", e))
+}
+fn map_bytes_error(e: daft_io::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, format!("Bytes failed: {}", e))
+}
+fn map_async_error(e: DaftError) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, format!("Async context failed: {}", e))
 }

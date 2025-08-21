@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from daft.daft import PyDaftFile
-from daft.io import IOConfig
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
