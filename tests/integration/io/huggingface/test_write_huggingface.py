@@ -64,6 +64,7 @@ def test_append(repo, split):
     assert_df_equals(actual, expected.to_pandas(), "a")
 
 
+@pytest.mark.integration()
 @pytest.mark.parametrize("split", ["train", "custom"])
 def test_overwrite(repo, split):
     df1 = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})

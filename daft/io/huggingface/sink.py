@@ -110,7 +110,7 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
         with io.BytesIO() as buffer:
             writer = None
 
-            def flush(writer: pq.ParquetWriter) -> CommitOperationAdd:
+            def flush(writer: pq.ParquetWriter) -> WriteResult[CommitOperationAddWrapper]:
                 writer.close()
 
                 nonlocal num_files
