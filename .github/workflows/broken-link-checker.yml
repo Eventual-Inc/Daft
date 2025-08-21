@@ -21,7 +21,32 @@ jobs:
         timeout_minutes: 10
         retry_wait_seconds: 120
         max_attempts: 3
-        command: blc https://www.daft.ai -ro --verbose --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daftengine --exclude https://www.linkedin.com/company/eventualai/ --exclude https://x.com/daftengine --exclude https://www.linkedin.com/showcase/daftengine/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://huggingface.co/docs/dataset-viewer/en/parquet
+        command: |
+          set -euo pipefail
+
+          # Run BLC and capture full output. If blc itself fails, the step fails (pipefail).
+          LOG="$(mktemp)"
+          blc https://www.daft.ai \
+            -ro --verbose \
+            --exclude www.pytorch.org/ \
+            --exclude https://github.com/Eventual-Inc/Daft/ \
+            --exclude https://twitter.com/daftengine \
+            --exclude https://www.linkedin.com/company/eventualai/ \
+            --exclude https://x.com/daftengine \
+            --exclude https://www.linkedin.com/showcase/daftengine/ \
+            --exclude https://scarf.sh/ \
+            --exclude https://static.scarf.sh/* \
+            --exclude https://huggingface.co/docs/dataset-viewer/en/parquet \
+            | tee "$LOG"
+
+          # Treat HTTP_308 as noise, fail if any BROKEN lines remain.
+          if grep -v 'HTTP_308' "$LOG" | grep -q 'BROKEN'; then
+            echo "Broken links found:"
+            grep -v 'HTTP_308' "$LOG" | grep 'BROKEN' || true
+            exit 1
+          fi
+
+          echo "No broken links detected."
   notify_on_failure:
     runs-on: self-hosted
     if: failure()
