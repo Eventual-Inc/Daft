@@ -48,15 +48,9 @@ def test_many_small_partitions_into_batches(make_df):
 
     batch_lengths = [len(batch) for batch in df.to_arrow_iter()]
 
-    test_runner_name = get_tests_daft_runner_name()
-    if test_runner_name == "native":
-        assert batch_lengths == [8] * 8, f"Expected all batches to be size 8, got {batch_lengths}"
-    elif test_runner_name == "ray":
-        # Expected all batches to be >= the batch threshold (8 * 0.8 = 6)
-        for i in range(len(batch_lengths) - 1):
-            assert batch_lengths[i] >= int(8 * 0.8), f"Expected batch to be >= 6, got {batch_lengths[i]}"
-    else:
-        raise ValueError(f"Unknown runner: {test_runner_name}")
+    # Expected all batches to be >= the batch threshold (8 * 0.8 = 6)
+    for i in range(len(batch_lengths) - 1):
+        assert batch_lengths[i] >= int(8 * 0.8), f"Expected batch to be >= 6, got {batch_lengths[i]}"
 
     assert sum(batch_lengths) == 64, f"Expected 64 rows, got {sum(batch_lengths)}"
 

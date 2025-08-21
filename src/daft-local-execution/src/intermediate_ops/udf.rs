@@ -34,7 +34,11 @@ use tracing::{instrument, Span};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType,
+    pipeline::{MorselSizeRequirement, NodeName},
+    ExecutionTaskSpawner,
+};
 
 const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
 const GIL_CONTRIBUTION_THRESHOLD: f64 = 0.5;
@@ -442,12 +446,10 @@ impl IntermediateOperator for UdfOperator {
         Ok(self.concurrency)
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        if let Some(batch_size) = self.udf_properties.batch_size {
-            (batch_size, batch_size)
-        } else {
-            (0, runtime_handle.default_morsel_size())
-        }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        self.udf_properties
+            .batch_size
+            .map(MorselSizeRequirement::Strict)
     }
 }
 
