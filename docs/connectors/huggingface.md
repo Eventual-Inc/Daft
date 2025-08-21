@@ -2,6 +2,11 @@
 
 Daft has native support for reading from and writing to [Hugging Face datasets](https://huggingface.co/datasets).
 
+To install all dependencies required for Daft's Hugging Face integrations, use the `huggingface` feature:
+```
+pip install 'daft[huggingface]'
+```
+
 ## Reading From a Dataset
 
 Daft is able to read datasets directly from Hugging Face using the [`daft.read_huggingface()`][daft.read_huggingface] function or via the `hf://datasets/` protocol.
@@ -64,7 +69,7 @@ Basic usage:
 
 See the [`DataFrame.write_huggingface`][daft.DataFrame.write_huggingface] API page for more info.
 
-### Configuration
+### Configuring Writes
 
 [`DataFrame.write_huggingface`][daft.DataFrame.write_huggingface] accepts an [`IOConfig`][daft.io.IOConfig] which can be used to configure the write behavior. Here's an example of how to use it:
 
@@ -104,3 +109,5 @@ Example of reading a dataset with a specified token:
     io_config = IOConfig(hf=HuggingFaceConfig(token="your_token"))
     df = daft.read_parquet("hf://datasets/username/dataset_name", io_config=io_config)
     ```
+
+<!-- TODO: add info about `anonymous` once we automatically grab the token from the environment. -->

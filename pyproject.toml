@@ -22,7 +22,7 @@ readme = "README.rst"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity, clickhouse]"]
+all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity, clickhouse, huggingface]"]
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
