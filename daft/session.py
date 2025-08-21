@@ -598,9 +598,10 @@ class Session:
             like "openai", then we will create and attach this known provider.
             For example, `daft.set_provider("openai")` works.
         """
+        # consider using @overload on known providers for better type hints
         if identifier is not None and not self._session.has_provider(identifier) and identifier in PROVIDERS:
             # upsert semantic for known providers e.g. daft.set_provider("openai")
-            provider = load_provider(identifier, alias=None, **options)
+            provider = load_provider(identifier, name=None, **options)
             self.attach_provider(provider)
         self._session.set_provider(identifier)
 

@@ -8,6 +8,20 @@ from daft.ai.openai import OpenAIProvider
 from daft.ai.openai.text_embedder import OpenAITextEmbedderDescriptor
 
 
+def test_openai_provider_upsert():
+    import daft
+
+    # test upsert via session object
+    sess = daft.Session()
+    sess.set_provider("openai", api_key="fake_key")
+    assert isinstance(sess.current_provider(), OpenAIProvider)
+
+    # test upsert via active session in context
+    with daft.session():
+        daft.set_provider("openai", api_key="fake_key")
+        assert isinstance(daft.current_provider(), OpenAIProvider)
+
+
 def test_openai_text_embedder_default():
     provider = OpenAIProvider()
     descriptor = provider.get_text_embedder()
