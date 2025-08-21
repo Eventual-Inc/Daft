@@ -22,12 +22,14 @@ readme = "README.rst"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity]"]
+all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity, clickhouse, huggingface]"]
 aws = ["boto3"]
 azure = []
+clickhouse = ["clickhouse_connect"]
 deltalake = ["deltalake", "packaging"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
+huggingface = ["huggingface-hub"]
 iceberg = ["pyiceberg >= 0.7.0", "packaging"]
 lance = ["pylance"]
 numpy = ["numpy"]

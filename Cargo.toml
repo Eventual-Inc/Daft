@@ -1,8 +1,10 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
+common-file = {path = "src/common/file", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-logging = {path = "src/common/logging", default-features = false}
 common-metrics = {path = "src/common/metrics", default-features = false}
 common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
@@ -22,6 +24,7 @@ daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dashboard = {path = "src/daft-dashboard", default-features = false}
 daft-distributed = {path = "src/daft-distributed", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
+daft-file = {path = "src/daft-file", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary", default-features = false}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
@@ -69,6 +72,7 @@ python = [
   "common-display/python",
   "common-partitioning/python",
   "common-resource-request/python",
+  "common-file/python",
   "common-file-formats/python",
   "common-scan-info/python",
   "common-system-info/python",
@@ -81,6 +85,7 @@ python = [
   "daft-dashboard/python",
   "daft-distributed/python",
   "daft-dsl/python",
+  "daft-file/python",
   "daft-functions-binary/python",
   "daft-functions-json/python",
   "daft-functions-list/python",
@@ -178,6 +183,7 @@ members = [
   "src/daft-csv",
   "src/daft-dashboard",
   "src/daft-dsl",
+  "src/daft-file",
   "src/daft-functions",
   "src/daft-functions-binary",
   "src/daft-functions-json",
@@ -217,6 +223,7 @@ members = [
 
 [workspace.dependencies]
 approx = "0.5.1"
+arc-swap = "1.7.1"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
   "tokio",
@@ -232,14 +239,17 @@ comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
+common-file = {path = "src/common/file"}
 common-file-formats = {path = "src/common/file-formats"}
 common-image = {path = "src/common/image"}
 common-metrics = {path = "src/common/metrics"}
+common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-algebra = {path = "src/daft-algebra"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
+daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}
 daft-functions-json = {path = "src/daft-functions-json"}
@@ -273,9 +283,11 @@ jaq-core = "2.2.0"
 jaq-json = {version = "1.1.2", features = ["serde_json"]}
 jaq-std = "2.1.1"
 mur3 = "0.1.0"
+ndarray = "0.16.1"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
+numpy = "0.25.0"
 opentelemetry = {version = "0.29", features = ["trace", "metrics"]}
 opentelemetry-otlp = {version = "0.29", features = ["grpc-tonic"]}
 opentelemetry_sdk = "0.29"
@@ -348,7 +360,7 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono"]
+features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono", "chrono-tz"]
 version = "0.25.1"
 
 [workspace.dependencies.pyo3-async-runtimes]

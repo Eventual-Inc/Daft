@@ -8,6 +8,7 @@
         * [URLs and Files](modalities/urls.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
+        * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
     * Data Connectors
         * [Overview](connectors/index.md)
@@ -43,6 +44,7 @@
 * Examples
     * [Overview](examples/index.md)
     * [Document Processing](examples/document-processing.md)
+    * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
     * [Generate Images from Text with Stable Diffusion](examples/image-generation.md)
@@ -56,11 +58,11 @@
     * [Expressions](api/expressions.md)
     * [Functions](api/functions/)
     * [User-Defined Functions](api/udf.md)
+    * [Data Types](api/datatypes.md)
     * [Window](api/window.md)
     * [Sessions](api/sessions.md)
     * [Catalogs & Tables](api/catalogs_tables.md)
     * [Schema](api/schema.md)
-    * [Data Types](api/datatypes.md)
     * [Aggregations](api/aggregations.md)
     * [Series](api/series.md)
     * [Spark Connect](api/spark_connect.md)

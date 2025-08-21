@@ -33,7 +33,7 @@ use spark_connect::{
     read::ReadType,
     relation::RelType,
     set_operation::SetOpType,
-    Deduplicate, Expression, Join, Limit, Range, Relation, SetOperation, Sort, Sql,
+    Deduplicate, Expression, Join, Limit, Offset, Range, Relation, SetOperation, Sort, Sql,
 };
 use tracing::debug;
 
@@ -101,6 +101,7 @@ impl SparkAnalyzer<'_> {
 
         let lp = match rel_type {
             RelType::Limit(l) => self.limit(*l).await,
+            RelType::Offset(o) => self.offset(*o).await,
             RelType::Range(r) => self.range(r),
             RelType::Project(p) => self.project(*p).await,
             RelType::Aggregate(a) => self.aggregate(*a).await,
@@ -141,6 +142,22 @@ impl SparkAnalyzer<'_> {
         })?;
 
         plan.limit(limit, false).map_err(Into::into)
+    }
+
+    async fn offset(&self, offset: Offset) -> ConnectResult<LogicalPlanBuilder> {
+        let Offset { input, offset } = offset;
+        let input = input.required("input")?;
+
+        let plan = Box::pin(self.to_logical_plan(*input)).await?;
+
+        let offset = u64::try_from(offset).map_err(|_| {
+            ConnectError::invalid_argument(format!(
+                "OFFSET <n> must be greater than or equal to 0, instead got: {}",
+                offset
+            ))
+        })?;
+
+        plan.offset(offset).map_err(Into::into)
     }
 
     async fn deduplicate(&self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {

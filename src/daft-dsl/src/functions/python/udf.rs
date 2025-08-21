@@ -86,7 +86,6 @@ impl LegacyPythonUDF {
                 MaybeInitializedUDF::Initialized(func) => func.clone().unwrap().clone_ref(py),
                 MaybeInitializedUDF::Uninitialized { inner, init_args } => {
                     // TODO(Kevin): warn user if initialization is taking too long and ask them to use actor pool UDFs
-
                     py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())?
                 }
             };

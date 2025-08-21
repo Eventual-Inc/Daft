@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from daft.datatype import DataType
 from daft.dependencies import np
@@ -36,7 +36,7 @@ class Descriptor(ABC, Generic[T]):
 
 
 # temp definition to defer complexity of a more generic embedding type to later PRs
-Embedding = np.typing.NDArray  # type: ignore[type-arg]
+Embedding = np.typing.NDArray[Any]
 
 
 @dataclass

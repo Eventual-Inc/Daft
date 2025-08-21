@@ -8,11 +8,11 @@ use super::{
     rules::{
         DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
         EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
-        PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
-        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
-        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
-        UnnestPredicateSubquery, UnnestScalarSubquery,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
+        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
+        PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
+        ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
+        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::{optimization::rules::AutomaticRepartitionRule, LogicalPlan};
@@ -181,6 +181,7 @@ impl OptimizerBuilder {
                 vec![Box::new(PushDownProjection::new())],
                 RuleExecutionStrategy::FixedPoint(None),
             ),
+
             // TODO: add the work here ==> look at the logical plan and do the optimization!
 
             // --- Automatic re-partitioning ---
@@ -190,6 +191,10 @@ impl OptimizerBuilder {
             // These pipelines have selects, filters, projections, UDF applications, etc.
             RuleBatch::new(
                 vec![Box::new(AutomaticRepartitionRule::new())],
+            ),
+            // --- Push down aggregations ---
+            RuleBatch::new(
+                vec![Box::new(PushDownAggregation::new())],
                 RuleExecutionStrategy::Once,
             ),
             // --- Shard pushdowns ---
@@ -390,14 +395,17 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{
         functions::{python::LegacyPythonUDF, FunctionExpr},
-        lit, resolved_col, unresolved_col, Expr,
+        lit, resolved_col, unresolved_col, AggExpr, Expr,
     };
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
         ops::{Filter, Project, UDFProject},
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
-        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
+        test::{
+            dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
+            dummy_scan_operator_for_aggregation,
+        },
         LogicalPlan,
     };
 
@@ -756,7 +764,6 @@ mod tests {
     #[test]
     fn filter_commutes_with_actor_pool_project() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
-
         // Create an actor pool project expression.
         let actor_pool_expr = Arc::new(Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
@@ -814,4 +821,55 @@ mod tests {
     // We can't do this at the momente currently rewrite monotonically increasing ids to a
     // monotonically increasing id column node that produces a column with a uuid. Moving away from
     // string-based column matching will make this test easier to write.
+
+    #[test]
+    fn pushdown_aggregation_through_project() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator_for_aggregation(
+            vec![
+                Field::new("a", DataType::UInt64),
+                Field::new("b", DataType::Int64),
+            ],
+            true,
+        );
+
+        // original plan: Scan -> Project -> Aggregation
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default()
+                .with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                    resolved_col("a"),
+                    CountMode::All,
+                )))))
+                .with_columns(Some(Arc::new(vec!["a".to_string()]))),
+        )
+        .build();
+
+        let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
+        let expected = scan_materializer_and_stats_enricher
+            .optimize_with_rules(
+                scan_materializer_and_stats_enricher.rule_batches[0]
+                    .rules
+                    .as_slice(),
+                expected,
+            )?
+            .data;
+
+        let optimizer = OptimizerBuilder::default()
+            .with_default_optimizations()
+            .build();
+        let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
+
+        assert_eq!(
+            opt_plan,
+            expected,
+            "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
+            opt_plan.repr_ascii(false),
+            expected.repr_ascii(false)
+        );
+        Ok(())
+    }
 }

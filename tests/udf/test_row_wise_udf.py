@@ -87,7 +87,7 @@ def test_row_wise_udf_literal_eval():
     def my_stringify_and_sum(a: int, b: int) -> str:
         return f"{a + b}"
 
-    assert my_stringify_and_sum(1, 2) == "3"
+    assert my_stringify_and_sum.eval(1, 2) == "3"
 
 
 def test_row_wise_udf_kwargs():
@@ -95,8 +95,8 @@ def test_row_wise_udf_kwargs():
     def my_stringify_and_sum_repeat(a: int, b: int, repeat: int = 1) -> str:
         return f"{a + b}" * repeat
 
-    assert my_stringify_and_sum_repeat(1, 2) == "3"
-    assert my_stringify_and_sum_repeat(1, 2, 3) == "333"
+    assert my_stringify_and_sum_repeat.eval(1, 2) == "3"
+    assert my_stringify_and_sum_repeat.eval(1, 2, 3) == "333"
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     default_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y")))

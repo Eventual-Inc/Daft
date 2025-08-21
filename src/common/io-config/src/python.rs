@@ -45,7 +45,7 @@ use crate::{
 /// Examples:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct S3Config {
     pub config: crate::S3Config,
@@ -68,7 +68,7 @@ pub struct S3Config {
 ///     ... )
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
@@ -95,7 +95,7 @@ pub struct S3Credentials {
 /// Examples:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
 ///     >>> daft.read_parquet("az://some-path", io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct AzureConfig {
     pub config: crate::AzureConfig,
@@ -119,7 +119,7 @@ pub struct AzureConfig {
 /// Examples:
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
 ///     >>> daft.read_parquet("gs://some-path", io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct GCSConfig {
     pub config: crate::GCSConfig,
@@ -154,16 +154,22 @@ pub struct IOConfig {
 /// Examples:
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
-#[derive(Clone, Default)]
-#[pyclass]
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft")]
 pub struct HTTPConfig {
     pub config: crate::HTTPConfig,
 }
 
-#[derive(Clone, Default)]
-#[pyclass]
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft")]
 pub struct UnityConfig {
     pub config: crate::UnityConfig,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft")]
+pub struct HuggingFaceConfig {
+    pub config: crate::HuggingFaceConfig,
 }
 
 #[pymethods]
@@ -175,7 +181,8 @@ impl IOConfig {
         azure=None,
         gcs=None,
         http=None,
-        unity=None
+        unity=None,
+        hf=None
     ))]
     pub fn new(
         s3: Option<S3Config>,
@@ -183,6 +190,7 @@ impl IOConfig {
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
+        hf: Option<HuggingFaceConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -191,6 +199,7 @@ impl IOConfig {
                 gcs: gcs.unwrap_or_default().config,
                 http: http.unwrap_or_default().config,
                 unity: unity.unwrap_or_default().config,
+                hf: hf.unwrap_or_default().config,
             },
         }
     }
@@ -201,7 +210,8 @@ impl IOConfig {
         azure=None,
         gcs=None,
         http=None,
-        unity=None
+        unity=None,
+        hf=None
     ))]
     pub fn replace(
         &self,
@@ -210,6 +220,7 @@ impl IOConfig {
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
+        hf: Option<HuggingFaceConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -228,6 +239,9 @@ impl IOConfig {
                 unity: unity
                     .map(|unity| unity.config)
                     .unwrap_or_else(|| self.config.unity.clone()),
+                hf: hf
+                    .map(|hf| hf.config)
+                    .unwrap_or_else(|| self.config.hf.clone()),
             },
         }
     }
@@ -275,6 +289,13 @@ impl IOConfig {
         })
     }
 
+    #[getter]
+    pub fn hf(&self) -> PyResult<HuggingFaceConfig> {
+        Ok(HuggingFaceConfig {
+            config: self.config.hf.clone(),
+        })
+    }
+
     pub fn __hash__(&self) -> PyResult<u64> {
         use std::{collections::hash_map::DefaultHasher, hash::Hash};
 
@@ -283,8 +304,6 @@ impl IOConfig {
         Ok(hasher.finish())
     }
 }
-
-impl_bincode_py_state_serialization!(IOConfig);
 
 #[pymethods]
 impl S3Config {
@@ -1148,6 +1167,115 @@ impl UnityConfig {
     }
 }
 
+#[pymethods]
+impl HuggingFaceConfig {
+    #[new]
+    #[pyo3(signature = (
+        token=None,
+        anonymous=None,
+        use_content_defined_chunking=None,
+        row_group_size=None,
+        target_filesize=None,
+        max_operations_per_commit=None
+    ))]
+    pub fn new(
+        token: Option<String>,
+        anonymous: Option<bool>,
+        use_content_defined_chunking: Option<bool>,
+        row_group_size: Option<usize>,
+        target_filesize: Option<usize>,
+        max_operations_per_commit: Option<usize>,
+    ) -> Self {
+        let default = crate::HuggingFaceConfig::default();
+        Self {
+            config: crate::HuggingFaceConfig {
+                token: token.map(Into::into).or(default.token),
+                anonymous: anonymous.unwrap_or(default.anonymous),
+                use_content_defined_chunking: use_content_defined_chunking
+                    .or(default.use_content_defined_chunking),
+                row_group_size: row_group_size.or(default.row_group_size),
+                target_filesize: target_filesize.unwrap_or(default.target_filesize),
+                max_operations_per_commit: max_operations_per_commit
+                    .unwrap_or(default.max_operations_per_commit),
+            },
+        }
+    }
+
+    #[pyo3(signature = (
+        token=None,
+        anonymous=None,
+        use_content_defined_chunking=None,
+        row_group_size=None,
+        target_filesize=None,
+        max_operations_per_commit=None
+    ))]
+    pub fn replace(
+        &self,
+        token: Option<String>,
+        anonymous: Option<bool>,
+        use_content_defined_chunking: Option<bool>,
+        row_group_size: Option<usize>,
+        target_filesize: Option<usize>,
+        max_operations_per_commit: Option<usize>,
+    ) -> Self {
+        Self {
+            config: crate::HuggingFaceConfig {
+                token: token.map(Into::into).or_else(|| self.config.token.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
+                use_content_defined_chunking: use_content_defined_chunking
+                    .or(self.config.use_content_defined_chunking),
+                row_group_size: row_group_size.or(self.config.row_group_size),
+                target_filesize: target_filesize.unwrap_or(self.config.target_filesize),
+                max_operations_per_commit: max_operations_per_commit
+                    .unwrap_or(self.config.max_operations_per_commit),
+            },
+        }
+    }
+
+    #[getter]
+    pub fn token(&self) -> Option<String> {
+        self.config
+            .token
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned()
+    }
+
+    #[getter]
+    pub fn anonymous(&self) -> bool {
+        self.config.anonymous
+    }
+
+    #[getter]
+    pub fn use_content_defined_chunking(&self) -> Option<bool> {
+        self.config.use_content_defined_chunking
+    }
+
+    #[getter]
+    pub fn row_group_size(&self) -> Option<usize> {
+        self.config.row_group_size
+    }
+
+    #[getter]
+    pub fn target_filesize(&self) -> usize {
+        self.config.target_filesize
+    }
+
+    #[getter]
+    pub fn max_operations_per_commit(&self) -> usize {
+        self.config.max_operations_per_commit
+    }
+}
+
+impl_bincode_py_state_serialization!(IOConfig);
+impl_bincode_py_state_serialization!(S3Config);
+impl_bincode_py_state_serialization!(S3Credentials);
+impl_bincode_py_state_serialization!(AzureConfig);
+impl_bincode_py_state_serialization!(GCSConfig);
+impl_bincode_py_state_serialization!(HTTPConfig);
+impl_bincode_py_state_serialization!(UnityConfig);
+impl_bincode_py_state_serialization!(HuggingFaceConfig);
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
@@ -1155,6 +1283,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
     parent.add_class::<UnityConfig>()?;
+    parent.add_class::<HuggingFaceConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }

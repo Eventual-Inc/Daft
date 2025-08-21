@@ -1,5 +1,6 @@
 [dependencies]
 common-error = {path = "../common/error", default-features = false}
+common-file = {path = "../common/file"}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-macros = {path = "../common/macros"}
 common-py-serde = {path = "../common/py-serde", default-features = false}

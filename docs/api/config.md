@@ -59,3 +59,15 @@ These configurations are most often used as inputs to Daft when reading I/O func
 ::: daft.io.AzureConfig
     options:
         filters: ["!^_"]
+
+::: daft.io.HTTPConfig
+    options:
+        filters: ["!^_"]
+
+::: daft.io.UnityConfig
+    options:
+        filters: ["!^_"]
+
+::: daft.io.HuggingFaceConfig
+    options:
+        filters: ["!^_"]

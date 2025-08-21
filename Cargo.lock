@@ -1798,6 +1798,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-file"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "serde",
+]
+
+[[package]]
 name = "common-file-formats"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1823,8 +1831,10 @@ dependencies = [
  "arrow2",
  "bincode",
  "common-error",
+ "common-ndarray",
  "daft-schema",
  "image",
+ "ndarray",
  "serde",
 ]
 
@@ -1845,6 +1855,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-logging"
+version = "0.3.0-dev0"
+dependencies = [
+ "arc-swap",
+ "log",
+]
+
+[[package]]
 name = "common-macros"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1862,6 +1880,15 @@ dependencies = [
  "indicatif 0.17.11",
  "serde",
  "smallvec",
+]
+
+[[package]]
+name = "common-ndarray"
+version = "0.3.0-dev0"
+dependencies = [
+ "ndarray",
+ "numpy",
+ "pyo3",
 ]
 
 [[package]]
@@ -1915,6 +1942,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "daft-algebra",
+ "daft-core",
  "daft-dsl",
  "daft-schema",
  "fnv",
@@ -2299,8 +2327,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
+ "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-logging",
  "common-metrics",
  "common-partitioning",
  "common-resource-request",
@@ -2320,6 +2350,7 @@ dependencies = [
  "daft-dashboard",
  "daft-distributed",
  "daft-dsl",
+ "daft-file",
  "daft-functions",
  "daft-functions-binary",
  "daft-functions-json",
@@ -2471,9 +2502,11 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
+ "common-file",
  "common-hashable-float-wrapper",
  "common-image",
  "common-io-config",
+ "common-ndarray",
  "common-py-serde",
  "daft-hash",
  "daft-minhash",
@@ -2489,7 +2522,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "mur3",
- "ndarray",
  "num-traits",
  "numpy",
  "pyo3",
@@ -2576,9 +2608,12 @@ dependencies = [
  "common-scan-info",
  "common-treenode",
  "daft-dsl",
+ "daft-io",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-micropartition",
  "daft-physical-plan",
+ "daft-recordbatch",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
@@ -2600,6 +2635,7 @@ name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-file",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
@@ -2614,6 +2650,15 @@ dependencies = [
  "rstest",
  "serde",
  "typetag",
+]
+
+[[package]]
+name = "daft-file"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-io",
+ "pyo3",
 ]
 
 [[package]]
@@ -2880,12 +2925,14 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "capitalize",
  "common-daft-config",
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-logging",
  "common-metrics",
  "common-py-serde",
  "common-resource-request",
@@ -2893,6 +2940,7 @@ dependencies = [
  "common-scan-info",
  "common-system-info",
  "common-tracing",
+ "console 0.16.0",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -2970,9 +3018,11 @@ dependencies = [
  "daft-functions-list",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-recordbatch",
  "daft-schema",
  "educe",
  "indexmap 2.9.0",
+ "indoc",
  "itertools 0.14.0",
  "log",
  "num-format",
@@ -6336,6 +6386,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8970a78afe0628a3e3430376fc5fd76b6b45c4d43360ffd6cdd40bdde72b682a"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "indexmap 2.9.0",
  "indoc",
  "inventory",

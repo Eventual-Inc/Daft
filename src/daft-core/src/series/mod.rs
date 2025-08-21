@@ -249,7 +249,7 @@ impl Series {
         self.inner.get_lit(idx)
     }
 
-    pub fn to_literals(&self) -> impl Iterator<Item = Literal> + use<'_> {
+    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> {
         (0..self.len()).map(|i| self.get_lit(i))
     }
 }
