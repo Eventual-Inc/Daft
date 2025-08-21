@@ -129,7 +129,6 @@ impl RuntimeHandle {
 
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
-    default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
     stats_manager: RuntimeStatsManagerHandle,
 }
@@ -137,13 +136,11 @@ pub(crate) struct ExecutionRuntimeContext {
 impl ExecutionRuntimeContext {
     #[must_use]
     pub fn new(
-        default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
         stats_manager: RuntimeStatsManagerHandle,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
-            default_morsel_size,
             memory_manager,
             stats_manager,
         }
@@ -165,11 +162,6 @@ impl ExecutionRuntimeContext {
 
     pub async fn shutdown(&mut self) {
         self.worker_set.shutdown().await;
-    }
-
-    #[must_use]
-    pub fn default_morsel_size(&self) -> usize {
-        self.default_morsel_size
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
