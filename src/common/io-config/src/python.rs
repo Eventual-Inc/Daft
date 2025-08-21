@@ -45,7 +45,7 @@ use crate::{
 /// Examples:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct S3Config {
     pub config: crate::S3Config,
@@ -68,7 +68,7 @@ pub struct S3Config {
 ///     ... )
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
@@ -95,7 +95,7 @@ pub struct S3Credentials {
 /// Examples:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
 ///     >>> daft.read_parquet("az://some-path", io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct AzureConfig {
     pub config: crate::AzureConfig,
@@ -119,7 +119,7 @@ pub struct AzureConfig {
 /// Examples:
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
 ///     >>> daft.read_parquet("gs://some-path", io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct GCSConfig {
     pub config: crate::GCSConfig,
@@ -154,19 +154,19 @@ pub struct IOConfig {
 /// Examples:
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct HTTPConfig {
     pub config: crate::HTTPConfig,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct UnityConfig {
     pub config: crate::UnityConfig,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
 pub struct HuggingFaceConfig {
     pub config: crate::HuggingFaceConfig,
@@ -304,8 +304,6 @@ impl IOConfig {
         Ok(hasher.finish())
     }
 }
-
-impl_bincode_py_state_serialization!(IOConfig);
 
 #[pymethods]
 impl S3Config {
@@ -1268,6 +1266,15 @@ impl HuggingFaceConfig {
         self.config.max_operations_per_commit
     }
 }
+
+impl_bincode_py_state_serialization!(IOConfig);
+impl_bincode_py_state_serialization!(S3Config);
+impl_bincode_py_state_serialization!(S3Credentials);
+impl_bincode_py_state_serialization!(AzureConfig);
+impl_bincode_py_state_serialization!(GCSConfig);
+impl_bincode_py_state_serialization!(HTTPConfig);
+impl_bincode_py_state_serialization!(UnityConfig);
+impl_bincode_py_state_serialization!(HuggingFaceConfig);
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
