@@ -344,6 +344,108 @@ fn hash_utf8<O: Offset>(
     }
 }
 
+fn hash_decimal(
+    array: &PrimitiveArray<i128>,
+    seed: Option<&PrimitiveArray<u64>>,
+    hash_function: HashFunctionKind,
+    precision: usize,
+    scale: usize,
+) -> PrimitiveArray<u64> {
+    // For decimal hashing, we need to consider precision and scale
+    // The same logical decimal value should hash to the same value regardless of precision/scale
+    // We'll normalize the value by removing trailing zeros beyond the scale
+    
+    let normalize_decimal = |value: i128| -> i128 {
+        if value == 0 {
+            return 0;
+        }
+        
+        // Remove trailing zeros beyond the scale
+        let mut normalized = value;
+        let mut trailing_zeros = 0;
+        
+        // Count trailing zeros in the decimal part
+        while normalized % 10 == 0 && trailing_zeros < scale {
+            normalized /= 10;
+            trailing_zeros += 1;
+        }
+        
+        normalized
+    };
+
+    match hash_function {
+        HashFunctionKind::XxHash => {
+            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+            let hashes = if let Some(seed) = seed {
+                array
+                    .iter()
+                    .zip(seed.values_iter())
+                    .map(|(v, s)| match v {
+                        Some(v) => {
+                            let normalized = normalize_decimal(*v);
+                            xxh3_64_with_seed(normalized.to_le_bytes().as_ref(), *s)
+                        }
+                        None => NULL_HASH,
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                array
+                    .iter()
+                    .map(|v| match v {
+                        Some(v) => {
+                            let normalized = normalize_decimal(*v);
+                            xxh3_64(normalized.to_le_bytes().as_ref())
+                        }
+                        None => NULL_HASH,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+        }
+        HashFunctionKind::MurmurHash3 => {
+            let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
+            let hashes = array
+                .iter()
+                .map(|v| {
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(v) => {
+                            let normalized = normalize_decimal(*v);
+                            hasher.write(normalized.to_le_bytes().as_ref());
+                            hasher.finish()
+                        }
+                        None => {
+                            hasher.write(b"");
+                            hasher.finish()
+                        }
+                    }
+                })
+                .collect::<Vec<_>>();
+            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+        }
+        HashFunctionKind::Sha1 => {
+            let hashes = array
+                .iter()
+                .map(|v| {
+                    let mut hasher = Sha1Hasher::default();
+                    match v {
+                        Some(v) => {
+                            let normalized = normalize_decimal(*v);
+                            hasher.write(normalized.to_le_bytes().as_ref());
+                            hasher.finish()
+                        }
+                        None => {
+                            hasher.write(b"");
+                            hasher.finish()
+                        }
+                    }
+                })
+                .collect::<Vec<_>>();
+            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+        }
+    }
+}
+
 macro_rules! with_match_hashing_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
@@ -400,9 +502,22 @@ pub fn hash(
         PhysicalType::Boolean => {
             hash_boolean(array.as_any().downcast_ref().unwrap(), seed, hash_function)
         }
-        PhysicalType::Primitive(primitive) => with_match_hashing_primitive_type!(primitive, |$T| {
-            hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-        }),
+        PhysicalType::Primitive(primitive) => {
+            // Check if this is a decimal type
+            if let DataType::Decimal(precision, scale) = array.data_type() {
+                // Use special decimal hashing that considers precision and scale
+                let decimal_array = array.as_any().downcast_ref::<PrimitiveArray<i128>>()
+                    .ok_or_else(|| Error::InvalidArgumentError(
+                        "Expected decimal array to be PrimitiveArray<i128>".to_string()
+                    ))?;
+                hash_decimal(decimal_array, seed, hash_function, *precision, *scale)
+            } else {
+                // Use regular primitive hashing
+                with_match_hashing_primitive_type!(primitive, |$T| {
+                    hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
+                })
+            }
+        },
         PhysicalType::Binary => {
             hash_binary::<i32>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
         }
@@ -425,3 +540,4 @@ pub fn hash(
         }
     })
 }
+

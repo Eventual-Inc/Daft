@@ -150,3 +150,124 @@ def test_table_expr_hash_mixed_algorithms():
     # Both columns should have valid hash values
     assert all(h is not None for h in result.to_pydict()["utf8"])
     assert all(h is not None for h in result.to_pydict()["int"])
+
+
+def test_table_expr_decimal_hash_basic():
+    import decimal
+
+    df = daft.from_pydict({
+        "dec": [decimal.Decimal("123.45"), None, decimal.Decimal("0.00")],
+    })
+    df = df.with_column("dec", col("dec"))
+
+    res = df.select(col("dec").hash()).to_pydict()["dec"]
+
+    assert len(res) == 3
+    assert res[0] is not None
+    assert res[2] is not None
+    # None should have a deterministic hash distinct from non-nulls
+    assert res[1] is not None
+    assert res[0] != res[1]
+
+
+def test_table_expr_decimal_hash_with_seed():
+    import decimal
+
+    df = daft.from_pydict({
+        "dec": [decimal.Decimal("123.45"), decimal.Decimal("67.89")],
+    }).with_column("dec", col("dec"))
+
+    unseeded = df.select(col("dec").hash()).to_pydict()["dec"]
+    seeded = df.select(col("dec").hash(seed=42)).to_pydict()["dec"]
+
+    assert len(unseeded) == 2 and len(seeded) == 2
+    assert unseeded[0] != seeded[0]
+
+
+def test_table_expr_decimal_hash_with_seed_array():
+    import decimal
+
+    df = daft.from_pydict({
+        "dec": [decimal.Decimal("1.00"), decimal.Decimal("2.00"), decimal.Decimal("3.00")],
+        "seed": [1, 2, 3],
+    }).with_column("dec", col("dec"))
+
+    res = df.select(col("dec").hash(seed=col("seed"))).to_pydict()["dec"]
+    assert len(res) == 3
+    # Different seeds should yield different hashes for same value when duplicated
+    df_dup = daft.from_pydict({
+        "dec": [decimal.Decimal("1.00"), decimal.Decimal("1.00")],
+        "seed": [1, 2],
+    }).with_column("dec", col("dec"))
+    res_dup = df_dup.select(col("dec").hash(seed=col("seed"))).to_pydict()["dec"]
+    assert res_dup[0] != res_dup[1]
+
+
+def test_table_expr_decimal_hash_different_algorithms():
+    import decimal
+
+    df = daft.from_pydict({
+        "dec": [decimal.Decimal("10.10"), decimal.Decimal("20.20"), decimal.Decimal("30.30")],
+    }).with_column("dec", col("dec"))
+
+    xx = df.select(col("dec").hash(hash_function="xxhash")).to_pydict()["dec"]
+    mm = df.select(col("dec").hash(hash_function="murmurhash3")).to_pydict()["dec"]
+    sh = df.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"]
+
+    assert len(xx) == len(mm) == len(sh) == 3
+    # Algorithms should generally differ
+    assert xx != mm
+    assert xx != sh
+
+
+def test_table_expr_decimal_hash_normalization_across_scales():
+    """Decimals with same logical value but different scales should hash the same."""
+    import decimal
+
+    # 123.45 with scale=2
+    df2 = daft.from_pydict({
+        "dec": [decimal.Decimal("123.45")],
+    }).with_column("dec", col("dec"))
+    h2 = df2.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+
+    # 123.450 with scale=3
+    df3 = daft.from_pydict({
+        "dec": [decimal.Decimal("123.450")],
+    }).with_column("dec", col("dec"))
+    h3 = df3.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+
+    # 0123.45 with scale=2
+    df4 = daft.from_pydict({
+        "dec": [decimal.Decimal("0123.45")],
+    }).with_column("dec", col("dec"))
+    h4 = df4.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+
+    # 0123.45 with scale=3
+    df5 = daft.from_pydict({
+        "dec": [decimal.Decimal("0123.450")],
+    }).with_column("dec", col("dec"))
+    h5 = df5.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+
+    assert h2 == h3 == h4 == h5
+
+def test_table_expr_decimal_hash_max_precision():
+    """Test that decimal hash respects max precision."""
+    import decimal
+
+    # how many precision are in 
+    df1 = daft.from_pydict({
+        "dec": [decimal.Decimal("0.12345678901234567890123456789012345678")],
+    }).with_column("dec", col("dec"))
+
+    df2 = daft.from_pydict({
+        "dec": [decimal.Decimal("1234567890123456789012345678.9012345678")],
+    }).with_column("dec", col("dec"))
+
+    df3 = daft.from_pydict({
+        "dec": [decimal.Decimal("1234567890123456789012345678.0019012345678")],
+    }).with_column("dec", col("dec"))
+
+    # Hash with default precision
+    res_default1 = df1.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+    res_default2 = df2.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+    res_default3 = df3.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
