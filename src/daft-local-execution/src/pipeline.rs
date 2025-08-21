@@ -425,7 +425,6 @@ pub fn physical_plan_to_pipeline(
             passthrough_columns,
             stats_state,
             schema,
-            ..
         }) => {
             let proj_op =
                 UdfOperator::try_new(project.clone(), passthrough_columns.clone(), schema)

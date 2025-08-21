@@ -4,6 +4,7 @@ common-display = {path = "src/common/display", default-features = false}
 common-file = {path = "src/common/file", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
+common-logging = {path = "src/common/logging", default-features = false}
 common-metrics = {path = "src/common/metrics", default-features = false}
 common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
@@ -222,6 +223,7 @@ members = [
 
 [workspace.dependencies]
 approx = "0.5.1"
+arc-swap = "1.7.1"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
   "tokio",

@@ -74,6 +74,8 @@ jobs:
           pyarrow-version: 8.0.0
         - python-version: '3.9'
           os: macos-latest
+        - python-version: '3.10'
+          os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
         - python-version: '3.11'
@@ -494,6 +496,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
+        HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() }}

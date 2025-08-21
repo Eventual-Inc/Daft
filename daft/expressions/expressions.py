@@ -5129,6 +5129,17 @@ class ExpressionsProjection(Iterable[Expression]):
     def __repr__(self) -> str:
         return f"{self._output_name_to_exprs.values()}"
 
+    @classmethod
+    def _from_serialized(cls, _output_name_to_exprs: dict[str, Expression]) -> ExpressionsProjection:
+        obj = cls.__new__(cls)
+        obj._output_name_to_exprs = _output_name_to_exprs
+        return obj
+
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[[dict[str, Expression]], ExpressionsProjection], tuple[dict[str, Expression]]]:
+        return ExpressionsProjection._from_serialized, (self._output_name_to_exprs,)
+
 
 class ExpressionImageNamespace(ExpressionNamespace):
     """Expression operations for image columns. The following methods are available under the `expr.image` attribute."""
