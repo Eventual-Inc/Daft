@@ -410,7 +410,7 @@ jobs:
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
-    # if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
@@ -495,24 +495,24 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
         HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
-    # - name: Send Slack notification on failure
-    #   uses: slackapi/slack-github-action@v2.0.0
-    #   if: ${{ failure() }}
-    #   with:
-    #     payload: |
-    #       {
-    #         "blocks": [
-    #           {
-    #             "type": "section",
-    #             "text": {
-    #               "type": "mrkdwn",
-    #               "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-    #             }
-    #           }
-    #         ]
-    #       }
-    #     webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-    #     webhook-type: incoming-webhook
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-test-iceberg:
     runs-on: ubuntu-latest
