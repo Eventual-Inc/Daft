@@ -1,4 +1,3 @@
-mod automatic_repartition;
 mod detect_monotonic_id;
 mod drop_into_batches;
 mod drop_repartition;
