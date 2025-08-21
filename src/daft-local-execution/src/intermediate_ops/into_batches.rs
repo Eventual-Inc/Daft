@@ -16,13 +16,14 @@ use crate::{
 
 pub struct IntoBatchesOperator {
     batch_size: usize,
+    strict: bool,
 }
 
 impl IntoBatchesOperator {
     const BATCH_SIZE_LOWER_BOUND_THRESHOLD: f64 = 0.8;
 
-    pub fn new(batch_size: usize) -> Self {
-        Self { batch_size }
+    pub fn new(batch_size: usize, strict: bool) -> Self {
+        Self { batch_size, strict }
     }
 }
 
@@ -65,11 +66,16 @@ impl IntermediateOperator for IntoBatchesOperator {
         Ok(())
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        let lower_bound =
-            (self.batch_size as f64 * Self::BATCH_SIZE_LOWER_BOUND_THRESHOLD) as usize;
-        Some(MorselSizeRequirement::Flexible(
-            lower_bound,
-            self.batch_size,
-        ))
+        match self.strict {
+            true => Some(MorselSizeRequirement::Strict(self.batch_size)),
+            false => {
+                let lower_bound =
+                    (self.batch_size as f64 * Self::BATCH_SIZE_LOWER_BOUND_THRESHOLD) as usize;
+                Some(MorselSizeRequirement::Flexible(
+                    lower_bound,
+                    self.batch_size,
+                ))
+            }
+        }
     }
 }

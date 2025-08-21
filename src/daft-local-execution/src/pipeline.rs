@@ -588,10 +588,11 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::IntoBatches(IntoBatches {
             input,
             batch_size,
+            strict,
             stats_state,
             ..
         }) => {
-            let into_batches_op = IntoBatchesOperator::new(*batch_size);
+            let into_batches_op = IntoBatchesOperator::new(*batch_size, *strict);
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(into_batches_op),

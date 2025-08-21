@@ -193,12 +193,14 @@ impl LocalPhysicalPlan {
     pub fn into_batches(
         input: LocalPhysicalPlanRef,
         batch_size: usize,
+        strict: bool,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::IntoBatches(IntoBatches {
             input,
             batch_size,
+            strict,
             schema,
             stats_state,
         })
@@ -836,7 +838,7 @@ impl LocalPhysicalPlan {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
                 | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
                 Self::Filter(Filter { predicate, .. }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
-                Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::into_batches(new_child.clone(), *batch_size, StatsState::NotMaterialized),
+                Self::IntoBatches(IntoBatches { batch_size, strict, .. }) => Self::into_batches(new_child.clone(), *batch_size, *strict, StatsState::NotMaterialized),
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -990,6 +992,7 @@ pub struct Filter {
 pub struct IntoBatches {
     pub input: LocalPhysicalPlanRef,
     pub batch_size: usize,
+    pub strict: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

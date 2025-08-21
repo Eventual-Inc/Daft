@@ -64,6 +64,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::into_batches(
                 input,
                 into_batches.batch_size,
+                false,
                 into_batches.stats_state.clone(),
             ))
         }
