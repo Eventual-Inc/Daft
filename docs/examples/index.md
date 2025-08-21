@@ -88,7 +88,7 @@
     </a>
   </div>
 
-<div class="example-card">
+  <div class="example-card">
     <a href="./window-functions" class="example-image-link">
       <div class="example-image">
         <img src="../img/window-functions-cover.jpg" alt="Window Functions" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
@@ -102,6 +102,7 @@
       </div>
     </a>
   </div>
+</div>
 
 <style>
 .examples-grid {
