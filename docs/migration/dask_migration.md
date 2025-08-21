@@ -80,7 +80,7 @@ For example:
     res = ddf.map_partitions(my_function, **kwargs)
     ```
 
-Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: [Expressions](../core_concepts.md#expressions) and [User-Defined Functions (UDFs)](../core_concepts.md#user-defined-functions-udf). Expressions are most useful when you need to define computation over your columns.
+Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: [Expressions](../core_concepts.md#expressions) and [User-Defined Functions (UDFs)](../custom-code/udfs.md). Expressions are most useful when you need to define computation over your columns.
 
 === "🐍 Python"
 
