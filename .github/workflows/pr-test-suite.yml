@@ -410,7 +410,7 @@ jobs:
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    # if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
