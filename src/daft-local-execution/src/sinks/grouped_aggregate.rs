@@ -21,7 +21,7 @@ use super::blocking_sink::{
 };
 use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
     // TODO: This would probably benefit from doing sharded aggs.
     AggThenPartition,
@@ -356,7 +356,7 @@ impl BlockingSink for GroupedAggregateSink {
                             }
 
                             // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
-                            if partially_aggregated.is_empty() {
+                            if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
                                 let concated = MicroPartition::concat(&unaggregated)?;
                                 let agged = concated
                                     .agg(&params.original_aggregations, &params.group_by)?;

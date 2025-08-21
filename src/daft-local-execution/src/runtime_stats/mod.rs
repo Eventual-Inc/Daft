@@ -338,6 +338,7 @@ impl InitializingCountingReceiver {
         v
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::sync::{atomic::AtomicU64, Arc, Mutex};

@@ -710,13 +710,38 @@ class HuggingFaceConfig:
     Args:
         token (str, optional): Your Hugging Face access token, generated from https://huggingface.co/settings/tokens.
         anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Hugging Face without any credentials. Defaults to False.
+        use_content_defined_chunking (bool, optional): Set the `use_content_defined_chunking` parameter when creating a `pyarrow.parquet.ParquetWriter`. Only available with pyarrow>=21. Defaults to true if available.
+        row_group_size (int, optional): Row group size when writing Parquet files. Defaults to the default `pyarrow.parquet.ParquetWriter` row group size.
+        target_filesize (int, optional): Target size in bytes for each written Parquet file. Defaults to 512 MB.
+        max_operations_per_commit (int, optional): Maximum number of files to add/copy/delete per commit. Defaults to 100.
+
     """
 
     token: str | None
     anonymous: bool
+    use_content_defined_chunking: bool
+    row_group_size: int | None
+    target_filesize: int
+    max_operations_per_commit: int
 
-    def __init__(self, token: str | None = None, anonymous: bool | None = None): ...
-    def replace(self, token: str | None = None, anonymous: bool | None = None) -> HuggingFaceConfig:
+    def __init__(
+        self,
+        token: str | None = None,
+        anonymous: bool | None = None,
+        use_content_defined_chunking: bool | None = None,
+        row_group_size: int | None = None,
+        target_filesize: int | None = None,
+        max_operations_per_commit: int | None = None,
+    ): ...
+    def replace(
+        self,
+        token: str | None = None,
+        anonymous: bool | None = None,
+        use_content_defined_chunking: bool | None = None,
+        row_group_size: int | None = None,
+        target_filesize: int | None = None,
+        max_operations_per_commit: int | None = None,
+    ) -> HuggingFaceConfig:
         """Replaces values if provided, returning a new HuggingFaceConfig."""
         ...
 

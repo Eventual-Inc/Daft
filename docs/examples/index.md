@@ -1,50 +1,232 @@
 # Examples
 
-## [Document Processing](./document-processing.md)
+<div class="examples-grid">
+  <div class="example-card">
+    <a href="./document-processing" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/document-processing-cover.jpg" alt="Document Processing">
+        <div class="example-overlay">
+          <h3>Document Processing</h3>
+          <p>Load PDFs from S3, extract text, run layout analysis, and compute embeddings</p>
+        </div>
+      </div>
+    </a>
+  </div>
 
-Load a collection of PDFs from S3, OCR or extract text from them, run layout analysis to group text boxes into paragraphs, then compute text embeddings using a locally running LLM. Also showcases how to use custom Pydantic classes as Daft DataTypes for UDFs.
+  <div class="example-card">
+    <a href="./text-embeddings" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/text-embeddings-cover.jpg" alt="Text Embeddings" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+          <span>📊</span>
+        </div>
+        <div class="example-overlay">
+          <h3>Text Embeddings for Turbopuffer</h3>
+          <p>Generate embeddings on text to store in vector DBs</p>
+        </div>
+      </div>
+    </a>
+  </div>
 
-<div class="grid cards examples" markdown>
+  <div class="example-card">
+    <a href="./llms-red-pajamas" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/llms-red-pajamas-cover.jpg" alt="LLMs on Red Pajamas" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+          <span>🤖</span>
+        </div>
+        <div class="example-overlay">
+          <h3>LLMs on Hugging Face Datasets</h3>
+          <p>Load Red Pajamas dataset and perform similarity search</p>
+        </div>
+      </div>
+    </a>
+  </div>
 
-- [![colab](../img/colab.png) Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/document_processing/document_processing_tutorial.ipynb)
+  <div class="example-card">
+    <a href="./image-generation" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/image-generation-cover.jpg" alt="Image Generation" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+          <span>🎨</span>
+        </div>
+        <div class="example-overlay">
+          <h3>Generate Images with Stable Diffusion</h3>
+          <p>Using text prompts with deep learning models</p>
+        </div>
+      </div>
+    </a>
+  </div>
 
-- [![thumbnail](../img/doc_proc.png) Follow along with the tutorial video](https://youtu.be/BLcKDQRTFKY)
+  <div class="example-card">
+    <a href="./querying-images" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/querying-images-cover.jpg" alt="Image Querying" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+          <span>🔍</span>
+        </div>
+        <div class="example-overlay">
+          <h3>Query Images</h3>
+          <p>Retrieve the top N "reddest" images from the Open Images dataset</p>
+        </div>
+      </div>
+    </a>
+  </div>
 
+  <div class="example-card">
+    <a href="./mnist" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/mnist-cover.jpg" alt="MNIST Classification" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
+          <span>🔢</span>
+        </div>
+        <div class="example-overlay">
+          <h3>MNIST Digit Classification</h3>
+          <p>Run classification with deep learning</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="example-card">
+    <a href="./window-functions" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/window-functions-cover.jpg" alt="Window Functions" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);">
+          <span>📈</span>
+        </div>
+        <div class="example-overlay">
+          <h3>Window Functions</h3>
+          <p>Efficient window functions for ranking, computing deltas, and tracking cumulative sums</p>
+        </div>
+      </div>
+    </a>
+  </div>
 </div>
 
-## [Generate Text Embeddings for Turbopuffer](./text-embeddings.md)
+<style>
+.examples-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
 
-Generate embeddings on text data then store them in a vector database.
+.example-card {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  background: white;
+}
 
+.example-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
 
-## [Running LLMs on the Red Pajamas Dataset](./llms-red-pajamas.md)
+.example-image {
+  position: relative;
+  height: 400px;
+  overflow: hidden;
+}
 
-Load the Red Pajamas dataset and perform similarity search on Stack Exchange questions using language models and embeddings.
+.example-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
 
-[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/embeddings/daft_tutorial_embeddings_stackexchange.ipynb)
+.example-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
 
-## [Generate Images from Text with Stable Diffusion](./image-generation.md)
+.example-image::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  pointer-events: none;
+}
 
-Generate images from text prompts using a deep learning model (Stable Diffusion) and Daft UDFs. Run Daft UDFs on GPUs for more efficient resource allocation.
+.example-card:hover .example-image img {
+  transform: scale(1.05);
+}
 
-[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
+.example-image-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
 
+.example-image-link:hover {
+  text-decoration: none;
+  color: inherit;
+}
 
-## [Querying Images with UDFs](./querying-images.md)
+.example-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 12%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0) 65%);
+  color: white;
+  padding: 1.5rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  z-index: 2;
+}
 
-Query the Open Images dataset to retrieve the top N "reddest" images. This tutorial uses common open-source tools such as numpy and Pillow inside Daft UDFs to execute this query.
+.example-overlay h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
 
-[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/image_querying/top_n_red_color.ipynb)
+.example-overlay p {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+  line-height: 1.4;
+}
 
+@media (max-width: 768px) {
+  .examples-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
 
-## [MNIST Digit Classification](./mnist.md)
+  .example-image {
+    height: 180px;
+  }
 
-Load the MNIST image dataset and use a simple deep learning model to run classification on each image. Evaluate the model's performance with simple aggregations.
+  .example-overlay {
+    padding: 1rem 0.75rem 0.75rem;
+  }
 
-[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/mnist.ipynb)
+  .example-overlay h3 {
+    font-size: 1.1rem;
+  }
 
-## [Window Functions](./window-functions.md)
-
-Compare traditional join operations with more efficient window functions for ranking, calculating deltas, and tracking cumulative sums.
-
-[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions/window_functions.ipynb)
+  .example-overlay p {
+    font-size: 0.85rem;
+  }
+}
+</style>

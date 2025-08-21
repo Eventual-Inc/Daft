@@ -1645,6 +1645,38 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    def write_huggingface(
+        self,
+        repo: str,
+        split: str = "train",
+        data_dir: str = "data",
+        revision: str = "main",
+        overwrite: bool = False,
+        commit_message: str = "Upload dataset using Daft",
+        commit_description: Optional[str] = None,
+        io_config: Optional[IOConfig] = None,
+    ) -> "DataFrame":
+        """Write a DataFrame into a Hugging Face dataset.
+
+        Args:
+            repo: The ID of the repository to push to in the following format: `<user>/<dataset_name>` or `<org>/<dataset_name>`.
+            split: The name of the split that will be given to that dataset.
+            data_dir: Directory of the uploaded data files.
+            revision: Branch to push the uploaded files to.
+            overwrite: Whether to overwrite or append.
+            commit_message: Message to commit while pushing.
+            commit_description: Description of the commit that will be created.
+            io_config: Configurations to use when interacting with remote storage.
+        """
+        from daft.io.huggingface.sink import HuggingFaceSink
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        sink = HuggingFaceSink(
+            repo, split, data_dir, revision, overwrite, commit_message, commit_description, io_config.hf
+        )
+        return self.write_sink(sink)
+
     ###
     # DataFrame operations
     ###

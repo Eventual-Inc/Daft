@@ -3,39 +3,8 @@ name: PR test suite
 on:
   push:
     branches: [main]
-    paths-ignore:
-    - '.vscode/**'
-    - 'ci/**'
-    - 'docs/**'
-    - '.git-blame-ignore-revs'
-    - '.gitignore'
-    - '.lldbinit'
-    - '.readthedocs.yaml'
-    - 'CODE_OF_CONDUCT.md'
-    - 'CONTRIBUTING.md'
-    - 'LICENSE'
-    - 'README.rst'
-    - 'SECURITY.md'
-    - 'codecov.yml'
-    - 'mkdocs.yml'
-
   pull_request:
     branches: [main]
-    paths-ignore:
-    - '.vscode/**'
-    - 'ci/**'
-    - 'docs/**'
-    - '.git-blame-ignore-revs'
-    - '.gitignore'
-    - '.lldbinit'
-    - '.readthedocs.yaml'
-    - 'CODE_OF_CONDUCT.md'
-    - 'CONTRIBUTING.md'
-    - 'LICENSE'
-    - 'README.rst'
-    - 'SECURITY.md'
-    - 'codecov.yml'
-    - 'mkdocs.yml'
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
@@ -73,6 +42,8 @@ jobs:
           python-version: '3.10'
           pyarrow-version: 8.0.0
         - python-version: '3.9'
+          os: macos-latest
+        - python-version: '3.10'
           os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
@@ -494,6 +465,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
+        HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() }}
