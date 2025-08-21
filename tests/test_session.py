@@ -263,7 +263,7 @@ def test_exception_surfacing():
 #
 
 
-class TestProvider:
+class MockProvider:
     def __init__(self, name):
         self._name = name
 
@@ -275,7 +275,7 @@ class TestProvider:
 def test_attach_provider():
     sess = Session()
 
-    provider = TestProvider("test_provider")
+    provider = MockProvider("test_provider")
     expect = sess.attach_provider(provider)
     actual = sess.get_provider("test_provider")
 
@@ -285,7 +285,7 @@ def test_attach_provider():
 def test_attach_provider_with_alias():
     sess = Session()
 
-    provider = TestProvider("test_provider")
+    provider = MockProvider("test_provider")
     expect = sess.attach_provider(provider, alias="alias")
     actual = sess.get_provider("alias")
 
@@ -297,7 +297,7 @@ def test_attach_provider_with_alias():
 def test_detach_provider():
     sess = Session()
 
-    provider = TestProvider("test_provider")
+    provider = MockProvider("test_provider")
     sess.attach_provider(provider)
     sess.detach_provider("test_provider")
 
@@ -306,13 +306,8 @@ def test_detach_provider():
 
 
 def test_set_provider_and_current_provider(monkeypatch):
+    mock_provider = MockProvider("mock_provider")
     sess = Session()
-    created = {}
-
-    def fake_load_provider(identifier, alias=None, **options):
-        created["provider"] = TestProvider(identifier)
-        return created["provider"]
-
-    monkeypatch.setattr("daft.session.load_provider", fake_load_provider)
-    sess.set_provider("test_provider")
-    assert sess.current_provider() is created["provider"]
+    sess.attach_provider(mock_provider)
+    sess.set_provider("mock_provider")
+    assert sess.current_provider() is mock_provider

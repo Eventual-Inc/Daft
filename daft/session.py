@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from contextvars import ContextVar, Token
+from typing import TYPE_CHECKING, Any, Literal
 
-from daft.ai.provider import Provider, load_provider
+from daft.ai.provider import PROVIDERS, Provider, load_provider
 from daft.catalog import Catalog, Identifier, Table
 from daft.context import get_context
 from daft.daft import LogicalPlanBuilder as PyBuilder
@@ -11,6 +12,9 @@ from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.udf import UDF
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 __all__ = [
     "Session",
@@ -55,6 +59,21 @@ __all__ = [
 ]
 
 
+_current_session: ContextVar[Session | None] = ContextVar("current_session", default=None)
+
+
+def session() -> Session:
+    """Creates a default daft session to be used with a context manager.
+
+    Examples:
+        >>> import daft
+        >>>
+        >>> with daft.session() as sess:
+        >>>     sess.sql("SELECT 1")  # doctest: +SKIP
+    """
+    return Session()
+
+
 class Session:
     """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs.
 
@@ -82,6 +101,24 @@ class Session:
 
     def __init__(self) -> None:
         self._session = PySession.empty()
+        self._token: Token[Session | None] | None = None
+
+    ###
+    # context manager methods
+    ###
+
+    def __enter__(self) -> Session:
+        self._token = _current_session.set(self)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self._token is not None:
+            _current_session.reset(self._token)
 
     ###
     # factory methods
@@ -561,8 +598,8 @@ class Session:
             like "openai", then we will create and attach this known provider.
             For example, `daft.set_provider("openai")` works.
         """
-        if identifier is not None and not self._session.has_provider(identifier):
-            # upsert semantic for the common case e.g. daft.set_provider("openai")
+        if identifier is not None and not self._session.has_provider(identifier) and identifier in PROVIDERS:
+            # upsert semantic for known providers e.g. daft.set_provider("openai")
             provider = load_provider(identifier, alias=None, **options)
             self.attach_provider(provider)
         self._session.set_provider(identifier)
@@ -608,25 +645,16 @@ _SESSION: Session | None = None
 
 
 def _session() -> Session:
-    """Returns the active session for this scope.
-
-    Note:
-        The daft context is a global singleton, but sessions
-        can be scoped. For convenience, there is an implicit
-        global session, but sessions can also be used with the
-        scoped daft context via `with daft.use_context(session)`.
-    """
-    from daft.context import current_context
-
-    # this implies we're within a daft.context context manager
-    if (ctx := current_context()) and (sess := ctx.session):
+    """Returns the active session for this scope."""
+    if sess := _current_session.get():
+        # this implies we are within a session context manager block.
         return sess
-
-    # fallback to the global active session, consider registering to the context.
-    global _SESSION
-    if not _SESSION:
-        _SESSION = Session._from_env()
-    return _SESSION
+    else:
+        # fallback to the global active session, consider registering to the context.
+        global _SESSION
+        if not _SESSION:
+            _SESSION = Session._from_env()
+        return _SESSION
 
 
 ###
@@ -730,27 +758,27 @@ def drop_table(identifier: Identifier | str) -> None:
 
 
 def current_catalog() -> Catalog | None:
-    """Returns the global context's current catalog or None."""
+    """Returns the active session's current catalog or None."""
     return _session().current_catalog()
 
 
 def current_namespace() -> Identifier | None:
-    """Returns the global context's current namespace or None."""
+    """Returns the active session's current namespace or None."""
     return _session().current_namespace()
 
 
 def current_model() -> str | None:
-    """Returns the global context's current model or None."""
+    """Returns the active session's current model or None."""
     return _session().current_model()
 
 
 def current_provider() -> Provider | None:
-    """Returns the global context's current provider or None."""
+    """Returns the active session's current provider or None."""
     return _session().current_provider()
 
 
 def current_session() -> Session:
-    """Returns the global context's current session."""
+    """Returns the active session's current session."""
     return _session()
 
 

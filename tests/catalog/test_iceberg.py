@@ -88,10 +88,9 @@ def test_create_namespace(catalog: Catalog):
     c.create_namespace(f"{n}.a.b")
     c.create_namespace(f"{n}.b")
     #
-    # bug? iceberg sql catalog does not include child namespace
-    # assert len(c.list_namespaces(f"{n}")) == 3
+    assert len(c.list_namespaces(pattern=n)) == 2
     assert len(c.list_namespaces(f"{n}.a")) == 1
-    assert len(c.list_namespaces(f"{n}.b")) == 1
+    assert len(c.list_namespaces(f"{n}.b")) == 0
 
     # existence checks
     assert c.has_namespace(n)

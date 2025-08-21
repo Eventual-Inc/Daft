@@ -34,14 +34,6 @@ Configure Daft in various ways during execution.
     options:
         heading_level: 3
 
-::: daft.context.use_context
-    options:
-        heading_level: 3
-
-::: daft.context.current_context
-    options:
-        heading_level: 3
-
 ## I/O Configurations
 
 Configure behavior when Daft interacts with storage (e.g. credentials, retry policies and various other knobs to control performance/resource usage)

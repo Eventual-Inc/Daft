@@ -17,6 +17,10 @@ if TYPE_CHECKING:
     from daft.ai.protocols import TextEmbedderDescriptor
     from daft.utils import ColumnInputType
 
+__all__ = [
+    "embed_text",
+]
+
 
 def _resolve_provider(provider: str | Provider | None, default: str) -> Provider:
     """Attempts to resolve a provider based upon the active session and environment variables.
