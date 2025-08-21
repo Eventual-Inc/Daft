@@ -523,7 +523,7 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 - [:simple-quicklook: **SQL**](core_concepts.md#sql)
 - [:material-select-group: **Aggregations and Grouping**](core_concepts.md#aggregations-and-grouping)
 - [:material-window-closed-variant: **Window Functions**](core_concepts.md#window-functions)
-- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](custom-code/udfs.md)
+- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
 - [:octicons-image-16: **Multimodal Data**](core_concepts.md#multimodal-data)
 
 </div> -->
