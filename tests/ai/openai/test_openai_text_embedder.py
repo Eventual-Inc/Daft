@@ -7,6 +7,7 @@ pytest.importorskip("openai")
 from unittest.mock import Mock, patch
 
 import numpy as np
+from openai import RateLimitError
 from openai.types.create_embedding_response import CreateEmbeddingResponse
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
@@ -19,6 +20,11 @@ from daft.ai.openai.text_embedder import (
 )
 from daft.ai.protocols import TextEmbedder
 from daft.ai.typing import EmbeddingDimensions
+
+
+def new_input(approx_tokens: int) -> str:
+    # ~4 chars per token, the batcher uses 3 to be conservative.
+    return "x" * 4 * approx_tokens
 
 
 @pytest.fixture
@@ -121,9 +127,9 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
 
 def test_embed_text_batch_splitting(mock_text_embedder, mock_client):
     """Test that large batches are split appropriately."""
-    text_sm = "z" * 1000  # ~5k tokens
-    text_md = "y" * 10000  # ~50k tokens
-    text_lg = "x" * 20000  # ~100k tokens
+    text_sm = new_input(approx_tokens=5_000)
+    text_md = new_input(approx_tokens=50_000)
+    text_lg = new_input(approx_tokens=100_000)
 
     def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
@@ -149,7 +155,7 @@ def test_embed_text_batch_splitting(mock_text_embedder, mock_client):
 
 def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
     """Test that very large inputs are chunked appropriately."""
-    input_lg = "x" * 2000  # ~10k tokens
+    input_lg = new_input(approx_tokens=10_000)
 
     def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
@@ -179,14 +185,14 @@ def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
     # should be called once with the chunked input.
     mock_client.embeddings.create.assert_called_once()
     call_args = mock_client.embeddings.create.call_args
-    assert len(call_args[1]["input"]) == 2  # two chunks
+    assert len(call_args[1]["input"]) == 2  # called with two chunks
 
 
 def test_embed_text_mixed_batch_and_chunking(mock_text_embedder, mock_client):
     """Test complex scenario with both batch splitting and input chunking."""
-    text_sm = "a" * 1000  # ~5k tokens
-    text_lg = "b" * 2000  # ~10k tokens, will be chunked
-    text_xl = "c" * 50000  # ~250k tokens, will be chunked
+    text_sm = new_input(approx_tokens=5_000)
+    text_lg = new_input(approx_tokens=10_000)
+    text_xl = new_input(approx_tokens=250_000)
 
     def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
@@ -217,6 +223,7 @@ def test_embed_text_empty_input(mock_text_embedder, mock_client):
 def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client):
     """Test that failures are handled when zero_on_failure is True."""
     mock_client.embeddings.create.side_effect = Exception("API Error")
+    mock_text_embedder._zero_on_failure = True
 
     result = mock_text_embedder._embed_text("Hello world")
 
@@ -361,3 +368,31 @@ def test_protocol_compliance():
     assert isinstance(text_embedder, TextEmbedder)
     assert hasattr(text_embedder, "embed_text")
     assert callable(text_embedder.embed_text)
+
+
+def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
+    """Test that _embed_text_batch falls back to individual calls when rate limited."""
+    mock_client.embeddings.create.side_effect = RateLimitError(
+        message="Rate limit exceeded",
+        response=Mock(),
+        body=None,
+    )
+
+    def mock_individual_create(*args, **kwargs):
+        mock_response = Mock(spec=CreateEmbeddingResponse)
+        mock_embedding = Mock(spec=OpenAIEmbedding)
+        mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
+        mock_response.data = [mock_embedding]
+        return mock_response
+
+    with patch.object(mock_text_embedder, "_embed_text") as mock_embed_text:
+        mock_embed_text.return_value = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
+        result = mock_text_embedder._embed_text_batch(["text1", "text2", "text3"])
+
+        # should have called _embed_text for each input
+        assert mock_embed_text.call_count == 3
+        assert len(result) == 3
+        for embedding in result:
+            assert isinstance(embedding, np.ndarray)
+            assert embedding.shape == (1536,)
+            assert embedding.dtype == np.float32

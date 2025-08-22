@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
@@ -97,7 +97,7 @@ class OpenAITextEmbedder(TextEmbedder):
     _client: OpenAI
     _model: str
 
-    def __init__(self, client: OpenAI, model: str, zero_on_failure: bool = True):
+    def __init__(self, client: OpenAI, model: str, zero_on_failure: bool = False):
         self._client = client
         self._model = model
         self._zero_on_failure = zero_on_failure
@@ -108,9 +108,9 @@ class OpenAITextEmbedder(TextEmbedder):
         curr_batch_token_count: int = 0
 
         batch_token_limit = 300_000
-        approx_tokens_per_char = 5  # rounding up from "1 token ≈ 4 characters"
+        approx_chars_per_token = 3  # round down for conservative estimate of "1 token ≈ 4 characters"
         input_text_token_limit = 8192
-        input_text_chars_limit = 1638  # rounding down from 8192 / 5
+        input_text_chars_limit = input_text_token_limit * approx_chars_per_token
 
         def flush() -> None:
             nonlocal curr_batch
@@ -123,13 +123,20 @@ class OpenAITextEmbedder(TextEmbedder):
             curr_batch_token_count = 0
 
         for input_text in text:
-            input_text_token_count = len(input_text) * approx_tokens_per_char
+            input_text_token_count = len(input_text) // approx_chars_per_token
             if input_text_token_count > input_text_token_limit:
-                flush()  # must process previous inputs first, if any.
+                # Must process previous inputs first, if any, to maintain ordered outputs.
+                flush()
+                # If the current input exceeds the maximum tokens per input (8192),
+                # then we will split this single input into its own batch request.
                 chunked_batch = chunk_text(input_text, input_text_chars_limit)
                 chunked_result = self._embed_text_batch(chunked_batch)
-                chunked_weights = [len(chunk) for chunk in chunked_batch]
-                embeddings.append(np.average(chunked_result, axis=0, weights=chunked_weights))
+                # We combine all result embedding vectors into a single embedding using a weighted average.
+                # https://github.com/openai/openai-cookbook/blob/main/examples/Embedding_long_inputs.ipynb
+                chunked_lens = [len(chunk) for chunk in chunked_batch]
+                chunked_vec = np.average(chunked_result, axis=0, weights=chunked_lens)
+                chunked_vec = chunked_vec / np.linalg.norm(chunked_vec)  # normalizes length to 1
+                embeddings.append(chunked_vec)
             elif input_text_token_count + curr_batch_token_count >= batch_token_limit:
                 flush()
             else:
@@ -140,15 +147,21 @@ class OpenAITextEmbedder(TextEmbedder):
         return embeddings
 
     def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
-        """Embeds text as a batch call, consider falling back to _embed_text."""
-        response = self._client.embeddings.create(
-            input=input_batch,
-            model=self._model,
-            encoding_format="float",
-        )
-        return [np.array(embedding.embedding) for embedding in response.data]
+        """Embeds text as a batch call, falling back to _embed_text on rate limit exceptions."""
+        try:
+            response = self._client.embeddings.create(
+                input=input_batch,
+                model=self._model,
+                encoding_format="float",
+            )
+            return [np.array(embedding.embedding) for embedding in response.data]
+        except RateLimitError:
+            # fall back to individual calls when rate limited
+            # consider sleeping or other backoff mechanisms
+            return [self._embed_text(text) for text in input_batch]
 
     def _embed_text(self, input_text: str) -> Embedding:
+        """Embeds a single text input and possibly returns a zero vector."""
         try:
             response: CreateEmbeddingResponse = self._client.embeddings.create(
                 input=[input_text],
