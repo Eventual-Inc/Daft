@@ -65,7 +65,13 @@ impl OptimizerRule for PushDownAggregation {
                                             SourceInfo::Physical(new_external_info).into(),
                                         ))
                                         .into();
-                                        Ok(Transformed::yes(new_source))
+                                        let new_aggregate = Aggregate::try_new(
+                                            new_source,
+                                            aggregations.clone(),
+                                            groupby.clone(),
+                                        )?
+                                        .into();
+                                        Ok(Transformed::yes(new_aggregate))
                                     } else {
                                         Ok(Transformed::no(node.clone()))
                                     }
