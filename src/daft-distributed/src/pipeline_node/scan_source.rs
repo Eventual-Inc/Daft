@@ -79,79 +79,17 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        let config = &self.config.execution_config;
-        let lower_threshold = config.scan_tasks_min_size_bytes;
-        let upper_threshold = config.scan_tasks_max_size_bytes;
-        let max_sources_per_task = config.max_sources_per_scan_task;
-
-        let mut bucket = Vec::new();
-        let mut bucket_size = 0usize;
-
         for scan_task in self.scan_tasks.iter() {
-            let task_size = scan_task
-                .estimate_in_memory_size_bytes(Some(config))
-                .unwrap_or(lower_threshold);
-
-            let should_finalize_bucket = !bucket.is_empty()
-                && (bucket_size + task_size > upper_threshold
-                    || bucket.len() >= max_sources_per_task);
-
-            if should_finalize_bucket {
-                if self
-                    .send_bucket_task(&bucket, &result_tx, &task_id_counter)
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                bucket.clear();
-                bucket_size = 0;
+            let task = self.make_source_tasks(
+                vec![scan_task.clone()].into(),
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )?;
+            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
+                break;
             }
-
-            bucket.push(scan_task.clone());
-            bucket_size += task_size;
-
-            // Finalize bucket if it reaches the lower threshold
-            if bucket_size >= lower_threshold {
-                if self
-                    .send_bucket_task(&bucket, &result_tx, &task_id_counter)
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                bucket.clear();
-                bucket_size = 0;
-            }
-        }
-
-        // Send any remaining tasks
-        if !bucket.is_empty() {
-            let _ = self
-                .send_bucket_task(&bucket, &result_tx, &task_id_counter)
-                .await;
         }
 
         Ok(())
-    }
-
-    async fn send_bucket_task(
-        &self,
-        bucket: &[ScanTaskLikeRef],
-        result_tx: &Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: &TaskIDCounter,
-    ) -> Result<(), ()> {
-        let task = self
-            .make_source_tasks(
-                Arc::new(bucket.to_vec()),
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )
-            .map_err(|_| ())?;
-
-        result_tx
-            .send(SubmittableTask::new(task))
-            .await
-            .map_err(|_| ())
     }
 
     fn make_source_tasks(
