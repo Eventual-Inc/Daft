@@ -136,17 +136,7 @@ class DataType:
                     pass
             elif isinstance(item, tuple):
                 fields = {}
-
-                for i, value in enumerate(item):
-                    if isinstance(value, list):
-                        dtype = DataType._infer_dtype_from_pylist(value)
-                        dtype = dtype if dtype else DataType.python()
-
-                        fields[f"_{i}"] = DataType.list(DataType._infer_type(type(value[0])))
-                    else:
-                        dtype = DataType._infer_type(value)
-
-                    fields[f"_{i}"] = dtype
+                fields = {f"_{i}": DataType._infer_type(value) for i, value in enumerate(item)}
                 curr_dtype = DataType.struct(fields)
             else:
                 return None
@@ -1226,7 +1216,7 @@ class DataType:
 
 
 # Type alias for a union of types that can be inferred into a DataType
-DataTypeLike = Union[DataType, type, str, tuple[Any]]
+DataTypeLike = Union[DataType, type, str, tuple[Any, ...]]
 
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()
