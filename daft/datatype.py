@@ -134,7 +134,20 @@ class DataType:
                     return None
                 else:
                     pass
+            elif isinstance(item, tuple):
+                fields = {}
 
+                for i, value in enumerate(item):
+                    if isinstance(value, list):
+                        dtype = DataType._infer_dtype_from_pylist(value)
+                        dtype = dtype if dtype else DataType.python()
+
+                        fields[f"_{i}"] = DataType.list(DataType._infer_type(type(value[0])))
+                    else:
+                        dtype = DataType._infer_type(value)
+
+                    fields[f"_{i}"] = dtype
+                curr_dtype = DataType.struct(fields)
             else:
                 return None
 
@@ -178,10 +191,30 @@ class DataType:
                 return DataType.binary()
             elif user_provided_type is bool:
                 return DataType.bool()
+            elif user_provided_type is list:
+                inner_type = get_args(user_provided_type)
+                return DataType.list(DataType._infer_type(inner_type))
             elif user_provided_type is object:
                 return DataType.python()
             else:
                 raise ValueError(f"Unrecognized Python type, cannot convert to Daft type: {user_provided_type}")
+        elif isinstance(user_provided_type, bool):
+            return DataType.bool()
+        elif isinstance(user_provided_type, int):
+            return DataType.int64()
+        elif isinstance(user_provided_type, float):
+            return DataType.float64()
+        elif isinstance(user_provided_type, str):
+            return DataType.string()
+        elif isinstance(user_provided_type, bytes):
+            return DataType.binary()
+
+        elif isinstance(user_provided_type, list):
+            return DataType.list(DataType._infer_type(user_provided_type[0]))
+        elif isinstance(user_provided_type, tuple):
+            return DataType.struct({f"_{i}": DataType._infer_type(value) for i, value in enumerate(user_provided_type)})
+        elif user_provided_type is object:
+            return DataType.python()
         else:
             raise ValueError(f"Unable to infer Daft DataType for provided value: {user_provided_type}")
 
@@ -1193,7 +1226,7 @@ class DataType:
 
 
 # Type alias for a union of types that can be inferred into a DataType
-DataTypeLike = Union[DataType, type, str]
+DataTypeLike = Union[DataType, type, str, tuple[Any]]
 
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()
