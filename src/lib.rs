@@ -128,6 +128,7 @@ pub mod pylib {
         common_resource_request::register_modules(m)?;
         common_file_formats::python::register_modules(m)?;
         common_scan_info::register_modules(m)?;
+        daft_ai::register_modules(m)?;
         daft_catalog::register_modules(m)?;
         daft_connect::register_modules(m)?;
         daft_context::register_modules(m)?;
