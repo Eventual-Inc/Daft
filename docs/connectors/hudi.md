@@ -11,7 +11,7 @@ Daft currently supports:
 3. **Multi-cloud Support:** Daft supports reading Hudi tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 
 
-A detailed Apache Hudi roadmap for Daft can be found on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/4389). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
+A detailed Apache Hudi roadmap for Daft can be found on [our GitHub Issues page](https://github.com/Eventual-Inc/Daft/issues/4389). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 
 ## Installing Daft with Apache Hudi Support
 
