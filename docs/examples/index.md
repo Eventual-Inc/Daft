@@ -14,6 +14,18 @@
   </div>
 
   <div class="example-card">
+    <a href="./audio-transcription" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/audio-transcription-cover.jpg" alt="Audio Transcription">
+        <div class="example-overlay">
+          <h3>Audio Transcription with Whisper</h3>
+          <p>Effortlessly convert audio to text at scale</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="example-card">
     <a href="./text-embeddings" class="example-image-link">
       <div class="example-image">
         <img src="../img/text-embeddings-cover.jpg" alt="Text Embeddings" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
@@ -22,7 +34,7 @@
         </div>
         <div class="example-overlay">
           <h3>Text Embeddings for Turbopuffer</h3>
-          <p>Generate embeddings on text to store in vector DBs</p>
+          <p>Generate embeddings on text to store in vector databases</p>
         </div>
       </div>
     </a>
@@ -127,7 +139,7 @@
 
 .example-image {
   position: relative;
-  height: 400px;
+  height: 380px;
   overflow: hidden;
 }
 
@@ -185,7 +197,7 @@
   right: 0;
   bottom: 0;
   left: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 12%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0) 65%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 12%, rgba(0, 0, 0, 0.4) 35%, rgba(0, 0, 0, 0) 65%);
   color: white;
   padding: 1.5rem 1rem 1rem;
   display: flex;
@@ -196,13 +208,13 @@
 
 .example-overlay h3 {
   margin: 0 0 0.5rem 0;
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
 .example-overlay p {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   opacity: 0.9;
   line-height: 1.4;
 }
@@ -222,11 +234,11 @@
   }
 
   .example-overlay h3 {
-    font-size: 1.1rem;
+    font-size: 1rem;
   }
 
   .example-overlay p {
-    font-size: 0.85rem;
+    font-size: 0.65rem;
   }
 }
 </style>

@@ -8,7 +8,7 @@ use self::logical::{DurationArray, ImageArray, MapArray};
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{
-        logical::{DateArray, FileArray, FixedShapeImageArray, TimeArray, TimestampArray},
+        logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
     series::{array_impl::ArrayWrapper, Series},
