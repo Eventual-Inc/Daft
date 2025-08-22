@@ -211,52 +211,6 @@ impl DistributedPipelineNode for ScanSourceNode {
         vec![]
     }
 
-    // fn produce_tasks(
-    //     self: Arc<Self>,
-    //     stage_context: &mut StageExecutionContext,
-    // ) -> SubmittableTaskStream {
-    //     let (result_tx, result_rx) = create_channel(1);
-
-    //     if self.scan_tasks.len() == 1 {
-    //         // materialize the read -> send to scheduler
-    //         let task_read = SubmittableTask::new(SwordfishTask::new(...));
-    //         // task_read.submit(&stage_context.scheduler_handle());
-    //         let read_result = stage_context.scheduler_handle().submit_task(task_read);
-    //         match read_result {
-    //             Ok(o) => match o {
-    //                 Some(materialized_output) => {}
-    //                 None => {
-    //                     let (err_result_tx, err_result_rx) = create_oneshot_channel();
-    //                     // err_result_tx.send()
-    //                     // TODO [mg] can we send the error task?
-    //                     // what do we do here???
-    //                     return SubmittableTaskStream::from(err_result_rx);
-    //                 }
-    //             },
-    //             Err(_) => {
-    //                 panic!("TODO [mg] what do we do here? *HOW* do we send the error?");
-    //             }
-    //         }
-
-    //         // get the result --> generate N batches of size K each
-    //         stage_context.spawn(task_in_batches);
-    //         // TODO [mg] this needs to be another scheduler send
-
-    //         // we now have lots of these data pointers, each is to one of these InBatches
-    //         // --> we can now send down the line a ton of In-memory read Tasks
-
-    //         stage_context.spawn(tasks_from_in_batches);
-    //         // TODO [mg] THIS ONE IS OK TO .spawn()
-    //         // TODO [mg] but, how do we create the right tasks? there should be an absolute
-    //         // ton of tasks from the in-batches thing
-    //     }
-
-    //     let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
-    //     stage_context.spawn(execution_loop);
-
-    //     SubmittableTaskStream::from(result_rx)
-    // }
-
     fn produce_tasks(
         self: Arc<Self>,
         stage_context: &mut StageExecutionContext,
