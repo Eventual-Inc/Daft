@@ -1802,6 +1802,8 @@ name = "common-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-io-config",
+ "pyo3",
  "serde",
 ]
 
@@ -2635,7 +2637,6 @@ name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-file",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
@@ -2657,8 +2658,13 @@ name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-runtime",
+ "daft-core",
+ "daft-dsl",
  "daft-io",
  "pyo3",
+ "serde",
+ "typetag",
 ]
 
 [[package]]

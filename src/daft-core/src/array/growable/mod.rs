@@ -2,7 +2,7 @@ use common_error::DaftResult;
 
 use crate::{
     array::{prelude::*, FixedSizeListArray, ListArray, StructArray},
-    datatypes::{logical::FileArray, prelude::*},
+    datatypes::{prelude::*, FileArray},
     series::Series,
     with_match_daft_types,
 };
@@ -121,7 +121,6 @@ impl GrowableArray for PythonArray {
         python_growable::PythonGrowable::new(name, dtype, arrays, capacity)
     }
 }
-
 macro_rules! impl_growable_array {
     (
         $daft_array:ident,
