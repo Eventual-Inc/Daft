@@ -439,26 +439,56 @@ fn hash_decimal(
     hash_function: HashFunctionKind,
     scale: usize,
 ) -> PrimitiveArray<u64> {
-    // For decimal hashing, we need to consider precision and scale
-    // The same logical decimal value should hash to the same value regardless of precision/scale
-    // We'll normalize the value by removing trailing zeros beyond the scale
+    // For decimal hashing, we preserve the exact representation including scale
+    // Different scales should produce different hashes (123, 123.0, 123.00 are different)
+    // We convert to string representation that preserves the scale information
 
-    let normalize_decimal = |value: i128| -> i128 {
+    let format_decimal = |value: i128, scale: usize| -> Vec<u8> {
         if value == 0 {
-            return 0;
+            // For zero, return "0.000..." with the appropriate number of decimal places
+            let mut result = String::from("0");
+            if scale > 0 {
+                result.push('.');
+                result.push_str(&"0".repeat(scale));
+            }
+            return result.into_bytes();
         }
 
-        // Remove trailing zeros beyond the scale
-        let mut normalized = value;
-        let mut trailing_zeros = 0;
+        // Handle negative values
+        let (is_negative, abs_value) = if value < 0 {
+            (true, (-value) as u128)
+        } else {
+            (false, value as u128)
+        };
 
-        // Count trailing zeros in the decimal part
-        while normalized % 10 == 0 && trailing_zeros < scale {
-            normalized /= 10;
-            trailing_zeros += 1;
+        // Convert to string with proper decimal placement
+        let value_str = abs_value.to_string();
+        let mut result = String::new();
+
+        if is_negative {
+            result.push('-');
         }
 
-        normalized
+        if scale == 0 {
+            // No decimal places
+            result.push_str(&value_str);
+        } else if value_str.len() <= scale {
+            // Value is smaller than scale, so it's 0.00...value
+            result.push('0');
+            result.push('.');
+            // Add leading zeros
+            result.push_str(&"0".repeat(scale - value_str.len()));
+            result.push_str(&value_str);
+        } else {
+            // Value has both integer and fractional parts
+            let integer_part = &value_str[..value_str.len() - scale];
+            let fractional_part = &value_str[value_str.len() - scale..];
+            result.push_str(integer_part);
+            result.push('.');
+            result.push_str(fractional_part);
+        }
+
+        result.into_bytes()
     };
 
     match hash_function {
@@ -470,8 +500,8 @@ fn hash_decimal(
                     .zip(seed.values_iter())
                     .map(|(v, s)| match v {
                         Some(v) => {
-                            let normalized = normalize_decimal(*v);
-                            xxh3_64_with_seed(normalized.to_le_bytes().as_ref(), *s)
+                            let formatted = format_decimal(*v, scale);
+                            xxh3_64_with_seed(&formatted, *s)
                         }
                         None => NULL_HASH,
                     })
@@ -481,8 +511,8 @@ fn hash_decimal(
                     .iter()
                     .map(|v| match v {
                         Some(v) => {
-                            let normalized = normalize_decimal(*v);
-                            xxh3_64(normalized.to_le_bytes().as_ref())
+                            let formatted = format_decimal(*v, scale);
+                            xxh3_64(&formatted)
                         }
                         None => NULL_HASH,
                     })
@@ -498,8 +528,8 @@ fn hash_decimal(
                     let mut hasher = hasher.build_hasher();
                     match v {
                         Some(v) => {
-                            let normalized = normalize_decimal(*v);
-                            hasher.write(normalized.to_le_bytes().as_ref());
+                            let formatted = format_decimal(*v, scale);
+                            hasher.write(&formatted);
                             hasher.finish()
                         }
                         None => {
@@ -518,8 +548,8 @@ fn hash_decimal(
                     let mut hasher = Sha1Hasher::default();
                     match v {
                         Some(v) => {
-                            let normalized = normalize_decimal(*v);
-                            hasher.write(normalized.to_le_bytes().as_ref());
+                            let formatted = format_decimal(*v, scale);
+                            hasher.write(&formatted);
                             hasher.finish()
                         }
                         None => {

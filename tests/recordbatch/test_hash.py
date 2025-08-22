@@ -231,7 +231,7 @@ def test_table_expr_decimal_hash_different_algorithms():
 
 
 def test_table_expr_decimal_hash_normalization_across_scales():
-    """Decimals with same logical value but different scales should hash the same."""
+    """Decimals with different scales should hash to different values."""
     import decimal
 
     # 123.45 with scale=2
@@ -250,7 +250,7 @@ def test_table_expr_decimal_hash_normalization_across_scales():
     ).with_column("dec", col("dec"))
     h3 = df3.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
 
-    # 0123.45 with scale=2
+    # 0123.45 with scale=2 (same as first one - leading zeros don't affect the value)
     df4 = daft.from_pydict(
         {
             "dec": [decimal.Decimal("0123.45")],
@@ -258,7 +258,7 @@ def test_table_expr_decimal_hash_normalization_across_scales():
     ).with_column("dec", col("dec"))
     h4 = df4.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
 
-    # 0123.45 with scale=3
+    # 0123.450 with scale=3 (same as second one - leading zeros don't affect the value)
     df5 = daft.from_pydict(
         {
             "dec": [decimal.Decimal("0123.450")],
@@ -266,7 +266,11 @@ def test_table_expr_decimal_hash_normalization_across_scales():
     ).with_column("dec", col("dec"))
     h5 = df5.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
 
-    assert h2 == h3 == h4 == h5
+    # Same logical value but different scales should hash differently
+    assert h2 != h3
+    # Leading zeros don't affect the hash (same scale, same fractional representation)
+    assert h2 == h4  # Both are 123.45 with scale=2
+    assert h3 == h5  # Both are 123.450 with scale=3
 
 
 def test_table_expr_decimal_hash_max_precision():
@@ -397,6 +401,56 @@ def test_table_expr_time_hash_different_algorithms():
     # Different algorithms should generally produce different results
     assert xx != mm
     assert xx != sh
+
+
+def test_table_expr_decimal_hash_scale_sensitive():
+    """Test that decimals with different scales produce different hashes."""
+    import decimal
+
+    # Test case: 123, 123.0, and 123.00 should all hash to different values
+    # Raw value 123 with scale 0 -> "123"
+    df_123_scale0 = daft.from_pydict(
+        {
+            "dec": [decimal.Decimal("123")],
+        }
+    ).with_column("dec", col("dec"))
+
+    # Raw value 1230 with scale 1 -> "123.0"
+    df_1230_scale1 = daft.from_pydict(
+        {
+            "dec": [decimal.Decimal("123.0")],
+        }
+    ).with_column("dec", col("dec"))
+
+    # Raw value 12300 with scale 2 -> "123.00"
+    df_12300_scale2 = daft.from_pydict(
+        {
+            "dec": [decimal.Decimal("123.00")],
+        }
+    ).with_column("dec", col("dec"))
+
+    # Get hashes for all three representations
+    hash_123_scale0 = df_123_scale0.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+    hash_1230_scale1 = df_1230_scale1.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+    hash_12300_scale2 = df_12300_scale2.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+
+    # All should hash to different values since they have different scale representations
+    assert hash_123_scale0 != hash_1230_scale1
+    assert hash_123_scale0 != hash_12300_scale2
+    assert hash_1230_scale1 != hash_12300_scale2
+
+    # Test that different logical values also hash differently
+    df_different = daft.from_pydict(
+        {
+            "dec": [decimal.Decimal("124")],
+        }
+    ).with_column("dec", col("dec"))
+    hash_different = df_different.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]
+
+    # This should be different from all the 123 variants
+    assert hash_123_scale0 != hash_different
+    assert hash_1230_scale1 != hash_different
+    assert hash_12300_scale2 != hash_different
 
 
 def test_table_expr_time_hash_microsecond_precision():
