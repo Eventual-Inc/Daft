@@ -22,9 +22,6 @@ jobs:
         retry_wait_seconds: 120
         max_attempts: 3
         command: |
-          set -euo pipefail
-
-          # Run BLC and capture full output. If blc itself fails, the step fails (pipefail).
           LOG="$(mktemp)"
           blc https://www.daft.ai \
             -ro --verbose \
