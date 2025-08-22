@@ -11,7 +11,7 @@ use daft_dsl::{
 };
 use daft_logical_plan::{
     partitioning::{HashRepartitionConfig, RepartitionSpec},
-    LogicalPlan, LogicalPlanRef, SourceInfo,
+    JoinStrategy, LogicalPlan, LogicalPlanRef, SourceInfo,
 };
 use daft_physical_plan::extract_agg_expr;
 
@@ -27,6 +27,71 @@ use crate::{
     },
     stage::StageConfig,
 };
+
+/// Check if a logical plan can be translated to a map-only pipeline
+/// This function examines the logical plan structure to determine if it contains
+/// any operations that require data movement or blocking behavior
+fn is_map_only_pipeline(logical_plan: &LogicalPlanRef) -> bool {
+    let mut can_translate = true;
+    let _ = logical_plan.apply(|node| match node.as_ref() {
+        // Map operations (safe for optimization)
+        LogicalPlan::Source(_)
+        | LogicalPlan::Project(_)
+        | LogicalPlan::Filter(_)
+        | LogicalPlan::IntoBatches(_)
+        | LogicalPlan::Sink(_)
+        | LogicalPlan::Sample(_)
+        | LogicalPlan::Explode(_)
+        | LogicalPlan::UDFProject(_)
+        | LogicalPlan::Unpivot(_)
+        | LogicalPlan::MonotonicallyIncreasingId(_)
+        | LogicalPlan::Window(_)
+        | LogicalPlan::Concat(_)
+        | LogicalPlan::Limit(_)
+        | LogicalPlan::Repartition(_)
+        | LogicalPlan::TopN(_) => Ok(common_treenode::TreeNodeRecursion::Continue),
+
+        // Join operations - only allow Hash and Broadcast joins
+        LogicalPlan::Join(join) => {
+            if join
+                .join_strategy
+                .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+            {
+                can_translate = false;
+                Ok(common_treenode::TreeNodeRecursion::Stop)
+            } else {
+                let (remaining_on, left_on, right_on, _) = join.on.split_eq_preds();
+                if !remaining_on.is_empty() || left_on.is_empty() || right_on.is_empty() {
+                    can_translate = false;
+                    Ok(common_treenode::TreeNodeRecursion::Stop)
+                } else {
+                    Ok(common_treenode::TreeNodeRecursion::Continue)
+                }
+            }
+        }
+
+        // Non-map operations (not safe for optimization)
+        LogicalPlan::Pivot(_)
+        | LogicalPlan::Aggregate(_)
+        | LogicalPlan::Sort(_)
+        | LogicalPlan::Distinct(_) => {
+            can_translate = false;
+            Ok(common_treenode::TreeNodeRecursion::Stop)
+        }
+
+        // Operations that should be optimized away
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Shard(_)
+        | LogicalPlan::Offset(_) => {
+            // These should be optimized away, but if they're present, they're not map-only
+            can_translate = false;
+            Ok(common_treenode::TreeNodeRecursion::Stop)
+        }
+    });
+    can_translate
+}
 
 pub(crate) fn logical_plan_to_pipeline_node(
     stage_config: StageConfig,
@@ -93,6 +158,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                             scan_tasks,
                             source.output_schema.clone(),
                             logical_node_id,
+                            is_map_only_pipeline(node),
                         ).arced()
                     }
                     SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),

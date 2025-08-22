@@ -27,6 +27,7 @@ pub(crate) struct ScanSourceNode {
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
     scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    is_map_only_pipeline: bool,
 }
 
 impl ScanSourceNode {
@@ -39,6 +40,7 @@ impl ScanSourceNode {
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
         logical_node_id: Option<NodeID>,
+        is_map_only_pipeline: bool,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
@@ -60,6 +62,7 @@ impl ScanSourceNode {
             context,
             pushdowns,
             scan_tasks,
+            is_map_only_pipeline,
         }
     }
 
@@ -218,8 +221,9 @@ impl DistributedPipelineNode for ScanSourceNode {
         let (result_tx, result_rx) = create_channel(1);
 
         // Check if this is a map-only pipeline by examining the stage type
+        // (this is performed at construction time from the LogicalPlanRef)
         // And make sure that we only have 1 scan task
-        if self.scan_tasks.len() == 1 {
+        if self.is_map_only_pipeline && self.scan_tasks.len() == 1 {
             let self_clone = self.clone();
             let task_id_counter = stage_context.task_id_counter();
             let scheduler_handle = stage_context.scheduler_handle();
