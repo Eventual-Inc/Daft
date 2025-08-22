@@ -50,6 +50,7 @@ jobs:
       run: |
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
         uv pip install twine yq
 
     - uses: oven-sh/setup-bun@v2

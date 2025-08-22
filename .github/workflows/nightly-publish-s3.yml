@@ -145,6 +145,7 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
+          source .venv/bin/activate
           uv sync --no-install-project --all-extras --all-groups
           uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
@@ -222,6 +223,7 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
+          source .venv/bin/activate
           uv sync --no-install-project --all-extras --all-groups
           uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
