@@ -12,7 +12,7 @@ def test_generator_udf():
         for _ in range(n):
             yield to_repeat
 
-    df = df = daft.from_pydict({"id": [0, 1, 2], "value": ["pip", "install", "daft"], "occurrences": [0, 2, 4]})
+    df = daft.from_pydict({"id": [0, 1, 2], "value": ["pip", "install", "daft"], "occurrences": [0, 2, 4]})
     actual = df.select("id", my_repeat(df["value"], df["occurrences"])).to_pydict()
 
     expected = {"id": [0, 1, 1, 2, 2, 2, 2], "value": [None, "install", "install", "daft", "daft", "daft", "daft"]}
@@ -26,7 +26,7 @@ def test_generator_udf_literal_arg():
         for _ in range(n):
             yield to_repeat
 
-    df = df = daft.from_pydict({"id": [0, 1, 2], "value": ["pip", "install", "daft"]})
+    df = daft.from_pydict({"id": [0, 1, 2], "value": ["pip", "install", "daft"]})
     actual = df.select("id", my_repeat(df["value"], 2)).to_pydict()
 
     expected = {"id": [0, 0, 1, 1, 2, 2], "value": ["pip", "pip", "install", "install", "daft", "daft"]}

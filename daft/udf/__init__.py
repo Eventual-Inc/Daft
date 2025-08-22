@@ -161,7 +161,8 @@ class _DaftFuncDecorator:
 
         This decorator can be used on Python generator functions and any Python function that returns an iterator.
         Unlike row-wise functions created via `@daft.func` which return one value per input row, generator functions may yield multiple values per row.
-        Each value is placed in its own row, with the other output columns are broadcasted to match the number of generated values.
+        Each value is placed in its own row, with the other output columns broadcast to match the number of generated values.
+        If no values are yielded for an input, a null value is inserted.
 
         Args:
             return_dtype: The data type that the iterator returned by this function should yield. If not specified, uses the function's yield type hint.
