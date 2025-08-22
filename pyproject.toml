@@ -29,12 +29,14 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity]"]
+all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity, clickhouse, huggingface]"]
 aws = ["boto3"]
 azure = []
+clickhouse = ["clickhouse_connect"]
 deltalake = ["deltalake", "packaging"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
+huggingface = ["huggingface-hub"]
 # pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
 # triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.

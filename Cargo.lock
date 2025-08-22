@@ -1802,6 +1802,8 @@ name = "common-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-io-config",
+ "pyo3",
  "serde",
 ]
 
@@ -1852,6 +1854,14 @@ dependencies = [
  "secrecy",
  "serde",
  "typetag",
+]
+
+[[package]]
+name = "common-logging"
+version = "0.3.0-dev0"
+dependencies = [
+ "arc-swap",
+ "log",
 ]
 
 [[package]]
@@ -2322,6 +2332,7 @@ dependencies = [
  "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-logging",
  "common-metrics",
  "common-partitioning",
  "common-resource-request",
@@ -2626,7 +2637,6 @@ name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-file",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
@@ -2648,8 +2658,13 @@ name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-runtime",
+ "daft-core",
+ "daft-dsl",
  "daft-io",
  "pyo3",
+ "serde",
+ "typetag",
 ]
 
 [[package]]
@@ -2916,12 +2931,14 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "capitalize",
  "common-daft-config",
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-logging",
  "common-metrics",
  "common-py-serde",
  "common-resource-request",
@@ -2929,6 +2946,7 @@ dependencies = [
  "common-scan-info",
  "common-system-info",
  "common-tracing",
+ "console 0.16.0",
  "daft-core",
  "daft-csv",
  "daft-dsl",

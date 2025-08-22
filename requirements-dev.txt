@@ -90,6 +90,9 @@ azure-storage-blob==12.24.0
 # GCS
 gcsfs==2023.12.0
 
+# Hugging Face
+huggingface-hub==0.34.4
+
 # Documentation
 markdown-exec
 mkdocs-jupyter
@@ -116,3 +119,6 @@ grpcio-status==1.67.0
 # ai
 vllm; platform_system == "Linux" and platform_machine == "x86_64" # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html
 openai
+
+#clickhouse
+clickhouse-connect

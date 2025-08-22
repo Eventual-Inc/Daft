@@ -49,10 +49,18 @@ fn should_enable_chrome_trace() -> bool {
 pub mod pylib {
     use std::sync::LazyLock;
 
+    use common_logging::GLOBAL_LOGGER;
     use common_tracing::{init_opentelemetry_providers, init_tracing};
     use pyo3::prelude::*;
 
-    static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);
+    static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(|| {
+        let py_logger = Box::new(pyo3_log::Logger::default());
+        let handle = py_logger.reset_handle();
+
+        GLOBAL_LOGGER.set_base_logger(py_logger);
+        log::set_boxed_logger(Box::new(GLOBAL_LOGGER.clone())).unwrap();
+        handle
+    });
 
     #[pyfunction]
     pub fn version() -> &'static str {
@@ -179,6 +187,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
+        functions_registry.add_fn(daft_file::File);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();

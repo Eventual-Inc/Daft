@@ -34,12 +34,12 @@ use crate::{
     },
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FileArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DataType, Field, ImageMode, Int64Array, NullArray,
-        TimeUnit, UInt64Array, Utf8Array,
+        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
+        NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
