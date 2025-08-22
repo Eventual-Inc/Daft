@@ -37,7 +37,7 @@ deltalake = ["deltalake", "packaging"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
 huggingface = ["huggingface-hub"]
-# pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
+# TDOO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
 # triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.
 iceberg = ["pyiceberg >= 0.7.0, < 0.9.1", "packaging"]
@@ -46,8 +46,9 @@ numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  'ray[data, client]>=2.0.0 ; platform_system != "Windows"',
-  'ray[data, client]>=2.10.0 ; platform_system == "Windows"',  # ray 2.10 has the pyarrow upper pin removed
+  # TODO: we temporarily limit ray<2.48.0 because https://github.com/Eventual-Inc/Daft/issues/5027
+  'ray[data, client]>=2.0.0, <2.48.0 ; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0, <2.48.0 ; platform_system == "Windows"',  # ray 2.10 has the pyarrow upper pin removed
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]

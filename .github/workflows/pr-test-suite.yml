@@ -198,9 +198,9 @@ jobs:
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        source .venv/bin/activate
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
         uv pip install -U twine toml maturin
     - uses: moonrepo/setup-rust@v1
       with:
