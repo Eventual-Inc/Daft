@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
@@ -13,9 +13,9 @@ use super::{
     SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::NodeID,
+    pipeline_node::{make_new_task_from_materialized_outputs, NodeID},
     scheduling::{
-        scheduler::SubmittableTask,
+        scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
@@ -27,6 +27,7 @@ pub(crate) struct ScanSourceNode {
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
     scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    is_map_only_pipeline: bool,
 }
 
 impl ScanSourceNode {
@@ -39,6 +40,7 @@ impl ScanSourceNode {
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
         logical_node_id: Option<NodeID>,
+        is_map_only_pipeline: bool,
     ) -> Self {
         let context = PipelineNodeContext::new(
             stage_config,
@@ -60,6 +62,7 @@ impl ScanSourceNode {
             context,
             pushdowns,
             scan_tasks,
+            is_map_only_pipeline,
         }
     }
 
@@ -86,6 +89,74 @@ impl ScanSourceNode {
             )?;
             if result_tx.send(SubmittableTask::new(task)).await.is_err() {
                 break;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn execute_optimized_scan(
+        self: Arc<Self>,
+        single_scan_task: ScanTaskLikeRef,
+        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+        batch_size: u64,
+    ) -> DaftResult<()> {
+        if batch_size == 0 {
+            return Err(
+                DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
+            );
+        }
+        let batch_size = match batch_size.try_into() {
+            Ok(bs) => bs,
+            Err(e) => {
+                return Err(DaftError::InternalError(format!(
+                "Batch size {batch_size} is too large to convert to usize on this platform: {e:?}"
+            ))
+                .into())
+            }
+        };
+
+        // Step 1: Materialize the scan task to get ray data pointers
+        let submit_single_scan_task = SubmittableTask::new(self.make_source_tasks(
+            vec![single_scan_task].into(),
+            TaskContext::from((&self.context, task_id_counter.next())),
+        )?);
+
+        let maybe_materialized_output = submit_single_scan_task.submit(&scheduler_handle)?.await?;
+
+        if let Some(materialized_output) = maybe_materialized_output {
+            // Step 2: Split the materialized output into batches of size 'k'
+            let materialized_outputs = materialized_output.split_into_materialized_outputs();
+
+            // Step 3: Create into_batches tasks for each batch
+            for batch in materialized_outputs.chunks(batch_size) {
+                let batch_materialized_outputs = batch.to_vec();
+
+                let task = make_new_task_from_materialized_outputs(
+                    TaskContext::from((&self.context, task_id_counter.next())),
+                    batch_materialized_outputs,
+                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    move |input| {
+                        LocalPhysicalPlan::into_batches(
+                            input,
+                            batch_size,
+                            true, // Strict batch sizes
+                            StatsState::NotMaterialized,
+                        )
+                    },
+                )?;
+
+                match result_tx.send(task).await {
+                    Ok(()) => (),
+                    Err(e) => {
+                        return Err(DaftError::InternalError(format!(
+                            "Failed to send internal batch to result channel: {e:?}"
+                        ))
+                        .into());
+                    }
+                }
             }
         }
 
@@ -148,8 +219,31 @@ impl DistributedPipelineNode for ScanSourceNode {
         stage_context: &mut StageExecutionContext,
     ) -> SubmittableTaskStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
-        stage_context.spawn(execution_loop);
+
+        // Check if this is a map-only pipeline by examining the stage type
+        // (this is performed at construction time from the LogicalPlanRef)
+        // And make sure that we only have 1 scan task
+        if self.is_map_only_pipeline && self.scan_tasks.len() == 1 {
+            let self_clone = self.clone();
+            let task_id_counter = stage_context.task_id_counter();
+            let scheduler_handle = stage_context.scheduler_handle();
+            let execution_future = async move {
+                self_clone
+                    .execute_optimized_scan(
+                        self.scan_tasks[0].clone(),
+                        task_id_counter,
+                        result_tx,
+                        scheduler_handle,
+                        self.config.execution_config.suggested_batch_size,
+                    )
+                    .await
+            };
+            stage_context.spawn(execution_future);
+        } else {
+            // Fall back to normal execution
+            let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
+            stage_context.spawn(execution_loop);
+        }
 
         SubmittableTaskStream::from(result_rx)
     }
