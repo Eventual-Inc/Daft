@@ -2,7 +2,7 @@
 comfy-table = {workspace = true}
 indexmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-terminal_size = {version = "0.4.2"}
+terminal_size = {version = "0.4.3"}
 textwrap = {version = "0.16.1"}
 
 [features]
