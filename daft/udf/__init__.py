@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import overload, Callable, TypeVar, TYPE_CHECKING
+from typing import Any, overload, Callable, TypeVar, TYPE_CHECKING
 import sys
+from dataclasses import dataclass
+from inspect import isgeneratorfunction
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
 else:
     from typing import ParamSpec
 
-from .gen import GeneratorUdf
+from .generator import GeneratorUdf
 from .row_wise import RowWiseUdf
 from .legacy import udf, UDF
 
@@ -20,18 +22,37 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
+@dataclass
+class _PartialUdf:
+    """Helper class to provide typing overloads for using `daft.func` as a decorator."""
+
+    return_dtype: DataTypeLike | None
+
+    @overload
+    def __call__(self, fn: Callable[P, Iterator[T]]) -> GeneratorUdf[P, T]: ...  # type: ignore[overload-overlap]
+    @overload
+    def __call__(self, fn: Callable[P, T]) -> RowWiseUdf[P, T]: ...
+
+    def __call__(self, fn: Callable[P, Any]) -> GeneratorUdf[P, Any] | RowWiseUdf[P, Any]:
+        if isgeneratorfunction(fn):
+            return GeneratorUdf(fn, return_dtype=self.return_dtype)
+        else:
+            return RowWiseUdf(fn, return_dtype=self.return_dtype)
+
+
 class _DaftFuncDecorator:
     """Decorator to convert a Python function into a Daft user-defined function.
 
     Daft function variants:
-    - `@daft.func` - Row-wise scalar function (1 in, 1 out)
-    - `@daft.func.gen` - Generator function (1 in, N out)
+    - **Row-wise** (1 row in, 1 row out) - the default variant
+    - **Async row-wise** (1 row in, 1 row out) - created by decorating a Python async function
+    - **Generator** (1 row in, N rows out) - created by decorating a Python generator function
 
-    Decorated functions accept both their original argument types and Daft Expressions, and return an Expression which can then be lazily evaluated.
+    Decorated functions accept both their original argument types and Daft Expressions, and return an Expression for lazy evaluation.
     To run the original function, call `<your_function>.eval(<args>)`.
 
     Args:
-        return_dtype: The data type that this function should return. If not specified, uses the function's return type hint.
+        return_dtype: The data type that this function should return or yield. If not specified, it is derived from the function's return type hint.
 
     Examples:
         Basic Example
@@ -128,82 +149,55 @@ class _DaftFuncDecorator:
         ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
+
+        Decorating a generator function
+
+        >>> import daft
+        >>> from typing import Iterator
+        >>> @daft.func
+        ... def my_gen_func(to_repeat: str, n: int) -> Iterator[str]:
+        ...     for _ in range(n):
+        ...         yield to_repeat
+        >>>
+        >>> df = daft.from_pydict({"id": [0, 1, 2], "value": ["pip", "install", "daft"], "occurrences": [0, 2, 4]})
+        >>> df = df.select("id", my_gen_func(df["value"], df["occurrences"]))
+        >>> df.collect()  # other output columns are repeated to match generator output length
+        ╭───────┬─────────╮
+        │ id    ┆ value   │
+        │ ---   ┆ ---     │
+        │ Int64 ┆ Utf8    │
+        ╞═══════╪═════════╡
+        │ 0     ┆ None    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 1     ┆ install │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 1     ┆ install │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ daft    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ daft    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ daft    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ daft    │
+        ╰───────┴─────────╯
+        <BLANKLINE>
+        (Showing first 7 of 7 rows)
     """
 
     @overload
-    def __new__(cls, *, return_dtype: DataTypeLike | None = None) -> Callable[[Callable[P, T]], RowWiseUdf[P, T]]: ...  # type: ignore
+    def __new__(cls, *, return_dtype: DataTypeLike | None = None) -> _PartialUdf: ...  # type: ignore[misc]
     @overload
-    def __new__(cls, fn: Callable[P, T], *, return_dtype: DataTypeLike | None = None) -> RowWiseUdf[P, T]: ...  # type: ignore
-
-    def __new__(  # type: ignore
-        cls, fn: Callable[P, T] | None = None, *, return_dtype: DataTypeLike | None = None
-    ) -> RowWiseUdf[P, T] | Callable[[Callable[P, T]], RowWiseUdf[P, T]]:
-        def partial_udf(fn: Callable[P, T]) -> RowWiseUdf[P, T]:
-            return RowWiseUdf(fn, return_dtype=return_dtype)
-
-        return partial_udf if fn is None else partial_udf(fn)
-
+    def __new__(  # type: ignore[misc]
+        cls, fn: Callable[P, Iterator[T]], *, return_dtype: DataTypeLike | None = None
+    ) -> GeneratorUdf[P, T]: ...
     @overload
-    @staticmethod
-    def gen(
-        *, return_dtype: DataTypeLike | None = None
-    ) -> Callable[[Callable[P, Iterator[T]]], GeneratorUdf[P, T]]: ...
+    def __new__(cls, fn: Callable[P, T], *, return_dtype: DataTypeLike | None = None) -> RowWiseUdf[P, T]: ...  # type: ignore[misc]
 
-    @overload
-    @staticmethod
-    def gen(fn: Callable[P, Iterator[T]], *, return_dtype: DataTypeLike | None = None) -> GeneratorUdf[P, T]: ...
-
-    @staticmethod
-    def gen(
-        fn: Callable[P, Iterator[T]] | None = None, *, return_dtype: DataTypeLike | None = None
-    ) -> GeneratorUdf[P, T] | Callable[[Callable[P, Iterator[T]]], GeneratorUdf[P, T]]:
-        """Decorator to convert a Python function into a Daft user-defined generator function.
-
-        This decorator can be used on Python generator functions and any Python function that returns an iterator.
-        Unlike row-wise functions created via `@daft.func` which return one value per input row, generator functions may yield multiple values per row.
-        Each value is placed in its own row, with the other output columns broadcast to match the number of generated values.
-        If no values are yielded for an input, a null value is inserted.
-
-        Args:
-            return_dtype: The data type that the iterator returned by this function should yield. If not specified, uses the function's yield type hint.
-
-        Example:
-            >>> import daft
-            >>> from typing import Iterator
-            >>> @daft.func.gen
-            ... def my_gen_func(to_repeat: str, n: int) -> Iterator[str]:
-            ...     for _ in range(n):
-            ...         yield to_repeat
-            >>>
-            >>> df = daft.from_pydict({"id": [0, 1, 2], "value": ["pip", "install", "daft"], "occurrences": [0, 2, 4]})
-            >>> df = df.select("id", my_gen_func(df["value"], df["occurrences"]))
-            >>> df.collect()
-            ╭───────┬─────────╮
-            │ id    ┆ value   │
-            │ ---   ┆ ---     │
-            │ Int64 ┆ Utf8    │
-            ╞═══════╪═════════╡
-            │ 0     ┆ None    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 1     ┆ install │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 1     ┆ install │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ daft    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ daft    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ daft    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ daft    │
-            ╰───────┴─────────╯
-            <BLANKLINE>
-            (Showing first 7 of 7 rows)
-        """
-
-        def partial_udf(fn: Callable[P, Iterator[T]]) -> GeneratorUdf[P, T]:
-            return GeneratorUdf(fn, return_dtype=return_dtype)
-
+    def __new__(  # type: ignore[misc]
+        cls, fn: Callable[P, Any] | None = None, *, return_dtype: DataTypeLike | None = None
+    ) -> _PartialUdf | GeneratorUdf[P, Any] | RowWiseUdf[P, Any]:
+        partial_udf = _PartialUdf(return_dtype=return_dtype)
         return partial_udf if fn is None else partial_udf(fn)
 
 

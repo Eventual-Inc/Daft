@@ -28,6 +28,11 @@ T = TypeVar("T")
 
 
 class RowWiseUdf(Generic[P, T]):
+    """A user-defined Daft row-wise function, created by calling `daft.func`.
+
+    Row-wise functions are called with data from one row at a time, and map that to a single output value for that row.
+    """
+
     def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None):
         self._inner = fn
         self.name = get_unique_function_name(fn)

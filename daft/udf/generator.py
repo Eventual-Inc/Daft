@@ -25,6 +25,13 @@ T = TypeVar("T")
 
 
 class GeneratorUdf(Generic[P, T]):
+    """A user-defined Daft generator function, created by calling `daft.func` on a generator function.
+
+    Unlike row-wise functions which return one value per input row, generator functions may yield multiple values per row.
+    Each value is placed in its own row, with the other output columns broadcast to match the number of generated values.
+    If no values are yielded for an input, a null value is inserted.
+    """
+
     def __init__(self, fn: Callable[P, Iterator[T]], return_dtype: DataTypeLike | None):
         self._inner = fn
         self.name = get_unique_function_name(fn)
@@ -34,7 +41,7 @@ class GeneratorUdf(Generic[P, T]):
             type_hints = get_type_hints(fn)
             if "return" not in type_hints:
                 raise ValueError(
-                    "`@daft.func.gen` requires either a return type hint or the `return_dtype` argument to be specified."
+                    "`@daft.func` requires either a return type hint or the `return_dtype` argument to be specified."
                 )
 
             iterator_type = type_hints["return"]
@@ -43,7 +50,7 @@ class GeneratorUdf(Generic[P, T]):
 
             if origin not in (Iterator, Generator):
                 raise TypeError(
-                    f"The return type of a Daft generator function must be an iterator or generator, found: {iterator_type}"
+                    f"The return type hint of a Daft generator function must be an iterator or generator, found: {iterator_type}"
                 )
 
             return_dtype = args[0]
