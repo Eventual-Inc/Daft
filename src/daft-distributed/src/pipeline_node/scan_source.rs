@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
@@ -27,6 +28,7 @@ pub(crate) struct ScanSourceNode {
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
     scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    buckets: Vec<Vec<ScanTaskLikeRef>>,
 }
 
 impl ScanSourceNode {
@@ -48,23 +50,80 @@ impl ScanSourceNode {
             vec![],
             logical_node_id,
         );
+
+        let buckets = Self::create_buckets(&scan_tasks, &stage_config.config);
+        let num_buckets = if scan_tasks.is_empty() {
+            1
+        } else {
+            buckets.len()
+        };
+
         let config = PipelineNodeConfig::new(
             schema,
             stage_config.config.clone(),
-            Arc::new(ClusteringSpec::unknown_with_num_partitions(
-                scan_tasks.len(),
-            )),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_buckets)),
         );
         Self {
             config,
             context,
             pushdowns,
             scan_tasks,
+            buckets,
         }
     }
 
     pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
         Arc::new(self)
+    }
+
+    fn create_buckets(
+        scan_tasks: &[ScanTaskLikeRef],
+        execution_config: &DaftExecutionConfig,
+    ) -> Vec<Vec<ScanTaskLikeRef>> {
+        if scan_tasks.is_empty() {
+            return vec![];
+        }
+
+        let lower_threshold = execution_config.scan_tasks_min_size_bytes;
+        let upper_threshold = execution_config.scan_tasks_max_size_bytes;
+        let max_sources_per_task = execution_config.max_sources_per_scan_task;
+
+        let mut buckets = Vec::new();
+        let mut current_bucket = Vec::new();
+        let mut bucket_size = 0usize;
+
+        for scan_task in scan_tasks {
+            let task_size = scan_task
+                .estimate_in_memory_size_bytes(Some(execution_config))
+                .unwrap_or(lower_threshold);
+
+            let should_finalize_bucket = !current_bucket.is_empty()
+                && (bucket_size + task_size > upper_threshold
+                    || current_bucket.len() >= max_sources_per_task);
+
+            if should_finalize_bucket {
+                buckets.push(current_bucket.clone());
+                current_bucket.clear();
+                bucket_size = 0;
+            }
+
+            current_bucket.push(scan_task.clone());
+            bucket_size += task_size;
+
+            // Finalize bucket if it reaches the lower threshold
+            if bucket_size >= lower_threshold {
+                buckets.push(current_bucket.clone());
+                current_bucket.clear();
+                bucket_size = 0;
+            }
+        }
+
+        // Add any remaining tasks
+        if !current_bucket.is_empty() {
+            buckets.push(current_bucket);
+        }
+
+        buckets
     }
 
     async fn execution_loop(
@@ -79,17 +138,36 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        for scan_task in self.scan_tasks.iter() {
-            let task = self.make_source_tasks(
-                vec![scan_task.clone()].into(),
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
-            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
+        for bucket in &self.buckets {
+            if self
+                .send_bucket_task(bucket, &result_tx, &task_id_counter)
+                .await
+                .is_err()
+            {
                 break;
             }
         }
 
         Ok(())
+    }
+
+    async fn send_bucket_task(
+        &self,
+        bucket: &[ScanTaskLikeRef],
+        result_tx: &Sender<SubmittableTask<SwordfishTask>>,
+        task_id_counter: &TaskIDCounter,
+    ) -> Result<(), ()> {
+        let task = self
+            .make_source_tasks(
+                Arc::new(bucket.to_vec()),
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )
+            .map_err(|_| ())?;
+
+        result_tx
+            .send(SubmittableTask::new(task))
+            .await
+            .map_err(|_| ())
     }
 
     fn make_source_tasks(
