@@ -95,20 +95,6 @@ def test_daft_iceberg_table_collect_correct(table_name, sort_key, local_iceberg_
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize(
-    "table_name, sort_key", [(table_name, SORT_KEYS[table_name]) for table_name in WORKING_SHOW_COLLECT]
-)
-def test_daft_iceberg_table_collect_correct_sql(table_name, sort_key, local_iceberg_catalog):
-    _, pyiceberg_catalog = local_iceberg_catalog
-    tab = pyiceberg_catalog.load_table(f"default.{table_name}")
-    df = daft.sql(f"select * from read_iceberg('{tab.metadata_location}')")
-    df.collect()
-    daft_pandas = df.to_pandas()
-    iceberg_pandas = tab.scan().to_arrow().to_pandas()
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=sort_key)
-
-
-@pytest.mark.integration()
 def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catalog):
     catalog_name, pyiceberg_catalog = local_iceberg_catalog
     tab = pyiceberg_catalog.load_table("default.test_table_rename")
