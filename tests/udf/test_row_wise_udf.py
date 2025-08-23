@@ -60,7 +60,10 @@ def test_row_wise_udf_should_infer_dtype_from_function():
 
 
 def test_func_requires_return_dtype_when_no_annotation():
-    with pytest.raises(ValueError, match="return_dtype is required when function has no return annotation"):
+    with pytest.raises(
+        ValueError,
+        match="`@daft.func` requires either a return type hint or the `return_dtype` argument to be specified.",
+    ):
 
         @daft.func()
         def my_func(a: int, b: int):
