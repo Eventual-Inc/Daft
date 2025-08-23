@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import gzip
+import json
 
 import pyarrow as pa
 import pytest
@@ -202,3 +204,65 @@ def test_throws_error_on_duration_and_binary_types(tmp_path):
         match="Not Yet Implemented: JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types",
     ):
         before_binary.write_json(str(tmp_path))
+
+
+def write_ndjson_file(path, data, compression=None):
+    """Write data to NDJSON file with optional gzip compression."""
+    if compression == "gzip":
+        with gzip.open(path, "wt", encoding="utf-8") as f:
+            for item in data:
+                f.write(json.dumps(item) + "\n")
+    else:
+        with open(path, "w") as f:
+            for item in data:
+                f.write(json.dumps(item) + "\n")
+
+
+@pytest.mark.parametrize("compression", [None, "gzip"])
+def test_roundtrip_ndjson_with_mismatched_schema_between_records(tmp_path, compression):
+    data = [
+        {"name": "Alice", "age": 30, "city": "New York"},
+        {"name": "Bob", "age": 25, "state": "California"},
+        {"name": "Charlie", "age": 35, "city": "Chicago"},
+    ]
+
+    filename = "data.ndjson.gz" if compression else "data.ndjson"
+    path = tmp_path / filename
+
+    write_ndjson_file(path, data, compression)
+
+    df = daft.read_json(str(path))
+    assert df.to_pydict() == {
+        "name": ["Alice", "Bob", "Charlie"],
+        "age": [30, 25, 35],
+        "city": ["New York", None, "Chicago"],
+        "state": [None, "California", None],
+    }
+
+
+@pytest.mark.parametrize("compression", [None, "gzip"])
+def test_roundtrip_ndjson_with_mismatched_schema_between_files(tmp_path, compression):
+    data1 = [
+        {"name": "Alice", "age": 30, "city": "New York", "state": "New York"},
+        {"name": "Bob", "age": 25, "city": "San Francisco", "state": "California"},
+    ]
+
+    data2 = [
+        {"name": "Charlie", "age": 35, "state": "California"},
+        {"name": "David", "age": 40, "state": "New York"},
+    ]
+
+    extension = ".ndjson.gz" if compression else ".ndjson"
+    path1 = tmp_path / f"data{extension}"
+    path2 = tmp_path / f"data2{extension}"
+
+    write_ndjson_file(path1, data1, compression)
+    write_ndjson_file(path2, data2, compression)
+
+    df = daft.read_json([str(path1), str(path2)])
+    assert df.to_pydict() == {
+        "name": ["Alice", "Bob", "Charlie", "David"],
+        "age": [30, 25, 35, 40],
+        "city": ["New York", "San Francisco", None, None],  # second file is missing city
+        "state": ["New York", "California", "California", "New York"],
+    }

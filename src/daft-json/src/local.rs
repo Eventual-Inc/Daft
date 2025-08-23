@@ -104,9 +104,7 @@ pub fn read_json_array_impl(
                                     deserialize_into(inner, &[value]);
                                 }
                                 None => {
-                                    Err(super::Error::JsonDeserializationError {
-                                        string: "Field not found in schema".to_string(),
-                                    })?;
+                                    inner.push_null();
                                 }
                             }
                         }
@@ -125,9 +123,7 @@ pub fn read_json_array_impl(
                             deserialize_into(inner, &[value]);
                         }
                         None => {
-                            Err(super::Error::JsonDeserializationError {
-                                string: "Field not found in schema".to_string(),
-                            })?;
+                            inner.push_null();
                         }
                     }
                 }
@@ -317,9 +313,7 @@ impl<'a> JsonReader<'a> {
                                 deserialize_into(inner, &[value]);
                             }
                             None => {
-                                Err(super::Error::JsonDeserializationError {
-                                    string: "Field not found in schema".to_string(),
-                                })?;
+                                inner.push_null();
                             }
                         }
                     }
@@ -343,7 +337,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
+        let tbl = RecordBatch::new_with_size(self.schema.clone(), columns, num_rows)?;
 
         if let Some(pred) = &self.predicate {
             let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;
