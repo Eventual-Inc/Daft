@@ -218,3 +218,7 @@ class IcebergScanOperator(ScanOperator):
 
     def can_absorb_select(self) -> bool:
         return True
+
+    def supports_count_pushdown(self) -> bool:
+        """Returns whether this scan operator supports count pushdown."""
+        return True
