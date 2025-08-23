@@ -8,7 +8,7 @@ import pytest
 
 import daft
 from daft import col
-from daft.context import get_context
+from daft.context import execution_config_ctx, get_context
 from daft.datatype import DataType
 from daft.errors import UDFException
 from daft.expressions import Expression
@@ -681,3 +681,39 @@ def test_run_udf_on_separate_process(batch_size):
     current_pid = os.getpid()
     for pid in result.to_pydict()["udf_1"]:
         assert pid != current_pid
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray"
+    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    reason="Ray runner will always run UDFs on separate processes",
+)
+def test_udf_fails_with_no_actors_schedulable():
+    with execution_config_ctx(actor_udf_ready_timeout=1):
+        df = daft.from_pydict({"a": [1, 2, 3]})
+
+        # Request for 1 actor, with 50 gpus. This will never be scheduled.
+        @udf(return_dtype=DataType.int64(), concurrency=1, num_gpus=50)
+        def udf_1(data):
+            return data
+
+        result = df.select(udf_1(col("a")).alias("udf_1"))
+        with pytest.raises(RuntimeError, match="RuntimeError: UDF actors failed to start within 1 seconds"):
+            result.collect()
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray"
+    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    reason="Ray runner will always run UDFs on separate processes",
+)
+def test_udf_succeeds_with_some_actors_schedulable():
+    df = daft.from_pydict({"a": [1, 2, 3]})
+
+    # Request for 100 actors, with 1 cpu. Not all will be scheduled, but the query can still run.
+    @udf(return_dtype=DataType.int64(), concurrency=100, num_cpus=1)
+    def udf_1(data):
+        return data
+
+    result = df.select(udf_1(col("a")).alias("udf_1")).to_pydict()
+    assert result == {"udf_1": [1, 2, 3]}
