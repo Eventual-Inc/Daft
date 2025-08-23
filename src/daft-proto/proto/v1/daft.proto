@@ -743,6 +743,7 @@ message Agg {
     ApproxSketch approx_sketch = 3;
     MergeSketch merge_sketch = 4;
     MapGroups map_groups = 5;
+    StddevFunction stddev_function = 6;
   }
 
   // avg, max, min, sum, stddev, skew
@@ -754,7 +755,12 @@ message Agg {
     string name = 1;
     repeated Expr args = 2;
     bool is_all = 3;
-    optional uint64 ddof = 4;
+  }
+
+  message StddevFunction {
+    repeated Expr args = 1;
+    bool is_all = 2;
+    uint64 ddof = 3;
   }
 
   message ApproxPercentile {

@@ -3154,6 +3154,8 @@ class DataFrame:
             return expr.max()
         elif op == "mean":
             return expr.mean()
+        elif op == "stddev":
+            return expr.stddev()
         elif op == "any_value":
             return expr.any_value()
         elif op == "list":
