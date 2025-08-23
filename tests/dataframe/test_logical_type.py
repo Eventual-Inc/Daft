@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from PIL import Image
 
 import daft
 from daft import DataType, Series, col
@@ -32,13 +31,15 @@ def test_embedding_type_df() -> None:
 
 @pytest.mark.parametrize("from_pil_imgs", [True, False])
 def test_image_type_df(from_pil_imgs) -> None:
+    PIL = pytest.importorskip("PIL")
+
     data = [
         np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
     if from_pil_imgs:
-        data = [Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
+        data = [PIL.Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="allow")})
 
     image_expr = col("image")
