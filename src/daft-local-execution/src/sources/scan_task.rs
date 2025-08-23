@@ -11,10 +11,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
-use daft_core::{
-    prelude::{AsArrow, Int64Array, Schema, SchemaRef, UInt64Array, Utf8Array},
-    series::IntoSeries,
-};
+use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::IOStatsRef;
@@ -465,33 +462,15 @@ async fn stream_scan_task(
             if let Some(aggregation) = &scan_task.pushdowns.aggregation
                 && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
             {
-                // For count pushdown, we can get the count from metadata without reading all data.
-                let parquet_metadata = daft_parquet::read::read_parquet_metadata(
+                daft_parquet::read::stream_parquet_count_pushdown(
                     url,
                     io_client,
                     Some(io_stats),
                     field_id_mapping.clone(),
+                    aggregation,
                 )
-                .await?;
-
-                // Currently only CountMode::All is supported for count pushdown.
-                let count = parquet_metadata.num_rows;
-                let count_field = daft_core::datatypes::Field::new(
-                    aggregation.name(),
-                    daft_core::datatypes::DataType::UInt64,
-                );
-                let count_array = UInt64Array::from_iter(
-                    count_field.clone(),
-                    std::iter::once(Some(count as u64)),
-                );
-                let count_batch = daft_recordbatch::RecordBatch::new_with_size(
-                    Schema::new(vec![count_field]),
-                    vec![count_array.into_series()],
-                    1,
-                )?;
-                Box::pin(futures::stream::once(async move { Ok(count_batch) }))
+                .await?
             } else {
-                // Regular parquet reading path
                 let parquet_chunk_size = chunk_size_from_config.or(chunk_size);
                 let inference_options =
                     ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));

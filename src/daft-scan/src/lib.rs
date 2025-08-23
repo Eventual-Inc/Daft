@@ -650,7 +650,7 @@ impl ScanTask {
                 if let Some(aggregation) = &self.pushdowns.aggregation {
                     Arc::new(Schema::new(vec![aggregation
                         .to_field(&self.schema)
-                        .unwrap()]))
+                        .expect("Casting to aggregation field should not fail")]))
                 } else {
                     self.schema.clone()
                 }
@@ -667,7 +667,9 @@ impl ScanTask {
                 let mut fields = schema_with_generated_fields.fields().to_vec();
                 if let Some(aggregation) = &self.pushdowns.aggregation {
                     // If we have a pushdown aggregation, the only field in the schema is the aggregation.
-                    fields = vec![aggregation.to_field(&schema_with_generated_fields).unwrap()];
+                    fields = vec![aggregation
+                        .to_field(&schema_with_generated_fields)
+                        .expect("Casting to aggregation field should not fail")];
                 } else {
                     // Filter the schema based on the pushdown column filters.
                     if let Some(columns) = &self.pushdowns.columns {
