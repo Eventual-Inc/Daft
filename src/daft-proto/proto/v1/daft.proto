@@ -754,6 +754,7 @@ message Agg {
     string name = 1;
     repeated Expr args = 2;
     bool is_all = 3;
+    optional uint64 ddof = 4;
   }
 
   message ApproxPercentile {
