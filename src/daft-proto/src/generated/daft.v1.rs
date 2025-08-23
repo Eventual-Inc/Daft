@@ -1045,7 +1045,7 @@ pub struct Measure {
 /// See SQL-99 <aggregate function> for variants.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Agg {
-    #[prost(oneof = "agg::Variant", tags = "1, 2, 3, 4, 5")]
+    #[prost(oneof = "agg::Variant", tags = "1, 2, 3, 4, 5, 6")]
     pub variant: ::core::option::Option<agg::Variant>,
 }
 /// Nested message and enum types in `Agg`.
@@ -1063,6 +1063,15 @@ pub mod agg {
         pub args: ::prost::alloc::vec::Vec<super::Expr>,
         #[prost(bool, tag = "3")]
         pub is_all: bool,
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct StddevFunction {
+        #[prost(message, repeated, tag = "1")]
+        pub args: ::prost::alloc::vec::Vec<super::Expr>,
+        #[prost(bool, tag = "2")]
+        pub is_all: bool,
+        #[prost(uint64, tag = "3")]
+        pub ddof: u64,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ApproxPercentile {
@@ -1136,6 +1145,8 @@ pub mod agg {
         MergeSketch(::prost::alloc::boxed::Box<MergeSketch>),
         #[prost(message, tag = "5")]
         MapGroups(::prost::alloc::boxed::Box<MapGroups>),
+        #[prost(message, tag = "6")]
+        StddevFunction(StddevFunction),
     }
 }
 /// / A type to leverage PyObjectWrapper's custom bincode serde.

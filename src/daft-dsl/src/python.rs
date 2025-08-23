@@ -404,8 +404,9 @@ impl PyExpr {
         Ok(self.expr.clone().mean().into())
     }
 
-    pub fn stddev(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().stddev().into())
+    #[pyo3(signature = (ddof=0))]
+    pub fn stddev(&self, ddof: u64) -> PyResult<Self> {
+        Ok(self.expr.clone().stddev_with_ddof(ddof).into())
     }
 
     pub fn min(&self) -> PyResult<Self> {
