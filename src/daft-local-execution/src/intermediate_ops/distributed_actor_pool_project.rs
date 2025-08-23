@@ -13,6 +13,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use rand::Rng;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -111,11 +112,16 @@ impl DistributedActorPoolProjectOperator {
             local_actor_handles
         };
 
+        let init_counter = if actor_handles.is_empty() {
+            0
+        } else {
+            rand::thread_rng().gen_range(0..actor_handles.len())
+        };
         Ok(Self {
             actor_handles,
             batch_size,
             memory_request,
-            counter: AtomicUsize::new(0),
+            counter: AtomicUsize::new(init_counter),
         })
     }
 }
