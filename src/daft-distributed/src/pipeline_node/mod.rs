@@ -39,16 +39,17 @@ mod concat;
 mod distinct;
 mod explode;
 mod filter;
-mod gather;
 mod in_memory_source;
+mod into_batches;
+mod into_partitions;
 mod join;
 mod limit;
 pub(crate) mod materialize;
 mod monotonically_increasing_id;
 mod project;
-mod repartition;
 mod sample;
 mod scan_source;
+mod shuffles;
 mod sink;
 mod sort;
 mod top_n;
@@ -115,6 +116,7 @@ impl MaterializedOutput {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,
@@ -135,6 +137,7 @@ impl PipelineNodeConfig {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct PipelineNodeContext {
     pub plan_id: PlanID,
     pub stage_id: StageID,

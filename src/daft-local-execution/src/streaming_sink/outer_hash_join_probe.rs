@@ -18,14 +18,9 @@ use tracing::{info_span, instrument, Span};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
-    StreamingSinkState,
 };
 use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ops::NodeType,
-    pipeline::NodeName,
-    state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
+    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
 };
 
 pub(crate) struct IndexBitmapBuilder {
@@ -83,7 +78,7 @@ impl IndexBitmap {
     }
 }
 
-enum OuterHashJoinState {
+pub(crate) enum OuterHashJoinState {
     Building(BroadcastStateBridgeRef<ProbeState>, bool),
     Probing(Arc<ProbeState>, Option<IndexBitmapBuilder>),
 }
@@ -115,12 +110,6 @@ impl OuterHashJoinState {
             }
             Self::Probing(_, builder) => builder,
         }
-    }
-}
-
-impl StreamingSinkState for OuterHashJoinState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -424,15 +413,12 @@ impl OuterHashJoinProbeSink {
     }
 
     async fn merge_bitmaps_and_construct_null_table(
-        mut states: Vec<Box<dyn StreamingSinkState>>,
+        mut states: Vec<OuterHashJoinState>,
     ) -> DaftResult<RecordBatch> {
         let mut states_iter = states.iter_mut();
         let first_state = states_iter
             .next()
-            .expect("at least one state should be present")
-            .as_any_mut()
-            .downcast_mut::<OuterHashJoinState>()
-            .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
+            .expect("at least one state should be present");
         let tables = first_state
             .get_or_build_probe_state()
             .await
@@ -448,12 +434,7 @@ impl OuterHashJoinProbeSink {
         let merged_bitmap = {
             let bitmaps = stream::once(async move { first_bitmap })
                 .chain(stream::iter(states_iter).then(|s| async move {
-                    let state = s
-                        .as_any_mut()
-                        .downcast_mut::<OuterHashJoinState>()
-                        .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
-                    state
-                        .get_or_build_bitmap()
+                    s.get_or_build_bitmap()
                         .await
                         .take()
                         .expect("bitmap should be set")
@@ -479,7 +460,7 @@ impl OuterHashJoinProbeSink {
     }
 
     async fn finalize_outer(
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<OuterHashJoinState>,
         common_join_cols: &[String],
         outer_common_col_schema: &SchemaRef,
         left_non_join_columns: &[String],
@@ -514,7 +495,7 @@ impl OuterHashJoinProbeSink {
     }
 
     async fn finalize_left(
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<OuterHashJoinState>,
         common_join_cols: &[String],
         left_non_join_columns: &[String],
         right_non_join_schema: &SchemaRef,
@@ -539,7 +520,7 @@ impl OuterHashJoinProbeSink {
     }
 
     async fn finalize_right(
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<OuterHashJoinState>,
         common_join_cols: &[String],
         right_non_join_columns: &[String],
         left_non_join_schema: &SchemaRef,
@@ -569,13 +550,14 @@ impl OuterHashJoinProbeSink {
 }
 
 impl StreamingSink for OuterHashJoinProbeSink {
+    type State = OuterHashJoinState;
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn StreamingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult {
+    ) -> StreamingSinkExecuteResult<Self> {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
             return Ok((state, StreamingSinkOutput::NeedMoreInput(Some(empty)))).into();
@@ -586,17 +568,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
         spawner
             .spawn(
                 async move {
-                    let outer_join_state = state
-                        .as_any_mut()
-                        .downcast_mut::<OuterHashJoinState>()
-                        .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
-                    let probe_state = outer_join_state.get_or_build_probe_state().await;
+                    let probe_state = state.get_or_build_probe_state().await;
 
                     let out = match params.join_type {
                         JoinType::Left | JoinType::Right if needs_bitmap => {
                             Self::probe_left_right_with_bitmap(
                                 &input,
-                                outer_join_state
+                                state
                                     .get_or_build_bitmap()
                                     .await
                                     .as_mut()
@@ -619,7 +597,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                             &params.right_non_join_columns,
                         ),
                         JoinType::Outer => {
-                            let bitmap_builder = outer_join_state
+                            let bitmap_builder = state
                                 .get_or_build_bitmap()
                                 .await
                                 .as_mut()
@@ -677,17 +655,14 @@ impl StreamingSink for OuterHashJoinProbeSink {
         res
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(OuterHashJoinState::Building(
-            self.probe_state_bridge.clone(),
-            self.needs_bitmap,
-        ))
+    fn make_state(&self) -> Self::State {
+        OuterHashJoinState::Building(self.probe_state_bridge.clone(), self.needs_bitmap)
     }
 
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         if self.needs_bitmap {
@@ -729,22 +704,6 @@ impl StreamingSink for OuterHashJoinProbeSink {
                 .into()
         } else {
             Ok(None).into()
-        }
-    }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::with_fixed_threshold(
-                runtime_handle.default_morsel_size(),
-            ))
-        } else {
-            Arc::new(UnorderedDispatcher::with_fixed_threshold(
-                runtime_handle.default_morsel_size(),
-            ))
         }
     }
 

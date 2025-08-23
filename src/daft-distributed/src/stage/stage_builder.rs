@@ -4,9 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_logical_plan::{
-    ops::{Limit as LogicalLimit, TopN as LogicalTopN},
-    partitioning::{ClusteringSpecRef, RepartitionSpec},
-    JoinStrategy, LogicalPlan, LogicalPlanRef,
+    partitioning::ClusteringSpecRef, JoinStrategy, LogicalPlan, LogicalPlanRef,
 };
 use daft_schema::schema::SchemaRef;
 
@@ -37,6 +35,7 @@ impl StagePlanBuilder {
             LogicalPlan::Source(_)
             | LogicalPlan::Project(_)
             | LogicalPlan::Filter(_)
+            | LogicalPlan::IntoBatches(_)
             | LogicalPlan::Sink(_)
             | LogicalPlan::Sample(_)
             | LogicalPlan::Explode(_)
@@ -46,25 +45,11 @@ impl StagePlanBuilder {
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
             | LogicalPlan::Window(_)
-            | LogicalPlan::Concat(_) => Ok(TreeNodeRecursion::Continue),
-            LogicalPlan::Limit(LogicalLimit { offset, .. })
-            | LogicalPlan::TopN(LogicalTopN { offset, .. }) => {
-                // TODO(zhenchao) support offset
-                if offset.is_some() {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
-                }
-            }
-            LogicalPlan::Repartition(repartition) => match &repartition.repartition_spec {
-                RepartitionSpec::Hash(_) => Ok(TreeNodeRecursion::Continue),
-                RepartitionSpec::Random(_) => Ok(TreeNodeRecursion::Continue),
-                RepartitionSpec::IntoPartitions(_) => {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                }
-            },
+            | LogicalPlan::Concat(_)
+            | LogicalPlan::Limit(_)
+            | LogicalPlan::Sort(_)
+            | LogicalPlan::Repartition(_)
+            | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Join(join) => {
                 if join
                     .join_strategy
@@ -80,17 +65,6 @@ impl StagePlanBuilder {
                     } else {
                         Ok(TreeNodeRecursion::Continue)
                     }
-                }
-            }
-            LogicalPlan::Sort(_) => {
-                if plan.materialized_stats().approx_stats.num_rows <= 1_000 {
-                    // Max 1GB with 1KB per row and off by 3 orders of magnitude
-                    Ok(TreeNodeRecursion::Continue)
-                } else {
-                    // TODO: Implement a distributed sort algorithm that can handle
-                    // a large number of rows without OOMing.
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
                 }
             }
             LogicalPlan::Pivot(_) => {

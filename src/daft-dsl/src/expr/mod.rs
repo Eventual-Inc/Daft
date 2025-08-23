@@ -749,7 +749,7 @@ impl AggExpr {
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
 
-            Self::List(expr) | Self::Set(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::List(expr) | Self::Set(expr) => Ok(expr.to_field(schema)?.to_list_field()),
 
             Self::BoolAnd(expr) | Self::BoolOr(expr) => {
                 let field = expr.to_field(schema)?;

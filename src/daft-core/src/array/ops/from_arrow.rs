@@ -7,7 +7,7 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
-        FieldRef,
+        FieldRef, FileArray,
     },
     prelude::*,
     series::Series,
@@ -170,6 +170,16 @@ impl FromArrow for MapArray {
                 d, a
             ))),
         }
+    }
+}
+
+impl FromArrow for FileArray {
+    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        Err(DaftError::TypeError(format!(
+            "Attempting to create Daft FileArray with type {} from arrow array with type {:?}",
+            field.dtype,
+            arrow_arr.data_type()
+        )))
     }
 }
 

@@ -7,9 +7,6 @@ docker
 # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
 aiohttp==3.12.4
 
-# Pinned requests due to docker-py issue: https://github.com/docker/docker-py/issues/3256
-requests<2.32.0
-
 # Pinned httpx due to unitycatalog-python issue: https://github.com/unitycatalog/unitycatalog-python/issues/9
 httpx==0.27.2
 
@@ -38,6 +35,7 @@ Pillow==10.4.0
 opencv-python==4.10.0.84
 tiktoken==0.9.0
 duckdb==1.1.2
+datasets==4.0.0
 
 # TQDM
 tqdm
@@ -92,6 +90,9 @@ azure-storage-blob==12.24.0
 # GCS
 gcsfs==2023.12.0
 
+# Hugging Face
+huggingface-hub==0.34.4
+
 # Documentation
 markdown-exec
 mkdocs-jupyter
@@ -118,3 +119,6 @@ grpcio-status==1.67.0
 # ai
 vllm; platform_system == "Linux" and platform_machine == "x86_64" # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html
 openai
+
+#clickhouse
+clickhouse-connect

@@ -1594,6 +1594,89 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    @DataframePublicAPI
+    def write_clickhouse(
+        self,
+        table: str,
+        *,
+        host: str,
+        port: Optional[int] = None,
+        user: Optional[str] = None,
+        password: Optional[str] = None,
+        database: Optional[str] = None,
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame to a ClickHouse table.
+
+        Args:
+            table: Name of the ClickHouse table to write to.
+            host: ClickHouse host.
+            port: ClickHouse port.
+            user: ClickHouse user.
+            password: ClickHouse password.
+            database: ClickHouse database.
+            client_kwargs: Optional dictionary of arguments to pass to the ClickHouse client constructor.
+            write_kwargs: Optional dictionary of arguments to pass to the ClickHouse write() method.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})  # doctest: +SKIP
+            >>> df.write_clickhouse(table="", host="", port=8123, user="", password="")  # doctest: +SKIP
+            ╭────────────────────┬─────────────────────╮
+            │ total_written_rows ┆ total_written_bytes │
+            │ ---                ┆ ---                 │
+            │ Int64              ┆ Int64               │
+            ╞════════════════════╪═════════════════════╡
+            │ 4                  ┆ 32                  │
+            ╰────────────────────┴─────────────────────╯
+        """
+        from daft.io.clickhouse.clickhouse_data_sink import ClickHouseDataSink
+
+        sink = ClickHouseDataSink(
+            table,
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            database=database,
+            client_kwargs=client_kwargs,
+            write_kwargs=write_kwargs,
+        )
+        return self.write_sink(sink)
+
+    def write_huggingface(
+        self,
+        repo: str,
+        split: str = "train",
+        data_dir: str = "data",
+        revision: str = "main",
+        overwrite: bool = False,
+        commit_message: str = "Upload dataset using Daft",
+        commit_description: Optional[str] = None,
+        io_config: Optional[IOConfig] = None,
+    ) -> "DataFrame":
+        """Write a DataFrame into a Hugging Face dataset.
+
+        Args:
+            repo: The ID of the repository to push to in the following format: `<user>/<dataset_name>` or `<org>/<dataset_name>`.
+            split: The name of the split that will be given to that dataset.
+            data_dir: Directory of the uploaded data files.
+            revision: Branch to push the uploaded files to.
+            overwrite: Whether to overwrite or append.
+            commit_message: Message to commit while pushing.
+            commit_description: Description of the commit that will be created.
+            io_config: Configurations to use when interacting with remote storage.
+        """
+        from daft.io.huggingface.sink import HuggingFaceSink
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        sink = HuggingFaceSink(
+            repo, split, data_dir, revision, overwrite, commit_message, commit_description, io_config.hf
+        )
+        return self.write_sink(sink)
+
     ###
     # DataFrame operations
     ###
@@ -2563,6 +2646,35 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def into_batches(self, batch_size: int) -> "DataFrame":
+        """Splits or coalesces DataFrame to partitions of size ``batch_size``.
+
+        Note:
+            Batch sizing is performed on a best-effort basis.
+            The heuristic is to emit a batch when we have enough rows to fill `batch_size * 0.8` rows.
+            This approach prioritizes processing efficiency over uniform batch sizes, especially when using the Ray Runner, as batches can be distributed over the cluster.
+            The exception to this is that the last batch will be the remainder of the total number of rows in the DataFrame.
+
+        Args:
+            batch_size (int): number of target rows per partition.
+
+        Returns:
+            DataFrame: Dataframe with `batch_size` rows per partition.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]})
+            >>> df = df.into_batches(2)
+            >>> for i, block in enumerate(df.to_arrow_iter()):
+            ...     assert len(block) == 2, f"Expected batch size 2, got {len(block)}"
+        """
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
+
+        builder = self._builder.into_batches(batch_size)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def join(
         self,
         other: "DataFrame",
@@ -2623,7 +2735,8 @@ class DataFrame:
         if how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
-
+            if strategy is not None:
+                raise ValueError("In a cross join, `strategy` cannot be set")
             left_on = []
             right_on = []
         elif on is None:
@@ -3289,7 +3402,11 @@ class DataFrame:
         """
         # Special case: treat this as a COUNT(*) operation which is likely what most people would expect
         # If user passes in "*", also do this behavior (by default it would count each column individually)
-        if len(cols) == 0 or (len(cols) == 1 and isinstance(cols[0], str) and cols[0] == "*"):
+        if (
+            len(cols) == 0
+            or (len(cols) == 1 and isinstance(cols[0], str) and cols[0] == "*")
+            or (len(cols) == 1 and isinstance(cols[0], int))
+        ):
             builder = self._builder.count()
             return DataFrame(builder)
 

@@ -1,4 +1,5 @@
 use common_error::{DaftError, DaftResult};
+use common_file::DaftFile;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use pyo3::{PyClass, Python};
@@ -43,6 +44,8 @@ impl_literal!(f64, Float64);
 impl_literal!(IntervalValue, Interval);
 impl_literal!(String, Utf8);
 impl_literal!(Series, List);
+impl_literal!(DaftFile, File);
+
 impl_literal!(&'_ str, Utf8, |s: &'_ str| s.to_owned());
 impl_literal!(&'_ [u8], Binary, |s: &'_ [u8]| s.to_vec());
 #[cfg(feature = "python")]
@@ -205,6 +208,7 @@ where
 
 impl_strict_fromliteral!(String, Utf8);
 impl_strict_fromliteral!(bool, Boolean);
+impl_strict_fromliteral!(DaftFile, File);
 impl_int_fromliteral!(i8);
 impl_int_fromliteral!(u8);
 impl_int_fromliteral!(i16);

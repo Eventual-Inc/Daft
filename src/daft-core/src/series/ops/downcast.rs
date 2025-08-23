@@ -168,4 +168,7 @@ impl Series {
     pub fn fixed_shape_sparse_tensor(&self) -> DaftResult<&FixedShapeSparseTensorArray> {
         self.downcast()
     }
+    pub fn file(&self) -> DaftResult<&FileArray> {
+        self.downcast()
+    }
 }

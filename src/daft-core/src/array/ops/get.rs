@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow2::types::months_days_ns;
+use common_file::{DaftFile, DaftFileType};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     series::Series,
@@ -185,6 +186,49 @@ impl MapArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Series> {
         self.physical.get(idx)
+    }
+}
+
+impl FileArray {
+    #[inline]
+    #[cfg(feature = "python")]
+    pub fn get(&self, idx: usize) -> Option<DaftFile> {
+        let discriminant_array = self.discriminant_array();
+        let discriminant = discriminant_array.get(idx)?;
+
+        let discriminant: DaftFileType = discriminant.try_into().expect("Invalid discriminant");
+        match discriminant {
+            // it's a path, we know its valid utf8
+            DaftFileType::Reference => {
+                let url_array = self.physical.get("url").expect("url exists");
+                let io_config_array = self.physical.get("io_config").expect("io_config exists");
+                let url_array = url_array.utf8().expect("url is utf8");
+                let io_config_array = io_config_array.python().expect("io_config is python");
+
+                let data = url_array.get(idx)?;
+                let io_config = io_config_array.get(idx);
+                let io_config: Option<common_io_config::python::IOConfig> =
+                    pyo3::Python::with_gil(|py| io_config.extract(py).ok().flatten());
+
+                Some(DaftFile::new_from_reference(
+                    data.to_string(),
+                    io_config.map(|conf| conf.config),
+                ))
+            }
+            DaftFileType::Data => {
+                let data_array = self.physical.get("data").expect("data exists");
+                let data_array = data_array.binary().expect("data is binary");
+                let data = data_array.get(idx)?;
+                let data = data.to_vec();
+                Some(DaftFile::new_from_data(data))
+            }
+        }
+    }
+
+    #[inline]
+    #[cfg(not(feature = "python"))]
+    pub fn get(&self, idx: usize) -> Option<DaftFile> {
+        unreachable!("FileArray.get() requires Python feature")
     }
 }
 

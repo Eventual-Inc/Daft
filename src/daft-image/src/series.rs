@@ -1,10 +1,8 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use common_image::CowImage;
+use daft_core::{array::ops::image::image_array_from_img_buffers, prelude::*};
 
-use crate::{
-    ops::{image_array_from_img_buffers, ImageOps},
-    DaftImageBuffer,
-};
+use crate::ops::ImageOps;
 fn image_decode_impl(
     ba: &BinaryArray,
     raise_error_on_failure: bool,
@@ -15,12 +13,12 @@ fn image_decode_impl(
         .as_any()
         .downcast_ref::<arrow2::array::BinaryArray<i64>>()
         .unwrap();
-    let mut img_bufs = Vec::<Option<DaftImageBuffer>>::with_capacity(arrow_array.len());
+    let mut img_bufs = Vec::<Option<CowImage>>::with_capacity(arrow_array.len());
     let mut cached_dtype: Option<DataType> = None;
     // Load images from binary buffers.
     // Confirm that all images have the same value dtype.
     for (index, row) in arrow_array.iter().enumerate() {
-        let mut img_buf = match row.map(DaftImageBuffer::decode).transpose() {
+        let mut img_buf = match row.map(CowImage::decode).transpose() {
             Ok(val) => val,
             Err(err) => {
                 if raise_error_on_failure {

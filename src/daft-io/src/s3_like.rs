@@ -479,12 +479,10 @@ async fn provide_credentials_with_retry(
 async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
-    let region = if let Some(region_name) = &config.region_name {
-        Region::new(region_name.clone())
-    } else {
-        let region_provider = aws_config::default_provider::region::default_provider();
-        region_provider.region().await.unwrap_or(DEFAULT_REGION)
-    };
+    let region = config
+        .region_name
+        .as_ref()
+        .map(|region_name| Region::new(region_name.clone()));
 
     let credentials_provider = if config.anonymous {
         None
@@ -506,12 +504,15 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
             msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
         });
     } else {
+        let mut provider_builder =
+            aws_config::default_provider::credentials::DefaultCredentialsChain::builder();
+
         // Set region now to avoid imds
-        let default_provider =
-            aws_config::default_provider::credentials::DefaultCredentialsChain::builder()
-                .region(region.clone())
-                .build()
-                .await;
+        if let Some(region) = &region {
+            provider_builder = provider_builder.region(region.clone());
+        }
+
+        let default_provider = provider_builder.build().await;
 
         // test if there are default credentials. If not, use anonymous mode
         if provide_credentials_with_retry(&default_provider)
@@ -570,11 +571,11 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
         }
 
         fn no_verify_hostname_client() -> SharedHttpClient {
-            unimplemented!("Setting `S3Config.check_hostname_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
+            unimplemented!("Setting `S3Config.check_hostname_ssl` is no longer supported. See this GitHub Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
         }
 
         fn no_verify_client() -> SharedHttpClient {
-            unimplemented!("Setting `S3Config.verify_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
+            unimplemented!("Setting `S3Config.verify_ssl` is no longer supported. See this GitHub Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
         }
 
         match (config.verify_ssl, config.check_hostname_ssl) {
@@ -609,8 +610,8 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
         maybe_set_loader_value!(profile_name, &config.profile_name);
         maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
         maybe_set_loader_value!(identity_cache, identity_cache);
+        maybe_set_loader_value!(region, region);
 
-        loader = loader.region(region);
         loader = loader.retry_config(retry_config);
         loader = loader.http_client(http_client);
         loader = loader.timeout_config(timeout_config);
@@ -623,7 +624,12 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
     builder = builder.force_path_style(force_path_style);
 
-    let s3_conf = builder.build();
+    let builder_copy = builder.clone();
+    let mut s3_conf = builder.build();
+
+    if s3_conf.region().is_none() {
+        s3_conf = builder_copy.region(DEFAULT_REGION).build();
+    }
 
     Ok(s3_conf)
 }
@@ -998,14 +1004,14 @@ impl S3LikeSource {
         }
     }
 
+    #[async_recursion]
     /// Initiates a multipart upload and returns the upload ID.
     pub async fn create_multipart_upload(
         &self,
         bucket: &str,
         key: &str,
-    ) -> super::Result<Cow<'static, str>> {
-        let region = &self.default_region;
-
+        region: &Region,
+    ) -> super::Result<MultipartUploadInfo> {
         let _permit = self
             .connection_pool_sema
             .clone()
@@ -1021,25 +1027,60 @@ impl S3LikeSource {
 
         let client = self.get_s3_client(region).await?;
 
-        let create_multipart_upload_response = client
+        let response = client
             .create_multipart_upload()
             .bucket(bucket)
             .key(key)
             .set_request_payer(request_payer.clone())
             .send()
-            .await
-            .context(UnableToCreateMultipartUploadSnafu { bucket, key })?;
+            .await;
 
-        let upload_id = create_multipart_upload_response
-            .upload_id()
-            .ok_or_else(|| Error::MissingUploadIdForMultipartUpload {
-                bucket: bucket.to_owned(),
-                key: key.to_owned(),
-            })?;
+        match response {
+            Ok(response) => {
+                let upload_id = response.upload_id().ok_or_else(|| {
+                    Error::MissingUploadIdForMultipartUpload {
+                        bucket: bucket.to_owned(),
+                        key: key.to_owned(),
+                    }
+                })?;
 
-        log::debug!("S3 create multipart upload-id: {upload_id}");
+                log::debug!("S3 create multipart upload-id: {upload_id}");
 
-        Ok(upload_id.to_owned().into())
+                Ok(MultipartUploadInfo {
+                    upload_id: upload_id.to_owned().into(),
+                    region: region.clone(),
+                })
+            }
+            Err(SdkError::ServiceError(err)) => {
+                let bad_response = err.raw();
+                match bad_response.status().as_u16() {
+                    // moved permanently
+                    301 => {
+                        let headers = bad_response.headers();
+                        let new_region =
+                            headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
+                                path: format!("{bucket}/{key}"),
+                                header: REGION_HEADER.into(),
+                            })?;
+
+                        let region_name = String::from_utf8(new_region.as_bytes().to_vec())
+                            .with_context(|_| UnableToParseUtf8Snafu::<String> {
+                                path: format!("{bucket}/{key}"),
+                            })?;
+
+                        let new_region = Region::new(region_name);
+                        log::debug!("S3 Region of {bucket}/{key} different than client {:?} vs {:?} Attempting multipart upload in that region with new client", new_region, region);
+                        self.create_multipart_upload(bucket, key, &new_region).await
+                    }
+                    _ => Err(UnableToCreateMultipartUploadSnafu { bucket, key }
+                        .into_error(SdkError::ServiceError(err))
+                        .into()),
+                }
+            }
+            Err(err) => Err(UnableToCreateMultipartUploadSnafu { bucket, key }
+                .into_error(err)
+                .into()),
+        }
     }
 
     /// Completes a multipart upload by providing the upload ID and a list of completed parts.
@@ -1049,9 +1090,8 @@ impl S3LikeSource {
         bucket: Cow<'static, str>,
         upload_id: Cow<'static, str>,
         completed_parts: Vec<CompletedPart>,
+        region: &Region,
     ) -> super::Result<()> {
-        let region = &self.default_region;
-
         let _permit = self
             .connection_pool_sema
             .clone()
@@ -1097,9 +1137,8 @@ impl S3LikeSource {
         upload_id: &str,
         part_number: NonZeroI32,
         data: bytes::Bytes,
+        region: &Region,
     ) -> super::Result<UploadPartOutput> {
-        let region = &self.default_region;
-
         let _permit = self
             .connection_pool_sema
             .clone()
@@ -1366,6 +1405,9 @@ pub struct S3MultipartWriter {
     /// to S3.
     upload_id: Cow<'static, str>,
 
+    /// The region the upload should write to.
+    region: Region,
+
     /// Handles for the parts being uploaded.
     in_progress_uploads: JoinSet<super::Result<CompletedPart>>,
 
@@ -1385,6 +1427,11 @@ pub struct S3MultipartWriter {
 pub struct CompletedPart {
     part_number: NonZeroI32,
     etag: Cow<'static, str>,
+}
+
+pub struct MultipartUploadInfo {
+    pub upload_id: Cow<'static, str>,
+    pub region: Region,
 }
 
 impl S3MultipartWriter {
@@ -1436,17 +1483,21 @@ impl S3MultipartWriter {
 
         log::debug!("S3 multipart upload requested: {uri}, part_size: {part_size}");
 
-        let upload_id = s3_client.create_multipart_upload(&bucket, &key).await?;
+        let upload_info = s3_client
+            .create_multipart_upload(&bucket, &key, &s3_client.default_region)
+            .await?;
 
         log::debug!(
-            "S3 multipart upload has been assigned an upload_id: {uri}, upload_id: {upload_id}"
+            "S3 multipart upload has been assigned an upload_id: {uri}, upload_id: {}",
+            upload_info.upload_id
         );
 
         Ok(Self {
             uri: uri.into(),
             bucket: bucket.into(),
             key: key.into(),
-            upload_id: upload_id.into(),
+            upload_id: upload_info.upload_id.into(),
+            region: upload_info.region,
             s3_client,
             next_part_number: unsafe { NonZeroI32::new_unchecked(1) },
             in_progress_uploads: JoinSet::new(),
@@ -1487,6 +1538,7 @@ impl S3MultipartWriter {
         let bucket = self.bucket.clone();
         let key = self.key.clone();
         let s3_client = self.s3_client.clone();
+        let region = self.region.clone();
 
         log::debug!(
             "S3 multipart upload part requested: {next_part_number}, size: {data_len} bytes"
@@ -1498,7 +1550,7 @@ impl S3MultipartWriter {
 
         let upload_future = async move {
             let output = s3_client
-                .upload_part(&bucket, &key, &upload_id, next_part_number, chunk)
+                .upload_part(&bucket, &key, &upload_id, next_part_number, chunk, &region)
                 .await?;
 
             drop(upload_permit);
@@ -1558,6 +1610,7 @@ impl S3MultipartWriter {
                     .into_iter()
                     .map(|part| part.into())
                     .collect(),
+                &self.region,
             )
             .await?;
 

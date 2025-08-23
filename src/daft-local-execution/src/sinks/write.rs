@@ -18,14 +18,14 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
     ops::NodeType,
-    pipeline::NodeName,
+    pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
+    ExecutionTaskSpawner,
 };
 
 #[derive(Default)]
@@ -79,7 +79,7 @@ pub enum WriteFormat {
     DataSink(String),
 }
 
-struct WriteState {
+pub(crate) struct WriteState {
     writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 }
 
@@ -88,12 +88,6 @@ impl WriteState {
         writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     ) -> Self {
         Self { writer }
-    }
-}
-
-impl BlockingSinkState for WriteState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -123,25 +117,21 @@ impl WriteSink {
 }
 
 impl BlockingSink for WriteSink {
+    type State = WriteState;
+
     #[instrument(skip_all, name = "WriteSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         let builder = spawner.runtime_stats.clone();
 
         spawner
             .spawn(
                 async move {
-                    let bytes_written = state
-                        .as_any_mut()
-                        .downcast_mut::<WriteState>()
-                        .expect("WriteSink should have WriteState")
-                        .writer
-                        .write(input)
-                        .await?;
+                    let bytes_written = state.writer.write(input).await?;
 
                     builder
                         .as_any_arc()
@@ -160,19 +150,15 @@ impl BlockingSink for WriteSink {
     #[instrument(skip_all, name = "WriteSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let file_schema = self.file_schema.clone();
         spawner
             .spawn(
                 async move {
                     let mut results = vec![];
                     for mut state in states {
-                        let state = state
-                            .as_any_mut()
-                            .downcast_mut::<WriteState>()
-                            .expect("State type mismatch");
                         results.extend(state.writer.close().await?);
                     }
                     let mp = Arc::new(MicroPartition::new_loaded(
@@ -208,9 +194,9 @@ impl BlockingSink for WriteSink {
         NodeType::Write
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         let writer = self.writer_factory.create_writer(0, None)?;
-        Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
+        Ok(WriteState::new(writer))
     }
 
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
@@ -219,7 +205,7 @@ impl BlockingSink for WriteSink {
 
     fn dispatch_spawner(
         &self,
-        _runtime_handle: &ExecutionRuntimeContext,
+        _morsel_size_requirement: Option<MorselSizeRequirement>,
     ) -> Arc<dyn DispatchSpawner> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))

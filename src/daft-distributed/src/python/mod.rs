@@ -1,5 +1,5 @@
 mod progress_bar;
-mod ray;
+pub mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
@@ -98,17 +98,15 @@ impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {
     runner: Arc<PlanRunner<RaySwordfishWorker>>,
-    on_ray_actor: bool,
 }
 
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new(py: Python, on_ray_actor: bool) -> PyResult<Self> {
+    fn new(py: Python) -> PyResult<Self> {
         let worker_manager = RayWorkerManager::try_new(py)?;
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
-            on_ray_actor,
         })
     }
 
@@ -130,9 +128,8 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> = vec![Box::new(
-            FlotillaProgressBar::try_new(py, self.on_ray_actor)?,
-        )];
+        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
+            vec![Box::new(FlotillaProgressBar::try_new(py)?)];
 
         tracing::info!("Checking DAFT_DASHBOARD_URL environment variable");
         match std::env::var("DAFT_DASHBOARD_URL") {

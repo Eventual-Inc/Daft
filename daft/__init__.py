@@ -60,7 +60,12 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
+from daft.context import (
+    set_execution_config,
+    set_planning_config,
+    execution_config_ctx,
+    planning_config_ctx,
+)
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -88,13 +93,17 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
+    read_video_frames,
     read_warc,
+    read_huggingface,
 )
 from daft.series import Series
 from daft.session import (
     Session,
     attach,
     attach_catalog,
+    attach_provider,
+    attach_function,
     attach_table,
     create_namespace,
     create_namespace_if_not_exists,
@@ -107,30 +116,34 @@ from daft.session import (
     current_provider,
     current_session,
     detach_catalog,
+    detach_function,
+    detach_provider,
     detach_table,
     drop_namespace,
     drop_table,
     get_catalog,
+    get_provider,
     get_table,
     has_catalog,
     has_namespace,
+    has_provider,
     has_table,
     list_catalogs,
     list_tables,
     read_table,
+    session,
     set_catalog,
     set_model,
     set_namespace,
     set_provider,
     set_session,
     write_table,
-    attach_function,
-    detach_function,
 )
 from daft.sql import sql, sql_expr
 from daft.udf import udf, _DaftFuncDecorator as func
 from daft.viz import register_viz_hook
 from daft.window import Window
+from daft.file import File
 
 import daft.context as context
 import daft.io as io
@@ -144,6 +157,7 @@ __all__ = [
     "DataFrame",
     "DataType",
     "Expression",
+    "File",
     "IOConfig",
     "Identifier",
     "ImageFormat",
@@ -158,6 +172,7 @@ __all__ = [
     "attach",
     "attach_catalog",
     "attach_function",
+    "attach_provider",
     "attach_table",
     "coalesce",
     "col",
@@ -174,6 +189,7 @@ __all__ = [
     "current_session",
     "detach_catalog",
     "detach_function",
+    "detach_provider",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -188,9 +204,11 @@ __all__ = [
     "from_ray_dataset",
     "func",
     "get_catalog",
+    "get_provider",
     "get_table",
     "has_catalog",
     "has_namespace",
+    "has_provider",
     "has_table",
     "interval",
     "io",
@@ -203,15 +221,18 @@ __all__ = [
     "read_csv",
     "read_deltalake",
     "read_hudi",
+    "read_huggingface",
     "read_iceberg",
     "read_json",
     "read_lance",
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_video_frames",
     "read_warc",
     "refresh_logger",
     "register_viz_hook",
+    "session",
     "set_catalog",
     "set_execution_config",
     "set_model",

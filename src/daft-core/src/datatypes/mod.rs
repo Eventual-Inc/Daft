@@ -26,8 +26,8 @@ pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 
+pub use crate::array::{file_array::FileArray, DataArray, FixedSizeListArray};
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
-pub use crate::array::{DataArray, FixedSizeListArray};
 
 pub mod interval;
 pub mod logical;
@@ -241,6 +241,7 @@ impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
+impl_daft_logical_data_array_datatype!(FileType, File, StructType);
 
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);

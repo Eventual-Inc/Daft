@@ -14,7 +14,10 @@ use daft_dsl::{
     has_agg, lit, null_lit, resolved_col, unresolved_col, Column, Expr, ExprRef, Operator, PlanRef,
     Subquery, UnresolvedColumn,
 };
-use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions::{
+    invalid_argument_err,
+    numeric::{ceil::ceil, floor::floor},
+};
 use daft_functions_utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
@@ -408,10 +411,7 @@ impl SQLPlanner<'_> {
                         }
                         out
                     }
-                    exprs => exprs
-                        .iter()
-                        .map(|expr| self.plan_expr(expr))
-                        .collect::<SQLPlannerResult<Vec<_>>>()?,
+                    exprs => self.plan_group_by_items(projections.as_slice(), exprs)?,
                 };
             }
         }
@@ -457,6 +457,24 @@ impl SQLPlanner<'_> {
             None => {}
         }
 
+        // Daft's SQL dialect closely follows both DuckDB and PostgreSQL, So unlike DataFrame, when
+        // LIMIT and OFFSET appear at the same time, we need to ignore the order of LIMIT and OFFSET
+        // and ensure that OFFSET is a child node of LIMIT.
+        if let Some(offset) = &query.offset {
+            let offset_expr = self.plan_expr(&offset.value)?;
+            match offset_expr.as_ref() {
+                Expr::Literal(Literal::Int64(offset)) if *offset >= 0 => {
+                    self.update_plan(|plan| plan.offset(*offset as u64))?;
+                }
+                Expr::Literal(Literal::Int64(offset)) => invalid_operation_err!(
+                    "OFFSET <n> must be greater than or equal to 0, instead got: {offset}"
+                ),
+                _ => invalid_operation_err!(
+                    "OFFSET <n> must be a constant integer, instead got: {offset_expr}"
+                ),
+            }
+        }
+
         if let Some(limit) = &query.limit {
             let limit_expr = self.plan_expr(limit)?;
             match limit_expr.as_ref() {
@@ -474,6 +492,40 @@ impl SQLPlanner<'_> {
         }
 
         Ok(self.current_plan.clone().unwrap())
+    }
+
+    fn plan_group_by_items(
+        &self,
+        select_items: &[ExprRef],
+        exprs: &[ast::Expr],
+    ) -> SQLPlannerResult<Vec<ExprRef>> {
+        let mut group_by_items = vec![];
+        for expr in exprs {
+            if let ast::Expr::Value(ast::Value::Number(number, _)) = expr {
+                let pos: usize = match number.parse() {
+                    Ok(p) => p,
+                    Err(_) => invalid_argument_err!(
+                        "GROUP BY position '{}' is not a valid non-negative integer",
+                        number
+                    ),
+                };
+                if pos == 0 {
+                    invalid_argument_err!("GROUP BY position must be >= 1 (1-based index)",);
+                }
+                if pos > select_items.len() {
+                    invalid_argument_err!(
+                        "GROUP BY position {} is out of range (only {} select items)",
+                        pos,
+                        select_items.len()
+                    );
+                }
+                group_by_items.push(select_items[pos - 1].clone());
+            } else {
+                let group_by_item = self.plan_expr(expr)?;
+                group_by_items.push(group_by_item);
+            }
+        }
+        Ok(group_by_items)
     }
 
     fn plan_non_agg_query(
@@ -1797,14 +1849,11 @@ impl SQLPlanner<'_> {
 }
 
 /// Checks if the SQL query is valid syntax and doesn't use unsupported features.
-/// /// This function examines various clauses and options in the provided [sqlparser::ast::Query]
+/// This function examines various clauses and options in the provided [sqlparser::ast::Query]
 /// and returns an error if any unsupported features are encountered.
-fn check_query_features(query: &sqlparser::ast::Query) -> SQLPlannerResult<()> {
+fn check_query_features(query: &Query) -> SQLPlannerResult<()> {
     if !query.limit_by.is_empty() {
         unsupported_sql_err!("LIMIT BY");
-    }
-    if query.offset.is_some() {
-        unsupported_sql_err!("OFFSET");
     }
     if query.fetch.is_some() {
         unsupported_sql_err!("FETCH");

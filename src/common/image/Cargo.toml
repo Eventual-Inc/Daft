@@ -1,0 +1,26 @@
+[dependencies]
+arrow2 = {workspace = true}
+bincode = {workspace = true}
+common-error = {path = "../error", default-features = false}
+common-ndarray = {workspace = true}
+daft-schema = {path = "../../daft-schema", default-features = false}
+image = {workspace = true, features = [
+  "gif",
+  "jpeg",
+  "ico",
+  "png",
+  "tiff",
+  "webp",
+  "bmp",
+  "hdr"
+]}
+ndarray = {workspace = true}
+serde = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-image"
+version = {workspace = true}

@@ -17,12 +17,12 @@ use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
 use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
 
-#[derive(Clone)]
-enum AggStrategy {
+#[derive(Clone, Debug)]
+pub(crate) enum AggStrategy {
     // TODO: This would probably benefit from doing sharded aggs.
     AggThenPartition,
     PartitionThenAgg(usize),
@@ -107,13 +107,13 @@ impl AggStrategy {
 }
 
 #[derive(Default)]
-struct SinglePartitionAggregateState {
+pub(crate) struct SinglePartitionAggregateState {
     partially_aggregated: Vec<MicroPartition>,
     unaggregated: Vec<MicroPartition>,
     unaggregated_size: usize,
 }
 
-enum GroupedAggregateState {
+pub(crate) enum GroupedAggregateState {
     Accumulating {
         inner_states: Vec<Option<SinglePartitionAggregateState>>,
         strategy: Option<AggStrategy>,
@@ -229,12 +229,6 @@ impl GroupedAggregateState {
     }
 }
 
-impl BlockingSinkState for GroupedAggregateState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 struct GroupedAggregateParams {
     // The original aggregations and group by expressions
     original_aggregations: Vec<BoundAggExpr>,
@@ -305,24 +299,20 @@ impl GroupedAggregateSink {
 }
 
 impl BlockingSink for GroupedAggregateSink {
+    type State = GroupedAggregateState;
     #[instrument(skip_all, name = "GroupedAggregateSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         let params = self.grouped_aggregate_params.clone();
         let strategy_lock = self.global_strategy_lock.clone();
         spawner
             .spawn(
                 async move {
-                    let agg_state = state
-                        .as_any_mut()
-                        .downcast_mut::<GroupedAggregateState>()
-                        .expect("GroupedAggregateSink should have GroupedAggregateState");
-
-                    agg_state.push(input, &params, &strategy_lock)?;
+                    state.push(input, &params, &strategy_lock)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -333,9 +323,9 @@ impl BlockingSink for GroupedAggregateSink {
     #[instrument(skip_all, name = "GroupedAggregateSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -343,14 +333,7 @@ impl BlockingSink for GroupedAggregateSink {
                 async move {
                     let mut state_iters = states
                         .into_iter()
-                        .map(|mut state| {
-                            state
-                                .as_any_mut()
-                                .downcast_mut::<GroupedAggregateState>()
-                                .expect("GroupedAggregateSink should have GroupedAggregateState")
-                                .finalize()
-                                .into_iter()
-                        })
+                        .map(|mut state| state.finalize().into_iter())
                         .collect::<Vec<_>>();
 
                     let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
@@ -373,7 +356,7 @@ impl BlockingSink for GroupedAggregateSink {
                             }
 
                             // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
-                            if partially_aggregated.is_empty() {
+                            if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
                                 let concated = MicroPartition::concat(&unaggregated)?;
                                 let agged = concated
                                     .agg(&params.original_aggregations, &params.group_by)?;
@@ -454,11 +437,11 @@ impl BlockingSink for GroupedAggregateSink {
         get_compute_pool_num_threads()
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(GroupedAggregateState::new(
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(GroupedAggregateState::new(
             self.num_partitions(),
             self.partial_agg_threshold,
             self.high_cardinality_threshold_ratio,
-        )))
+        ))
     }
 }

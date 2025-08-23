@@ -1,0 +1,16 @@
+[dependencies]
+common-error = {path = "../error", default-features = false}
+common-io-config = {path = "../io-config"}
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
+
+[features]
+python = ["common-error/python", "dep:pyo3"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-file"
+version = {workspace = true}

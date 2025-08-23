@@ -17,7 +17,7 @@ use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
 use crate::{
     ops::NodeType,
@@ -27,7 +27,7 @@ use crate::{
     ExecutionTaskSpawner,
 };
 
-enum ProbeTableState {
+pub(crate) enum ProbeTableState {
     Building {
         probe_table_builder: Option<Box<dyn ProbeableBuilder>>,
         projection: Vec<BoundExpr>,
@@ -64,14 +64,17 @@ impl ProbeTableState {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
             let input_tables = input.get_tables()?;
             if input_tables.is_empty() {
-                tables.push(RecordBatch::empty(Some(input.schema())));
-                return Ok(());
-            }
-            for table in input_tables.iter() {
-                tables.push(table.clone());
-                let join_keys = table.eval_expression_list(projection)?;
-
+                let empty_table = RecordBatch::empty(Some(input.schema()));
+                let join_keys = empty_table.eval_expression_list(projection)?;
                 probe_table_builder.add_table(&join_keys)?;
+                tables.push(empty_table);
+            } else {
+                for table in input_tables.iter() {
+                    tables.push(table.clone());
+                    let join_keys = table.eval_expression_list(projection)?;
+
+                    probe_table_builder.add_table(&join_keys)?;
+                }
             }
             Ok(())
         } else {
@@ -94,12 +97,6 @@ impl ProbeTableState {
         } else {
             panic!("finalize can only be used during the Building Phase")
         }
-    }
-}
-
-impl BlockingSinkState for ProbeTableState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -161,6 +158,8 @@ impl HashJoinBuildSink {
 }
 
 impl BlockingSink for HashJoinBuildSink {
+    type State = ProbeTableState;
+
     fn name(&self) -> NodeName {
         "HashJoinBuild".into()
     }
@@ -186,17 +185,13 @@ impl BlockingSink for HashJoinBuildSink {
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         spawner
             .spawn(
                 async move {
-                    let probe_table_state: &mut ProbeTableState = state
-                        .as_any_mut()
-                        .downcast_mut::<ProbeTableState>()
-                        .expect("HashJoinBuildSink should have ProbeTableState");
-                    probe_table_state.add_tables(&input)?;
+                    state.add_tables(&input)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 info_span!("HashJoinBuildSink::sink"),
@@ -207,16 +202,12 @@ impl BlockingSink for HashJoinBuildSink {
     #[instrument(skip_all, name = "HashJoinBuildSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();
-        let probe_table_state = state
-            .as_any_mut()
-            .downcast_mut::<ProbeTableState>()
-            .expect("State type mismatch");
-        let finalized_probe_state = probe_table_state.finalize();
+        let finalized_probe_state = state.finalize();
         self.probe_state_bridge
             .set_state(finalized_probe_state.into());
         Ok(BlockingSinkFinalizeOutput::Finished(vec![])).into()
@@ -226,16 +217,20 @@ impl BlockingSink for HashJoinBuildSink {
         1
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(ProbeTableState::new(
+    fn make_state(&self) -> DaftResult<Self::State> {
+        ProbeTableState::new(
             &self.key_schema,
             self.projection.clone(),
             self.nulls_equal_aware.as_ref(),
             self.track_indices,
-        )?))
+        )
     }
 
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(HashJoinBuildRuntimeStats::default())
+    }
+
+    fn morsel_size_requirement(&self) -> Option<crate::pipeline::MorselSizeRequirement> {
+        None
     }
 }

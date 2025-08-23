@@ -13,19 +13,15 @@ use crate::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
-    dispatcher::DispatchSpawner,
+    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
-    pipeline::{NodeName, PipelineNode, RuntimeContext},
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
-
-pub trait StreamingSinkState: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
 
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
@@ -34,25 +30,26 @@ pub enum StreamingSinkOutput {
     Finished(Option<Arc<MicroPartition>>),
 }
 
-pub(crate) type StreamingSinkExecuteResult =
-    OperatorOutput<DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>>;
+pub(crate) type StreamingSinkExecuteResult<Op> =
+    OperatorOutput<DaftResult<(<Op as StreamingSink>::State, StreamingSinkOutput)>>;
 pub(crate) type StreamingSinkFinalizeResult =
     OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
-pub trait StreamingSink: Send + Sync {
+pub(crate) trait StreamingSink: Send + Sync {
+    type State: Send + Sync + Unpin;
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
     /// with the given state.
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn StreamingSinkState>,
+        state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult;
+    ) -> StreamingSinkExecuteResult<Self>;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult;
 
@@ -65,7 +62,7 @@ pub trait StreamingSink: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Box<dyn StreamingSinkState>;
+    fn make_state(&self) -> Self::State;
 
     /// Create a new RuntimeStats for this StreamingSink.
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
@@ -78,24 +75,35 @@ pub trait StreamingSink: Send + Sync {
         get_compute_pool_num_threads()
     }
 
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        None
+    }
+
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner>;
+    ) -> Arc<dyn DispatchSpawner> {
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
+        } else {
+            Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+        }
+    }
 }
 
-pub struct StreamingSinkNode {
-    op: Arc<dyn StreamingSink>,
+pub struct StreamingSinkNode<Op: StreamingSink> {
+    op: Arc<Op>,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
+    morsel_size_requirement: MorselSizeRequirement,
 }
 
-impl StreamingSinkNode {
+impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     pub(crate) fn new(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
@@ -103,12 +111,14 @@ impl StreamingSinkNode {
         let name = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
         let runtime_stats = op.make_runtime_stats();
+        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             children,
             runtime_stats,
             plan_stats,
             node_info: Arc::new(node_info),
+            morsel_size_requirement,
         }
     }
 
@@ -118,12 +128,12 @@ impl StreamingSinkNode {
 
     #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
     async fn run_worker(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         input_receiver: Receiver<Arc<MicroPartition>>,
         output_sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Box<dyn StreamingSinkState>> {
+    ) -> DaftResult<Op::State> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
         let spawner =
@@ -161,9 +171,9 @@ impl StreamingSinkNode {
     }
 
     fn spawn_workers(
-        op: Arc<dyn StreamingSink>,
+        op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
+        task_set: &mut TaskSet<DaftResult<Op::State>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
@@ -183,7 +193,7 @@ impl StreamingSinkNode {
     }
 }
 
-impl TreeDisplay for StreamingSinkNode {
+impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -199,6 +209,7 @@ impl TreeDisplay for StreamingSinkNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
@@ -217,7 +228,7 @@ impl TreeDisplay for StreamingSinkNode {
     }
 }
 
-impl PipelineNode for StreamingSinkNode {
+impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         self.children
             .iter()
@@ -233,6 +244,25 @@ impl PipelineNode for StreamingSinkNode {
         self.node_info.name.clone()
     }
 
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        _default_morsel_size: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.op.morsel_size_requirement();
+        let combined_morsel_size_requirement = MorselSizeRequirement::combine_requirements(
+            operator_morsel_size_requirement,
+            downstream_requirement,
+        );
+        self.morsel_size_requirement = combined_morsel_size_requirement;
+        for child in &mut self.children {
+            child.propagate_morsel_size_requirement(
+                combined_morsel_size_requirement,
+                _default_morsel_size,
+            );
+        }
+    }
+
     fn start(
         &self,
         maintain_order: bool,
@@ -245,7 +275,7 @@ impl PipelineNode for StreamingSinkNode {
                 child_result_receiver,
                 self.node_id(),
                 self.runtime_stats.clone(),
-                runtime_handle.stats_manager().clone(),
+                runtime_handle.stats_manager(),
             ));
         }
 
@@ -256,7 +286,7 @@ impl PipelineNode for StreamingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle, maintain_order);
+        let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,

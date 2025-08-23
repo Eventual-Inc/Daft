@@ -32,7 +32,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{
-        get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
+        get_pipeline_relationship_mapping, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
     },
     resource_manager::get_or_init_memory_manager,
@@ -283,7 +283,7 @@ impl NativeExecutor {
         start_chrome_trace();
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
-        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
+        let pipeline = translate_physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
@@ -301,14 +301,12 @@ impl NativeExecutor {
                 )
             });
 
-            let stats_manager = Arc::new(RuntimeStatsManager::new(runtime.handle(), &pipeline));
+            let stats_manager = RuntimeStatsManager::new(runtime.handle(), &pipeline);
+            let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle = ExecutionRuntimeContext::new(
-                    cfg.default_morsel_size,
-                    memory_manager.clone(),
-                    stats_manager.clone(),
-                );
+                let mut runtime_handle =
+                    ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 while let Some(val) = receiver.recv().await {
@@ -348,8 +346,6 @@ impl NativeExecutor {
             })?;
 
             // Finish the stats manager
-            let stats_manager = Arc::into_inner(stats_manager)
-                .expect("There should only be 1 stats manager instance by the end");
             stats_manager.finish(&runtime);
 
             if enable_explain_analyze {
@@ -389,7 +385,7 @@ impl NativeExecutor {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
         let ctx = RuntimeContext::new();
-        let pipeline_node = physical_plan_to_pipeline(
+        let pipeline_node = translate_physical_plan_to_pipeline(
             &physical_plan,
             &InMemoryPartitionSetCache::empty(),
             &cfg,
@@ -408,7 +404,7 @@ impl NativeExecutor {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
         let ctx = RuntimeContext::new();
-        let pipeline_node = physical_plan_to_pipeline(
+        let pipeline_node = translate_physical_plan_to_pipeline(
             &physical_plan,
             &InMemoryPartitionSetCache::empty(),
             &cfg,
@@ -435,7 +431,7 @@ impl NativeExecutor {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
         let ctx = RuntimeContext::new();
-        let pipeline_node = physical_plan_to_pipeline(
+        let pipeline_node = translate_physical_plan_to_pipeline(
             &physical_plan,
             &InMemoryPartitionSetCache::empty(),
             &cfg,

@@ -169,60 +169,6 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         assert result.stdout.decode().strip() == "ok"
 
 
-# TODO: Figure out why these tests are failing for Py3.8
-# def test_in_ray_worker():
-#     """Test that running Daft in a Ray worker defaults to Python runner"""
-
-#     autodetect_script = """
-# import ray
-# import os
-# import daft
-
-# @ray.remote
-# def init_and_return_daft_runner():
-
-#     # Attempt to confuse our runner inference code
-#     assert ray.is_initialized()
-#     os.environ["RAY_JOB_ID"] = "dummy"
-
-#     df = daft.from_pydict({"foo": [1, 2, 3]})
-#     return daft.context.get_context()._runner.name
-
-# ray.init()
-# print(ray.get(init_and_return_daft_runner.remote()))
-#     """
-
-#     with with_null_env():
-#         result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
-#         assert result.stdout.decode().strip() in {"native"}
-
-
-# def test_in_ray_worker_launch_query():
-#     """Test that running Daft in a Ray worker defaults to Python runner"""
-
-#     autodetect_script = """
-# import ray
-# import os
-# import daft
-
-# @ray.remote
-# def init_and_return_daft_runner():
-
-#     assert ray.is_initialized()
-#     daft.context.set_runner_ray()
-
-#     df = daft.from_pydict({"foo": [1, 2, 3]})
-#     return daft.context.get_context()._runner.name
-
-# ray.init()
-# print(ray.get(init_and_return_daft_runner.remote()))
-#     """
-
-#     with with_null_env():
-#         result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
-#         assert result.stdout.decode().strip() == "ray"
-
-
 def test_cannot_set_runner_ray_after_py():
     cannot_set_runner_ray_after_py_script = """
 import daft

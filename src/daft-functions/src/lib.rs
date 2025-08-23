@@ -58,9 +58,9 @@ impl FunctionModule for HashFunctions {
     }
 }
 
-pub struct StructFunctions;
+pub struct ConversionFunctions;
 
-impl FunctionModule for StructFunctions {
+impl FunctionModule for ConversionFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(ToStructFunction);
     }
