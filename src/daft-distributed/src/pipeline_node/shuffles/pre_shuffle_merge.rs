@@ -12,7 +12,7 @@ use crate::{
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        task::{SchedulingStrategy, SwordfishTask, TaskContext},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
@@ -172,6 +172,10 @@ impl PreShuffleMergeNode {
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
                         &(self_clone as Arc<dyn DistributedPipelineNode>),
+                        Some(SchedulingStrategy::WorkerAffinity {
+                            worker_id,
+                            soft: false,
+                        }),
                     )?;
 
                     // Send the task directly to result_tx
@@ -183,13 +187,17 @@ impl PreShuffleMergeNode {
         }
 
         // Handle any remaining buckets that haven't reached the threshold
-        for (_, materialized_outputs) in worker_buckets {
+        for (worker_id, materialized_outputs) in worker_buckets {
             if !materialized_outputs.is_empty() {
                 let self_clone = self.clone();
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
                     &(self_clone as Arc<dyn DistributedPipelineNode>),
+                    Some(SchedulingStrategy::WorkerAffinity {
+                        worker_id,
+                        soft: false,
+                    }),
                 )?;
 
                 if result_tx.send(task).await.is_err() {

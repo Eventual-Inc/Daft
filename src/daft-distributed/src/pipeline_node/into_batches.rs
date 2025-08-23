@@ -114,6 +114,7 @@ impl IntoBatchesNode {
                                 StatsState::NotMaterialized,
                             )
                         },
+                        None,
                     )?;
                     if result_tx.send(task).await.is_err() {
                         break;
@@ -136,6 +137,7 @@ impl IntoBatchesNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
         }

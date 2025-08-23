@@ -687,14 +687,17 @@ def test_list_value_counts_nested():
     )
 
     # Apply list_value_counts operation and expect an exception
-    with pytest.raises(daft.exceptions.DaftCoreException) as exc_info:
-        mp.eval_expression_list([col("nested_list_col").list.value_counts().alias("value_counts")])
+    result = mp.eval_expression_list([col("nested_list_col").list.value_counts().alias("value_counts")])
+    result_dict = result.to_pydict()
 
-    # Check the exception message
-    assert (
-        'DaftError::ArrowError Invalid argument error: The data type type LargeList(Field { name: "item", data_type: Int64, is_nullable: true, metadata: {} }) has no natural order'
-        in str(exc_info.value)
-    )
+    assert result_dict["value_counts"] == [
+        [([1, 2], 1), ([3, 4], 1)],
+        [([1, 2], 1), ([5, 6], 1)],
+        [([3, 4], 1), ([1, 2], 1)],
+        [],
+        [],
+        [([1, 2], 2)],
+    ]
 
 
 def test_list_value_counts_fixed_size():

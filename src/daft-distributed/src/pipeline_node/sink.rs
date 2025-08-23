@@ -133,6 +133,7 @@ impl SinkNode {
                     StatsState::NotMaterialized,
                 )
             },
+            None,
         )?;
         let _ = sender.send(task).await;
         Ok(())
