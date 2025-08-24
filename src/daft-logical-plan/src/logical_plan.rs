@@ -181,7 +181,7 @@ impl LogicalPlan {
                 RequiredCols::new(res, None)
             }
             Self::UDFProject(UDFProject {
-                project,
+                udf_expr,
                 passthrough_columns,
                 ..
             }) => {
@@ -190,7 +190,7 @@ impl LogicalPlan {
                     .flat_map(get_required_columns)
                     .collect::<IndexSet<_>>();
 
-                res.extend(get_required_columns(project).into_iter());
+                res.extend(get_required_columns(&udf_expr.to_expr()).into_iter());
                 RequiredCols::new(res, None)
             }
             Self::Filter(filter) => RequiredCols::new(
@@ -494,7 +494,7 @@ impl LogicalPlan {
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
                         input.clone(), projection.clone(),
                     ).unwrap()),
-                Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
+                Self::UDFProject(UDFProject {udf_expr, passthrough_columns, out_name, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), udf_expr.clone(), out_name.clone(), passthrough_columns.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size)),
                 Self::Limit(Limit { limit, offset, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),

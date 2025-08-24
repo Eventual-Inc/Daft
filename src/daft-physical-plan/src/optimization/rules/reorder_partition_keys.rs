@@ -88,12 +88,12 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     )?);
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::ActorPoolProject(ActorPoolProject { input, projection, clustering_spec: _, udf_properties }) => {
+                PhysicalPlan::ActorPoolProject(ActorPoolProject { input, projection, clustering_spec: _, udf_expr }) => {
                     let new_plan = PhysicalPlan::ActorPoolProject(ActorPoolProject {
                         input: input.clone(),
                         projection: projection.clone(),
                         clustering_spec: new_spec.into(),
-                        udf_properties: udf_properties.clone(),
+                        udf_expr: udf_expr.clone(),
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }

@@ -12,7 +12,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
         BoundColumn,
     },
-    functions::python::get_resource_request,
+    functions::python::{get_resource_request, UDFImpl},
     Column, WindowExpr, WindowFrame, WindowSpec,
 };
 use daft_logical_plan::{
@@ -258,14 +258,16 @@ impl LocalPhysicalPlan {
 
     pub fn udf_project(
         input: LocalPhysicalPlanRef,
-        project: BoundExpr,
+        udf_expr: UDFImpl,
+        out_name: Arc<str>,
         passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::UDFProject(UDFProject {
             input,
-            project,
+            udf_expr,
+            out_name,
             passthrough_columns,
             schema,
             stats_state,
@@ -781,9 +783,9 @@ impl LocalPhysicalPlan {
     pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
         let mut base = ResourceRequest::default_cpu();
         self.apply(|plan| match plan.as_ref() {
-            Self::UDFProject(UDFProject { project, .. }) => {
-                if let Some(resource_request) = get_resource_request([project]) {
-                    base = base.max(&resource_request);
+            Self::UDFProject(UDFProject { udf_expr, .. }) => {
+                if let Some(resource_request) = udf_expr.resource_request() {
+                    base = base.max(resource_request);
                 }
                 Ok(TreeNodeRecursion::Continue)
             }
@@ -860,7 +862,7 @@ impl LocalPhysicalPlan {
                 Self::IntoBatches(IntoBatches { batch_size, strict, .. }) => Self::into_batches(new_child.clone(), *batch_size, *strict, StatsState::NotMaterialized),
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UDFProject(UDFProject { udf_expr, out_name, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), udf_expr.clone(), out_name.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -986,7 +988,8 @@ pub struct Project {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
-    pub project: BoundExpr,
+    pub udf_expr: UDFImpl,
+    pub out_name: Arc<str>,
     pub passthrough_columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

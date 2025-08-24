@@ -17,7 +17,7 @@ from daft.execution.udf import (
     SharedMemoryTransport,
 )
 from daft.expressions.expressions import ExpressionsProjection
-from daft.recordbatch.micropartition import MicroPartition
+from daft.recordbatch import RecordBatch
 
 
 def udf_event_loop(
@@ -49,15 +49,17 @@ def udf_event_loop(
                 expression_projection = initialized_projection
 
             input_bytes = transport.read_and_release(name, size)
-            input = MicroPartition.from_ipc_stream(input_bytes)
+            input = RecordBatch.from_ipc_stream(input_bytes)
             evaluated = input.eval_expression_list(expression_projection)
 
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
 
+            # Mark end of UDF's stdout and flush
             print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
             sys.stdout.flush()
             sys.stderr.flush()
+
             conn.send((_SUCCESS, out_name, out_size))
     except UDFException as e:
         exc = e.__cause__

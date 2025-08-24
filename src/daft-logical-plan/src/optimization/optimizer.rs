@@ -383,7 +383,10 @@ mod tests {
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
-        functions::{python::LegacyPythonUDF, FunctionExpr},
+        functions::{
+            python::{LegacyPythonUDF, UDFImpl},
+            FunctionExpr,
+        },
         lit, resolved_col, unresolved_col, AggExpr, Expr,
     };
 
@@ -697,9 +700,12 @@ mod tests {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
 
         // Create an actor pool project expression.
+        let actor_pool = LegacyPythonUDF::new_testing_udf();
+        let inputs = vec![resolved_col("a").into()];
+        let actor_pool_udf = UDFImpl::Legacy(actor_pool.clone(), inputs.clone());
         let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
-            inputs: vec![resolved_col("a").into()],
+            func: FunctionExpr::Python(actor_pool),
+            inputs: inputs.clone(),
         });
 
         // Create a plan with Select using actor pool project followed by Limit.
@@ -718,7 +724,8 @@ mod tests {
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            actor_pool_expr.alias("a"),
+            actor_pool_udf.clone(),
+            "a".into(),
             vec![],
         )?)
         .arced();
@@ -754,9 +761,12 @@ mod tests {
     fn filter_commutes_with_actor_pool_project() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         // Create an actor pool project expression.
+        let actor_pool = LegacyPythonUDF::new_testing_udf();
+        let inputs = vec![resolved_col("a").into()];
+        let actor_pool_udf = UDFImpl::Legacy(actor_pool.clone(), inputs.clone());
         let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
-            inputs: vec![resolved_col("a").into()],
+            func: FunctionExpr::Python(actor_pool),
+            inputs,
         });
 
         // Create a plan with Select using actor pool project followed by Filter.
@@ -777,7 +787,8 @@ mod tests {
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            actor_pool_expr.alias("renamed_col"),
+            actor_pool_udf.clone(),
+            "renamed_col".into(),
             vec![resolved_col("a")],
         )?)
         .arced();

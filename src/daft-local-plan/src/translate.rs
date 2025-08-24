@@ -6,6 +6,7 @@ use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    functions::python::UDFImpl,
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
@@ -92,13 +93,15 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::UDFProject(udf_project) => {
             let input = translate(&udf_project.input)?;
 
-            let project = BoundExpr::try_new(udf_project.project.clone(), input.schema())?;
             let passthrough_columns =
                 BoundExpr::bind_all(&udf_project.passthrough_columns, input.schema())?;
+            let project = BoundExpr::try_new(udf_project.udf_expr.to_expr(), input.schema())?;
+            let udf_expr = UDFImpl::from_expr(project.inner())?;
 
             Ok(LocalPhysicalPlan::udf_project(
                 input,
-                project,
+                udf_expr,
+                udf_project.out_name.clone(),
                 passthrough_columns,
                 udf_project.projected_schema.clone(),
                 udf_project.stats_state.clone(),

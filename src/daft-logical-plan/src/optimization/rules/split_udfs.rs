@@ -3,7 +3,8 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
-    functions::{scalar::ScalarFn, BuiltinScalarFn},
+    expr::count_udfs,
+    functions::{python::UDFImpl, scalar::ScalarFn, BuiltinScalarFn},
     is_udf,
     optimization::{get_required_columns, requires_computation},
     resolved_col, Column, Expr, ExprRef, ResolvedColumn,
@@ -467,7 +468,7 @@ fn recursive_optimize_project(
     };
 
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
-    let (actor_pool_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
+    let (udf_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
         .partition(|expr| exists_skip_list_map(expr, is_udf));
 
@@ -501,15 +502,27 @@ fn recursive_optimize_project(
     let new_plan = {
         let mut child = new_plan;
 
-        for expr in actor_pool_stages {
+        for expr in udf_stages {
             let passthrough_columns = child
                 .schema()
                 .field_names()
                 .map(resolved_col)
                 .filter(|c| c.name() != expr.name())
                 .collect();
-            child = LogicalPlan::UDFProject(UDFProject::try_new(child, expr, passthrough_columns)?)
-                .arced();
+
+            let (udf_expr, out_name) = expr.unwrap_alias();
+            let num_udfs = count_udfs(&udf_expr);
+            assert_eq!(num_udfs, 1, "Expected only one udf in an udf project");
+            let udf_expr = UDFImpl::from_expr(&udf_expr)?;
+            let out_name = out_name.unwrap_or_else(|| expr.name().into());
+
+            child = LogicalPlan::UDFProject(UDFProject::try_new(
+                child,
+                udf_expr,
+                out_name,
+                passthrough_columns,
+            )?)
+            .arced();
         }
         child
     };
@@ -537,11 +550,8 @@ mod tests {
     use common_resource_request::ResourceRequest;
     use daft_core::prelude::*;
     use daft_dsl::{
-        functions::{
-            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
-            FunctionExpr,
-        },
-        resolved_col, Expr, ExprRef,
+        functions::python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject, UDFImpl},
+        resolved_col, ExprRef,
     };
     use indoc::indoc;
     use test_log::test;
@@ -597,9 +607,9 @@ mod tests {
         )
     }
 
-    fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
-        Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF {
+    fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> UDFImpl {
+        UDFImpl::Legacy(
+            LegacyPythonUDF {
                 name: Arc::new("foo".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),
@@ -612,10 +622,9 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 use_process: None,
-            }),
+            },
             inputs,
-        }
-        .arced()
+        )
     }
 
     fn create_resource_request() -> ResourceRequest {
@@ -630,7 +639,7 @@ mod tests {
 
         // Add a Projection with actor pool UDF and resource request
         let project_plan = scan_plan
-            .with_columns(vec![actor_pool_project_expr.alias("b")])?
+            .with_columns(vec![actor_pool_project_expr.to_expr().alias("b")])?
             .build();
 
         // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
@@ -638,8 +647,8 @@ mod tests {
             project_plan,
             indoc! { "
             Project: col(a), col(b)
-              UDFProject:
-              UDF foo = py_udf(col(a)) as b
+              UDF: foo
+              Expr = py_udf(col(a)) as b
               Passthrough Columns = col(a)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -662,10 +671,16 @@ mod tests {
         let scan_plan = dummy_scan_node(scan_op);
         let project_plan = scan_plan
             .with_columns(vec![
-                create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])])
-                    .alias("a_prime"),
-                create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("b")])])
-                    .alias("b_prime"),
+                create_actor_pool_udf(vec![
+                    create_actor_pool_udf(vec![resolved_col("a")]).to_expr()
+                ])
+                .to_expr()
+                .alias("a_prime"),
+                create_actor_pool_udf(vec![
+                    create_actor_pool_udf(vec![resolved_col("b")]).to_expr()
+                ])
+                .to_expr()
+                .alias("b_prime"),
             ])?
             .build();
 
@@ -673,25 +688,25 @@ mod tests {
             project_plan,
             indoc! {"
             Project: col(a), col(b), col(a_prime), col(b_prime)
-              UDFProject:
-              UDF foo = py_udf(col(__TruncateRootUDF_0-3-0__)) as b_prime
+              UDF: foo
+              Expr = py_udf(col(__TruncateRootUDF_0-3-0__)) as b_prime
               Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b), col(a_prime)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
-                UDFProject:
-                UDF foo = py_udf(col(__TruncateRootUDF_0-2-0__)) as a_prime
+                UDF: foo
+                Expr = py_udf(col(__TruncateRootUDF_0-2-0__)) as a_prime
                 Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
                 Concurrency = Some(8)
                 Resource request = { num_cpus = 8, num_gpus = 1 }
                   Project: col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
                     Project: col(a), col(b), col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__)
-                      UDFProject:
-                      UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-3-0__
+                      UDF: foo
+                      Expr = py_udf(col(b)) as __TruncateRootUDF_0-3-0__
                       Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-2-0__)
                       Concurrency = Some(8)
                       Resource request = { num_cpus = 8, num_gpus = 1 }
-                        UDFProject:
-                        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-2-0__
+                        UDF: foo
+                        Expr = py_udf(col(a)) as __TruncateRootUDF_0-2-0__
                         Passthrough Columns = col(a), col(b)
                         Concurrency = Some(8)
                         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -710,27 +725,29 @@ mod tests {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr =
-            create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])]);
+            create_actor_pool_udf(vec![
+                create_actor_pool_udf(vec![resolved_col("a")]).to_expr()
+            ]);
 
         // Add a Projection with actor pool UDF and resource request
         // Project([col("a"), foo(foo(col("a"))).alias("b")])
         let project_plan = scan_plan
-            .with_columns(vec![stacked_actor_pool_project_expr.alias("b")])?
+            .with_columns(vec![stacked_actor_pool_project_expr.to_expr().alias("b")])?
             .build();
 
         assert_optimized_plan_eq(
             project_plan.clone(),
             indoc! {"
 Project: col(a), col(b)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
   Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-1-0__), col(a)
       Project: col(a), col(__TruncateRootUDF_0-1-0__)
-        UDFProject:
-        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
+        UDF: foo
+        Expr = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
         Passthrough Columns = col(a)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -748,14 +765,14 @@ Project: col(a), col(b)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
 Passthrough Columns = col(a)
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
   Project: col(__TruncateRootUDF_0-1-0__), col(a)
-    UDFProject:
-    UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
+    UDF: foo
+    Expr = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
     Passthrough Columns = col(a)
     Concurrency = Some(8)
     Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -773,26 +790,28 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr =
-            create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])]);
+            create_actor_pool_udf(vec![
+                create_actor_pool_udf(vec![resolved_col("a")]).to_expr()
+            ]);
 
         // Add a Projection with actor pool UDF and resource request
         let project_plan = scan_plan
-            .select(vec![stacked_actor_pool_project_expr])?
+            .select(vec![stacked_actor_pool_project_expr.to_expr()])?
             .build();
 
         assert_optimized_plan_eq(
             project_plan.clone(),
             indoc! {"
 Project: col(a)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-0-0__)
       Project: col(__TruncateRootUDF_0-0-0__)
-        UDFProject:
-        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+        UDF: foo
+        Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
         Passthrough Columns = col(a)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -807,13 +826,13 @@ Project: col(a)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
 Passthrough Columns = None
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
-  UDFProject:
-  UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+  UDF: foo
+  Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
   Passthrough Columns = None
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -834,9 +853,10 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr = create_actor_pool_udf(vec![
-            create_actor_pool_udf(vec![resolved_col("a")]),
-            create_actor_pool_udf(vec![resolved_col("b")]),
-        ]);
+            create_actor_pool_udf(vec![resolved_col("a")]).to_expr(),
+            create_actor_pool_udf(vec![resolved_col("b")]).to_expr(),
+        ])
+        .to_expr();
 
         // Add a Projection with actor pool UDF and resource request
         // Project([foo(foo(col("a")), foo(col("b"))).alias("c")])
@@ -848,20 +868,20 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
             project_plan.clone(),
             indoc! {"
 Project: col(c)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
       Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
-        UDFProject:
-        UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
+        UDF: foo
+        Expr = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
         Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-0-0__)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
-          UDFProject:
-          UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+          UDF: foo
+          Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
           Passthrough Columns = col(a), col(b)
           Concurrency = Some(8)
           Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -877,18 +897,18 @@ Project: col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
 Passthrough Columns = None
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
-  UDFProject:
-  UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
+  UDF: foo
+  Expr = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
-    UDFProject:
-    UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+    UDF: foo
+    Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
     Passthrough Columns = col(b)
     Concurrency = Some(8)
     Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -910,7 +930,9 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr =
             create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])
-                .add(create_actor_pool_udf(vec![resolved_col("b")]))]);
+                .to_expr()
+                .add(create_actor_pool_udf(vec![resolved_col("b")]).to_expr())])
+            .to_expr();
 
         // Add a Projection with actor pool UDF and resource request
         // Project([foo(foo(col("a")) + foo(col("b"))).alias("c")])
@@ -922,8 +944,8 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
             project_plan.clone(),
             indoc! {"
 Project: col(c)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -931,13 +953,13 @@ Project: col(c)
       Project: col(__TruncateRootUDF_0-0-0__)
         Project: col(__TruncateAnyUDFChildren_1-0-0__), col(__TruncateAnyUDFChildren_1-0-1__), col(__TruncateAnyUDFChildren_1-0-0__) + col(__TruncateAnyUDFChildren_1-0-1__) as __TruncateRootUDF_0-0-0__
           Project: col(__TruncateAnyUDFChildren_1-0-0__), col(__TruncateAnyUDFChildren_1-0-1__)
-            UDFProject:
-            UDF foo = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
+            UDF: foo
+            Expr = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
             Passthrough Columns = col(a), col(b), col(__TruncateAnyUDFChildren_1-0-0__)
             Concurrency = Some(8)
             Resource request = { num_cpus = 8, num_gpus = 1 }
-              UDFProject:
-              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
+              UDF: foo
+              Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
               Passthrough Columns = col(a), col(b)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -953,19 +975,19 @@ Project: col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
 Passthrough Columns = None
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
   Project: col(__TruncateAnyUDFChildren_1-0-0__) + col(__TruncateAnyUDFChildren_1-0-1__) as __TruncateRootUDF_0-0-0__
-    UDFProject:
-    UDF foo = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
+    UDF: foo
+    Expr = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
     Passthrough Columns = col(__TruncateAnyUDFChildren_1-0-0__)
     Concurrency = Some(8)
     Resource request = { num_cpus = 8, num_gpus = 1 }
-      UDFProject:
-      UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
+      UDF: foo
+      Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
       Passthrough Columns = col(b)
       Concurrency = Some(8)
       Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -983,8 +1005,9 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr = create_actor_pool_udf(vec![
-            resolved_col("a").add(create_actor_pool_udf(vec![resolved_col("a")]))
-        ]);
+            resolved_col("a").add(create_actor_pool_udf(vec![resolved_col("a")]).to_expr())
+        ])
+        .to_expr();
 
         // Add a Projection with actor pool UDF and resource request
         // Project([foo(col("a") + foo(col("a"))).alias("c")])
@@ -999,8 +1022,8 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
             project_plan,
             indoc! {"
 Project: col(a), col(c)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as c
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1008,8 +1031,8 @@ Project: col(a), col(c)
       Project: col(a), col(__TruncateRootUDF_0-1-0__)
         Project: col(__TruncateAnyUDFChildren_1-1-0__), col(a), col(a) + col(__TruncateAnyUDFChildren_1-1-0__) as __TruncateRootUDF_0-1-0__
           Project: col(a), col(__TruncateAnyUDFChildren_1-1-0__)
-            UDFProject:
-            UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-1-0__
+            UDF: foo
+            Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-1-0__
             Passthrough Columns = col(a)
             Concurrency = Some(8)
             Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1031,7 +1054,7 @@ Project: col(a), col(c)
         // (col("a") + col("a"))  +  foo(col("a"))
         let actor_pool_project_expr = resolved_col("a")
             .add(resolved_col("a"))
-            .add(create_actor_pool_udf(vec![resolved_col("a")]))
+            .add(create_actor_pool_udf(vec![resolved_col("a")]).to_expr())
             .alias("result");
         let project_plan = scan_plan
             .select(vec![resolved_col("a"), actor_pool_project_expr])?
@@ -1043,8 +1066,8 @@ Project: col(a), col(c)
         Project: col(a), col(result)
           Project: col(__TruncateAnyUDFChildren_0-1-0__), col(a), [col(a) + col(a)] + col(__TruncateAnyUDFChildren_0-1-0__) as result
             Project: col(a), col(__TruncateAnyUDFChildren_0-1-0__)
-              UDFProject:
-              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
+              UDF: foo
+              Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
               Passthrough Columns = col(a)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1074,7 +1097,8 @@ Project: col(a), col(c)
         // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
         let udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node.build(),
-            mock_udf.alias("udf_results"),
+            mock_udf,
+            "udf_results".into(),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
@@ -1087,8 +1111,8 @@ Project: col(a), col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             project,
             indoc! {"
-        UDFProject:
-        UDF foo = py_udf(col(c)) as udf_results
+        UDF: foo
+        Expr = py_udf(col(c)) as udf_results
         Passthrough Columns = None
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1118,14 +1142,16 @@ Project: col(a), col(c)
         // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
         let plan = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node,
-            mock_udf.alias("udf_results_0"),
+            mock_udf.clone(),
+            "udf_results_0".into(),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
 
         let plan = LogicalPlan::UDFProject(UDFProject::try_new(
             plan,
-            mock_udf.alias("udf_results_1"),
+            mock_udf,
+            "udf_results_1".into(),
             vec![
                 resolved_col("a"),
                 resolved_col("b"),
@@ -1143,13 +1169,13 @@ Project: col(a), col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             plan,
             indoc! {"
-        UDFProject:
-        UDF foo = py_udf(col(a)) as udf_results_1
+        UDF: foo
+        Expr = py_udf(col(a)) as udf_results_1
         Passthrough Columns = col(udf_results_0)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
-          UDFProject:
-          UDF foo = py_udf(col(a)) as udf_results_0
+          UDF: foo
+          Expr = py_udf(col(a)) as udf_results_0
           Passthrough Columns = col(a)
           Concurrency = Some(8)
           Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1171,7 +1197,7 @@ Project: col(a), col(c)
             Field::new("b", DataType::Boolean),
             Field::new("c", DataType::Int64),
         ]);
-        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]).to_expr();
         let plan = dummy_scan_node(scan_op.clone())
             .with_columns(vec![mock_udf.alias("udf_results")])?
             // Select only col("a"), so the udf is redundant and should be removed
@@ -1194,7 +1220,7 @@ Project: col(a), col(c)
 
     #[test]
     fn test_projection_pushdown_into_udf_and_reorder() -> DaftResult<()> {
-        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]).to_expr();
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
@@ -1215,8 +1241,8 @@ Project: col(a), col(c)
             indoc! {"
             Project: col(a), col(udf_results), col(b)
               Project: col(a), col(b), col(c), col(udf_results)
-                UDFProject:
-                UDF foo = py_udf(col(c)) as udf_results
+                UDF: foo
+                Expr = py_udf(col(c)) as udf_results
                 Passthrough Columns = col(a), col(b), col(c)
                 Concurrency = Some(8)
                 Resource request = { num_cpus = 8, num_gpus = 1 }

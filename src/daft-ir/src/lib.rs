@@ -73,6 +73,7 @@ pub mod rel {
 
     use common_error::DaftError;
     use common_error::DaftResult;
+    use daft_dsl::functions::python::UDFImpl;
     pub use daft_logical_plan::*;
     pub use daft_logical_plan::ops::*;
     use crate::schema::Schema;
@@ -116,7 +117,10 @@ pub mod rel {
         let input: Arc<LogicalPlan> = input.into();
         let project: Arc<Expr> = project.into();
         let passthrough_columns: Vec<Arc<Expr>> = passthrough_columns.into_iter().map(|e| e.into()).collect();
-        UDFProject::new(input, project, passthrough_columns)
+        let (udf_expr, out_name) = project.unwrap_alias();
+        let out_name = out_name.unwrap_or_else(|| udf_expr.name().into());
+        let udf_expr = UDFImpl::from_expr(&udf_expr)?;
+        UDFProject::new(input, udf_expr, out_name, passthrough_columns)
     }
 
     /// Creates a new filter relational operator.

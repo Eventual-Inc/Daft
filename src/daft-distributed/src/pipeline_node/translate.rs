@@ -7,6 +7,7 @@ use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    functions::python::UDFImpl,
     resolved_col,
 };
 use daft_logical_plan::{
@@ -104,8 +105,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     let projection = udf
                         .passthrough_columns
                         .iter()
-                        .chain(std::iter::once(&udf.project.clone()))
                         .cloned()
+                        .chain(std::iter::once(
+                            udf.udf_expr.to_expr().alias(udf.out_name.clone()),
+                        ))
                         .collect::<Vec<_>>();
                     let projection =
                         BoundExpr::bind_all(projection.as_slice(), &udf.input.schema())?;
@@ -114,7 +117,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         logical_node_id,
                         &self.stage_config,
                         projection,
-                        udf.udf_properties.clone(),
+                        udf.udf_expr.clone(),
                         udf.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
                     )?
@@ -126,7 +129,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 }
             }
             LogicalPlan::UDFProject(udf) => {
-                let project = BoundExpr::try_new(udf.project.clone(), &udf.input.schema())?;
+                let project = BoundExpr::try_new(udf.udf_expr.to_expr(), &udf.input.schema())?;
+                let udf_expr = UDFImpl::from_expr(project.inner())?;
                 let passthrough_columns =
                     BoundExpr::bind_all(&udf.passthrough_columns, &udf.input.schema())?;
 
@@ -134,9 +138,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    project,
+                    udf_expr,
+                    udf.out_name.clone(),
                     passthrough_columns,
-                    udf.udf_properties.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )

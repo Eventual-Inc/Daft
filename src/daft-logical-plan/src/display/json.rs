@@ -45,7 +45,8 @@ where
                 "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
             LogicalPlan::UDFProject(project) => json!({
-                "project": project.project.to_string(),
+                "udf_expr": project.udf_expr.to_expr().to_string(),
+                "output_name": project.out_name,
             }),
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],

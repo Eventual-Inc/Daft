@@ -505,16 +505,21 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::UDFProject(UDFProject {
             input,
-            project,
+            udf_expr,
+            out_name,
             passthrough_columns,
             stats_state,
             schema,
         }) => {
-            let proj_op =
-                UdfOperator::try_new(project.clone(), passthrough_columns.clone(), schema)
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let proj_op = UdfOperator::try_new(
+                udf_expr.clone(),
+                out_name.clone(),
+                passthrough_columns.clone(),
+                schema,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),

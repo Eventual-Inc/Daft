@@ -123,22 +123,22 @@ pub(super) fn translate_single_logical_node(
             )
         }
         LogicalPlan::UDFProject(LogicalUDFProject {
-            project,
+            udf_expr,
+            out_name,
             passthrough_columns,
-            udf_properties,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let projection = passthrough_columns
                 .iter()
-                .chain(std::iter::once(&project.clone()))
                 .cloned()
+                .chain(std::iter::once(udf_expr.to_expr().alias(out_name.clone())))
                 .collect();
-            if udf_properties.is_actor_pool_udf() {
+            if udf_expr.is_actor_pool_udf() {
                 Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                     input_physical,
                     projection,
-                    udf_properties.clone(),
+                    udf_expr.clone(),
                 )?)
                 .arced())
             } else {
