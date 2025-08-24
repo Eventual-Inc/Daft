@@ -1450,6 +1450,7 @@ def udf(
     batch_size: int | None,
     concurrency: int | None,
     use_process: bool | None,
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def row_wise_udf(
     name: str,

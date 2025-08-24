@@ -72,7 +72,7 @@ test: .venv build  ## Run tests
 
 .PHONY: doctests
 doctests: .venv
-	DAFT_BOLD_TABLE_HEADERS=0 DAFT_PROGRESS_BAR=0 $(VENV_BIN)/pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py --ignore=daft/functions/ai/__init__.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
+	DAFT_BOLD_TABLE_HEADERS=0 DAFT_PROGRESS_BAR=0 $(VENV_BIN)/pytest -vvv --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py --ignore=daft/functions/ai/__init__.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data

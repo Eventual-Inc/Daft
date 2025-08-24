@@ -359,6 +359,7 @@ message ScalarFn {
       optional uint64 num_gpus = 10;
       optional uint64 max_memory_bytes = 11;
       optional bool use_process = 12;
+      PyObject ray_options = 13; // Ray-specific options for UDF execution
     }
 
     message RowWiseFn {

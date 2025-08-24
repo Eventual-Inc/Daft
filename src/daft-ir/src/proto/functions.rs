@@ -57,6 +57,7 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                         .on_error
                         .and_then(|s| OnError::from_str(&s).ok())
                         .unwrap_or_default(),
+                    ray_options: None,
                 };
                 ir::rex::from_py_rowwise_func(func)
             }
@@ -81,6 +82,7 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                         .on_error
                         .and_then(|s| OnError::from_str(&s).ok())
                         .unwrap_or_default(),
+                    ray_options: None,
                 };
                 ir::rex::from_py_batch_func(func)
             }
@@ -450,7 +452,6 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             let num_cpus = message.num_cpus.map(|c| c as f64);
             let num_gpus = message.num_gpus.map(|g| g as f64);
             let max_memory_bytes = message.max_memory_bytes.map(|m| m as usize);
-
             if num_cpus.is_some() || num_gpus.is_some() || max_memory_bytes.is_some() {
                 Some(common_resource_request::ResourceRequest::try_new_internal(
                     num_cpus,
@@ -461,6 +462,12 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
                 None
             }
         };
+
+        // Handle ray_options
+        let ray_options = message
+            .ray_options
+            .map(|py| from_proto(Some(py)))
+            .transpose()?;
 
         Ok(Self {
             name: name.into(),
@@ -473,6 +480,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             concurrency: concurrency
                 .map(|c| NonZeroUsize::new(c).expect("concurrency for udf should be non-zero")),
             use_process,
+            ray_options,
         })
     }
 
@@ -514,6 +522,13 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             None => (None, None, None),
         };
 
+        // Handle ray_options
+        let ray_options = self
+            .ray_options
+            .as_ref()
+            .map(|opts| opts.to_proto())
+            .transpose()?;
+
         Ok(Self::Message {
             name,
             arity,
@@ -527,6 +542,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             num_gpus,
             max_memory_bytes,
             use_process: self.use_process,
+            ray_options,
         })
     }
 }

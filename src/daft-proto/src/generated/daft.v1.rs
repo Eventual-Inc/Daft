@@ -522,6 +522,8 @@ pub mod scalar_fn {
             pub max_memory_bytes: ::core::option::Option<u64>,
             #[prost(bool, optional, tag = "12")]
             pub use_process: ::core::option::Option<bool>,
+            #[prost(message, optional, tag = "13")]
+            pub ray_options: ::core::option::Option<super::super::PyObject>,
         }
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RowWiseFn {
