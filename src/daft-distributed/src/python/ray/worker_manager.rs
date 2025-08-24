@@ -208,7 +208,6 @@ impl WorkerManager for RayWorkerManager {
                     dict.insert("CPU", bundle.num_cpus().ceil() as i64);
                     dict.insert("GPU", bundle.num_gpus().ceil() as i64);
                     dict.insert("memory", bundle.memory_bytes() as i64);
-                    dict
                 })
                 .collect::<Vec<_>>();
 

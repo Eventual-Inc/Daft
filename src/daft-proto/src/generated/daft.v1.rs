@@ -522,6 +522,8 @@ pub mod scalar_fn {
             pub max_memory_bytes: ::core::option::Option<u64>,
             #[prost(bool, optional, tag = "12")]
             pub use_process: ::core::option::Option<bool>,
+            #[prost(message, optional, tag = "13")]
+            pub ray_options: ::core::option::Option<super::super::PyObject>,
         }
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RowWiseFn {
@@ -1376,6 +1378,13 @@ pub struct PyObject {
     /// bincode
     #[prost(bytes = "vec", tag = "1")]
     pub object: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LabelEntry {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub value: ::prost::alloc::string::String,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

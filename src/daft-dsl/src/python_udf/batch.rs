@@ -1,7 +1,7 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{prelude::DataType, series::Series};
+use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +27,7 @@ pub fn batch_udf(
     args: Vec<ExprRef>,
     max_retries: Option<usize>,
     on_error: crate::functions::python::OnError,
+    ray_options: Option<HashMap<String, String>>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
         function_name: Arc::from(name),
@@ -42,10 +43,11 @@ pub fn batch_udf(
         args,
         max_retries,
         on_error,
+        ray_options,
     })))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BatchPyFn {
     pub function_name: Arc<str>,
     pub cls: RuntimePyObject,
@@ -60,6 +62,7 @@ pub struct BatchPyFn {
     pub args: Vec<ExprRef>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
+    pub ray_options: Option<HashMap<String, String>>,
 }
 
 impl Display for BatchPyFn {
@@ -92,6 +95,7 @@ impl BatchPyFn {
             args: children,
             max_retries: self.max_retries,
             on_error: self.on_error,
+            ray_options: self.ray_options.clone(),
         }
     }
 
@@ -285,5 +289,29 @@ impl BatchPyFn {
         _metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
         panic!("Cannot evaluate a BatchPyFn without compiling for Python");
+    }
+}
+
+impl std::hash::Hash for BatchPyFn {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.function_name.hash(state);
+        // Skip hashing cls and method as they may not be hashable
+        self.is_async.hash(state);
+        self.return_dtype.hash(state);
+        self.gpus.hash(state);
+        self.use_process.hash(state);
+        self.max_concurrency.hash(state);
+        self.batch_size.hash(state);
+        // Skip hashing original_args as it may not be hashable
+        self.args.hash(state);
+        self.max_retries.hash(state);
+        // Skip hashing on_error as it may not be hashable
+        // Hash ray_options manually
+        if let Some(ray_options) = &self.ray_options {
+            for (key, value) in ray_options {
+                key.hash(state);
+                value.hash(state);
+            }
+        }
     }
 }

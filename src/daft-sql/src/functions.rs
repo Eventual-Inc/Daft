@@ -467,7 +467,7 @@ impl SQLPlanner<'_> {
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
-                    Expr::Over(WindowExpr::Agg(agg_expr.clone()), window_spec).arced()
+                    Expr::Over(WindowExpr::Agg(Box::new(agg_expr.clone())), window_spec).arced()
                 }
                 Expr::WindowFunction(window_expr) => {
                     Expr::Over(window_expr.clone(), window_spec).arced()

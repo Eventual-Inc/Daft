@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{LogicalPlan, logical_plan::Result, stats::StatsState};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UDFProject {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
@@ -23,6 +23,18 @@ pub struct UDFProject {
 
     pub projected_schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl std::hash::Hash for UDFProject {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.plan_id.hash(state);
+        self.node_id.hash(state);
+        // Note: We don't hash input as LogicalPlan doesn't implement Hash
+        // Note: We don't hash expr as ExprRef doesn't implement Hash
+        // Note: We don't hash projected_schema as SchemaRef doesn't implement Hash
+        self.passthrough_columns.hash(state);
+        self.udf_properties.hash(state);
+    }
 }
 
 impl UDFProject {

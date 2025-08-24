@@ -359,6 +359,8 @@ message ScalarFn {
       optional uint64 num_gpus = 10;
       optional uint64 max_memory_bytes = 11;
       optional bool use_process = 12;
+      repeated LabelEntry resources = 13;
+      PyObject ray_options = 14; // Ray-specific options for UDF execution
     }
 
     message RowWiseFn {
@@ -918,4 +920,9 @@ message Agg {
 /// A type to leverage PyObjectWrapper's custom bincode serde.
 message PyObject {
   bytes object = 1; // bincode
+}
+
+message LabelEntry {
+  string key = 1;
+  string value = 2;
 }
