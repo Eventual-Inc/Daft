@@ -469,10 +469,12 @@ class RayRunnerIO(runner_io.RunnerIO):
         )
 
 
+# add resource options
+# see more https://docs.ray.io/en/latest/ray-core/scheduling/resources.html#specify-node-resources
 def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
-    options = {}
+    options: dict[str, Any] = {}
     # FYI: Ray's default resource behaviour is documented here:
-    # https://docs.ray.io/en/latest/ray-core/tasks/resources.html
+    # https://docs.ray.io/en/latest/ray-core/tasks.html
     if resource_request.num_cpus is not None:
         # Ray worker pool will thrash if a request comes in for fractional cpus,
         # so we floor the request to at least 1 cpu here.
@@ -485,6 +487,8 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
         # Note that lower versions of Ray do not accept a value of 0 here,
         # so the if-clause is load-bearing.
         options["memory"] = resource_request.memory_bytes
+    if resource_request.resources:
+        options["resources"] = resource_request.resources
     return options
 
 

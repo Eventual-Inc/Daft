@@ -310,3 +310,22 @@ def test_improper_num_gpus():
 
     with pytest.raises(ValueError, match="DaftError::ValueError"):
         foo = foo.override_options(num_gpus=1.5)
+
+
+def test_udf_with_custom_resources():
+    @udf(return_dtype=daft.DataType.int64(), resources={"gpu_l20": 1})
+    def udf_with_gpu_label(c):
+        return c
+
+    assert udf_with_gpu_label.resource_request.resources == {"gpu_l20": 1}
+
+    overridden_udf = udf_with_gpu_label.override_options(resources={"gpu_h100": 2})
+    assert overridden_udf.resource_request.resources == {"gpu_h100": 2}
+
+    @udf(return_dtype=daft.DataType.int64(), num_cpus=2, resources={"gpu_l20": 1, "fast_network": 1})
+    def complex_udf(c):
+        return c
+
+    overridden_complex = complex_udf.override_options(resources={"gpu_h100": 1}, num_cpus=3)
+    assert overridden_complex.resource_request.num_cpus == 3
+    assert overridden_complex.resource_request.resources == {"gpu_h100": 1}

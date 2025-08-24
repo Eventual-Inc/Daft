@@ -358,6 +358,7 @@ message ScalarFn {
       optional uint64 num_gpus = 10;
       optional uint64 max_memory_bytes = 11;
       optional bool use_process = 12;
+      repeated ResourceEntry resources = 13;
     }
 
     message RowWiseFn {
@@ -787,4 +788,9 @@ message Agg {
 /// A type to leverage PyObjectWrapper's custom bincode serde.
 message PyObject {
   bytes object = 1; // bincode
+}
+
+message ResourceEntry {
+  string key = 1;
+  double value = 2;
 }
