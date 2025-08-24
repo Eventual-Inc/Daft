@@ -81,7 +81,7 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
 _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = True
 try:
-    from ray.data.extensions import ArrowTensorArray, ArrowTensorType
+    from ray.data.extensions import ArrowTensorArray, ArrowTensorType, ArrowTensorTypeV2
 except ImportError:
     _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = False
 
@@ -98,6 +98,7 @@ else:
         if _RAY_VERSION >= (2, 2, 0):
             from ray.data.extensions import (
                 ArrowTensorType,
+                ArrowTensorTypeV2,
                 ArrowVariableShapedTensorType,
             )
 
@@ -248,7 +249,19 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
         return MicroPartition._from_record_batches(
             [RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))]
         )
-    return MicroPartition.from_arrow(arrow_table)
+    # Use the Ray-aware function to convert all arrow types, not just non-native ones
+    # This ensures Ray extension types are properly handled
+    series_dict = dict()
+    for name, column in zip(arrow_table.column_names, arrow_table.columns):
+        series = (
+            _series_from_arrow_with_ray_data_extensions(column, name)
+            if isinstance(column, (pa.Array, pa.ChunkedArray))
+            else item_to_series(name, column)
+        )
+        series_dict[name] = series._series
+    return MicroPartition._from_record_batches(
+        [RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))]
+    )
 
 
 @ray.remote  # type: ignore[misc]

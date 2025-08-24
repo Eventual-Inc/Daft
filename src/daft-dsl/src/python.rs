@@ -195,6 +195,7 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     batch_size=None,
     concurrency=None,
     use_process=None,
+    ray_options=None,
 ))]
 pub fn udf(
     name: &str,
@@ -207,6 +208,7 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
+    ray_options: Option<Py<PyAny>>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -238,6 +240,7 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            ray_options.map(|r| r.into()),
         )?
         .into(),
     })
@@ -293,6 +296,7 @@ pub fn row_wise_udf(
             on_error_enum.unwrap_or_default(),
             original_args.into(),
             args,
+            None,
         )
         .into(),
     })
