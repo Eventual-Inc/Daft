@@ -297,6 +297,7 @@ impl UDFProperties {
                             None,
                             Some(*gpus as f64),
                             None,
+                            None,
                         )?),
                         batch_size: None,
                         concurrency: *max_concurrency,
@@ -317,6 +318,7 @@ impl UDFProperties {
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
                             Some(*gpus as f64),
+                            None,
                             None,
                         )?),
                         batch_size: *batch_size,

@@ -77,16 +77,24 @@ async def start_udf_actors(
     num_gpus_per_actor: float,
     num_cpus_per_actor: float,
     memory_per_actor: float,
+    label_selector: dict[str, str],
     timeout: int,
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
     actors: list[RayActorHandle] = [
         UDFActor.options(  # type: ignore
-            scheduling_strategy="SPREAD",
-            num_gpus=num_gpus_per_actor,
-            num_cpus=num_cpus_per_actor,
-            memory=memory_per_actor,
+            **(
+                __import__("daft.runners.ray_compat").runners.ray_compat.normalize_ray_options_with_label_selector(
+                    {
+                        "scheduling_strategy": "SPREAD",
+                        "num_gpus": num_gpus_per_actor,
+                        "num_cpus": num_cpus_per_actor,
+                        "memory": memory_per_actor,
+                        "label_selector": label_selector,
+                    }
+                )
+            )
         ).remote(expr_projection)
         for _ in range(num_actors)
     ]

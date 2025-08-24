@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::ProtoResult;
 use crate::{
     non_null, not_implemented_err,
@@ -424,12 +426,21 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             let num_cpus = message.num_cpus.map(|c| c as f64);
             let num_gpus = message.num_gpus.map(|g| g as f64);
             let max_memory_bytes = message.max_memory_bytes.map(|m| m as usize);
-
-            if num_cpus.is_some() || num_gpus.is_some() || max_memory_bytes.is_some() {
+            let label_selector: HashMap<String, String> = message
+                .label_selector
+                .into_iter()
+                .map(|entry| (entry.key, entry.value))
+                .collect();
+            if num_cpus.is_some()
+                || num_gpus.is_some()
+                || max_memory_bytes.is_some()
+                || !label_selector.is_empty()
+            {
                 Some(common_resource_request::ResourceRequest::try_new_internal(
                     num_cpus,
                     num_gpus,
                     max_memory_bytes,
+                    Some(label_selector),
                 )?)
             } else {
                 None
@@ -477,14 +488,26 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
         // Now flatten out what is currently "resources" but will get renamed at some point.
         let concurrency: Option<u64> = self.concurrency.map(|s| s as u64);
         let batch_size: Option<u64> = self.batch_size.map(|s| s as u64);
-        let (num_cpus, num_gpus, max_memory_bytes) = match &self.resource_request {
+        let (num_cpus, num_gpus, max_memory_bytes, label_selector) = match &self.resource_request {
             Some(req) => {
                 let num_cpus: Option<u64> = req.num_cpus().map(|f| f as u64);
                 let num_gpus: Option<u64> = req.num_gpus().map(|f| f as u64);
                 let max_memory_bytes: Option<u64> = req.memory_bytes().map(|s| s as u64);
-                (num_cpus, num_gpus, max_memory_bytes)
+                let label_selector = req
+                    .label_selector()
+                    .as_ref()
+                    .map(|map| {
+                        map.iter()
+                            .map(|(k, v)| proto::LabelEntry {
+                                key: k.clone(),
+                                value: v.clone(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (num_cpus, num_gpus, max_memory_bytes, label_selector)
             }
-            None => (None, None, None),
+            None => (None, None, None, Vec::new()),
         };
 
         Ok(Self::Message {
@@ -500,6 +523,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             num_gpus,
             max_memory_bytes,
             use_process: self.use_process,
+            label_selector,
         })
     }
 }
