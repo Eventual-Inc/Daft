@@ -7,7 +7,7 @@ import daft
 
 
 def test_generator_udf():
-    @daft.func.gen(return_dtype=daft.DataType.string())
+    @daft.func(return_dtype=daft.DataType.string())
     def my_repeat(to_repeat: str, n: int):
         for _ in range(n):
             yield to_repeat
@@ -21,7 +21,7 @@ def test_generator_udf():
 
 
 def test_generator_udf_literal_arg():
-    @daft.func.gen(return_dtype=daft.DataType.string())
+    @daft.func(return_dtype=daft.DataType.string())
     def my_repeat(to_repeat: str, n: int):
         for _ in range(n):
             yield to_repeat
@@ -35,7 +35,7 @@ def test_generator_udf_literal_arg():
 
 
 def test_generator_udf_literal_eval():
-    @daft.func.gen(return_dtype=daft.DataType.string())
+    @daft.func(return_dtype=daft.DataType.string())
     def my_repeat(to_repeat: str, n: int):
         for _ in range(n):
             yield to_repeat
@@ -44,7 +44,7 @@ def test_generator_udf_literal_eval():
 
 
 def test_generator_udf_typing_iterator():
-    @daft.func.gen
+    @daft.func
     def my_gen_func(input: int) -> typing.Iterator[str]:
         yield str(input)
 
@@ -55,7 +55,7 @@ def test_generator_udf_typing_iterator():
 
 
 def test_generator_udf_typing_generator():
-    @daft.func.gen
+    @daft.func
     def my_gen_func(input: int) -> typing.Generator[str, None, None]:
         yield str(input)
 
@@ -66,7 +66,7 @@ def test_generator_udf_typing_generator():
 
 
 def test_generator_udf_collections_iterator():
-    @daft.func.gen
+    @daft.func
     def my_gen_func(input: int) -> collections.abc.Iterator[str]:
         yield str(input)
 
@@ -77,7 +77,7 @@ def test_generator_udf_collections_iterator():
 
 
 def test_generator_udf_collections_generator():
-    @daft.func.gen
+    @daft.func
     def my_gen_func(input: int) -> collections.abc.Generator[str, None, None]:
         yield str(input)
 
