@@ -80,8 +80,8 @@ class GpuUdf:
     inner: GPUTorchFunc
     name: str
     return_daft_dtype: DataType
-    init_fn: Callable[[], Any]
     device: DeviceLikeType
+    init_fn: Callable[[], Any]
     batch_size: int
     num_streams: int | None
 
@@ -91,8 +91,8 @@ class GpuUdf:
             name=self.name,
             inner=self.inner,
             return_dtype=self.return_daft_dtype,
-            init_fn=self.init_fn,
             device=self.device,
+            init_fn=self.init_fn,
             batch_size=self.batch_size,
             num_streams=self.num_streams,
         )
