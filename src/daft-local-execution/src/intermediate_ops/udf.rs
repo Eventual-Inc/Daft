@@ -203,8 +203,6 @@ impl Drop for UdfHandle {
 /// Each UdfState holds a handle to a single Python process.
 /// The concurrency of the Python process pool is thus tied to the concurrency of the operator
 /// and the local executor handles task scheduling.
-///
-/// TODO: Implement a work-stealing dispatcher in the executor to improve pipelining.
 pub(crate) struct UdfState {
     udf_handle: UdfHandle,
 }
@@ -366,5 +364,3 @@ impl IntermediateOperator for UdfOperator {
             .map(MorselSizeRequirement::Strict)
     }
 }
-
-// TODO: Add test for UDFs, can't create a fake one for testing

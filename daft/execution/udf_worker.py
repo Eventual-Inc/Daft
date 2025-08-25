@@ -45,8 +45,7 @@ def udf_event_loop(
             # We initialize after ready to avoid blocking the main thread
             if expression_projection is None:
                 uninitialized_projection: ExpressionsProjection = pickle.loads(expr_projection_bytes)
-                initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
-                expression_projection = initialized_projection
+                expression_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
             input_bytes = transport.read_and_release(name, size)
             input = RecordBatch.from_ipc_stream(input_bytes)
