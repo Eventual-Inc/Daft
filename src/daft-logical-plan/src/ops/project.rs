@@ -42,14 +42,12 @@ impl Project {
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
             Self::try_factor_subexpressions(input, projection)?;
-
         let fields = factored_projection
             .iter()
             .map(|expr| expr.to_field(&factored_input.schema()))
             .collect::<DaftResult<Vec<_>>>()?;
 
         let projected_schema = Schema::new(fields).into();
-
         Ok(Self {
             plan_id: None,
             node_id: None,
@@ -511,6 +509,7 @@ fn replace_column_with_semantic_id(
                     ))))
                 }
             }
+            _ => todo!(),
         }
     }
 }

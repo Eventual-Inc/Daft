@@ -8,7 +8,7 @@ use pyo3::{
 use crate::{
     functions::{scalar::ScalarFn, BuiltinScalarFn, FunctionExpr},
     python::PyExpr,
-    python_udf::{PyScalarFn, RowWisePyFn},
+    python_udf::{GpuUdf, PyScalarFn, RowWisePyFn},
     AggExpr, Column, Expr, ExprRef, Operator, Subquery, WindowExpr, WindowSpec,
 };
 
@@ -180,6 +180,14 @@ impl<'py> PyVisitor<'py> {
                     .collect::<PyResult<Vec<_>>>()?;
 
                 self.visit_function(name, args)
+            }
+            PyScalarFn::GPU(GpuUdf {
+                function_name: name,
+                arg,
+                ..
+            }) => {
+                let arg = self.to_expr(arg)?;
+                self.visit_function(name, vec![arg])
             }
         }
     }

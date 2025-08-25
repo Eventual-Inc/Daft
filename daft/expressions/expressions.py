@@ -31,6 +31,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
+from daft.daft import gpu_udf as _gpu_udf
 from daft.daft import list_lit as _list_lit
 from daft.daft import lit as _lit
 from daft.daft import row_wise_udf as _row_wise_udf
@@ -428,6 +429,18 @@ class Expression:
         return Expression._from_pyexpr(
             _row_wise_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in expr_args])
         )
+
+    @staticmethod
+    def _gpu_udf(
+        arg: Expression,
+        name: builtins.str,
+        inner: Any,
+        return_dtype: DataType,
+        init_arg: Callable[[], Any],
+        device: Any,
+        _gpu_mem: builtins.float,
+    ) -> Expression:
+        return Expression._from_pyexpr(_gpu_udf(name, inner, arg._expr, return_dtype._dtype, device, init_arg))
 
     @staticmethod
     def to_struct(*fields: Expression | builtins.str) -> Expression:

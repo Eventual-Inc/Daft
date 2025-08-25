@@ -140,7 +140,7 @@ from daft.session import (
     write_table,
 )
 from daft.sql import sql, sql_expr
-from daft.udf import udf, _DaftFuncDecorator as func
+from daft.udf import udf, _DaftFuncDecorator as func, gpu_udf
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File
@@ -206,6 +206,7 @@ __all__ = [
     "get_catalog",
     "get_provider",
     "get_table",
+    "gpu_udf",
     "has_catalog",
     "has_namespace",
     "has_provider",

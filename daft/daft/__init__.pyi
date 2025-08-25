@@ -1324,6 +1324,14 @@ def row_wise_udf(
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
+def gpu_udf(
+    name: str,
+    inner: Callable[..., Any],
+    arg: PyExpr,
+    return_dtype: PyDataType,
+    device: Any,
+    init_arg: Any,
+) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 
 # TODO: Remove with the old Ray Runner

@@ -416,6 +416,7 @@ fn translate_clustering_spec_expr(
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
         Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),
+        _ => todo!(),
     }
 }
 

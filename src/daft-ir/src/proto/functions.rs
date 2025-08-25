@@ -106,6 +106,7 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                 args: Some(args),
             })
         }
+        _ => todo!(),
     }
 }
 

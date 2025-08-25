@@ -25,8 +25,7 @@ use crate::{
 
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput(Option<Arc<MicroPartition>>),
     Finished(Option<Arc<MicroPartition>>),
 }
 
@@ -153,8 +152,10 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
-                        if output_sender.send(mp).await.is_err() {
-                            return Ok(state);
+                        if let Some(mp) = mp {
+                            if output_sender.send(mp).await.is_err() {
+                                return Ok(state);
+                            }
                         }
                     }
                     StreamingSinkOutput::Finished(mp) => {

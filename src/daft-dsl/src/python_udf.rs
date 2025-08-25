@@ -14,23 +14,27 @@ use crate::{
 #[display("{_0}")]
 pub enum PyScalarFn {
     RowWise(RowWisePyFn),
+    GPU(GpuUdf),
 }
 
 impl PyScalarFn {
     pub fn name(&self) -> &str {
         match self {
             Self::RowWise(RowWisePyFn { function_name, .. }) => function_name,
+            Self::GPU(GpuUdf { function_name, .. }) => function_name,
         }
     }
     pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call(args),
+            _ => panic!("Cannot call GPU UDF in expression"),
         }
     }
 
     pub fn args(&self) -> Vec<ExprRef> {
         match self {
             Self::RowWise(RowWisePyFn { args, .. }) => args.clone(),
+            Self::GPU(gpu_udf) => gpu_udf.args(),
         }
     }
 
@@ -50,6 +54,7 @@ impl PyScalarFn {
 
                 Ok(Field::new(field_name, return_dtype.clone()))
             }
+            Self::GPU(gpu_udf) => gpu_udf.to_field(schema),
         }
     }
 }
@@ -211,5 +216,54 @@ impl RowWisePyFn {
         })?;
 
         Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
+    }
+}
+
+pub fn gpu_udf(
+    name: &str,
+    inner: RuntimePyObject,
+    arg: ExprRef,
+    return_dtype: DataType,
+    device: RuntimePyObject,
+    init_fn: RuntimePyObject,
+) -> Expr {
+    Expr::ScalarFn(ScalarFn::Python(PyScalarFn::GPU(GpuUdf {
+        function_name: Arc::from(name),
+        inner,
+        arg,
+        return_dtype,
+        device,
+        init_fn,
+    })))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct GpuUdf {
+    pub function_name: Arc<str>,
+    pub inner: RuntimePyObject,
+    pub arg: ExprRef,
+    pub return_dtype: DataType,
+    pub device: RuntimePyObject,
+    pub init_fn: RuntimePyObject,
+}
+
+impl GpuUdf {
+    pub fn args(&self) -> Vec<ExprRef> {
+        vec![self.arg.clone()]
+    }
+}
+
+impl GpuUdf {
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        Ok(Field::new(
+            self.arg.get_name(schema)?,
+            self.return_dtype.clone(),
+        ))
+    }
+}
+
+impl Display for GpuUdf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}({})", self.function_name, self.arg)
     }
 }

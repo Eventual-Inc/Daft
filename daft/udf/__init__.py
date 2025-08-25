@@ -11,6 +11,7 @@ else:
 
 import functools
 from daft.udf.legacy import udf, UDF
+from daft.udf.gpu import gpu_udf, GpuUdf
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -149,4 +150,4 @@ class _DaftFuncDecorator:
         return partial_udf if fn is None else partial_udf(fn)
 
 
-__all__ = ["UDF", "udf"]
+__all__ = ["UDF", "GpuUdf", "gpu_udf", "udf"]

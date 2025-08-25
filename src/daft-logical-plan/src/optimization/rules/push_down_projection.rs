@@ -121,7 +121,7 @@ impl PushDownProjection {
                     .projection
                     .iter()
                     .map(|e| replace_columns_with_expressions(e.clone(), &upstream_names_to_exprs))
-                    .collect();
+                    .collect::<Vec<_>>();
 
                 // Make a new projection node with the merged projections.
                 let new_plan: LogicalPlan =

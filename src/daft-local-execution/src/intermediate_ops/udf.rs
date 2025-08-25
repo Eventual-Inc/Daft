@@ -318,7 +318,7 @@ impl IntermediateOperator for UdfOperator {
             format!("UDF: {}", self.params.udf_expr.name()),
             format!("Expr = {}", self.params.udf_expr.to_expr()),
             format!(
-                "Passthrough Columns = [{}]",
+                "Passthrough Columns = {}",
                 self.params.passthrough_columns.iter().join(", ")
             ),
             format!("Concurrency = {}", self.concurrency),

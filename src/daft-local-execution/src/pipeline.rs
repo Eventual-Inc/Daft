@@ -10,7 +10,10 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
+use daft_dsl::{
+    common_treenode::ConcreteTreeNode, functions::python::UDFImpl, join::get_common_join_cols,
+    python_udf::PyScalarFn,
+};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
@@ -63,7 +66,8 @@ use crate::{
     state_bridge::BroadcastStateBridge,
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
-        limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
+        gpu::GPUOperator, limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
     },
     ExecutionRuntimeContext, PipelineCreationSnafu,
@@ -511,23 +515,42 @@ fn physical_plan_to_pipeline(
             stats_state,
             schema,
         }) => {
-            let proj_op = UdfOperator::try_new(
-                udf_expr.clone(),
-                out_name.clone(),
-                passthrough_columns.clone(),
-                schema,
-            )
-            .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(proj_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+
+            if let UDFImpl::PyScalarFn(PyScalarFn::GPU(gpu_udf)) = udf_expr {
+                let proj_op = GPUOperator::new(
+                    gpu_udf.clone(),
+                    out_name.clone(),
+                    passthrough_columns.clone(),
+                    schema,
+                );
+
+                StreamingSinkNode::new(
+                    Arc::new(proj_op),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                )
+                .boxed()
+            } else {
+                let proj_op = UdfOperator::try_new(
+                    udf_expr.clone(),
+                    out_name.clone(),
+                    passthrough_columns.clone(),
+                    schema,
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+
+                IntermediateNode::new(
+                    Arc::new(proj_op),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                )
+                .boxed()
+            }
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::DistributedActorPoolProject(

@@ -435,7 +435,7 @@ fn recursive_optimize_project(
 
     // Split the Projection into:
     // * remaining: remaining parts of the Project to recurse on
-    // * truncated_exprs: current parts of the Project to split into (Project -> U
+    // * truncated_exprs: current parts of the Project to split into (Project -> UDFProject -> Project)
     let (truncated_exprs, remaining): (Vec<ExprRef>, Vec<ExprRef>) =
         split_projection(projection.projection.as_slice(), recursive_count)?;
 
@@ -467,7 +467,7 @@ fn recursive_optimize_project(
         optimized_child_plan.data
     };
 
-    // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
+    // Start building a chain of `child -> Project -> UDFProject -> UDFProject -> ... -> Project`
     let (udf_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
         .partition(|expr| exists_skip_list_map(expr, is_udf));
