@@ -377,7 +377,7 @@ pub fn delta_scan<T: AsRef<str>>(
         };
 
         // let py_io_config = PyIOConfig { config: io_config };
-        let delta_lake_scan = PyModule::import(py, "daft.delta_lake.delta_lake_scan")?;
+        let delta_lake_scan = PyModule::import(py, "daft.io.delta_lake.delta_lake_scan")?;
         let delta_lake_scan_operator =
             delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
         let delta_lake_operator = delta_lake_scan_operator
@@ -421,7 +421,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let iceberg_table =
             iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
         // iceberg_scan = daft.iceberg.iceberg_scan.IcebergScanOperator(iceberg_table, snapshot_id, storage_config)
-        let iceberg_scan_module = PyModule::import(py, "daft.iceberg.iceberg_scan")?;
+        let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
         let iceberg_scan = iceberg_scan_class
             .call1((iceberg_table, snapshot_id, storage_config))?
