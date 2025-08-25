@@ -52,22 +52,9 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
-spark = [
-  "googleapis-common-protos==1.56.4",
-  "grpcio>=1.60",
-  "grpcio-status>=1.60",
-  "numpy>=1.15",
-  "pandas>=1.0.5",
-  "py4j>=0.10.9.7",
-  "pyspark==3.5.5"
-]
-sql = [
-  "connectorx==0.2.3; platform_system=='Linux' and platform_machine=='aarch64'",
-  "connectorx==0.3.3; platform_system!='Linux' or platform_machine!='aarch64'",
-  "sqlalchemy",
-  "sqlglot"
-]
-unity = ["httpx<=0.27.2", "unitycatalog"]
+spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
+sql = ["connectorx", "sqlalchemy", "sqlglot"]
+unity = ["httpx <= 0.27.2", "unitycatalog"]
 viz = []
 
 [dependency-groups]
@@ -78,12 +65,8 @@ dev = [
   "docker",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
   "aiohttp==3.12.4",
-  # Pinned requests due to docker-py issue: https://github.com/docker/docker-py/issues/3256
-  "requests<2.32.0",
   # Pinned httpx due to unitycatalog-python issue: https://github.com/unitycatalog/unitycatalog-python/issues/9
   "httpx==0.27.2",
-  "pydantic==2.10.6",
-  "tenacity==8.2.3",
   # Tracing
   "orjson==3.10.12",
   "py-spy>=0.3.14",
@@ -94,11 +77,11 @@ dev = [
   "pytest-benchmark==4.0.0",
   "pytest-cov==4.1.0",
   "pytest-lazy-fixture==0.6.3",
-  "memray==1.17.2; platform_system != 'Windows'",
+  "memray==1.17.2; platform_system != \"Windows\"",
   "pytest-codspeed==2.2.1",
   # Testing dependencies
   "lxml==5.3.0",
-  "dask[dataframe]==2024.8.0",
+  "dask[dataframe]==2024.4.1",
   "numpy==1.26.2",
   "pandas==2.1.3",
   "pandas-stubs==2.2.2.240807",
@@ -107,22 +90,35 @@ dev = [
   "opencv-python==4.10.0.84",
   "tiktoken==0.9.0",
   "duckdb==1.1.2",
-  # TQDM
-  "tqdm",
+  "datasets==4.0.0",
   # Pyarrow
   "pyarrow==20.0.0",
   "pyarrow-stubs==19.4",
+  # Ray
+  "ray[data, client]==2.34.0",
+  # Lance
+  "pylance>=0.20.0",
+  # Iceberg
+  "pyiceberg==0.7.0",
+  "pydantic==2.10.6",
+  "tenacity==8.2.3",
+  # Delta Lake
+  "deltalake==0.5.8; platform_system == \"Windows\"",
+  "deltalake==1.0.2; platform_system != \"Windows\"",
   # Databricks
   "databricks-sdk==0.12.0",
+  "unitycatalog==0.1.1",
   # SQL
+  "sqlalchemy==2.0.36",
+  "connectorx==0.2.3; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
+  "connectorx==0.3.3; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
   "trino[sqlalchemy]==0.328.0",
   "PyMySQL==1.1.0",
   "psycopg2-binary==2.9.10",
+  "sqlglot==23.3.0",
   "pyodbc==5.1.0",
   # AWS
   "s3fs==2023.12.0",
-  # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
-  # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
   "boto3==1.36.20",
   "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
   "moto[glue,s3,s3tables,server]==5.1.1",
@@ -131,9 +127,17 @@ dev = [
   "azure-storage-blob==12.24.0",
   # GCS
   "gcsfs==2023.12.0",
-  # ai
-  "vllm; platform_system == 'Linux' and platform_machine == 'x86_64'",  # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html
-  "openai"
+  # Hugging Face
+  "huggingface-hub==0.34.4",
+  # Daft connect testing
+  "pyspark==3.5.5",
+  "grpcio==1.68.1",
+  "grpcio-status==1.67.0",
+  # AI
+  "vllm; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+  "openai",
+  # Clickhouse
+  "clickhouse-connect"
 ]
 docs = [
   "markdown-exec",
@@ -152,7 +156,10 @@ docs = [
   "Jinja2"
 ]
 lint = [
-  "ruff==0.8.2"
+  "ruff",
+  "black",
+  "isort",
+  "mypy"
 ]
 
 [tool]

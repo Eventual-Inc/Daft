@@ -45,8 +45,8 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          source .venv/bin/activate
-          uv sync --no-install-project --all-extras
+          source activate
+          uv sync --no-install-project --all-extras --all-groups
           uv pip install -e docs/plugins/nav_hide_children
     - name: Build Daft in development mode and generate docs
       run: |
