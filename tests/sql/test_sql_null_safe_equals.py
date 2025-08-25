@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft.sql import SQLCatalog
 from tests.utils import sort_pydict
 
 
@@ -27,8 +26,8 @@ def test_null_safe_equals_basic(query, expected):
     df1 = daft.from_pydict({"id": [1, 2, 3, None], "val": [10, 20, None, 40]})
     df2 = daft.from_pydict({"id": [1, 2, None, 4], "score": [0.1, 0.2, 0.3, 0.4]})
 
-    catalog = SQLCatalog({"df1": df1, "df2": df2})
-    result = daft.sql(query, catalog).to_pydict()
+    bindings = {"df1": df1, "df2": df2}
+    result = daft.sql(query, **bindings).to_pydict()
     assert sort_pydict(result, "id") == expected
 
 
@@ -51,8 +50,8 @@ def test_null_safe_equals_complex(query, expected):
     """Test complex expressions using null-safe equality."""
     df = daft.from_pydict({"id": [3, 2, 1, None, None], "val": [30, None, 10, 40, None]})
 
-    catalog = SQLCatalog({"df": df})
-    result = daft.sql(query, catalog).to_pydict()
+    bindings = {"df": df}
+    result = daft.sql(query, **bindings).to_pydict()
     assert sort_pydict(result, "id") == expected
 
 
@@ -104,6 +103,6 @@ def test_null_safe_equals_types(query, expected):
         }
     )
 
-    catalog = SQLCatalog({"df": df})
-    result = daft.sql(query, catalog).to_pydict()
+    bindings = {"df": df}
+    result = daft.sql(query, **bindings).to_pydict()
     assert result == expected

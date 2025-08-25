@@ -31,7 +31,9 @@ class UnityCatalog(Catalog):
     def _from_obj(obj: object) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
-            return UnityCatalog.__new__(UnityCatalog)
+            catalog = UnityCatalog.__new__(UnityCatalog)
+            catalog._inner = obj
+            return catalog
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
     ###

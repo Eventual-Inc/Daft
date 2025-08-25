@@ -6,7 +6,6 @@ import pytest
 
 import daft
 from daft import col, interval
-from daft.sql.sql import SQLCatalog
 
 
 def test_nested():
@@ -116,8 +115,8 @@ def test_is_in():
 def test_is_in_exprs():
     df = daft.from_pydict({"x": [1, 2, 3, 5, 9]})
     expected = {"x": [1, 2, 9]}
-    catalog = SQLCatalog({"df": df})
-    actual = daft.sql("select * from df where x in (0 + 1, 0 + 2, 0 + 9)", catalog).collect().to_pydict()
+    bindings = {"df": df}
+    actual = daft.sql("select * from df where x in (0 + 1, 0 + 2, 0 + 9)", **bindings).collect().to_pydict()
 
     assert actual == expected
 
@@ -224,7 +223,7 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
     df = daft.from_pydict({"date": date_values, "ts": ts_values}).select(
         col("date").cast(daft.DataType.date()), col("ts").str.to_datetime("%Y-%m-%d %H:%M:%S")
     )
-    catalog = SQLCatalog({"test": df})
+    bindings = {"test": df}
 
     expected_df = (
         df.select(
@@ -261,7 +260,7 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             ts + INTERVAL '1' year * 2 AS ts_add_year_mul_2,
         FROM test
         """,
-            catalog=catalog,
+            **bindings,
         )
         .collect()
         .to_pydict()
@@ -281,14 +280,14 @@ def test_coalesce():
 
     expected = df.select(daft.coalesce(col("a"), col("b"), col("c")).alias("result")).to_pydict()
 
-    catalog = SQLCatalog({"df": df})
+    bindings = {"df": df}
     actual = daft.sql(
         """
     SELECT
         COALESCE(a, b, c) as result
     FROM df
     """,
-        catalog=catalog,
+        **bindings,
     ).to_pydict()
 
     assert actual == expected
