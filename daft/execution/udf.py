@@ -64,7 +64,7 @@ class UdfHandle:
         env = dict(os.environ)
 
         # Python auto-buffers stdout by default, so disable
-        env["PYTHONBUFFERED"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
 
         # Start the worker process
         self.process = subprocess.Popen(
