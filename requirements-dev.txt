@@ -118,7 +118,7 @@ grpcio-status==1.67.0
 
 # ai
 vllm; platform_system == "Linux" and platform_machine == "x86_64" # for other systems, see install instructions: https://docs.vllm.ai/en/latest/getting_started/installation.html
-openai
+openai==1.100
 
 #clickhouse
 clickhouse-connect
