@@ -50,6 +50,43 @@ def test_lancedb_with_version(lance_dataset_path):
     df = daft.read_lance(lance_dataset_path, version=1)
     assert df.to_pydict() == data
 
+    # test pushdown filters with limit and projection
+    def test_lancedb_read_pushdown(lance_dataset_path, capsys):
+        df = daft.read_lance(lance_dataset_path)
+        df = daft.sql("SELECT vector, lat + 1 as lat_plus_1 FROM df where  long < 3 limit 1")
+        df.explain(show_all=True)
+        captured = capsys.readouterr()
+        explain_output = captured.out
+
+        assert "Pushdowns: {projection: [vector, lat], filter: col(long) < lit(3), limit: 1}" in explain_output
+        assert "Limit: 1" in explain_output
+
+        result = df.to_pydict()
+        assert len(result["vector"]) == 1
+
+        df = daft.read_lance(lance_dataset_path)
+        df = df.select("vector", "lat")
+        assert df.to_pydict() == {"vector": data["vector"], "lat": data["lat"]}
+
+        # multi filter
+        daft.context.set_planning_config(enable_strict_filter_pushdown=True)
+
+        df = daft.read_lance(lance_dataset_path)
+        df = daft.sql("SELECT vector, lat + 1 as lat_plus_1 FROM df where  lat is not null  and big_int in (1, 2, 3)")
+        df.explain(show_all=True)
+        captured = capsys.readouterr()
+        explain_output = captured.out
+        physical_plan_start = explain_output.find("== Physical Plan ==")
+        if physical_plan_start != -1:
+            physical_plan_output = explain_output[physical_plan_start:]
+
+            filter_count = physical_plan_output.count("Filter:")
+            scan_source_count = physical_plan_output.count("ScanTaskSource:")
+
+            assert (
+                filter_count == 0 or filter_count == scan_source_count
+            ), f"Physical plan contains {filter_count} Filter nodes and {scan_source_count} ScanTaskSource nodes, which is not expected"
+
 
 class TestLanceDBCountPushdown:
     tmp_data = {
@@ -145,41 +182,3 @@ class TestLanceDBCountPushdown:
 
         result = df.to_pydict()
         assert result == {"count": [6]}
-
-
-    # test pushdown filters with limit and projection
-    def test_lancedb_read_pushdown(lance_dataset_path, capsys):
-        df = daft.read_lance(lance_dataset_path)
-        df = daft.sql("SELECT vector, lat + 1 as lat_plus_1 FROM df where  long < 3 limit 1")
-        df.explain(show_all=True)
-        captured = capsys.readouterr()
-        explain_output = captured.out
-
-        assert "Pushdowns: {projection: [vector, lat], filter: col(long) < lit(3), limit: 1}" in explain_output
-        assert "Limit: 1" in explain_output
-
-        result = df.to_pydict()
-        assert len(result["vector"]) == 1
-
-        df = daft.read_lance(lance_dataset_path)
-        df = df.select("vector", "lat")
-        assert df.to_pydict() == {"vector": data["vector"], "lat": data["lat"]}
-
-        # multi filter
-        daft.context.set_planning_config(enable_strict_filter_pushdown=True)
-
-        df = daft.read_lance(lance_dataset_path)
-        df = daft.sql("SELECT vector, lat + 1 as lat_plus_1 FROM df where  lat is not null  and big_int in (1, 2, 3)")
-        df.explain(show_all=True)
-        captured = capsys.readouterr()
-        explain_output = captured.out
-        physical_plan_start = explain_output.find("== Physical Plan ==")
-        if physical_plan_start != -1:
-            physical_plan_output = explain_output[physical_plan_start:]
-
-            filter_count = physical_plan_output.count("Filter:")
-            scan_source_count = physical_plan_output.count("ScanTaskSource:")
-
-            assert (
-                filter_count == 0 or filter_count == scan_source_count
-            ), f"Physical plan contains {filter_count} Filter nodes and {scan_source_count} ScanTaskSource nodes, which is not expected"
