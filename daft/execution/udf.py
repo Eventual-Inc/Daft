@@ -60,6 +60,12 @@ class UdfHandle:
         secret = secrets.token_bytes(32)
         self.listener = Listener(self.socket_path, authkey=secret)
 
+        # Copy the current process environment
+        env = dict(os.environ)
+
+        # Python auto-buffers stdout by default, so disable
+        env["PYTHONUNBUFFERED"] = "1"
+
         # Start the worker process
         self.process = subprocess.Popen(
             [
@@ -71,8 +77,7 @@ class UdfHandle:
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            # Python auto-buffers stdout by default, so disable
-            env={"PYTHONUNBUFFERED": "1"},
+            env=env,
         )
 
         # Initialize communication
