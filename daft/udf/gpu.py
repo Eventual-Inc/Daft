@@ -80,7 +80,7 @@ class GpuUdf:
     inner: GPUTorchFunc
     name: str
     return_daft_dtype: DataType
-    init_args: Callable[[], Any]
+    init_fn: Callable[[], Any]
     device: DeviceLikeType
     batch_size: int
     num_streams: int | None
@@ -91,7 +91,7 @@ class GpuUdf:
             name=self.name,
             inner=self.inner,
             return_dtype=self.return_daft_dtype,
-            init_arg=self.init_args,
+            init_fn=self.init_fn,
             device=self.device,
             batch_size=self.batch_size,
             num_streams=self.num_streams,
@@ -106,7 +106,7 @@ def gpu_udf(
     *,
     return_dtype: DataType,
     device: DeviceLikeType,
-    init_args: Callable[[], Any] = _nothing,
+    init_fn: Callable[[], Any] = _nothing,
     batch_size: int = 64,
     num_streams: int | None = None,
 ) -> Callable[[GPUTorchFunc], GpuUdf]:
@@ -125,7 +125,7 @@ def gpu_udf(
             name,
             return_dtype,
             device,
-            init_args,
+            init_fn,
             batch_size,
             num_streams,
         )

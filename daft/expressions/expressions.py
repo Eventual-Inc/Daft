@@ -436,13 +436,13 @@ class Expression:
         name: builtins.str,
         inner: Any,
         return_dtype: DataType,
-        init_arg: Callable[[], Any],
         device: Any,
+        init_fn: Callable[[], Any],
         batch_size: builtins.int,
         num_streams: builtins.int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _gpu_udf(name, inner, arg._expr, return_dtype._dtype, device, init_arg, batch_size, num_streams)
+            _gpu_udf(name, inner, arg._expr, return_dtype._dtype, device, init_fn, batch_size, num_streams)
         )
 
     @staticmethod
