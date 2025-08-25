@@ -164,7 +164,7 @@ class OpenAITextEmbedder(TextEmbedder):
         """Embeds a single text input and possibly returns a zero vector."""
         try:
             response: CreateEmbeddingResponse = self._client.embeddings.create(
-                input=[input_text],
+                input=input_text,
                 model=self._model,
                 encoding_format="float",
             )
