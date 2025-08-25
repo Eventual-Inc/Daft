@@ -75,7 +75,7 @@ class TestLanceDBCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "Pushdowns: {projection: [a], aggregation: count(col(a), All)}" in actual.out
+        assert "Pushdowns: {projection: [b], aggregation: count(col(b), All)}" in actual.out
         assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
 
         result = df.to_pydict()
@@ -136,3 +136,16 @@ class TestLanceDBCountPushdown:
 
         result = df.to_pydict()
         assert result == {"count": [0]}
+
+    def test_count_1(self, dataset_path, capsys):
+        """Test count(*) pushdown with CountMode.All."""
+        df = daft.read_lance(dataset_path).count(1)
+
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        assert "Pushdowns: {projection: [b], aggregation: count(col(b), All)}" in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+
+        result = df.to_pydict()
+        assert result == {"count": [6]}

@@ -236,7 +236,7 @@ Filtering can give you powerful optimization when you are working with partition
 
 ### Exclude Data
 
-You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`[daft.DataFrame.limit] method:
+You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`][daft.DataFrame.limit] method:
 
 === "🐍 Python"
 

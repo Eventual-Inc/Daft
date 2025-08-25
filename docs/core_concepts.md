@@ -1708,7 +1708,7 @@ Daft abstracts away the in-memory representation of your data and provides kerne
 
 <!-- todo(docs - cc): add relative path to expressions image page after figure out image namespace-->
 
-Please add suggestions for new DataTypes to our Github Discussions page!
+Please add suggestions for new DataTypes to our GitHub Discussions page!
 
 ## SQL
 

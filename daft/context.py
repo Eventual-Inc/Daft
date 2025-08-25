@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
+import threading
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -18,10 +19,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-import threading
 
-
-@dataclasses.dataclass
+@dataclass
 class DaftContext:
     """Global context for the current Daft execution environment."""
 
@@ -75,6 +74,7 @@ class DaftContext:
 
 
 def get_context() -> DaftContext:
+    """Returns the global singleton daft context."""
     return DaftContext(_get_context())
 
 

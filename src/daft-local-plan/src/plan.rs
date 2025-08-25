@@ -195,12 +195,14 @@ impl LocalPhysicalPlan {
     pub fn into_batches(
         input: LocalPhysicalPlanRef,
         batch_size: usize,
+        strict: bool,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::IntoBatches(IntoBatches {
             input,
             batch_size,
+            strict,
             schema,
             stats_state,
         })
@@ -525,7 +527,7 @@ impl LocalPhysicalPlan {
 
     pub fn sample(
         input: LocalPhysicalPlanRef,
-        fraction: f64,
+        sampling_method: SamplingMethod,
         with_replacement: bool,
         seed: Option<u64>,
         stats_state: StatsState,
@@ -533,7 +535,7 @@ impl LocalPhysicalPlan {
         let schema = input.schema().clone();
         Self::Sample(Sample {
             input,
-            fraction,
+            sampling_method,
             with_replacement,
             seed,
             schema,
@@ -855,7 +857,7 @@ impl LocalPhysicalPlan {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
                 | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
                 Self::Filter(Filter { predicate, .. }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
-                Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::into_batches(new_child.clone(), *batch_size, StatsState::NotMaterialized),
+                Self::IntoBatches(IntoBatches { batch_size, strict, .. }) => Self::into_batches(new_child.clone(), *batch_size, *strict, StatsState::NotMaterialized),
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -864,7 +866,9 @@ impl LocalPhysicalPlan {
                 Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Pivot(Pivot {  group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(new_child.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Sort(Sort {  sort_by, descending, nulls_first, schema, .. }) => Self::sort(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), StatsState::NotMaterialized),
-                Self::Sample(Sample {  fraction, with_replacement, seed, schema, .. }) => Self::sample(new_child.clone(), *fraction, *with_replacement, *seed, StatsState::NotMaterialized),
+                Self::Sample(Sample {  sampling_method, with_replacement, seed, schema, .. }) => {
+                    Self::sample(new_child.clone(), sampling_method.clone(), *with_replacement, *seed, StatsState::NotMaterialized)
+                },
                 Self::Explode(Explode {  to_explode, schema, .. }) => Self::explode(new_child.clone(), to_explode.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Unpivot(Unpivot {  ids, values, variable_name, value_name, schema, .. }) => Self::unpivot(new_child.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Concat(Concat {  other, schema, .. }) => Self::concat(new_child.clone(), other.clone(), StatsState::NotMaterialized),
@@ -1010,6 +1014,7 @@ pub struct Filter {
 pub struct IntoBatches {
     pub input: LocalPhysicalPlanRef,
     pub batch_size: usize,
+    pub strict: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -1053,10 +1058,16 @@ pub struct TopN {
     pub stats_state: StatsState,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum SamplingMethod {
+    Fraction(f64),
+    Size(usize),
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
-    pub fraction: f64,
+    pub sampling_method: SamplingMethod,
     pub with_replacement: bool,
     pub seed: Option<u64>,
     pub schema: SchemaRef,

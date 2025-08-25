@@ -244,8 +244,7 @@ impl Display for Literal {
                 }
                 write!(f, ")")
             }
-            Self::File(DaftFile::Reference(path)) => write!(f, "File({path:?})"),
-            Self::File(DaftFile::Data(bytes)) => write!(f, "File({bytes:?})"),
+            Self::File(file) => write!(f, "{file}"),
             Self::Tensor { data, shape } => {
                 write!(
                     f,

@@ -12,7 +12,7 @@ use daft_dsl::{
 use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
-use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 
 pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
     match plan.as_ref() {
@@ -64,6 +64,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::into_batches(
                 input,
                 into_batches.batch_size,
+                false,
                 into_batches.stats_state.clone(),
             ))
         }
@@ -107,7 +108,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let input = translate(&sample.input)?;
             Ok(LocalPhysicalPlan::sample(
                 input,
-                sample.fraction,
+                SamplingMethod::Fraction(sample.fraction),
                 sample.with_replacement,
                 sample.seed,
                 sample.stats_state.clone(),

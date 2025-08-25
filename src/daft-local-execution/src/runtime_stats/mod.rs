@@ -158,6 +158,16 @@ impl RuntimeStatsManager {
             loop {
                 tokio::select! {
                     biased;
+                    _ = &mut finish_rx => {
+                        if !active_nodes.is_empty() {
+                            log::debug!(
+                                "RuntimeStatsManager finished with active nodes {{{}}}",
+                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
+                            );
+                        }
+                        break;
+                    }
+
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
                             for subscriber in &subscribers {
@@ -178,16 +188,6 @@ impl RuntimeStatsManager {
                                 }
                             }
                         }
-                    }
-
-                    _ = &mut finish_rx => {
-                        if !active_nodes.is_empty() {
-                            log::warn!(
-                                "RuntimeStatsManager finished with active nodes {{{}}}",
-                                active_nodes.iter().map(|id| id.to_string()).join(", ")
-                            );
-                        }
-                        break;
                     }
 
                     _ = interval.tick() => {
@@ -338,6 +338,7 @@ impl InitializingCountingReceiver {
         v
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::sync::{atomic::AtomicU64, Arc, Mutex};
