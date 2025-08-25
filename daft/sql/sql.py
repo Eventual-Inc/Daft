@@ -2,8 +2,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
 import inspect
-import warnings
-from typing import Optional
 
 import daft
 from daft.api_annotations import PublicAPI
@@ -25,13 +23,6 @@ class SQLCatalog:
     """
 
     _catalog: _PySqlCatalog = None  # type: ignore
-
-    def __post_init__(self) -> None:
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.6.0; please use `Catalog.from_pydict()`.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
 
     def __init__(self, tables: dict[str, DataFrame]) -> None:
         """Create a new SQLCatalog from a dictionary of table names to dataframes."""
@@ -110,7 +101,6 @@ def sql_expr(sql: str) -> Expression:
 @PublicAPI
 def sql(
     sql: str,
-    catalog: Optional[SQLCatalog] = None,
     register_globals: bool = True,
     **bindings: DataFrame,
 ) -> DataFrame:
@@ -201,15 +191,6 @@ def sql(
         for alias, variable in caller_vars.items():
             if isinstance(variable, DataFrame):
                 py_ctes[alias] = variable._builder._builder
-
-    # 2. Add all SQLCatalog names for backwards compatibility.
-    if catalog:
-        warnings.warn(
-            "The `catalog` argument is deprecated and will be removed in daft >= 0.6.0. Please use `ctes` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        py_ctes.update(catalog._catalog.to_pydict())
 
     # 3. Add explicit CTEs last so these can't be shadowed.
     for alias, df in bindings.items():
