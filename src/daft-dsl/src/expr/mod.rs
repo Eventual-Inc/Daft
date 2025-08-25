@@ -1499,6 +1499,8 @@ impl Expr {
                 return_dtype,
                 device,
                 init_fn: init_arg,
+                num_streams,
+                batch_size,
             }))) => {
                 let Some(arg) = children.first() else {
                     panic!("Expected 1 child");
@@ -1511,6 +1513,8 @@ impl Expr {
                     init_fn: init_arg.clone(),
                     inner: inner.clone(),
                     arg: arg.clone(),
+                    num_streams: *num_streams,
+                    batch_size: *batch_size,
                 })))
             }
         }

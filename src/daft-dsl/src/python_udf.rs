@@ -219,6 +219,7 @@ impl RowWisePyFn {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn gpu_udf(
     name: &str,
     inner: RuntimePyObject,
@@ -226,6 +227,8 @@ pub fn gpu_udf(
     return_dtype: DataType,
     device: RuntimePyObject,
     init_fn: RuntimePyObject,
+    num_streams: Option<usize>,
+    batch_size: usize,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::GPU(GpuUdf {
         function_name: Arc::from(name),
@@ -234,6 +237,8 @@ pub fn gpu_udf(
         return_dtype,
         device,
         init_fn,
+        num_streams,
+        batch_size,
     })))
 }
 
@@ -245,6 +250,8 @@ pub struct GpuUdf {
     pub return_dtype: DataType,
     pub device: RuntimePyObject,
     pub init_fn: RuntimePyObject,
+    pub num_streams: Option<usize>,
+    pub batch_size: usize,
 }
 
 impl GpuUdf {

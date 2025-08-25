@@ -298,14 +298,26 @@ pub fn row_wise_udf(
     }
 }
 
-#[pyfunction]
+#[pyfunction(signature = (
+    name,
+    func,
+    arg,
+    return_dtype,
+    device,
+    init_fn,
+    batch_size,
+    num_streams=None,
+))]
+#[allow(clippy::too_many_arguments)]
 pub fn gpu_udf(
     name: &str,
     func: PyObject,
     arg: PyExpr,
     return_dtype: PyDataType,
     device: PyObject,
-    init_args: PyObject,
+    init_fn: PyObject,
+    batch_size: usize,
+    num_streams: Option<usize>,
 ) -> PyExpr {
     use crate::python_udf::gpu_udf;
 
@@ -316,7 +328,9 @@ pub fn gpu_udf(
             arg.into(),
             return_dtype.into(),
             device.into(),
-            init_args.into(),
+            init_fn.into(),
+            num_streams,
+            batch_size,
         )
         .into(),
     }

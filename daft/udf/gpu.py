@@ -82,7 +82,8 @@ class GpuUdf:
     return_daft_dtype: DataType
     init_args: Callable[[], Any]
     device: DeviceLikeType
-    gpu_mem: float
+    batch_size: int
+    num_streams: int | None
 
     def __call__(self, arg: Expression) -> Expression:
         return Expression._gpu_udf(
@@ -92,7 +93,8 @@ class GpuUdf:
             return_dtype=self.return_daft_dtype,
             init_arg=self.init_args,
             device=self.device,
-            _gpu_mem=self.gpu_mem,
+            batch_size=self.batch_size,
+            num_streams=self.num_streams,
         )
 
 
@@ -105,7 +107,8 @@ def gpu_udf(
     return_dtype: DataType,
     device: DeviceLikeType,
     init_args: Callable[[], Any] = _nothing,
-    gpu_mem: float = 1.0,
+    batch_size: int = 64,
+    num_streams: int | None = None,
 ) -> Callable[[GPUTorchFunc], GpuUdf]:
     def _udf(f: GPUTorchFunc) -> GpuUdf:
         # Grab a name for the UDF. It **should** be unique.
@@ -123,7 +126,8 @@ def gpu_udf(
             return_dtype,
             device,
             init_args,
-            gpu_mem,
+            batch_size,
+            num_streams,
         )
 
         return udf

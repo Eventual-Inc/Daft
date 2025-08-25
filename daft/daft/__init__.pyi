@@ -1330,7 +1330,9 @@ def gpu_udf(
     arg: PyExpr,
     return_dtype: PyDataType,
     device: Any,
-    init_arg: Any,
+    init_fn: Callable[[], Any],
+    batch_size: int,
+    num_streams: int | None,
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 

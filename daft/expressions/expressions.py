@@ -438,9 +438,12 @@ class Expression:
         return_dtype: DataType,
         init_arg: Callable[[], Any],
         device: Any,
-        _gpu_mem: builtins.float,
+        batch_size: builtins.int,
+        num_streams: builtins.int | None,
     ) -> Expression:
-        return Expression._from_pyexpr(_gpu_udf(name, inner, arg._expr, return_dtype._dtype, device, init_arg))
+        return Expression._from_pyexpr(
+            _gpu_udf(name, inner, arg._expr, return_dtype._dtype, device, init_arg, batch_size, num_streams)
+        )
 
     @staticmethod
     def to_struct(*fields: Expression | builtins.str) -> Expression:

@@ -70,8 +70,10 @@ impl GPUSinkState {
         })
         .unwrap();
 
-        let num_streams = get_compute_pool_num_threads();
-
+        let num_streams = args
+            .gpu_udf
+            .num_streams
+            .unwrap_or_else(get_compute_pool_num_threads);
         let stream_states = (0..num_streams)
             .into_iter()
             .map(|_| StreamState {
@@ -333,6 +335,6 @@ impl StreamingSink for GPUOperator {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        Some(MorselSizeRequirement::Strict(64))
+        Some(MorselSizeRequirement::Strict(self.args.gpu_udf.batch_size))
     }
 }
