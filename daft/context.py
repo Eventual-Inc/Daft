@@ -138,6 +138,7 @@ def planning_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
 def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
+    enable_strict_filter_pushdown: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control Daft plan construction behavior.
 
@@ -154,7 +155,7 @@ def set_planning_config(
     with ctx._lock:
         old_daft_planning_config = ctx._ctx._daft_planning_config if config is None else config
         new_daft_planning_config = old_daft_planning_config.with_config_values(
-            default_io_config=default_io_config,
+            default_io_config=default_io_config, enable_strict_filter_pushdown=enable_strict_filter_pushdown
         )
 
         ctx._ctx._daft_planning_config = new_daft_planning_config
