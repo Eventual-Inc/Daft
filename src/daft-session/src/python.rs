@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use daft_ai::{provider::ProviderRef, python::PyProviderWrapper};
 use daft_catalog::{
     python::{pyobj_to_catalog, pyobj_to_table, PyIdentifier, PyTableSource},
     Identifier,
@@ -29,12 +30,22 @@ impl PySession {
         Ok(self.0.attach_catalog(pyobj_to_catalog(catalog)?, alias)?)
     }
 
+    pub fn attach_provider(&self, provider: Bound<PyAny>, alias: String) -> PyResult<()> {
+        Ok(self
+            .0
+            .attach_provider(pyobj_to_provider(provider)?, alias)?)
+    }
+
     pub fn attach_table(&self, table: Bound<PyAny>, alias: String) -> PyResult<()> {
         Ok(self.0.attach_table(pyobj_to_table(table)?, alias)?)
     }
 
     pub fn detach_catalog(&self, alias: &str) -> PyResult<()> {
         Ok(self.0.detach_catalog(alias)?)
+    }
+
+    pub fn detach_provider(&self, alias: &str) -> PyResult<()> {
+        Ok(self.0.detach_provider(alias)?)
     }
 
     pub fn detach_table(&self, alias: &str) -> PyResult<()> {
@@ -66,8 +77,8 @@ impl PySession {
         Ok(None)
     }
 
-    pub fn current_provider(&self) -> PyResult<Option<String>> {
-        Ok(self.0.current_provider()?)
+    pub fn current_provider(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+        self.0.current_provider()?.map(|p| p.to_py(py)).transpose()
     }
 
     pub fn current_model(&self) -> PyResult<Option<String>> {
@@ -78,12 +89,20 @@ impl PySession {
         self.0.get_catalog(name)?.to_py(py)
     }
 
+    pub fn get_provider(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
+        self.0.get_provider(name)?.to_py(py)
+    }
+
     pub fn get_table(&self, py: Python<'_>, ident: &PyIdentifier) -> PyResult<PyObject> {
         self.0.get_table(ident.as_ref())?.to_py(py)
     }
 
     pub fn has_catalog(&self, name: &str) -> PyResult<bool> {
         Ok(self.0.has_catalog(name))
+    }
+
+    pub fn has_provider(&self, name: &str) -> PyResult<bool> {
+        Ok(self.0.has_provider(name))
     }
 
     pub fn has_table(&self, ident: &PyIdentifier) -> PyResult<bool> {
@@ -135,6 +154,11 @@ impl PySession {
         self.0.detach_function(alias)?;
         Ok(())
     }
+}
+
+fn pyobj_to_provider(obj: Bound<PyAny>) -> PyResult<ProviderRef> {
+    // no current rust-based providers, so just wrap
+    Ok(Arc::new(PyProviderWrapper::from(obj.unbind())))
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

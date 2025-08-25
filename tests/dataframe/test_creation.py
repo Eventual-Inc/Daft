@@ -1259,3 +1259,16 @@ def test_create_dataframe_parquet_read_mismatched_schemas_with_pushdown_no_rows_
         df = df.select("x")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x"]
         assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
+
+
+def test_create_dataframe_of_tuples():
+    df = daft.from_pydict({"tuples": [(1, "a"), (2, "b")]})
+    expected = {"tuples": [{"_0": 1, "_1": "a"}, {"_0": 2, "_1": "b"}]}
+    assert df.to_pydict() == expected
+
+
+def test_create_dataframe_of_deeply_nested_tuples():
+    df = daft.from_pydict({"tuples": [(1, {"foo": 1, "more_nesting": [1, 2, 3], "bar": (1, "a")})]})
+    expected = {"tuples": [{"_0": 1, "_1": {"foo": 1, "more_nesting": [1, 2, 3], "bar": {"_0": 1, "_1": "a"}}}]}
+
+    assert df.to_pydict() == expected

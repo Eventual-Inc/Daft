@@ -754,13 +754,89 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] SQL Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Unity Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
                 }
               }
             ]
           }
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
+
+  integration-test-ai-credentialed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+    - integration-test-build
+    env:
+      package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9']
+        daft-runner: [ray, native]
+        enable-aqe: [1, 0]
+        exclude:
+        - daft-runner: native
+          enable-aqe: 1
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        architecture: x64
+        cache: pip
+        cache-dependency-path: |
+          pyproject.toml
+          requirements-dev.txt
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
+    - name: Run AI provider integration tests
+      run: |
+        pytest -m integration tests/integration/ai --credentials --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] AI Provider Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -771,6 +847,7 @@ jobs:
     - integration-test-iceberg
     - integration-test-sql
     - integration-test-unity
+    - integration-test-ai-credentialed
     if: always()
     steps:
     - name: All tests ok
