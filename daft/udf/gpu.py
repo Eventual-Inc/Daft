@@ -10,6 +10,7 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import TypeAlias
 
+from daft.datatype import DataType
 from daft.dependencies import np, torch
 from daft.expressions import Expression
 from daft.series import Series
@@ -17,7 +18,7 @@ from daft.series import Series
 if TYPE_CHECKING:
     from torch._prims_common import DeviceLikeType
 
-    from daft.datatype import DataType
+    from daft.daft import PyDataType
 
     GPUTorchFunc: TypeAlias = Callable[..., torch.Tensor]
 
@@ -53,7 +54,7 @@ class StreamManager:
 
         self.output_tensor = output
 
-    def get_output(self, out_dtype: DataType) -> tuple[torch.Tensor, float, float, float] | None:
+    def get_output(self, out_dtype: PyDataType) -> tuple[torch.Tensor, float, float, float] | None:
         if not self.stream.query():
             return None
 
@@ -62,7 +63,7 @@ class StreamManager:
         # Move output back to CPU and convert to Numpy
         start = time.time()
         output_cpu = self.output_tensor.cpu()
-        output = Series.from_numpy(np.array(output_cpu), out_dtype)
+        output = Series.from_numpy(np.array(output_cpu), dtype=DataType._from_pydatatype(out_dtype))
         d2h_time = time.time() - start
 
         self.output_tensor = None
