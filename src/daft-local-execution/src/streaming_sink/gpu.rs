@@ -66,7 +66,7 @@ impl GPUSinkState {
             use pyo3::PyErr;
 
             let init_fn = args.gpu_udf.init_fn.as_ref().bind(py);
-            Ok::<_, PyErr>(init_fn.call0()?.unbind())
+            Ok::<_, PyErr>(init_fn.call1((args.gpu_udf.device.as_ref(),))?.unbind())
         })
         .unwrap();
 
