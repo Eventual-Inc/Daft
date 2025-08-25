@@ -18,7 +18,6 @@ env:
   CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
 
   DAFT_ANALYTICS_ENABLED: '0'
-  UV_SYSTEM_PYTHON: 1
   PYTHON_VERSION: '3.9'
 
 jobs:
@@ -129,15 +128,16 @@ jobs:
       uses: astral-sh/setup-uv@v4
       with:
         version: "0.6.17"
-    - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        uv venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
@@ -145,7 +145,9 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          source activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -155,6 +157,7 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
     - name: Run TPCH integration tests
       run: |
+        source activate
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -176,7 +179,6 @@ jobs:
           }
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
-
 
 
   integration-test-io:
@@ -204,18 +206,16 @@ jobs:
       timeout-minutes: 15
       if: runner.os == 'macos'
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v4
-      with:
-        version: "0.6.17"
-    - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        uv venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
@@ -223,7 +223,9 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          source activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -242,6 +244,7 @@ jobs:
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
+        source activate
         pytest tests/integration/io -m 'integration and not benchmark' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}

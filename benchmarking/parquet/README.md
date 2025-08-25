@@ -10,8 +10,8 @@ Goals:
 Create a new virtual environment and install the dependencies
 
 ```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r benchmark-requirements.txt
 ```
 

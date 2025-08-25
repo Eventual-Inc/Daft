@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nav-hide-children"
+version = "0.1.0"
+description = "MkDocs plugin to conditionally hide navigation children based on configured paths"
+authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
+requires-python = ">=3.8"
+dependencies = [
+  "mkdocs>=1.4"
+]
+
+[project.entry-points."mkdocs.plugins"]
+"nav-hide-children" = "plugin:NavHideChildrenPlugin"
