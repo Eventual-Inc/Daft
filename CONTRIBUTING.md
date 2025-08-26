@@ -39,13 +39,7 @@ When proposing features, please include:
 
 To set up your development environment:
 
-1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.12)
-   - **Note**: The Makefile defaults to using `python3.11`. If you have a different Python version, you can override this by setting `WHICH_PYTHON` when running make commands:
-     ```bash
-     make .venv WHICH_PYTHON=python3
-     # or export it in your shell:
-     export WHICH_PYTHON=python3
-     ```
+1. Install [uv](https://docs.astral.sh/uv/). On macOS, you can run `brew install uv`.
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
 3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
 4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
