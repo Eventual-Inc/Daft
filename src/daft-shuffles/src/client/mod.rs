@@ -29,7 +29,15 @@ impl FlightClientManager {
         }
     }
 
-    pub async fn fetch_partition(&self, partition: usize) -> DaftResult<Arc<MicroPartition>> {
+    pub async fn add_addresses(&mut self, addresses: Vec<String>) -> DaftResult<()> {
+        let mut clients = self.clients.lock().await;
+        for address in addresses {
+            clients.push(ShuffleFlightClient::new(address, self.schema.clone()));
+        }
+        Ok(())
+    }
+
+    pub async fn fetch_partition(&self, shuffle_id: &str, partition: usize) -> DaftResult<Arc<MicroPartition>> {
         let io_runtime = get_io_runtime(true);
         let permit =
             self.semaphore.acquire().await.map_err(|e| {
@@ -40,7 +48,7 @@ impl FlightClientManager {
             futures::future::try_join_all(
                 clients
                     .iter_mut()
-                    .map(|client| client.get_partition(partition)),
+                    .map(|client| client.get_partition(shuffle_id, partition)),
             )
             .await?
         };

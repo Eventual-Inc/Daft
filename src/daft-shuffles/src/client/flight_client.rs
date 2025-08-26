@@ -51,9 +51,10 @@ impl ShuffleFlightClient {
 
     pub async fn get_partition(
         &mut self,
+        shuffle_id: &str,
         partition_idx: usize,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
-        let ticket = Ticket::new(partition_idx.to_string());
+        let ticket = Ticket::new(format!("{}:{}", shuffle_id, partition_idx));
         let (address, client) = self.connect().await?;
         let stream = client.do_get(ticket).await.map_err(|e| {
             DaftError::External(

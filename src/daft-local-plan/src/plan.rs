@@ -74,6 +74,8 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     Repartition(Repartition),
     IntoPartitions(IntoPartitions),
+    FlightShuffleWrite(FlightShuffleWrite),
+    FlightShuffleRead(FlightShuffleRead),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
 }
@@ -118,6 +120,8 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
+            | Self::FlightShuffleWrite(FlightShuffleWrite { stats_state, .. })
+            | Self::FlightShuffleRead(FlightShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -731,6 +735,42 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn flight_shuffle_write(
+        input: LocalPhysicalPlanRef,
+        shuffle_id: String,
+        repartition_spec: RepartitionSpec,
+        num_partitions: usize,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::FlightShuffleWrite(FlightShuffleWrite {
+            input,
+            shuffle_id,
+            repartition_spec,
+            num_partitions,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub fn flight_shuffle_read(
+        shuffle_id: String,
+        partition_idx: usize,
+        node_ips: Vec<String>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::FlightShuffleRead(FlightShuffleRead {
+            shuffle_id,
+            partition_idx,
+            node_ips,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -773,6 +813,8 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::Repartition(Repartition { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
+            Self::FlightShuffleWrite(FlightShuffleWrite { schema, .. }) => schema,
+            Self::FlightShuffleRead(FlightShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
@@ -846,6 +888,8 @@ impl LocalPhysicalPlan {
             }
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
+            Self::FlightShuffleWrite(FlightShuffleWrite { input, .. }) => vec![input.clone()],
+            Self::FlightShuffleRead(_) => vec![], // Flight shuffle read has no input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
         }
@@ -855,7 +899,7 @@ impl LocalPhysicalPlan {
         match children {
             [new_child] => match self {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
+                | Self::InMemoryScan(_) | Self::FlightShuffleRead(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, InMemoryScan, and FlightShuffleRead do not have children"),
                 Self::Filter(Filter { predicate, .. }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
                 Self::IntoBatches(IntoBatches { batch_size, strict, .. }) => Self::into_batches(new_child.clone(), *batch_size, *strict, StatsState::NotMaterialized),
                 Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
@@ -890,6 +934,7 @@ impl LocalPhysicalPlan {
                 Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
                 Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
                 Self::IntoPartitions(IntoPartitions {  num_partitions, .. }) => Self::into_partitions(new_child.clone(), *num_partitions, StatsState::NotMaterialized),
+                Self::FlightShuffleWrite(FlightShuffleWrite { shuffle_id, repartition_spec, num_partitions, schema, .. }) => Self::flight_shuffle_write(new_child.clone(), shuffle_id.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -1268,6 +1313,25 @@ pub struct Repartition {
 pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlightShuffleWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub shuffle_id: String,
+    pub repartition_spec: RepartitionSpec,
+    pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlightShuffleRead {
+    pub shuffle_id: String,
+    pub partition_idx: usize,
+    pub node_ips: Vec<String>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

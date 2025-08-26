@@ -1,4 +1,4 @@
-use std::{fs::File, pin::Pin, sync::Arc};
+use std::{collections::HashMap, fs::File, pin::Pin, sync::Arc};
 
 use arrow2::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use arrow_flight::{
@@ -9,18 +9,36 @@ use arrow_flight::{
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use futures::{Stream, StreamExt, TryStreamExt};
+use tokio::sync::RwLock;
 use tonic::{transport::Server, Request, Response, Status};
 
 use super::stream::FlightDataStreamReader;
 use crate::shuffle_cache::ShuffleCache;
 
 struct ShuffleFlightServer {
-    shuffle_cache: Arc<ShuffleCache>,
+    shuffle_caches: Arc<RwLock<HashMap<String, Vec<Arc<ShuffleCache>>>>>,
 }
 
 impl ShuffleFlightServer {
-    fn new(shuffle_cache: Arc<ShuffleCache>) -> Self {
-        Self { shuffle_cache }
+    fn new() -> Self {
+        Self {
+            shuffle_caches: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub async fn add_shuffle_cache(&self, shuffle_id: String, shuffle_cache: Arc<ShuffleCache>) {
+        let mut caches = self.shuffle_caches.write().await;
+        caches.entry(shuffle_id).or_insert_with(Vec::new).push(shuffle_cache);
+    }
+
+    pub async fn remove_shuffle_cache(&self, shuffle_id: &str) {
+        let mut caches = self.shuffle_caches.write().await;
+        caches.remove(shuffle_id);
+    }
+
+    async fn get_shuffle_caches(&self, shuffle_id: &str) -> Option<Vec<Arc<ShuffleCache>>> {
+        let caches = self.shuffle_caches.read().await;
+        caches.get(shuffle_id).cloned()
     }
 }
 
@@ -79,14 +97,46 @@ impl FlightService for ShuffleFlightServer {
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
         let ticket = request.into_inner().ticket;
-        let partition_idx_str = String::from_utf8(ticket.to_vec())
+        let ticket_str = String::from_utf8(ticket.to_vec())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let partition_idx = partition_idx_str
-            .parse::<usize>()
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let file_paths = self.shuffle_cache.file_paths_for_partition(partition_idx);
 
-        let file_path_stream = futures::stream::iter(file_paths);
+        // Parse ticket format: "shuffle_id:partition_idx"
+        let parts: Vec<&str> = ticket_str.split(':').collect();
+        if parts.len() != 2 {
+            return Err(Status::invalid_argument(
+                "Invalid ticket format. Expected 'shuffle_id:partition_idx'",
+            ));
+        }
+
+        let shuffle_id = parts[0];
+        let partition_idx = parts[1]
+            .parse::<usize>()
+            .map_err(|e| Status::invalid_argument(format!("Invalid partition index: {}", e)))?;
+
+        // Get all shuffle caches for this shuffle operation
+        let shuffle_caches = self.get_shuffle_caches(shuffle_id).await.ok_or_else(|| {
+            Status::not_found(format!("Shuffle cache not found for shuffle_id: {}", shuffle_id))
+        })?;
+
+        // Collect file paths from all shuffle caches for this partition
+        let mut all_file_paths = Vec::new();
+        let mut schema_opt = None;
+
+        for shuffle_cache in shuffle_caches {
+            let file_paths = shuffle_cache.file_paths_for_partition(partition_idx);
+            all_file_paths.extend(file_paths);
+
+            if schema_opt.is_none() {
+                schema_opt = Some(shuffle_cache.schema().clone());
+            }
+        }
+
+        let schema = schema_opt
+            .ok_or_else(|| Status::internal("No schema found in shuffle caches"))?
+            .to_arrow()
+            .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
+
+        let file_path_stream = futures::stream::iter(all_file_paths);
         let flight_data_stream = file_path_stream
             .map(|file_path| {
                 let reader = File::open(file_path)
@@ -99,11 +149,6 @@ impl FlightService for ShuffleFlightServer {
                 Ok::<_, Status>(stream)
             })
             .try_flatten();
-
-        let schema =
-            self.shuffle_cache.schema().to_arrow().map_err(|e| {
-                Status::internal(format!("Error converting schema to arrow: {}", e))
-            })?;
         let flight_schema = FlightData {
             data_header: schema_to_bytes(&schema, &default_ipc_fields(&schema.fields)).into(),
             ..Default::default()
@@ -146,6 +191,7 @@ pub struct FlightServerConnectionHandle {
     port: u16,
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
     server_task: Option<RuntimeTask<DaftResult<()>>>,
+    server: Arc<ShuffleFlightServer>,
 }
 
 impl FlightServerConnectionHandle {
@@ -164,18 +210,26 @@ impl FlightServerConnectionHandle {
     pub fn port(&self) -> u16 {
         self.port
     }
+
+    pub async fn add_shuffle_cache(&self, shuffle_id: String, shuffle_cache: Arc<ShuffleCache>) {
+        self.server.add_shuffle_cache(shuffle_id, shuffle_cache).await;
+    }
+
+    pub async fn remove_shuffle_cache(&self, shuffle_id: &str) {
+        self.server.remove_shuffle_cache(shuffle_id).await;
+    }
 }
 
-pub fn start_flight_server(
-    shuffle_cache: Arc<ShuffleCache>,
-    ip: &str,
-) -> Result<FlightServerConnectionHandle, Status> {
+pub fn start_flight_server(ip: &str) -> Result<FlightServerConnectionHandle, Status> {
     let io_runtime = common_runtime::get_io_runtime(true);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let (port_tx, port_rx) = tokio::sync::oneshot::channel();
 
+    let server = Arc::new(ShuffleFlightServer::new());
+    let server_clone = server.clone();
+
     let addr = format!("{}:0", ip);
-    let server_task = io_runtime.spawn(async {
+    let server_task = io_runtime.spawn(async move {
         let listener = tokio::net::TcpListener::bind(addr)
             .await
             .expect("Failed to bind to port");
@@ -191,9 +245,7 @@ pub fn start_flight_server(
             .expect("Failed to create TCP incoming connection from listener");
 
         Server::builder()
-            .add_service(FlightServiceServer::new(ShuffleFlightServer::new(
-                shuffle_cache,
-            )))
+            .add_service(FlightServiceServer::new(server_clone))
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_rx.await;
             })
@@ -207,6 +259,7 @@ pub fn start_flight_server(
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),
+        server,
     };
     Ok(handle)
 }
