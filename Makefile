@@ -22,12 +22,8 @@ endif
 
 
 .venv:  ## Set up virtual environment
-ifeq (, $(shell which uv))
-	$(WHICH_PYTHON) -m venv $(VENV)
-	$(VENV_BIN)/python -m pip install --upgrade uv
-else
-	uv venv --seed $(VENV) -p $(WHICH_PYTHON)
-endif
+	@which uv > /dev/null || (echo "Error: uv is required but not installed. Please install uv first." && exit 1)
+	uv venv $(VENV) -p $(WHICH_PYTHON)
 ifeq ($(IS_M1), 1)
 	## Hacks to deal with grpcio compile errors on m1 macs
 	GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1 \
