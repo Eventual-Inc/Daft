@@ -168,6 +168,7 @@ mod tests {
                 CountMode::All,
             ))))),
         )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;

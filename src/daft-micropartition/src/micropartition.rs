@@ -15,7 +15,7 @@ use common_runtime::get_io_runtime;
 use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::ExprRef;
+use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::{
@@ -514,6 +514,11 @@ impl MicroPartition {
                     parquet_metadata,
                     chunk_size,
                     scan_task.generated_fields.clone(),
+                    scan_task
+                        .pushdowns
+                        .aggregation
+                        .as_ref()
+                        .map(|agg| agg.as_ref()),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -1106,6 +1111,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
     generated_fields: Option<SchemaRef>,
+    aggregation_pushdown: Option<&Expr>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1186,6 +1192,28 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             .collect::<DaftResult<Vec<_>>>()?;
         (metadata, schemas)
     };
+
+    // Handle count pushdown aggregation optimization.
+    if let Some(Expr::Agg(AggExpr::Count(_, _))) = aggregation_pushdown {
+        let count: usize = metadata.iter().map(|m| m.num_rows).sum();
+        let count_field = daft_core::datatypes::Field::new(
+            aggregation_pushdown.unwrap().name(),
+            daft_core::datatypes::DataType::UInt64,
+        );
+        let count_array =
+            UInt64Array::from_iter(count_field.clone(), std::iter::once(Some(count as u64)));
+        let count_batch = daft_recordbatch::RecordBatch::new_with_size(
+            Schema::new(vec![count_field]),
+            vec![count_array.into_series()],
+            1,
+        )
+        .context(DaftCoreComputeSnafu)?;
+        return Ok(MicroPartition::new_loaded(
+            count_batch.schema.clone(),
+            Arc::new(vec![count_batch]),
+            None,
+        ));
+    }
 
     let any_stats_avail = metadata
         .iter()

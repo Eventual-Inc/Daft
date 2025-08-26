@@ -758,6 +758,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 None,
+                None,
             )
         })?;
         Ok(mp.into())
@@ -818,6 +819,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 chunk_size,
+                None,
                 None,
             )
         })?;
