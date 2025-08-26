@@ -98,6 +98,7 @@ extra_css:
 - css/docsearch.css
 - https://cdn.jsdelivr.net/npm/@docsearch/css@3
 extra_javascript:
+- js/reo.js
 - js/custom.js
 - js/docsearch.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
