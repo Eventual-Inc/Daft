@@ -65,7 +65,7 @@ jobs:
       run: rustup component add llvm-tools-preview
 
     - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -136,7 +136,7 @@ jobs:
         path: ./report-output
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -276,7 +276,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -349,7 +349,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.3.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -361,7 +361,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -455,7 +455,7 @@ jobs:
         # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
         # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.3.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -467,7 +467,7 @@ jobs:
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
         HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() }}
       with:
         payload: |
@@ -535,7 +535,7 @@ jobs:
           uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - uses: docker/setup-buildx-action@v3
-    - uses: docker/build-push-action@v5
+    - uses: docker/build-push-action@v6
       with:
         context: ./tests/integration/iceberg/docker-compose/
         file: ./tests/integration/iceberg/docker-compose/Dockerfile
@@ -553,7 +553,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -638,7 +638,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -725,7 +725,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -896,7 +896,7 @@ jobs:
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -945,7 +945,7 @@ jobs:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -1051,7 +1051,7 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         files: ./report-output/*
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -1131,7 +1131,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -1171,7 +1171,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
     - name: Install pre-commit
@@ -1194,7 +1194,7 @@ jobs:
         pre-commit run --all-files
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
