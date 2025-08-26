@@ -64,36 +64,45 @@ jobs:
     - name: install llvm tools
       run: rustup component add llvm-tools-preview
 
-    - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
-        cache-dependency-glob: |
-          **/requirements-dev.txt
-          **/pyproject.toml
+        cache-dependency-glob: "**/pyproject.toml"
+
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: |
+          uv sync --no-install-project --all-extras --all-groups
 
     - name: Override pyarrow
-      run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
+      run: |
+        source .venv/bin/activate
+        uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
     - name: Override deltalake for pyarrow
       if: ${{ (matrix.pyarrow-version == '8.0.0') }}
-      run: uv pip install deltalake==0.10.0
+      run: |
+        source .venv/bin/activate
+        uv pip install deltalake==0.10.0
 
     # Rust code coverage does not work on ubuntu-latest, so we only run it on macOS
     # For more info: https://github.com/Eventual-Inc/Daft/issues/3801
     - name: Build library and Test with pytest (Linux)
       if: ${{ (runner.os == 'Linux') }}
       run: |
-        maturin develop
+        source .venv/bin/activate
+        maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
@@ -108,8 +117,9 @@ jobs:
     - name: Build library and Test with pytest with code coverage (macOS)
       if: ${{ (runner.os == 'macOS') }}
       run: |
+        source .venv/bin/activate
         cargo llvm-cov clean --workspace
-        maturin develop
+        maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
@@ -179,11 +189,18 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
-        architecture: x64
-    - run: pip install -U twine toml maturin
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
+        uv pip install -U twine toml maturin
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -191,11 +208,9 @@ jobs:
       with:
         key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
-
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
@@ -204,7 +219,9 @@ jobs:
 
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
-      run: maturin build --release --compatibility linux --out dist
+      run: |
+        source .venv/bin/activate
+        maturin build --release --compatibility linux --out dist
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
@@ -232,36 +249,32 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
-
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
-
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -271,6 +284,7 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
     - name: Run TPCH integration tests
       run: |
+        source .venv/bin/activate
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -315,34 +329,32 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -355,6 +367,7 @@ jobs:
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
+        source .venv/bin/activate
         pytest tests/integration/io -m 'integration and not benchmark' --durations=50
         pytest tests/io -m 'integration' --durations=50
       env:
@@ -407,34 +420,32 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -461,6 +472,7 @@ jobs:
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
+        source .venv/bin/activate
         pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -506,33 +518,32 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - uses: docker/setup-buildx-action@v3
     - uses: docker/build-push-action@v5
@@ -548,6 +559,7 @@ jobs:
         popd
     - name: Run Iceberg integration tests
       run: |
+        source .venv/bin/activate
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -592,33 +604,32 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Install ODBC Driver 18 for SQL Server
       run: |
@@ -633,6 +644,7 @@ jobs:
         popd
     - name: Run sql integration tests
       run: |
+        source .venv/bin/activate
         pytest tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -677,14 +689,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
@@ -704,22 +708,30 @@ jobs:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Run unity integration tests
       run: |
+        source .venv/bin/activate
         pytest tests/integration/unity -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -765,25 +777,22 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
@@ -791,10 +800,13 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Run AI provider integration tests
       run: |
+        source .venv/bin/activate
         pytest -m integration tests/integration/ai --credentials --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -859,21 +871,23 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-    - uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
-        python-version: '3.12' # Codspeed requires Python 3.12
+        python-version: '3.12'  # Codspeed requires Python 3.12
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --no-install-project --all-extras --all-groups
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
@@ -881,8 +895,8 @@ jobs:
         bun run build
     - name: Build Rust Library
       run: |
-        source activate
-        maturin develop --profile dev-bench
+        source .venv/bin/activate
+        maturin develop --uv --profile dev-bench
     - uses: actions/cache@v4
       env:
         cache-name: cache-tpch-data
@@ -892,7 +906,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v3
       with:
-        run: pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
+        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
@@ -1003,30 +1017,27 @@ jobs:
       with:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
-    - name: Set up Python ${{ env.python-version }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --no-install-project --all-extras --all-groups
     - name: Run doctests
       run: |
-        source activate
-        maturin develop
+        source .venv/bin/activate
+        maturin develop --uv
         make doctests
       env:
         DAFT_RUNNER: native
@@ -1087,47 +1098,49 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
 
     - name: Unix Build
       if: ${{ (runner.os != 'Windows') }}
       run: |
-        python -m venv venv
-        source venv/bin/activate
-        python -m pip install maturin
+        uv venv --seed .venv
+        source .venv/bin/activate
+        uv pip install maturin
         maturin build --out dist
 
     - name: Windows Build
       if: ${{ (runner.os == 'Windows') }}
       run: |
-        python -m venv venv
-        .\venv\Scripts\activate
-        python -m pip install maturin
+        uv venv --seed .venv
+        .\.venv\Scripts\activate
+        uv pip install maturin
         maturin build --out dist
 
     - name: Test Imports in Clean Env (Unix)
       if: ${{ (runner.os != 'Windows') }}
       run: |
         rm -rf daft
-        rm -rf venv
-        python -m venv venv
-        source venv/bin/activate
+        rm -rf .venv
+        uv venv --seed .venv
+        source .venv/bin/activate
         ls -R ./dist
-        pip install dist/*.whl
+        uv pip install dist/*.whl
         python -c 'import daft; from daft import *'
 
     - name: Test Imports in Clean Env (Windows)
       if: ${{ (runner.os == 'Windows') }}
       run: |
         rd -r daft
-        rd -r venv
-        python -m venv venv
-        .\venv\Scripts\activate
+        rd -r .venv
+        uv venv --seed .venv
+        .\.venv\Scripts\activate
         $FILES = Get-ChildItem -Path .\dist\*.whl -Force -Recurse
-        python -m pip install $FILES[0].FullName
+        uv pip install $FILES[0].FullName
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
@@ -1170,12 +1183,16 @@ jobs:
       python-version: '3.9'
     steps:
     - uses: actions/checkout@v4
-    - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
-    - name: Install pre-commit
-      run: uv pip install pre-commit
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
+        uv pip install pre-commit
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1191,6 +1208,7 @@ jobs:
         key: ${{ runner.os }}-python-${{ env.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
     - name: Python And Rust Style Check
       run: |
+        source .venv/bin/activate
         pre-commit run --all-files
 
     - name: Send Slack notification on failure

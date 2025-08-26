@@ -26,7 +26,7 @@ ifeq (, $(shell which uv))
 	$(PYTHON_VERSION) -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 else
-	uv venv $(VENV) -p $(PYTHON_VERSION)
+	uv venv --seed $(VENV) -p $(PYTHON_VERSION)
 endif
 ifeq ($(IS_M1), 1)
 	## Hacks to deal with grpcio compile errors on m1 macs
@@ -34,9 +34,9 @@ ifeq ($(IS_M1), 1)
 	GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1	\
 	CFLAGS="${CFLAGS} -I /opt/homebrew/opt/openssl/include"	\
 	LDFLAGS="${LDFLAGS} -L /opt/homebrew/opt/openssl/lib" \
-	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
+	uv sync --no-install-project --all-extras --all-groups
 else
-	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
+	uv sync --no-install-project --all-extras --all-groups
 endif
 
 .PHONY: check-toolchain
@@ -89,8 +89,8 @@ install-docs-deps:
 		curl -fsSL https://bun.sh/install | bash; \
 		export PATH="$$HOME/.bun/bin:$$PATH"; \
 	fi
-	. $(VENV_BIN)/activate && uv pip install -r requirements-doc.txt
-# 	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
+	$(VENV_BIN)/activate && uv sync --all-extras --all-groups
+	$(VENV_BIN)/activate && uv pip install -e docs/plugins/nav_hide_children
 
 .PHONY: docs
 docs: .venv install-docs-deps ## Build Daft documentation

@@ -24,7 +24,6 @@ on:
 env:
   PYTHON_VERSION: 3.11
   DAFT_ANALYTICS_ENABLED: '0'
-  UV_SYSTEM_PYTHON: 1
   RUST_DAFT_PKG_BUILD_TYPE: ${{ inputs.build_type }}
 
 defaults:
@@ -39,14 +38,24 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - uses: actions/setup-python@v5
+
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
+        uv pip install twine yq
+
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-    - run: pip install uv
-    - run: uv pip install twine yq setuptools_scm
 
     - name: Patch package version
       run: |

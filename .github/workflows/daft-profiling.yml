@@ -10,7 +10,6 @@ env:
   TPCH_SCALE_FACTOR: '4'
   TPCH_NUM_PARTS: '32'
   PYTHON_VERSION: '3.9'
-  UV_SYSTEM_PYTHON: 1
 
 
 jobs:
@@ -27,16 +26,17 @@ jobs:
         key: ${{ runner.os }}-profile
         cache-all-crates: 'true'
 
-    - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
 
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
       uses: nick-fields/retry@v3
@@ -44,7 +44,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --no-install-project --all-extras --all-groups
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
@@ -57,7 +57,7 @@ jobs:
     - name: Build Rust Library
       run: |
         source activate
-        maturin develop --release
+        maturin develop --release --uv
 
     - uses: actions/cache@v4
       env:
