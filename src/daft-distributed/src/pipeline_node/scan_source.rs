@@ -13,7 +13,10 @@ use super::{
     SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::{make_new_task_from_materialized_outputs, NodeID},
+    pipeline_node::{
+        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
+        make_new_task_from_materialized_outputs, NodeID,
+    },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -119,6 +122,114 @@ impl ScanSourceNode {
         };
 
         // Step 1: Materialize the scan task to get ray data pointers
+
+        // use fn append_plan_to_existing_task
+        // TODO: put this bad boi as a method on SubmittableTask's impl
+
+        let plan_builder = move |input| {
+            LocalPhysicalPlan::into_batches(
+                input,
+                batch_size,
+                true, // Strict batch sizes
+                StatsState::NotMaterialized,
+            )
+        };
+
+        let scan_and_into_batches_task = append_plan_to_existing_task(
+            SubmittableTask::new(self.make_source_tasks(
+                vec![single_scan_task].into(),
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )?),
+            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+            &plan_builder,
+        );
+        // a task with 2 operations:
+        //      (1) physical_scan
+        //      (2) into_batches
+
+        let maybe_materialized_output = scan_and_into_batches_task
+            .submit(&scheduler_handle)?
+            .await?;
+
+        /**
+
+            a single scan task generally corresponds to a single partition
+
+            could have multiple scan tasks in one file
+                e.g. parquet with row groups (constant time to offset into a row group)
+
+        --- have ---
+
+        1. create scan task
+        2. materialize scan task
+        3. generate into batches task
+        4. "return" this
+
+        --- want ---
+
+        1. create scan task
+        2. create into batches task and **append** to scan task
+        3. >> we cannot just *return* <<
+
+        we need to inform the scheduler that it can move these "batches" around freely
+        for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
+
+         */
+        if let Some(materialized_output) = maybe_materialized_output {
+            // Step 2: Split the materialized output into batches of size 'k'
+            let materialized_outputs = materialized_output.split_into_materialized_outputs();
+
+            // Step 3: Create into_batches tasks for each batch
+            // todo!("this won't work because materialized_outputs is a vec of length one, so .chunks(K) on [0] will be [0]");
+
+            for batch in materialized_outputs.chunks(batch_size) {
+                let batch_materialized_outputs = batch.to_vec();
+
+                let task = make_in_memory_task_from_materialized_outputs(
+                    TaskContext::from((&self.context, task_id_counter.next())),
+                    batch_materialized_outputs,
+                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                )?;
+
+                match result_tx.send(task).await {
+                    Ok(()) => (),
+                    Err(e) => {
+                        return Err(DaftError::InternalError(format!(
+                            "Failed to send internal batch to result channel: {e:?}"
+                        ))
+                        .into());
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn og_execute_optimized_scan(
+        self: Arc<Self>,
+        single_scan_task: ScanTaskLikeRef,
+        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+        batch_size: u64,
+    ) -> DaftResult<()> {
+        if batch_size == 0 {
+            return Err(
+                DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
+            );
+        }
+        let batch_size = match batch_size.try_into() {
+            Ok(bs) => bs,
+            Err(e) => {
+                return Err(DaftError::InternalError(format!(
+                "Batch size {batch_size} is too large to convert to usize on this platform: {e:?}"
+            ))
+                .into())
+            }
+        };
+
+        // Step 1: Materialize the scan task to get ray data pointers
         let submit_single_scan_task = SubmittableTask::new(self.make_source_tasks(
             vec![single_scan_task].into(),
             TaskContext::from((&self.context, task_id_counter.next())),
@@ -131,8 +242,12 @@ impl ScanSourceNode {
             let materialized_outputs = materialized_output.split_into_materialized_outputs();
 
             // Step 3: Create into_batches tasks for each batch
+            // todo!("this won't work because materialized_outputs is a vec of length one, so .chunks(K) on [0] will be [0]");
+
             for batch in materialized_outputs.chunks(batch_size) {
                 let batch_materialized_outputs = batch.to_vec();
+
+                //
 
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
