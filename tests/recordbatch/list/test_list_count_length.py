@@ -20,13 +20,13 @@ def fixed_table():
     return table.eval_expression_list([col("col").cast(fixed_dtype)])
 
 
-def test_list_lengths(table):
-    result = table.eval_expression_list([col("col").list.lengths()])
+def test_list_length(table):
+    result = table.eval_expression_list([col("col").list.length()])
     assert result.to_pydict() == {"col": [None, 0, 1, 1, 2, 2, 3]}
 
 
-def test_fixed_list_lengths(fixed_table):
-    result = fixed_table.eval_expression_list([col("col").list.lengths()])
+def test_fixed_list_length(fixed_table):
+    result = fixed_table.eval_expression_list([col("col").list.length()])
     assert result.to_pydict() == {"col": [2, 2, 2, 2, None]}
 
 
