@@ -3,7 +3,7 @@
 SHELL=/bin/bash
 VENV = .venv
 IS_M1 ?= 0
-WHICH_PYTHON ?= python3.11
+PYTHON_VERSION ?= python3.11
 
 # Hypothesis
 HYPOTHESIS_MAX_EXAMPLES ?= 100
@@ -23,7 +23,7 @@ endif
 
 .venv:  ## Set up virtual environment
 	@which uv > /dev/null || (echo "Error: uv is required but not installed. Please install uv first." && exit 1)
-	uv venv $(VENV) -p $(WHICH_PYTHON)
+	uv venv $(VENV) -p $(PYTHON_VERSION)
 ifeq ($(IS_M1), 1)
 	## Hacks to deal with grpcio compile errors on m1 macs
 	GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1 \
