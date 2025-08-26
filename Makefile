@@ -3,7 +3,7 @@
 SHELL=/bin/bash
 VENV = .venv
 IS_M1 ?= 0
-PYTHON_VERSION ?= python3.11
+WHICH_PYTHON ?= python3.11
 
 # Hypothesis
 HYPOTHESIS_MAX_EXAMPLES ?= 100
@@ -23,10 +23,10 @@ endif
 
 .venv:  ## Set up virtual environment
 ifeq (, $(shell which uv))
-	$(PYTHON_VERSION) -m venv $(VENV)
+	$(WHICH_PYTHON) -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 else
-	uv venv --seed $(VENV) -p $(PYTHON_VERSION)
+	uv venv --seed $(VENV) -p $(WHICH_PYTHON)
 endif
 ifeq ($(IS_M1), 1)
 	## Hacks to deal with grpcio compile errors on m1 macs
