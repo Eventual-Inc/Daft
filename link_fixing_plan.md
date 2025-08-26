@@ -4,7 +4,7 @@ This document tracks the project to update all links pointing to `core_concepts.
 
 | File | Link | New Link | Status |
 |---|---|---|---|
-| `docs/api/udf.md` | `../core_concepts.md#user-defined-functions-udf` | `../custom-code/udfs.md` | Done |
+| `docs/api/udf.md` | `../core_concepts.md#user-defined-functions-udf` | `../custom-code/udfs.md` | Done ([PR #5022](https://github.com/Eventual-Inc/Daft/pull/5022)) |
 | `docs/api/aggregations.md` | `../core_concepts.md#aggregations-and-grouping` | | Not started |
 | `docs/api/dataframe.md` | `../core_concepts.md#dataframe` | | Not started |
 | `docs/api/datatypes.md` | `../core_concepts.md#datatypes` | | Not started |
