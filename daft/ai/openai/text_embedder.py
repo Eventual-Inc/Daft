@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from openai import OpenAI, RateLimitError
+from openai import OpenAI, OpenAIError, RateLimitError
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
@@ -159,6 +159,8 @@ class OpenAITextEmbedder(TextEmbedder):
             # fall back to individual calls when rate limited
             # consider sleeping or other backoff mechanisms
             return [self._embed_text(text) for text in input_batch]
+        except OpenAIError as ex:
+            raise ValueError("The `embed_text` method encountered an OpenAI error.") from ex
 
     def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""
