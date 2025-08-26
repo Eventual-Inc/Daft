@@ -744,6 +744,7 @@ jobs:
         webhook-type: incoming-webhook
 
   integration-test-ai-credentialed:
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
