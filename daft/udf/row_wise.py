@@ -3,6 +3,10 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hints
 
+from daft.daft import row_wise_udf
+
+from ._internal import get_expr_args, get_unique_function_name
+
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
 else:
@@ -24,41 +28,35 @@ T = TypeVar("T")
 
 
 class RowWiseUdf(Generic[P, T]):
+    """A user-defined Daft row-wise function, created by calling `daft.func`.
+
+    Row-wise functions are called with data from one row at a time, and map that to a single output value for that row.
+    """
+
     def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None):
         self._inner = fn
+        self.name = get_unique_function_name(fn)
 
-        module_name = getattr(fn, "__module__")
-        qual_name: str = getattr(fn, "__qualname__")
-        if module_name:
-            self.name = f"{module_name}.{qual_name}"
-        else:
-            self.name = qual_name
-
-        type_hints = get_type_hints(fn)
         if return_dtype is None:
-            if "return" in type_hints:
-                self.return_dtype = DataType._infer_type(type_hints["return"])
-            else:
-                raise ValueError("return_dtype is required when function has no return annotation")
-        elif isinstance(return_dtype, DataType):
-            self.return_dtype = return_dtype
-        else:
-            self.return_dtype = DataType._infer_type(return_dtype)
+            type_hints = get_type_hints(fn)
+            if "return" not in type_hints:
+                raise ValueError(
+                    "`@daft.func` requires either a return type hint or the `return_dtype` argument to be specified."
+                )
+
+            return_dtype = type_hints["return"]
+        self.return_dtype = DataType._infer_type(return_dtype)
 
     def eval(self, *args: P.args, **kwargs: P.kwargs) -> T:
         """Run the decorated function eagerly and return the result immediately."""
         return self._inner(*args, **kwargs)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
-        expr_args = []
-        for arg in args:
-            if isinstance(arg, Expression):
-                expr_args.append(arg)
-        for arg in kwargs.values():
-            if isinstance(arg, Expression):
-                expr_args.append(arg)
+        expr_args = get_expr_args(args, kwargs)
 
-        return Expression._row_wise_udf(self.name, self._inner, self.return_dtype, (args, kwargs), expr_args)
+        return Expression._from_pyexpr(
+            row_wise_udf(self.name, self._inner, self.return_dtype._dtype, (args, kwargs), expr_args)
+        )
 
 
 def __call_async_batch(
