@@ -40,10 +40,10 @@ repos:
   - id: check-toml
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-  rev: v2.14.0
+  rev: v2.15.0
   hooks:
   - id: pretty-format-toml
-    args: [--autofix]
+    args: [--autofix, --no-sort]
     exclude: Cargo.lock
   - id: pretty-format-yaml
     args: [--autofix, --preserve-quotes]
@@ -113,6 +113,6 @@ repos:
     pass_filenames: false
 
 - repo: https://github.com/abravalheri/validate-pyproject
-  rev: v0.19
+  rev: v0.24.1
   hooks:
   - id: validate-pyproject
