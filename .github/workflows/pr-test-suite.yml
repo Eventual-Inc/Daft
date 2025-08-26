@@ -1122,6 +1122,8 @@ jobs:
         webhook-type: incoming-webhook
 
   test-imports-platform:
+    needs: skipcheck
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
