@@ -46,13 +46,13 @@ To set up your development environment:
      # or export it in your shell:
      export WHICH_PYTHON=python3
      ```
-2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
-3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
-4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
-5. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
-6. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
-7. Run `make .venv` from your newly cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
-8. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
+1. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
+1. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
+1. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
+1. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
+1. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
+1. Run `make .venv` from your newly cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
+1. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
 
 ### Developing
 
