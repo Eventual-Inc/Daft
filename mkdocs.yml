@@ -103,7 +103,6 @@ extra_javascript:
 - js/docsearch.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
 - js/readthedocs.js
-- js/runllm.js
 # Extensions
 markdown_extensions:
 - admonition
