@@ -294,6 +294,7 @@ class JsonSourceConfig:
 
 class WarcSourceConfig:
     """Configuration of a Warc data source."""
+
     def __init__(self) -> None: ...
 
 class DatabaseSourceConfig:
@@ -1708,6 +1709,7 @@ class AdaptivePhysicalPlanScheduler:
     ) -> AdaptivePhysicalPlanScheduler: ...
     def next(self) -> tuple[int | None, PhysicalPlanScheduler]: ...
     def is_done(self) -> bool: ...
+
     # Todo use in memory info here instead
     def update(
         self,
@@ -1961,6 +1963,7 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
         use_experimental_distributed_engine: bool | None = None,
         min_cpu_per_task: float | None = None,
@@ -2015,6 +2018,8 @@ class PyDaftExecutionConfig:
     def use_experimental_distributed_engine(self) -> bool: ...
     @property
     def min_cpu_per_task(self) -> float: ...
+    @property
+    def scantask_max_parallel(self) -> int: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
@@ -2028,11 +2033,15 @@ class PyDaftPlanningConfig:
 
 class PyDaftContext:
     def __init__(self) -> None: ...
+
     _runner: Runner[Any]
+
     def get_or_create_runner(self) -> Runner[PartitionT]: ...
     def get_or_infer_runner_type(self) -> str: ...
+
     _daft_execution_config: PyDaftExecutionConfig
     _daft_planning_config: PyDaftPlanningConfig
+
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig: ...
     @property
