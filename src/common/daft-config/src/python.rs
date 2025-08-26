@@ -101,6 +101,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
         scantask_splitting_level=None,
+        scantask_max_parallel=None,
         native_parquet_writer=None,
         use_experimental_distributed_engine=None,
         min_cpu_per_task=None,
@@ -132,6 +133,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
+        scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
         use_experimental_distributed_engine: Option<bool>,
         min_cpu_per_task: Option<f64>,
@@ -233,6 +235,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.scantask_splitting_level = scantask_splitting_level;
+        }
+
+        if let Some(scantask_max_parallel) = scantask_max_parallel {
+            config.scantask_max_parallel = scantask_max_parallel;
         }
 
         if let Some(native_parquet_writer) = native_parquet_writer {
@@ -361,6 +367,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn scantask_splitting_level(&self) -> PyResult<i32> {
         Ok(self.config.scantask_splitting_level)
+    }
+
+    #[getter]
+    fn scantask_max_parallel(&self) -> PyResult<usize> {
+        Ok(self.config.scantask_max_parallel)
     }
 
     #[getter]

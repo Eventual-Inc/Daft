@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import subprocess
 import sys
 
 import pytest
+
+import daft
+from tests.conftest import get_tests_daft_runner_name
 
 
 @contextlib.contextmanager
@@ -282,3 +286,30 @@ print(daft.context.get_context().get_or_infer_runner_type())
             env={"DAFT_RUNNER": daft_runner_envvar},
         )
         assert result.stdout.decode().strip() == f"{daft_runner_envvar}\nray"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+def test_use_default_scantask_max_parallelism():
+    with with_null_env():
+        str_io = io.StringIO()
+        df = daft.range(start=0, end=1024, partitions=10)
+        df.explain(show_all=True, file=str_io)
+        assert "Num Parallel Scan Tasks = 8" in str_io.getvalue().strip()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+def test_set_scantask_max_parallelism_less_than_partition_num():
+    with daft.execution_config_ctx(scantask_max_parallel=7):
+        str_io = io.StringIO()
+        df = daft.range(start=0, end=1024, partitions=10)
+        df.explain(show_all=True, file=str_io)
+        assert "Num Parallel Scan Tasks = 7" in str_io.getvalue().strip()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+def test_set_scantask_max_parallelism_greater_than_partition_num():
+    with daft.execution_config_ctx(scantask_max_parallel=17):
+        str_io = io.StringIO()
+        df = daft.range(start=0, end=1024, partitions=10)
+        df.explain(show_all=True, file=str_io)
+        assert "Num Parallel Scan Tasks = 10" in str_io.getvalue().strip()
