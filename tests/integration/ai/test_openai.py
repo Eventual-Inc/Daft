@@ -22,7 +22,7 @@ from daft.functions.ai import embed_text
 def skip_no_credential(pytestconfig):
     if not pytestconfig.getoption("--credentials"):
         pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
-    if "OPENAI_API_KEY" not in os.environ:
+    if os.environ.get("OPENAI_API_KEY") is None:
         pytest.skip(reason="OpenAI integration tests require the OPENAI_API_KEY environment variable.")
 
 
