@@ -96,6 +96,7 @@ from daft.io import (
     read_video_frames,
     read_warc,
     read_huggingface,
+    read_mcap,
 )
 from daft.series import Series
 from daft.session import (
@@ -225,6 +226,7 @@ __all__ = [
     "read_iceberg",
     "read_json",
     "read_lance",
+    "read_mcap",
     "read_parquet",
     "read_sql",
     "read_table",
