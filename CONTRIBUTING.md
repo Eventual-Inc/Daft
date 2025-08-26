@@ -46,6 +46,7 @@ To set up your development environment:
      # or export it in your shell:
      export WHICH_PYTHON=python3
      ```
+1. Install [uv](https://docs.astral.sh/uv/). On macOS, you can run `brew install uv`.
 1. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
 1. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
 1. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
