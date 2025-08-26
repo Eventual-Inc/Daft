@@ -2,7 +2,10 @@ use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{unity::UnityConfig, AzureConfig, GCSConfig, HTTPConfig, S3Config};
+use crate::{
+    huggingface::HuggingFaceConfig, unity::UnityConfig, AzureConfig, GCSConfig, HTTPConfig,
+    S3Config,
+};
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IOConfig {
     pub s3: S3Config,
@@ -10,6 +13,7 @@ pub struct IOConfig {
     pub gcs: GCSConfig,
     pub http: HTTPConfig,
     pub unity: UnityConfig,
+    pub hf: HuggingFaceConfig,
 }
 
 impl IOConfig {
@@ -35,6 +39,10 @@ impl IOConfig {
         res.push(format!(
             "Unity config = {{ {} }}",
             self.unity.multiline_display().join(", ")
+        ));
+        res.push(format!(
+            "Hugging Face config = {{ {} }}",
+            self.hf.multiline_display().join(", ")
         ));
         res
     }

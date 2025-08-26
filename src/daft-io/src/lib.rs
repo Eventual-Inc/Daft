@@ -35,9 +35,9 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
-use futures::stream::BoxStream;
+use futures::{stream::BoxStream, FutureExt};
 use object_io::StreamingRetryParams;
-pub use object_io::{FileMetadata, GetResult};
+pub use object_io::{FileMetadata, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use s3_like::{s3_config_from_env, S3LikeSource, S3MultipartWriter, S3PartBuffer};
@@ -45,7 +45,7 @@ use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
-use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
+use self::{http::HttpSource, local::LocalSource};
 pub use crate::range::GetRange;
 
 #[derive(Debug, Snafu)]
@@ -206,19 +206,21 @@ impl IOClient {
             config,
         })
     }
-
-    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source_and_path(
+        &self,
+        input: &str,
+    ) -> Result<(Arc<dyn ObjectSource>, String)> {
         let (source_type, path) = parse_url(input)?;
 
         {
             if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
-                return Ok(client.clone());
+                return Ok((client.clone(), path.to_string()));
             }
         }
         let mut w_handle = self.source_type_to_store.write().await;
 
         if let Some(client) = w_handle.get(&source_type) {
-            return Ok(client.clone());
+            return Ok((client.clone(), path.to_string()));
         }
 
         let new_source = match source_type {
@@ -238,7 +240,8 @@ impl IOClient {
                 GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
             }
             SourceType::HF => {
-                HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+                HFSource::get_client(&self.config.hf, &self.config.http).await?
+                    as Arc<dyn ObjectSource>
             }
             SourceType::Unity => {
                 #[cfg(feature = "python")]
@@ -255,7 +258,13 @@ impl IOClient {
         if w_handle.get(&source_type).is_none() {
             w_handle.insert(source_type, new_source.clone());
         }
-        Ok(new_source)
+        Ok((new_source, path.to_string()))
+    }
+
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+        self.get_source_and_path(input)
+            .map(|f| f.map(|(source, _)| source))
+            .await
     }
 
     pub async fn glob(

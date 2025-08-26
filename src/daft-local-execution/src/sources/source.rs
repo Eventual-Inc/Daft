@@ -20,7 +20,7 @@ use futures::{stream::BoxStream, StreamExt};
 use crate::{
     channel::{create_channel, Receiver},
     ops::{NodeCategory, NodeInfo, NodeType},
-    pipeline::{NodeName, PipelineNode, RuntimeContext},
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{CountingSender, RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY},
     ExecutionRuntimeContext,
 };
@@ -72,6 +72,7 @@ pub trait Source: Send + Sync {
         &self,
         maintain_order: bool,
         io_stats: IOStatsRef,
+        chunk_size: Option<usize>,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
 }
@@ -81,6 +82,7 @@ pub(crate) struct SourceNode {
     runtime_stats: Arc<SourceStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
+    morsel_size_requirement: MorselSizeRequirement,
 }
 
 impl SourceNode {
@@ -92,6 +94,7 @@ impl SourceNode {
             runtime_stats,
             plan_stats,
             node_info: Arc::new(info),
+            morsel_size_requirement: MorselSizeRequirement::default(),
         }
     }
 
@@ -116,6 +119,7 @@ impl TreeDisplay for SourceNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
 
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
@@ -147,6 +151,13 @@ impl PipelineNode for SourceNode {
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
         vec![]
     }
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        _default_morsel_size: MorselSizeRequirement,
+    ) {
+        self.morsel_size_requirement = downstream_requirement;
+    }
     fn start(
         &self,
         maintain_order: bool,
@@ -159,10 +170,17 @@ impl PipelineNode for SourceNode {
 
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let chunk_size = match self.morsel_size_requirement {
+            MorselSizeRequirement::Strict(size) => Some(size),
+            MorselSizeRequirement::Flexible(_, upper) => Some(upper),
+        };
+
         runtime_handle.spawn_local(
             async move {
                 let mut has_data = false;
-                let mut source_stream = source.get_data(maintain_order, io_stats).await?;
+                let mut source_stream = source
+                    .get_data(maintain_order, io_stats, chunk_size)
+                    .await?;
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
                     stats_manager.activate_node(node_id);

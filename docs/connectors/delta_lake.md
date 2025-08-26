@@ -10,7 +10,7 @@ Daft currently supports:
 
 3. **Multi-cloud Support:** Daft supports reading Delta Lake tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 
-A detailed Delta Lake roadmap for Daft can be found on [our Github issues](https://github.com/Eventual-Inc/Daft/issues/2457). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
+A detailed Delta Lake roadmap for Daft can be found on [our GitHub issues](https://github.com/Eventual-Inc/Daft/issues/2457). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 
 ## Installing Daft with Delta Lake Support
 

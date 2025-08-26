@@ -31,6 +31,29 @@ pub fn assert_optimized_plan_with_rules_eq(
 }
 
 /// Helper that creates an optimizer with the provided rules registered, optimizes
+/// the provided plan with said optimizer, and compares the optimized plan with
+/// the provided expected plan.
+pub fn assert_optimized_plan_with_rules_repr_eq(
+    plan: Arc<LogicalPlan>,
+    expected_repr: &str,
+    rule_batches: Vec<RuleBatch>,
+) -> DaftResult<()> {
+    let unoptimized_plan = plan.clone();
+    let optimized_plan = optimize_with_rules(plan, rule_batches)?.repr_indent();
+
+    assert_eq!(
+        optimized_plan,
+        expected_repr,
+        "\n\nOptimized plan not equal to expected.\n\nBefore Optimization:\n{}\n\nOptimized:\n{}\n\nExpected:\n{}",
+        unoptimized_plan.repr_indent(),
+        optimized_plan,
+        expected_repr
+    );
+
+    Ok(())
+}
+
+/// Helper that creates an optimizer with the provided rules registered, optimizes
 /// the provided plan with said optimizer, and expect to return the expected error
 /// during the optimization process.
 pub fn assert_optimized_plan_with_rules_err(
@@ -45,7 +68,7 @@ pub fn assert_optimized_plan_with_rules_err(
     Ok(())
 }
 
-fn optimize_with_rules(
+pub fn optimize_with_rules(
     plan: Arc<LogicalPlan>,
     rule_batches: Vec<RuleBatch>,
 ) -> DaftResult<Arc<LogicalPlan>> {

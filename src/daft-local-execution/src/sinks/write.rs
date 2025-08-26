@@ -23,9 +23,9 @@ use super::blocking_sink::{
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
     ops::NodeType,
-    pipeline::NodeName,
+    pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
+    ExecutionTaskSpawner,
 };
 
 #[derive(Default)]
@@ -205,7 +205,7 @@ impl BlockingSink for WriteSink {
 
     fn dispatch_spawner(
         &self,
-        _runtime_handle: &ExecutionRuntimeContext,
+        _morsel_size_requirement: Option<MorselSizeRequirement>,
     ) -> Arc<dyn DispatchSpawner> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))

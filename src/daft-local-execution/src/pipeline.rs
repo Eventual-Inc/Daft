@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt::Display, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -14,8 +14,9 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
-    Pivot, Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    Pivot, Project, Sample, SamplingMethod, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -70,11 +71,81 @@ use crate::{
 
 pub type NodeName = Cow<'static, str>;
 
+#[derive(Copy, Clone, Debug)]
+pub enum MorselSizeRequirement {
+    // Fixed size morsel
+    Strict(usize),
+    // Flexible size morsel, between lower and upper bound
+    Flexible(usize, usize),
+}
+
+impl Display for MorselSizeRequirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Strict(size) => write!(f, "{}", size),
+            Self::Flexible(lower, upper) => write!(f, "Range({lower}, {upper}]"),
+        }
+    }
+}
+
+impl Default for MorselSizeRequirement {
+    fn default() -> Self {
+        Self::Flexible(
+            0,
+            common_daft_config::DaftExecutionConfig::default().default_morsel_size,
+        )
+    }
+}
+
+impl MorselSizeRequirement {
+    pub fn combine_requirements(
+        current_requirement: Option<Self>,
+        downstream_requirement: Self,
+    ) -> Self {
+        match (current_requirement, downstream_requirement) {
+            // If there is no current requirement and the downstream requirement is strict, use flexible with 0 as lower bound
+            (None, Self::Strict(size)) => Self::Flexible(0, size),
+            // If there is no current requirement and the downstream requirement is flexible, use flexible with 0 as lower bound
+            (None, Self::Flexible(_, upper)) => Self::Flexible(0, upper),
+            // If the current requirement is strict use it regardless of the downstream requirement
+            (Some(Self::Strict(current_size)), _) => Self::Strict(current_size),
+            // If the current requirement is flexible and the downstream requirement is strict, use the minimum of the two sizes
+            (
+                Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
+                Self::Strict(strict_size),
+            ) => Self::Flexible(
+                lower_flexible_size.min(strict_size),
+                strict_size.min(upper_flexible_size),
+            ),
+            // If the current requirement is flexible and the downstream requirement is flexible, use the intersection of ranges
+            (
+                Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
+                Self::Flexible(lower_other_size, upper_other_size),
+            ) => {
+                let lower = lower_flexible_size.max(lower_other_size);
+                let upper = upper_flexible_size.min(upper_other_size);
+
+                // If ranges don't overlap, fall back to downstream requirement
+                if lower > upper {
+                    Self::Flexible(lower_other_size, upper_other_size)
+                } else {
+                    Self::Flexible(lower, upper)
+                }
+            }
+        }
+    }
+}
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     #[allow(clippy::borrowed_box)]
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>>;
     fn name(&self) -> Arc<str>;
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        default_requirement: MorselSizeRequirement,
+    );
     fn start(
         &self,
         maintain_order: bool,
@@ -231,7 +302,21 @@ pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
     s
 }
 
-pub fn physical_plan_to_pipeline(
+pub fn translate_physical_plan_to_pipeline(
+    physical_plan: &LocalPhysicalPlan,
+    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
+    cfg: &Arc<DaftExecutionConfig>,
+    ctx: &RuntimeContext,
+) -> crate::Result<Box<dyn PipelineNode>> {
+    let mut pipeline_node = physical_plan_to_pipeline(physical_plan, psets, cfg, ctx)?;
+    pipeline_node.propagate_morsel_size_requirement(
+        MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
+        MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
+    );
+    Ok(pipeline_node)
+}
+
+fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
@@ -240,7 +325,7 @@ pub fn physical_plan_to_pipeline(
     use daft_local_plan::PhysicalScan;
 
     use crate::sources::scan_task::ScanTaskSource;
-    let out: Box<dyn PipelineNode> = match physical_plan {
+    let pipeline_node: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
         }
@@ -424,7 +509,6 @@ pub fn physical_plan_to_pipeline(
             passthrough_columns,
             stats_state,
             schema,
-            ..
         }) => {
             let proj_op =
                 UdfOperator::try_new(project.clone(), passthrough_columns.clone(), schema)
@@ -470,13 +554,20 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Sample(Sample {
             input,
-            fraction,
+            sampling_method,
             with_replacement,
             seed,
             stats_state,
             ..
         }) => {
-            let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
+            let sample_op = match sampling_method {
+                SamplingMethod::Fraction(fraction) => {
+                    SampleOperator::new(*fraction, *with_replacement, *seed)
+                }
+                SamplingMethod::Size(size) => {
+                    SampleOperator::new_size(*size, *with_replacement, *seed)
+                }
+            };
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(sample_op),
@@ -505,10 +596,11 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::IntoBatches(IntoBatches {
             input,
             batch_size,
+            strict,
             stats_state,
             ..
         }) => {
-            let into_batches_op = IntoBatchesOperator::new(*batch_size);
+            let into_batches_op = IntoBatchesOperator::new(*batch_size, *strict);
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(into_batches_op),
@@ -1132,5 +1224,5 @@ pub fn physical_plan_to_pipeline(
         }
     };
 
-    Ok(out)
+    Ok(pipeline_node)
 }

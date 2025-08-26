@@ -1,8 +1,6 @@
 use common_image::Image;
 
-use crate::{
-    array::ops::image::AsImageObj, datatypes::logical::FileArray, lit::Literal, prelude::*,
-};
+use crate::{array::ops::image::AsImageObj, datatypes::FileArray, lit::Literal, prelude::*};
 
 fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
 where
@@ -268,6 +266,7 @@ impl_array_get_lit!(DateArray, Date);
 impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);
 impl_array_get_lit!(EmbeddingArray, Embedding);
+impl_array_get_lit!(FileArray, File);
 
 impl_array_get_lit!(Decimal128Array, DataType::Decimal128(precision, scale) => |v| Literal::Decimal(v, *precision as _, *scale as _));
 impl_array_get_lit!(TimestampArray, DataType::Timestamp(tu, tz) => |v| Literal::Timestamp(v, *tu, tz.clone()));
@@ -277,15 +276,3 @@ impl_array_get_lit!(FixedShapeTensorArray, DataType::FixedShapeTensor(_, shape) 
 
 impl_image_array_get_lit!(ImageArray);
 impl_image_array_get_lit!(FixedShapeImageArray);
-
-impl FileArray {
-    pub fn get_lit(&self, idx: usize) -> Literal {
-        assert!(
-            idx < self.len(),
-            "Out of bounds: {} vs len: {}",
-            idx,
-            self.len()
-        );
-        map_or_null(self.get(idx), Literal::File)
-    }
-}

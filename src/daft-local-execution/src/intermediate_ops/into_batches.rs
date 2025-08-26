@@ -8,15 +8,22 @@ use tracing::Span;
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType,
+    pipeline::{MorselSizeRequirement, NodeName},
+    ExecutionTaskSpawner,
+};
 
 pub struct IntoBatchesOperator {
     batch_size: usize,
+    strict: bool,
 }
 
 impl IntoBatchesOperator {
-    pub fn new(batch_size: usize) -> Self {
-        Self { batch_size }
+    const BATCH_SIZE_LOWER_BOUND_THRESHOLD: f64 = 0.8;
+
+    pub fn new(batch_size: usize, strict: bool) -> Self {
+        Self { batch_size, strict }
     }
 }
 
@@ -55,10 +62,20 @@ impl IntermediateOperator for IntoBatchesOperator {
     fn multiline_display(&self) -> Vec<String> {
         vec![format!("IntoBatches: {}", self.batch_size)]
     }
-    fn morsel_size_range(&self, _runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        (self.batch_size, self.batch_size)
-    }
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
+    }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        match self.strict {
+            true => Some(MorselSizeRequirement::Strict(self.batch_size)),
+            false => {
+                let lower_bound =
+                    (self.batch_size as f64 * Self::BATCH_SIZE_LOWER_BOUND_THRESHOLD) as usize;
+                Some(MorselSizeRequirement::Flexible(
+                    lower_bound,
+                    self.batch_size,
+                ))
+            }
+        }
     }
 }
