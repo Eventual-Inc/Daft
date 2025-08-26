@@ -15,6 +15,7 @@ def test_convert_to_s3_config():
         connect_timeout_ms=1000,
         anonymous=True,
         force_virtual_addressing=True,
+        multipart_size=8 * 1024 * 1024,
     )
     expected_s3_config = {
         "region": "us-east-2",
@@ -26,6 +27,7 @@ def test_convert_to_s3_config():
         "connect_timeout": "1000ms",
         "skip_signature": "true",
         "virtual_hosted_style_request": "true",
+        "multipart_size": "8388608",
     }
     table_uri = "s3://dummy_bucket/path"
 
