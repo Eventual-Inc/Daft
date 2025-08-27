@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 
 import daft
-from daft.sql.sql import SQLCatalog
 
 
 def test_partitioning_exprs():
@@ -19,7 +18,7 @@ def test_partitioning_exprs():
             ],
         }
     )
-    catalog = SQLCatalog({"test": df})
+    bindings = {"test": df}
     expected = (
         df.select(
             daft.col("date").partitioning.days().alias("date_days"),
@@ -42,6 +41,6 @@ def test_partitioning_exprs():
         partitioning_iceberg_truncate(id, 10) AS id_truncate
     FROM test
     """
-    actual = daft.sql(sql, catalog).collect().to_pydict()
+    actual = daft.sql(sql, **bindings).collect().to_pydict()
 
     assert actual == expected

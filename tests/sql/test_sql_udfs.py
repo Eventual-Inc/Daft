@@ -5,7 +5,6 @@ import ast
 import pytest
 
 import daft
-from daft.sql import SQLCatalog
 
 
 def test_sql_udf():
@@ -15,17 +14,17 @@ def test_sql_udf():
     def multiply_by_n(data, n):
         return [i * n for i in data]
 
-    cat = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     expected = {"b": [2, 4, 6]}
-    actual = daft.sql("select multiply_by_n(a, n:=2) as b from df", cat).to_pydict()
+    actual = daft.sql("select multiply_by_n(a, n:=2) as b from df", **bindings).to_pydict()
 
     assert actual == expected
 
 
 def test_sql_udf_ambigious_name():
     df = daft.from_pydict({"a": [1, 2, 3]})
-    cat = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def multiply_by_n(data, n):
@@ -36,25 +35,25 @@ def test_sql_udf_ambigious_name():
         return [i * n for i in data]
 
     with pytest.raises(Exception, match="Invalid operation: Ambigiuous identifier for Function: found"):
-        daft.sql("select multiply_by_n(a, n:=2) from df", cat).to_pydict()
+        daft.sql("select multiply_by_n(a, n:=2) from df", **bindings).to_pydict()
 
 
 def test_sql_udf_multi_column():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
-    cat = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def multiply(a, b):
         return a * b
 
     expected = {"a": [4, 10, 18]}
-    actual = daft.sql("select multiply(a, b) as a from df", cat).to_pydict()
+    actual = daft.sql("select multiply(a, b) as a from df", **bindings).to_pydict()
     assert actual == expected
 
 
 def test_sql_udf_multi_column_and_kwargs():
     df = daft.from_pydict({"first_name": ["Alice", "Bob", "Charlie"], "last_name": ["Smith", "Johnson", "Williams"]})
-    cat = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     @daft.udf(return_dtype=str)
     def make_greeting(a, b, greeting="hello"):
@@ -71,7 +70,7 @@ def test_sql_udf_multi_column_and_kwargs():
             make_greeting(first_name, last_name, greeting:='hi') as greeting2
         from df
     """,
-        cat,
+        **bindings,
     ).to_pydict()
     assert actual == expected
 
@@ -93,9 +92,9 @@ def test_sql_udf_various_datatypes(value, return_type):
 
     df = daft.from_pydict({"x": [i for i in range(10)]})
 
-    cat = SQLCatalog({"df": df})
+    bindings = {"df": df}
     query = f"select udf(x, literal:={value}) as x from df"
-    actual = daft.sql(query, cat).to_pydict()
+    actual = daft.sql(query, **bindings).to_pydict()
 
     if return_type is str:
         # remove the quotes
