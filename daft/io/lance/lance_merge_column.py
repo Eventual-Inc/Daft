@@ -35,7 +35,7 @@ class FragmentHandler:
         return results
 
 
-def merge_columns(
+def merge_columns_internal(
     lance_ds: lance.LanceDataset,
     uri: str,
     *,

@@ -36,7 +36,7 @@ class TestCustomTask:
             )
 
         # Add columns
-        daft.merge_columns_lance(
+        daft.io.lance.merge_columns(
             path,
             transform=double_score,
             read_columns=["c"],

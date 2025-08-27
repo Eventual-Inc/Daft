@@ -7,7 +7,7 @@ from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
 from daft.dependencies import pa
-from daft.io.lance.lance_merge_column import merge_columns
+from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.builder import LogicalPlanBuilder
@@ -134,7 +134,7 @@ def read_lance(
 
 
 @PublicAPI
-def merge_columns_lance(
+def merge_columns(
     url: str,
     io_config: Optional[IOConfig] = None,
     *,
@@ -188,7 +188,7 @@ def merge_columns_lance(
         ...     import pyarrow.compute as pc
         ...
         ...     return batch.append_column("new_column", pc.multiply(batch["c"], 2))
-        >>> daft.merge_columns_lance("s3://my-lancedb-bucket/data/", transform=double_score)
+        >>> daft.io.lance.merge_columns("s3://my-lancedb-bucket/data/", transform=double_score)
     """
     try:
         import lance
@@ -211,7 +211,7 @@ def merge_columns_lance(
         metadata_cache_size_bytes=metadata_cache_size_bytes,
     )
 
-    merge_columns(
+    merge_columns_internal(
         lance_ds,
         url,
         transform=transform,
