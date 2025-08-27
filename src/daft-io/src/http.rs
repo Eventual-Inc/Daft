@@ -6,10 +6,12 @@ use std::{
     time::Duration,
 };
 
+use async_recursion::async_recursion;
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
 use regex::Regex;
+use reqwest::StatusCode;
 use reqwest_middleware::{
     reqwest::header::{self, CONTENT_LENGTH, RANGE},
     ClientBuilder, ClientWithMiddleware,
@@ -17,6 +19,7 @@ use reqwest_middleware::{
 use reqwest_retry::{policies::ExponentialBackoff, Jitter, RetryTransientMiddleware};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
+use uuid::Uuid;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
@@ -32,6 +35,11 @@ const HTTP_DELIMITER: &str = "/";
 static HTML_A_TAG_HREF_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap()
 });
+
+/// Check if a URL is a Hugging Face domain
+fn is_huggingface_domain(uri: &str) -> bool {
+    uri.contains("huggingface.co")
+}
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -221,18 +229,34 @@ impl HttpSource {
 
         Ok(Self { client }.into())
     }
-}
 
-#[async_trait]
-impl ObjectSource for HttpSource {
-    async fn get(
+    // Currently with requests, if a request fails, we retry with cache busting.
+    // Then if that fails again, we retry but without a range request.
+    // If that ultimately fails, we return the error.
+    #[async_recursion]
+    async fn request(
         &self,
         uri: &str,
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
-    ) -> super::Result<GetResult> {
-        let request = self.client.get(uri);
-        let request = match range {
+        cache_bust: bool,
+    ) -> super::Result<reqwest::Response> {
+        let (new_uri, new_range) = if cache_bust && is_huggingface_domain(uri) {
+            if uri.contains("cachebust") {
+                // Hugging Face is buggy with range requests. If we already attempted cache busting, try removing the range request.
+                (uri.to_string(), None)
+            } else {
+                let cachebuster = Uuid::new_v4();
+                let separator = if uri.contains('?') { "&" } else { "?" };
+                let new_uri = format!("{}{}cachebust={}", uri, separator, cachebuster);
+                (new_uri, range)
+            }
+        } else {
+            (uri.to_string(), range)
+        };
+
+        let request = self.client.get(&new_uri);
+        let request = match &new_range {
             None => request,
             Some(range) => {
                 range.validate().context(InvalidRangeRequestSnafu)?;
@@ -243,10 +267,54 @@ impl ObjectSource for HttpSource {
         let response = request
             .send()
             .await
-            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
-        let response = response
+            .context(UnableToConnectSnafu::<String> {
+                path: new_uri.clone(),
+            })?;
+
+        match response.error_for_status() {
+            Err(e) => {
+                let status_code = e.status();
+                match status_code {
+                    // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
+                    // Retry with cache busting to bypass the improperly cached response and get correct file metadata.
+                    Some(StatusCode::RANGE_NOT_SATISFIABLE) if is_huggingface_domain(&new_uri) => {
+                        self.request(&new_uri, new_range, io_stats, true).await
+                    }
+                    _ => Err(e).context(UnableToOpenFileSnafu::<String> {
+                        path: new_uri.into(),
+                    })?,
+                }
+            }
+            Ok(res) => {
+                // Check if we got a 206 (Partial Content) response with zero content length.
+                // This can happen due to Hugging Face's buggy caching. Retry with cache busting.
+                if res.status() == StatusCode::PARTIAL_CONTENT
+                    && res.content_length() == Some(0)
+                    && is_huggingface_domain(&new_uri)
+                {
+                    self.request(&new_uri, new_range, io_stats, true).await
+                } else {
+                    Ok(res)
+                }
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl ObjectSource for HttpSource {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<GetRange>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
+        let response = self
+            .request(uri, range, io_stats.clone(), false)
+            .await?
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
         if let Some(is) = io_stats.as_ref() {
             is.mark_get_requests(1);
         }
