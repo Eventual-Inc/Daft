@@ -400,7 +400,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 profile_name,
                 multipart_size: multipart_size.unwrap_or(default.multipart_size),
                 multipart_max_concurrency: multipart_max_concurrency
-                   .unwrap_or(default.multipart_max_concurrency),
+                    .unwrap_or(default.multipart_max_concurrency),
             };
 
             Ok(IOConfig {
