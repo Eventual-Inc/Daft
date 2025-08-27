@@ -54,7 +54,7 @@ def anonymous_minio_io_config() -> daft.io.IOConfig:
 
 @pytest.fixture(scope="session")
 def aws_public_s3_config(request) -> daft.io.IOConfig:
-    # Use anonymous mode to avoid having to search for credentials in the Github Runner
+    # Use anonymous mode to avoid having to search for credentials in the GitHub Runner
     # If pytest is run with `--credentials` then we set anonymous=None to go down the credentials chain
     anonymous = None if request.config.getoption("--credentials") else True
 
@@ -69,7 +69,7 @@ def aws_public_s3_config(request) -> daft.io.IOConfig:
 
 @pytest.fixture(scope="session")
 def gcs_public_config(request) -> daft.io.IOConfig:
-    # Use anonymous mode to avoid having to search for credentials in the Github Runner
+    # Use anonymous mode to avoid having to search for credentials in the GitHub Runner
     # If pytest is run with `--credentials` then we set anonymous=None to go down the credentials chain
     anonymous = None if request.config.getoption("--credentials") else True
     return daft.io.IOConfig(gcs=daft.io.GCSConfig(project_id=None, anonymous=anonymous))

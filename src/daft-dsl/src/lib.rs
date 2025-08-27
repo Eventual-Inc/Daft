@@ -45,8 +45,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::duration_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::interval_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::decimal_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::file_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::file_bytes_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::list_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::udf, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::row_wise_udf, parent)?)?;

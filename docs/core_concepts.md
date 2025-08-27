@@ -994,9 +994,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 #### JSON Expressions
 
-If you have a column of JSON strings, Daft provides the [`.json.*`](api/expressions.md#daft.expressions.expressions.ExpressionJsonNamespace) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
-
-<!-- todo(docs - cc): add relative path to .json after figure out json namespace-->
+If you have a column of JSON strings, Daft provides the [`.jq()`](api/expressions.md#daft.expressions.expressions.Expression.jq) method to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
 
 === "🐍 Python"
     ``` python
@@ -1708,7 +1706,7 @@ Daft abstracts away the in-memory representation of your data and provides kerne
 
 <!-- todo(docs - cc): add relative path to expressions image page after figure out image namespace-->
 
-Please add suggestions for new DataTypes to our Github Discussions page!
+Please add suggestions for new DataTypes to our GitHub Discussions page!
 
 ## SQL
 

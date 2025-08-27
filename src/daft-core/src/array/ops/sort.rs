@@ -11,13 +11,13 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FileArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
-        ExtensionArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray, NullArray,
-        Utf8Array,
+        ExtensionArray, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray,
+        NullArray, Utf8Array,
     },
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
     series::Series,

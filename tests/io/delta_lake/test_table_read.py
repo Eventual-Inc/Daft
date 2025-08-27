@@ -25,6 +25,16 @@ def test_deltalake_read_basic(tmp_path, base_table):
     assert_pyarrow_tables_equal(df.to_arrow(), base_table)
 
 
+def test_deltalake_read_basic_sql(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
+    path = tmp_path / "some_table"
+    deltalake.write_deltalake(path, base_table)
+    df = daft.sql(f"select * from read_deltalake('{path!s}')")
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(deltalake.DeltaTable(path).schema().to_arrow()))
+    assert df.schema() == expected_schema
+    assert_pyarrow_tables_equal(df.to_arrow(), base_table)
+
+
 def test_deltalake_read_full(deltalake_table):
     deltalake = pytest.importorskip("deltalake")
     path, catalog_table, io_config, parts = deltalake_table

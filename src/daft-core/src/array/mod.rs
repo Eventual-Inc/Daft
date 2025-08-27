@@ -1,3 +1,4 @@
+pub mod file_array;
 mod fixed_size_list_array;
 pub mod from;
 pub mod growable;

@@ -49,7 +49,6 @@ import numpy as np
 import daft
 from daft import Window, col
 from daft.functions import rank
-from daft.sql.sql import SQLCatalog
 ```
 
 ## Data Generation: Setting Up Our Chocolate Contest
@@ -508,7 +507,7 @@ With just a handful of window function calls, we've calculated:
 For those more familiar with SQL, Daft also supports these window operations through SQL syntax. See also [Window Functions SQL Reference](../sql/window_functions.md) in Daft Documentation.
 
 ```python
-catalog = SQLCatalog({"race_data": df})
+bindings = {"race_data": df}
 
 sql_df = daft.sql(
     """
@@ -544,7 +543,7 @@ sql_df = daft.sql(
     FROM base
     ORDER BY contestant, time
     """,
-    catalog=catalog,
+    **bindings
 ).collect()
 ```
 
