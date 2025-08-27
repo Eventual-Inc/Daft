@@ -226,7 +226,16 @@ impl IOClient {
         let new_source = match source_type {
             SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::Http => {
-                HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+                let url = url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+
+                // Hugging Face requires special logic around cache busting. That logic is encapsulated in the HFSource.
+                match url.domain() {
+                    Some("huggingface.co") => {
+                        HFSource::get_client(&self.config.hf, &self.config.http).await?
+                            as Arc<dyn ObjectSource>
+                    }
+                    _ => HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>,
+                }
             }
             SourceType::S3 => {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
