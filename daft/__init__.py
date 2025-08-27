@@ -79,24 +79,6 @@ from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
-from daft.io import (
-    DataCatalogTable,
-    DataCatalogType,
-    IOConfig,
-    from_glob_path,
-    _range as range,
-    read_csv,
-    read_deltalake,
-    read_hudi,
-    read_iceberg,
-    read_json,
-    read_parquet,
-    read_sql,
-    read_lance,
-    read_video_frames,
-    read_warc,
-    read_huggingface,
-)
 from daft.series import Series
 from daft.session import (
     Session,
@@ -139,8 +121,26 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.sql import sql, sql_expr
 from daft.udf import udf, _DaftFuncDecorator as func
+from daft.io import (
+    DataCatalogTable,
+    DataCatalogType,
+    IOConfig,
+    from_glob_path,
+    _range as range,
+    read_csv,
+    read_deltalake,
+    read_hudi,
+    read_iceberg,
+    read_json,
+    read_parquet,
+    read_sql,
+    read_lance,
+    read_video_frames,
+    read_warc,
+    read_huggingface,
+)
+from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File
