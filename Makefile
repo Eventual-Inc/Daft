@@ -89,8 +89,8 @@ install-docs-deps:
 		curl -fsSL https://bun.sh/install | bash; \
 		export PATH="$$HOME/.bun/bin:$$PATH"; \
 	fi
-	$(VENV_BIN)/activate && uv sync --all-extras --all-groups
-	$(VENV_BIN)/activate && uv pip install -e docs/plugins/nav_hide_children
+	source $(VENV_BIN)/activate && uv sync --all-extras --all-groups
+	source $(VENV_BIN)/activate && uv pip install -e docs/plugins/nav_hide_children
 
 .PHONY: docs
 docs: .venv install-docs-deps ## Build Daft documentation
