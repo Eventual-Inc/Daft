@@ -39,7 +39,7 @@ pub struct S3Config {
     pub force_virtual_addressing: bool,
     pub profile_name: Option<String>,
     pub multipart_size: u64,
-    pub multipart_max_concurrency: u64,
+    pub multipart_max_concurrency: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

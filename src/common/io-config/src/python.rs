@@ -355,7 +355,7 @@ impl S3Config {
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
         multipart_size: Option<u64>,
-        multipart_max_concurrency: Option<u64>,
+        multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
         let def = crate::S3Config::default();
         Ok(Self {
@@ -447,7 +447,7 @@ impl S3Config {
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
         multipart_size: Option<u64>,
-        multipart_max_concurrency: Option<u64>,
+        multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: crate::S3Config {
