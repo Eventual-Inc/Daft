@@ -1,6 +1,6 @@
 # Expressions
 
-Daft Expressions allow you to express some computation that needs to happen in a DataFrame. This page provides an overview of all the functionality that is provided by Daft Expressions. Learn more about Expressions in the Daft User Guide.
+Daft Expressions allow you to express some computation that needs to happen in a DataFrame. This page provides an overview of all the functionality that is provided by Daft Expressions. Learn more about [link:Expressions](../core_concepts.md#expressions) in the Daft User Guide.
 
 ## Constructors
 

@@ -289,7 +289,7 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`][daft.DataFrame.
 
 ### Transform Columns with Expressions
 
-[Expressions](api/expressions.md) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`][daft.col] expressions together with the [`with_column`][daft.DataFrame.with_column] method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
+[link:Expressions](api/expressions.md) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`][daft.col] expressions together with the [`with_column`][daft.DataFrame.with_column] method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
 
 === "🐍 Python"
 
