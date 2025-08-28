@@ -13,7 +13,7 @@ from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
-from tests.utils import sort_arrow_table
+from tests.utils import sort_arrow_table, sort_pydict
 
 
 def _assert_all_hashable(values, test_name=""):
@@ -934,15 +934,15 @@ def test_groupby_with_list_cols(make_df):
             "key2": pa.array(
                 [["a"], ["a"], ["hello", "world"], ["hello", "world", "and", "beyond"]], type=pa.list_(pa.string())
             ),
-            "values": pa.array([1.0, 2.0, 3.0, 4.0], type=pa.float64()),
+            "values": pa.array([1.0, 10.0, 3.0, 4.0], type=pa.float64()),
         }
     )
 
     res = df.groupby(["key1", "key2"]).agg(col("values").sum())
-    assert res.to_pydict() == {
+    assert sort_pydict(res.to_pydict(), "values") == {
         "key1": [[1, 2], [2, 3], [2, 3]],
-        "key2": [["a"], ["hello", "world"], ["hello", "world", "and", "beyond"]],
-        "values": [3.0, 3.0, 4.0],
+        "key2": [["a"], ["hello", "world", "and", "beyond"], ["hello", "world"]],
+        "values": [11.0, 4.0, 3.0],
     }
 
 
