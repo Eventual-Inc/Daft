@@ -10,10 +10,10 @@ build:
     - asdf install uv latest
     - asdf global uv latest
     create_environment:
-    - uv venv doc_env
+    - make .venv
     install:
-    - UV_PROJECT_ENVIRONMENT=doc_env uv sync --group docs --verbose
-    - UV_PROJECT_ENVIRONMENT=doc_env uv pip install -e docs/plugins/nav_hide_children
+    - UV_PROJECT_ENVIRONMENT=.venv uv sync --group docs --verbose
+    - UV_PROJECT_ENVIRONMENT=.venv uv pip install -e docs/plugins/nav_hide_children
 
 mkdocs:
   configuration: mkdocs.yml
