@@ -466,7 +466,10 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 Ok((SourceType::File, fixed_input))
             }
         }
-        "http" | "https" => Ok((SourceType::Http, fixed_input)),
+        "http" | "https" => match url.domain() {
+            Some("huggingface.co") => Ok((SourceType::HF, fixed_input)),
+            _ => Ok((SourceType::Http, fixed_input)),
+        },
         "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
