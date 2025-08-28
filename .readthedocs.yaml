@@ -7,7 +7,7 @@ build:
   jobs:
     post_install:
     - pip install uv
-    - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv pip install "markdown-exec" "mkdocs-jupyter" "mkdocs-material" "mkdocs-macros-plugin" "mkdocs-simple-hooks" "pymdown-extensions" "mkdocs-material[imaging]" "mkdocstrings-python" "mkdocs-minify-plugin" "mkdocs-redirects" "mkdocs-gen-files" "griffe" "mkdocs-literate-nav" "Jinja2"
+    - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --group docs
     - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv pip install -e docs/plugins/nav_hide_children
 
 mkdocs:
