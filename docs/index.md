@@ -2,21 +2,6 @@
 
 Daft is a high-performance data engine providing simple and reliable data processing for any modality and scale.
 
-Raw data collected from application systems is messy, unstructured and multimodal.
-
-Daft is used to build efficient data pipelines involving heavy transformations:
-
-* Models on GPUs
-* Rate-limited external APIs
-* Custom user logic
-
-Data lands in specialized data systems, which can then power workloads such as:
-
-* Distributed model training (AWS S3 Object Storage + `.tfrecord` files)
-* Analytics (Data Warehouses/Lakehouses)
-* Search (Vector Databases, Fulltext Search Systems)
-* Web Applications (SQL Databases)
-
 <style>
   .daft-pipeline-component {
     --ink: #f4f7ff;
@@ -30,62 +15,97 @@ Data lands in specialized data systems, which can then power workloads such as:
     box-sizing: border-box;
   }
 
-  .daft-pipeline-component .pipeline {
+  .daft-pipeline-component .container {
     width: 100%;
-    max-width: 1100px;
-    padding: 28px;
+    max-width: 1200px;
     margin: 0 auto;
     display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .daft-pipeline-component .stage-box {
+    padding: 6px;
+  }
+
+  .daft-pipeline-component .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
     align-items: center;
-    justify-content: center;
-    gap: 14px;
   }
 
-  .daft-pipeline-component .label {
-    font-weight: 800;
+  .daft-pipeline-component .stage-header {
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: .1em;
+    letter-spacing: .08em;
     color: #b9c8ff;
-    font-size: clamp(10px, 1.2vw, 12px);
+    font-size: clamp(12px, 1.2vw, 14px);
+    margin-bottom: 12px;
   }
 
-  .daft-pipeline-component .token {
-    position: relative;
-    width: 200px;
-    height: 80px;
-    border-radius: 14px;
-    padding: 12px 16px;
-    background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-    border: 1px solid rgba(255,255,255,.1);
-    font-family: var(--mono);
-    font-size: clamp(14px, 2vw, 18px);
+  .daft-pipeline-component .description {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .daft-pipeline-component .description h2 {
+    margin: 0 0 20px 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: #e8edff;
+  }
+
+  .daft-pipeline-component .description p {
+    margin: 0 0 12px 0;
+    line-height: 1.5;
+    color: var(--ink);
+    font-size: 15px;
+  }
+
+  .daft-pipeline-component .description p:last-child {
+    margin: 0;
+    font-size: 13px;
+    color: rgba(185, 200, 255, 0.7);
+    font-weight: 400;
+    line-height: 1.4;
+    font-style: italic;
+  }
+
+  .daft-pipeline-component .description ul {
+    margin: 12px 0;
+    padding-left: 18px;
+  }
+
+  .daft-pipeline-component .description li {
+    margin: 6px 0;
     line-height: 1.4;
     color: var(--ink);
-    overflow: hidden;
-    word-wrap: break-word;
-    white-space: normal;
+    font-size: 14px;
+  }
+
+  .daft-pipeline-component .pipeline-item {
+    background: rgba(255,255,255,.02);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 8px;
+    padding: 16px 20px;
     display: flex;
     align-items: center;
+    min-height: 60px;
+    font-family: var(--mono);
+    font-size: clamp(13px, 1.8vw, 16px);
+    color: var(--ink);
   }
 
-  .daft-pipeline-component .arrow {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 999px;
-    background: linear-gradient(180deg,#21306b,#1b2656);
-    border: 1px solid rgba(255,255,255,.12);
-    flex: 0 0 40px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
-  }
 
-  .daft-pipeline-component .arrow svg {
-    width: 20px;
-    height: 20px;
-    fill: #cfe0ff;
-  }
+
+
+
+
+
+
 
   .daft-pipeline-component .type {
     display: inline-block;
@@ -113,46 +133,65 @@ Data lands in specialized data systems, which can then power workloads such as:
   }
 
   @media (max-width: 720px) {
-    .daft-pipeline-component .pipeline {
-      flex-direction: column;
+    .daft-pipeline-component .stage-box {
+      padding: 8px;
+      margin-bottom: 4px;
+    }
+    .daft-pipeline-component .row {
+      grid-template-columns: 1fr;
       gap: 20px;
-      align-items: stretch;
     }
-    .daft-pipeline-component .token {
-      width: 100%;
-      max-width: none;
+    .daft-pipeline-component .pipeline-item {
+      min-height: 50px;
     }
-    .daft-pipeline-component .arrow {
-      display: none;
+    .daft-pipeline-component .description p:last-child {
+      font-size: 12px;
+      margin-top: 4px;
     }
   }
 </style>
 
 <div class="daft-pipeline-component">
-  <div class="pipeline" id="pipe" role="region" aria-label="Animated data pipeline">
-      <div class="group">
-        <div class="label">Read</div>
-        <div class="token"><span id="read" class="swap"></span></div>
-      </div>
-
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z" transform="rotate(180 12 12)"/></svg>
-      </span>
-
-      <div class="group">
-        <div class="label">Transform</div>
-        <div class="token"><span id="xform" class="swap"></span></div>
-      </div>
-
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M12 4l1.41 1.41L8.83 10H20v2H8.83l4.58 4.59L12 18l-8-8 8-8z" transform="rotate(180 12 12)"/></svg>
-      </span>
-
-      <div class="group">
-        <div class="label">Write</div>
-        <div class="token"><span id="write" class="swap"></span></div>
+  <div class="container">
+    <div class="stage-box">
+      <div class="row">
+        <div class="description">
+          <div class="stage-header">READ</div>
+          <p>Daft reads raw unstructured and multimodal data collected from application systems</p>
+          <p>Object Store (AWS S3, GCS, R2)<br>Event Bus (Kafka)<br>Data Lake (Iceberg, Deltalake)</p>
+        </div>
+        <div class="pipeline-item">
+          <span id="read" class="swap"></span>
+        </div>
       </div>
     </div>
+
+    <div class="stage-box">
+      <div class="row">
+        <div class="description">
+          <div class="stage-header">TRANSFORM</div>
+          <p>Build efficient Daft data pipelines involving heavy transformations</p>
+          <p>GPU models<br>User-provided Python code<br>External LLM APIs</p>
+        </div>
+        <div class="pipeline-item">
+          <span id="xform" class="swap"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-box">
+      <div class="row">
+        <div class="description">
+          <div class="stage-header">WRITE</div>
+          <p>Daft lands data into specialized data systems for downstream use-cases</p>
+          <p>Search (fulltext, vector)<br>Applications (SQL database)<br>Analytics (data warehouse)<br>Model Training (TFRecords on object storage)</p>
+        </div>
+        <div class="pipeline-item">
+          <span id="write" class="swap"></span>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -161,41 +200,41 @@ Data lands in specialized data systems, which can then power workloads such as:
 const MODALITIES = {
   "Images (JPEG)": {
     transforms: {
-      "OCR for text extraction": ["Fulltext Search"],
-      "Image captioning with LLM": ["SQL Database"],
-      "Object detection": ["SQL Database"],
-      "Generate embeddings": ["Vector DB"]
+      "OCR for text extraction": ["Elasticsearch"],
+      "Image captioning with LLM": ["PostgreSQL", "MongoDB"],
+      "Object detection": ["PostgreSQL", "MySQL"],
+      "Generate embeddings": ["Turbopuffer", "LanceDB"]
     }
   },
   "PDFs": {
     transforms: {
-      "OCR for text extraction": ["Fulltext Search"],
-      "Structured data extraction": ["Data Warehouse"],
-      "Generate embeddings": ["Vector DB"],
-      "PII detection": ["Data Warehouse"],
-      "Chunking + deduplication": ["Data Lake"]
+      "OCR for text extraction": ["Elasticsearch"],
+      "Structured data extraction": ["BigQuery", "Snowflake", "Databricks"],
+      "Generate embeddings": ["Turbopuffer", "LanceDB"],
+      "PII detection": ["BigQuery", "Snowflake", "Databricks"],
+      "Chunking + deduplication": ["Parquet"]
     }
   },
   "Video (MP4/MKV)": {
     transforms: {
-      "Video captioning": ["SQL Database"],
-      "Scene detection": ["S3 Object Store"],
-      "Audio transcription": ["SQL Database"],
-      "Generate embeddings": ["Vector DB"]
+      "Video captioning": ["PostgreSQL"],
+      "Scene detection": ["AWS S3"],
+      "Audio transcription": ["PostgreSQL", "MongoDB", "Elasticsearch"],
+      "Generate embeddings": ["Turbopuffer", "LanceDB"]
     }
   },
   "Audio (WAV/MP3/FLAC)": {
     transforms: {
-      "Transcription with Whisper": ["Fulltext Search"],
-      "Speaker identification": ["SQL Database"],
-      "Emotion detection": ["Data Warehouse"],
-      "Generate embeddings": ["Vector DB"]
+      "Transcription with Whisper": ["PostgreSQL", "MongoDB", "Elasticsearch"],
+      "Speaker identification": ["PostgreSQL", "MySQL"],
+      "Emotion detection": ["BigQuery", "Snowflake", "Databricks"],
+      "Generate embeddings": ["Turbopuffer", "LanceDB"]
     }
   },
   "AI Agent Logs": {
     transforms: {
-      "LLM summarization": ["SQL Database"],
-      "Generate embeddings": ["Vector DB"]
+      "LLM summarization": ["PostgreSQL", "MySQL"],
+      "Generate embeddings": ["Turbopuffer", "LanceDB"]
     }
   }
 };
