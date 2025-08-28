@@ -59,37 +59,7 @@ pub async fn test_full_get(
             None,
         )
         .await;
-
-    // Check if this is a HuggingFace source.
-    let is_huggingface = client
-        .clone()
-        .as_any_arc()
-        .downcast::<crate::huggingface::HFSource>()
-        .is_ok();
-
-    match invalid_range_ret {
-        Ok(result) => {
-            if is_huggingface {
-                // For our HuggingFace reader, we sometimes get 416 status errors for invalid ranges due to
-                // CDN issues. We currently ensure the happy path works by dropping range requests when this happens,
-                // which means no error is returned.
-                let bytes = result.bytes().await?;
-                assert_eq!(bytes.len(), all_bytes.len());
-                assert_eq!(bytes.as_ref(), all_bytes.as_ref());
-            } else {
-                // Unexpected: other sources don't succeed with invalid ranges
-                panic!("Unexpected success for invalid range request on non-HuggingFace source");
-            }
-        }
-        Err(_) => {
-            if is_huggingface {
-                // Unexpected: HuggingFace should handle 416 and return full content
-                panic!("Unexpected error for invalid range request on HuggingFace source");
-            } else {
-                // Expected: other sources should return error for invalid ranges.
-            }
-        }
-    }
+    assert!(invalid_range_ret.is_err());
 
     let invalid_range_ret = client
         .get(parquet_file_path, Some(GetRange::Bounded(10..10)), None)

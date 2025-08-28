@@ -124,7 +124,7 @@ impl FromStr for HFPathParts {
     fn from_str(uri: &str) -> Result<Self, Self::Err> {
         // hf:// [datasets] / {username} / {reponame} @ {revision} / {path from root}
         //       !>
-        if !(uri.starts_with("hf://") || uri.starts_with("https://huggingface.co/")) {
+        if !uri.starts_with("hf://") {
             return Err(Error::InvalidPath {
                 path: uri.to_string(),
             });
@@ -316,9 +316,9 @@ impl ObjectSource for HFSource {
             let uri = &path.get_file_uri(cache_bust);
 
             let req = client.get(uri);
-            let req = match (range, cache_bust) {
-                (None, _) | (_, true) => req,
-                (Some(range), false) => {
+            let req = match range {
+                None => req,
+                Some(range) => {
                     range.validate().context(InvalidRangeRequestSnafu)?;
                     req.header(RANGE, range.to_string())
                 }
@@ -330,7 +330,7 @@ impl ObjectSource for HFSource {
         }
         let response = make_request(uri, false, &self.http_source.client, range.as_ref()).await?;
 
-        let response = match response.error_for_status() {
+        let (response, range_applied) = match response.error_for_status() {
             Err(e) => {
                 let status_code = e.status();
                 match status_code {
@@ -340,8 +340,7 @@ impl ObjectSource for HFSource {
                     // If it fails again, we'll return the error.
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         let response =
-                            make_request(uri, true, &self.http_source.client, range.as_ref())
-                                .await?;
+                            make_request(uri, true, &self.http_source.client, None).await?;
 
                         let res = response.error_for_status().map_err(|e| {
                             if e.status() == Some(StatusCode::UNAUTHORIZED) {
@@ -353,7 +352,7 @@ impl ObjectSource for HFSource {
                                 }
                             }
                         })?;
-                        Ok(res)
+                        Ok((res, false))
                     }
                     _ => Err(Error::UnableToOpenFile {
                         path: uri.to_string(),
@@ -378,9 +377,9 @@ impl ObjectSource for HFSource {
                             }
                         }
                     })?;
-                    Ok(res)
+                    Ok((res, true))
                 } else {
-                    Ok(res)
+                    Ok((res, true))
                 }
             }
         }?;
@@ -398,12 +397,32 @@ impl ObjectSource for HFSource {
             .into_error(e)
             .into()
         });
-        Ok(GetResult::Stream(
-            io_stats_on_bytestream(stream, io_stats),
+
+        let result = GetResult::Stream(
+            io_stats_on_bytestream(stream, io_stats.clone()),
             size_bytes,
             None,
             None,
-        ))
+        );
+
+        if !range_applied && let Some(range) = range {
+            // TODO: make this more efficient
+            let bytes = result.bytes().await?;
+            let len = bytes.len();
+            let range = range.as_range(len).context(InvalidRangeRequestSnafu)?;
+            let bytes_in_range = bytes.slice(range);
+
+            let range_stream = Box::pin(futures::stream::once(async { Ok(bytes_in_range) }));
+
+            Ok(GetResult::Stream(
+                io_stats_on_bytestream(range_stream, io_stats),
+                Some(len),
+                None,
+                None,
+            ))
+        } else {
+            Ok(result)
+        }
     }
 
     async fn put(
@@ -465,43 +484,65 @@ impl ObjectSource for HFSource {
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
-        // Huggingface has a special API for parquet files
-        // So we'll try to use that API to get the parquet files
-        // This allows us compatibility with datasets that are not natively uploaded as parquet, such as image datasets
+        let path = glob_path.parse::<HFPath>()?;
 
-        // We only want to use this api for datasets, not specific files
-        // such as
-        // hf://datasets/user/repo
-        // but not
-        // hf://datasets/user/repo/file.parquet
-        if file_format == Some(FileFormat::Parquet) {
-            let res =
-                try_parquet_api(glob_path, limit, io_stats.clone(), &self.http_source.client).await;
-            match res {
-                Ok(Some(stream)) => return Ok(stream),
-                Err(e) => return Err(e.into()),
-                Ok(None) => {
-                    // INTENTIONALLY EMPTY
-                    // If we can't determine if the dataset is private, we'll fall back to the default globbing
+        // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
+        let fanout_limit = None;
+        let page_size = None;
+
+        match path {
+            HFPath::Http(_) => {
+                glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
+            }
+            HFPath::Hf(parts) => {
+                // Huggingface has a special API for parquet files
+                // So we'll try to use that API to get the parquet files
+                // This allows us compatibility with datasets that are not natively uploaded as parquet, such as image datasets
+
+                // We only want to use this api for datasets, not specific files
+                // such as
+                // hf://datasets/user/repo
+                // but not
+                // hf://datasets/user/repo/file.parquet
+                if file_format == Some(FileFormat::Parquet) {
+                    let res =
+                        try_parquet_api(parts, limit, io_stats.clone(), &self.http_source.client)
+                            .await;
+                    match res {
+                        Ok(Some(stream)) => return Ok(stream),
+                        Err(e) => return Err(e.into()),
+                        Ok(None) => {
+                            // INTENTIONALLY EMPTY
+                            // If we can't determine if the dataset is private, we'll fall back to the default globbing
+                        }
+                    }
                 }
+
+                glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
             }
         }
-
-        glob(self, glob_path, None, None, limit, io_stats).await
     }
 
     async fn ls(
         &self,
         path: &str,
         posix: bool,
-        _continuation_token: Option<&str>,
-        _page_size: Option<i32>,
+        continuation_token: Option<&str>,
+        page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for HTTP listing");
         }
-        let path_parts = path.parse::<HFPathParts>()?;
+
+        let hf_path = path.parse::<HFPath>()?;
+
+        let HFPath::Hf(path_parts) = hf_path else {
+            return self
+                .http_source
+                .ls(path, posix, continuation_token, page_size, io_stats)
+                .await;
+        };
 
         let api_uri = HFPath::Hf(path_parts.clone()).get_api_uri();
 
@@ -574,12 +615,11 @@ impl ObjectSource for HFSource {
 }
 
 async fn try_parquet_api(
-    glob_path: &str,
+    hf_glob_path: HFPathParts,
     limit: Option<usize>,
     io_stats: Option<IOStatsRef>,
     client: &ClientWithMiddleware,
 ) -> Result<Option<BoxStream<'static, super::Result<FileMetadata>>>, Error> {
-    let hf_glob_path = glob_path.parse::<HFPathParts>()?;
     if hf_glob_path.path.is_empty() {
         let api_path = HFPath::Hf(hf_glob_path.clone()).get_parquet_api_uri();
 
