@@ -56,7 +56,18 @@ impl SplitUDFsFromFilters {
                 resolved_col(col_name.as_str()),
             )?));
 
-            Ok(Transformed::yes(new_filter))
+            let exclude_project = Project::try_new(
+                new_filter,
+                filter
+                    .input
+                    .schema()
+                    .field_names()
+                    .map(resolved_col)
+                    .collect(),
+            )?
+            .into();
+
+            Ok(Transformed::yes(exclude_project))
         } else {
             Ok(Transformed::no(plan.clone()))
         }
@@ -1312,10 +1323,7 @@ Project: col(a), col(c)
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_node = dummy_scan_node(scan_op.clone());
         let udf = create_filter_udf(vec![resolved_col("a")]);
-        let plan = scan_node
-            .filter(udf)?
-            .select(vec![resolved_col("a")])?
-            .build();
+        let plan = scan_node.filter(udf)?.build();
 
         assert_optimized_plan_with_rules_repr_eq(
             plan,
