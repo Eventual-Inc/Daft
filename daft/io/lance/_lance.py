@@ -36,6 +36,7 @@ def read_lance(
     index_cache_size: Optional[int] = None,
     default_scan_options: Optional[dict[str, str]] = None,
     metadata_cache_size_bytes: Optional[int] = None,
+    native: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
