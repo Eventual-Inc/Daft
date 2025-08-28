@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 
 import daft
+from daft.sql.sql import SQLCatalog
 
 
 def test_temporals():
@@ -26,7 +27,7 @@ def test_temporals():
             ],
         }
     )
-    bindings = {"test": df}
+    catalog = SQLCatalog({"test": df})
 
     expected = df.select(
         daft.col("datetimes").dt.date().alias("date"),
@@ -90,7 +91,7 @@ def test_temporals():
         strftime(times) as time_str,
     FROM test
     """,
-        **bindings,
+        catalog=catalog,
     ).collect()
 
     assert actual.to_pydict() == expected.to_pydict()

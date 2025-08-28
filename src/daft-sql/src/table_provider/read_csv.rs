@@ -21,6 +21,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
         // TODO validations (unsure if should carry over from python API)
+        // - schema_hints is deprecated
         // - ensure infer_schema is true if schema is None.
 
         let glob_paths: Vec<String> = if let Some(arg) = args.get_positional(0) {
@@ -50,6 +51,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
+        let schema_hints = None; // TODO
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
@@ -68,6 +70,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             allow_variable_columns,
             buffer_size,
             chunk_size,
+            schema_hints,
         })
     }
 }
@@ -94,6 +97,7 @@ impl SQLTableFunction for ReadCsvFunction {
                 "io_config",
                 "file_path_column",
                 "hive_partitioning",
+                // "schema_hints",
                 "buffer_size",
                 "chunk_size",
             ],

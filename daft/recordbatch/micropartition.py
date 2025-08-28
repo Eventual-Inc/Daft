@@ -154,6 +154,10 @@ class MicroPartition:
     # Exporting methods
     ###
 
+    def to_table(self) -> RecordBatch:
+        """DEPRECATED: Please use `to_record_batch`."""
+        return self.to_record_batch()
+
     def to_record_batch(self) -> RecordBatch:
         """Returns the MicroPartition as a single (concatenated) RecordBatch."""
         return RecordBatch._from_pyrecordbatch(self._micropartition.to_record_batch())
