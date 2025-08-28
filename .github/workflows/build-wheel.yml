@@ -49,8 +49,13 @@ jobs:
     - name: Setup Virtual Env
       run: |
         uv venv --seed .venv
-        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
-        source .venv/bin/activate
+        if [[ "${{ inputs.os }}" == "windows" ]]; then
+          echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
+          source .venv/Scripts/activate
+        else
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          source .venv/bin/activate
+        fi
         uv pip install twine yq setuptools_scm
 
     - uses: oven-sh/setup-bun@v2
