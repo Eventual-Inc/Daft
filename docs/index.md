@@ -404,7 +404,7 @@ async function shuffleAll() {
 // Auto-advance with delay
 async function runCycle() {
     await shuffleAll();
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 8000));
 }
 
 // Start the cycle
