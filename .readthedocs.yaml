@@ -4,16 +4,15 @@ build:
   os: "ubuntu-24.04"
   tools:
     python: "3.10"
-  jobs:
-    pre_create_environment:
-    - asdf plugin add uv
-    - asdf install uv latest
-    - asdf global uv latest
-    create_environment:
-    - make .venv
-    install:
-    - UV_PROJECT_ENVIRONMENT=.venv uv sync --group docs --verbose
-    - UV_PROJECT_ENVIRONMENT=.venv uv pip install -e docs/plugins/nav_hide_children
+
+python:
+  install:
+  - method: pip
+    path: .
+    extra_requirements:
+    - docs
+  - method: pip
+    path: docs/plugins/nav_hide_children
 
 mkdocs:
   configuration: mkdocs.yml
