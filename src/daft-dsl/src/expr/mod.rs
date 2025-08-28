@@ -2092,25 +2092,6 @@ pub fn is_udf(expr: &ExprRef) -> bool {
     )
 }
 
-pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
-    exprs
-        .iter()
-        .map(|expr| {
-            let mut count = 0;
-            expr.apply(|e| {
-                if is_actor_pool_udf(e) {
-                    count += 1;
-                }
-
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            })
-            .unwrap();
-
-            count
-        })
-        .sum()
-}
-
 pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
     let estimate = match expr {
         // Boolean operations that filter rows
