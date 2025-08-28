@@ -926,6 +926,26 @@ def test_bool_agg_type_error(make_df):
     assert "bool_or is not implemented for type Int64" in str(exc_info.value)
 
 
+def test_groupby_with_list_cols(make_df):
+    """Test that groupby works with list & fixed-size-list columns."""
+    df = make_df(
+        {
+            "key1": pa.array([[1, 2], [1, 2], [2, 3], [2, 3]], type=pa.list_(pa.int64(), 2)),
+            "key2": pa.array(
+                [["a"], ["a"], ["hello", "world"], ["hello", "world", "and", "beyond"]], type=pa.list_(pa.string())
+            ),
+            "values": pa.array([1.0, 2.0, 3.0, 4.0], type=pa.float64()),
+        }
+    )
+
+    res = df.groupby(["key1", "key2"]).agg(col("values").sum())
+    assert res.to_pydict() == {
+        "key1": [[1, 2], [2, 3], [2, 3]],
+        "key2": [["a"], ["hello", "world"], ["hello", "world", "and", "beyond"]],
+        "values": [3.0, 3.0, 4.0],
+    }
+
+
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size):
     """Test join followed by groupby with simple aggregations."""
