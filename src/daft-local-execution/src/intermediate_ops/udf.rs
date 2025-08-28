@@ -159,14 +159,21 @@ impl UdfHandle {
 
         for batch in input_batches.as_ref() {
             // Prepare inputs
+            eprintln!("batch: \n{}", batch);
             let func_input = batch.eval_expression_list(self.params.required_cols.as_slice())?;
+            eprintln!("func_input: \n{}", func_input);
 
             // Call the UDF
-            let result = if let Some(handle) = &self.handle {
+            let mut result = if let Some(handle) = &self.handle {
                 self.eval_input_with_handle(func_input, handle)
             } else {
                 self.eval_input_inline(func_input)
             }?;
+            // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
+            if result.len() == 1 {
+                result = result.broadcast(batch.num_rows())?;
+            }
+            eprintln!("result: \n{}", result);
 
             // Append result to passthrough
             let passthrough_input =
