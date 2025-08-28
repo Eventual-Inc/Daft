@@ -606,7 +606,7 @@ mod tests {
     use crate::{
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownProjection,
+            rules::{PushDownProjection, SplitUDFsFromFilters},
             test::assert_optimized_plan_with_rules_repr_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
@@ -667,6 +667,27 @@ mod tests {
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
+                use_process: None,
+            }),
+            inputs,
+        }
+        .arced()
+    }
+
+    fn create_filter_udf(inputs: Vec<ExprRef>) -> ExprRef {
+        Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF {
+                name: Arc::new("foo".to_string()),
+                func: MaybeInitializedUDF::Uninitialized {
+                    inner: RuntimePyObject::new_none(),
+                    init_args: RuntimePyObject::new_none(),
+                },
+                bound_args: RuntimePyObject::new_none(),
+                num_expressions: inputs.len(),
+                return_dtype: DataType::Boolean,
+                resource_request: None,
+                batch_size: Some(32),
+                concurrency: None,
                 use_process: None,
             }),
             inputs,
@@ -1282,6 +1303,42 @@ Project: col(a), col(c)
                     Partitioning keys = []
                     Output schema = a#Int64, b#Int64, c#Int64
         "},
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_split_udf_in_filter() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let scan_node = dummy_scan_node(scan_op.clone());
+        let udf = create_filter_udf(vec![resolved_col("a")]);
+        let plan = scan_node
+            .filter(udf)?
+            .select(vec![resolved_col("a")])?
+            .build();
+
+        assert_optimized_plan_with_rules_repr_eq(
+            plan,
+            indoc! {"
+        Project: col(a)
+          Filter: col(__SplitUDFsFromFilters_udf_0__)
+            UDFProject:
+            UDF foo = py_udf(col(a)) as __SplitUDFsFromFilters_udf_0__
+            Passthrough Columns = col(a)
+            Concurrency = None
+              DummyScanOperator
+              File schema = a#Int64
+              Partitioning keys = []
+              Output schema = a#Int64
+        "},
+            vec![RuleBatch::new(
+                vec![
+                    Box::new(SplitUDFsFromFilters::new()),
+                    Box::new(SplitUDFs::new()),
+                    Box::new(PushDownProjection::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            )],
         )?;
         Ok(())
     }
