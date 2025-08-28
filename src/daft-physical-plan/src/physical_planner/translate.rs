@@ -138,7 +138,6 @@ pub(super) fn translate_single_logical_node(
                 Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                     input_physical,
                     projection,
-                    expr.clone(),
                     udf_properties.clone(),
                 )?)
                 .arced())

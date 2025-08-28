@@ -7,7 +7,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 
 use crate::{
-    ops::Source,
+    ops::{Source, UDFProject},
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     LogicalPlan, SourceInfo,
 };
@@ -112,6 +112,28 @@ impl LogicalPlan {
                     }),
                 _ => Transformed::no(self.clone()),
             },
+            Self::UDFProject(UDFProject {
+                plan_id,
+                node_id,
+                input,
+                expr,
+                passthrough_columns,
+                projected_schema,
+                udf_properties,
+                stats_state,
+            }) => f(expr.clone(), &input.schema())?.update_data(|new_expr| {
+                Self::UDFProject(UDFProject {
+                    plan_id: *plan_id,
+                    node_id: *node_id,
+                    input: input.clone(),
+                    expr: new_expr,
+                    passthrough_columns: passthrough_columns.clone(),
+                    projected_schema: projected_schema.clone(),
+                    udf_properties: udf_properties.clone(),
+                    stats_state: stats_state.clone(),
+                })
+                .into()
+            }),
             Self::Sort(Sort {
                 plan_id,
                 node_id,

@@ -21,7 +21,6 @@ use crate::{impl_default_tree_display, PhysicalPlanRef};
 pub struct ActorPoolProject {
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub expr: ExprRef,
     pub udf_properties: UDFProperties,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
@@ -30,7 +29,6 @@ impl ActorPoolProject {
     pub(crate) fn try_new(
         input: PhysicalPlanRef,
         projection: Vec<ExprRef>,
-        expr: ExprRef,
         udf_properties: UDFProperties,
     ) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
@@ -43,7 +41,6 @@ impl ActorPoolProject {
         Ok(Self {
             input,
             projection,
-            expr,
             udf_properties,
             clustering_spec,
         })
