@@ -10,7 +10,7 @@ This document tracks the project to update all links pointing to `core_concepts.
 | `docs/api/datatypes.md` | http://127.0.0.1:8000/en/stable/api/datatypes/ | link:DataTypes | `../core_concepts.md#datatypes` | | Done - Redundant Line Removed |
 | `docs/api/expressions.md` | http://127.0.0.1:8000/en/stable/api/expressions/ | link:Expressions | `../core_concepts.md#expressions` | | Done - Redundant Line Removed |
 | `docs/api/schema.md` | http://127.0.0.1:8000/en/stable/api/schema/ | link:Schemas | `../core_concepts.md#schemas-and-types` | | Done - Redundant Line Removed |
-| `docs/api/window.md` | http://127.0.0.1:8000/en/stable/api/window/ | link:Window Functions | `../core_concepts.md/#window-functions` | `../examples/window-functions.md` | Done - Redirected to Examples |
+| `docs/api/window.md` | http://127.0.0.1:8000/en/stable/api/window/ | link:Window Functions | `../core_concepts.md/#window-functions` | `../examples/window-functions.md` | Done - Redirected to Tutorial |
 | `docs/migration/dask_migration.md` | http://127.0.0.1:8000/en/stable/migration/dask_migration/ | link:Expressions | `../core_concepts.md#expressions` | `../api/expressions.md` | Changed - Not Tested |
 | `docs/migration/dask_migration.md` | http://127.0.0.1:8000/en/stable/migration/dask_migration/ | link:the documentation | `../core_concepts.md#datatypes` | `../api/datatypes.md` | Changed - Not Tested |
 | `docs/migration/dask_migration.md` | http://127.0.0.1:8000/en/stable/migration/dask_migration/ | link:User-Defined Functions (UDFs) | `../core_concepts.md#user-defined-functions-udf` | `../custom-code/udfs.md` | Changed - Not Tested |
