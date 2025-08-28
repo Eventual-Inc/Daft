@@ -51,7 +51,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         source .venv/bin/activate
-        uv pip install twine yq
+        uv pip install twine yq setuptools_scm
 
     - uses: oven-sh/setup-bun@v2
       with:
