@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import math
+import warnings
 from collections.abc import Collection, Iterable, Iterator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -351,6 +352,11 @@ class Expression:
         return ExpressionPartitioningNamespace.from_expression(self)
 
     @property
+    def json(self) -> ExpressionJsonNamespace:
+        """Access methods that work on columns of json."""
+        return ExpressionJsonNamespace.from_expression(self)
+
+    @property
     def binary(self) -> ExpressionBinaryNamespace:
         """Access binary string operations for this expression.
 
@@ -409,6 +415,18 @@ class Expression:
                 use_process,
             )
         )
+
+    @staticmethod
+    def to_struct(*fields: Expression | builtins.str) -> Expression:
+        """Constructs a struct from the input field expressions.
+
+        Renamed to 'struct' in https://github.com/Eventual-Inc/Daft/pull/3755.
+        """
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.4.4!  Instead, please use 'struct'",
+            category=DeprecationWarning,
+        )
+        return struct(*fields)
 
     def unnest(self) -> Expression:
         """Flatten the fields of a struct expression into columns in a DataFrame.
@@ -4663,6 +4681,21 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_count", mode)
 
+    def lengths(self) -> Expression:
+        """Gets the length of each list.
+
+        (DEPRECATED) Please use Expression.list.length instead
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'Expression.list.length'",
+            category=DeprecationWarning,
+        )
+
+        return self._eval_expressions("list_count", CountMode.All)
+
     def length(self) -> Expression:
         """Gets the length of each list.
 
@@ -5252,6 +5285,50 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
             Expression: Expression of the Same Type of the input
         """
         return Expression._from_pyexpr(self._expr.partitioning_iceberg_truncate(w))
+
+
+class ExpressionJsonNamespace(ExpressionNamespace):
+    """The following methods are available under the `expr.json` attribute."""
+
+    def query(self, jq_query: str) -> Expression:
+        """Query JSON data in a column using a JQ-style filter <https://jqlang.github.io/jq/manual/>.
+
+        This expression uses jaq as the underlying executor, see <https://github.com/01mf02/jaq> for the full list of supported filters.
+
+        Args:
+            jq_query (str): JQ query string
+
+        Returns:
+            Expression: Expression representing the result of the JQ query as a column of JSON-compatible strings
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col": ['{"a": 1}', '{"a": 2}', '{"a": 3}']})
+            >>> df.with_column("res", df["col"].json.query(".a")).collect()
+            ╭──────────┬──────╮
+            │ col      ┆ res  │
+            │ ---      ┆ ---  │
+            │ Utf8     ┆ Utf8 │
+            ╞══════════╪══════╡
+            │ {"a": 1} ┆ 1    │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ {"a": 2} ┆ 2    │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ {"a": 3} ┆ 3    │
+            ╰──────────┴──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        warnings.warn(
+            "`.json.query` is deprecated in daft >=0.5.1 and will be removed in >=0.6.0. Users should use `.jq` instead. Example: `col('x').jq('query')`",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        f = native.get_function_from_registry("jq")
+        filter = Expression._to_expression(jq_query)._expr
+
+        return Expression._from_pyexpr(f(self._expr, filter))
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):

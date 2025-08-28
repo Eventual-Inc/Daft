@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 import daft
+from daft.sql.sql import SQLCatalog
 
 
 def test_floats():
@@ -12,7 +13,7 @@ def test_floats():
             "infs": [1.0, 2.0, np.inf, np.inf],
         }
     )
-    bindings = {"test": df}
+    catalog = SQLCatalog({"test": df})
 
     sql = """
     SELECT
@@ -22,12 +23,12 @@ def test_floats():
         fill_nan(nans, 0.0) as fill_nan
     FROM test
     """
-    df = daft.sql(sql, **bindings).collect()
+    df = daft.sql(sql, catalog=catalog).collect()
     expected = {
         "is_nan": [False, False, True, False],
         "is_inf": [False, False, True, True],
         "not_nan": [True, True, False, True],
         "fill_nan": [1.0, 2.0, 0.0, 4.0],
     }
-    actual = daft.sql(sql, **bindings).to_pydict()
+    actual = df.to_pydict()
     assert actual == expected

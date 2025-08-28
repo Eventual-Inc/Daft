@@ -144,6 +144,7 @@ pub struct CsvScanBuilder {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
+    pub schema_hints: Option<SchemaRef>,
 }
 
 impl CsvScanBuilder {
@@ -170,6 +171,7 @@ impl CsvScanBuilder {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
+            schema_hints: None,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -228,6 +230,10 @@ impl CsvScanBuilder {
         self.chunk_size = Some(chunk_size);
         self
     }
+    pub fn schema_hints(mut self, schema_hints: SchemaRef) -> Self {
+        self.schema_hints = Some(schema_hints);
+        self
+    }
 
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = CsvSourceConfig {
@@ -267,6 +273,7 @@ pub struct JsonScanBuilder {
     pub schema: Option<SchemaRef>,
     pub file_path_column: Option<String>,
     pub hive_partitioning: bool,
+    pub schema_hints: Option<SchemaRef>,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -287,6 +294,7 @@ impl JsonScanBuilder {
             hive_partitioning: false,
             buffer_size: None,
             chunk_size: None,
+            schema_hints: None,
         }
     }
 
@@ -312,6 +320,11 @@ impl JsonScanBuilder {
 
     pub fn hive_partitioning(mut self, hive_partitioning: bool) -> Self {
         self.hive_partitioning = hive_partitioning;
+        self
+    }
+
+    pub fn schema_hints(mut self, schema_hints: SchemaRef) -> Self {
+        self.schema_hints = Some(schema_hints);
         self
     }
 

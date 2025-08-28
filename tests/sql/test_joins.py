@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft.sql import SQLCatalog
 from tests.utils import sort_pydict
 
 
@@ -22,9 +23,9 @@ def test_joins_with_alias():
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
     df2 = daft.from_pydict({"idx": [1, 2], "score": [0.1, 0.2]})
 
-    bindings = {"df1": df1, "df2": df2}
+    catalog = SQLCatalog({"df1": df1, "df2": df2})
 
-    df_sql = daft.sql("select * from df1 as foo join df2 as bar on foo.idx=bar.idx where bar.score>0.1", **bindings)
+    df_sql = daft.sql("select * from df1 as foo join df2 as bar on foo.idx=bar.idx where bar.score>0.1", catalog)
 
     actual = df_sql.collect().to_pydict()
 
@@ -37,8 +38,8 @@ def test_joins_with_spaceship():
     df1 = daft.from_pydict({"idx": [1, 2, None], "val": [10, 20, 30]})
     df2 = daft.from_pydict({"idx": [1, 2, None], "score": [0.1, 0.2, None]})
 
-    bindings = {"df1": df1, "df2": df2}
-    df_sql = daft.sql("select idx, val, score from df1 join df2 on (df1.idx<=>df2.idx)", **bindings)
+    catalog = SQLCatalog({"df1": df1, "df2": df2})
+    df_sql = daft.sql("select idx, val, score from df1 join df2 on (df1.idx<=>df2.idx)", catalog=catalog)
 
     actual = df_sql.collect().to_pydict()
 
@@ -52,7 +53,7 @@ def test_joins_with_wildcard_expansion():
     df2 = daft.from_pydict({"idx": [3], "score": [0.1]})
     df3 = daft.from_pydict({"idx": [1], "score": [0.1], "a": [1], "b": [2], "c": [3]})
 
-    bindings = {"df1": df1, "df2": df2, "df3": df3}
+    catalog = SQLCatalog({"df1": df1, "df2": df2, "df3": df3})
 
     df_sql = (
         daft.sql(
@@ -62,7 +63,7 @@ def test_joins_with_wildcard_expansion():
         left join df2 on (df1.idx=df2.idx)
         left join df3 on (df1.idx=df3.idx)
         """,
-            **bindings,
+            catalog,
         )
         .collect()
         .to_pydict()
@@ -94,7 +95,7 @@ def test_joins_with_duplicate_columns():
 
     table2 = daft.from_pydict({"id": [2, 3, 4, 5], "value": ["b", "c", "d", "e"]})
 
-    bindings = {"table1": table1, "table2": table2}
+    catalog = SQLCatalog({"table1": table1, "table2": table2})
 
     actual = daft.sql(
         """
@@ -103,7 +104,7 @@ def test_joins_with_duplicate_columns():
         LEFT JOIN table2 t2 on t2.id = t1.id
         ORDER BY t1.id;
         """,
-        **bindings,
+        catalog,
     ).collect()
 
     expected = {
@@ -134,9 +135,9 @@ def test_join_qualifiers(join_condition, selection):
     a = daft.from_pydict({"x": [1, None], "val": [10, 20]})
     b = daft.from_pydict({"y": [1, None], "score": [0.1, 0.2]})
 
-    bindings = {"a": a, "b": b}
+    catalog = SQLCatalog({"a": a, "b": b})
 
-    df_sql = daft.sql(f"select {selection} from a join b on {join_condition}", **bindings).to_pydict()
+    df_sql = daft.sql(f"select {selection} from a join b on {join_condition}", catalog).to_pydict()
 
     expected = {"x": [1], "val": [10], "y": [1], "score": [0.1]}
 
@@ -163,9 +164,9 @@ def test_join_qualifiers_with_alias(join_condition, selection):
     a = daft.from_pydict({"x": [1, None], "val": [10, 20]})
     b = daft.from_pydict({"y": [1, None], "score": [0.1, 0.2]})
 
-    bindings = {"a": a, "b": b}
+    catalog = SQLCatalog({"a": a, "b": b})
 
-    df_sql = daft.sql(f"select {selection} from a as a1 join b as b1 on {join_condition}", **bindings).to_pydict()
+    df_sql = daft.sql(f"select {selection} from a as a1 join b as b1 on {join_condition}", catalog).to_pydict()
 
     expected = {"x": [1], "val": [10], "y": [1], "score": [0.1]}
 
@@ -187,9 +188,9 @@ def test_cross_join():
         },
     )
 
-    bindings = {"x": x, "y": y}
+    catalog = SQLCatalog({"x": x, "y": y})
 
-    df = daft.sql("select * from x, y order by A, C", **bindings)
+    df = daft.sql("select * from x, y order by A, C", catalog)
 
     assert df.to_pydict() == {
         "A": [1, 1, 1, 1, 3, 3, 3, 3, 5, 5, 5, 5],

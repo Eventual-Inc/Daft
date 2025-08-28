@@ -4,7 +4,9 @@ Daft provides powerful capabilities for working with JSON data and nested data s
 
 ## JSON
 
-If you have a column of JSON strings, Daft provides the [`.jq()`](../api/expressions.md#daft.expressions.expressions.Expression.jq) method to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
+If you have a column of JSON strings, Daft provides the [`.json.*`](../api/expressions.md#daft.expressions.expressions.ExpressionJsonNamespace) method namespace to run [JQ-style filters](https://stedolan.github.io/jq/manual/) on them. For example, to extract a value from a JSON object:
+
+<!-- todo(docs - cc): add relative path to .json after figure out json namespace-->
 
 === "🐍 Python"
     ``` python
@@ -14,7 +16,7 @@ If you have a column of JSON strings, Daft provides the [`.jq()`](../api/express
             '{"a": 3, "b": 4}',
         ],
     })
-    df = df.with_column("a", df["json"].jq(".a"))
+    df = df.with_column("a", df["json"].json.query(".a"))
     df.collect()
     ```
 

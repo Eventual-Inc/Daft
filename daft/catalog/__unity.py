@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from unitycatalog import NotFoundError as UnityNotFoundError
@@ -19,8 +20,13 @@ if TYPE_CHECKING:
 class UnityCatalog(Catalog):
     _inner: InnerCatalog
 
-    def __init__(self) -> None:
-        raise RuntimeError("UnityCatalog.__init__ is not supported, please use `Catalog.from_unity` instead.")
+    def __init__(self, unity_catalog: InnerCatalog):
+        """DEPRECATED: Please use `Catalog.from_unity`; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Catalog.from_unity` instead; version 0.5.0!",
+            category=DeprecationWarning,
+        )
+        self._inner = unity_catalog
 
     @property
     def name(self) -> str:
@@ -31,9 +37,7 @@ class UnityCatalog(Catalog):
     def _from_obj(obj: object) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
-            catalog = UnityCatalog.__new__(UnityCatalog)
-            catalog._inner = obj
-            return catalog
+            return UnityCatalog(obj)
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
     ###
@@ -68,7 +72,7 @@ class UnityCatalog(Catalog):
 
     def _get_table(self, ident: Identifier) -> UnityTable:
         try:
-            return UnityTable._from_obj(self._inner.load_table(str(ident)))
+            return UnityTable(self._inner.load_table(str(ident)))
         except UnityNotFoundError:
             raise NotFoundError(f"Table {ident} not found!")
 
@@ -131,8 +135,13 @@ class UnityTable(Table):
         "allow_unsafe_rename",
     }
 
-    def __init__(self) -> None:
-        raise RuntimeError("UnityTable.__init__ is not supported, please use `Table.from_unity` instead.")
+    def __init__(self, unity_table: InnerTable):
+        """DEPRECATED: Please use `Table.from_unity`; version 0.5.0!"""
+        warnings.warn(
+            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Table.from_unity` instead; version 0.5.0!",
+            category=DeprecationWarning,
+        )
+        self._inner = unity_table
 
     @property
     def name(self) -> str:

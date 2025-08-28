@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
@@ -1048,6 +1049,14 @@ class SeriesPartitioningNamespace(SeriesNamespace):
 
 
 class SeriesListNamespace(SeriesNamespace):
+    def lengths(self) -> Series:
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'length'",
+            category=DeprecationWarning,
+        )
+
+        return self._eval_expressions("list_count", mode=CountMode.All)
+
     def length(self) -> Series:
         return self._eval_expressions("list_count", mode=CountMode.All)
 

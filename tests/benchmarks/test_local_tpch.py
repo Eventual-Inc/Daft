@@ -42,6 +42,8 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, q):  # noqa
 @pytest.mark.benchmark(group="tpch")
 @pytest.mark.parametrize("q", TPCH_QUESTIONS)
 def test_tpch_sql(tmp_path, check_answer, get_df, benchmark_with_memray, q):  # noqa F811
+    from daft.sql import SQLCatalog
+
     get_df, num_parts = get_df
 
     # TODO: remove this once SQL allows case-insensitive column names
@@ -58,13 +60,13 @@ def test_tpch_sql(tmp_path, check_answer, get_df, benchmark_with_memray, q):  # 
         "nation",
         "region",
     ]
-    bindings = {tbl: lowercase_column_names(get_df(tbl)) for tbl in table_names}
+    catalog = SQLCatalog({tbl: lowercase_column_names(get_df(tbl)) for tbl in table_names})
 
     with open(f"benchmarking/tpch/queries/{q:02}.sql") as query_file:
         query = query_file.read()
 
     def f():
-        daft_df = daft.sql(query, **bindings)
+        daft_df = daft.sql(query, catalog=catalog)
         return daft_df.to_arrow()
 
     benchmark_group = f"q{q}-sql-parts-{num_parts}"

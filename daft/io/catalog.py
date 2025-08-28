@@ -34,6 +34,15 @@ class DataCatalogTable:
     table_name: str
     catalog_id: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        import warnings
+
+        warnings.warn(
+            "This API is deprecated in daft >=0.5.0 and will be removed in >=0.6.0. Users should use the new functionality in daft.catalog.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     def table_uri(self, io_config: IOConfig) -> str:
         """Get the URI of the table in the data catalog.
 
