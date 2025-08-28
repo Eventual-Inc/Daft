@@ -62,6 +62,18 @@ class File:
         file._inner = inner
         return file
 
+    @staticmethod
+    def _from_tuple(tuple: tuple[Any]) -> File:
+        inner = PyDaftFile._from_tuple(tuple)
+        file: File
+        if isinstance(tuple[0], str):
+            file = PathFile.__new__(PathFile)
+        else:
+            file = MemoryFile.__new__(MemoryFile)
+
+        file._inner = inner
+        return file
+
     def read(self, size: int = -1) -> bytes:
         return self._inner.read(size)
 
