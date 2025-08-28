@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
@@ -56,8 +57,6 @@ async def start_udf_actors(
     num_cpus_per_actor: float,
     memory_per_actor: float,
 ) -> list[UDFActorHandle]:
-    import asyncio
-
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
     actors = [
