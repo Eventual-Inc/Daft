@@ -124,7 +124,7 @@ impl FromStr for HFPathParts {
     fn from_str(uri: &str) -> Result<Self, Self::Err> {
         // hf:// [datasets] / {username} / {reponame} @ {revision} / {path from root}
         //       !>
-        if !uri.starts_with("hf://") {
+        if !(uri.starts_with("hf://") || uri.starts_with("https://huggingface.co/")) {
             return Err(Error::InvalidPath {
                 path: uri.to_string(),
             });
