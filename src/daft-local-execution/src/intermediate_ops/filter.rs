@@ -116,7 +116,7 @@ impl IntermediateOperator for FilterOperator {
         Arc::new(FilterStats::default())
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
 }

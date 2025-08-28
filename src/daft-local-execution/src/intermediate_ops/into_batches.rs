@@ -62,7 +62,7 @@ impl IntermediateOperator for IntoBatchesOperator {
     fn multiline_display(&self) -> Vec<String> {
         vec![format!("IntoBatches: {}", self.batch_size)]
     }
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

@@ -32,11 +32,24 @@ enum UDFActors {
 
 impl UDFActors {
     // TODO: This is a blocking call, and should be done asynchronously.
-    fn initialize_actors(
+    async fn initialize_actors(
         projection: &[BoundExpr],
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
+        let (task_locals, py_exprs) = Python::with_gil(|py| {
+            let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
+                .get()
+                .expect("Python task locals not initialized")
+                .clone_ref(py);
+            let py_exprs = projection
+                .iter()
+                .map(|e| PyExpr {
+                    expr: e.inner().clone(),
+                })
+                .collect::<Vec<_>>();
+            (task_locals, py_exprs)
+        });
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
@@ -50,42 +63,47 @@ impl UDFActors {
                 None => (0.0, 0.0, 0),
             };
 
+        // Use async pattern similar to DistributedActorPoolProjectOperator
+        let await_coroutine = async move {
+            let result = Python::with_gil(|py| {
+                let ray_actor_pool_udf_module =
+                    py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+                let coroutine = ray_actor_pool_udf_module.call_method1(
+                    pyo3::intern!(py, "start_udf_actors"),
+                    (
+                        py_exprs,
+                        num_actors,
+                        gpu_request,
+                        cpu_request,
+                        memory_request,
+                        actor_ready_timeout,
+                    ),
+                )?;
+                pyo3_async_runtimes::tokio::into_future(coroutine)
+            })?
+            .await?;
+            DaftResult::Ok(result)
+        };
+
+        // Execute the coroutine with proper task locals
+        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
         let actors = Python::with_gil(|py| {
-            let ray_actor_pool_udf_module =
-                py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-            let py_exprs = projection
-                .iter()
-                .map(|e| PyExpr {
-                    expr: e.inner().clone(),
-                })
-                .collect::<Vec<_>>();
-            let actors = ray_actor_pool_udf_module.call_method1(
-                pyo3::intern!(py, "start_udf_actors"),
-                (
-                    py_exprs,
-                    num_actors,
-                    gpu_request,
-                    cpu_request,
-                    memory_request,
-                    actor_ready_timeout,
-                ),
-            )?;
-            DaftResult::Ok(
-                actors
-                    .extract::<Vec<PyObject>>()?
+            result.extract::<Vec<PyObject>>(py).map(|py_objects| {
+                py_objects
                     .into_iter()
                     .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
-                    .collect::<Vec<_>>(),
-            )
+                    .collect::<Vec<_>>()
+            })
         })?;
         Ok(actors)
     }
 
-    fn get_actors(&mut self, actor_ready_timeout: usize) -> DaftResult<Vec<PyObjectWrapper>> {
+    async fn get_actors(&mut self, actor_ready_timeout: usize) -> DaftResult<Vec<PyObjectWrapper>> {
         match self {
             Self::Uninitialized(projection, udf_properties) => {
                 let actors =
-                    Self::initialize_actors(projection, udf_properties, actor_ready_timeout)?;
+                    Self::initialize_actors(projection, udf_properties, actor_ready_timeout)
+                        .await?;
                 *self = Self::Initialized {
                     actors: actors.clone(),
                 };
@@ -167,7 +185,7 @@ impl ActorUDF {
 
         let mut running_tasks = JoinSet::new();
         while let Some(task) = input_task_stream.next().await {
-            let actors = udf_actors.get_actors(self.actor_ready_timeout)?;
+            let actors = udf_actors.get_actors(self.actor_ready_timeout).await?;
 
             let modified_task = self.append_actor_udf_to_task(task, actors);
             let (submittable_task, notify_token) = modified_task.add_notify_token();

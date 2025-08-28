@@ -47,7 +47,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Self::State>;
+    async fn make_state(&self) -> DaftResult<Self::State>;
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::default())
     }
@@ -126,7 +126,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         let compute_runtime = get_compute_runtime();
         let task_spawner =
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
-        let mut state = op.make_state()?;
+        let mut state = op.make_state().await?;
         while let Some(morsel) = receiver.recv().await {
             loop {
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;
