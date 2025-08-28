@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -121,7 +121,7 @@ impl DistributedPipelineNode for SampleNode {
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::sample(
                 input,
-                fraction,
+                SamplingMethod::Fraction(fraction),
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,

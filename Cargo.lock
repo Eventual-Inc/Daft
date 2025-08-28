@@ -1802,6 +1802,8 @@ name = "common-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-io-config",
+ "pyo3",
  "serde",
 ]
 
@@ -1852,6 +1854,14 @@ dependencies = [
  "secrecy",
  "serde",
  "typetag",
+]
+
+[[package]]
+name = "common-logging"
+version = "0.3.0-dev0"
+dependencies = [
+ "arc-swap",
+ "log",
 ]
 
 [[package]]
@@ -1934,6 +1944,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "daft-algebra",
+ "daft-core",
  "daft-dsl",
  "daft-schema",
  "fnv",
@@ -2321,6 +2332,7 @@ dependencies = [
  "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-logging",
  "common-metrics",
  "common-partitioning",
  "common-resource-request",
@@ -2329,6 +2341,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "common-version",
+ "daft-ai",
  "daft-algebra",
  "daft-catalog",
  "daft-cli",
@@ -2380,6 +2393,13 @@ dependencies = [
  "pyo3-log",
  "sysinfo 0.32.1",
  "tikv-jemallocator",
+]
+
+[[package]]
+name = "daft-ai"
+version = "0.3.0-dev0"
+dependencies = [
+ "pyo3",
 ]
 
 [[package]]
@@ -2598,9 +2618,12 @@ dependencies = [
  "common-scan-info",
  "common-treenode",
  "daft-dsl",
+ "daft-io",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-micropartition",
  "daft-physical-plan",
+ "daft-recordbatch",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
@@ -2622,7 +2645,6 @@ name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-file",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
@@ -2644,8 +2666,13 @@ name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-runtime",
+ "daft-core",
+ "daft-dsl",
  "daft-io",
  "pyo3",
+ "serde",
+ "typetag",
 ]
 
 [[package]]
@@ -2912,12 +2939,14 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "capitalize",
  "common-daft-config",
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-logging",
  "common-metrics",
  "common-py-serde",
  "common-resource-request",
@@ -2925,6 +2954,7 @@ dependencies = [
  "common-scan-info",
  "common-system-info",
  "common-tracing",
+ "console 0.16.0",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3002,9 +3032,11 @@ dependencies = [
  "daft-functions-list",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-recordbatch",
  "daft-schema",
  "educe",
  "indexmap 2.9.0",
+ "indoc",
  "itertools 0.14.0",
  "log",
  "num-format",
@@ -3252,6 +3284,7 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
+ "daft-ai",
  "daft-catalog",
  "daft-core",
  "daft-dsl",

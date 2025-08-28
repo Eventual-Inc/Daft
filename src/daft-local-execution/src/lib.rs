@@ -17,12 +17,14 @@ mod streaming_sink;
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, LazyLock},
     task::{Context, Poll},
 };
 
+use arc_swap::ArcSwap;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeRef, RuntimeTask};
+use console::style;
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
@@ -127,7 +129,6 @@ impl RuntimeHandle {
 
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
-    default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
     stats_manager: RuntimeStatsManagerHandle,
 }
@@ -135,13 +136,11 @@ pub(crate) struct ExecutionRuntimeContext {
 impl ExecutionRuntimeContext {
     #[must_use]
     pub fn new(
-        default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
         stats_manager: RuntimeStatsManagerHandle,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
-            default_morsel_size,
             memory_manager,
             stats_manager,
         }
@@ -163,11 +162,6 @@ impl ExecutionRuntimeContext {
 
     pub async fn shutdown(&mut self) {
         self.worker_set.shutdown().await;
-    }
-
-    #[must_use]
-    pub fn default_morsel_size(&self) -> usize {
-        self.default_morsel_size
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
@@ -244,6 +238,50 @@ impl ExecutionTaskSpawner {
         self.runtime_ref.spawn(timed_fut)
     }
 }
+
+// ---------------------------- STDOUT / STDERR PIPING ---------------------------- //
+
+/// Target for printing to.
+trait PythonPrintTarget: Send + Sync + 'static {
+    fn println(&self, message: &str);
+}
+
+/// A static entity that redirects Python sys.stdout / sys.stderr to handle Rust side effects.
+/// Tracks internal tags to reduce interweaving of user prints
+/// Can also register callbacks, for example for suspending the progress bar before prints.
+struct StdoutHandler {
+    target: ArcSwap<Option<Box<dyn PythonPrintTarget>>>,
+}
+
+impl StdoutHandler {
+    pub fn new() -> Self {
+        Self {
+            target: ArcSwap::new(Arc::new(None)),
+        }
+    }
+
+    fn set_target(&self, target: Box<dyn PythonPrintTarget>) {
+        self.target.store(Arc::new(Some(target)));
+    }
+
+    fn reset_target(&self) {
+        self.target.store(Arc::new(None));
+    }
+
+    fn print(&self, prefix: &str, message: &str) {
+        let message = format!("{} {}", style(prefix).magenta(), message);
+
+        if let Some(target) = self.target.load().as_ref() {
+            target.println(&message);
+        } else {
+            println!("{message}");
+        }
+    }
+}
+
+static STDOUT: LazyLock<Arc<StdoutHandler>> = LazyLock::new(|| Arc::new(StdoutHandler::new()));
+
+// -------------------------------------------------------------------------------- //
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

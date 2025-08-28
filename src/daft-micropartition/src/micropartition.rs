@@ -1298,6 +1298,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 }),
                 num_rows,
                 None,
+                None,
             ),
             generated_fields,
         );

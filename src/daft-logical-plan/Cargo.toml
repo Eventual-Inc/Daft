@@ -15,6 +15,7 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
 daft-functions-uri = {path = "../daft-functions-uri", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 educe = {workspace = true}
 indexmap = {workspace = true}
@@ -33,6 +34,7 @@ uuid.workspace = true
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
 daft-functions-binary = {path = "../daft-functions-binary", default-features = false}
 daft-functions-utf8 = {path = "../daft-functions-utf8", default-features = false}
+indoc = "2"
 pretty_assertions = {workspace = true}
 rand = "0.8"
 rstest = {workspace = true}

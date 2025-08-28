@@ -7,6 +7,7 @@ use daft_micropartition::MicroPartition;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
+    pipeline::MorselSizeRequirement,
     runtime_stats::InitializingCountingReceiver,
     RuntimeHandle, SpawnedTask,
 };
@@ -43,24 +44,14 @@ pub(crate) struct RoundRobinDispatcher {
 }
 
 impl RoundRobinDispatcher {
-    pub(crate) fn new(morsel_size_lower_bound: usize, morsel_size_upper_bound: usize) -> Self {
+    pub(crate) fn new(morsel_size_requirement: MorselSizeRequirement) -> Self {
+        let (lower_bound, upper_bound) = match morsel_size_requirement {
+            MorselSizeRequirement::Strict(size) => (size, size),
+            MorselSizeRequirement::Flexible(lower, upper) => (lower, upper),
+        };
         Self {
-            morsel_size_lower_bound,
-            morsel_size_upper_bound,
-        }
-    }
-
-    pub(crate) fn with_fixed_threshold(threshold: usize) -> Self {
-        Self {
-            morsel_size_lower_bound: threshold,
-            morsel_size_upper_bound: threshold,
-        }
-    }
-
-    pub(crate) fn unbounded() -> Self {
-        Self {
-            morsel_size_lower_bound: 0,
-            morsel_size_upper_bound: usize::MAX,
+            morsel_size_lower_bound: lower_bound,
+            morsel_size_upper_bound: upper_bound,
         }
     }
 
@@ -138,17 +129,14 @@ pub(crate) struct UnorderedDispatcher {
 }
 
 impl UnorderedDispatcher {
-    pub(crate) fn new(morsel_size_lower_bound: usize, morsel_size_upper_bound: usize) -> Self {
+    pub(crate) fn new(morsel_size_requirement: MorselSizeRequirement) -> Self {
+        let (lower_bound, upper_bound) = match morsel_size_requirement {
+            MorselSizeRequirement::Strict(size) => (size, size),
+            MorselSizeRequirement::Flexible(lower, upper) => (lower, upper),
+        };
         Self {
-            morsel_size_lower_bound,
-            morsel_size_upper_bound,
-        }
-    }
-
-    pub(crate) fn with_fixed_threshold(threshold: usize) -> Self {
-        Self {
-            morsel_size_lower_bound: threshold,
-            morsel_size_upper_bound: threshold,
+            morsel_size_lower_bound: lower_bound,
+            morsel_size_upper_bound: upper_bound,
         }
     }
 

@@ -33,17 +33,17 @@ from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_lit as _list_lit
 from daft.daft import lit as _lit
-from daft.daft import row_wise_udf as _row_wise_udf
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, TimeUnit
-from daft.dependencies import pa, pc
+from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
+    from daft.dependencies import pc
     from daft.io import IOConfig
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
@@ -380,7 +380,7 @@ class Expression:
 
     def to_arrow_expr(self) -> pc.Expression:
         """Returns this expression as a pyarrow.compute.Expression for integrations with other systems."""
-        from daft.expressions.visitor import _PyArrowExpressionVisitor
+        from daft.expressions.pyarrow_visitor import _PyArrowExpressionVisitor
 
         return _PyArrowExpressionVisitor().visit(self)
 
@@ -414,18 +414,6 @@ class Expression:
                 concurrency,
                 use_process,
             )
-        )
-
-    @staticmethod
-    def _row_wise_udf(
-        name: builtins.str,
-        inner: Callable[..., Any],
-        return_dtype: DataType,
-        original_args: tuple[tuple[Any, ...], dict[builtins.str, Any]],
-        expr_args: builtins.list[Expression],
-    ) -> Expression:
-        return Expression._from_pyexpr(
-            _row_wise_udf(name, inner, return_dtype._dtype, original_args, [e._expr for e in expr_args])
         )
 
     @staticmethod
@@ -5127,6 +5115,17 @@ class ExpressionsProjection(Iterable[Expression]):
 
     def __repr__(self) -> str:
         return f"{self._output_name_to_exprs.values()}"
+
+    @classmethod
+    def _from_serialized(cls, _output_name_to_exprs: dict[str, Expression]) -> ExpressionsProjection:
+        obj = cls.__new__(cls)
+        obj._output_name_to_exprs = _output_name_to_exprs
+        return obj
+
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[[dict[str, Expression]], ExpressionsProjection], tuple[dict[str, Expression]]]:
+        return ExpressionsProjection._from_serialized, (self._output_name_to_exprs,)
 
 
 class ExpressionImageNamespace(ExpressionNamespace):

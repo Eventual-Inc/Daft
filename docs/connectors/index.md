@@ -14,7 +14,6 @@ Daft offers a variety of approaches to reading from and writing to various data 
 | [`from_pylist`][daft.from_pylist]                 | Create a DataFrame from a python list                   |
 | [`from_ray_dataset`][daft.from_ray_dataset]       | Create a DataFrame from a Ray Dataset                   |
 
-
 ## CSV
 
 | Function                                          | Description                                            |
@@ -81,6 +80,13 @@ See also [Iceberg](iceberg.md) for detailed integration.
 | [`read_sql`][daft.io.read_sql] | Read data from a SQL database into a DataFrame |
 
 
+## Video
+
+| Function                                         | Description                        |
+|--------------------------------------------------|------------------------------------|
+| [`read_video_frames`][daft.io.read_video_frames] | Read video frames into a DataFrame |
+
+
 ## WARC
 
 | Function                         | Description                                              |
@@ -90,13 +96,13 @@ See also [Iceberg](iceberg.md) for detailed integration.
 
 ## User-Defined
 
-| Function                                                    | Description                                                        |
-|-------------------------------------------------------------|--------------------------------------------------------------------|
-| [`DataSink`][daft.io.sink.DataSink]                         | Interface for writing data from DataFrames                         |
-| [`DataSource`][daft.io.source.DataSource]                   | Interface for reading data into DataFrames                         |
-| [`DataSourceTask`][daft.io.source.DataSourceTask]           | Represents a partition of data that can be processed independently |
-| [`WriteResult`][daft.io.sink.WriteResult]                   | Wrapper for intermediate results written by a DataSink             |
-| [`write_sink`][daft.dataframe.DataFrame.write_sink]         | Write a DataFrame to the given DataSink                            |
+| Function                                            | Description                                                        |
+|-----------------------------------------------------|--------------------------------------------------------------------|
+| [`DataSink`][daft.io.sink.DataSink]                 | Interface for writing data from DataFrames                         |
+| [`DataSource`][daft.io.source.DataSource]           | Interface for reading data into DataFrames                         |
+| [`DataSourceTask`][daft.io.source.DataSourceTask]   | Represents a partition of data that can be processed independently |
+| [`WriteResult`][daft.io.sink.WriteResult]           | Wrapper for intermediate results written by a DataSink             |
+| [`write_sink`][daft.dataframe.DataFrame.write_sink] | Write a DataFrame to the given DataSink                            |
 
 ## Daft Catalogs
 

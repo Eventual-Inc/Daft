@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.ai import Provider
     from daft.catalog import Catalog, Table
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
@@ -293,6 +294,7 @@ class JsonSourceConfig:
 
 class WarcSourceConfig:
     """Configuration of a Warc data source."""
+
     def __init__(self) -> None: ...
 
 class DatabaseSourceConfig:
@@ -703,6 +705,47 @@ class UnityConfig:
         """Replaces values if provided, returning a new UnityConfig."""
         ...
 
+class HuggingFaceConfig:
+    """I/O configuration for accessing Hugging Face datasets.
+
+    Args:
+        token (str, optional): Your Hugging Face access token, generated from https://huggingface.co/settings/tokens.
+        anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Hugging Face without any credentials. Defaults to False.
+        use_content_defined_chunking (bool, optional): Set the `use_content_defined_chunking` parameter when creating a `pyarrow.parquet.ParquetWriter`. Only available with pyarrow>=21. Defaults to true if available.
+        row_group_size (int, optional): Row group size when writing Parquet files. Defaults to the default `pyarrow.parquet.ParquetWriter` row group size.
+        target_filesize (int, optional): Target size in bytes for each written Parquet file. Defaults to 512 MB.
+        max_operations_per_commit (int, optional): Maximum number of files to add/copy/delete per commit. Defaults to 100.
+
+    """
+
+    token: str | None
+    anonymous: bool
+    use_content_defined_chunking: bool
+    row_group_size: int | None
+    target_filesize: int
+    max_operations_per_commit: int
+
+    def __init__(
+        self,
+        token: str | None = None,
+        anonymous: bool | None = None,
+        use_content_defined_chunking: bool | None = None,
+        row_group_size: int | None = None,
+        target_filesize: int | None = None,
+        max_operations_per_commit: int | None = None,
+    ): ...
+    def replace(
+        self,
+        token: str | None = None,
+        anonymous: bool | None = None,
+        use_content_defined_chunking: bool | None = None,
+        row_group_size: int | None = None,
+        target_filesize: int | None = None,
+        max_operations_per_commit: int | None = None,
+    ) -> HuggingFaceConfig:
+        """Replaces values if provided, returning a new HuggingFaceConfig."""
+        ...
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -711,6 +754,7 @@ class IOConfig:
     gcs: GCSConfig
     http: HTTPConfig
     unity: UnityConfig
+    hf: HuggingFaceConfig
 
     def __init__(
         self,
@@ -719,6 +763,7 @@ class IOConfig:
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
+        hf: HuggingFaceConfig | None = None,
     ): ...
     def replace(
         self,
@@ -727,6 +772,7 @@ class IOConfig:
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
+        hf: HuggingFaceConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -868,6 +914,7 @@ class PyPushdowns:
     filters: PyExpr | None
     partition_filters: PyExpr | None
     limit: int | None
+    aggregation: PyExpr | None
 
     def __init__(
         self,
@@ -875,9 +922,18 @@ class PyPushdowns:
         filters: PyExpr | None = None,
         partition_filters: PyExpr | None = None,
         limit: int | None = None,
+        aggregation: PyExpr | None = None,
     ) -> None: ...
     def filter_required_column_names(self) -> list[str]:
         """List of field names that are required by the filter predicate."""
+        ...
+
+    def aggregation_required_column_names(self) -> list[str]:
+        """List of field names that are required by the aggregation predicate."""
+        ...
+
+    def aggregation_count_mode(self) -> CountMode:
+        """Count mode of the aggregation predicate."""
         ...
 
 PyArrowParquetType = tuple[pa.Field, dict[str, str], pa.Array, int]
@@ -1139,6 +1195,7 @@ class PySchema:
     def _truncated_table_string(self) -> str: ...
     def apply_hints(self, hints: PySchema) -> PySchema: ...
     def display_with_metadata(self, include_metadata: bool = False) -> str: ...
+    def min_estimated_size_column(self) -> str | None: ...
 
 class PyExpr:
     def alias(self, name: str) -> PyExpr: ...
@@ -1248,8 +1305,6 @@ def interval_lit(
     nanos: int | None,
 ) -> PyExpr: ...
 def decimal_lit(sign: bool, digits: tuple[int, ...], exp: int) -> PyExpr: ...
-def file_lit(path: str) -> PyExpr: ...
-def file_bytes_lit(bytes: bytes) -> PyExpr: ...
 def list_lit(item: PySeries) -> PyExpr: ...
 def udf(
     name: str,
@@ -1654,6 +1709,7 @@ class AdaptivePhysicalPlanScheduler:
     ) -> AdaptivePhysicalPlanScheduler: ...
     def next(self) -> tuple[int | None, PhysicalPlanScheduler]: ...
     def is_done(self) -> bool: ...
+
     # Todo use in memory info here instead
     def update(
         self,
@@ -1854,8 +1910,8 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: int | None,
-        context: dict[str, str] | None,
+        results_buffer_size: int | None = None,
+        context: dict[str, str] | None = None,
     ) -> AsyncIterator[PyMicroPartition]: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
@@ -1907,6 +1963,7 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
         use_experimental_distributed_engine: bool | None = None,
         min_cpu_per_task: float | None = None,
@@ -1964,6 +2021,8 @@ class PyDaftExecutionConfig:
     def min_cpu_per_task(self) -> float: ...
     @property
     def actor_udf_ready_timeout(self) -> int: ...
+    @property
+    def scantask_max_parallel(self) -> int: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
@@ -1971,17 +2030,24 @@ class PyDaftPlanningConfig:
     def with_config_values(
         self,
         default_io_config: IOConfig | None = None,
+        enable_strict_filter_pushdown: bool | None = None,
     ) -> PyDaftPlanningConfig: ...
     @property
     def default_io_config(self) -> IOConfig: ...
+    @property
+    def enable_strict_filter_pushdown(self) -> bool: ...
 
 class PyDaftContext:
     def __init__(self) -> None: ...
+
     _runner: Runner[Any]
+
     def get_or_create_runner(self) -> Runner[PartitionT]: ...
     def get_or_infer_runner_type(self) -> str: ...
+
     _daft_execution_config: PyDaftExecutionConfig
     _daft_planning_config: PyDaftPlanningConfig
+
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig: ...
     @property
@@ -2074,17 +2140,23 @@ class PySession:
     @staticmethod
     def empty() -> PySession: ...
     def attach_catalog(self, catalog: Catalog, alias: str) -> None: ...
+    def attach_function(self, function: UDF, alias: str | None = None) -> None: ...
+    def attach_provider(self, provider: Provider, alias: str) -> None: ...
     def attach_table(self, table: Table, alias: str) -> None: ...
     def detach_catalog(self, alias: str) -> None: ...
+    def detach_function(self, alias: str) -> None: ...
+    def detach_provider(self, alias: str) -> None: ...
     def detach_table(self, alias: str) -> None: ...
     def create_temp_table(self, ident: str, source: PyTableSource, replace: bool) -> Table: ...
     def current_catalog(self) -> Catalog | None: ...
     def current_namespace(self) -> PyIdentifier | None: ...
-    def current_provider(self) -> str | None: ...
+    def current_provider(self) -> Provider | None: ...
     def current_model(self) -> str | None: ...
     def get_catalog(self, ident: str) -> Catalog: ...
+    def get_provider(self, ident: str) -> Provider: ...
     def get_table(self, ident: PyIdentifier) -> Table: ...
     def has_catalog(self, ident: str) -> bool: ...
+    def has_provider(self, ident: str) -> bool: ...
     def has_table(self, ident: PyIdentifier) -> bool: ...
     def list_catalogs(self, pattern: str | None = None) -> list[str]: ...
     def list_tables(self, pattern: str | None = None) -> list[PyIdentifier]: ...
@@ -2092,8 +2164,6 @@ class PySession:
     def set_namespace(self, ident: PyIdentifier | None) -> None: ...
     def set_provider(self, ident: str | None) -> None: ...
     def set_model(self, ident: str | None) -> None: ...
-    def attach_function(self, function: UDF, alias: str | None = None) -> None: ...
-    def detach_function(self, alias: str) -> None: ...
 
 class InProgressShuffleCache:
     @staticmethod
@@ -2144,7 +2214,7 @@ class PyDaftFile:
     def read(self, size: int | None = None) -> bytes: ...
     def seek(self, offset: int, whence: int = 0) -> int: ...
     @staticmethod
-    def _from_path(path: str) -> PyDaftFile: ...
+    def _from_path(path: str, io_config: IOConfig | None = None) -> PyDaftFile: ...
     @staticmethod
     def _from_bytes(data: bytes) -> PyDaftFile: ...
     def tell(self) -> int: ...

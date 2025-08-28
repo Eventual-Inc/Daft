@@ -8,7 +8,13 @@
         * [URLs and Files](modalities/urls.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
+        * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
+    * Running Custom Python Code
+        * [Overview](custom-code/index.md)
+        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
+        * [Working with GPUs](custom-code/gpu.md)
+        * [External APIs](custom-code/apis.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
@@ -22,11 +28,6 @@
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
-    * Running Custom Python Code
-        * [Overview](custom-code/index.md)
-        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Working with GPUs](custom-code/gpu.md)
-        * [External APIs](custom-code/apis.md)
     * [Scaling Out and Deployment](distributed.md)
     * Optimization and Debugging
         * [Overview](optimization/index.md)
@@ -43,6 +44,7 @@
 * Examples
     * [Overview](examples/index.md)
     * [Document Processing](examples/document-processing.md)
+    * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
     * [Generate Images from Text with Stable Diffusion](examples/image-generation.md)
@@ -51,6 +53,7 @@
     * [Window Functions](examples/window-functions.md)
 * Python API
     * [Overview](api/index.md)
+    * [AI](api/ai.md)
     * [I/O](api/io.md)
     * [DataFrame](api/dataframe.md)
     * [Expressions](api/expressions.md)
