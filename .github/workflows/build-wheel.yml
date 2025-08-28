@@ -46,8 +46,15 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
 
-    - name: Install dependencies
-      run: uv pip install twine yq setuptools_scm
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        if [[ "${{ inputs.os }}" == "windows" ]]; then
+          .\.venv\Scripts\activate
+        else
+          source .venv\bin\activate
+        fi
+        uv pip install twine yq setuptools_scm
 
     - uses: oven-sh/setup-bun@v2
       with:
@@ -66,6 +73,7 @@ jobs:
 
     - name: Configure RUSTFLAGS for x86
       if: ${{ (inputs.arch == 'x86_64') }}
+      shell: bash
       run: |
         if [[ "${{ inputs.lts }}" == "true" ]]; then
           echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV && \
@@ -77,6 +85,7 @@ jobs:
 
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
+      shell: bash
       run: |
         bun install
         bun run build
