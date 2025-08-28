@@ -62,6 +62,10 @@ Daft is a high-performance data engine providing simple and reliable data proces
     font-style: italic;
   }
 
+  .daft-pipeline-component .source-comment {
+    color: rgba(185, 200, 255, 0.7);
+  }
+
   .daft-pipeline-component .pipeline-item {
     background: rgba(255,255,255,.02);
     border: 1px solid rgba(255,255,255,.08);
@@ -108,7 +112,8 @@ Daft is a high-performance data engine providing simple and reliable data proces
       gap: 20px;
     }
     .daft-pipeline-component .pipeline-item {
-      min-height: 50px;
+      min-height: 80px;
+      padding: 12px 16px;
     }
     .daft-pipeline-component .description p:last-child {
       font-size: 12px;
@@ -150,7 +155,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
         <div class="description">
           <div class="stage-header">WRITE</div>
           <p>Daft lands data into specialized data systems for downstream use-cases</p>
-          <p>Search (fulltext, vector)<br>Applications (SQL database)<br>Analytics (data warehouse)<br>Model Training (TFRecords on object storage)</p>
+          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model Training (S3 object storage)</p>
         </div>
         <div class="pipeline-item">
           <span id="write" class="swap"></span>
@@ -164,50 +169,177 @@ Daft is a high-performance data engine providing simple and reliable data proces
 
 // Hierarchical data buckets by modality with transform-to-write mappings
 const MODALITIES = {
-  "Images (JPEG)": {
+  "Images": {
+    sources: ["*.jpeg files in S3", "URLs in database", "*.parquet on Huggingface"],
     transforms: {
-      "OCR for text extraction": ["Elasticsearch"],
-      "Image captioning with LLM": ["PostgreSQL", "MongoDB"],
-      "Object detection": ["PostgreSQL", "MySQL"],
-      "Generate embeddings": ["Turbopuffer", "LanceDB"]
+      "OCR for text extraction": {
+        details: ["# use Tesseract OCR engine", "# use Azure Computer Vision API"],
+        destinations: {
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Image captioning with LLM": {
+        details: ["# use qwen model on H100 GPU"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MongoDB": "# for querying by webapps"
+        }
+      },
+      "Object detection": {
+        details: ["# use YOLOv8 model on GPU", "# use Azure Object Detection APIs"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MySQL": "# for querying by webapps"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use CLIP model on GPU", "# use OpenAI text-embedding-3"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
     }
   },
-  "PDFs": {
+  "Documents": {
+    sources: ["*.pdf files in S3", "*.docx files in GCS", "*.html files in R2", "*.parquet on Huggingface"],
     transforms: {
-      "OCR for text extraction": ["Elasticsearch"],
-      "Structured data extraction": ["BigQuery", "Snowflake", "Databricks"],
-      "Generate embeddings": ["Turbopuffer", "LanceDB"],
-      "PII detection": ["BigQuery", "Snowflake", "Databricks"],
-      "Chunking + deduplication": ["Parquet"]
+      "OCR for text extraction": {
+        details: ["# use Tesseract OCR engine", "# use EasyOCR with GPU acceleration", "# use Azure Computer Vision API"],
+        destinations: {
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Structured data extraction": {
+        details: ["# use OpenAI's API for gpt-4o", "# use Azure Form Recognizer APIs"],
+        destinations: {
+          "BigQuery": "# for analytics",
+          "Snowflake": "# for analytics",
+          "Databricks": "# for analytics"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use OpenAI's API for text-embedding-3", "# use sentence-transformers on GPU"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      },
+      "PII detection": {
+        details: ["# use spaCy NER model", "# use Azure PII detection"],
+        destinations: {
+          "BigQuery": "# for analytics",
+          "Snowflake": "# for analytics",
+          "Databricks": "# for analytics"
+        }
+      },
+      "Chunking + deduplication": {
+        details: ["# use daft default splitting"],
+        destinations: {
+          "Parquet": "# for data lake storage"
+        }
+      }
     }
   },
-  "Video (MP4/MKV)": {
+  "Video": {
+    sources: ["*.mp4 files in S3", "URLs in CSVs", "*.parquet on Huggingface"],
     transforms: {
-      "Video captioning": ["PostgreSQL"],
-      "Scene detection": ["AWS S3"],
-      "Audio transcription": ["PostgreSQL", "MongoDB", "Elasticsearch"],
-      "Generate embeddings": ["Turbopuffer", "LanceDB"]
+      "Video captioning": {
+        details: ["# custom Python code: extract audio and transcribe"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps"
+        }
+      },
+      "Scene detection": {
+        details: ["# use OpenCV scene detection", "# use PySceneDetect library"],
+        destinations: {
+          "AWS S3": "# for object storage"
+        }
+      },
+      "Audio transcription": {
+        details: ["# use Whisper model on GPU", "# use Azure Speech Services API"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MongoDB": "# for querying by webapps",
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use CLIP model on CPU", "# use CLIP model on GPU"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
     }
   },
   "Audio (WAV/MP3/FLAC)": {
+    sources: ["*.wav files in S3", "URLs in database", "*.parquet on Huggingface"],
     transforms: {
-      "Transcription with Whisper": ["PostgreSQL", "MongoDB", "Elasticsearch"],
-      "Speaker identification": ["PostgreSQL", "MySQL"],
-      "Emotion detection": ["BigQuery", "Snowflake", "Databricks"],
-      "Generate embeddings": ["Turbopuffer", "LanceDB"]
+      "Transcription with Whisper": {
+        details: ["# use Whisper.cpp on CPU", "# use Azure Speech Services API"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MongoDB": "# for querying by webapps",
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Speaker identification": {
+        details: ["# use custom Python code with pyannote.audio", "# use Azure Speaker Recognition API"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MySQL": "# for querying by webapps"
+        }
+      },
+      "Emotion detection": {
+        details: ["# use custom Python code with wav2vec2", "# use Azure Emotion API"],
+        destinations: {
+          "BigQuery": "# for analytics",
+          "Snowflake": "# for analytics",
+          "Databricks": "# for analytics"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use custom Python code with wav2vec2", "# use OpenAI's endpoint for text-embedding-3"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
     }
   },
   "AI Agent Logs": {
+    sources: ["JSON logs in Kafka", "JSON-lines in S3"],
     transforms: {
-      "LLM summarization": ["PostgreSQL", "MySQL"],
-      "Generate embeddings": ["Turbopuffer", "LanceDB"]
+      "LLM summarization": {
+        details: ["# use OpenAI gpt-4o endpoint", "# use Claude 3.5 Sonnet API endpoint", "# use custom summarization model on GPUs"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MySQL": "# for querying by webapps"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use OpenAI's endpoint for text-embedding-3", "# use sentence-transformers on GPUs", "# use BERT model on GPUs"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
     }
   }
 };
 
 // Helpers
 const q = (id) => document.getElementById(id);
-const els = { read: q("read"), xform: q("xform"), write: q("write") };
+
+// Wait for DOM to be ready
+function waitForElements() {
+    const els = { read: q("read"), xform: q("xform"), write: q("write") };
+    if (els.read && els.xform && els.write) {
+        return els;
+    }
+    return null;
+}
 
 function pick(list, last) {
     if (list.length < 2) return list[0];
@@ -219,6 +351,8 @@ function pick(list, last) {
 
 // Typewriter effect
 async function typeTo(el, text) {
+    if (!el) return; // Safety check for null elements
+
     const speed = 12 + Math.random() * 10;
     el.classList.remove("fade-in");
     el.innerHTML = "";
@@ -227,28 +361,43 @@ async function typeTo(el, text) {
     el.appendChild(span);
 
     for (let i = 0; i <= text.length; i++) {
-        span.innerHTML = text.slice(0, i) + '<span class="cursor">█</span>';
+        const currentText = text.slice(0, i);
+        const lines = currentText.split('\n');
+        const formattedLines = lines.map(line => {
+            if (line.startsWith('# ')) {
+                return `<span class="source-comment">${line}</span>`;
+            }
+            return line;
+        });
+        span.innerHTML = formattedLines.join('\n') + '<span class="cursor">█</span>';
         await new Promise(r => setTimeout(r, speed));
     }
     el.classList.add("fade-in");
 }
 
 // Cycle logic
-let last = { read: null, xform: null, write: null };
+let last = { read: null, xform: null, write: null, source: null, detail: null };
 async function shuffleAll() {
+    const els = waitForElements();
+    if (!els) return; // Exit if elements aren't ready
+
     const modalities = Object.keys(MODALITIES);
     const read = pick(modalities, last.read);
     const modality = MODALITIES[read];
+    const source = pick(modality.sources, last.source);
     const transforms = Object.keys(modality.transforms);
     const xform = pick(transforms, last.xform);
-    const writes = modality.transforms[xform];
-    const write = pick(writes, last.write);
-    last = { read, xform, write };
+    const transformData = modality.transforms[xform];
+    const detail = pick(transformData.details, last.detail);
+    const destinations = Object.keys(transformData.destinations);
+    const write = pick(destinations, last.write);
+    const writeUseCase = transformData.destinations[write];
+    last = { read, xform, write, source, detail };
 
     await Promise.all([
-        typeTo(els.read, read),
-        typeTo(els.xform, xform),
-        typeTo(els.write, write)
+        typeTo(els.read, read + "\n" + "# " + source),
+        typeTo(els.xform, xform + "\n" + detail),
+        typeTo(els.write, write + "\n" + writeUseCase)
     ]);
 }
 
