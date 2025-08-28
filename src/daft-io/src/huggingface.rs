@@ -41,8 +41,6 @@ enum Error {
     UnableToOpenFile {
         path: String,
         source: reqwest_middleware::reqwest::Error,
-        #[snafu(backtrace)]
-        backtrace: snafu::Backtrace,
     },
 
     #[snafu(display("Unable to determine size of {}", path))]
@@ -260,7 +258,7 @@ impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{UnableToDetermineSize, UnableToOpenFile};
         match error {
-            UnableToOpenFile { path, source, .. } => match source.status().map(|v| v.as_u16()) {
+            UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
                 Some(404 | 410) => Self::NotFound {
                     path,
                     source: source.into(),
@@ -378,10 +376,10 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
-                UnableToOpenFileSnafu {
+                Error::UnableToOpenFile {
                     path: uri.to_string(),
+                    source: e,
                 }
-                .into_error(e)
             }
         })?;
 
@@ -448,7 +446,10 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
-                UnableToOpenFileSnafu { path: uri.clone() }.into_error(e)
+                Error::UnableToOpenFile {
+                    path: uri.clone(),
+                    source: e,
+                }
             }
         })?;
 
@@ -556,10 +557,10 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
-                UnableToOpenFileSnafu {
+                Error::UnableToOpenFile {
                     path: api_uri.clone(),
+                    source: e,
                 }
-                .into_error(e)
             }
         })?;
 
