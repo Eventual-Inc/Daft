@@ -358,6 +358,9 @@ impl DataType {
             File => Struct(vec![
                 Field::new("discriminant", UInt8),
                 Field::new("data", Binary),
+                Field::new("url", Utf8),
+                #[cfg(feature = "python")]
+                Field::new("io_config", Python),
             ]),
             _ => {
                 assert!(self.is_physical());

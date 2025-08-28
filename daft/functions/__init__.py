@@ -4,20 +4,21 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from daft.expressions import Expression
 
-from .window import (
-    row_number,
-    rank,
-    dense_rank,
-)
-from .misc import monotonically_increasing_id, format, file
-from .columnar import (
+from daft.functions.ai import embed_text
+from daft.functions.columnar import (
     columns_sum,
     columns_mean,
     columns_avg,
     columns_min,
     columns_max,
 )
-from .llm import llm_generate
+from daft.functions.llm import llm_generate
+from daft.functions.misc import monotonically_increasing_id, format, file
+from daft.functions.window import (
+    row_number,
+    rank,
+    dense_rank,
+)
 
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "columns_min",
     "columns_sum",
     "dense_rank",
+    "embed_text",
     "file",
     "format",
     "llm_generate",

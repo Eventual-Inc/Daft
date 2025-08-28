@@ -16,7 +16,11 @@ use tracing::{instrument, Span};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType,
+    pipeline::{MorselSizeRequirement, NodeName},
+    ExecutionTaskSpawner,
+};
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -162,12 +166,9 @@ impl IntermediateOperator for ProjectOperator {
         Ok(self.max_concurrency)
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        if let Some(batch_size) = self.batch_size {
-            (batch_size, batch_size)
-        } else {
-            (0, runtime_handle.default_morsel_size())
-        }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        self.batch_size
+            .map(|batch_size| MorselSizeRequirement::Flexible(0, batch_size))
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

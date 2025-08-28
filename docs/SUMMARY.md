@@ -44,6 +44,7 @@
 * Examples
     * [Overview](examples/index.md)
     * [Document Processing](examples/document-processing.md)
+    * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
     * [Generate Images from Text with Stable Diffusion](examples/image-generation.md)
@@ -52,6 +53,7 @@
     * [Window Functions](examples/window-functions.md)
 * Python API
     * [Overview](api/index.md)
+    * [AI](api/ai.md)
     * [I/O](api/io.md)
     * [DataFrame](api/dataframe.md)
     * [Expressions](api/expressions.md)

@@ -110,6 +110,7 @@ impl IntoBatchesNode {
                             LocalPhysicalPlan::into_batches(
                                 input,
                                 group_size,
+                                true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                                 StatsState::NotMaterialized,
                             )
                         },
@@ -131,6 +132,7 @@ impl IntoBatchesNode {
                     LocalPhysicalPlan::into_batches(
                         input,
                         current_group_size,
+                        true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
                     )
                 },
@@ -189,6 +191,7 @@ impl DistributedPipelineNode for IntoBatchesNode {
             LocalPhysicalPlan::into_batches(
                 input,
                 self_clone.batch_size,
+                false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
             )
         });

@@ -15,7 +15,7 @@ pub use plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, IntoBatches, IntoPartitions, Limit, LocalPhysicalPlan, LocalPhysicalPlanRef,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Repartition, Sample,
-    Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    SamplingMethod, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
