@@ -11,6 +11,7 @@ import sys
 import daft
 from daft import col
 from daft.io import IOConfig, S3Config
+from daft.sql import SQLCatalog
 
 TABLE_NAMES = [
     "part",
@@ -69,14 +70,14 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
         # TODO: remove this once we support q21
         return q21(get_df)
     else:
-        bindings = {tbl: lowercase_column_names(get_df(tbl)) for tbl in TABLE_NAMES}
+        catalog = SQLCatalog({tbl: lowercase_column_names(get_df(tbl)) for tbl in TABLE_NAMES})
 
         module_dir = os.path.dirname(os.path.abspath(__file__))
         query_file_path = os.path.join(module_dir, f"queries/{q:02}.sql")
 
         with open(query_file_path) as query_file:
             query = query_file.read()
-        return daft.sql(query, **bindings)
+        return daft.sql(query, catalog=catalog)
 
 
 def main(parquet_path, q):

@@ -20,13 +20,13 @@ def fixed_table():
     return table.eval_expression_list([col("col").cast(fixed_dtype)])
 
 
-def test_list_length(table):
-    result = table.eval_expression_list([col("col").list.length()])
+def test_list_lengths(table):
+    result = table.eval_expression_list([col("col").list.lengths()])
     assert result.to_pydict() == {"col": [None, 0, 1, 1, 2, 2, 3]}
 
 
-def test_fixed_list_length(fixed_table):
-    result = fixed_table.eval_expression_list([col("col").list.length()])
+def test_fixed_list_lengths(fixed_table):
+    result = fixed_table.eval_expression_list([col("col").list.lengths()])
     assert result.to_pydict() == {"col": [2, 2, 2, 2, None]}
 
 
@@ -50,3 +50,12 @@ def test_fixed_list_count(fixed_table):
 
     result = fixed_table.eval_expression_list([col("col").list.count(CountMode.Null)])
     assert result.to_pydict() == {"col": [0, 0, 1, 2, None]}
+
+
+def test_list_length(fixed_table):
+    with pytest.warns(DeprecationWarning):
+        lengths_result = fixed_table.eval_expression_list([col("col").list.lengths()])
+    length_result = fixed_table.eval_expression_list([col("col").list.length()])
+
+    assert lengths_result.to_pydict() == {"col": [2, 2, 2, 2, None]}
+    assert length_result.to_pydict() == {"col": [2, 2, 2, 2, None]}
