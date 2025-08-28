@@ -331,6 +331,8 @@ impl HFSource {
             }
         };
 
+        let reqclone = req.try_clone();
+
         let response = req.send().await.context(UnableToConnectSnafu::<String> {
             path: uri.to_string(),
         })?;
@@ -344,7 +346,10 @@ impl HFSource {
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         self.request(uri, true, range, client).await
                     }
-                    _ => Err(e).context(UnableToOpenFileSnafu::<String> { path: uri.into() })?,
+                    _ => {
+                        println!("reqclone: {:?}", reqclone);
+                        Err(e).context(UnableToOpenFileSnafu::<String> { path: uri.into() })?
+                    }
                 }
             }
             Ok(res) => {
@@ -376,6 +381,7 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
+                println!("%%%%%%%%: {:?}", e);
                 Error::UnableToOpenFile {
                     path: uri.to_string(),
                     source: e,
@@ -446,6 +452,7 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
+                println!("########: {:?}", e);
                 Error::UnableToOpenFile {
                     path: uri.clone(),
                     source: e,
@@ -557,6 +564,7 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
+                println!("$$$$$$$$: {:?}", e);
                 Error::UnableToOpenFile {
                     path: api_uri.clone(),
                     source: e,
