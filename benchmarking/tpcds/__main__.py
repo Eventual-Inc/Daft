@@ -256,7 +256,7 @@ def run_query_on_ray(
 def run_query_on_local(
     run_args: RunArgs,
 ) -> list[Result]:
-    bindings = helpers.generate_bindings(run_args.scaled_tpcds_gen_folder)
+    catalog = helpers.generate_catalog(run_args.scaled_tpcds_gen_folder)
     results = []
 
     for query_index in run_args.query_indices:
@@ -272,9 +272,9 @@ def run_query_on_local(
         validation_error = None
 
         try:
-            daft.sql(query, **bindings).explain(show_all=True)
+            daft.sql(query, catalog=catalog).explain(show_all=True)
             if not run_args.dry_run:
-                daft_results = daft.sql(query, **bindings).collect()
+                daft_results = daft.sql(query, catalog=catalog).collect()
 
                 if run_args.validate and not run_args.dry_run:
                     is_correct, validation_error = validate_query_results(
