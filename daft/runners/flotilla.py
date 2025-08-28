@@ -94,14 +94,14 @@ def get_boundaries_remote(
     return result._micropartition
 
 
-def get_boundaries(
+async def get_boundaries(
     samples: list[ray.ObjectRef],
     sort_by: list[Expression],
     descending: list[bool],
     nulls_first: list[bool] | None,
     num_quantiles: int,
 ) -> PyMicroPartition:
-    return ray.get(get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples))
+    return await get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples)
 
 
 @dataclass
@@ -223,6 +223,7 @@ class RemoteFlotillaRunner:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
+        ray._private.worker.blocking_get_inside_async_warned = True
 
     def run_plan(
         self,
