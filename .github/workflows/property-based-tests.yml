@@ -32,9 +32,13 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
+    - name: Setup UV
+      uses: astral-sh/setup-uv@v6
+
     - name: Setup Virtual Env
       run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
