@@ -35,6 +35,7 @@ repos:
     - --no-sort-keys
     - '--indent=  '
   - id: check-added-large-files
+    exclude: uv.lock
   - id: check-merge-conflict
   - id: check-docstring-first
   - id: check-toml
