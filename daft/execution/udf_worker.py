@@ -3,6 +3,7 @@ from __future__ import annotations
 import pickle
 import sys
 from multiprocessing.connection import Client
+from pickle import PicklingError
 from traceback import TracebackException
 
 from daft.errors import UDFException
@@ -62,7 +63,13 @@ def udf_event_loop(
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None
-        conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), pickle.dumps(exc)))
+        try:
+            # TODO: Consider using cloudpickle, since it can pickle more types
+            # like lambda functions
+            exc_bytes = pickle.dumps(exc)
+        except (PicklingError, AttributeError):
+            exc_bytes = None
+        conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), exc_bytes))
     except Exception as e:
         try:
             conn.send((_ERROR, TracebackException.from_exception(e)))
