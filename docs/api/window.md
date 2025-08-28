@@ -1,6 +1,6 @@
 # Window Functions
 
-Window functions allow you to perform calculations across a set of rows that are related to the current row. They operate on a group of rows (called a window frame) and return a result for each row based on the values in its window frame, without collapsing the result into a single row like aggregate functions do. Learn more about [Window Functions](../core_concepts.md/#window-functions) in the Daft User Guide.
+Window functions allow you to perform calculations across a set of rows that are related to the current row. They operate on a group of rows (called a window frame) and return a result for each row based on the values in its window frame, without collapsing the result into a single row like aggregate functions do. See [Window Functions Tutorial](../examples/window-functions.md) for a step-by-step tutorial.
 
 ::: daft.window.Window
 

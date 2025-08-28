@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
+from collections.abc import Callable as CallableABC
 from typing import (
     Any,
     Callable,
@@ -84,6 +85,19 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
             return True
 
         origin_T = get_origin(T)
+
+        # Handle Callable types
+        if (origin_T is CallableABC or T is CallableABC) and isinstance(CallableABC, type):
+            return isinstance(value, CallableABC)
+
+        # Handle generic types that are subclasses of Callable
+        if (
+            origin_T is not None
+            and hasattr(origin_T, "__mro__")
+            and CallableABC in getattr(origin_T, "__mro__", [])
+            and isinstance(CallableABC, type)
+        ):
+            return isinstance(value, CallableABC)
 
         # T is a builtin primitive type, like `int`
         if origin_T is None:

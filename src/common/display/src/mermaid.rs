@@ -23,7 +23,7 @@ pub struct MermaidDisplayOptions {
     pub subgraph_options: Option<SubgraphOptions>,
 }
 
-/// subrgaph <subgraph_id>["<name>"]
+/// subgraph <subgraph_id>["<name>"]
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject))]
 pub struct SubgraphOptions {
@@ -91,6 +91,16 @@ impl<W> MermaidDisplayVisitor<'_, W>
 where
     W: fmt::Write,
 {
+    fn escape(text: &str, is_node_id: bool) -> String {
+        if is_node_id {
+            // Considering that the mermaid node id constraint does not allow semicolons,
+            // underscores are used instead.
+            text.replace(['<', '>'], "__")
+        } else {
+            text.replace('<', "&lt;").replace('>', "&gt;")
+        }
+    }
+
     fn add_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
         let name = node.get_name();
         let display = self.display_for_node(node)?;
@@ -104,7 +114,12 @@ where
         if display.is_empty() {
             return Err(fmt::Error);
         }
-        writeln!(self.output, r#"{id}["{display}"]"#)?;
+        writeln!(
+            self.output,
+            r#"{}["{}"]"#,
+            Self::escape(&id, true),
+            Self::escape(&display, false)
+        )?;
 
         self.nodes.insert(node.id(), id);
         Ok(())
@@ -129,7 +144,12 @@ where
     }
 
     fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
-        writeln!(self.output, r"{child} --> {parent}")
+        writeln!(
+            self.output,
+            r"{} --> {}",
+            Self::escape(&child, true),
+            Self::escape(&parent, true)
+        )
     }
 
     fn fmt_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
@@ -154,7 +174,12 @@ where
             metadata,
         }) = &self.subgraph_options
         {
-            writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
+            writeln!(
+                self.output,
+                r#"subgraph {}["{}"]"#,
+                Self::escape(subgraph_id, true),
+                Self::escape(name, false)
+            )?;
             if self.bottom_up {
                 writeln!(self.output, r"direction BT")?;
             } else {
@@ -163,7 +188,12 @@ where
             // add metadata to the subgraph
             let metadata_id = if let Some(metadata) = metadata {
                 let id = format!("{subgraph_id}_metadata");
-                writeln!(self.output, r#"{id}["{metadata}"]"#)?;
+                writeln!(
+                    self.output,
+                    r#"{}["{}"]"#,
+                    Self::escape(&id, true),
+                    Self::escape(metadata, false)
+                )?;
                 Some(id)
             } else {
                 None
@@ -175,10 +205,20 @@ where
             if let Some(metadata_id) = metadata_id {
                 if self.bottom_up {
                     let first_node_id = self.nodes.values().next().unwrap();
-                    writeln!(self.output, r"{first_node_id} ~~~ {metadata_id}")?;
+                    writeln!(
+                        self.output,
+                        r"{} ~~~ {}",
+                        Self::escape(first_node_id, true),
+                        Self::escape(&metadata_id, true)
+                    )?;
                 } else {
                     let last_node_id = self.nodes.values().last().unwrap();
-                    writeln!(self.output, r"{metadata_id} ~~~ {last_node_id}")?;
+                    writeln!(
+                        self.output,
+                        r"{} ~~~ {}",
+                        Self::escape(&metadata_id, true),
+                        Self::escape(last_node_id, true)
+                    )?;
                 }
             }
 

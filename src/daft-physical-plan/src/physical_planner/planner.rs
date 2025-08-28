@@ -545,11 +545,11 @@ impl AdaptivePlanner {
         self.stage_cache.insert_stage(&next_stage)?;
         match &next_stage {
             QueryStageOutput::Final { physical_plan } => {
-                log::info!("Emitting final plan:\n {}", physical_plan.repr_ascii(true));
+                log::debug!("Emitting final plan:\n {}", physical_plan.repr_ascii(true));
                 self.status = AdaptivePlannerStatus::Done;
             }
             QueryStageOutput::Partial { physical_plan, .. } => {
-                log::info!(
+                log::debug!(
                     "Emitting partial plan:\n {}",
                     physical_plan.repr_ascii(true)
                 );

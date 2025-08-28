@@ -134,7 +134,10 @@ class DataType:
                     return None
                 else:
                     pass
-
+            elif isinstance(item, tuple):
+                fields = {}
+                fields = {f"_{i}": DataType._infer_type(value) for i, value in enumerate(item)}
+                curr_dtype = DataType.struct(fields)
             else:
                 return None
 
@@ -145,15 +148,13 @@ class DataType:
         import types
         from typing import get_args, get_origin
 
-        from PIL import Image
-
         if isinstance(user_provided_type, DataType):
             return user_provided_type
         elif (
             isinstance(user_provided_type, types.ModuleType)
             and hasattr(user_provided_type.module, "__name__")
             and user_provided_type.module.__name__ == "PIL.Image"
-        ) or user_provided_type is Image.Image:
+        ) or (pil_image.module_available() and user_provided_type is pil_image.Image):
             return DataType.image()
         elif isinstance(user_provided_type, dict):
             return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
@@ -180,10 +181,30 @@ class DataType:
                 return DataType.binary()
             elif user_provided_type is bool:
                 return DataType.bool()
+            elif user_provided_type is list:
+                inner_type = get_args(user_provided_type)
+                return DataType.list(DataType._infer_type(inner_type))
             elif user_provided_type is object:
                 return DataType.python()
             else:
                 raise ValueError(f"Unrecognized Python type, cannot convert to Daft type: {user_provided_type}")
+        elif isinstance(user_provided_type, bool):
+            return DataType.bool()
+        elif isinstance(user_provided_type, int):
+            return DataType.int64()
+        elif isinstance(user_provided_type, float):
+            return DataType.float64()
+        elif isinstance(user_provided_type, str):
+            return DataType.string()
+        elif isinstance(user_provided_type, bytes):
+            return DataType.binary()
+
+        elif isinstance(user_provided_type, list):
+            return DataType.list(DataType._infer_type(user_provided_type[0]))
+        elif isinstance(user_provided_type, tuple):
+            return DataType.struct({f"_{i}": DataType._infer_type(value) for i, value in enumerate(user_provided_type)})
+        elif user_provided_type is object:
+            return DataType.python()
         else:
             raise ValueError(f"Unable to infer Daft DataType for provided value: {user_provided_type}")
 
@@ -1195,7 +1216,7 @@ class DataType:
 
 
 # Type alias for a union of types that can be inferred into a DataType
-DataTypeLike = Union[DataType, type, str]
+DataTypeLike = Union[DataType, type, str, tuple[Any, ...]]
 
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()
@@ -1212,25 +1233,7 @@ def _ensure_registered_super_ext_type() -> None:
     if not _EXT_TYPE_REGISTERED:
         with _EXT_TYPE_REGISTRATION_LOCK:
             if not _EXT_TYPE_REGISTERED:
-
-                class DaftExtension(pa.ExtensionType):  # type: ignore[misc]
-                    def __init__(self, dtype: pa.DataType, metadata: bytes = b"") -> None:
-                        # attributes need to be set first before calling
-                        # super init (as that calls serialize)
-                        self._metadata = metadata
-                        super().__init__(dtype, "daft.super_extension")
-
-                    def __reduce__(
-                        self,
-                    ) -> tuple[Callable[[pa.DataType, bytes], DaftExtension], tuple[pa.DataType, bytes]]:
-                        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
-
-                    def __arrow_ext_serialize__(self) -> bytes:
-                        return self._metadata
-
-                    @classmethod
-                    def __arrow_ext_deserialize__(cls, storage_type: pa.DataType, serialized: bytes) -> DaftExtension:
-                        return cls(storage_type, serialized)
+                from daft.extension_type import DaftExtension
 
                 _STATIC_DAFT_EXTENSION = DaftExtension
                 pa.register_extension_type(DaftExtension(pa.null()))
