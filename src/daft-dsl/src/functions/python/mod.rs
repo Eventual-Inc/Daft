@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use super::FunctionExpr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{functions::scalar::ScalarFn, python_udf::PyScalarFn, Expr, ExprRef};
+use crate::{functions::scalar::ScalarFn, Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MaybeInitializedUDF {
@@ -243,100 +243,66 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum UDFImpl {
-    Legacy(LegacyPythonUDF, Vec<ExprRef>),
-    PyScalarFn(PyScalarFn),
+pub struct UDFProperties {
+    pub name: String,
+    pub resource_request: Option<ResourceRequest>,
+    pub batch_size: Option<usize>,
+    pub concurrency: Option<usize>,
+    pub use_process: Option<bool>,
 }
 
-impl UDFImpl {
-    pub fn from_expr(expr: &ExprRef) -> DaftResult<Self> {
-        match expr.as_ref() {
-            Expr::Function {
-                func: FunctionExpr::Python(func),
-                inputs: input_exprs,
-            } => Ok(Self::Legacy(func.clone(), input_exprs.clone())),
-            Expr::ScalarFn(ScalarFn::Python(f)) => Ok(Self::PyScalarFn(f.clone())),
-            _ => Err(DaftError::InternalError(format!(
-                "Expected a Python UDF, got {}",
-                expr
-            ))),
-        }
-    }
-
-    pub fn to_expr(&self) -> Arc<Expr> {
-        match self {
-            Self::Legacy(udf, inputs) => Expr::Function {
-                func: FunctionExpr::Python(udf.clone()),
-                inputs: inputs.clone(),
-            }
-            .arced(),
-            Self::PyScalarFn(udf) => Expr::ScalarFn(ScalarFn::Python(udf.clone())).arced(),
-        }
-    }
-
-    pub fn to_field(&self, schema: &SchemaRef) -> DaftResult<Field> {
-        match self {
-            Self::Legacy(udf, inputs) => match inputs.as_slice() {
-                [] => Err(DaftError::ValueError(
-                    "Cannot run UDF with 0 expression arguments".into(),
-                )),
-                [first, ..] => Ok(Field::new(first.name(), udf.return_dtype.clone())),
-            },
-            Self::PyScalarFn(udf) => udf.to_field(schema),
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Legacy(udf, _) => udf.name.as_ref(),
-            Self::PyScalarFn(udf) => udf.name(),
-        }
-    }
-
-    pub fn args(&self) -> Vec<ExprRef> {
-        match self {
-            Self::Legacy(_, inputs) => inputs.clone(),
-            Self::PyScalarFn(udf) => udf.args(),
-        }
-    }
-
+impl UDFProperties {
     pub fn is_actor_pool_udf(&self) -> bool {
-        if let Self::Legacy(udf, _) = self {
-            udf.concurrency.is_some()
-        } else {
-            false
-        }
+        self.concurrency.is_some()
     }
 
-    pub fn batch_size(&self) -> Option<usize> {
-        if let Self::Legacy(udf, _) = self {
-            udf.batch_size
-        } else {
-            Some(512)
-        }
-    }
+    pub fn from_expr(expr: &ExprRef) -> DaftResult<Self> {
+        let mut udf_properties = None;
+        let mut num_udfs = 0;
 
-    pub fn concurrency(&self) -> Option<usize> {
-        if let Self::Legacy(udf, _) = self {
-            udf.concurrency
-        } else {
-            None
-        }
-    }
+        expr.apply(|e| {
+            if let Expr::Function {
+                func:
+                    FunctionExpr::Python(LegacyPythonUDF {
+                        name,
+                        resource_request,
+                        batch_size,
+                        concurrency,
+                        use_process,
+                        ..
+                    }),
+                ..
+            } = e.as_ref()
+            {
+                num_udfs += 1;
+                udf_properties = Some(Self {
+                    name: name.as_ref().clone(),
+                    resource_request: resource_request.clone(),
+                    batch_size: *batch_size,
+                    concurrency: *concurrency,
+                    use_process: *use_process,
+                });
+            } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
+                num_udfs += 1;
+                udf_properties = Some(Self {
+                    name: py.name().to_string(),
+                    resource_request: None,
+                    batch_size: Some(512),
+                    concurrency: None,
+                    use_process: None,
+                });
+            }
+            Ok(TreeNodeRecursion::Continue)
+        })
+        .unwrap();
 
-    pub fn use_process(&self) -> Option<bool> {
-        if let Self::Legacy(udf, _) = self {
-            udf.use_process
+        if num_udfs != 1 {
+            Err(DaftError::ValueError(format!(
+                "Expected exactly one UDF in expression, got {} UDFs",
+                num_udfs
+            )))
         } else {
-            None
-        }
-    }
-
-    pub fn resource_request(&self) -> Option<&ResourceRequest> {
-        if let Self::Legacy(udf, _) = self {
-            udf.resource_request.as_ref()
-        } else {
-            None
+            Ok(udf_properties.unwrap())
         }
     }
 }

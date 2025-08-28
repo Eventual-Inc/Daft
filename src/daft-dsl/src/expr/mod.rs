@@ -947,7 +947,15 @@ impl Expr {
     }
 
     pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
-        Self::Alias(self.clone(), name.into()).into()
+        Self::Alias(
+            if let Self::Alias(inner, _) = self.as_ref() {
+                inner.clone()
+            } else {
+                self.clone()
+            },
+            name.into(),
+        )
+        .into()
     }
 
     pub fn if_else(self: ExprRef, if_true: ExprRef, if_false: ExprRef) -> ExprRef {

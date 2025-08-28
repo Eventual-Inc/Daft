@@ -6,7 +6,7 @@ use common_treenode::TreeNode;
 use daft_dsl::{
     count_actor_pool_udfs,
     functions::{
-        python::{LegacyPythonUDF, UDFImpl},
+        python::{LegacyPythonUDF, UDFProperties},
         FunctionExpr,
     },
     Expr, ExprRef,
@@ -21,7 +21,8 @@ use crate::{impl_default_tree_display, PhysicalPlanRef};
 pub struct ActorPoolProject {
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
-    pub udf_expr: UDFImpl,
+    pub expr: ExprRef,
+    pub udf_properties: UDFProperties,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
@@ -29,7 +30,8 @@ impl ActorPoolProject {
     pub(crate) fn try_new(
         input: PhysicalPlanRef,
         projection: Vec<ExprRef>,
-        udf_expr: UDFImpl,
+        expr: ExprRef,
+        udf_properties: UDFProperties,
     ) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
 
@@ -41,19 +43,20 @@ impl ActorPoolProject {
         Ok(Self {
             input,
             projection,
-            udf_expr,
+            expr,
+            udf_properties,
             clustering_spec,
         })
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
-        self.udf_expr.resource_request().cloned()
+        self.udf_properties.resource_request.clone()
     }
 
     /// Retrieves the concurrency of this ActorPoolProject
     pub fn concurrency(&self) -> usize {
-        self.udf_expr
-            .concurrency()
+        self.udf_properties
+            .concurrency
             .expect("ActorPoolProject should have concurrency specified")
     }
 

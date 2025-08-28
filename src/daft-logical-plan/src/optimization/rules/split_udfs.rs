@@ -3,8 +3,7 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
-    expr::count_udfs,
-    functions::{python::UDFImpl, scalar::ScalarFn, BuiltinScalarFn},
+    functions::{scalar::ScalarFn, BuiltinScalarFn},
     is_udf,
     optimization::{get_required_columns, requires_computation},
     resolved_col, Column, Expr, ExprRef, ResolvedColumn,
@@ -510,19 +509,8 @@ fn recursive_optimize_project(
                 .filter(|c| c.name() != expr.name())
                 .collect();
 
-            let (udf_expr, out_name) = expr.unwrap_alias();
-            let num_udfs = count_udfs(&udf_expr);
-            assert_eq!(num_udfs, 1, "Expected only one udf in an udf project");
-            let udf_expr = UDFImpl::from_expr(&udf_expr)?;
-            let out_name = out_name.unwrap_or_else(|| expr.name().into());
-
-            child = LogicalPlan::UDFProject(UDFProject::try_new(
-                child,
-                udf_expr,
-                out_name,
-                passthrough_columns,
-            )?)
-            .arced();
+            child = LogicalPlan::UDFProject(UDFProject::try_new(child, expr, passthrough_columns)?)
+                .arced();
         }
         child
     };
@@ -550,8 +538,11 @@ mod tests {
     use common_resource_request::ResourceRequest;
     use daft_core::prelude::*;
     use daft_dsl::{
-        functions::python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject, UDFImpl},
-        resolved_col, ExprRef,
+        functions::{
+            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
+            FunctionExpr,
+        },
+        resolved_col, Expr, ExprRef,
     };
     use indoc::indoc;
     use test_log::test;
@@ -607,9 +598,9 @@ mod tests {
         )
     }
 
-    fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> UDFImpl {
-        UDFImpl::Legacy(
-            LegacyPythonUDF {
+    fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
+        Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF {
                 name: Arc::new("foo".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),
@@ -622,9 +613,10 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 use_process: None,
-            },
+            }),
             inputs,
-        )
+        }
+        .arced()
     }
 
     fn create_resource_request() -> ResourceRequest {
@@ -639,7 +631,7 @@ mod tests {
 
         // Add a Projection with actor pool UDF and resource request
         let project_plan = scan_plan
-            .with_columns(vec![actor_pool_project_expr.to_expr().alias("b")])?
+            .with_columns(vec![actor_pool_project_expr.alias("b")])?
             .build();
 
         // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
@@ -671,16 +663,10 @@ mod tests {
         let scan_plan = dummy_scan_node(scan_op);
         let project_plan = scan_plan
             .with_columns(vec![
-                create_actor_pool_udf(vec![
-                    create_actor_pool_udf(vec![resolved_col("a")]).to_expr()
-                ])
-                .to_expr()
-                .alias("a_prime"),
-                create_actor_pool_udf(vec![
-                    create_actor_pool_udf(vec![resolved_col("b")]).to_expr()
-                ])
-                .to_expr()
-                .alias("b_prime"),
+                create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])])
+                    .alias("a_prime"),
+                create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("b")])])
+                    .alias("b_prime"),
             ])?
             .build();
 
@@ -725,14 +711,12 @@ mod tests {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr =
-            create_actor_pool_udf(vec![
-                create_actor_pool_udf(vec![resolved_col("a")]).to_expr()
-            ]);
+            create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])]);
 
         // Add a Projection with actor pool UDF and resource request
         // Project([col("a"), foo(foo(col("a"))).alias("b")])
         let project_plan = scan_plan
-            .with_columns(vec![stacked_actor_pool_project_expr.to_expr().alias("b")])?
+            .with_columns(vec![stacked_actor_pool_project_expr.alias("b")])?
             .build();
 
         assert_optimized_plan_eq(
@@ -790,13 +774,11 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr =
-            create_actor_pool_udf(vec![
-                create_actor_pool_udf(vec![resolved_col("a")]).to_expr()
-            ]);
+            create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])]);
 
         // Add a Projection with actor pool UDF and resource request
         let project_plan = scan_plan
-            .select(vec![stacked_actor_pool_project_expr.to_expr()])?
+            .select(vec![stacked_actor_pool_project_expr])?
             .build();
 
         assert_optimized_plan_eq(
@@ -853,10 +835,9 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         ]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr = create_actor_pool_udf(vec![
-            create_actor_pool_udf(vec![resolved_col("a")]).to_expr(),
-            create_actor_pool_udf(vec![resolved_col("b")]).to_expr(),
-        ])
-        .to_expr();
+            create_actor_pool_udf(vec![resolved_col("a")]),
+            create_actor_pool_udf(vec![resolved_col("b")]),
+        ]);
 
         // Add a Projection with actor pool UDF and resource request
         // Project([foo(foo(col("a")), foo(col("b"))).alias("c")])
@@ -930,9 +911,7 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr =
             create_actor_pool_udf(vec![create_actor_pool_udf(vec![resolved_col("a")])
-                .to_expr()
-                .add(create_actor_pool_udf(vec![resolved_col("b")]).to_expr())])
-            .to_expr();
+                .add(create_actor_pool_udf(vec![resolved_col("b")]))]);
 
         // Add a Projection with actor pool UDF and resource request
         // Project([foo(foo(col("a")) + foo(col("b"))).alias("c")])
@@ -1005,9 +984,8 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
         let stacked_actor_pool_project_expr = create_actor_pool_udf(vec![
-            resolved_col("a").add(create_actor_pool_udf(vec![resolved_col("a")]).to_expr())
-        ])
-        .to_expr();
+            resolved_col("a").add(create_actor_pool_udf(vec![resolved_col("a")]))
+        ]);
 
         // Add a Projection with actor pool UDF and resource request
         // Project([foo(col("a") + foo(col("a"))).alias("c")])
@@ -1054,7 +1032,7 @@ Project: col(a), col(c)
         // (col("a") + col("a"))  +  foo(col("a"))
         let actor_pool_project_expr = resolved_col("a")
             .add(resolved_col("a"))
-            .add(create_actor_pool_udf(vec![resolved_col("a")]).to_expr())
+            .add(create_actor_pool_udf(vec![resolved_col("a")]))
             .alias("result");
         let project_plan = scan_plan
             .select(vec![resolved_col("a"), actor_pool_project_expr])?
@@ -1097,8 +1075,7 @@ Project: col(a), col(c)
         // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
         let udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node.build(),
-            mock_udf,
-            "udf_results".into(),
+            mock_udf.alias("udf_results"),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
@@ -1142,16 +1119,14 @@ Project: col(a), col(c)
         // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
         let plan = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node,
-            mock_udf.clone(),
-            "udf_results_0".into(),
+            mock_udf.clone().alias("udf_results_0"),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
 
         let plan = LogicalPlan::UDFProject(UDFProject::try_new(
             plan,
-            mock_udf,
-            "udf_results_1".into(),
+            mock_udf.alias("udf_results_1"),
             vec![
                 resolved_col("a"),
                 resolved_col("b"),
@@ -1197,7 +1172,7 @@ Project: col(a), col(c)
             Field::new("b", DataType::Boolean),
             Field::new("c", DataType::Int64),
         ]);
-        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]).to_expr();
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
         let plan = dummy_scan_node(scan_op.clone())
             .with_columns(vec![mock_udf.alias("udf_results")])?
             // Select only col("a"), so the udf is redundant and should be removed
@@ -1220,7 +1195,7 @@ Project: col(a), col(c)
 
     #[test]
     fn test_projection_pushdown_into_udf_and_reorder() -> DaftResult<()> {
-        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]).to_expr();
+        let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
 
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),

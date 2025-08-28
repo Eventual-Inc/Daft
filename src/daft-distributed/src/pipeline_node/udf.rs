@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFImpl};
+use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -18,8 +18,8 @@ use crate::{
 pub(crate) struct UDFNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    udf_expr: UDFImpl,
-    out_name: Arc<str>,
+    expr: BoundExpr,
+    udf_properties: UDFProperties,
     passthrough_columns: Vec<BoundExpr>,
     child: Arc<dyn DistributedPipelineNode>,
 }
@@ -32,8 +32,8 @@ impl UDFNode {
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         stage_config: &StageConfig,
-        udf_expr: UDFImpl,
-        out_name: Arc<str>,
+        expr: BoundExpr,
+        udf_properties: UDFProperties,
         passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
@@ -60,8 +60,8 @@ impl UDFNode {
         Self {
             config,
             context,
-            udf_expr,
-            out_name,
+            expr,
+            udf_properties,
             passthrough_columns,
             child,
         }
@@ -73,17 +73,14 @@ impl UDFNode {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.udf_expr.name()),
-            format!(
-                "Expr = {}",
-                self.udf_expr.to_expr().alias(self.out_name.clone())
-            ),
+            format!("UDF: {}", self.udf_properties.name),
+            format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = [{}]",
                 self.passthrough_columns.iter().join(", ")
             ),
         ];
-        if let Some(resource_request) = &self.udf_expr.resource_request() {
+        if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
@@ -132,15 +129,15 @@ impl DistributedPipelineNode for UDFNode {
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(stage_context);
 
-        let udf_expr = self.udf_expr.clone();
-        let out_name = self.out_name.clone();
+        let expr = self.expr.clone();
+        let udf_properties = self.udf_properties.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::udf_project(
                 input,
-                udf_expr.clone(),
-                out_name.clone(),
+                expr.clone(),
+                udf_properties.clone(),
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,

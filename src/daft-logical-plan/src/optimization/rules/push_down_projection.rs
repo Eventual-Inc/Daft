@@ -237,7 +237,7 @@ impl PushDownProjection {
                     .map(|e| e.name().to_string())
                     .collect::<IndexSet<_>>();
                 // Assume that previous opt rule should have removed unused cols, thus this op
-                let output_column = upstream_udf.out_name.as_ref();
+                let output_column = upstream_udf.expr.name();
                 debug_assert!(required_columns.contains(output_column));
                 required_columns.shift_remove(output_column);
 
@@ -253,8 +253,7 @@ impl PushDownProjection {
 
                     let new_upstream = LogicalPlan::UDFProject(UDFProject::try_new(
                         upstream_udf.input.clone(),
-                        upstream_udf.udf_expr.clone(),
-                        upstream_udf.out_name.clone(),
+                        upstream_udf.expr.clone(),
                         pruned_passthrough,
                     )?)
                     .arced();

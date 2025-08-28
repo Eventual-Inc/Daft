@@ -470,7 +470,7 @@ impl PhysicalPlan {
                     input.clone(), projection.clone(), clustering_spec.clone(),
                 ).unwrap()),
 
-                Self::ActorPoolProject(ActorPoolProject {projection, udf_expr, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), udf_expr.clone()).unwrap()),
+                Self::ActorPoolProject(ActorPoolProject {projection, expr, udf_properties, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone(), expr.clone(), udf_properties.clone()).unwrap()),
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, offset, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager, *num_partitions)),
                 Self::TopN(TopN { sort_by, descending, nulls_first, limit, offset, num_partitions, .. }) => Self::TopN(TopN::new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *offset,*num_partitions)),

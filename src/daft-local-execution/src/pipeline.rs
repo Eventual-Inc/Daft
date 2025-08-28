@@ -505,15 +505,15 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::UDFProject(UDFProject {
             input,
-            udf_expr,
-            out_name,
+            expr,
+            udf_properties,
             passthrough_columns,
             stats_state,
             schema,
         }) => {
             let proj_op = UdfOperator::try_new(
-                udf_expr.clone(),
-                out_name.clone(),
+                expr.clone(),
+                udf_properties.clone(),
                 passthrough_columns.clone(),
                 schema,
             )

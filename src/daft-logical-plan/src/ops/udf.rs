@@ -1,17 +1,13 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::prelude::Schema;
-use daft_dsl::{expr::count_udfs, functions::python::UDFImpl, ExprRef};
+use daft_dsl::{functions::python::UDFProperties, ExprRef};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    logical_plan::{Error, Result},
-    stats::StatsState,
-    LogicalPlan,
-};
+use crate::{logical_plan::Result, stats::StatsState, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UDFProject {
@@ -20,8 +16,8 @@ pub struct UDFProject {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     // UDF
-    pub udf_expr: UDFImpl,
-    pub out_name: Arc<str>,
+    pub expr: ExprRef,
+    pub udf_properties: UDFProperties,
     // Additional columns to pass through
     pub passthrough_columns: Vec<ExprRef>,
 
@@ -33,42 +29,24 @@ impl UDFProject {
     /// Same as try_new, but with a DaftResult return type so this can be public.
     pub fn new(
         input: Arc<LogicalPlan>,
-        udf_expr: UDFImpl,
-        out_name: Arc<str>,
+        udf_expr: ExprRef,
         passthrough_columns: Vec<ExprRef>,
     ) -> DaftResult<Self> {
-        Ok(Self::try_new(
-            input,
-            udf_expr,
-            out_name,
-            passthrough_columns,
-        )?)
+        Ok(Self::try_new(input, udf_expr, passthrough_columns)?)
     }
 
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        udf_expr: UDFImpl,
-        out_name: Arc<str>,
+        expr: ExprRef,
         passthrough_columns: Vec<ExprRef>,
     ) -> Result<Self> {
-        let num_udfs: usize = count_udfs(&udf_expr.to_expr());
-        if num_udfs != 1 {
-            return Err(Error::CreationError {
-                source: DaftError::InternalError(format!(
-                    "Expected UDFProject to have exactly 1 UDF expression but found: {num_udfs}"
-                )),
-            });
-        }
+        let udf_properties = UDFProperties::from_expr(&expr)?;
 
         let fields = passthrough_columns
             .iter()
+            .cloned()
+            .chain(std::iter::once(expr.clone()))
             .map(|e| e.to_field(&input.schema()))
-            .chain(std::iter::once(
-                udf_expr
-                    .to_expr()
-                    .alias(out_name.clone())
-                    .to_field(&input.schema()),
-            ))
             .collect::<DaftResult<Vec<_>>>()?;
         let projected_schema = Arc::new(Schema::new(fields));
 
@@ -76,8 +54,8 @@ impl UDFProject {
             plan_id: None,
             node_id: None,
             input,
-            udf_expr,
-            out_name,
+            expr,
+            udf_properties,
             passthrough_columns,
             projected_schema,
             stats_state: StatsState::NotMaterialized,
@@ -102,16 +80,13 @@ impl UDFProject {
     }
 
     pub fn is_actor_pool_udf(&self) -> bool {
-        self.udf_expr.concurrency().is_some()
+        self.udf_properties.is_actor_pool_udf()
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.udf_expr.name()),
-            format!(
-                "Expr = {}",
-                self.udf_expr.to_expr().alias(self.out_name.clone())
-            ),
+            format!("UDF: {}", self.udf_properties.name),
+            format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = {}",
                 if self.passthrough_columns.is_empty() {
@@ -123,9 +98,9 @@ impl UDFProject {
                         .join(", ")
                 }
             ),
-            format!("Concurrency = {:?}", self.udf_expr.concurrency()),
+            format!("Concurrency = {:?}", self.udf_properties.concurrency),
         ];
-        if let Some(resource_request) = self.udf_expr.resource_request() {
+        if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",

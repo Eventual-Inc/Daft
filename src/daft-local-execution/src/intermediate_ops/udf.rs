@@ -14,7 +14,12 @@ use daft_core::prelude::SchemaRef;
 use daft_core::series::Series;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
-use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFImpl};
+use daft_dsl::{
+    common_treenode::{TreeNode, TreeNodeRecursion},
+    expr::bound_expr::BoundExpr,
+    functions::python::UDFProperties,
+    Column, Expr, ExprRef,
+};
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_recordbatch::RecordBatch;
@@ -32,12 +37,26 @@ use crate::{
     ExecutionTaskSpawner,
 };
 
+fn get_required_columns(expr: &BoundExpr) -> Vec<BoundExpr> {
+    let mut cols = vec![];
+    expr.inner()
+        .apply(&mut |expr: &ExprRef| {
+            if matches!(expr.as_ref(), Expr::Column(Column::Bound(..))) {
+                cols.push(BoundExpr::new_unchecked(expr.clone()));
+            }
+            Ok(TreeNodeRecursion::Continue)
+        })
+        .expect("Error occurred when visiting for required columns");
+    cols
+}
+
 /// Common parameters for UDF handle and operator
 struct UdfParams {
-    udf_expr: UDFImpl,
-    out_name: Arc<str>,
+    expr: BoundExpr,
+    udf_properties: UDFProperties,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
+    required_cols: Vec<BoundExpr>,
 }
 
 pub(crate) struct UdfHandle {
@@ -109,8 +128,7 @@ impl UdfHandle {
 
         let label = format!(
             "[`{}` Worker #{}]",
-            self.params.udf_expr.name(),
-            self.worker_idx
+            self.params.udf_properties.name, self.worker_idx
         );
         for line in outs {
             STDOUT.print(&label, &line);
@@ -141,18 +159,14 @@ impl UdfHandle {
 
         for batch in input_batches.as_ref() {
             // Prepare inputs
-            let args = BoundExpr::bind_all(&self.params.udf_expr.args(), batch.schema.as_ref())?;
-            let func_input = batch.eval_expression_list(args.as_slice())?;
+            let func_input = batch.eval_expression_list(self.params.required_cols.as_slice())?;
 
             // Call the UDF
-            let mut result = if let Some(handle) = &self.handle {
+            let result = if let Some(handle) = &self.handle {
                 self.eval_input_with_handle(func_input, handle)
             } else {
                 self.eval_input_inline(func_input)
             }?;
-
-            // Set to output name
-            result = result.rename(&self.params.out_name);
 
             // Append result to passthrough
             let passthrough_input =
@@ -216,29 +230,32 @@ pub(crate) struct UdfOperator {
 
 impl UdfOperator {
     pub fn try_new(
-        udf_expr: UDFImpl,
-        out_name: Arc<str>,
+        expr: BoundExpr,
+        udf_properties: UDFProperties,
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
     ) -> DaftResult<Self> {
         // Determine optimal parallelism
-        let resource_request = udf_expr.resource_request();
-        let max_concurrency = Self::get_optimal_allocation(udf_expr.name(), resource_request)?;
+        let resource_request = udf_properties.resource_request.as_ref();
+        let max_concurrency =
+            Self::get_optimal_allocation(udf_properties.name.as_str(), resource_request)?;
         // If parallelism is already specified, use that
-        let concurrency = udf_expr.concurrency().unwrap_or(max_concurrency);
+        let concurrency = udf_properties.concurrency.unwrap_or(max_concurrency);
 
         let memory_request = resource_request
-            .as_ref()
             .and_then(|req| req.memory_bytes())
             .map(|m| m as u64)
             .unwrap_or(0);
 
+        let required_cols = get_required_columns(&expr);
+
         Ok(Self {
             params: Arc::new(UdfParams {
-                udf_expr: udf_expr.clone(),
-                out_name,
+                expr,
+                udf_properties,
                 passthrough_columns,
                 output_schema: output_schema.clone(),
+                required_cols,
             }),
             worker_count: AtomicUsize::new(0),
             concurrency,
@@ -300,10 +317,11 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn name(&self) -> NodeName {
-        let udf_name = if let Some((_, udf_name)) = self.params.udf_expr.name().rsplit_once('.') {
+        let udf_name = if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.')
+        {
             udf_name
         } else {
-            self.params.udf_expr.name()
+            self.params.udf_properties.name.as_str()
         };
 
         format!("UDF {}", udf_name).into()
@@ -315,15 +333,15 @@ impl IntermediateOperator for UdfOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.params.udf_expr.name()),
-            format!("Expr = {}", self.params.udf_expr.to_expr()),
+            format!("UDF: {}", self.params.udf_properties.name.as_str()),
+            format!("Expr = {}", self.params.expr),
             format!(
                 "Passthrough Columns = [{}]",
                 self.params.passthrough_columns.iter().join(", ")
             ),
             format!("Concurrency = {}", self.concurrency),
         ];
-        if let Some(resource_request) = &self.params.udf_expr.resource_request() {
+        if let Some(resource_request) = &self.params.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
@@ -338,14 +356,11 @@ impl IntermediateOperator for UdfOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
 
-        let mut udf_handle = UdfHandle::no_handle(
-            self.params.clone(),
-            BoundExpr::new_unchecked(self.params.udf_expr.to_expr()),
-            worker_count,
-        );
+        let mut udf_handle =
+            UdfHandle::no_handle(self.params.clone(), self.params.expr.clone(), worker_count);
 
-        if self.params.udf_expr.is_actor_pool_udf()
-            || self.params.udf_expr.use_process().unwrap_or(false)
+        if self.params.udf_properties.is_actor_pool_udf()
+            || self.params.udf_properties.use_process.unwrap_or(false)
         {
             udf_handle.create_handle()?;
         }
@@ -359,8 +374,8 @@ impl IntermediateOperator for UdfOperator {
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         self.params
-            .udf_expr
-            .batch_size()
+            .udf_properties
+            .batch_size
             .map(MorselSizeRequirement::Strict)
     }
 }

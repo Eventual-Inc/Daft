@@ -123,8 +123,8 @@ pub(super) fn translate_single_logical_node(
             )
         }
         LogicalPlan::UDFProject(LogicalUDFProject {
-            udf_expr,
-            out_name,
+            expr,
+            udf_properties,
             passthrough_columns,
             ..
         }) => {
@@ -132,13 +132,14 @@ pub(super) fn translate_single_logical_node(
             let projection = passthrough_columns
                 .iter()
                 .cloned()
-                .chain(std::iter::once(udf_expr.to_expr().alias(out_name.clone())))
+                .chain(std::iter::once(expr.clone()))
                 .collect();
-            if udf_expr.is_actor_pool_udf() {
+            if udf_properties.is_actor_pool_udf() {
                 Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                     input_physical,
                     projection,
-                    udf_expr.clone(),
+                    expr.clone(),
+                    udf_properties.clone(),
                 )?)
                 .arced())
             } else {
