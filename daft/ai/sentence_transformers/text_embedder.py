@@ -29,8 +29,10 @@ class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.options
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        # hardcoding all-MiniLM-L6-v2 for now
-        return EmbeddingDimensions(size=384, dtype=DataType.float32())
+        from transformers import AutoConfig
+
+        dimensions = AutoConfig.from_pretrained(self.model).hidden_size
+        return EmbeddingDimensions(size=dimensions, dtype=DataType.float32())
 
     def instantiate(self) -> TextEmbedder:
         return SentenceTransformersTextEmbedder(self.model, **self.options)
