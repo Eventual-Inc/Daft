@@ -8,15 +8,12 @@ Daft is a high-performance data engine providing simple and reliable data proces
     --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --sans: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
 
-    display: block;
     color: var(--ink);
     font-family: var(--sans);
     margin: 20px 0;
-    box-sizing: border-box;
   }
 
   .daft-pipeline-component .container {
-    width: 100%;
     max-width: 1200px;
     margin: 0 auto;
     display: flex;
@@ -51,13 +48,6 @@ Daft is a high-performance data engine providing simple and reliable data proces
     justify-content: center;
   }
 
-  .daft-pipeline-component .description h2 {
-    margin: 0 0 20px 0;
-    font-size: 24px;
-    font-weight: 700;
-    color: #e8edff;
-  }
-
   .daft-pipeline-component .description p {
     margin: 0 0 12px 0;
     line-height: 1.5;
@@ -69,21 +59,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
     margin: 0;
     font-size: 13px;
     color: rgba(185, 200, 255, 0.7);
-    font-weight: 400;
-    line-height: 1.4;
     font-style: italic;
-  }
-
-  .daft-pipeline-component .description ul {
-    margin: 12px 0;
-    padding-left: 18px;
-  }
-
-  .daft-pipeline-component .description li {
-    margin: 6px 0;
-    line-height: 1.4;
-    color: var(--ink);
-    font-size: 14px;
   }
 
   .daft-pipeline-component .pipeline-item {
@@ -99,18 +75,9 @@ Daft is a high-performance data engine providing simple and reliable data proces
     color: var(--ink);
   }
 
-
-
-
-
-
-
-
-
   .daft-pipeline-component .type {
     display: inline-block;
     white-space: normal;
-    position: relative;
     word-wrap: break-word;
   }
 
@@ -135,7 +102,6 @@ Daft is a high-performance data engine providing simple and reliable data proces
   @media (max-width: 720px) {
     .daft-pipeline-component .stage-box {
       padding: 8px;
-      margin-bottom: 4px;
     }
     .daft-pipeline-component .row {
       grid-template-columns: 1fr;
