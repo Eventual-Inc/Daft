@@ -14,14 +14,14 @@ This document tracks the project to update all links pointing to `core_concepts.
 | `docs/migration/dask_migration.md` | http://127.0.0.1:8000/en/stable/migration/dask_migration/ | link:Expressions | `../core_concepts.md#expressions` | `../api/expressions.md` | File Removed - Both files were redirected and have been deleted |
 | `docs/migration/dask_migration.md` | http://127.0.0.1:8000/en/stable/migration/dask_migration/ | link:the documentation | `../core_concepts.md#datatypes` | `../api/datatypes.md` | File Removed - Both files were redirected and have been deleted |
 | `docs/migration/dask_migration.md` | http://127.0.0.1:8000/en/stable/migration/dask_migration/ | link:User-Defined Functions (UDFs) | `../core_concepts.md#user-defined-functions-udf` | `../custom-code/udfs.md` | File Removed - Both files were redirected and have been deleted |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:Expressions | `core_concepts.md#expressions` (line 292) | `api/expressions.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**DataFrame Operations** | `core_concepts.md#dataframe` (line 518) | `api/dataframe.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Expressions** | `core_concepts.md#expressions` (line 519) | `api/expressions.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Reading Data** | `core_concepts.md#reading-data` (line 520) | `connectors/index.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Writing Data** | `core_concepts.md#reading-data` (line 521) | `connectors/index.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**DataTypes** | `core_concepts.md#datatypes` (line 522) | `api/datatypes.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**SQL** | `core_concepts.md#sql` (line 523) | `sql_overview.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Aggregations and Grouping** | `core_concepts.md#aggregations-and-grouping` (line 524) | `api/aggregations.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Window Functions** | `core_concepts.md#window-functions` (line 525) | `api/window.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**User-Defined Functions (UDFs)** | `core_concepts.md#user-defined-functions-udf` (line 526) | `custom-code/udfs.md` | Changed - Not Tested |
-| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Multimodal Data** | `core_concepts.md#multimodal-data` (line 527) | `modalities/index.md` | Changed - Not Tested |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:Expressions | `core_concepts.md#expressions` (line 292) | `api/expressions.md` | Done - Link Updated |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**DataFrame Operations** | `core_concepts.md#dataframe` (line 518) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Expressions** | `core_concepts.md#expressions` (line 519) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Reading Data** | `core_concepts.md#reading-data` (line 520) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Writing Data** | `core_concepts.md#reading-data` (line 521) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**DataTypes** | `core_concepts.md#datatypes` (line 522) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**SQL** | `core_concepts.md#sql` (line 523) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Aggregations and Grouping** | `core_concepts.md#aggregations-and-grouping` (line 524) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Window Functions** | `core_concepts.md#window-functions` (line 525) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**User-Defined Functions (UDFs)** | `core_concepts.md#user-defined-functions-udf` (line 526) | | Done - Entire Section Removed |
+| `docs/quickstart.md` | http://127.0.0.1:8000/en/stable/quickstart/ | link:**Multimodal Data** | `core_concepts.md#multimodal-data` (line 527) | | Done - Entire Section Removed |
