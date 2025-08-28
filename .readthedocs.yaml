@@ -12,7 +12,7 @@ build:
     create_environment:
     - uv venv doc_env
     install:
-    - UV_PROJECT_ENVIRONMENT=doc_env uv sync --group docs
+    - UV_PROJECT_ENVIRONMENT=doc_env uv sync --group docs --verbose
     - UV_PROJECT_ENVIRONMENT=doc_env uv pip install -e docs/plugins/nav_hide_children
 
 mkdocs:
