@@ -41,6 +41,8 @@ enum Error {
     UnableToOpenFile {
         path: String,
         source: reqwest_middleware::reqwest::Error,
+        #[snafu(backtrace)]
+        backtrace: snafu::Backtrace,
     },
 
     #[snafu(display("Unable to determine size of {}", path))]
@@ -212,7 +214,11 @@ impl HFPath {
         if cache_bust {
             let cachebuster = Uuid::new_v4();
             let cachebuster = cachebuster.to_string();
-            format!("{base}?cachebust={cachebuster}")
+            if base.contains('?') {
+                format!("{base}&cachebust={cachebuster}")
+            } else {
+                format!("{base}?cachebust={cachebuster}")
+            }
         } else {
             base
         }
@@ -254,7 +260,7 @@ impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{UnableToDetermineSize, UnableToOpenFile};
         match error {
-            UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
+            UnableToOpenFile { path, source, .. } => match source.status().map(|v| v.as_u16()) {
                 Some(404 | 410) => Self::NotFound {
                     path,
                     source: source.into(),
@@ -372,10 +378,10 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
-                Error::UnableToOpenFile {
+                UnableToOpenFileSnafu {
                     path: uri.to_string(),
-                    source: e,
                 }
+                .into_error(e)
             }
         })?;
 
@@ -442,10 +448,7 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
-                Error::UnableToOpenFile {
-                    path: uri.clone(),
-                    source: e,
-                }
+                UnableToOpenFileSnafu { path: uri.clone() }.into_error(e)
             }
         })?;
 
@@ -553,10 +556,10 @@ impl ObjectSource for HFSource {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
-                Error::UnableToOpenFile {
+                UnableToOpenFileSnafu {
                     path: api_uri.clone(),
-                    source: e,
                 }
+                .into_error(e)
             }
         })?;
 
