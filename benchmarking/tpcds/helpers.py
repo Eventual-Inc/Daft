@@ -3,19 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import daft
-from daft.sql.sql import SQLCatalog
 
 
-def generate_catalog(dir: Path):
+def generate_bindings(dir: Path):
     if not dir.exists():
         raise RuntimeError(f"Directory not found: {dir}")
-    return SQLCatalog(
-        tables={
-            file.stem: daft.read_parquet(path=str(file))
-            for file in dir.iterdir()
-            if file.is_file() and file.suffix == ".parquet"
-        }
-    )
+    return {
+        file.stem: daft.read_parquet(path=str(file))
+        for file in dir.iterdir()
+        if file.is_file() and file.suffix == ".parquet"
+    }
 
 
 def parse_questions_str(questions: str) -> list[int]:
