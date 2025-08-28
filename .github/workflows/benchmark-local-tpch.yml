@@ -55,7 +55,7 @@ jobs:
       run: aws s3 cp s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet /tmp/tpch-data --recursive --no-progress
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         version: "0.6.17"

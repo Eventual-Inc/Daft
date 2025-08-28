@@ -13,6 +13,7 @@ common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-ai = {path = "src/daft-ai", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
@@ -76,6 +77,7 @@ python = [
   "common-file-formats/python",
   "common-scan-info/python",
   "common-system-info/python",
+  "daft-ai/python",
   "daft-catalog/python",
   "daft-cli/python",
   "daft-connect/python",
@@ -175,6 +177,7 @@ members = [
   "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
+  "src/daft-ai",
   "src/daft-algebra",
   "src/daft-catalog",
   "src/daft-connect",
@@ -245,6 +248,7 @@ common-image = {path = "src/common/image"}
 common-metrics = {path = "src/common/metrics"}
 common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}
+daft-ai = {path = "src/daft-ai"}
 daft-algebra = {path = "src/daft-algebra"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}

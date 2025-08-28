@@ -10,6 +10,11 @@
         * [Images](modalities/images.md)
         * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
+    * Running Custom Python Code
+        * [Overview](custom-code/index.md)
+        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
+        * [Working with GPUs](custom-code/gpu.md)
+        * [External APIs](custom-code/apis.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
@@ -23,11 +28,6 @@
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
-    * Running Custom Python Code
-        * [Overview](custom-code/index.md)
-        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Working with GPUs](custom-code/gpu.md)
-        * [External APIs](custom-code/apis.md)
     * [Scaling Out and Deployment](distributed.md)
     * Optimization and Debugging
         * [Overview](optimization/index.md)
@@ -53,6 +53,7 @@
     * [Window Functions](examples/window-functions.md)
 * Python API
     * [Overview](api/index.md)
+    * [AI](api/ai.md)
     * [I/O](api/io.md)
     * [DataFrame](api/dataframe.md)
     * [Expressions](api/expressions.md)
