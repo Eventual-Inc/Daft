@@ -13,6 +13,7 @@ build:
     - uv venv doc_env
     install:
     - UV_PROJECT_ENVIRONMENT=doc_env uv sync --frozen --group docs
+    - UV_PROJECT_ENVIRONMENT=doc_env uv pip install -e docs/plugins/nav_hide_children
 
 mkdocs:
   configuration: mkdocs.yml
