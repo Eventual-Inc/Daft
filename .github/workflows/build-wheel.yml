@@ -51,7 +51,7 @@ jobs:
         uv venv --seed .venv
         if [[ "${{ inputs.os }}" == "windows" ]]; then
           echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
-          .\.venv\Scripts\activate
+          .venv\Scripts\activate
         else
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           source .venv/bin/activate
@@ -75,7 +75,6 @@ jobs:
 
     - name: Configure RUSTFLAGS for x86
       if: ${{ (inputs.arch == 'x86_64') }}
-      shell: bash
       run: |
         if [[ "${{ inputs.lts }}" == "true" ]]; then
           echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV && \
