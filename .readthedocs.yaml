@@ -7,7 +7,7 @@ build:
   jobs:
     post_install:
     - pip install uv
-    - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --group docs --no-install-project
+    - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --only-group docs
     - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv pip install -e docs/plugins/nav_hide_children
 
 mkdocs:
