@@ -49,8 +49,13 @@ jobs:
     - name: Setup Virtual Env
       run: |
         uv venv --seed .venv
-        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
-        source .venv/bin/activate
+        if [[ "${{ inputs.os }}" == "windows" ]]; then
+          echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
+          .\.venv\Scripts\activate
+        else
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          source .venv/bin/activate
+        fi
         uv pip install twine yq setuptools_scm
 
     - uses: oven-sh/setup-bun@v2
@@ -70,6 +75,7 @@ jobs:
 
     - name: Configure RUSTFLAGS for x86
       if: ${{ (inputs.arch == 'x86_64') }}
+      shell: bash
       run: |
         if [[ "${{ inputs.lts }}" == "true" ]]; then
           echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV && \
