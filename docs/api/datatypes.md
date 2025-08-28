@@ -37,7 +37,7 @@ TODO
 
 ## daft.DataType
 
-Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like tensors and images. Learn more about link:DataTypes in the Daft User Guide.
+Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like tensors and images.
 
 ::: daft.datatype.DataType
     options:
