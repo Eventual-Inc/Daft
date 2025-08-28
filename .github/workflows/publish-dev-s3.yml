@@ -65,12 +65,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
+        os: [ubuntu]
         arch: [x86_64, aarch64]
         lts: [false]
-        exclude:
-        - os: windows
-          arch: aarch64
 
   publish:
     name: Publish wheels to S3
