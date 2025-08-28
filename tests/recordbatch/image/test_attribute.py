@@ -26,3 +26,27 @@ def test_image_attribute_mixed_shape(mixed_shape_data_fixture, attr):
     elif attr == "mode":
         expected_mode = MODE_TO_NUM_CHANNELS[mode_name]
         assert all(x == expected_mode for x in values if x is not None)
+
+
+def test_image_direct_attribute_methods(mixed_shape_data_fixture):
+    table = daft.from_pydict({"images": mixed_shape_data_fixture})
+
+    table = table.with_columns(
+        {
+            "width": table["images"].image.width(),
+            "height": table["images"].image.height(),
+            "channel": table["images"].image.channel(),
+            "mode": table["images"].image.mode(),
+            "width_old": table["images"].image.attribute("width"),
+            "height_old": table["images"].image.attribute("height"),
+            "channel_old": table["images"].image.attribute("channel"),
+            "mode_old": table["images"].image.attribute("mode"),
+        }
+    )
+
+    result = table.to_pydict()
+
+    assert result["width"] == result["width_old"]
+    assert result["height"] == result["height_old"]
+    assert result["channel"] == result["channel_old"]
+    assert result["mode"] == result["mode_old"]
