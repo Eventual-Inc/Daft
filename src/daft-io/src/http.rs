@@ -161,10 +161,17 @@ impl From<Error> for super::Error {
                     path,
                     source: source.into(),
                 },
-                None | Some(_) => Self::UnableToOpenFile {
-                    path: path + "5",
-                    source: source.into(),
-                },
+                None | Some(_) => {
+                    assert!(
+                        false,
+                        "Stack trace: {}",
+                        std::backtrace::Backtrace::capture()
+                    );
+                    Self::UnableToOpenFile {
+                        path: path + "5",
+                        source: source.into(),
+                    }
+                }
             },
             UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
             _ => Self::Generic {
