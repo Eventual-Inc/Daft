@@ -348,7 +348,9 @@ impl HFSource {
                     }
                     _ => {
                         println!("reqclone: {:?}", reqclone);
-                        Err(e).context(UnableToOpenFileSnafu::<String> { path: uri.into() })?
+                        Err(e).context(UnableToOpenFileSnafu::<String> {
+                            path: uri.to_string() + "3",
+                        })?
                     }
                 }
             }
@@ -383,7 +385,7 @@ impl ObjectSource for HFSource {
             } else {
                 println!("%%%%%%%%: {:?}", e);
                 Error::UnableToOpenFile {
-                    path: uri.to_string(),
+                    path: uri.to_string() + "4",
                     source: e,
                 }
             }
@@ -454,7 +456,7 @@ impl ObjectSource for HFSource {
             } else {
                 println!("########: {:?}", e);
                 Error::UnableToOpenFile {
-                    path: uri.clone(),
+                    path: uri.clone() + "1",
                     source: e,
                 }
             }
@@ -566,7 +568,7 @@ impl ObjectSource for HFSource {
             } else {
                 println!("$$$$$$$$: {:?}", e);
                 Error::UnableToOpenFile {
-                    path: api_uri.clone(),
+                    path: api_uri.clone() + "2",
                     source: e,
                 }
             }
