@@ -22,7 +22,7 @@ Common data operations that you would perform on DataFrames are:
 2. **Creating new columns:** Use [`df.with_column(...)`][daft.DataFrame.with_column] to add a new column based on calculations from existing ones.
 3. [**Joining DataFrames:**](core_concepts.md#combining-dataframes) Use [`df.join(other_df, ...)`][daft.DataFrame.join] to combine two DataFrames based on common columns.
 4. [**Sorting:**](core_concepts.md#reordering-rows) Use [`df.sort(...)`][daft.DataFrame.sort] to arrange your data based on values in one or more columns.
-5. [**Grouping and aggregating:**](core_concepts.md#aggregations-and-grouping) Use [`df.groupby(...)`][daft.DataFrame.groupby] and [`df.agg(...)`][daft.DataFrame.agg] to summarize your data by groups.
+5. **Grouping and aggregating:** Use [`df.groupby(...)`][daft.DataFrame.groupby] and [`df.agg(...)`][daft.DataFrame.agg] to summarize your data by groups.
 
 ### Creating a Dataframe
 
