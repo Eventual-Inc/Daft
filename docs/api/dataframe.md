@@ -1,6 +1,6 @@
 # DataFrame
 
-Most DataFrame methods are **lazy**, meaning that they do not execute computation immediately when invoked. Instead, these operations are enqueued in the DataFrame's internal query plan, and are only executed when Execution DataFrame methods are called. Learn more about [link:DataFrames](../core_concepts.md#dataframe) in the Daft User Guide.
+Most DataFrame methods are **lazy**, meaning that they do not execute computation immediately when invoked. Instead, these operations are enqueued in the DataFrame's internal query plan, and are only executed when Execution DataFrame methods are called. Learn more about link:DataFrames in the Daft User Guide.
 
 ::: daft.DataFrame
     options:
