@@ -38,8 +38,6 @@ pub struct ScanTaskSource {
 }
 
 impl ScanTaskSource {
-    const MAX_PARALLEL_SCAN_TASKS: usize = 8;
-
     pub fn new(
         scan_tasks: Vec<Arc<ScanTask>>,
         pushdowns: Pushdowns,
@@ -47,6 +45,7 @@ impl ScanTaskSource {
         cfg: &DaftExecutionConfig,
     ) -> Self {
         // Determine the number of parallel tasks to run based on available CPU cores and row limits
+        let num_cpus = get_compute_pool_num_threads();
         let mut num_parallel_tasks = match pushdowns.limit {
             // If we have a row limit, we need to calculate how many parallel tasks we can run
             // without exceeding the limit
@@ -55,7 +54,7 @@ impl ScanTaskSource {
                 let mut remaining_rows = limit as f64;
 
                 // Only examine tasks up to the number of available CPU cores
-                for scan_task in scan_tasks.iter().take(Self::MAX_PARALLEL_SCAN_TASKS) {
+                for scan_task in scan_tasks.iter().take(num_cpus) {
                     match scan_task.approx_num_rows(Some(cfg)) {
                         // If we can estimate the number of rows for this task
                         Some(estimated_rows) => {
@@ -74,8 +73,19 @@ impl ScanTaskSource {
                 }
                 count
             }
-            // If there's no row limit, use all available CPU cores
-            None => Self::MAX_PARALLEL_SCAN_TASKS,
+            // If there's no row limit, use the configured parallelism, or all available CPU cores
+            // if configured value is 0
+            None => {
+                if cfg.scantask_max_parallel == 0 {
+                    log::info!(
+                        "The max parallelism of the scan tasks is configured to {}, using all available CPUs instead.",
+                        cfg.scantask_max_parallel
+                    );
+                    num_cpus
+                } else {
+                    cfg.scantask_max_parallel
+                }
+            }
         };
         num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
         Self {
@@ -96,6 +106,7 @@ impl ScanTaskSource {
         io_stats: IOStatsRef,
         delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
         maintain_order: bool,
+        chunk_size: Option<usize>,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
         let scan_tasks = self.scan_tasks.clone();
@@ -113,6 +124,7 @@ impl ScanTaskSource {
                         io_stats.clone(),
                         delete_map.clone(),
                         maintain_order,
+                        chunk_size,
                         sender,
                     ));
                 }
@@ -127,6 +139,7 @@ impl ScanTaskSource {
                         io_stats.clone(),
                         delete_map.clone(),
                         maintain_order,
+                        chunk_size,
                         sender,
                     ));
                 }
@@ -144,6 +157,7 @@ impl Source for ScanTaskSource {
         &self,
         maintain_order: bool,
         io_stats: IOStatsRef,
+        chunk_size: Option<usize>,
     ) -> DaftResult<SourceStream<'static>> {
         // Get the delete map for the scan tasks, if any
         let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
@@ -162,7 +176,13 @@ impl Source for ScanTaskSource {
         };
 
         // Spawn the scan task processor
-        let task = self.spawn_scan_task_processor(senders, io_stats, delete_map, maintain_order);
+        let task = self.spawn_scan_task_processor(
+            senders,
+            io_stats,
+            delete_map,
+            maintain_order,
+            chunk_size,
+        );
 
         // Flatten the receivers into a stream
         let result_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
@@ -202,11 +222,13 @@ impl TreeDisplay for ScanTaskSource {
                 .map(|st| st.size_bytes_on_disk().unwrap_or(0))
                 .sum();
 
+            let num_parallel_tasks = scan.num_parallel_tasks;
             #[allow(unused_mut)]
             let mut s = format!(
                 "ScanTaskSource:
 Num Scan Tasks = {num_scan_tasks}
 Estimated Scan Bytes = {total_bytes}
+Num Parallel Scan Tasks = {num_parallel_tasks}
 "
             );
             #[cfg(feature = "python")]
@@ -378,9 +400,11 @@ async fn forward_scan_task_stream(
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
+    chunk_size: Option<usize>,
     sender: Sender<Arc<MicroPartition>>,
 ) -> DaftResult<()> {
-    let mut stream = stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await?;
+    let mut stream =
+        stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
     while let Some(result) = stream.next().await {
         if sender.send(result?).await.is_err() {
             break;
@@ -394,6 +418,7 @@ async fn stream_scan_task(
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
+    chunk_size: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
     let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
         v.iter()
@@ -442,9 +467,10 @@ async fn stream_scan_task(
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,
             field_id_mapping,
-            chunk_size,
+            chunk_size: chunk_size_from_config,
             ..
         }) => {
+            let parquet_chunk_size = chunk_size_from_config.or(chunk_size);
             let inference_options =
                 ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
@@ -471,7 +497,7 @@ async fn stream_scan_task(
                 metadata,
                 maintain_order,
                 delete_rows,
-                *chunk_size,
+                parquet_chunk_size,
             )
             .await?
         }
@@ -502,7 +528,8 @@ async fn stream_scan_task(
                 cfg.escape_char,
                 cfg.comment,
             )?;
-            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+            let csv_chunk_size = cfg.chunk_size.or(chunk_size);
+            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
             daft_csv::stream_csv(
                 url.to_string(),
                 Some(convert_options),
@@ -526,7 +553,8 @@ async fn stream_scan_task(
                 scan_task.pushdowns.filters.clone(),
             );
             let parse_options = JsonParseOptions::new_internal();
-            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+            let json_chunk_size = cfg.chunk_size.or(chunk_size);
+            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
 
             daft_json::read::stream_json(
                 url.to_string(),

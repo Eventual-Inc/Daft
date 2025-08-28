@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
-    datatypes::{logical::FileArray, prelude::*},
+    datatypes::{prelude::*, FileArray},
     lit::Literal,
     series::{DaftResult, SeriesLike},
     with_match_integer_daft_types,

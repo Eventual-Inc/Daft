@@ -8,7 +8,7 @@ Daft currently natively supports:
 2. **Skipping Filtered Data:** Daft uses [`df.where()`][daft.DataFrame.where] filter calls to only read data that matches your predicates
 3. **All Catalogs From PyIceberg:** Daft is natively integrated with PyIceberg, and supports all the catalogs that PyIceberg does
 
-A detailed Iceberg roadmap for Daft can be found on [our Github issues](https://github.com/Eventual-Inc/Daft/issues/2458). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
+A detailed Iceberg roadmap for Daft can be found on [our GitHub issues](https://github.com/Eventual-Inc/Daft/issues/2458). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 
 ## Tutorial
 

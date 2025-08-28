@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-# skip if missing required dependencies
 pytest.importorskip("sentence_transformers")
 pytest.importorskip("torch")
 

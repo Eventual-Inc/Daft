@@ -13,12 +13,17 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use rand::Rng;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    ops::NodeType,
+    pipeline::{MorselSizeRequirement, NodeName},
+    ExecutionTaskSpawner,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ActorHandle {
@@ -124,11 +129,16 @@ impl DistributedActorPoolProjectOperator {
         memory_request: u64,
     ) -> DaftResult<Self> {
         let task_locals = Python::with_gil(pyo3_async_runtimes::tokio::get_current_locals)?;
+        let init_counter = if actor_handles.is_empty() {
+            0
+        } else {
+            rand::thread_rng().gen_range(0..actor_handles.len())
+        };
         Ok(Self {
             actor_handles,
             batch_size,
             memory_request,
-            counter: AtomicUsize::new(0),
+            counter: AtomicUsize::new(init_counter),
             task_locals,
         })
     }
@@ -215,11 +225,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         Ok(self.actor_handles.len())
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        if let Some(batch_size) = self.batch_size {
-            (batch_size, batch_size)
-        } else {
-            (0, runtime_handle.default_morsel_size())
-        }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        self.batch_size.map(MorselSizeRequirement::Strict)
     }
 }
