@@ -75,10 +75,26 @@ impl ConnectSession {
             hf,
         } = get_context().io_config();
 
-        self.s3_config_helper(&mut s3)?;
-        self.azure_config_helper(&mut azure)?;
-        self.gcs_config_helper(&mut gcs)?;
-        self.http_config_helper(&mut http)?;
+        if let Some(s3_config) = s3.take() {
+            let mut s3_config = s3_config;
+            self.s3_config_helper(&mut s3_config)?;
+            s3 = Some(s3_config);
+        }
+        if let Some(azure_config) = azure.take() {
+            let mut azure_config = azure_config;
+            self.azure_config_helper(&mut azure_config)?;
+            azure = Some(azure_config);
+        }
+        if let Some(gcs_config) = gcs.take() {
+            let mut gcs_config = gcs_config;
+            self.gcs_config_helper(&mut gcs_config)?;
+            gcs = Some(gcs_config);
+        }
+        if let Some(http_config) = http.take() {
+            let mut http_config = http_config;
+            self.http_config_helper(&mut http_config)?;
+            http = Some(http_config);
+        }
 
         Ok(IOConfig {
             s3,

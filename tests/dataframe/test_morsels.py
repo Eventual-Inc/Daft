@@ -136,7 +136,12 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Retry initial backoff ms = 1000
 |   Connect timeout ms = 30000
 |   Read timeout ms = 30000
-|   Max retries = 5))) as {id_placeholder}, col(0: data)
+|   Max retries = 5
+|   UnityConfig
+|       endpoint: None
+|       token: None
+|   HuggingFaceConfig
+|   Anonymous = false))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |
 * InMemorySource:
@@ -146,6 +151,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Batch Size = Range(0, 10]
 
 """
+    print(f"captured: {captured}")
     assert clean_explain_output(captured) == clean_explain_output(expected)
 
 
