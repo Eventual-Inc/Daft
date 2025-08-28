@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use async_recursion::async_recursion;
 use async_trait::async_trait;
 use common_io_config::{HTTPConfig, HuggingFaceConfig};
 use futures::{
@@ -296,6 +297,63 @@ impl HFSource {
         }
         .into())
     }
+
+    #[async_recursion]
+    async fn request(
+        &self,
+        uri: &str,
+        cache_bust: bool,
+        range: Option<&GetRange>,
+        client: &reqwest_middleware::ClientWithMiddleware,
+    ) -> super::Result<(reqwest::Response, bool)> {
+        let (use_range, range) = if cache_bust {
+            if uri.contains("cachebust") {
+                // Hugging Face is buggy with range requests. If we already attempted cache busting, try removing the range request.
+                (false, None)
+            } else {
+                (range.is_some(), range)
+            }
+        } else {
+            (range.is_some(), range)
+        };
+        let path = uri.parse::<HFPath>()?;
+        let uri = &path.get_file_uri(cache_bust);
+        let req = client.get(uri);
+        let req = match &range {
+            None => req,
+            Some(range) => {
+                range.validate().context(InvalidRangeRequestSnafu)?;
+                req.header(RANGE, range.to_string())
+            }
+        };
+
+        let response = req.send().await.context(UnableToConnectSnafu::<String> {
+            path: uri.to_string(),
+        })?;
+
+        match response.error_for_status() {
+            Err(e) => {
+                let status_code = e.status();
+                match status_code {
+                    // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
+                    // Retry with cache busting to bypass the improperly cached response and get correct file metadata.
+                    Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
+                        self.request(uri, true, range, client).await
+                    }
+                    _ => Err(e).context(UnableToOpenFileSnafu::<String> { path: uri.into() })?,
+                }
+            }
+            Ok(res) => {
+                // Check if we got a 206 (Partial Content) response with zero content length.
+                // This can happen due to Hugging Face's buggy caching. Retry with cache busting.
+                if res.status() == StatusCode::PARTIAL_CONTENT && res.content_length() == Some(0) {
+                    self.request(uri, true, range, client).await
+                } else {
+                    Ok((res, use_range))
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -306,83 +364,20 @@ impl ObjectSource for HFSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        async fn make_request(
-            uri: &str,
-            cache_bust: bool,
-            client: &reqwest_middleware::ClientWithMiddleware,
-            range: Option<&GetRange>,
-        ) -> super::Result<reqwest::Response> {
-            let path = uri.parse::<HFPath>()?;
-            let uri = &path.get_file_uri(cache_bust);
+        let (response, range_applied) = self
+            .request(uri, false, range.as_ref(), &self.http_source.client)
+            .await?;
 
-            let req = client.get(uri);
-            let req = match range {
-                None => req,
-                Some(range) => {
-                    range.validate().context(InvalidRangeRequestSnafu)?;
-                    req.header(RANGE, range.to_string())
-                }
-            };
-
-            Ok(req.send().await.context(UnableToConnectSnafu::<String> {
-                path: uri.to_string(),
-            })?)
-        }
-        let response = make_request(uri, false, &self.http_source.client, range.as_ref()).await?;
-
-        let (response, range_applied) = match response.error_for_status() {
-            Err(e) => {
-                let status_code = e.status();
-                match status_code {
-                    Some(StatusCode::UNAUTHORIZED) => Err(Error::Unauthorized),
-                    // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
-                    // Retry once with cache busting to bypass the improperly cached response and get correct file metadata.
-                    // If it fails again, we'll return the error.
-                    Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
-                        let response =
-                            make_request(uri, true, &self.http_source.client, None).await?;
-
-                        let res = response.error_for_status().map_err(|e| {
-                            if e.status() == Some(StatusCode::UNAUTHORIZED) {
-                                Error::Unauthorized
-                            } else {
-                                Error::UnableToOpenFile {
-                                    path: uri.to_string(),
-                                    source: e,
-                                }
-                            }
-                        })?;
-                        Ok((res, false))
-                    }
-                    _ => Err(Error::UnableToOpenFile {
-                        path: uri.to_string(),
-                        source: e,
-                    }),
+        let response = response.error_for_status().map_err(|e| {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
+                Error::Unauthorized
+            } else {
+                Error::UnableToOpenFile {
+                    path: uri.to_string(),
+                    source: e,
                 }
             }
-            Ok(res) => {
-                // Check if we got a 206 (Partial Content) response with zero content length.
-                // This can happen due to Hugging Face's buggy caching. Retry with cache busting.
-                if res.status() == StatusCode::PARTIAL_CONTENT && res.content_length() == Some(0) {
-                    let response =
-                        make_request(uri, true, &self.http_source.client, range.as_ref()).await?;
-
-                    let res = response.error_for_status().map_err(|e| {
-                        if e.status() == Some(StatusCode::UNAUTHORIZED) {
-                            Error::Unauthorized
-                        } else {
-                            Error::UnableToOpenFile {
-                                path: uri.to_string(),
-                                source: e,
-                            }
-                        }
-                    })?;
-                    Ok((res, true))
-                } else {
-                    Ok((res, true))
-                }
-            }
-        }?;
+        })?;
 
         if let Some(is) = io_stats.as_ref() {
             is.mark_get_requests(1);
