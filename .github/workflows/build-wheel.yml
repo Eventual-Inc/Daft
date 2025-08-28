@@ -46,17 +46,23 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
 
-    - name: Setup Virtual Env
+    - name: Setup Virtual Env part 1 of 3
+      run: uv venv --seed .venv
+
+    - name: Setup Virtual Env part 2 of 3 (windows)
+      if: inputs.os == 'windows'
       run: |
-        uv venv --seed .venv
-        if [[ "${{ inputs.os }}" == "windows" ]]; then
-          echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
-          source .venv/Scripts/activate
-        else
-          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
-          source .venv/bin/activate
-        fi
-        uv pip install twine yq setuptools_scm
+        echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
+        source .venv/Scripts/activate
+
+    - name: Setup Virtual Env part 2 of 3 (posix)
+      if: inputs.os != 'windows'
+      run: |
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
+
+    - name: Setup Virtual Env part 3 of 3
+      run: uv pip install twine yq setuptools_scm
 
     - uses: oven-sh/setup-bun@v2
       with:
