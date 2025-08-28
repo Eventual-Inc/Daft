@@ -34,6 +34,7 @@ jobs:
 
     - name: Setup Virtual Env
       run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
