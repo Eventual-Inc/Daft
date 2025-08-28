@@ -127,7 +127,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
     <div class="stage-box">
       <div class="row">
         <div class="description">
-          <div class="stage-header">READ</div>
+          <div class="stage-header">READ ANYTHING</div>
           <p>Daft reads raw unstructured and multimodal data collected from application systems</p>
           <p>Object Store (AWS S3, GCS, R2)<br>Event Bus (Kafka)<br>Data Lake (Iceberg, Deltalake)</p>
         </div>
@@ -140,7 +140,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
     <div class="stage-box">
       <div class="row">
         <div class="description">
-          <div class="stage-header">TRANSFORM</div>
+          <div class="stage-header">EXPENSIVE TRANSFORMATIONS</div>
           <p>Build efficient Daft data pipelines involving heavy transformations</p>
           <p>GPU models<br>User-provided Python code<br>External LLM APIs</p>
         </div>
