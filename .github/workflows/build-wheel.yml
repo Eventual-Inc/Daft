@@ -51,7 +51,7 @@ jobs:
         uv venv --seed .venv
         if [[ "${{ inputs.os }}" == "windows" ]]; then
           echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
-          .venv\Scripts\activate
+          source .venv/Scripts/activate
         else
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           source .venv/bin/activate
