@@ -116,12 +116,18 @@ class UdfHandle:
         response = self.handle_conn.recv()
         stdout = self.trace_output()
         if response[0] == _UDF_ERROR:
-            base_exc: Exception = pickle.loads(response[3])
-            if sys.version_info >= (3, 11):
-                base_exc.add_note("\n".join(response[2].format()))
+            try:
+                base_exc: Exception | None = pickle.loads(response[3])
+            except TypeError:
+                base_exc = None
+
+            if base_exc is None and sys.version_info >= (3, 11):
+                raise UDFException(response[1], response[2])
+            if base_exc and sys.version_info >= (3, 11):
+                base_exc.add_note("\n".join(response[2].format()).rstrip())  # type: ignore[attr-defined]
             raise UDFException(response[1]) from base_exc
         elif response[0] == _ERROR:
-            raise RuntimeError("Actor Pool UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
+            raise RuntimeError("UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
         elif response[0] == _SUCCESS:
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
