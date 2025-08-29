@@ -1,5 +1,3 @@
-use std::iter;
-
 use arrow2::{
     array::{BinaryArray as ArrowBinaryArray, Utf8Array as ArrowUtf8Array},
     bitmap::MutableBitmap,
@@ -9,16 +7,13 @@ use arrow2::{
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::as_arrow::AsArrow,
-    datatypes::{
-        BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray, UInt64Array,
-    },
+    datatypes::{BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray},
     prelude::{DataType, Utf8Array},
 };
 
 use crate::utils::*;
 
 pub trait BinaryArrayExtension: Sized {
-    fn length(&self) -> DaftResult<UInt64Array>;
     fn binary_concat(&self, other: &Self) -> DaftResult<Self>;
     fn binary_slice<I, J>(
         &self,
@@ -45,16 +40,6 @@ pub trait BinaryArrayExtension: Sized {
 }
 
 impl BinaryArrayExtension for BinaryArray {
-    fn length(&self) -> DaftResult<UInt64Array> {
-        let self_arrow = self.as_arrow();
-        let offsets = self_arrow.offsets();
-        let arrow_result = arrow2::array::UInt64Array::from_iter(
-            offsets.windows(2).map(|w| Some((w[1] - w[0]) as u64)),
-        )
-        .with_validity(self_arrow.validity().cloned());
-        Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
-    }
-
     fn binary_concat(&self, other: &Self) -> DaftResult<Self> {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
@@ -295,17 +280,6 @@ impl BinaryArrayExtension for BinaryArray {
 }
 
 impl BinaryArrayExtension for FixedSizeBinaryArray {
-    fn length(&self) -> DaftResult<UInt64Array> {
-        let self_arrow = self.as_arrow();
-        let size = self_arrow.size();
-        let arrow_result = arrow2::array::UInt64Array::from_iter(iter::repeat_n(
-            Some(size as u64),
-            self_arrow.len(),
-        ))
-        .with_validity(self_arrow.validity().cloned());
-        Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
-    }
-
     fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
