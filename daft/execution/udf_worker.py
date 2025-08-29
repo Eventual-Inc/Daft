@@ -64,8 +64,6 @@ def udf_event_loop(
         exc = e.__cause__
         assert exc is not None
         try:
-            # TODO: Consider using cloudpickle, since it can pickle more types
-            # like lambda functions
             exc_bytes = daft.pickle.dumps(exc)
         except (PicklingError, AttributeError):
             exc_bytes = None
