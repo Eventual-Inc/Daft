@@ -219,6 +219,7 @@ impl LogicalPlanBuilder {
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::builder()
+            .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
             .allow_explode(true)
             .build();
@@ -231,6 +232,7 @@ impl LogicalPlanBuilder {
 
     pub fn with_columns(&self, columns: Vec<ExprRef>) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::builder()
+            .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
             .allow_explode(true)
             .build();
@@ -309,7 +311,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::default();
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
         let predicate = expr_resolver.resolve_single(predicate, self.plan.clone())?;
 
