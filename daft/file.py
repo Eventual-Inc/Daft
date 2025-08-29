@@ -63,7 +63,7 @@ class File:
         return file
 
     @staticmethod
-    def _from_tuple(tuple: tuple[Any]) -> File:
+    def _from_tuple(tup: tuple[Any]) -> File:
         inner = PyDaftFile._from_tuple(tuple)
         file: File
         if isinstance(tuple[0], str):
