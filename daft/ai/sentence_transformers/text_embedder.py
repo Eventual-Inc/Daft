@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from sentence_transformers import SentenceTransformer
+from transformers import AutoConfig
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
@@ -29,8 +30,6 @@ class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.options
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        from transformers import AutoConfig
-
         dimensions = AutoConfig.from_pretrained(self.model).hidden_size
         return EmbeddingDimensions(size=dimensions, dtype=DataType.float32())
 
