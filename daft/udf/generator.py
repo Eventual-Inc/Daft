@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Generator, Iterator
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, get_args, get_origin, get_type_hints, overload
 
 from daft.daft import row_wise_udf
 from daft.datatype import DataType
@@ -56,12 +56,19 @@ class GeneratorUdf(Generic[P, T]):
             return_dtype = args[0]
         self.return_dtype = DataType._infer_type(return_dtype)
 
-    def eval(self, *args: P.args, **kwargs: P.kwargs) -> Iterator[T]:
-        """Run the decorated generator function eagerly and return an iterator."""
-        return self._inner(*args, **kwargs)
+    @overload
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Iterator[T]: ...
+    @overload
+    def __call__(self, *args: Expression, **kwargs: Expression) -> Expression: ...
+    @overload
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression | Iterator[T]: ...
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression | Iterator[T]:
         expr_args = get_expr_args(args, kwargs)
+
+        # evaluate the function eagerly if there are no expression arguments
+        if len(expr_args) == 0:
+            return self._inner(*args, **kwargs)
 
         check_fn_serializable(self._inner, "@daft.func")
 
