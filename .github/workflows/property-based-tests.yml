@@ -27,13 +27,12 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+    - name: Setup Python ${{ matrix.python-version}} and UV
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
-
-    - name: Setup UV
-      uses: astral-sh/setup-uv@v6
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
 
     - name: Setup Virtual Env
       run: |
