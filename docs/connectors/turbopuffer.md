@@ -7,7 +7,7 @@ We recommend [turbopuffer](https://turbopuffer.com/) as a fast search engine tha
 This example does the following:
 
 1. Reads the [`Open-Orca/OpenOrca`](https://huggingface.co/datasets/Open-Orca/OpenOrca) dataset from [Hugging Face](https://huggingface.co/)
-2. Computes text embeddings on the `prompt` column, using either an [OpenAI model](https://platform.openai.com/docs/models/text-embedding-3-small) or the [`BAAI/bge-base-en-v1.5`](https://huggingface.co/BAAI/bge-base-en-v1.5) open model on Hugging Face with [Sentence Transformers](https://sbert.net/index.html)
+2. Computes text embeddings on the `response` column, using either an [OpenAI model](https://platform.openai.com/docs/models/text-embedding-3-small) or the [`BAAI/bge-base-en-v1.5`](https://huggingface.co/BAAI/bge-base-en-v1.5) open model on Hugging Face with [Sentence Transformers](https://sbert.net/index.html)
 3. Writes the results to turbopuffer
 
 === "🐍 Python"
