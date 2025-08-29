@@ -149,8 +149,6 @@ from daft.file import File
 import daft.context as context
 import daft.io as io
 
-to_struct = Expression.to_struct
-
 __all__ = [
     "Catalog",
     "DataCatalogTable",
@@ -245,7 +243,6 @@ __all__ = [
     "sql",
     "sql_expr",
     "struct",
-    "to_struct",
     "udf",
     "write_table",
 ]
