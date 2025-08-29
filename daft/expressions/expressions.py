@@ -5481,49 +5481,64 @@ class ExpressionKVLanceNamespace(ExpressionNamespace):
 
     def get(
         self,
-        uri: str,
+        uri: str | None = None,
         columns: list[str] | None = None,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
+        kv_config: "KVConfig" | None = None,
     ) -> Expression:
         """Get data from Lance dataset using row IDs.
 
         Args:
-            uri: URI path to the Lance dataset
+            uri: URI path to the Lance dataset (deprecated, use kv_config instead)
             columns: List of column names to retrieve. If None, returns all columns
             on_error: Error handling strategy - "raise" or "null"
             io_config: IO configuration for accessing the dataset
+            kv_config: KV configuration object (recommended)
 
         Returns:
             Expression: Expression containing the retrieved data
 
         Examples:
+            >>> # Using URI (legacy)
             >>> df = df.with_column("data", df["row_id"].kv.lance.get("s3://bucket/dataset"))
-            >>> df = df.with_column("image", df["row_id"].kv.lance.get(
-            ...     "s3://bucket/images", 
-            ...     columns=["image_data", "metadata"]
-            ... ))
+            
+            >>> # Using KVConfig (recommended)
+            >>> from daft.kv import KVConfig, LanceConfig
+            >>> config = KVConfig(lance=LanceConfig(uri="s3://bucket/dataset"))
+            >>> df = df.with_column("data", df["row_id"].kv.lance.get(kv_config=config))
         """
         from daft import context
 
-        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        # Handle both legacy URI and new KVConfig approaches
+        if kv_config is not None:
+            # Use KVConfig approach
+            kv_config_expr = Expression._to_expression(kv_config)._expr
+            f = native.get_function_from_registry("lance_kv_get_with_config")
+            return Expression._from_pyexpr(f(self._expr, kv_config=kv_config_expr))
+        else:
+            # Legacy URI approach
+            if uri is None:
+                raise ValueError("Either 'uri' or 'kv_config' must be provided")
+            
+            io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        uri_expr = Expression._to_expression(uri)._expr
-        columns_expr = Expression._to_expression(columns)._expr
-        on_error_expr = Expression._to_expression(on_error)._expr
-        io_config_expr = Expression._to_expression(io_config)._expr
+            uri_expr = Expression._to_expression(uri)._expr
+            columns_expr = Expression._to_expression(columns)._expr
+            on_error_expr = Expression._to_expression(on_error)._expr
+            io_config_expr = Expression._to_expression(io_config)._expr
 
-        f = native.get_function_from_registry("lance_kv_get")
+            f = native.get_function_from_registry("lance_kv_get")
 
-        return Expression._from_pyexpr(
-            f(
-                self._expr,
-                uri=uri_expr,
-                columns=columns_expr,
-                on_error=on_error_expr,
-                io_config=io_config_expr,
+            return Expression._from_pyexpr(
+                f(
+                    self._expr,
+                    uri=uri_expr,
+                    columns=columns_expr,
+                    on_error=on_error_expr,
+                    io_config=io_config_expr,
+                )
             )
-        )
 
     def take(
         self,
