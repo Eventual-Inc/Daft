@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import pickle
 import secrets
 import subprocess
 import sys
@@ -11,6 +10,7 @@ from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Listener
 from typing import IO, TYPE_CHECKING, cast
 
+import daft.pickle
 from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch import MicroPartition
@@ -88,7 +88,7 @@ class UdfHandle:
         expr_projection = ExpressionsProjection(
             [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
         )
-        expr_projection_bytes = pickle.dumps(expr_projection)
+        expr_projection_bytes = daft.pickle.dumps(expr_projection)
         self.handle_conn.send((_ENTER, expr_projection_bytes))
         response = self.handle_conn.recv()
         if response != _READY:
@@ -117,7 +117,7 @@ class UdfHandle:
         stdout = self.trace_output()
         if response[0] == _UDF_ERROR:
             try:
-                base_exc: Exception | None = pickle.loads(response[3])
+                base_exc: Exception | None = daft.pickle.loads(response[3])
             except TypeError:
                 base_exc = None
 

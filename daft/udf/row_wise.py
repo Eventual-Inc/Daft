@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hint
 
 from daft.daft import row_wise_udf
 
-from ._internal import get_expr_args, get_unique_function_name
+from ._internal import check_fn_serializable, get_expr_args, get_unique_function_name
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
@@ -53,6 +53,7 @@ class RowWiseUdf(Generic[P, T]):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         expr_args = get_expr_args(args, kwargs)
+        check_fn_serializable(self._inner, "@daft.func")
 
         return Expression._from_pyexpr(
             row_wise_udf(self.name, self._inner, self.return_dtype._dtype, (args, kwargs), expr_args)

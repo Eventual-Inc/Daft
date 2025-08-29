@@ -1414,6 +1414,9 @@ dev = [
     { name = "ipdb" },
     { name = "lxml" },
     { name = "maturin" },
+    { name = "mcap" },
+    { name = "mcap-protobuf-support" },
+    { name = "mcap-ros2-support" },
     { name = "memray", marker = "sys_platform != 'win32'" },
     { name = "moto", extra = ["glue", "s3", "server"] },
     { name = "numpy" },
@@ -1535,6 +1538,9 @@ dev = [
     { name = "ipdb" },
     { name = "lxml", specifier = "==5.3.0" },
     { name = "maturin" },
+    { name = "mcap", specifier = "==1.3.0" },
+    { name = "mcap-protobuf-support", specifier = "==0.5.3" },
+    { name = "mcap-ros2-support", specifier = "==0.5.5" },
     { name = "memray", marker = "sys_platform != 'win32'", specifier = "==1.17.2" },
     { name = "moto", extras = ["glue", "s3", "s3tables", "server"], specifier = "==5.1.1" },
     { name = "numpy", specifier = "==1.26.2" },
@@ -3458,6 +3464,44 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/43/e3/f304c3bdc3fba9adebe5348d4d2dd015f1152c0a9027aaf52cae0bb182c8/maturin-1.9.4-py3-none-win32.whl", hash = "sha256:ed2e54d132ace7e61829bd49709331007dd9a2cc78937f598aa76a4f69b6804d", size = 7265200, upload-time = "2025-08-27T11:37:50.881Z" },
     { url = "https://files.pythonhosted.org/packages/14/14/f86d0124bf1816b99005c058a1dbdca7cb5850d9cf4b09dcae07a1bc6201/maturin-1.9.4-py3-none-win_amd64.whl", hash = "sha256:8e450bb2c9afdf38a0059ee2e1ec2b17323f152b59c16f33eb9c74edaf1f9f79", size = 8237391, upload-time = "2025-08-27T11:37:53.23Z" },
     { url = "https://files.pythonhosted.org/packages/3f/25/8320fc2591e45b750c3ae71fa596b47aefa802d07d6abaaa719034a85160/maturin-1.9.4-py3-none-win_arm64.whl", hash = "sha256:7a6f980a9b67a5c13c844c268eabd855b54a6a765df4b4bb07d15a990572a4c9", size = 6988277, upload-time = "2025-08-27T11:37:55.429Z" },
+]
+
+[[package]]
+name = "mcap"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lz4" },
+    { name = "zstandard" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a2/ca/9b0f31eddb3c3261d25059e5f70cc2021e5ce0fe85c1d8012f6cdda50afa/mcap-1.3.0.tar.gz", hash = "sha256:5f0d5826ba3b8418508c1d992bada4c5744073f1b3e6d685579f0aca0389fb2f", size = 21593, upload-time = "2025-06-19T04:48:24.068Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/8e/e974e3883872d9a255eb549e6a3c31db9f8fa8a130fb644487511cbf7a4b/mcap-1.3.0-py3-none-any.whl", hash = "sha256:6262a68cd5a9ed7f8fe8fa6330412a87949842782ab42a4800cd033d0f38e4cd", size = 20634, upload-time = "2025-06-19T04:48:22.837Z" },
+]
+
+[[package]]
+name = "mcap-protobuf-support"
+version = "0.5.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcap" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/a0/c546998ffccc26f3edfc4f9b004fe7ab7f80659f9d63124c8dcfd5e6b09a/mcap_protobuf_support-0.5.3.tar.gz", hash = "sha256:0545ed005cdc6ac22c5d87a7d8574f0e9adb0c5da7b0f46ae896f5702fc1a250", size = 7042, upload-time = "2025-01-29T22:17:07.657Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9c/2e/023519eca2606e1837a926f5f6d9108a34b206ec0082c93fc69a96d24a36/mcap_protobuf_support-0.5.3-py3-none-any.whl", hash = "sha256:2cdfe7082f26f7da1bae8fa91c9196820562d03dccf39d4e4de11e8287f92dcb", size = 7283, upload-time = "2025-01-29T22:17:06.388Z" },
+]
+
+[[package]]
+name = "mcap-ros2-support"
+version = "0.5.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcap" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/50/7b/579794b5ace83beb46d051ad954e42f65f33bc587bff89f6c4ef5a41e5ff/mcap_ros2_support-0.5.5.tar.gz", hash = "sha256:cd0bf92fee3f5cbff1dcd129f8e890d5ea0d036e2257ceb1f0518bce68e64de4", size = 23027, upload-time = "2024-10-10T16:54:00.819Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2e/88/c2a7828d7f5f30a2fbfd1c67ca451df5c175fd19c2015b6a6657ee5ead28/mcap_ros2_support-0.5.5-py3-none-any.whl", hash = "sha256:79141d29d6b8e3b5494178333b260ef27ddcb3c61588bca388ee52993ab80443", size = 21983, upload-time = "2024-10-10T16:53:59.846Z" },
 ]
 
 [[package]]
