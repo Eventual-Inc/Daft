@@ -3,6 +3,7 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
+    expr::count_udfs,
     functions::{scalar::ScalarFn, BuiltinScalarFn},
     is_udf,
     optimization::{get_required_columns, requires_computation},
@@ -13,9 +14,76 @@ use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Project, UDFProject},
+    ops::{Filter, Project, UDFProject},
     LogicalPlan,
 };
+
+/// Simple optimizer rule that checks if filters contain a UDF and if so, pulls it out of the filter.
+/// Expectation is that this rule will run before SplitUDFs, so that the UDFs are split out of the filter expression.
+#[derive(Default, Debug)]
+pub struct SplitUDFsFromFilters {}
+
+impl SplitUDFsFromFilters {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn try_optimize_filter(
+        &self,
+        count: &mut usize,
+        filter: &Filter,
+        plan: &Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        if count_udfs(&filter.predicate) > 0 {
+            let col_name = format!("__SplitUDFsFromFilters_udf_{}__", count);
+            *count += 1;
+
+            let predicate_node = LogicalPlan::Project(Project::try_new(
+                filter.input.clone(),
+                filter
+                    .input
+                    .schema()
+                    .field_names()
+                    .map(resolved_col)
+                    .chain(std::iter::once(
+                        filter.predicate.clone().alias(col_name.as_str()),
+                    ))
+                    .collect(),
+            )?)
+            .into();
+
+            let new_filter = Arc::new(LogicalPlan::Filter(Filter::try_new(
+                predicate_node,
+                resolved_col(col_name.as_str()),
+            )?));
+
+            let exclude_project = Project::try_new(
+                new_filter,
+                filter
+                    .input
+                    .schema()
+                    .field_names()
+                    .map(resolved_col)
+                    .collect(),
+            )?
+            .into();
+
+            Ok(Transformed::yes(exclude_project))
+        } else {
+            Ok(Transformed::no(plan.clone()))
+        }
+    }
+}
+
+impl OptimizerRule for SplitUDFsFromFilters {
+    fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        let mut udf_count = 0;
+        plan.transform_down(|node| match node.as_ref() {
+            LogicalPlan::Filter(filter) => self.try_optimize_filter(&mut udf_count, filter, &node),
+            _ => Ok(Transformed::no(node)),
+        })
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct SplitUDFs {}
@@ -541,7 +609,7 @@ mod tests {
             python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
             FunctionExpr,
         },
-        resolved_col, Expr, ExprRef,
+        lit, resolved_col, Expr, ExprRef,
     };
     use indoc::indoc;
     use test_log::test;
@@ -550,7 +618,7 @@ mod tests {
     use crate::{
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownProjection,
+            rules::{PushDownProjection, SplitUDFsFromFilters},
             test::assert_optimized_plan_with_rules_repr_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
@@ -611,6 +679,27 @@ mod tests {
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
+                use_process: None,
+            }),
+            inputs,
+        }
+        .arced()
+    }
+
+    fn create_filter_udf(inputs: Vec<ExprRef>) -> ExprRef {
+        Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF {
+                name: Arc::new("foo".to_string()),
+                func: MaybeInitializedUDF::Uninitialized {
+                    inner: RuntimePyObject::new_none(),
+                    init_args: RuntimePyObject::new_none(),
+                },
+                bound_args: RuntimePyObject::new_none(),
+                num_expressions: inputs.len(),
+                return_dtype: DataType::Boolean,
+                resource_request: None,
+                batch_size: Some(32),
+                concurrency: None,
                 use_process: None,
             }),
             inputs,
@@ -1226,6 +1315,74 @@ Project: col(a), col(c)
                     Partitioning keys = []
                     Output schema = a#Int64, b#Int64, c#Int64
         "},
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_split_udf_in_filter_top() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let scan_node = dummy_scan_node(scan_op.clone());
+        let udf = create_filter_udf(vec![resolved_col("a")]);
+        let plan = scan_node.filter(udf)?.build();
+
+        assert_optimized_plan_with_rules_repr_eq(
+            plan,
+            indoc! {"
+        Project: col(a)
+          Filter: col(__SplitUDFsFromFilters_udf_0__)
+            UDFProject:
+            UDF foo = py_udf(col(a)) as __SplitUDFsFromFilters_udf_0__
+            Passthrough Columns = col(a)
+            Concurrency = None
+              DummyScanOperator
+              File schema = a#Int64
+              Partitioning keys = []
+              Output schema = a#Int64
+        "},
+            vec![RuleBatch::new(
+                vec![
+                    Box::new(SplitUDFsFromFilters::new()),
+                    Box::new(SplitUDFs::new()),
+                    Box::new(PushDownProjection::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            )],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_split_udf_in_filter_middle() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let scan_node = dummy_scan_node(scan_op.clone());
+        let condition = create_actor_pool_udf(vec![resolved_col("a")]).not_eq(lit("hello"));
+        let plan = scan_node.filter(condition)?.build();
+
+        assert_optimized_plan_with_rules_repr_eq(
+            plan,
+            indoc! {r#"
+        Project: col(a)
+          Filter: col(__SplitUDFsFromFilters_udf_0__)
+            Project: col(a), col(__TruncateAnyUDFChildren_0-1-0__) != lit("hello") as __SplitUDFsFromFilters_udf_0__
+              UDFProject:
+              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
+              Passthrough Columns = col(a)
+              Concurrency = Some(8)
+              Resource request = { num_cpus = 8, num_gpus = 1 }
+                DummyScanOperator
+                File schema = a#Int64
+                Partitioning keys = []
+                Output schema = a#Int64
+        "#},
+            vec![RuleBatch::new(
+                vec![
+                    Box::new(SplitUDFsFromFilters::new()),
+                    Box::new(SplitUDFs::new()),
+                    Box::new(PushDownProjection::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            )],
         )?;
         Ok(())
     }
