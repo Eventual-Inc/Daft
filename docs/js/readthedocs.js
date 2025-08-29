@@ -15,8 +15,20 @@ document.addEventListener(
               </button>
 
               <ul class="md-version__list">
-              ${config.versions.active.map(
-      (version) => `
+              ${config.versions.active
+                .filter((version) => {
+                  // Hide versions from v0.0.0 to v0.4.*, only show v0.5.* and later
+                  const versionSlug = version.slug;
+                  if (versionSlug.startsWith('v0.0.') ||
+                      versionSlug.startsWith('v0.1.') ||
+                      versionSlug.startsWith('v0.2.') ||
+                      versionSlug.startsWith('v0.3.') ||
+                      versionSlug.startsWith('v0.4.')) {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((version) => `
                 <li class="md-version__item">
                   <a href="${version.urls.documentation}" class="md-version__link">
                     ${version.slug}
