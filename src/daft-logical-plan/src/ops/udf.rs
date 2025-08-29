@@ -81,7 +81,7 @@ impl UDFProject {
                 {
                     return Err(Error::CreationError {
                         source: DaftError::InternalError(
-                            format!("UDF `{}` can not set `use_process=True` because it has a Python-dtype input `{}`. Please unset `use_process` or cast the input to a non-Python dtype if possible.", udf_properties.name, col.name)
+                            format!("UDF `{}` can not set `use_process=True` because it has a Python-dtype input column `{}`. Please unset `use_process` or cast the input to a non-Python dtype if possible.", udf_properties.name, col.name)
                         ),
                     });
                 }

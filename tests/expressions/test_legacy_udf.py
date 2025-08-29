@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 
+import httpx
 import numpy as np
 import pyarrow as pa
 import pytest
+from openai import APIStatusError
 
 import daft
 from daft import col
@@ -704,6 +706,44 @@ def test_udf_python_dtype():
     assert result.to_pydict() == {"udf_1": [f"{os.getpid()} foo"]}
 
     udf1_process = udf_1.run_on_process(True)
-    with pytest.raises(DaftCoreException, match="because it has a Python-dtype input `a`"):
+    with pytest.raises(DaftCoreException, match="because it has a Python-dtype input column `a`"):
         result = df.select(udf1_process(col("a")).alias("udf_1"))
         assert result.to_pydict() == {"udf_1": [f"{os.getpid()} foo"]}
+
+
+def test_udf_error_serialize_err():
+    """Test that UDF errors that can't be serialized are handled."""
+
+    @udf(return_dtype=DataType.string(), use_process=True)
+    def throw_value_err(x):
+        raise ValueError(lambda x: x * 2)
+
+    expr = throw_value_err(col("a"))
+
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    with pytest.raises(UDFException) as exc_info:
+        table.eval_expression_list([expr])
+
+    assert str(exc_info.value).startswith("User-defined function")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_udf_error_deserialize_err():
+    """Test that UDF errors that can't be deserialized are handled."""
+
+    @udf(return_dtype=DataType.int64(), use_process=True)
+    def throw_api_status_err(x: int) -> int:
+        fake_request = httpx.Request("GET", "http://google.com")
+        fake_response = httpx.Response(status_code=400, request=fake_request, headers={})
+        raise APIStatusError("test", response=fake_response, body=None)
+
+    expr = throw_api_status_err(col("a"))
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(UDFException) as exc_info:
+        table.eval_expression_list([expr])
+
+    assert str(exc_info.value).startswith("User-defined function")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=3)")
+    assert isinstance(exc_info.value.__cause__, APIStatusError)
