@@ -27,7 +27,7 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - name: Setup Python ${{ matrix.python-version}} and UV
+    - name: Setup Python ${{ matrix.python-version  }} and UV
       uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
