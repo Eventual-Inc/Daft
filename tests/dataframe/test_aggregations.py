@@ -13,7 +13,7 @@ from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
-from tests.utils import sort_arrow_table
+from tests.utils import sort_arrow_table, sort_pydict
 
 
 def _assert_all_hashable(values, test_name=""):
@@ -924,6 +924,26 @@ def test_bool_agg_type_error(make_df):
     with pytest.raises(Exception) as exc_info:
         df.agg(col("int_col").bool_or()).collect()
     assert "bool_or is not implemented for type Int64" in str(exc_info.value)
+
+
+def test_groupby_with_list_cols(make_df):
+    """Test that groupby works with list & fixed-size-list columns."""
+    df = make_df(
+        {
+            "key1": pa.array([[1, 2], [1, 2], [2, 3], [2, 3]], type=pa.list_(pa.int64(), 2)),
+            "key2": pa.array(
+                [["a"], ["a"], ["hello", "world"], ["hello", "world", "and", "beyond"]], type=pa.list_(pa.string())
+            ),
+            "values": pa.array([1.0, 10.0, 3.0, 4.0], type=pa.float64()),
+        }
+    )
+
+    res = df.groupby(["key1", "key2"]).agg(col("values").sum())
+    assert sort_pydict(res.to_pydict(), "values") == {
+        "key1": [[1, 2], [2, 3], [2, 3]],
+        "key2": [["a"], ["hello", "world", "and", "beyond"], ["hello", "world"]],
+        "values": [11.0, 4.0, 3.0],
+    }
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
