@@ -365,6 +365,15 @@ class Expression:
         """
         return ExpressionBinaryNamespace.from_expression(self)
 
+    @property
+    def kv(self) -> ExpressionKVNamespace:
+        """Access KV store operations for this expression.
+
+        Returns:
+            ExpressionKVNamespace: A namespace containing KV store operations
+        """
+        return ExpressionKVNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -5456,3 +5465,140 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
 
         """
         return self._eval_expressions("binary_slice", start, length)
+
+
+class ExpressionKVNamespace(ExpressionNamespace):
+    """KV store operations for expressions."""
+
+    @property
+    def lance(self) -> ExpressionKVLanceNamespace:
+        """Access Lance KV store operations."""
+        return ExpressionKVLanceNamespace.from_expression(Expression._from_pyexpr(self._expr))
+
+
+class ExpressionKVLanceNamespace(ExpressionNamespace):
+    """Lance KV store operations for expressions."""
+
+    def get(
+        self,
+        uri: str,
+        columns: list[str] | None = None,
+        on_error: Literal["raise", "null"] = "raise",
+        io_config: IOConfig | None = None,
+    ) -> Expression:
+        """Get data from Lance dataset using row IDs.
+
+        Args:
+            uri: URI path to the Lance dataset
+            columns: List of column names to retrieve. If None, returns all columns
+            on_error: Error handling strategy - "raise" or "null"
+            io_config: IO configuration for accessing the dataset
+
+        Returns:
+            Expression: Expression containing the retrieved data
+
+        Examples:
+            >>> df = df.with_column("data", df["row_id"].kv.lance.get("s3://bucket/dataset"))
+            >>> df = df.with_column("image", df["row_id"].kv.lance.get(
+            ...     "s3://bucket/images", 
+            ...     columns=["image_data", "metadata"]
+            ... ))
+        """
+        from daft import context
+
+        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        uri_expr = Expression._to_expression(uri)._expr
+        columns_expr = Expression._to_expression(columns)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
+
+        f = native.get_function_from_registry("lance_kv_get")
+
+        return Expression._from_pyexpr(
+            f(
+                self._expr,
+                uri=uri_expr,
+                columns=columns_expr,
+                on_error=on_error_expr,
+                io_config=io_config_expr,
+            )
+        )
+
+    def take(
+        self,
+        uri: str,
+        columns: list[str] | None = None,
+        batch_size: int = 1000,
+        on_error: Literal["raise", "null"] = "raise",
+        io_config: IOConfig | None = None,
+    ) -> Expression:
+        """Batch take operation for Lance dataset.
+
+        Args:
+            uri: URI path to the Lance dataset
+            columns: List of column names to retrieve
+            batch_size: Batch size for processing optimization
+            on_error: Error handling strategy - "raise" or "null"
+            io_config: IO configuration for accessing the dataset
+
+        Returns:
+            Expression: Expression containing the retrieved data
+        """
+        from daft import context
+
+        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        uri_expr = Expression._to_expression(uri)._expr
+        columns_expr = Expression._to_expression(columns)._expr
+        batch_size_expr = Expression._to_expression(batch_size)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
+
+        f = native.get_function_from_registry("lance_kv_take")
+
+        return Expression._from_pyexpr(
+            f(
+                self._expr,
+                uri=uri_expr,
+                columns=columns_expr,
+                batch_size=batch_size_expr,
+                on_error=on_error_expr,
+                io_config=io_config_expr,
+            )
+        )
+
+    def exists(
+        self,
+        uri: str,
+        on_error: Literal["raise", "null"] = "raise",
+        io_config: IOConfig | None = None,
+    ) -> Expression:
+        """Check if row IDs exist in Lance dataset.
+
+        Args:
+            uri: URI path to the Lance dataset
+            on_error: Error handling strategy - "raise" or "null"
+            io_config: IO configuration for accessing the dataset
+
+        Returns:
+            Expression: Boolean expression indicating if row IDs exist
+        """
+        from daft import context
+
+        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        uri_expr = Expression._to_expression(uri)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
+
+        f = native.get_function_from_registry("lance_kv_exists")
+
+        return Expression._from_pyexpr(
+            f(
+                self._expr,
+                uri=uri_expr,
+                on_error=on_error_expr,
+                io_config=io_config_expr,
+            )
+        )
