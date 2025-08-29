@@ -9,8 +9,8 @@ use daft_dsl::{
         scalar::ScalarFn, struct_::StructExpr, BuiltinScalarFn, FunctionArg, FunctionArgs,
         FunctionExpr,
     },
-    has_agg, is_actor_pool_udf, left_col, resolved_col, right_col, AggExpr, Column, Expr, ExprRef,
-    PlanRef, ResolvedColumn, UnresolvedColumn,
+    has_agg, left_col, resolved_col, right_col, AggExpr, Column, Expr, ExprRef, PlanRef,
+    ResolvedColumn, UnresolvedColumn,
 };
 use typed_builder::TypedBuilder;
 
@@ -271,8 +271,6 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
 #[derive(Default, TypedBuilder)]
 pub struct ExprResolver<'a> {
     #[builder(default)]
-    allow_actor_pool_udf: bool,
-    #[builder(default)]
     allow_monotonic_id: bool,
     #[builder(default)]
     allow_explode: bool,
@@ -294,12 +292,6 @@ pub struct ExprResolver<'a> {
 
 impl ExprResolver<'_> {
     fn check_expr(&self, expr: &ExprRef) -> DaftResult<()> {
-        if !self.allow_actor_pool_udf && expr.exists(is_actor_pool_udf) {
-            return Err(DaftError::ValueError(format!(
-                "UDFs with concurrency set are only allowed in projections: {expr}"
-            )));
-        }
-
         if !self.allow_monotonic_id
             && expr.exists(|e| match e.as_ref() {
                 Expr::ScalarFn(ScalarFn::Builtin(func)) => {

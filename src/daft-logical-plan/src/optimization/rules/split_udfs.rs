@@ -3,6 +3,7 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
+    expr::count_udfs,
     functions::{scalar::ScalarFn, BuiltinScalarFn},
     is_udf,
     optimization::{get_required_columns, requires_computation},
@@ -33,7 +34,7 @@ impl SplitUDFsFromFilters {
         filter: &Filter,
         plan: &Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        if is_udf(&filter.predicate) {
+        if count_udfs(&filter.predicate) > 0 {
             let col_name = format!("__SplitUDFsFromFilters_udf_{}__", count);
             *count += 1;
 
@@ -608,7 +609,7 @@ mod tests {
             python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
             FunctionExpr,
         },
-        resolved_col, Expr, ExprRef,
+        lit, resolved_col, Expr, ExprRef,
     };
     use indoc::indoc;
     use test_log::test;
@@ -1319,7 +1320,7 @@ Project: col(a), col(c)
     }
 
     #[test]
-    fn test_split_udf_in_filter() -> DaftResult<()> {
+    fn test_split_udf_in_filter_top() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_node = dummy_scan_node(scan_op.clone());
         let udf = create_filter_udf(vec![resolved_col("a")]);
@@ -1339,6 +1340,41 @@ Project: col(a), col(c)
               Partitioning keys = []
               Output schema = a#Int64
         "},
+            vec![RuleBatch::new(
+                vec![
+                    Box::new(SplitUDFsFromFilters::new()),
+                    Box::new(SplitUDFs::new()),
+                    Box::new(PushDownProjection::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            )],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_split_udf_in_filter_middle() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let scan_node = dummy_scan_node(scan_op.clone());
+        let condition = create_actor_pool_udf(vec![resolved_col("a")]).not_eq(lit("hello"));
+        let plan = scan_node.filter(condition)?.build();
+
+        assert_optimized_plan_with_rules_repr_eq(
+            plan,
+            indoc! {r#"
+        Project: col(a)
+          Filter: col(__SplitUDFsFromFilters_udf_0__)
+            Project: col(a), col(__TruncateAnyUDFChildren_0-1-0__) != lit("hello") as __SplitUDFsFromFilters_udf_0__
+              UDFProject:
+              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
+              Passthrough Columns = col(a)
+              Concurrency = Some(8)
+              Resource request = { num_cpus = 8, num_gpus = 1 }
+                DummyScanOperator
+                File schema = a#Int64
+                Partitioning keys = []
+                Output schema = a#Int64
+        "#},
             vec![RuleBatch::new(
                 vec![
                     Box::new(SplitUDFsFromFilters::new()),
