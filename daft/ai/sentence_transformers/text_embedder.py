@@ -42,10 +42,9 @@ class SentenceTransformersTextEmbedder(TextEmbedder):
     options: Options  # not currently used, torch hardcoded
 
     def __init__(self, model_name_or_path: str, **options: Any):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Let SentenceTransformer handle device selection automatically.
         self.model = SentenceTransformer(model_name_or_path, trust_remote_code=True, backend="torch")
         self.model.eval()
-        self.model.to(self.device)
         self.options = options
 
     def embed_text(self, text: list[str]) -> list[Embedding]:
