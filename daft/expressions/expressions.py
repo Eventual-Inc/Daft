@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 import math
 import warnings
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
+    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8zlib"]
 
 
 def lit(value: object) -> Expression:
@@ -431,34 +431,12 @@ class Expression:
     def unnest(self) -> Expression:
         """Flatten the fields of a struct expression into columns in a DataFrame.
 
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "struct": [
-            ...             {"x": 1, "y": 2},
-            ...             {"x": 3, "y": 4},
-            ...         ]
-            ...     }
-            ... )
-            >>> unnested_df = df.select(df["struct"].unnest())
-            >>> unnested_df.show()
-            ╭───────┬───────╮
-            │ x     ┆ y     │
-            │ ---   ┆ ---   │
-            │ Int64 ┆ Int64 │
-            ╞═══════╪═══════╡
-            │ 1     ┆ 2     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ 4     │
-            ╰───────┴───────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
-            >>> # These are also equivalent syntactic sugars for above
-            >>> unnested_df = df.select(df["struct"].struct.get("*"))
-            >>> unnested_df = df.select(df["struct"]["*"])
+        Tip: See Also
+            [`daft.functions.unnest`](https://docs.daft.ai/en/stable/api/functions/unnest/)
         """
-        return self.struct.get("*")
+        from daft.functions import unnest
+
+        return unnest(self)
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -471,9 +449,14 @@ class Expression:
         return self.abs()
 
     def abs(self) -> Expression:
-        """Absolute of a numeric expression."""
-        f = native.get_function_from_registry("abs")
-        return Expression._from_pyexpr(f(self._expr))
+        """Absolute of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.abs`](https://docs.daft.ai/en/stable/api/functions/abs/)
+        """
+        from daft.functions import abs
+
+        return abs(self)
 
     def __add__(self, other: object) -> Expression:
         """Adds two numeric expressions or concatenates two string expressions (``e1 + e2``)."""
@@ -561,22 +544,15 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr == expr._expr)
 
-    def eq_null_safe(self, other: Expression) -> Expression:
+    def eq_null_safe(self, other: Expression | Any) -> Expression:
         """Performs a null-safe equality comparison between two expressions.
 
-        Unlike regular equality (==), null-safe equality (<=> or IS NOT DISTINCT FROM):
-        - Returns True when comparing NULL <=> NULL
-        - Returns False when comparing NULL <=> any_value
-        - Behaves like regular equality for non-NULL values
-
-        Args:
-            other: The expression to compare with
-
-        Returns:
-            Expression: A boolean expression indicating if the values are equal
+        Tip: See Also
+            [`daft.functions.eq_null_safe`](https://docs.daft.ai/en/stable/api/functions/eq_null_safe/)
         """
-        expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr.eq_null_safe(expr._expr))
+        from daft.functions import eq_null_safe
+
+        return eq_null_safe(self, other)
 
     def __ne__(self, other: Expression) -> Expression:  # type: ignore
         """Compares if an expression is not equal to another (``e1 != e2``)."""
@@ -664,6 +640,13 @@ class Expression:
                 f"Argument {key} of type {type(key)} is not supported in Expression.__getitem__. Only int and string types are supported."
             )
 
+    @classmethod
+    def _call_builtin_scalar_fn(cls, func_name: builtins.str, *args: Any, **kwargs: Any) -> Expression:
+        expr_args = [cls._to_expression(v)._expr for v in args]
+        expr_kwargs = {k: cls._to_expression(v)._expr for k, v in kwargs.items() if v is not None}
+        f = native.get_function_from_registry(func_name)
+        return cls._from_pyexpr(f(*expr_args, **expr_kwargs))
+
     def _eval_expressions(self, func_name: builtins.str, *args: Any, **kwargs: Any) -> Expression:
         expr_args = [Expression._to_expression(v)._expr for v in args]
         expr_kwargs = {k: Expression._to_expression(v)._expr for k, v in kwargs.items() if v is not None}
@@ -706,123 +689,56 @@ class Expression:
     def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
 
-        The following combinations of datatype casting is valid:
-
-        | Target →           | Null | Boolean | Integers | Floats | Decimal128 | String | Binary | Fixed-size Binary | Image | Fixed-shape Image | Embedding | Tensor | Fixed-shape Tensor | Python | List | Fixed-size List | Struct | Map | Timestamp | Date | Time | Duration |
-        | ------------------ | ---- | ------- | -------- | ------ | ---------- | ------ | ------ | ----------------- | ----- | ----------------- | --------- | ------ | ------------------ | ------ | ---- | --------------- | ------ | --- | --------- | ---- | ---- | -------- |
-        | **Source ↓**       |
-        | Null               | Y    | Y       | Y        | Y      | Y          | Y      | Y      | Y                 | N     | N                 | Y         | N      | N                  | Y      | Y    | Y               | Y      | Y   | Y         | Y    | Y    | Y        |
-        | Boolean            | Y    | Y       | Y        | Y      | N          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-        | Integers           | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | Y        |
-        | Floats             | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | M               | N      | N   | Y         | Y    | Y    | Y        |
-        | Decimal128         | Y    | N       | Y        | Y      | Y          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-        | String             | Y    | N       | Y        | Y      | N          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | N    | N        |
-        | Binary             | Y    | N       | Y        | Y      | N          | Y      | Y      | Y                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-        | Fixed-size Binary  | Y    | N       | N        | N      | N          | N      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-        | Image              | N    | N       | N        | N      | N          | N      | N      | N                 | Y     | Y                 | N         | Y      | Y                  | Y      | N    | N               | Y      | N   | N         | N    | N    | N        |
-        | Fixed-size Image   | N    | N       | N        | N      | N          | N      | N      | N                 | Y     | Y                 | N         | Y      | Y                  | Y      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-        | Embedding          | Y    | N       | N        | N      | N          | n      | N      | N                 | N     | Y                 | N         | Y      | Y                  | Y      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-        | Tensor             | Y    | N       | N        | N      | N          | N      | N      | N                 | Y     | Y                 | N         | Y      | Y                  | Y      | N    | N               | Y      | N   | N         | N    | N    | N        |
-        | Fixed-shape Tensor | N    | N       | N        | N      | N          | N      | N      | N                 | N     | Y                 | N         | Y      | Y                  | Y      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-        | Python             | Y    | Y       | Y        | Y      | N          | Y      | Y      | Y                 | Y     | Y                 | Y         | Y      | Y                  | Y      | Y    | Y               | Y      | N   | N         | N    | N    | N        |
-        | List               | N    | N       | N        | N      | N          | N      | N      | N                 | N     | N                 | Y         | N      | N                  | N      | Y    | Y               | N      | Y   | N         | N    | N    | N        |
-        | Fixed-size List    | N    | N       | N        | N      | N          | N      | N      | N                 | N     | Y                 | N         | N      | Y                  | N      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-        | Struct             | N    | N       | N        | N      | N          | N      | N      | N                 | Y     | N                 | N         | Y      | N                  | N      | N    | N               | Y      | N   | N         | N    | N    | N        |
-        | Map                | N    | N       | N        | N      | N          | N      | N      | N                 | N     | N                 | Y         | N      | N                  | N      | Y    | Y               | N      | Y   | N         | N    | N    | N        |
-        | Timestamp          | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | N        |
-        | Date               | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | N    | N        |
-        | Time               | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | Y    | N        |
-        | Duration           | Y    | N       | Y        | Y      | N          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-
-        Returns:
-            Expression: Expression with the specified new datatype
-
-        Note:
-            - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
-            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://docs.daft.ai/en/stable/sql/datatypes/) for supported datatypes.
-            - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"float": [1.0, 2.5, None]})
-            >>> df = df.select(daft.col("float").cast(daft.DataType.int64()))
-            >>> df.show()
-            ╭───────╮
-            │ float │
-            │ ---   │
-            │ Int64 │
-            ╞═══════╡
-            │ 1     │
-            ├╌╌╌╌╌╌╌┤
-            │ 2     │
-            ├╌╌╌╌╌╌╌┤
-            │ None  │
-            ╰───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            Example with python type and sql types:
-            >>> import daft
-            >>> df = daft.from_pydict({"a": [1, 2, 3]})
-            >>> df = df.select(
-            ...     daft.col("a").cast(str).alias("str"),
-            ...     daft.col("a").cast(int).alias("int"),
-            ...     daft.col("a").cast(float).alias("float"),
-            ...     daft.col("a").cast("string").alias("sql_string"),
-            ...     daft.col("a").cast("int").alias("sql_int"),
-            ...     daft.col("a").cast("tinyint").alias("sql_tinyint"),
-            ... )
-            >>> df.show()
-            ╭──────┬───────┬─────────┬────────────┬─────────┬─────────────╮
-            │ str  ┆ int   ┆ float   ┆ sql_string ┆ sql_int ┆ sql_tinyint │
-            │ ---  ┆ ---   ┆ ---     ┆ ---        ┆ ---     ┆ ---         │
-            │ Utf8 ┆ Int64 ┆ Float64 ┆ Utf8       ┆ Int32   ┆ Int8        │
-            ╞══════╪═══════╪═════════╪════════════╪═════════╪═════════════╡
-            │ 1    ┆ 1     ┆ 1       ┆ 1          ┆ 1       ┆ 1           │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2    ┆ 2     ┆ 2       ┆ 2          ┆ 2       ┆ 2           │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 3    ┆ 3     ┆ 3       ┆ 3          ┆ 3       ┆ 3           │
-            ╰──────┴───────┴─────────┴────────────┴─────────┴─────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
+        Tip: See Also
+            [`daft.functions.cast`](https://docs.daft.ai/en/stable/api/functions/cast/)
         """
-        if isinstance(dtype, str):
-            dtype = DataType._from_pydatatype(sql_datatype(dtype))
-        else:
-            assert isinstance(dtype, (DataType, type))
-            dtype = DataType._infer_type(dtype)
-        expr = self._expr.cast(dtype._dtype)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import cast
+
+        return cast(self, dtype)
 
     def ceil(self) -> Expression:
-        """The ceiling of a numeric expression."""
-        f = native.get_function_from_registry("ceil")
-        return Expression._from_pyexpr(f(self._expr))
+        """The ceiling of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.ceil`](https://docs.daft.ai/en/stable/api/functions/ceil/)
+        """
+        from daft.functions import ceil
+
+        return ceil(self)
 
     def floor(self) -> Expression:
-        """The floor of a numeric expression."""
-        f = native.get_function_from_registry("floor")
-        return Expression._from_pyexpr(f(self._expr))
+        """The floor of a numeric expression.
 
-    def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
+        Tip: See Also
+            [`daft.functions.floor`](https://docs.daft.ai/en/stable/api/functions/floor/)
+        """
+        from daft.functions import floor
+
+        return floor(self)
+
+    def clip(
+        self,
+        min: Expression | int | builtins.float | None = None,
+        max: Expression | int | builtins.float | None = None,
+    ) -> Expression:
         """Clips an expression to the given minimum and maximum values.
 
-        Args:
-            min: Minimum value to clip to. If None (or column value is Null), no lower clipping is applied.
-            max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
-
+        Tip: See Also
+            [`daft.functions.clip`](https://docs.daft.ai/en/stable/api/functions/clip/)
         """
-        min_expr = Expression._to_expression(min)._expr
-        max_expr = Expression._to_expression(max)._expr
-        f = native.get_function_from_registry("clip")
-        return Expression._from_pyexpr(f(self._expr, min_expr, max_expr))
+        from daft.functions import clip
+
+        return clip(self, min, max)
 
     def sign(self) -> Expression:
-        """The sign of a numeric expression."""
-        f = native.get_function_from_registry("sign")
-        return Expression._from_pyexpr(f(self._expr))
+        """The sign of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.sign`](https://docs.daft.ai/en/stable/api/functions/sign/)
+        """
+        from daft.functions import sign
+
+        return sign(self)
 
     def signum(self) -> Expression:
         """The signum of a numeric expression."""
@@ -830,212 +746,349 @@ class Expression:
         return Expression._from_pyexpr(f(self._expr))
 
     def negate(self) -> Expression:
-        """The negative of a numeric expression."""
-        f = native.get_function_from_registry("negative")
-        return Expression._from_pyexpr(f(self._expr))
+        """The negative of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.negate`](https://docs.daft.ai/en/stable/api/functions/negate/)
+        """
+        from daft.functions import negate
+
+        return negate(self)
 
     def negative(self) -> Expression:
         """The negative of a numeric expression."""
         f = native.get_function_from_registry("negative")
         return Expression._from_pyexpr(f(self._expr))
 
-    def round(self, decimals: int | Expression = 0) -> Expression:
+    def round(self, decimals: Expression | int = 0) -> Expression:
         """The round of a numeric expression.
 
-        Args:
-            decimals: number of decimal places to round to. Defaults to 0.
+        Tip: See Also
+            [`daft.functions.round`](https://docs.daft.ai/en/stable/api/functions/round/)
         """
-        assert isinstance(decimals, int)
-        f = native.get_function_from_registry("round")
-        decimals_expr = Expression._to_expression(decimals)._expr
-        return Expression._from_pyexpr(f(self._expr, decimals=decimals_expr))
+        from daft.functions import round
+
+        return round(self, decimals)
 
     def sqrt(self) -> Expression:
-        """The square root of a numeric expression."""
-        f = native.get_function_from_registry("sqrt")
-        return Expression._from_pyexpr(f(self._expr))
+        """The square root of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.sqrt`](https://docs.daft.ai/en/stable/api/functions/sqrt/)
+        """
+        from daft.functions import sqrt
+
+        return sqrt(self)
 
     def cbrt(self) -> Expression:
-        """The cube root of a numeric expression."""
-        f = native.get_function_from_registry("cbrt")
-        return Expression._from_pyexpr(f(self._expr))
+        """The cube root of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.cbrt`](https://docs.daft.ai/en/stable/api/functions/cbrt/)
+        """
+        from daft.functions import cbrt
+
+        return cbrt(self)
 
     def sin(self) -> Expression:
-        """The elementwise sine of a numeric expression."""
-        f = native.get_function_from_registry("sin")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise sine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.sin`](https://docs.daft.ai/en/stable/api/functions/sin/)
+        """
+        from daft.functions import sin
+
+        return sin(self)
 
     def cos(self) -> Expression:
-        """The elementwise cosine of a numeric expression."""
-        f = native.get_function_from_registry("cos")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise cosine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.cos`](https://docs.daft.ai/en/stable/api/functions/cos/)
+        """
+        from daft.functions import cos
+
+        return cos(self)
 
     def tan(self) -> Expression:
-        """The elementwise tangent of a numeric expression."""
-        f = native.get_function_from_registry("tan")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise tangent of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.tan`](https://docs.daft.ai/en/stable/api/functions/tan/)
+        """
+        from daft.functions import tan
+
+        return tan(self)
 
     def csc(self) -> Expression:
-        """The elementwise cosecant of a numeric expression."""
-        f = native.get_function_from_registry("csc")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise cosecant of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.csc`](https://docs.daft.ai/en/stable/api/functions/csc/)
+        """
+        from daft.functions import csc
+
+        return csc(self)
 
     def sec(self) -> Expression:
-        """The elementwise secant of a numeric expression."""
-        f = native.get_function_from_registry("sec")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise secant of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.sec`](https://docs.daft.ai/en/stable/api/functions/sec/)
+        """
+        from daft.functions import sec
+
+        return sec(self)
 
     def cot(self) -> Expression:
-        """The elementwise cotangent of a numeric expression."""
-        f = native.get_function_from_registry("cot")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise cotangent of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.cot`](https://docs.daft.ai/en/stable/api/functions/cot/)
+        """
+        from daft.functions import cot
+
+        return cot(self)
 
     def sinh(self) -> Expression:
-        """The elementwise hyperbolic sine of a numeric expression."""
-        f = native.get_function_from_registry("sinh")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise hyperbolic sine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.sinh`](https://docs.daft.ai/en/stable/api/functions/sinh/)
+        """
+        from daft.functions import sinh
+
+        return sinh(self)
 
     def cosh(self) -> Expression:
-        """The elementwise hyperbolic cosine of a numeric expression."""
-        f = native.get_function_from_registry("cosh")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise hyperbolic cosine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.cosh`](https://docs.daft.ai/en/stable/api/functions/cosh/)
+        """
+        from daft.functions import cosh
+
+        return cosh(self)
 
     def tanh(self) -> Expression:
-        """The elementwise hyperbolic tangent of a numeric expression."""
-        f = native.get_function_from_registry("tanh")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise hyperbolic tangent of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.tanh`](https://docs.daft.ai/en/stable/api/functions/tanh/)
+        """
+        from daft.functions import tanh
+
+        return tanh(self)
 
     def arcsin(self) -> Expression:
-        """The elementwise arc sine of a numeric expression."""
-        f = native.get_function_from_registry("arcsin")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise arc sine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.arcsin`](https://docs.daft.ai/en/stable/api/functions/arcsin/)
+        """
+        from daft.functions import arcsin
+
+        return arcsin(self)
 
     def arccos(self) -> Expression:
-        """The elementwise arc cosine of a numeric expression."""
-        f = native.get_function_from_registry("arccos")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise arc cosine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.arccos`](https://docs.daft.ai/en/stable/api/functions/arccos/)
+        """
+        from daft.functions import arccos
+
+        return arccos(self)
 
     def arctan(self) -> Expression:
-        """The elementwise arc tangent of a numeric expression."""
-        f = native.get_function_from_registry("arctan")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise arc tangent of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.arctan`](https://docs.daft.ai/en/stable/api/functions/arctan/)
+        """
+        from daft.functions import arctan
+
+        return arctan(self)
 
     def arctan2(self, other: Expression) -> Expression:
         """Calculates the four quadrant arctangent of coordinates (y, x), in radians.
 
-        * ``x = 0``, ``y = 0``: ``0``
-        * ``x >= 0``: ``[-pi/2, pi/2]``
-        * ``y >= 0``: ``(pi/2, pi]``
-        * ``y < 0``: ``(-pi, -pi/2)``
+        Tip: See Also
+            [`daft.functions.arctan2`](https://docs.daft.ai/en/stable/api/functions/arctan2/)
         """
-        expr = Expression._to_expression(other)
-        f = native.get_function_from_registry("arctan2")
-        return Expression._from_pyexpr(f(self._expr, expr._expr))
+        from daft.functions import arctan2
+
+        return arctan2(self, other)
 
     def arctanh(self) -> Expression:
-        """The elementwise inverse hyperbolic tangent of a numeric expression."""
-        f = native.get_function_from_registry("arctanh")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise inverse hyperbolic tangent of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.arctanh`](https://docs.daft.ai/en/stable/api/functions/arctanh/)
+        """
+        from daft.functions import arctanh
+
+        return arctanh(self)
 
     def arccosh(self) -> Expression:
-        """The elementwise inverse hyperbolic cosine of a numeric expression."""
-        f = native.get_function_from_registry("arccosh")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise inverse hyperbolic cosine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.arccosh`](https://docs.daft.ai/en/stable/api/functions/arccosh/)
+        """
+        from daft.functions import arccosh
+
+        return arccosh(self)
 
     def arcsinh(self) -> Expression:
-        """The elementwise inverse hyperbolic sine of a numeric expression."""
-        f = native.get_function_from_registry("arcsinh")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise inverse hyperbolic sine of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.arcsinh`](https://docs.daft.ai/en/stable/api/functions/arcsinh/)
+        """
+        from daft.functions import arcsinh
+
+        return arcsinh(self)
 
     def radians(self) -> Expression:
-        """The elementwise radians of a numeric expression."""
-        f = native.get_function_from_registry("radians")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise radians of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.radians`](https://docs.daft.ai/en/stable/api/functions/radians/)
+        """
+        from daft.functions import radians
+
+        return radians(self)
 
     def degrees(self) -> Expression:
-        """The elementwise degrees of a numeric expression."""
-        f = native.get_function_from_registry("degrees")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise degrees of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.degrees`](https://docs.daft.ai/en/stable/api/functions/degrees/)
+        """
+        from daft.functions import degrees
+
+        return degrees(self)
 
     def log2(self) -> Expression:
-        """The elementwise log base 2 of a numeric expression."""
-        f = native.get_function_from_registry("log2")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise log base 2 of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.log2`](https://docs.daft.ai/en/stable/api/functions/log2/)
+        """
+        from daft.functions import log2
+
+        return log2(self)
 
     def log10(self) -> Expression:
-        """The elementwise log base 10 of a numeric expression."""
-        f = native.get_function_from_registry("log10")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise log base 10 of a numeric expression.
 
-    def log(self, base: float = math.e) -> Expression:  # type: ignore
+        Tip: See Also
+            [`daft.functions.log10`](https://docs.daft.ai/en/stable/api/functions/log10/)
+        """
+        from daft.functions import log10
+
+        return log10(self)
+
+    def log(self, base: int | builtins.float = math.e) -> Expression:
         """The elementwise log with given base, of a numeric expression.
 
-        Args:
-            base: The base of the logarithm. Defaults to e.
+        Tip: See Also
+            [`daft.functions.log`](https://docs.daft.ai/en/stable/api/functions/log/)
         """
-        assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
-        base = lit(base)
-        f = native.get_function_from_registry("log")
-        expr = f(self._expr, base._expr)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import log
+
+        return log(self, base=base)
 
     def ln(self) -> Expression:
-        """The elementwise natural log of a numeric expression."""
-        f = native.get_function_from_registry("ln")
-        return Expression._from_pyexpr(f(self._expr))
+        """The elementwise natural log of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.ln`](https://docs.daft.ai/en/stable/api/functions/ln/)
+        """
+        from daft.functions import ln
+
+        return ln(self)
 
     def log1p(self) -> Expression:
-        """The ln(self + 1) of a numeric expression."""
-        f = native.get_function_from_registry("log1p")
-        return Expression._from_pyexpr(f(self._expr))
+        """The ln(self + 1) of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.log1p`](https://docs.daft.ai/en/stable/api/functions/log1p/)
+        """
+        from daft.functions import log1p
+
+        return log1p(self)
 
     def exp(self) -> Expression:
-        """The e^self of a numeric expression."""
-        f = native.get_function_from_registry("exp")
-        return Expression._from_pyexpr(f(self._expr))
+        """The e^self of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.exp`](https://docs.daft.ai/en/stable/api/functions/exp/)
+        """
+        from daft.functions import exp
+
+        return exp(self)
 
     def expm1(self) -> Expression:
-        """The e^self - 1 of a numeric expression."""
-        f = native.get_function_from_registry("expm1")
-        return Expression._from_pyexpr(f(self._expr))
+        """The e^self - 1 of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.expm1`](https://docs.daft.ai/en/stable/api/functions/expm1/)
+        """
+        from daft.functions import expm1
+
+        return expm1(self)
 
     def bitwise_and(self, other: Expression) -> Expression:
-        """Bitwise AND of two integer expressions."""
-        expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr & expr._expr)
+        """Bitwise AND of two integer expressions.
+
+        Tip: See Also
+            [`daft.functions.bitwise_and`](https://docs.daft.ai/en/stable/api/functions/bitwise_and/)
+        """
+        from daft.functions import bitwise_and
+
+        return bitwise_and(self, other)
 
     def bitwise_or(self, other: Expression) -> Expression:
-        """Bitwise OR of two integer expressions."""
-        expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr | expr._expr)
+        """Bitwise OR of two integer expressions.
+
+        Tip: See Also
+            [`daft.functions.bitwise_or`](https://docs.daft.ai/en/stable/api/functions/bitwise_or/)
+        """
+        from daft.functions import bitwise_or
+
+        return bitwise_or(self, other)
 
     def bitwise_xor(self, other: Expression) -> Expression:
-        """Bitwise XOR of two integer expressions."""
-        expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr ^ expr._expr)
+        """Bitwise XOR of two integer expressions.
+
+        Tip: See Also
+            [`daft.functions.bitwise_xor`](https://docs.daft.ai/en/stable/api/functions/bitwise_xor/)
+        """
+        from daft.functions import bitwise_xor
+
+        return bitwise_xor(self, other)
 
     def shift_left(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the left (``expr << other``).
 
-        Args:
-            other: The number of bits to shift the expression to the left
+        Tip: See Also
+            [`daft.functions.shift_left`](https://docs.daft.ai/en/stable/api/functions/shift_left/)
         """
-        expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr << expr._expr)
+        from daft.functions import shift_left
+
+        return shift_left(self, other)
 
     def shift_right(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the right (``expr >> other``).
 
-        Args:
-            other: The number of bits to shift the expression to the right
-
-        Note:
-            For unsigned integers, this expression perform a logical right shift.
-            For signed integers, this expression perform an arithmetic right shift.
-
+        Tip: See Also
+            [`daft.functions.shift_right`](https://docs.daft.ai/en/stable/api/functions/shift_right/)
         """
-        expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr >> expr._expr)
+        from daft.functions import shift_right
+
+        return shift_right(self, other)
 
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
@@ -1402,184 +1455,64 @@ class Expression:
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data).
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are missing
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
-            >>> df = df.select(df["x"].is_null())
-            >>> df.collect()
-            ╭─────────╮
-            │ x       │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
+        Tip: See Also
+            [`daft.functions.is_null`](https://docs.daft.ai/en/stable/api/functions/is_null/)
         """
-        expr = self._expr.is_null()
-        return Expression._from_pyexpr(expr)
+        from daft.functions import is_null
+
+        return is_null(self)
 
     def not_null(self) -> Expression:
         """Checks if values in the Expression are not Null (a special value indicating missing data).
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are not missing
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
-            >>> df = df.select(df["x"].not_null())
-            >>> df.collect()
-            ╭─────────╮
-            │ x       │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
+        Tip: See Also
+            [`daft.functions.not_null`](https://docs.daft.ai/en/stable/api/functions/not_null/)
         """
-        expr = self._expr.not_null()
-        return Expression._from_pyexpr(expr)
+        from daft.functions import not_null
 
-    def fill_null(self, fill_value: Expression) -> Expression:
+        return not_null(self)
+
+    def fill_null(self, fill_value: Expression | Any) -> Expression:
         """Fills null values in the Expression with the provided fill_value.
 
-        Returns:
-            Expression: Expression with null values filled with the provided fill_value
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": [1, None, 3]})
-            >>> df = df.select(df["data"].fill_null(2))
-            >>> df.collect()
-            ╭───────╮
-            │ data  │
-            │ ---   │
-            │ Int64 │
-            ╞═══════╡
-            │ 1     │
-            ├╌╌╌╌╌╌╌┤
-            │ 2     │
-            ├╌╌╌╌╌╌╌┤
-            │ 3     │
-            ╰───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
+        Tip: See Also
+            [`daft.functions.fill_null`](https://docs.daft.ai/en/stable/api/functions/fill_null/)
         """
-        fill_value = Expression._to_expression(fill_value)
-        expr = self._expr.fill_null(fill_value._expr)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import fill_null
+
+        return fill_null(self, fill_value)
 
     def is_in(self, other: Any) -> Expression:
         """Checks if values in the Expression are in the provided list.
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are in the provided list
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": [1, 2, 3]})
-            >>> df = df.select(df["data"].is_in([1, 3]))
-            >>> df.collect()
-            ╭─────────╮
-            │ data    │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
+        Tip: See Also
+            [`daft.functions.is_in`](https://docs.daft.ai/en/stable/api/functions/is_in/)
         """
-        if isinstance(other, Collection):
-            other = [Expression._to_expression(item) for item in other]
-        elif not isinstance(other, Expression):
-            series = item_to_series("items", other)
-            other = [Expression._from_pyexpr(_list_lit(series._series))]
-        else:
-            other = [other]
+        from daft.functions import is_in
 
-        expr = self._expr.is_in([item._expr for item in other])
-        return Expression._from_pyexpr(expr)
+        return is_in(self, other)
 
-    def between(self, lower: Any, upper: Any) -> Expression:
+    def between(self, lower: int | builtins.float, upper: int | builtins.float) -> Expression:
         """Checks if values in the Expression are between lower and upper, inclusive.
 
-        Returns:
-            Expression: Boolean Expression indicating whether values are between lower and upper, inclusive.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": [1, 2, 3, 4]})
-            >>> df = df.select(df["data"].between(1, 2))
-            >>> df.collect()
-            ╭─────────╮
-            │ data    │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
-
+        Tip: See Also
+            [`daft.functions.between`](https://docs.daft.ai/en/stable/api/functions/between/)
         """
-        lower = Expression._to_expression(lower)
-        upper = Expression._to_expression(upper)
+        from daft.functions import between
 
-        expr = self._expr.between(lower._expr, upper._expr)
-        return Expression._from_pyexpr(expr)
+        return between(self, lower, upper)
 
     def hash(
         self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash"
     ) -> Expression:
         """Hashes the values in the Expression.
 
-        Uses the specified hash function to hash the values in the expression. Default to [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function.
-
-        Args:
-            seed (optional): Seed used for generating the hash. Defaults to 0.
-            hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
-
-        Note:
-            Null values will produce a hash value instead of being propagated as null.
-
+        Tip: See Also
+            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/)
         """
-        # Only pass hash_function if explicitly provided to maintain backward compatibility in string representation
-        kwargs = {}
-        if seed is not None:
-            kwargs["seed"] = seed
-        if hash_function is not None:
-            kwargs["hash_function"] = hash_function
-        return self._eval_expressions("hash", **kwargs)
+        from daft.functions import hash
+
+        return hash(self, seed=seed, hash_function=hash_function)
 
     def minhash(
         self,
@@ -1591,23 +1524,12 @@ class Expression:
     ) -> Expression:
         """Runs the MinHash algorithm on the series.
 
-        For a string, calculates the minimum hash over all its ngrams,
-        repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
-
-        Tokens for the ngrams are delimited by spaces.
-        The strings are not normalized or pre-processed, so it is recommended
-        to normalize the strings yourself.
-
-        Args:
-            num_hashes: The number of hash permutations to compute.
-            ngram_size: The number of tokens in each shingle/ngram.
-            seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-            hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
-
+        Tip: See Also
+            [`daft.functions.minhash`](https://docs.daft.ai/en/stable/api/functions/minhash/)
         """
-        return self._eval_expressions(
-            "minhash", num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
-        )
+        from daft.functions import minhash
+
+        return minhash(self, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function)
 
     def encode(self, codec: EncodingCodec) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
@@ -1983,78 +1905,32 @@ class Expression:
     def explode(self) -> Expression:
         """Explode a list expression.
 
-        A row is created for each item in the lists, and the other non-exploded output columns are broadcasted to match.
+        Tip: See also
+            [`daft.functions.explode`](https://docs.daft.ai/en/stable/api/functions/explode/)
+        """
+        from daft.functions import explode
 
-        If exploding multiple columns at once, all list lengths must match.
+        return explode(self)
+
+    def cosine_distance(self, other: Expression) -> Expression:
+        """Compute the cosine distance between two embeddings.
 
         Tip: See also
-            [DataFrame.explode](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.explain)
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"id": [1, 2, 3], "sentence": ["lorem ipsum", "foo bar baz", "hi"]})
-            >>>
-            >>> # Explode one column, broadcast the rest
-            >>> df.with_column("word", df["sentence"].str.split(" ").explode()).show()
-            ╭───────┬─────────────┬───────╮
-            │ id    ┆ sentence    ┆ word  │
-            │ ---   ┆ ---         ┆ ---   │
-            │ Int64 ┆ Utf8        ┆ Utf8  │
-            ╞═══════╪═════════════╪═══════╡
-            │ 1     ┆ lorem ipsum ┆ lorem │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 1     ┆ lorem ipsum ┆ ipsum │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ foo bar baz ┆ foo   │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ foo bar baz ┆ bar   │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ foo bar baz ┆ baz   │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 3     ┆ hi          ┆ hi    │
-            ╰───────┴─────────────┴───────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-            >>>
-            >>> # Explode multiple columns with the same lengths
-            >>> df.select(
-            ...     df["sentence"].str.split(" ").explode().alias("word"),
-            ...     df["sentence"].str.capitalize().str.split(" ").explode().alias("capitalized_word"),
-            ... ).show()
-            ╭───────┬──────────────────╮
-            │ word  ┆ capitalized_word │
-            │ ---   ┆ ---              │
-            │ Utf8  ┆ Utf8             │
-            ╞═══════╪══════════════════╡
-            │ lorem ┆ Lorem            │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ ipsum ┆ ipsum            │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ foo   ┆ Foo              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ bar   ┆ bar              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ baz   ┆ baz              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ hi    ┆ Hi               │
-            ╰───────┴──────────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-            >>>
-            >>> # This will error because exploded lengths are different:
-            >>> # df.select(
-            >>> #     df["sentence"]
-            >>> #             .str.split(" ")
-            >>> #             .explode()
-            >>> #             .alias("word"),
-            >>> #     df["sentence"]
-            >>> #             .str.split("a")
-            >>> #             .explode()
-            >>> #             .alias("split_on_a")
-            >>> # ).show()
+            [`daft.functions.cosine_distance`](https://docs.daft.ai/en/stable/api/functions/cosine_distance/)
         """
-        f = native.get_function_from_registry("explode")
-        return Expression._from_pyexpr(f(self._expr))
+        from daft.functions import cosine_distance
+
+        return cosine_distance(self, other)
+
+    def length(self) -> Expression:
+        """Retrieves the length of the given expression.
+
+        Tip: See also
+            [`daft.functions.length`](https://docs.daft.ai/en/stable/api/functions/length/)
+        """
+        from daft.functions import length
+
+        return length(self)
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
@@ -2065,6 +1941,9 @@ class ExpressionNamespace:
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a ExpressionNamespace via __init__ ")
+
+    def _to_expression(self) -> Expression:
+        return Expression._from_pyexpr(self._expr)
 
     @classmethod
     def from_expression(cls: type[SomeExpressionNamespace], expr: Expression) -> SomeExpressionNamespace:
@@ -3805,33 +3684,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, replacement_expr._expr))
 
     def length(self) -> Expression:
-        """Retrieves the length for a UTF-8 string column.
-
-        Returns:
-            Expression: an UInt64 expression with the length of each string
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
-            >>> df = df.select(df["x"].str.length())
-            >>> df.show()
-            ╭────────╮
-            │ x      │
-            │ ---    │
-            │ UInt64 │
-            ╞════════╡
-            │ 3      │
-            ├╌╌╌╌╌╌╌╌┤
-            │ 3      │
-            ├╌╌╌╌╌╌╌╌┤
-            │ 3      │
-            ╰────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("length")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.length` instead."""
+        warnings.warn(
+            "`Expression.str.length` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.length` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().length()
 
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
@@ -4691,12 +4549,12 @@ class ExpressionListNamespace(ExpressionNamespace):
         return self._eval_expressions("list_count", CountMode.All)
 
     def length(self) -> Expression:
-        """Gets the length of each list.
-
-        Returns:
-            Expression: a UInt64 expression which is the length of each list
-        """
-        return self._eval_expressions("list_count", CountMode.All)
+        """(DEPRECATED) Please use `daft.functions.length` instead."""
+        warnings.warn(
+            "`Expression.list.length` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.length` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().length()
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list.
@@ -5329,66 +5187,25 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.embedding` attribute."""
 
     def cosine_distance(self, other: Expression) -> Expression:
-        """Compute the cosine distance between two embeddings.
+        """(DEPRECATED) Please use `daft.functions.cosine_distance` instead."""
+        warnings.warn(
+            "`Expression.embedding.cosine_distance` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.cosine_distance` instead.",
+            category=DeprecationWarning,
+        )
 
-        Args:
-            other (Expression): The other embedding to compute the cosine distance against.
-
-        Returns:
-            Expression: a Float64 Expression with the cosine distance between the two embeddings.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"e1": [[1, 2, 3], [1, 2, 3]], "e2": [[1, 2, 3], [-1, -2, -3]]})
-            >>> dtype = daft.DataType.fixed_size_list(daft.DataType.float32(), 3)
-            >>> df = df.with_column("dist", df["e1"].cast(dtype).embedding.cosine_distance(df["e2"].cast(dtype)))
-            >>> df.show()
-            ╭─────────────┬──────────────┬─────────╮
-            │ e1          ┆ e2           ┆ dist    │
-            │ ---         ┆ ---          ┆ ---     │
-            │ List[Int64] ┆ List[Int64]  ┆ Float64 │
-            ╞═════════════╪══════════════╪═════════╡
-            │ [1, 2, 3]   ┆ [1, 2, 3]    ┆ 0       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [1, 2, 3]   ┆ [-1, -2, -3] ┆ 2       │
-            ╰─────────────┴──────────────┴─────────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
-
-        """
-        return self._eval_expressions("cosine_distance", other)
+        return self._to_expression().cosine_distance(other)
 
 
 class ExpressionBinaryNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.binary` attribute."""
 
     def length(self) -> Expression:
-        """Retrieves the length for a binary string column.
-
-        Returns:
-            Expression: an UInt64 expression with the length of each binary string in bytes
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [b"foo", b"bar", b"baz"]})
-            >>> df = df.select(df["x"].binary.length())
-            >>> df.show()
-            ╭────────╮
-            │ x      │
-            │ ---    │
-            │ UInt64 │
-            ╞════════╡
-            │ 3      │
-            ├╌╌╌╌╌╌╌╌┤
-            │ 3      │
-            ├╌╌╌╌╌╌╌╌┤
-            │ 3      │
-            ╰────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("binary_length")
+        """(DEPRECATED) Please use `daft.functions.length` instead."""
+        warnings.warn(
+            "`Expression.binary.length` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.length` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().length()
 
     def concat(self, other: Expression) -> Expression:
         r"""Concatenates two binary strings.
