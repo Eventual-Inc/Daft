@@ -27,6 +27,7 @@
         * [Hugging Face Datasets](connectors/huggingface.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
+        * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * [Scaling Out and Deployment](distributed.md)
     * Optimization and Debugging
