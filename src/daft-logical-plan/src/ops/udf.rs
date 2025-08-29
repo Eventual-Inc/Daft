@@ -8,7 +8,7 @@ use daft_dsl::{
     functions::python::{get_udf_properties, UDFProperties},
     ExprRef,
 };
-use daft_schema::schema::SchemaRef;
+use daft_schema::{dtype::DataType, schema::SchemaRef};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -67,6 +67,33 @@ impl UDFProject {
         let projected_schema = Arc::new(Schema::new(fields));
 
         let udf_properties = get_udf_properties(&project);
+
+        // Check if any inputs or outputs are Python-dtype columns
+        // and that use_process != true
+        #[cfg(feature = "python")]
+        {
+            if matches!(udf_properties.use_process, Some(true)) {
+                if let Some(col) = input
+                    .schema()
+                    .fields()
+                    .iter()
+                    .find(|f| matches!(f.dtype, DataType::Python))
+                {
+                    return Err(Error::CreationError {
+                        source: DaftError::InternalError(
+                            format!("UDF `{}` can not set `use_process=True` because it has a Python-dtype input `{}`. Please unset `use_process` or cast the input to a non-Python dtype if possible.", udf_properties.name, col.name)
+                        ),
+                    });
+                }
+                if project.to_field(&input.schema())?.dtype == DataType::Python {
+                    return Err(Error::CreationError {
+                        source: DaftError::InternalError(
+                            format!("UDF `{}` can not set `use_process=True` because it returns a Python-dtype value. Please unset `use_process` or specify the `return_dtype` to another dtype if possible.", udf_properties.name)
+                        ),
+                    });
+                }
+            }
+        }
 
         Ok(Self {
             plan_id: None,

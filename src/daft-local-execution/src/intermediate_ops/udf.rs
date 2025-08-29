@@ -11,7 +11,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
-use daft_core::prelude::SchemaRef;
+use daft_core::prelude::{DataType, SchemaRef};
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -290,6 +290,7 @@ pub(crate) struct UdfOperator {
     udf_properties: UDFProperties,
     concurrency: usize,
     memory_request: u64,
+    input_schema: SchemaRef,
 }
 
 impl UdfOperator {
@@ -297,6 +298,7 @@ impl UdfOperator {
         project: BoundExpr,
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
+        input_schema: &SchemaRef,
     ) -> DaftResult<Self> {
         let project_unbound = project.inner().clone();
 
@@ -328,6 +330,7 @@ impl UdfOperator {
             udf_properties,
             concurrency,
             memory_request,
+            input_schema: input_schema.clone(),
         })
     }
 
@@ -426,15 +429,30 @@ impl IntermediateOperator for UdfOperator {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
         let mut rng = rand::thread_rng();
 
+        // Check if any inputs or the output are Python-dtype columns
+        // Those should by default run on the same thread
+        let is_python_dtype = self
+            .input_schema
+            .fields()
+            .iter()
+            .any(|f| matches!(f.dtype, DataType::Python))
+            || self
+                .params
+                .udf_expr
+                .inner()
+                .to_field(self.input_schema.as_ref())?
+                .dtype
+                == DataType::Python;
+
         let mut udf_handle = UdfHandle::no_handle(
             self.params.clone(),
             worker_count,
-            matches!(self.udf_properties.use_process, Some(false)),
+            matches!(self.udf_properties.use_process, None) && !is_python_dtype,
             rng.gen_range(NUM_TEST_ITERATIONS_RANGE),
         );
 
         if self.udf_properties.is_actor_pool_udf()
-            || self.udf_properties.use_process.unwrap_or(false)
+            || self.udf_properties.use_process.unwrap_or(!is_python_dtype)
         {
             udf_handle.create_handle()?;
         }
