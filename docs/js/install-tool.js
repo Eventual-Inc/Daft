@@ -1,6 +1,6 @@
-// Daft Installation Tool JavaScript
+// Daft Installation Tool JavaScript.
 document.addEventListener('DOMContentLoaded', function() {
-  // Wait a bit to ensure the DOM is fully loaded
+  // Wait a bit to ensure the DOM is fully loaded.
   setTimeout(function() {
     initializeInstallTool();
   }, 100);
@@ -37,17 +37,21 @@ function updateInstallCommand() {
     }
   });
 
-  let command = 'pip install -U ';
-  command += 'daft';
+  const prefix = 'pip install -U ';
+  let packageName = 'daft';
+
   if (extras.length > 0) {
-    // If all checkboxes are selected, use "all" instead of listing them all
+    // If all checkboxes are selected, use "all" instead of listing them all.
     if (extras.length === checkboxes.length) {
-      command += '[all]';
+      packageName += '[all]';
     } else {
-      command += '[' + extras.join(',') + ']';
+      packageName += '[' + extras.join(',') + ']';
     }
-    command = 'pip install -U "' + command.substring(15) + '"';
+    // Quote the package name when it has extras.
+    packageName = '"' + packageName + '"';
   }
+
+  let command = prefix + packageName;
 
   commandElement.textContent = command;
 }
