@@ -30,7 +30,7 @@ This example does the following:
         model = "BAAI/bge-base-en-v1.5"
 
     turbopuffer_config = {
-        "namespace": "daft-tpuf-example2",
+        "namespace": "daft-tpuf-example",
         "region": "gcp-us-central1",
         "distance_metric": "cosine_distance",
         "schema": {

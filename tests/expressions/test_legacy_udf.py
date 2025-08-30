@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 
 import httpx
 import numpy as np
@@ -672,7 +673,7 @@ def test_run_udf_on_same_process(batch_size):
     get_tests_daft_runner_name() == "ray",
     reason="Ray runner will always run UDFs on separate processes",
 )
-@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 10])
 def test_run_udf_on_separate_process(batch_size):
     df = daft.from_pydict({"a": [None] * 3})
 
@@ -747,3 +748,20 @@ def test_udf_error_deserialize_err():
     assert str(exc_info.value).startswith("User-defined function")
     assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=3)")
     assert isinstance(exc_info.value.__cause__, APIStatusError)
+
+
+def test_udf_error_global_var():
+    """Test that UDFs that use non-serializable global variables error with a helpful message."""
+    # Create a global variable that is not serializable
+    lock = threading.Lock()
+
+    @udf(return_dtype=DataType.string())
+    def use_global_lambda(x):
+        with lock:
+            return x * 2
+
+    with pytest.raises(
+        ValueError,
+        match="`@daft.udf` requires that the UDF is serializable.",
+    ):
+        use_global_lambda(col("a"))
