@@ -646,7 +646,15 @@ impl ScanTask {
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
         match (&self.generated_fields, &self.pushdowns.columns) {
-            (None, None) => self.schema.clone(),
+            (None, None) => {
+                if let Some(aggregation) = &self.pushdowns.aggregation {
+                    Arc::new(Schema::new(vec![aggregation
+                        .to_field(&self.schema)
+                        .expect("Casting to aggregation field should not fail")]))
+                } else {
+                    self.schema.clone()
+                }
+            }
             _ => {
                 let schema_with_generated_fields =
                     if let Some(generated_fields) = &self.generated_fields {
@@ -657,10 +665,16 @@ impl ScanTask {
                     };
 
                 let mut fields = schema_with_generated_fields.fields().to_vec();
-
-                // Filter the schema based on the pushdown column filters.
-                if let Some(columns) = &self.pushdowns.columns {
-                    fields.retain(|field| columns.contains(&field.name));
+                if let Some(aggregation) = &self.pushdowns.aggregation {
+                    // If we have a pushdown aggregation, the only field in the schema is the aggregation.
+                    fields = vec![aggregation
+                        .to_field(&schema_with_generated_fields)
+                        .expect("Casting to aggregation field should not fail")];
+                } else {
+                    // Filter the schema based on the pushdown column filters.
+                    if let Some(columns) = &self.pushdowns.columns {
+                        fields.retain(|field| columns.contains(&field.name));
+                    }
                 }
 
                 Arc::new(Schema::new(fields))
