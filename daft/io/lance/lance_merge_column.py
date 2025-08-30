@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import pickle
 from typing import TYPE_CHECKING, Any, Callable
 
+import daft.pickle
 from daft.datatype import DataType
 from daft.udf import udf
 
@@ -31,7 +31,7 @@ class FragmentHandler:
         for fragment_id in fragment_ids:
             fragment = self.lance_ds.get_fragment(fragment_id)
             fragment_meta, schema = fragment.merge_columns(self.transform, self.read_columns, None, self.reader_schema)
-            results.append({"fragment_meta": pickle.dumps(fragment_meta), "schema": pickle.dumps(schema)})
+            results.append({"fragment_meta": daft.pickle.dumps(fragment_meta), "schema": daft.pickle.dumps(schema)})
         return results
 
 
@@ -76,9 +76,9 @@ def merge_columns_internal(
     for commit_message in commit_messages:
         fragment_meta = commit_message["fragment_meta"]
         schema = commit_message["schema"]
-        fragment_metas.append(pickle.loads(fragment_meta))
+        fragment_metas.append(daft.pickle.loads(fragment_meta))
         if new_schema is None:
-            new_schema = pickle.loads(schema)
+            new_schema = daft.pickle.loads(schema)
             continue
     if new_schema is None:
         raise ValueError("No schema for new fragment found")
