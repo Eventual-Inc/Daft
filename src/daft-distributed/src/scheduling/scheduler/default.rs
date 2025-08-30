@@ -445,7 +445,7 @@ mod tests {
                 MockTaskBuilder::default()
                     .with_task_id(3)
                     .with_resource_request(
-                        ResourceRequest::try_new_internal(Some(3.0), None, None).unwrap(), // 3 CPUs
+                        ResourceRequest::try_new_internal(Some(3.0), None, None, None).unwrap(), // 3 CPUs
                     )
                     .build(),
             ),
@@ -453,7 +453,7 @@ mod tests {
                 MockTaskBuilder::default()
                     .with_task_id(2)
                     .with_resource_request(
-                        ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap(), // 2 CPUs
+                        ResourceRequest::try_new_internal(Some(2.0), None, None, None).unwrap(), // 2 CPUs
                     )
                     .build(),
             ),
@@ -461,7 +461,7 @@ mod tests {
                 MockTaskBuilder::default()
                     .with_task_id(1)
                     .with_resource_request(
-                        ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(), // 1 CPU
+                        ResourceRequest::try_new_internal(Some(1.0), None, None, None).unwrap(), // 1 CPU
                     )
                     .build(),
             ),
@@ -514,7 +514,7 @@ mod tests {
                 MockTaskBuilder::default()
                     .with_task_id(1)
                     .with_resource_request(
-                        ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(), // 1 CPU
+                        ResourceRequest::try_new_internal(Some(1.0), None, None, None).unwrap(), // 1 CPU
                     )
                     .build(),
             ),
@@ -522,7 +522,7 @@ mod tests {
                 MockTaskBuilder::default()
                     .with_task_id(2)
                     .with_resource_request(
-                        ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap(), // 2 CPUs
+                        ResourceRequest::try_new_internal(Some(2.0), None, None, None).unwrap(), // 2 CPUs
                     )
                     .build(),
             ),
@@ -530,7 +530,7 @@ mod tests {
                 MockTaskBuilder::default()
                     .with_task_id(3)
                     .with_resource_request(
-                        ResourceRequest::try_new_internal(Some(3.0), None, None).unwrap(), // 3 CPUs
+                        ResourceRequest::try_new_internal(Some(3.0), None, None, None).unwrap(), // 3 CPUs
                     )
                     .build(),
             ),
