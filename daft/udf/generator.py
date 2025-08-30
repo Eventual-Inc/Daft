@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, get_args, get_origin, g
 from daft.daft import row_wise_udf
 from daft.datatype import DataType
 
-from ._internal import get_expr_args, get_unique_function_name
+from ._internal import check_fn_serializable, get_expr_args, get_unique_function_name
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
@@ -69,6 +69,8 @@ class GeneratorUdf(Generic[P, T]):
         # evaluate the function eagerly if there are no expression arguments
         if len(expr_args) == 0:
             return self._inner(*args, **kwargs)
+
+        check_fn_serializable(self._inner, "@daft.func")
 
         # temporary workaround before we implement actual generator UDFs: convert it into a list-type row-wise UDF + explode
         def inner_rowwise(*args: P.args, **kwargs: P.kwargs) -> list[T]:
