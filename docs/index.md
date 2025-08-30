@@ -4,42 +4,55 @@ Daft is a high-performance data engine providing simple and reliable data proces
 
 <style>
   .daft-pipeline-component {
-    --ink: #1a1a1a;
-    --ink-light: #f4f7ff;
-    --accent: #6366f1;
-    --accent-light: #c7d2fe;
-    --bg-subtle: rgba(0,0,0,.04);
-    --bg-subtle-light: rgba(255,255,255,.02);
-    --border-subtle: rgba(0,0,0,.15);
-    --border-subtle-light: rgba(255,255,255,.08);
-    --comment: rgba(75, 85, 99, 0.8);
-    --comment-light: rgba(199, 210, 254, 0.7);
-    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    --sans: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
-
-    color: var(--ink);
-    font-family: var(--sans);
+    color: #1a1a1a;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
     margin: 20px 0;
   }
 
   /* Dark mode overrides */
   @media (prefers-color-scheme: dark) {
     .daft-pipeline-component {
-      --ink: var(--ink-light);
-      --accent: var(--accent-light);
-      --bg-subtle: var(--bg-subtle-light);
-      --border-subtle: var(--border-subtle-light);
-      --comment: var(--comment-light);
+      color: #f4f7ff;
+    }
+    .daft-pipeline-component .stage-header {
+      color: #c7d2fe;
+    }
+    .daft-pipeline-component .description p {
+      color: #f4f7ff;
+    }
+    .daft-pipeline-component .description p:last-child {
+      color: rgba(199, 210, 254, 0.7);
+    }
+    .daft-pipeline-component .source-comment {
+      color: rgba(199, 210, 254, 0.7);
+    }
+    .daft-pipeline-component .pipeline-item {
+      background: rgba(255,255,255,.02);
+      border-color: rgba(255,255,255,.08);
+      color: #f4f7ff;
     }
   }
 
   /* Material for MkDocs dark mode */
   [data-md-color-scheme="slate"] .daft-pipeline-component {
-    --ink: var(--ink-light);
-    --accent: var(--accent-light);
-    --bg-subtle: var(--bg-subtle-light);
-    --border-subtle: var(--border-subtle-light);
-    --comment: var(--comment-light);
+    color: #f4f7ff;
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .stage-header {
+    color: #c7d2fe;
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .description p {
+    color: #f4f7ff;
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .description p:last-child {
+    color: rgba(199, 210, 254, 0.7);
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .source-comment {
+    color: rgba(199, 210, 254, 0.7);
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .pipeline-item {
+    background: rgba(255,255,255,.02);
+    border-color: rgba(255,255,255,.08);
+    color: #f4f7ff;
   }
 
   .daft-pipeline-component .container {
@@ -65,7 +78,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: .08em;
-    color: var(--accent);
+    color: #6366f1;
     font-size: clamp(12px, 1.2vw, 14px);
     margin-bottom: 12px;
   }
@@ -80,32 +93,32 @@ Daft is a high-performance data engine providing simple and reliable data proces
   .daft-pipeline-component .description p {
     margin: 0 0 12px 0;
     line-height: 1.5;
-    color: var(--ink);
+    color: #1a1a1a;
     font-size: 15px;
   }
 
   .daft-pipeline-component .description p:last-child {
     margin: 0;
     font-size: 13px;
-    color: var(--comment);
+    color: rgba(75, 85, 99, 0.8);
     font-style: italic;
   }
 
   .daft-pipeline-component .source-comment {
-    color: var(--comment);
+    color: rgba(75, 85, 99, 0.8);
   }
 
   .daft-pipeline-component .pipeline-item {
-    background: var(--bg-subtle);
-    border: 1px solid var(--border-subtle);
+    background: rgba(0,0,0,.04);
+    border: 1px solid rgba(0,0,0,.15);
     border-radius: 8px;
     padding: 16px 20px;
     display: flex;
     align-items: center;
     min-height: 60px;
-    font-family: var(--mono);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: clamp(13px, 1.8vw, 16px);
-    color: var(--ink);
+    color: #1a1a1a;
   }
 
   .daft-pipeline-component .type {
