@@ -431,12 +431,12 @@ impl IntermediateOperator for UdfOperator {
 
         // Check if any inputs or the output are Python-dtype columns
         // Those should by default run on the same thread
-        let is_python_dtype = self
+        let is_arrow_dtype = self
             .input_schema
             .fields()
             .iter()
-            .any(|f| f.dtype.is_arrow())
-            || self
+            .all(|f| f.dtype.is_arrow())
+            && self
                 .params
                 .udf_expr
                 .inner()
@@ -447,12 +447,12 @@ impl IntermediateOperator for UdfOperator {
         let mut udf_handle = UdfHandle::no_handle(
             self.params.clone(),
             worker_count,
-            self.udf_properties.use_process.is_none() && !is_python_dtype,
+            self.udf_properties.use_process.is_none() && is_arrow_dtype,
             rng.gen_range(NUM_TEST_ITERATIONS_RANGE),
         );
 
         if self.udf_properties.is_actor_pool_udf()
-            || self.udf_properties.use_process.unwrap_or(!is_python_dtype)
+            || self.udf_properties.use_process.unwrap_or(is_arrow_dtype)
         {
             udf_handle.create_handle()?;
         }
