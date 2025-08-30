@@ -31,9 +31,15 @@ jobs:
 
     - name: Detect non-trivial changes
       id: filter
-      if: ${{ github.ref != 'refs/heads/main' }}
       run: |
-        BASE=${{ github.base_ref || 'main' }}
+        # On main branch, we want to run all tests (no skipping)
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          echo "skip=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # For PRs, check if there are non-trivial changes
+        BASE=${{ github.base_ref || 'origin/main' }}
         git fetch origin $BASE --depth=1
 
         if git diff --quiet origin/$BASE -- \
