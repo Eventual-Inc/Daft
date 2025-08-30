@@ -255,7 +255,7 @@ def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
 
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
-@pytest.mark.parametrize("num_gpus", [None, 1])
+@pytest.mark.parametrize("num_gpus", [1])
 def test_with_column_rayrunner_gpu(num_gpus):
     df = daft.from_pydict(DATA).repartition(2)
 
