@@ -1,58 +1,258 @@
-# Installation
+# How to Install Daft
 
-To install Daft, run this from your terminal:
+This guide helps you install Daft based on your specific needs and environment.
+
+For most users, install Daft with a single command:
 
 ```bash
 pip install -U daft
 ```
 
-## Extra Dependencies
+This includes most essential features for using Daft.
 
-Some Daft functionality may also require other dependencies, which are specified as "extras":
+## Optional Dependencies
 
-To install Daft with the extra dependencies required for interacting with AWS services, such as AWS S3, run:
+Depending on your use case, you may need to install Daft with additional dependencies.
+
+<div id="daft-install-tool" class="daft-install-tool">
+  <div class="use-cases">
+    <h4>Use Cases:</h4>
+
+    <div class="checkbox-group">
+      <label class="checkbox-item">
+        <input type="checkbox" id="huggingface" data-extra="huggingface">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Hugging Face</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="openai" data-extra="openai">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>OpenAI</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="sentence-transformers" data-extra="sentence-transformers">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Sentence Transformers</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="ray" data-extra="ray">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Distributed Computing on Ray</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="turbopuffer" data-extra="turbopuffer">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Turbopuffer</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="aws" data-extra="aws">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>AWS Glue or AWS S3 Tables</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="iceberg" data-extra="iceberg">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Apache Iceberg</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="deltalake" data-extra="deltalake">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Delta Lake</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="hudi" data-extra="hudi">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Apache Hudi</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="unity" data-extra="unity">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Unity Catalog (Databricks)</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="lance" data-extra="lance">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>LanceDB</strong>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="clickhouse" data-extra="clickhouse">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>ClickHouse</strong>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <div class="command-output">
+    <h4>Installation Command:</h4>
+    <div class="highlight">
+      <table class="highlighttable">
+        <tbody>
+          <tr>
+            <td class="linenos">
+              <div class="linenodiv">
+                <pre><span></span><span class="normal">1</span></pre>
+              </div>
+            </td>
+            <td class="code">
+              <div>
+                <pre><button class="md-clipboard md-icon" title="Copy to clipboard" data-clipboard-target="#install-command > code"></button><code id="install-command" class="language-bash">pip install -U daft</code></pre>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+You can also install Daft with all extra dependencies:
 
 ```bash
-pip install -U daft[aws]
+pip install -U "daft[all]"
 ```
 
-To install Daft with the extra dependencies required for running distributed Daft on top of a [Ray cluster](https://docs.ray.io/en/latest/index.html), run:
+## Troubleshooting Legacy CPU Support
 
-```bash
-pip install -U daft[ray]
-```
-
-To install Daft with all extras, run:
-
-```bash
-pip install -U daft[all]
-```
-
-## Legacy CPUs
-
-If you see the text `Illegal instruction` when trying to run Daft, it may be because your CPU lacks support for certain instruction sets such as [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions). For those CPUs, use the `daft-lts` package instead:
+If you encounter `Illegal instruction` errors, your CPU may lack support for advanced instruction sets like [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions). Use the LTS version instead:
 
 ```bash
 pip install -U daft-lts
 ```
 
-!!! tip "Note"
-    Because `daft-lts` is compiled to use a limited CPU instruction set, the package is unable to take advantage of more performant vectorized operations. Only install this package if your CPU does not support running the `daft` package.
+!!! warning "Performance Impact"
+    The LTS version uses limited CPU instructions and cannot leverage vectorized operations, resulting in slower performance. Only use this if the standard package fails to run.
 
-## Advanced Installation
+<style>
+.daft-install-tool {
+  margin: 20px 0;
+}
 
-### Installing Nightlies
+.use-cases h4 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  color: var(--md-default-fg-color);
+}
 
-If you wish to use Daft at the bleeding edge of development, you may also install the nightly build of Daft which is built every night against the `main` branch:
+.checkbox-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
 
-```bash
-pip install -U daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly
-```
+.checkbox-item {
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  padding: 12px;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
 
-### Installing Daft from source
+.checkbox-item:hover {
+  background: var(--md-default-fg-color--lightest);
+  border-color: var(--md-accent-fg-color);
+}
 
-```bash
-pip install -U https://github.com/Eventual-Inc/Daft/archive/refs/heads/main.zip
-```
+.checkbox-item input[type="checkbox"] {
+  display: none;
+}
 
-Please note that Daft requires the Rust toolchain in order to build from source.
+.checkmark {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--md-default-fg-color--light);
+  border-radius: 4px;
+  margin-right: 12px;
+  margin-top: 2px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.checkbox-item input[type="checkbox"]:checked + .checkmark {
+  background: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+
+.checkbox-item input[type="checkbox"]:checked + .checkmark::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.checkbox-content {
+  flex: 1;
+}
+
+.checkbox-content strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--md-default-fg-color);
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.checkbox-content .description {
+  font-size: 14px;
+  color: var(--md-default-fg-color--light);
+}
+
+.command-output h4 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: var(--md-default-fg-color);
+}
+
+.highlight {
+  margin-bottom: 12px;
+}
+
+.explanation {
+  font-size: 14px;
+  color: var(--md-default-fg-color--light);
+  line-height: 1.5;
+}
+
+
+</style>

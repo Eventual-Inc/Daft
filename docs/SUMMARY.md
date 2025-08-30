@@ -1,8 +1,8 @@
 * Guide
     * [Overview](index.md)
-    * [Installation](install.md)
     * [Quickstart](quickstart.md)
-    * Modalities
+    * [Installation](install.md)
+    * Working with Modalities
         * [Overview](modalities/index.md)
         * [Custom Modalities](modalities/custom.md)
         * [URLs and Files](modalities/urls.md)
