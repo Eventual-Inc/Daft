@@ -49,15 +49,5 @@ function updateInstallCommand() {
     command = 'pip install -U "' + command.substring(15) + '"';
   }
 
-  // Add syntax highlighting - only highlight quoted strings
-  let highlightedCommand = command;
-  if (command.includes('"daft[')) {
-    // Highlight only the quoted package name
-    highlightedCommand = command.replace(
-      /(pip install -U )(")(daft\[[^\]]+\])(")/,
-      '$1<span class="s2">$2$3$4</span>'
-    );
-  }
-
-  commandElement.innerHTML = highlightedCommand;
+  commandElement.textContent = command;
 }
