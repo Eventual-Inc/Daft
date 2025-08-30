@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
+    expr::StddevParams,
     functions::{scalar::ScalarFn, FunctionArgs},
     optimization,
     python_udf::{PyScalarFn, RowWisePyFn},
@@ -575,9 +576,17 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Mean, |_| e)
         }
-        AggExpr::Stddev(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Stddev, |_| e)
+        AggExpr::Stddev(StddevParams { ref child, ddof }) => {
+            let ddof_val = ddof;
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |new_child| {
+                    AggExpr::Stddev(StddevParams {
+                        child: new_child,
+                        ddof: ddof_val,
+                    })
+                },
+                |_| e,
+            )
         }
         AggExpr::Min(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
