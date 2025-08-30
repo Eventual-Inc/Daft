@@ -239,6 +239,7 @@ pub mod schema {
     pub use daft_schema::time_unit::TimeUnit;
     pub use daft_schema::image_format::ImageFormat;
     pub use daft_schema::image_mode::ImageMode;
+    pub use daft_schema::image_property::ImageProperty;
 }
 
 /// Python exports for daft_ir.
