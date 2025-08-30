@@ -8,8 +8,6 @@ For most users, install Daft with a single command:
 pip install -U daft
 ```
 
-This includes most essential features for using Daft.
-
 ## Optional Dependencies
 
 Depending on your use case, you may need to install Daft with additional dependencies.
@@ -23,7 +21,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="huggingface" data-extra="huggingface">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Hugging Face</strong>
+          <strong>Hugging Face</strong> <code>huggingface</code>
         </div>
       </label>
 
@@ -31,7 +29,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="openai" data-extra="openai">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>OpenAI</strong>
+          <strong>OpenAI</strong> <code>openai</code>
         </div>
       </label>
 
@@ -39,7 +37,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="sentence-transformers" data-extra="sentence-transformers">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Sentence Transformers</strong>
+          <strong>Sentence Transformers</strong> <code>sentence-transformers</code>
         </div>
       </label>
 
@@ -47,7 +45,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="ray" data-extra="ray">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Distributed Computing on Ray</strong>
+          <strong>Distributed Computing on Ray</strong> <code>ray</code>
         </div>
       </label>
 
@@ -55,7 +53,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="turbopuffer" data-extra="turbopuffer">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Turbopuffer</strong>
+          <strong>Turbopuffer</strong> <code>turbopuffer</code>
         </div>
       </label>
 
@@ -63,7 +61,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="aws" data-extra="aws">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>AWS Glue or AWS S3 Tables</strong>
+          <strong>AWS Glue or AWS S3 Tables</strong> <code>aws</code>
         </div>
       </label>
 
@@ -71,7 +69,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="iceberg" data-extra="iceberg">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Apache Iceberg</strong>
+          <strong>Apache Iceberg</strong> <code>iceberg</code>
         </div>
       </label>
 
@@ -79,7 +77,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="deltalake" data-extra="deltalake">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Delta Lake</strong>
+          <strong>Delta Lake</strong> <code>deltalake</code>
         </div>
       </label>
 
@@ -87,7 +85,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="hudi" data-extra="hudi">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Apache Hudi</strong>
+          <strong>Apache Hudi</strong> <code>hudi</code>
         </div>
       </label>
 
@@ -95,7 +93,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="unity" data-extra="unity">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>Unity Catalog (Databricks)</strong>
+          <strong>Unity Catalog (Databricks)</strong> <code>unity</code>
         </div>
       </label>
 
@@ -103,7 +101,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="lance" data-extra="lance">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>LanceDB</strong>
+          <strong>LanceDB</strong> <code>lance</code>
         </div>
       </label>
 
@@ -111,7 +109,7 @@ Depending on your use case, you may need to install Daft with additional depende
         <input type="checkbox" id="clickhouse" data-extra="clickhouse">
         <span class="checkmark"></span>
         <div class="checkbox-content">
-          <strong>ClickHouse</strong>
+          <strong>ClickHouse</strong> <code>clickhouse</code>
         </div>
       </label>
     </div>
@@ -146,6 +144,8 @@ You can also install Daft with all extra dependencies:
 pip install -U "daft[all]"
 ```
 
+
+
 ## Troubleshooting Legacy CPU Support
 
 If you encounter `Illegal instruction` errors, your CPU may lack support for advanced instruction sets like [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions). Use the LTS version instead:
@@ -173,13 +173,14 @@ pip install -U daft-lts
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 12px;
   margin-bottom: 24px;
+  align-items: center;
 }
 
 .checkbox-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   cursor: pointer;
-  padding: 12px;
+  padding: 8px 8px 8px 16px;
   border: 1px solid var(--md-default-fg-color--lightest);
   border-radius: 6px;
   transition: all 0.2s ease;
@@ -227,15 +228,10 @@ pip install -U daft-lts
 
 .checkbox-content strong {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: -2px;
   color: var(--md-default-fg-color);
   font-size: 14px;
   font-weight: normal;
-}
-
-.checkbox-content .description {
-  font-size: 14px;
-  color: var(--md-default-fg-color--light);
 }
 
 .command-output h4 {
@@ -247,12 +243,4 @@ pip install -U daft-lts
 .highlight {
   margin-bottom: 12px;
 }
-
-.explanation {
-  font-size: 14px;
-  color: var(--md-default-fg-color--light);
-  line-height: 1.5;
-}
-
-
 </style>
