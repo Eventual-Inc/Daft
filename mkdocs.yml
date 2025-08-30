@@ -101,6 +101,7 @@ extra_javascript:
 - js/reo.js
 - js/custom.js
 - js/docsearch.js
+- js/install-tool.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
 - js/readthedocs.js
 # Extensions
