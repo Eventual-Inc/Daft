@@ -1,6 +1,6 @@
 #[cfg(feature = "python")]
 pub mod python;
-use std::hash::Hash;
+use std::{hash::Hash, sync::Arc};
 
 use common_error::DaftError;
 use common_io_config::IOConfig;
@@ -9,17 +9,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum DaftFile {
     /// A reference to a file.
-    Reference(String, Box<Option<IOConfig>>),
+    Reference(String, Option<Arc<IOConfig>>),
     /// In memory data.
-    Data(Vec<u8>),
+    Data(Arc<Vec<u8>>),
 }
 
 impl DaftFile {
     pub fn new_from_data(data: Vec<u8>) -> Self {
-        Self::Data(data)
+        Self::Data(Arc::new(data))
     }
     pub fn new_from_reference(reference: String, io_config: Option<IOConfig>) -> Self {
-        Self::Reference(reference, Box::new(io_config))
+        Self::Reference(reference, io_config.map(Arc::new))
     }
 }
 
