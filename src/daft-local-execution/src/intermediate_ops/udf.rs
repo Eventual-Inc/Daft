@@ -11,7 +11,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
-use daft_core::prelude::{DataType, SchemaRef};
+use daft_core::prelude::SchemaRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -435,19 +435,19 @@ impl IntermediateOperator for UdfOperator {
             .input_schema
             .fields()
             .iter()
-            .any(|f| matches!(f.dtype, DataType::Python))
+            .any(|f| f.dtype.is_arrow())
             || self
                 .params
                 .udf_expr
                 .inner()
                 .to_field(self.input_schema.as_ref())?
                 .dtype
-                == DataType::Python;
+                .is_arrow();
 
         let mut udf_handle = UdfHandle::no_handle(
             self.params.clone(),
             worker_count,
-            matches!(self.udf_properties.use_process, None) && !is_python_dtype,
+            self.udf_properties.use_process.is_none() && !is_python_dtype,
             rng.gen_range(NUM_TEST_ITERATIONS_RANGE),
         );
 
