@@ -17,6 +17,7 @@ from daft.ai.transformers import TransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
 from daft.functions.ai import embed_image
+from tests.benchmarks.conftest import IS_CI
 
 
 def test_transformers_image_embedder_default():
@@ -29,15 +30,15 @@ def test_transformers_image_embedder_default():
 
 
 @pytest.mark.parametrize(
-    "model_name, dimensions, run_model",
+    "model_name, dimensions, run_model_in_ci",
     [
         ("openai/clip-vit-base-patch32", 512, True),
-        ("openai/clip-vit-large-patch14", 768, True),
+        ("openai/clip-vit-large-patch14", 768, False),
         ("openai/clip-vit-base-patch16", 512, True),
-        ("openai/clip-vit-large-patch14-336", 768, True),
+        ("openai/clip-vit-large-patch14-336", 768, False),
     ],
 )
-def test_transformers_image_embedder_other(model_name, dimensions, run_model):
+def test_transformers_image_embedder_other(model_name, dimensions, run_model_in_ci):
     mock_options = {"arg1": "val1", "arg2": "val2"}
 
     provider = TransformersProvider()
@@ -47,7 +48,7 @@ def test_transformers_image_embedder_other(model_name, dimensions, run_model):
     assert descriptor.get_model() == model_name
     assert descriptor.get_options() == mock_options
 
-    if run_model:
+    if not IS_CI or run_model_in_ci:
         embedder = descriptor.instantiate()
 
         # Test with a variety of image sizes and shapes that should be preprocessed correctly.
