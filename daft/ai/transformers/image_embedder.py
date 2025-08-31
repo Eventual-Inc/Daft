@@ -52,7 +52,11 @@ class TransformersImageEmbedder(ImageEmbedder):
             if hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
             else torch.device("cpu")
         )
-        self.model = AutoModel.from_pretrained(model_name_or_path, trust_remote_code=True).to(self.device)
+        self.model = AutoModel.from_pretrained(
+            model_name_or_path,
+            trust_remote_code=True,
+            use_safetensors=True,
+        ).to(self.device)
         self.processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, use_fast=True)
         self.options = options
 
