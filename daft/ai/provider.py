@@ -7,7 +7,7 @@ from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.protocols import TextEmbedderDescriptor
+    from daft.ai.protocols import ImageEmbedderDescriptor, TextEmbedderDescriptor
 
 
 class ProviderImportError(ImportError):
@@ -34,9 +34,19 @@ def load_sentence_transformers(name: str | None = None, **options: Any) -> Provi
         raise ProviderImportError(["sentence_transformers", "torch"]) from e
 
 
+def load_transformers(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.transformers import TransformersProvider
+
+        return TransformersProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["transformers", "torch", "torchvision"]) from e
+
+
 PROVIDERS: dict[str, Callable[..., Provider]] = {
     "openai": load_openai,
     "sentence_transformers": load_sentence_transformers,
+    "transformers": load_transformers,
 }
 
 
@@ -64,4 +74,9 @@ class Provider(ABC):
     @abstractmethod
     def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
         """Returns a TextEmbedderDescriptor for this provider."""
+        ...
+
+    @abstractmethod
+    def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
+        """Returns a ImageEmbedderDescriptor for this provider."""
         ...

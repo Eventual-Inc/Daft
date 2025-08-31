@@ -85,3 +85,21 @@ def embed_text(
     )
     expr = expr.with_init_args(text_embedder)
     return expr(text)
+
+
+def embed_image(
+    image: Expression,
+    *,
+    provider: str | Provider | None = None,
+    model: str | None = None,
+    **options: str,
+) -> Expression:
+    from daft.ai._expressions import _ImageEmbedderExpression
+    from daft.ai.protocols import ImageEmbedder
+
+    image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
+    expr = udf(return_dtype=image_embedder.get_dimensions().as_dtype(), concurrency=1, use_process=False)(
+        _ImageEmbedderExpression
+    )
+    expr = expr.with_init_args(image_embedder)
+    return expr(image)

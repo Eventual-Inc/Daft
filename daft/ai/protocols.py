@@ -7,6 +7,7 @@ from daft.ai.typing import Descriptor
 
 if TYPE_CHECKING:
     from daft.ai.typing import Embedding, EmbeddingDimensions
+    from daft.dependencies import np
 
 
 @runtime_checkable
@@ -24,3 +25,20 @@ class TextEmbedderDescriptor(Descriptor[TextEmbedder]):
     @abstractmethod
     def get_dimensions(self) -> EmbeddingDimensions:
         """Returns the dimensions of the embeddings produced by the described TextEmbedder."""
+
+
+@runtime_checkable
+class ImageEmbedder(Protocol):
+    """Protocol for image embedding implementations."""
+
+    def embed_image(self, image: list[np.ndarray]) -> list[Embedding]:
+        """Embeds a batch of images into an embedding vector."""
+        ...
+
+
+class ImageEmbedderDescriptor(Descriptor[ImageEmbedder]):
+    """Descriptor for a ImageEmbedder implementation."""
+
+    @abstractmethod
+    def get_dimensions(self) -> EmbeddingDimensions:
+        """Returns the dimensions of the embeddings produced by the described ImageEmbedder."""

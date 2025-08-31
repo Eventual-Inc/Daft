@@ -9,7 +9,7 @@ from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
+    from daft.ai.protocols import ImageEmbedderDescriptor, TextEmbedderDescriptor
     from daft.ai.typing import Options
 
 __all__ = [
@@ -36,3 +36,6 @@ class OpenAIProvider(Provider):
             model_name=(model or "text-embedding-3-small"),
             model_options=options,
         )
+
+    def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
+        raise NotImplementedError("embed_image is not currently implemented for the OpenAI provider")
