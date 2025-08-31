@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import torch
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoConfig, AutoModel, AutoProcessor
 
 from daft import DataType
 from daft.ai.protocols import ImageEmbedder, ImageEmbedderDescriptor
@@ -31,8 +31,6 @@ class TransformersImageEmbedderDescriptor(ImageEmbedderDescriptor):
         return self.options
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        from transformers import AutoConfig
-
         config = AutoConfig.from_pretrained(self.model, trust_remote_code=True)
         # For CLIP models, the image embedding dimension is typically in projection_dim or hidden_size.
         embedding_size = getattr(config, "projection_dim", getattr(config, "hidden_size", 512))

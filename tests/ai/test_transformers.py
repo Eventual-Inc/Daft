@@ -6,6 +6,8 @@ pytest.importorskip("transformers")
 pytest.importorskip("torch")
 pytest.importorskip("PIL")
 
+from unittest.mock import patch
+
 import numpy as np
 import torch
 
@@ -92,8 +94,6 @@ def test_transformers_pil_dependency_check():
 
 def test_transformers_pil_dependency_check_failure():
     """Test that the embedder fails fast when PIL is not available."""
-    from unittest.mock import patch
-
     with patch("daft.dependencies.pil_image.module_available", return_value=False):
         provider = TransformersProvider()
 

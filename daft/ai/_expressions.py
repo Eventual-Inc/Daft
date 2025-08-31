@@ -22,7 +22,7 @@ class _TextEmbedderExpression:
 
 
 class _ImageEmbedderExpression:
-    """Function expression implementation for a ImageEmbedder protocol."""
+    """Function expression implementation for an ImageEmbedder protocol."""
 
     image_embedder: ImageEmbedder
 

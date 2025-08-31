@@ -78,5 +78,5 @@ class Provider(ABC):
 
     @abstractmethod
     def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
-        """Returns a ImageEmbedderDescriptor for this provider."""
+        """Returns an ImageEmbedderDescriptor for this provider."""
         ...
