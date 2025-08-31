@@ -270,7 +270,7 @@ Various AI/ML protocols can be implemented through Providers. Here is an example
 
 ```python
 # Set the current provider to be OpenAI (requires a valid OpenAI API key)
-api_key = <your OpenAI API kere here>
+api_key = <your OpenAI API key here>
 sess.set_provider("openai", api_key=api_key)
 
 # Check the current session provider
@@ -286,7 +286,7 @@ print(default_model.model_name)
 text-embedding-3-small
 """
 
-# Use the default embedder model to crate embeddings
+# Use the default embedder model to create embeddings
 result = default_model.instantiate().embed_text(["Hello world"])
 
 # Use a custom OpenAI embedder model to create embeddings
@@ -315,7 +315,7 @@ For complete documentation, please see the [Session API docs](api/sessions.md).
 | [`create_temp_table`][daft.Session.create_temp_table]                           | Creates a temp table scoped to this session from an existing view. |
 | [`current_catalog`][daft.Session.current_catalog]                               | Returns the session's current catalog.                             |
 | [`current_namespace`][daft.Session.current_namespace]                           | Returns the session's current namespace.                           |
-| [`current_provider`][daft.Session.current_namespace]                            | Returns the session's current provider.                            |
+| [`current_provider`][daft.Session.current_provider]                             | Returns the session's current provider.                            |
 | [`detach_catalog`][daft.Session.detach_catalog]                                 | Detaches the catalog from this session                             |
 | [`detach_table`][daft.Session.detach_table]                                     | Detaches the table from this session                               |
 | [`drop_namespace`][daft.Session.drop_namespace]                                 | Drop the namespace in the session's current catalog                |
