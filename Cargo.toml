@@ -221,7 +221,8 @@ members = [
   "src/parquet2",
   "src/parquet-format-safe",
   "src/generated/spark-connect",
-  "src/daft-cli"
+  "src/daft-cli",
+  "daft_flow"
 ]
 
 [workspace.dependencies]

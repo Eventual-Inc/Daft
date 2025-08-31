@@ -1,0 +1,18 @@
+[package]
+name = "daft-flow"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+daft-flow-pylib = {path = "src/daft-flow-pylib", optional = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "dep:daft-flow-pylib"
+]
+
+[lib]
+name = "daft_flow"
+crate-type = ["cdylib"]

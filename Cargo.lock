@@ -2676,6 +2676,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-flow"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-flow-pylib",
+ "pyo3",
+]
+
+[[package]]
+name = "daft-flow-pylib"
+version = "0.1.0"
+dependencies = [
+ "pyo3",
+]
+
+[[package]]
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [

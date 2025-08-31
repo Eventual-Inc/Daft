@@ -1,0 +1,2 @@
+build:
+	maturin develop

@@ -1,0 +1,14 @@
+[build-system]
+build-backend = "maturin"
+requires = ["maturin>=1.5.0,<2.0.0"]
+
+[project]
+name = "flowlib"
+dynamic = ["version"]
+description = "Daft Flow Library"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.maturin]
+features = ["python"]
+python-source = "python"
