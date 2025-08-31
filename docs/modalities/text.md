@@ -25,7 +25,7 @@ from daft.functions.ai import embed_text
 
 (
     daft.read_huggingface("togethercomputer/RedPajama-Data-1T")
-    .with_column("embedding", embed_text(df["text"]))
+    .with_column("embedding", embed_text(daft.col("text")))
     .show()
 )
 ```
@@ -42,7 +42,7 @@ First install the optional Sentence Transformers dependency for Daft.
 pip install -U "daft[sentence-transformers]"
 ```
 
-Then use the `sentence_transfomers` provider with any desired open model hosted on [Hugging Face](https://huggingface.co/) such as [`BAAI/bge-base-en-v1.5`](https://huggingface.co/BAAI/bge-base-en-v1.5).
+Then use the `sentence_transformers` provider with any desired open model hosted on [Hugging Face](https://huggingface.co/) such as [`BAAI/bge-base-en-v1.5`](https://huggingface.co/BAAI/bge-base-en-v1.5).
 
 ```python
 import daft
@@ -130,7 +130,6 @@ nlp_model_name = "en_core_web_sm"
 def chunk_by_sentences(text: str) -> typing.Iterator[str]:
     import spacy
     nlp = spacy.load(nlp_model_name)
-    doc = nlp(text)
     for sentence in nlp(text):
         yield sentence.text
 
