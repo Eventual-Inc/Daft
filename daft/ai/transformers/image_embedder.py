@@ -47,9 +47,6 @@ class TransformersImageEmbedder(ImageEmbedder):
     options: Options
 
     def __init__(self, model_name_or_path: str, **options: Any):
-        if not pil_image.module_available():
-            raise ImportError("Pillow is required for image processing but not available")
-
         self.device = (
             torch.device("cuda")
             if torch.cuda.is_available()

@@ -94,6 +94,20 @@ def embed_image(
     model: str | None = None,
     **options: str,
 ) -> Expression:
+    """Returns an expression that embeds images using the specified image model and provider.
+
+    Args:
+        image (Expression): The input image column expression.
+        provider (str | Provider | None): The provider to use for the image model. If None, the default provider is used.
+        model (str | None): The image model to use. Can be a model instance or a model name. If None, the default model is used.
+        **options: Any additional options to pass for the model.
+
+    Note:
+        Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
+
+    Returns:
+        Expression: An expression representing the embedded image vectors.
+    """
     from daft.ai._expressions import _ImageEmbedderExpression
     from daft.ai.protocols import ImageEmbedder
 
