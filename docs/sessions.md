@@ -264,6 +264,40 @@ sess.sql("SELECT * FROM example.tbl, temp LIMIT 1").show()
 
     We aim to support SQL DDL in future releases!
 
+### Using providers
+
+Various AI/ML protocols can be implemented through Providers. Here is an example of using OpenAI provider for creating text embeddings
+
+```python
+# Set the current provider to be OpenAI (requires a valid OpenAI API key)
+api_key = <your OpenAI API kere here>
+sess.set_provider("openai", api_key=api_key)
+
+# Check the current session provider
+print(sess.current_provider().name)
+"""
+openai
+"""
+
+# Get the default text embedder model used by the provider
+default_model = sess.current_provider().get_text_embedder()
+print(default_model.model_name)
+"""
+text-embedding-3-small
+"""
+
+# Use the default embedder model to crate embeddings
+result = default_model.instantiate().embed_text(["Hello world"])
+
+# Use a custom OpenAI embedder model to create embeddings
+result_large = (
+    sess.current_provider()
+    .get_text_embedder(model="text-embedding-3-large")
+    .instantiate()
+    .embed_text(["Hello world"])
+)
+```
+
 ## Reference
 
 For complete documentation, please see the [Session API docs](api/sessions.md).
@@ -281,6 +315,7 @@ For complete documentation, please see the [Session API docs](api/sessions.md).
 | [`create_temp_table`][daft.Session.create_temp_table]                           | Creates a temp table scoped to this session from an existing view. |
 | [`current_catalog`][daft.Session.current_catalog]                               | Returns the session's current catalog.                             |
 | [`current_namespace`][daft.Session.current_namespace]                           | Returns the session's current namespace.                           |
+| [`current_provider`][daft.Session.current_namespace]                            | Returns the session's current provider.                            |
 | [`detach_catalog`][daft.Session.detach_catalog]                                 | Detaches the catalog from this session                             |
 | [`detach_table`][daft.Session.detach_table]                                     | Detaches the table from this session                               |
 | [`drop_namespace`][daft.Session.drop_namespace]                                 | Drop the namespace in the session's current catalog                |
@@ -297,5 +332,6 @@ For complete documentation, please see the [Session API docs](api/sessions.md).
 | [`write_table`][daft.Session.write_table]                                       | Writes a dataframe to the table.                                   |
 | [`set_catalog`][daft.Session.set_catalog]                                       | Sets the current catalog.                                          |
 | [`set_namespace`][daft.Session.set_namespace]                                   | Sets the current namespace.                                        |
+| [`set_provider`][daft.Session.set_provider]                                     | Sets the current provider.                                         |
 | [`sql`][daft.Session.sql]                                                       | Executes SQL against the session.                                  |
 | [`use`][daft.Session.use]                                                       | Sets the current catalog and namespace.                            |
