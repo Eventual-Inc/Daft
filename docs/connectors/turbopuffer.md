@@ -13,8 +13,10 @@ This example does the following:
 === "🐍 Python"
 
     ```python
-    # $ pip install turbopuffer
-    # $ pip install openai OR pip install sentence_transformers
+    # $ pip install -U "daft[turbopuffer]"
+    # $ pip install -U "daft[openai]"
+    # OR
+    # $ pip install -U "daft[sentence-transformers]"
     import os
 
     import daft
