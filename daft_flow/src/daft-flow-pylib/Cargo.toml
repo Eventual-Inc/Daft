@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 pyo3 = {workspace = true}
+daft-functions-adapter = {path = "../daft-functions-adapter"}

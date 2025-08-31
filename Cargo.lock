@@ -2687,6 +2687,7 @@ dependencies = [
 name = "daft-flow-pylib"
 version = "0.1.0"
 dependencies = [
+ "daft-functions-adapter",
  "pyo3",
 ]
 
@@ -2704,6 +2705,17 @@ dependencies = [
  "snafu",
  "typetag",
  "xxhash-rust",
+]
+
+[[package]]
+name = "daft-functions-adapter"
+version = "0.1.0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-functions-uri",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

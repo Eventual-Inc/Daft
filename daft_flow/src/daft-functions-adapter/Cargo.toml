@@ -1,0 +1,11 @@
+[package]
+name = "daft-functions-adapter"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+daft-functions-uri = {path = "../../../src/daft-functions-uri"}
+daft-dsl = {path = "../../../src/daft-dsl"}
+daft-core = {path = "../../../src/daft-core"}
+common-error = {path = "../../../src/common/error", default-features = false}
+thiserror = "1.0"
