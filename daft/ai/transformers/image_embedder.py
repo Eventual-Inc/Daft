@@ -56,7 +56,7 @@ class TransformersImageEmbedder(ImageEmbedder):
         self.processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, use_fast=True)
         self.options = options
 
-    def embed_image(self, images: list[np.ndarray]) -> list[Embedding]:
+    def embed_image(self, images: list[np.ndarray[Any, Any]]) -> list[Embedding]:
         # TODO(desmond): There's potential for image decoding and processing on the GPU with greater
         # performance. Methods differ a little between different models, so let's do it later.
         pil_images = [pil_image.fromarray(image) for image in images]
