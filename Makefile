@@ -126,3 +126,7 @@ clean:
 	rm -rf ./target
 	rm -rf ./site
 	rm -f daft/daft.abi3.so
+
+.PHONY: build-daft-flow
+build-daft-flow: check-toolchain .venv  ## Compile and install daft_flow for development
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --manifest-path daft_flow/Cargo.toml --extras=all --uv

@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 #[pyfunction]
 fn hello_world() -> &'static str {
-    "Hello, world!"
+    "Hello, world!!"
 }
 
 pub fn register_modules(m: &Bound<PyModule>) -> PyResult<()> {
