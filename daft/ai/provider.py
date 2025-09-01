@@ -34,9 +34,19 @@ def load_sentence_transformers(name: str | None = None, **options: Any) -> Provi
         raise ProviderImportError(["sentence_transformers", "torch"]) from e
 
 
+def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.openai import LMStudioProvider
+
+        return LMStudioProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["openai"]) from e
+
+
 PROVIDERS: dict[str, Callable[..., Provider]] = {
     "openai": load_openai,
     "sentence_transformers": load_sentence_transformers,
+    "lm_studio": load_lm_studio,
 }
 
 
