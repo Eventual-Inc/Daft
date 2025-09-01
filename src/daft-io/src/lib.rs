@@ -234,7 +234,7 @@ impl IOClient {
                         HFSource::get_client(&self.config.hf.clone().unwrap_or_default(), &self.config.http.clone().unwrap_or_default()).await?
                             as Arc<dyn ObjectSource>
                     }
-                    _ => HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>,
+                    _ => HttpSource::get_client(&self.config.http.clone().unwrap_or_default()).await? as Arc<dyn ObjectSource>,
                 }
             }
             SourceType::S3 => {
