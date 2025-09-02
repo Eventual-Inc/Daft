@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from huggingface_hub.hf_api import HfApi
 
 from daft.datatype import DataType
 from daft.dependencies import pq
@@ -12,7 +15,7 @@ from daft.schema import Schema
 from daft.utils import get_arrow_version
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Iterator
 
     from huggingface_hub import CommitOperationAdd, HfApi
 
@@ -91,10 +94,18 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
             }
         )
 
-    def _get_api(self) -> HfApi:
+    @contextmanager
+    def _hf_api(self) -> Iterator[HfApi]:
+        """Context manager to get an authenticated Hugging Face API client with progress bars disabled."""
         from huggingface_hub import HfApi
+        from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
 
-        return HfApi(token=self.config.token, library_name="daft")
+        api = HfApi(token=self.config.token, library_name="daft")
+        disable_progress_bars()
+        try:
+            yield api
+        finally:
+            enable_progress_bars()
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[CommitOperationAddWrapper]]:
         import io
@@ -102,62 +113,62 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
 
         from huggingface_hub import CommitOperationAdd
 
-        api = self._get_api()
         id = uuid.uuid4()
         num_files = 0
         num_rows = 0
 
-        with io.BytesIO() as buffer:
-            writer = None
+        with self._hf_api() as api:
+            with io.BytesIO() as buffer:
+                writer = None
 
-            def flush(writer: pq.ParquetWriter) -> WriteResult[CommitOperationAddWrapper]:
-                writer.close()
+                def flush(writer: pq.ParquetWriter) -> WriteResult[CommitOperationAddWrapper]:
+                    writer.close()
 
-                nonlocal num_files
-                nonlocal num_rows
+                    nonlocal num_files
+                    nonlocal num_rows
 
-                path_in_repo = f"{self.path_prefix}-{id}-{num_files}.parquet"
-                num_files += 1
+                    path_in_repo = f"{self.path_prefix}-{id}-{num_files}.parquet"
+                    num_files += 1
 
-                addition = CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buffer.getvalue())
-                api.preupload_lfs_files(
-                    repo_id=self.repo, additions=[addition], repo_type="dataset", revision=self.revision
-                )
+                    addition = CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buffer.getvalue())
+                    api.preupload_lfs_files(
+                        repo_id=self.repo, additions=[addition], repo_type="dataset", revision=self.revision
+                    )
 
-                # Reuse the buffer for the next file
-                buffer.seek(0)
-                buffer.truncate()
+                    # Reuse the buffer for the next file
+                    buffer.seek(0)
+                    buffer.truncate()
 
-                result = WriteResult(
-                    CommitOperationAddWrapper(addition), bytes_written=addition.upload_info.size, rows_written=num_rows
-                )
+                    result = WriteResult(
+                        CommitOperationAddWrapper(addition),
+                        bytes_written=addition.upload_info.size,
+                        rows_written=num_rows,
+                    )
 
-                num_rows = 0
+                    num_rows = 0
 
-                return result
+                    return result
 
-            for part in micropartitions:
-                if writer is None:
-                    writer = pq.ParquetWriter(buffer, part.schema().to_pyarrow_schema(), **self.writer_kwargs)
+                for part in micropartitions:
+                    if writer is None:
+                        writer = pq.ParquetWriter(buffer, part.schema().to_pyarrow_schema(), **self.writer_kwargs)
 
-                num_rows += len(part)
-                writer.write_table(part.to_arrow(), row_group_size=self.config.row_group_size)
+                    num_rows += len(part)
+                    writer.write_table(part.to_arrow(), row_group_size=self.config.row_group_size)
 
-                if buffer.tell() > self.config.target_filesize:
+                    if buffer.tell() > self.config.target_filesize:
+                        yield flush(writer)
+
+                        # delete the writer and create one for the next partition
+                        writer = None
+
+                # flush remaining data
+                if writer is not None:
                     yield flush(writer)
-
-                    # delete the writer and create one for the next partition
-                    writer = None
-
-            # flush remaining data
-            if writer is not None:
-                yield flush(writer)
 
     def finalize(self, write_results: list[WriteResult[CommitOperationAddWrapper]]) -> MicroPartition:
         from huggingface_hub import CommitOperation, CommitOperationAdd, CommitOperationCopy, CommitOperationDelete
         from huggingface_hub.hf_api import RepoFile, RepoFolder
-
-        api = self._get_api()
 
         additions = [res.result.inner for res in write_results]
         operations = {}
@@ -165,7 +176,7 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
         count_existing = 0
         output: dict[str, list[str]] = {"path_in_repo": [], "operation": [], "src_path_in_repo": []}
 
-        def list_split() -> Iterator[RepoFile | RepoFolder]:
+        def list_split(api: HfApi) -> Iterator[RepoFile | RepoFolder]:
             """Get all existing files of the current split."""
             from huggingface_hub.utils import EntryNotFoundError
 
@@ -184,7 +195,7 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
             except EntryNotFoundError:
                 pass
 
-        def create_commits(operations: list[CommitOperation], message: str) -> None:
+        def create_commits(api: HfApi, operations: list[CommitOperation], message: str) -> None:
             """Split the commit into multiple parts if necessary.
 
             The HuggingFace API may time out if there are too many operations in a single commit.
@@ -226,42 +237,41 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
         def format_path(i: int) -> str:
             return f"{self.path_prefix}-{i:05d}-of-{count_new + count_existing:05d}.parquet"
 
-        def rename(old_path: str, new_path: str) -> Generator[CommitOperation, Any, None]:
+        def rename(old_path: str, new_path: str) -> Iterator[CommitOperation]:
             if old_path != new_path:
                 yield CommitOperationCopy(src_path_in_repo=old_path, path_in_repo=new_path)
                 yield CommitOperationDelete(path_in_repo=old_path)
 
-        # In overwrite mode, delete existing files
-        if self.overwrite:
-            for obj in list_split():
-                # Delete old file
-                operations[obj.path] = CommitOperationDelete(
-                    path_in_repo=obj.path, is_folder=isinstance(obj, RepoFolder)
+        with self._hf_api() as api:
+            # In overwrite mode, delete existing files
+            if self.overwrite:
+                for obj in list_split(api):
+                    # Delete old file
+                    operations[obj.path] = CommitOperationDelete(
+                        path_in_repo=obj.path, is_folder=isinstance(obj, RepoFolder)
+                    )
+            # In append mode, rename existing files to have the correct total number of parts
+            else:
+                rename_operations: list[CommitOperation] = []
+                existing = list(obj for obj in list_split(api) if isinstance(obj, RepoFile))
+                count_existing = len(existing)
+                for i, obj in enumerate(existing):
+                    new_path = format_path(i)
+                    rename_operations.extend(rename(obj.path, new_path))
+                # Rename files in a separate commit to prevent them from being overwritten by new files of the same name
+                create_commits(
+                    api,
+                    operations=rename_operations,
+                    message=f"{self.commit_message} (rename existing files before uploading new files)",
                 )
-        # In append mode, rename existing files to have the correct total number of parts
-        else:
-            rename_operations: list[CommitOperation] = []
-            existing = list(obj for obj in list_split() if isinstance(obj, RepoFile))
-            count_existing = len(existing)
-            for i, obj in enumerate(existing):
-                new_path = format_path(i)
-                rename_operations.extend(rename(obj.path, new_path))
-            # Rename files in a separate commit to prevent them from being overwritten by new files of the same name
-            create_commits(
-                operations=rename_operations,
-                message=f"{self.commit_message} (rename existing files before uploading new files)",
-            )
 
-        # Rename additions, putting them after existing files if any
-        for i, addition in enumerate(additions):
-            addition.path_in_repo = format_path(i + count_existing)
-            # Overwrite the deletion operation if the file already exists
-            operations[addition.path_in_repo] = addition
+            # Rename additions, putting them after existing files if any
+            for i, addition in enumerate(additions):
+                addition.path_in_repo = format_path(i + count_existing)
+                # Overwrite the deletion operation if the file already exists
+                operations[addition.path_in_repo] = addition
 
-        # Upload the new files
-        create_commits(
-            operations=list(operations.values()),
-            message=self.commit_message,
-        )
+            # Upload the new files
+            create_commits(api, operations=list(operations.values()), message=self.commit_message)
 
         return MicroPartition.from_pydict(output)

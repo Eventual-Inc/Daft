@@ -50,7 +50,7 @@ impl UDFProject {
         project: ExprRef,
         passthrough_columns: Vec<ExprRef>,
     ) -> Result<Self> {
-        let num_udfs: usize = count_udfs(&[project.clone()]);
+        let num_udfs: usize = count_udfs(&project);
         if num_udfs != 1 {
             return Err(Error::CreationError {
                 source: DaftError::InternalError(format!(
