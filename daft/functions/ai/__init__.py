@@ -80,6 +80,8 @@ def embed_text(
     text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
     # implemented as class-based UDF for now
-    expr = udf(return_dtype=text_embedder.get_dimensions().as_dtype(), concurrency=1)(_TextEmbedderExpression)
+    expr = udf(return_dtype=text_embedder.get_dimensions().as_dtype(), concurrency=1, use_process=False)(
+        _TextEmbedderExpression
+    )
     expr = expr.with_init_args(text_embedder)
     return expr(text)

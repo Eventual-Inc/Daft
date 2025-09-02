@@ -7,7 +7,6 @@ on:
 
 env:
   PYTHON_VERSION: 3.11
-  UV_SYSTEM_PYTHON: 1
 
 defaults:
   run:

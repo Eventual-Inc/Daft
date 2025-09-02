@@ -1,8 +1,8 @@
 * Guide
     * [Overview](index.md)
-    * [Installation](install.md)
     * [Quickstart](quickstart.md)
-    * Modalities
+    * [Installation](install.md)
+    * Working with Modalities
         * [Overview](modalities/index.md)
         * [Custom Modalities](modalities/custom.md)
         * [URLs and Files](modalities/urls.md)
@@ -10,6 +10,11 @@
         * [Images](modalities/images.md)
         * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
+    * Running Custom Python Code
+        * [Overview](custom-code/index.md)
+        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
+        * [Working with GPUs](custom-code/gpu.md)
+        * [External APIs](custom-code/apis.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
@@ -22,12 +27,8 @@
         * [Hugging Face Datasets](connectors/huggingface.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
+        * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
-    * Running Custom Python Code
-        * [Overview](custom-code/index.md)
-        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Working with GPUs](custom-code/gpu.md)
-        * [External APIs](custom-code/apis.md)
     * [Scaling Out and Deployment](distributed.md)
     * Optimization and Debugging
         * [Overview](optimization/index.md)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.catalog import Catalog as InnerCatalog
@@ -35,13 +34,8 @@ if TYPE_CHECKING:
 class IcebergCatalog(Catalog):
     _inner: InnerCatalog
 
-    def __init__(self, pyiceberg_catalog: InnerCatalog):
-        """DEPRECATED: Please use `Catalog.from_iceberg`; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please use `Catalog.from_iceberg` instead.",
-            category=DeprecationWarning,
-        )
-        self._inner = pyiceberg_catalog
+    def __init__(self) -> None:
+        raise RuntimeError("IcebergCatalog.__init__ is not supported, please use `Catalog.from_iceberg` instead.")
 
     @staticmethod
     def _from_obj(obj: object) -> IcebergCatalog:
@@ -206,13 +200,8 @@ class IcebergTable(Table):
     _read_options = {"snapshot_id"}
     _write_options: set[str] = set()
 
-    def __init__(self, inner: InnerTable):
-        """DEPRECATED: Please use `Table.from_iceberg`; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Table.from_iceberg` instead; version 0.5.0!",
-            category=DeprecationWarning,
-        )
-        self._inner = inner
+    def __init__(self) -> None:
+        raise RuntimeError("IcebergTable.__init__ is not supported, please use `Table.from_iceberg` instead.")
 
     @property
     def name(self) -> str:

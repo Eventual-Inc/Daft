@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import pickle
 import sys
 from multiprocessing.connection import Client
+from pickle import PicklingError
 from traceback import TracebackException
 
+import daft.pickle
 from daft.errors import UDFException
 from daft.execution.udf import (
     _ENTER,
@@ -44,7 +45,7 @@ def udf_event_loop(
 
             # We initialize after ready to avoid blocking the main thread
             if expression_projection is None:
-                uninitialized_projection: ExpressionsProjection = pickle.loads(expr_projection_bytes)
+                uninitialized_projection: ExpressionsProjection = daft.pickle.loads(expr_projection_bytes)
                 expression_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
             input_bytes = transport.read_and_release(name, size)
@@ -63,7 +64,11 @@ def udf_event_loop(
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None
-        conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), pickle.dumps(exc)))
+        try:
+            exc_bytes = daft.pickle.dumps(exc)
+        except (PicklingError, AttributeError):
+            exc_bytes = None
+        conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), exc_bytes))
     except Exception as e:
         try:
             conn.send((_ERROR, TracebackException.from_exception(e)))

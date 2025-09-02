@@ -2,51 +2,17 @@
 # isort: dont-add-import: from __future__ import annotations
 
 import inspect
-import warnings
-from typing import Optional
 
 import daft
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.daft import LogicalPlanBuilder as _PyLogicalPlanBuilder
-from daft.daft import PySqlCatalog as _PySqlCatalog
 from daft.daft import sql_exec as _sql_exec
 from daft.daft import sql_expr as _sql_expr
 from daft.dataframe import DataFrame
 from daft.exceptions import DaftCoreException
 from daft.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
-
-
-class SQLCatalog:
-    """SQLCatalog is a simple map from table names to dataframes used in query planning.
-
-    EXPERIMENTAL: This features is early in development and will change.
-    """
-
-    _catalog: _PySqlCatalog = None  # type: ignore
-
-    def __post_init__(self) -> None:
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.6.0; please use `Catalog.from_pydict()`.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-    def __init__(self, tables: dict[str, DataFrame]) -> None:
-        """Create a new SQLCatalog from a dictionary of table names to dataframes."""
-        self._catalog = _PySqlCatalog.new()
-        for name, df in tables.items():
-            self._catalog.register_table(name, df._get_current_builder()._builder)
-
-    def __str__(self) -> str:
-        return str(self._catalog)
-
-    def register_table(self, name: str, df: DataFrame) -> None:
-        self._catalog.register_table(name, df._get_current_builder()._builder)
-
-    def _copy_from(self, other: "SQLCatalog") -> None:
-        self._catalog.copy_from(other._catalog)
 
 
 @PublicAPI
@@ -110,7 +76,6 @@ def sql_expr(sql: str) -> Expression:
 @PublicAPI
 def sql(
     sql: str,
-    catalog: Optional[SQLCatalog] = None,
     register_globals: bool = True,
     **bindings: DataFrame,
 ) -> DataFrame:
@@ -118,9 +83,6 @@ def sql(
 
     Args:
         sql (str): SQL query to execute
-        catalog (SQLCatalog, optional): Catalog of tables to use in the query.
-            Defaults to None, in which case a catalog will be built from variables
-            in the callers scope.
         register_globals (bool, optional): Whether to incorporate global
             variables into the supplied catalog, in which case a copy of the
             catalog will be made and the original not modified. Defaults to True.
@@ -161,7 +123,6 @@ def sql(
         A more complex example using CTE bindings to create a named subquery (DataFrame) called `"my_df"`, which can then be referenced from inside your SQL statement.
 
         >>> import daft
-        >>> from daft.sql import SQLCatalog
         >>>
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
         >>>
@@ -202,16 +163,7 @@ def sql(
             if isinstance(variable, DataFrame):
                 py_ctes[alias] = variable._builder._builder
 
-    # 2. Add all SQLCatalog names for backwards compatibility.
-    if catalog:
-        warnings.warn(
-            "The `catalog` argument is deprecated and will be removed in daft >= 0.6.0. Please use `ctes` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        py_ctes.update(catalog._catalog.to_pydict())
-
-    # 3. Add explicit CTEs last so these can't be shadowed.
+    # 2. Add explicit CTEs last so these can't be shadowed.
     for alias, df in bindings.items():
         py_ctes[alias] = df._builder._builder
 

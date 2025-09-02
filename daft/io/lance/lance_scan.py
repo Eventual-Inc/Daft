@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
 from daft.dependencies import pa
+from daft.expressions import Expression
 from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
@@ -79,10 +80,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return isinstance(self, SupportsPushdownFilters)
 
     def can_absorb_limit(self) -> bool:
-        return False
+        return True
 
     def can_absorb_select(self) -> bool:
-        return False
+        return True
 
     def supports_count_pushdown(self) -> bool:
         """Returns whether this scan operator supports count pushdown."""
@@ -92,6 +93,9 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         """Returns the count modes supported by this scan operator."""
         return [CountMode.All]
 
+    def as_pushdown_filter(self) -> Union[SupportsPushdownFilters, None]:
+        return self
+
     def multiline_display(self) -> list[str]:
         return [
             self.display_name(),
@@ -99,13 +103,12 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         ]
 
     def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
-        from daft.expressions import Expression
-
         pushed = []
         remaining = []
+
         for expr in filters:
             try:
-                filters = Expression._from_pyexpr(expr).to_arrow_expr()
+                Expression._from_pyexpr(expr).to_arrow_expr()
                 pushed.append(expr)
             except NotImplementedError:
                 remaining.append(expr)
@@ -169,8 +172,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
-        # TODO: figure out how to translate Pushdowns into LanceDB filters
-        filters = None
         fragments = self._ds.get_fragments()
         for fragment in fragments:
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
@@ -184,11 +185,18 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             # we will probably end up materializing the data anyways for any operations, we leave this
             # as None.
             num_rows = None
+            pushed_expr = None
+            if self._pushed_filters is not None:
+                # Combine all pushed filters using __and__
+                combined_filter = self._pushed_filters[0]
+                for filter_expr in self._pushed_filters[1:]:
+                    combined_filter = combined_filter.__and__(filter_expr)
+                pushed_expr = Expression._from_pyexpr(combined_filter).to_arrow_expr()
 
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
                 func_name=_lancedb_table_factory_function.__name__,
-                func_args=(self._ds, [fragment.fragment_id], required_columns, filters, pushdowns.limit),
+                func_args=(self._ds, [fragment.fragment_id], required_columns, pushed_expr, pushdowns.limit),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
                 size_bytes=size_bytes,

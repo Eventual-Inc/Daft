@@ -39,7 +39,7 @@ When proposing features, please include:
 
 To set up your development environment:
 
-1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.12)
+1. Install [uv](https://docs.astral.sh/uv/). You can run `curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS and Linux.
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
 3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
 4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.

@@ -2081,6 +2081,7 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
     )
 }
 
+/// Check if the top-level expression is a UDF
 #[inline]
 pub fn is_udf(expr: &ExprRef) -> bool {
     matches!(
