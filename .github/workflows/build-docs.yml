@@ -21,6 +21,11 @@ jobs:
       python-version: '3.10'
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false

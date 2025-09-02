@@ -8,7 +8,14 @@ from jinja2 import Environment, FileSystemLoader
 
 # map of functions submodule to name displayed on docs
 # also dictates category order
-CATEGORY_TITLES = {"ai": "AI", "misc": "Miscellaneous", "columnar": "Columnar", "window": "Window", "llm": "LLM"}
+CATEGORY_TITLES = {
+    "ai": "AI",
+    "misc": "Miscellaneous",
+    "columnar": "Columnar",
+    "window": "Window",
+    "llm": "LLM",
+    "kv": "Key-Value Store",
+}
 
 # Set up Jinja2 environment
 template_dir = os.path.join(os.path.dirname(__file__), "templates")

@@ -146,6 +146,10 @@ pub fn function_expr_to_proto(
                 variant: Some(proto::scalar_fn::py_fn::Variant::Legacy(py)),
             })
         }
+        ir::functions::FunctionExpr::KV(kv_expr) => {
+            let rs = kv_expr.to_proto()?;
+            proto::ScalarFnDescriptor::Builtin(rs)
+        }
     };
 
     // Convert all arguments to unbound arguments (aka no param name) then reuse existing conversion logic.
@@ -466,5 +470,20 @@ impl ToFromProto for ir::functions::python::RuntimePyObject {
         Ok(Self::Message {
             object: bincode::serialize(self)?,
         })
+    }
+}
+
+impl ToFromProto for ir::functions::kv::KVExpr {
+    type Message = proto::scalar_fn::BuiltinFn;
+
+    fn from_proto(_: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        not_implemented_err!("kv_expr")
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        not_implemented_err!("kv_expr")
     }
 }

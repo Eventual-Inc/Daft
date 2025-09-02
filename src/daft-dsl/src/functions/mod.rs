@@ -1,5 +1,6 @@
 pub mod agg;
 pub mod function_args;
+pub mod kv;
 #[cfg(test)]
 mod macro_tests;
 pub mod map;
@@ -25,7 +26,10 @@ use scalar::DynamicScalarFunction;
 pub use scalar::{BuiltinScalarFn, ScalarFunctionFactory, ScalarUDF};
 use serde::{Deserialize, Serialize};
 
-use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
+use self::{
+    kv::KVExpr, map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr,
+    struct_::StructExpr,
+};
 use crate::ExprRef;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -35,6 +39,7 @@ pub enum FunctionExpr {
     Struct(StructExpr),
     Python(LegacyPythonUDF),
     Partitioning(PartitioningExpr),
+    KV(Box<KVExpr>),
 }
 
 pub trait FunctionEvaluator {
@@ -57,6 +62,7 @@ impl FunctionExpr {
             Self::Struct(expr) => expr.get_evaluator(),
             Self::Python(expr) => expr,
             Self::Partitioning(expr) => expr.get_evaluator(),
+            Self::KV(expr) => expr.get_evaluator(),
         }
     }
 }

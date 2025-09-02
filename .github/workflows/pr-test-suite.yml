@@ -88,6 +88,11 @@ jobs:
           pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -228,6 +233,11 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
@@ -898,6 +908,11 @@ jobs:
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -978,6 +993,11 @@ jobs:
         os: [ubuntu, Windows]
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1035,6 +1055,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1051,6 +1076,11 @@ jobs:
       python-version: '3.10'
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1133,6 +1163,11 @@ jobs:
         python-version: ['3.9']
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1226,6 +1261,11 @@ jobs:
       python-version: '3.9'
     steps:
     - uses: actions/checkout@v4
+
+    # Install protobuf compiler for Lance dependency using composite action
+    - name: Setup Protobuf Compiler
+      uses: ./.github/actions/setup-protoc
+
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:

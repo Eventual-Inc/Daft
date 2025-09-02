@@ -9,6 +9,7 @@ from daft.context import get_context
 from daft.daft import LogicalPlanBuilder as PyBuilder
 from daft.daft import PySession, PyTableSource, sql_exec
 from daft.dataframe import DataFrame
+from daft.kv import KV_STORES, KVStore, load_kv
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.udf import UDF
@@ -21,6 +22,7 @@ __all__ = [
     "attach",
     "attach_catalog",
     "attach_function",
+    "attach_kv",
     "attach_provider",
     "attach_table",
     "create_namespace",
@@ -29,20 +31,24 @@ __all__ = [
     "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
+    "current_kv",
     "current_model",
     "current_namespace",
     "current_provider",
     "current_session",
     "detach_catalog",
     "detach_function",
+    "detach_kv",
     "detach_provider",
     "detach_table",
     "drop_namespace",
     "drop_table",
     "get_catalog",
+    "get_kv",
     "get_provider",
     "get_table",
     "has_catalog",
+    "has_kv",
     "has_namespace",
     "has_provider",
     "has_table",
@@ -51,6 +57,7 @@ __all__ = [
     "list_tables",
     "read_table",
     "set_catalog",
+    "set_kv",
     "set_model",
     "set_namespace",
     "set_provider",
@@ -181,6 +188,8 @@ class Session:
             self.attach_table(object, alias)
         elif isinstance(object, UDF):
             self.attach_function(object, alias)
+        elif isinstance(object, KVStore):
+            self.attach_kv(object, alias)
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
@@ -233,6 +242,21 @@ class Session:
         self._session.attach_table(t, a)
         return t
 
+    def attach_kv(self, kv_store: KVStore, alias: str | None = None) -> KVStore:
+        """Attaches a KV store instance to this session.
+
+        Args:
+            kv_store (KVStore): KV store instance
+            alias (str | None): optional alias for name resolution
+
+        Returns:
+            KVStore: the KV store instance
+        """
+        k = kv_store  # TODO: support attaching KV-store-like objects
+        a = alias if alias else k.name
+        self._session.attach_kv(k, a)  # type: ignore[attr-defined]
+        return k
+
     def detach_catalog(self, alias: str) -> None:
         """Detaches the catalog from this session or raises if the catalog does not exist.
 
@@ -260,6 +284,14 @@ class Session:
             alias (str): catalog alias to detach
         """
         return self._session.detach_table(alias)
+
+    def detach_kv(self, alias: str) -> None:
+        """Detaches the KV store from this session or raises if the KV store does not exist.
+
+        Args:
+            alias (str): KV store alias to detach
+        """
+        return self._session.detach_kv(alias)  # type: ignore[attr-defined]
 
     ###
     # create_*
@@ -436,6 +468,14 @@ class Session:
         """
         return self._session.current_model()
 
+    def current_kv(self) -> KVStore | None:
+        """Get the session's current KV store or None.
+
+        Returns:
+            KVStore: the session's default KV store instance
+        """
+        return self._session.current_kv()  # type: ignore[attr-defined]
+
     ###
     # get_*
     ###
@@ -484,6 +524,20 @@ class Session:
             identifier = Identifier.from_str(identifier)
         return self._session.get_table(identifier._ident)
 
+    def get_kv(self, identifier: str) -> KVStore:
+        """Returns the KV store or raises an exception if it does not exist.
+
+        Args:
+            identifier (str): KV store identifier (name)
+
+        Returns:
+            KVStore: The KV store object.
+
+        Raises:
+            ValueError: If the KV store does not exist.
+        """
+        return self._session.get_kv(identifier)  # type: ignore[attr-defined]
+
     ###
     # has_*
     ###
@@ -507,6 +561,10 @@ class Session:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         return self._session.has_table(identifier._ident)
+
+    def has_kv(self, identifier: str) -> bool:
+        """Returns true if a KV store with the given identifier exists."""
+        return self._session.has_kv(identifier)  # type: ignore[attr-defined]
 
     ###
     # list_*
@@ -613,6 +671,25 @@ class Session:
         """
         self._session.set_model(identifier)
 
+    def set_kv(self, identifier: str | None, **options: Any) -> None:
+        """Set the default KV store with associated options.
+
+        Args:
+            identifier (str | None): KV store identifier string or None.
+            **options (Any): KV store specific options.
+
+        Note:
+            If there are no KV stores, and you give a known KV store identifier
+            like "lance", then we will create and attach this known KV store.
+            For example, `daft.set_kv("lance")` works.
+        """
+        # consider using @overload on known KV stores for better type hints
+        if identifier is not None and not self._session.has_kv(identifier) and identifier in KV_STORES:  # type: ignore[attr-defined]
+            # upsert semantic for known KV stores e.g. daft.set_kv("lance")
+            kv_store = load_kv(identifier, name=None, **options)
+            self.attach_kv(kv_store)
+        self._session.set_kv(identifier)  # type: ignore[attr-defined]
+
     ###
     # write_*
     ###
@@ -708,6 +785,16 @@ def detach_table(alias: str) -> None:
     return _session().detach_table(alias)
 
 
+def attach_kv(kv_store: KVStore, alias: str | None = None) -> KVStore:
+    """Attaches a KV store instance to the current session."""
+    return _session().attach_kv(kv_store, alias)
+
+
+def detach_kv(alias: str) -> None:
+    """Detaches the KV store from the current session."""
+    return _session().detach_kv(alias)
+
+
 ###
 # create_*
 ###
@@ -778,6 +865,11 @@ def current_provider() -> Provider | None:
     return _session().current_provider()
 
 
+def current_kv() -> KVStore | None:
+    """Returns the active session's current KV store or None."""
+    return _session().current_kv()
+
+
 def current_session() -> Session:
     """Returns the active session's current session."""
     return _session()
@@ -803,6 +895,11 @@ def get_table(identifier: Identifier | str) -> Table:
     return _session().get_table(identifier)
 
 
+def get_kv(identifier: str) -> KVStore:
+    """Returns the KV store from the current session or raises an exception if it does not exist."""
+    return _session().get_kv(identifier)
+
+
 ###
 # has_*
 ###
@@ -826,6 +923,11 @@ def has_namespace(identifier: Identifier | str) -> bool:
 def has_table(identifier: Identifier | str) -> bool:
     """Returns true if a table with the given identifier exists in the current session."""
     return _session().has_table(identifier)
+
+
+def has_kv(identifier: str) -> bool:
+    """Returns true if a KV store with the given identifier exists in the current session."""
+    return _session().has_kv(identifier)
 
 
 ###
@@ -896,6 +998,11 @@ def set_provider(identifier: str | None, **options: Any) -> None:
 def set_model(identifier: str | None) -> None:
     """Set the given model as current_model for the active session."""
     _session().set_model(identifier)
+
+
+def set_kv(identifier: str | None, **options: Any) -> None:
+    """Set the given KV store as current_kv for the active session."""
+    _session().set_kv(identifier, **options)
 
 
 def set_session(session: Session) -> None:
