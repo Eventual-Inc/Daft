@@ -88,13 +88,14 @@ impl UdfHandle {
         #[cfg(feature = "python")]
         {
             let py_expr = PyExpr::from(self.udf_expr.inner().clone());
+            let udf_name = self.params.udf_properties.name.clone();
 
             let handle = Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
                     py.import(pyo3::intern!(py, "daft.execution.udf"))?
                         .getattr(pyo3::intern!(py, "UdfHandle"))?
-                        .call1((py_expr,))?
+                        .call1((udf_name, py_expr))?
                         .unbind(),
                 )
             })?;
