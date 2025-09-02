@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import subprocess
 import sys
 
 import pytest
+
+import daft
+from tests.conftest import get_tests_daft_runner_name
 
 
 @contextlib.contextmanager
@@ -169,60 +173,6 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         assert result.stdout.decode().strip() == "ok"
 
 
-# TODO: Figure out why these tests are failing for Py3.8
-# def test_in_ray_worker():
-#     """Test that running Daft in a Ray worker defaults to Python runner"""
-
-#     autodetect_script = """
-# import ray
-# import os
-# import daft
-
-# @ray.remote
-# def init_and_return_daft_runner():
-
-#     # Attempt to confuse our runner inference code
-#     assert ray.is_initialized()
-#     os.environ["RAY_JOB_ID"] = "dummy"
-
-#     df = daft.from_pydict({"foo": [1, 2, 3]})
-#     return daft.context.get_context()._runner.name
-
-# ray.init()
-# print(ray.get(init_and_return_daft_runner.remote()))
-#     """
-
-#     with with_null_env():
-#         result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
-#         assert result.stdout.decode().strip() in {"native"}
-
-
-# def test_in_ray_worker_launch_query():
-#     """Test that running Daft in a Ray worker defaults to Python runner"""
-
-#     autodetect_script = """
-# import ray
-# import os
-# import daft
-
-# @ray.remote
-# def init_and_return_daft_runner():
-
-#     assert ray.is_initialized()
-#     daft.context.set_runner_ray()
-
-#     df = daft.from_pydict({"foo": [1, 2, 3]})
-#     return daft.context.get_context()._runner.name
-
-# ray.init()
-# print(ray.get(init_and_return_daft_runner.remote()))
-#     """
-
-#     with with_null_env():
-#         result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
-#         assert result.stdout.decode().strip() == "ray"
-
-
 def test_cannot_set_runner_ray_after_py():
     cannot_set_runner_ray_after_py_script = """
 import daft
@@ -336,3 +286,30 @@ print(daft.context.get_context().get_or_infer_runner_type())
             env={"DAFT_RUNNER": daft_runner_envvar},
         )
         assert result.stdout.decode().strip() == f"{daft_runner_envvar}\nray"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+def test_use_default_scantask_max_parallelism():
+    with with_null_env():
+        str_io = io.StringIO()
+        df = daft.range(start=0, end=1024, partitions=10)
+        df.explain(show_all=True, file=str_io)
+        assert "Num Parallel Scan Tasks = 8" in str_io.getvalue().strip()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+def test_set_scantask_max_parallelism_less_than_partition_num():
+    with daft.execution_config_ctx(scantask_max_parallel=7):
+        str_io = io.StringIO()
+        df = daft.range(start=0, end=1024, partitions=10)
+        df.explain(show_all=True, file=str_io)
+        assert "Num Parallel Scan Tasks = 7" in str_io.getvalue().strip()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+def test_set_scantask_max_parallelism_greater_than_partition_num():
+    with daft.execution_config_ctx(scantask_max_parallel=17):
+        str_io = io.StringIO()
+        df = daft.range(start=0, end=1024, partitions=10)
+        df.explain(show_all=True, file=str_io)
+        assert "Num Parallel Scan Tasks = 10" in str_io.getvalue().strip()

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
@@ -116,6 +115,9 @@ class Series:
             if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
                 np_arr = np.array(data)
                 arrow_array = pa.array(np_arr)
+            elif data and isinstance(data[0], tuple):
+                dtype = DataType._infer_dtype_from_pylist(data)
+                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
             else:
                 arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
             return Series.from_arrow(arrow_array, name=name, dtype=dtype)
@@ -1050,14 +1052,6 @@ class SeriesPartitioningNamespace(SeriesNamespace):
 
 
 class SeriesListNamespace(SeriesNamespace):
-    def lengths(self) -> Series:
-        warnings.warn(
-            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'length'",
-            category=DeprecationWarning,
-        )
-
-        return self._eval_expressions("list_count", mode=CountMode.All)
-
     def length(self) -> Series:
         return self._eval_expressions("list_count", mode=CountMode.All)
 

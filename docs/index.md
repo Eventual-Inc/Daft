@@ -1,8 +1,458 @@
-# Overview
+# Introduction
 
-Welcome to **Daft**!
+Daft is a high-performance data engine providing simple and reliable data processing for any modality and scale.
 
-Daft is a high-performance data engine providing simple and reliable data processing for any modality and scale, from local to petabyte-scale distributed workloads. The core engine is written in Rust and exposes both SQL and Python DataFrame interfaces as first-class citizens.
+<style>
+  .daft-pipeline-component {
+    color: #1a1a1a;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    margin: 20px 0;
+  }
+
+  /* Dark mode overrides */
+  @media (prefers-color-scheme: dark) {
+    .daft-pipeline-component {
+      color: #f4f7ff;
+    }
+    .daft-pipeline-component .stage-header {
+      color: #c7d2fe;
+    }
+    .daft-pipeline-component .description p {
+      color: #f4f7ff;
+    }
+    .daft-pipeline-component .description p:last-child {
+      color: rgba(199, 210, 254, 0.7);
+    }
+    .daft-pipeline-component .source-comment {
+      color: rgba(199, 210, 254, 0.7);
+    }
+    .daft-pipeline-component .pipeline-item {
+      background: rgba(255,255,255,.02);
+      border-color: rgba(255,255,255,.08);
+      color: #f4f7ff;
+    }
+  }
+
+  /* Material for MkDocs dark mode */
+  [data-md-color-scheme="slate"] .daft-pipeline-component {
+    color: #f4f7ff;
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .stage-header {
+    color: #c7d2fe;
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .description p {
+    color: #f4f7ff;
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .description p:last-child {
+    color: rgba(199, 210, 254, 0.7);
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .source-comment {
+    color: rgba(199, 210, 254, 0.7);
+  }
+  [data-md-color-scheme="slate"] .daft-pipeline-component .pipeline-item {
+    background: rgba(255,255,255,.02);
+    border-color: rgba(255,255,255,.08);
+    color: #f4f7ff;
+  }
+
+  .daft-pipeline-component .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .daft-pipeline-component .stage-box {
+    padding: 6px;
+  }
+
+  .daft-pipeline-component .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+  }
+
+  .daft-pipeline-component .stage-header {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #6366f1;
+    font-size: clamp(12px, 1.2vw, 14px);
+    margin-bottom: 12px;
+  }
+
+  .daft-pipeline-component .description {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .daft-pipeline-component .description p {
+    margin: 0 0 12px 0;
+    line-height: 1.5;
+    color: #1a1a1a;
+    font-size: 15px;
+  }
+
+  .daft-pipeline-component .description p:last-child {
+    margin: 0;
+    font-size: 13px;
+    color: rgba(75, 85, 99, 0.8);
+    font-style: italic;
+  }
+
+  .daft-pipeline-component .source-comment {
+    color: rgba(75, 85, 99, 0.8);
+  }
+
+  .daft-pipeline-component .pipeline-item {
+    background: rgba(0,0,0,.04);
+    border: 1px solid rgba(0,0,0,.15);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    min-height: 60px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: clamp(13px, 1.8vw, 16px);
+    color: #1a1a1a;
+  }
+
+  .daft-pipeline-component .type {
+    display: inline-block;
+    white-space: normal;
+    word-wrap: break-word;
+  }
+
+  .daft-pipeline-component .cursor {
+    color: #ff00ff;
+    animation: daft-caret .9s steps(1,end) infinite;
+  }
+
+  @keyframes daft-caret {
+    50% { opacity: 0; }
+  }
+
+  .daft-pipeline-component .fade-in {
+    animation: daft-enter .45s ease both;
+  }
+
+  @keyframes daft-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (max-width: 720px) {
+    .daft-pipeline-component .stage-box {
+      padding: 8px;
+    }
+    .daft-pipeline-component .row {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    .daft-pipeline-component .pipeline-item {
+      min-height: 80px;
+      padding: 12px 16px;
+    }
+    .daft-pipeline-component .description p:last-child {
+      font-size: 12px;
+      margin-top: 4px;
+    }
+  }
+</style>
+
+<div class="daft-pipeline-component">
+  <div class="container">
+    <div class="stage-box">
+      <div class="row">
+        <div class="description">
+          <div class="stage-header">READ ANYTHING</div>
+          <p>Daft reads raw unstructured and multimodal data collected from application systems</p>
+          <p>Object Store (AWS S3, GCS, R2)<br>Event Bus (Kafka)<br>Data Lake (Iceberg, Deltalake)</p>
+        </div>
+        <div class="pipeline-item">
+          <span id="read" class="swap"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-box">
+      <div class="row">
+        <div class="description">
+          <div class="stage-header">EXPENSIVE TRANSFORMATIONS</div>
+          <p>Build efficient Daft data pipelines involving heavy transformations</p>
+          <p>GPU models<br>User-provided Python code<br>External LLM APIs</p>
+        </div>
+        <div class="pipeline-item">
+          <span id="xform" class="swap"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-box">
+      <div class="row">
+        <div class="description">
+          <div class="stage-header">WRITE</div>
+          <p>Daft lands data into specialized data systems for downstream use-cases</p>
+          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model Training (S3 object storage)</p>
+        </div>
+        <div class="pipeline-item">
+          <span id="write" class="swap"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+// Hierarchical data buckets by modality with transform-to-write mappings
+const MODALITIES = {
+  "Images": {
+    sources: ["*.jpeg files in S3", "URLs in database", "*.parquet on Huggingface"],
+    transforms: {
+      "OCR for text extraction": {
+        details: ["# use Tesseract OCR engine", "# use Azure Computer Vision API"],
+        destinations: {
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Image captioning with LLM": {
+        details: ["# use qwen model on H100 GPU"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MongoDB": "# for querying by webapps"
+        }
+      },
+      "Object detection": {
+        details: ["# use YOLOv8 model on GPU", "# use Azure Object Detection APIs"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MySQL": "# for querying by webapps"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use CLIP model on GPU", "# use OpenAI text-embedding-3"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
+    }
+  },
+  "Documents": {
+    sources: ["*.pdf files in S3", "*.docx files in GCS", "*.html files in R2", "*.parquet on Huggingface"],
+    transforms: {
+      "OCR for text extraction": {
+        details: ["# use Tesseract OCR engine", "# use EasyOCR with GPU acceleration", "# use Azure Computer Vision API"],
+        destinations: {
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Structured data extraction": {
+        details: ["# use OpenAI's API for gpt-4o", "# use Azure Form Recognizer APIs"],
+        destinations: {
+          "BigQuery": "# for analytics",
+          "Snowflake": "# for analytics",
+          "Databricks": "# for analytics"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use OpenAI's API for text-embedding-3", "# use sentence-transformers on GPU"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      },
+      "PII detection": {
+        details: ["# use spaCy NER model", "# use Azure PII detection"],
+        destinations: {
+          "BigQuery": "# for analytics",
+          "Snowflake": "# for analytics",
+          "Databricks": "# for analytics"
+        }
+      },
+      "Chunking + deduplication": {
+        details: ["# use daft default splitting"],
+        destinations: {
+          "Parquet": "# for data lake storage"
+        }
+      }
+    }
+  },
+  "Video": {
+    sources: ["*.mp4 files in S3", "URLs in CSVs", "*.parquet on Huggingface"],
+    transforms: {
+      "Video captioning": {
+        details: ["# custom Python code: extract audio and transcribe"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps"
+        }
+      },
+      "Scene detection": {
+        details: ["# use OpenCV scene detection", "# use PySceneDetect library"],
+        destinations: {
+          "AWS S3": "# for object storage"
+        }
+      },
+      "Audio transcription": {
+        details: ["# use Whisper model on GPU", "# use Azure Speech Services API"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MongoDB": "# for querying by webapps",
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use CLIP model on CPU", "# use CLIP model on GPU"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
+    }
+  },
+  "Audio (WAV/MP3/FLAC)": {
+    sources: ["*.wav files in S3", "URLs in database", "*.parquet on Huggingface"],
+    transforms: {
+      "Transcription with Whisper": {
+        details: ["# use Whisper.cpp on CPU", "# use Azure Speech Services API"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MongoDB": "# for querying by webapps",
+          "Elasticsearch": "# for full-text search"
+        }
+      },
+      "Speaker identification": {
+        details: ["# use custom Python code with pyannote.audio", "# use Azure Speaker Recognition API"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MySQL": "# for querying by webapps"
+        }
+      },
+      "Emotion detection": {
+        details: ["# use custom Python code with wav2vec2", "# use Azure Emotion API"],
+        destinations: {
+          "BigQuery": "# for analytics",
+          "Snowflake": "# for analytics",
+          "Databricks": "# for analytics"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use custom Python code with wav2vec2", "# use OpenAI's endpoint for text-embedding-3"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
+    }
+  },
+  "AI Agent Logs": {
+    sources: ["JSON logs in Kafka", "JSON-lines in S3"],
+    transforms: {
+      "LLM summarization": {
+        details: ["# use OpenAI gpt-4o endpoint", "# use Claude 3.5 Sonnet API endpoint", "# use custom summarization model on GPUs"],
+        destinations: {
+          "PostgreSQL": "# for querying by webapps",
+          "MySQL": "# for querying by webapps"
+        }
+      },
+      "Generate embeddings": {
+        details: ["# use OpenAI's endpoint for text-embedding-3", "# use sentence-transformers on GPUs", "# use BERT model on GPUs"],
+        destinations: {
+          "Turbopuffer": "# for vector search",
+          "LanceDB": "# for vector search"
+        }
+      }
+    }
+  }
+};
+
+// Helpers
+const q = (id) => document.getElementById(id);
+
+// Wait for DOM to be ready
+function waitForElements() {
+    const els = { read: q("read"), xform: q("xform"), write: q("write") };
+    if (els.read && els.xform && els.write) {
+        return els;
+    }
+    return null;
+}
+
+function pick(list, last) {
+    if (list.length < 2) return list[0];
+    let choice;
+    do choice = list[(Math.random() * list.length) | 0];
+    while (choice === last);
+    return choice;
+}
+
+// Typewriter effect
+async function typeTo(el, text) {
+    if (!el) return; // Safety check for null elements
+
+    const speed = 12 + Math.random() * 10;
+    el.classList.remove("fade-in");
+    el.innerHTML = "";
+    const span = document.createElement("span");
+    span.className = "type";
+    el.appendChild(span);
+
+    for (let i = 0; i <= text.length; i++) {
+        const currentText = text.slice(0, i);
+        const lines = currentText.split('\n');
+        const formattedLines = lines.map(line => {
+            if (line.startsWith('# ')) {
+                return `<span class="source-comment">${line}</span>`;
+            }
+            return line;
+        });
+        span.innerHTML = formattedLines.join('\n') + '<span class="cursor">█</span>';
+        await new Promise(r => setTimeout(r, speed));
+    }
+    el.classList.add("fade-in");
+}
+
+// Cycle logic
+let last = { read: null, xform: null, write: null, source: null, detail: null };
+async function shuffleAll() {
+    const els = waitForElements();
+    if (!els) return; // Exit if elements aren't ready
+
+    const modalities = Object.keys(MODALITIES);
+    const read = pick(modalities, last.read);
+    const modality = MODALITIES[read];
+    const source = pick(modality.sources, last.source);
+    const transforms = Object.keys(modality.transforms);
+    const xform = pick(transforms, last.xform);
+    const transformData = modality.transforms[xform];
+    const detail = pick(transformData.details, last.detail);
+    const destinations = Object.keys(transformData.destinations);
+    const write = pick(destinations, last.write);
+    const writeUseCase = transformData.destinations[write];
+    last = { read, xform, write, source, detail };
+
+    await Promise.all([
+        typeTo(els.read, read + "\n" + "# " + source),
+        typeTo(els.xform, xform + "\n" + detail),
+        typeTo(els.write, write + "\n" + writeUseCase)
+    ]);
+}
+
+// Auto-advance with delay
+async function runCycle() {
+    await shuffleAll();
+    await new Promise(resolve => setTimeout(resolve, 8000));
+}
+
+// Start the cycle
+runCycle();
+setInterval(runCycle, 4600);
+</script>
 
 ## Why Daft?
 

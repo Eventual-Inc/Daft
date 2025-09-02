@@ -2341,6 +2341,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "common-version",
+ "daft-ai",
  "daft-algebra",
  "daft-catalog",
  "daft-cli",
@@ -2392,6 +2393,13 @@ dependencies = [
  "pyo3-log",
  "sysinfo 0.32.1",
  "tikv-jemallocator",
+]
+
+[[package]]
+name = "daft-ai"
+version = "0.3.0-dev0"
+dependencies = [
+ "pyo3",
 ]
 
 [[package]]
@@ -3277,6 +3285,7 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
+ "daft-ai",
  "daft-catalog",
  "daft-core",
  "daft-dsl",

@@ -26,7 +26,7 @@ This example shows reading a video's frames into a DataFrame.
 
 ```{title="Output"}
 ╭────────────────────────────────┬──────────────┬────────────────────┬─────────────────┬───────────┬───────────┬────────────────┬──────────────┬───────────────────────╮
-│ path                           ┆ frame_index ┆ frame_time         ┆ frame_time_base ┆ frame_pts ┆ frame_dts ┆ frame_duration ┆ is_key_frame ┆ data                  │
+│ path                           ┆ frame_index  ┆ frame_time         ┆ frame_time_base ┆ frame_pts ┆ frame_dts ┆ frame_duration ┆ is_key_frame ┆ data                  │
 │ ---                            ┆ ---          ┆ ---                ┆ ---             ┆ ---       ┆ ---       ┆ ---            ┆ ---          ┆ ---                   │
 │ Utf8                           ┆ Int64        ┆ Float64            ┆ Utf8            ┆ Int64     ┆ Int64     ┆ Int64          ┆ Boolean      ┆ Image[RGB; 480 x 640] │
 ╞════════════════════════════════╪══════════════╪════════════════════╪═════════════════╪═══════════╪═══════════╪════════════════╪══════════════╪═══════════════════════╡

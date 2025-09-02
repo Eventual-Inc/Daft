@@ -289,7 +289,7 @@ To **drop** columns from the DataFrame, use the [`df.exclude()`][daft.DataFrame.
 
 ### Transform Columns with Expressions
 
-[Expressions](core_concepts.md#expressions) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`][daft.col] expressions together with the [`with_column`][daft.DataFrame.with_column] method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
+[Expressions](api/expressions.md) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`][daft.col] expressions together with the [`with_column`][daft.DataFrame.with_column] method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
 
 === "🐍 Python"
 
@@ -511,22 +511,6 @@ You can **group** and **aggregate** your data using the [`df.groupby()`][daft.Da
 
 Now that you have a basic sense of Daft’s functionality and features, here are some more resources to help you get the most out of Daft:
 
-<!-- **Check out our [Core Concepts](core_concepts.md) for more details about:**
-
-<div class="grid cards" markdown>
-
-- [:material-filter: **DataFrame Operations**](core_concepts.md#dataframe)
-- [:octicons-code-16: **Expressions**](core_concepts.md#expressions)
-- [:material-file-eye: **Reading Data**](core_concepts.md#reading-data)
-- [:material-file-edit: **Writing Data**](core_concepts.md#reading-data)
-- [:fontawesome-solid-square-binary: **DataTypes**](core_concepts.md#datatypes)
-- [:simple-quicklook: **SQL**](core_concepts.md#sql)
-- [:material-select-group: **Aggregations and Grouping**](core_concepts.md#aggregations-and-grouping)
-- [:material-window-closed-variant: **Window Functions**](core_concepts.md#window-functions)
-- [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
-- [:octicons-image-16: **Multimodal Data**](core_concepts.md#multimodal-data)
-
-</div> -->
 
 **Work with your favorite table and catalog formats**:
 

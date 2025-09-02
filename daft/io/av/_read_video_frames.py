@@ -9,7 +9,6 @@ from typing_extensions import TypeAlias
 
 from daft.daft import FileInfos, ImageMode
 from daft.datatype import DataType
-from daft.dependencies import np
 from daft.filesystem import _infer_filesystem, glob_path_with_stats
 from daft.io import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
@@ -24,7 +23,13 @@ if TYPE_CHECKING:
     from daft.daft import IOConfig
     from daft.io.pushdowns import Pushdowns
 
-_VideoFrameData: TypeAlias = np.typing.NDArray[Any]
+
+if TYPE_CHECKING:
+    from daft.dependencies import np
+
+    _VideoFrameData: TypeAlias = np.typing.NDArray[Any]
+else:
+    _VideoFrameData: TypeAlias = Any
 
 
 @dataclass

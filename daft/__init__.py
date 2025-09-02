@@ -60,7 +60,12 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
+from daft.context import (
+    set_execution_config,
+    set_planning_config,
+    execution_config_ctx,
+    planning_config_ctx,
+)
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -74,6 +79,49 @@ from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
+from daft.series import Series
+from daft.session import (
+    Session,
+    attach,
+    attach_catalog,
+    attach_provider,
+    attach_function,
+    attach_table,
+    create_namespace,
+    create_namespace_if_not_exists,
+    create_table,
+    create_table_if_not_exists,
+    create_temp_table,
+    current_catalog,
+    current_model,
+    current_namespace,
+    current_provider,
+    current_session,
+    detach_catalog,
+    detach_function,
+    detach_provider,
+    detach_table,
+    drop_namespace,
+    drop_table,
+    get_catalog,
+    get_provider,
+    get_table,
+    has_catalog,
+    has_namespace,
+    has_provider,
+    has_table,
+    list_catalogs,
+    list_tables,
+    read_table,
+    session,
+    set_catalog,
+    set_model,
+    set_namespace,
+    set_provider,
+    set_session,
+    write_table,
+)
+from daft.udf import udf, _DaftFuncDecorator as func
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -91,54 +139,15 @@ from daft.io import (
     read_video_frames,
     read_warc,
     read_huggingface,
-)
-from daft.series import Series
-from daft.session import (
-    Session,
-    attach,
-    attach_catalog,
-    attach_table,
-    create_namespace,
-    create_namespace_if_not_exists,
-    create_table,
-    create_table_if_not_exists,
-    create_temp_table,
-    current_catalog,
-    current_model,
-    current_namespace,
-    current_provider,
-    current_session,
-    detach_catalog,
-    detach_table,
-    drop_namespace,
-    drop_table,
-    get_catalog,
-    get_table,
-    has_catalog,
-    has_namespace,
-    has_table,
-    list_catalogs,
-    list_tables,
-    read_table,
-    set_catalog,
-    set_model,
-    set_namespace,
-    set_provider,
-    set_session,
-    write_table,
-    attach_function,
-    detach_function,
+    read_mcap,
 )
 from daft.sql import sql, sql_expr
-from daft.udf import udf, _DaftFuncDecorator as func
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File
 
 import daft.context as context
 import daft.io as io
-
-to_struct = Expression.to_struct
 
 __all__ = [
     "Catalog",
@@ -162,6 +171,7 @@ __all__ = [
     "attach",
     "attach_catalog",
     "attach_function",
+    "attach_provider",
     "attach_table",
     "coalesce",
     "col",
@@ -178,6 +188,7 @@ __all__ = [
     "current_session",
     "detach_catalog",
     "detach_function",
+    "detach_provider",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -192,9 +203,11 @@ __all__ = [
     "from_ray_dataset",
     "func",
     "get_catalog",
+    "get_provider",
     "get_table",
     "has_catalog",
     "has_namespace",
+    "has_provider",
     "has_table",
     "interval",
     "io",
@@ -211,6 +224,7 @@ __all__ = [
     "read_iceberg",
     "read_json",
     "read_lance",
+    "read_mcap",
     "read_parquet",
     "read_sql",
     "read_table",
@@ -218,6 +232,7 @@ __all__ = [
     "read_warc",
     "refresh_logger",
     "register_viz_hook",
+    "session",
     "set_catalog",
     "set_execution_config",
     "set_model",
@@ -228,7 +243,6 @@ __all__ = [
     "sql",
     "sql_expr",
     "struct",
-    "to_struct",
     "udf",
     "write_table",
 ]

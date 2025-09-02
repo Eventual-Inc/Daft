@@ -4,6 +4,11 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
 <div class="grid cards" markdown>
 
+- [**AI**](ai.md)
+
+    Functions and interfaces for building AI applications with daft. This includes providers
+    and various model inference protocols such as text embedding.
+
 - [**I/O**](io.md)
 
     Variety of approaches to creating a DataFrame from reading various data sources like in-memory data, files, data catalogs, and integrations and writing to various data sources.

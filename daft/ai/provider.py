@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+from typing_extensions import Unpack
 
 if TYPE_CHECKING:
+    from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import TextEmbedderDescriptor
-    from daft.ai.typing import Options
 
 
 class ProviderImportError(ImportError):
@@ -14,24 +16,34 @@ class ProviderImportError(ImportError):
         super().__init__(f"Missing required dependencies: {deps}. " f"Please install {deps} to use this provider.")
 
 
-def load_sentence_transformers(options: Options) -> Provider:
+def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions]) -> Provider:
+    try:
+        from daft.ai.openai import OpenAIProvider
+
+        return OpenAIProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["openai"]) from e
+
+
+def load_sentence_transformers(name: str | None = None, **options: Any) -> Provider:
     try:
         from daft.ai.sentence_transformers import SentenceTransformersProvider
 
-        return SentenceTransformersProvider(**options)
+        return SentenceTransformersProvider(name, **options)
     except ImportError as e:
         raise ProviderImportError(["sentence_transformers", "torch"]) from e
 
 
-PROVIDERS: dict[str, Callable[[Options], Provider]] = {
+PROVIDERS: dict[str, Callable[..., Provider]] = {
+    "openai": load_openai,
     "sentence_transformers": load_sentence_transformers,
 }
 
 
-def load_provider(provider: str, **options: str) -> Provider:
+def load_provider(provider: str, name: str | None = None, **options: Any) -> Provider:
     if provider not in PROVIDERS:
         raise ValueError(f"Provider '{provider}' is not yet supported.")
-    return PROVIDERS[provider](options)
+    return PROVIDERS[provider](name, **options)
 
 
 class Provider(ABC):
@@ -43,7 +55,13 @@ class Provider(ABC):
         We could opt to include a factory method location (descriptor's init) in the serialization.
     """
 
+    @property
     @abstractmethod
-    def get_text_embedder(self, model: str | None = None, **options: str) -> TextEmbedderDescriptor:
+    def name(self) -> str:
+        """Returns the provider's name."""
+        ...
+
+    @abstractmethod
+    def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
         """Returns a TextEmbedderDescriptor for this provider."""
         ...

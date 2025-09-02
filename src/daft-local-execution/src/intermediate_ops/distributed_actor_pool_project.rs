@@ -13,6 +13,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use rand::Rng;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -47,26 +48,31 @@ impl ActorHandle {
         }
     }
 
-    fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        #[cfg(feature = "python")]
-        {
-            Python::with_gil(|py| {
-                Ok(self
-                    .inner
-                    .bind(py)
-                    .call_method1(
-                        pyo3::intern!(py, "eval_input"),
-                        (PyMicroPartition::from(input),),
-                    )?
-                    .extract::<PyMicroPartition>()?
-                    .into())
-            })
-        }
-
-        #[cfg(not(feature = "python"))]
-        {
-            panic!("Cannot evaluate a UDF without compiling for Python");
-        }
+    #[cfg(feature = "python")]
+    async fn eval_input(
+        &self,
+        input: Arc<MicroPartition>,
+        task_locals: pyo3_async_runtimes::TaskLocals,
+    ) -> DaftResult<Arc<MicroPartition>> {
+        let inner = self.inner.clone();
+        let await_coroutine = async move {
+            let result = Python::with_gil(|py| {
+                let coroutine = inner.call_method1(
+                    py,
+                    pyo3::intern!(py, "eval_input"),
+                    (PyMicroPartition::from(input),),
+                )?;
+                pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
+            })?
+            .await?;
+            DaftResult::Ok(result)
+        };
+        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
+            .await
+            .and_then(|result| {
+                Python::with_gil(|py| result.extract::<PyMicroPartition>(py)).map_err(|e| e.into())
+            })?;
+        Ok(result.into())
     }
 }
 
@@ -86,6 +92,8 @@ pub(crate) struct DistributedActorPoolProjectOperator {
     batch_size: Option<usize>,
     memory_request: u64,
     counter: AtomicUsize,
+    #[cfg(feature = "python")]
+    task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
 impl DistributedActorPoolProjectOperator {
@@ -111,12 +119,36 @@ impl DistributedActorPoolProjectOperator {
             local_actor_handles
         };
 
+        Self::new_with_task_locals(actor_handles, batch_size, memory_request)
+    }
+
+    #[cfg(feature = "python")]
+    fn new_with_task_locals(
+        actor_handles: Vec<ActorHandle>,
+        batch_size: Option<usize>,
+        memory_request: u64,
+    ) -> DaftResult<Self> {
+        let task_locals = Python::with_gil(pyo3_async_runtimes::tokio::get_current_locals)?;
+        let init_counter = if actor_handles.is_empty() {
+            0
+        } else {
+            rand::thread_rng().gen_range(0..actor_handles.len())
+        };
         Ok(Self {
             actor_handles,
             batch_size,
             memory_request,
-            counter: AtomicUsize::new(0),
+            counter: AtomicUsize::new(init_counter),
+            task_locals,
         })
+    }
+    #[cfg(not(feature = "python"))]
+    fn new_with_task_locals(
+        actor_handles: Vec<ActorHandle>,
+        batch_size: Option<usize>,
+        memory_request: u64,
+    ) -> DaftResult<Self> {
+        unimplemented!("DistributedActorPoolProjectOperator::new_with_task_locals is not implemented without Python");
     }
 }
 
@@ -131,18 +163,29 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
-        let fut = task_spawner.spawn_with_memory_request(
-            memory_request,
-            async move {
-                let res = state
-                    .actor_handle
-                    .eval_input(input)
-                    .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
-                Ok((state, res))
-            },
-            Span::current(),
-        );
-        fut.into()
+        #[cfg(feature = "python")]
+        {
+            let task_locals = Python::with_gil(|py| self.task_locals.clone_ref(py));
+            let fut = task_spawner.spawn_with_memory_request(
+                memory_request,
+                async move {
+                    let res = state
+                        .actor_handle
+                        .eval_input(input, task_locals)
+                        .await
+                        .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+                    Ok((state, res))
+                },
+                Span::current(),
+            );
+            fut.into()
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            unimplemented!(
+                "DistributedActorPoolProjectOperator::execute is not implemented without Python"
+            );
+        }
     }
 
     fn name(&self) -> NodeName {

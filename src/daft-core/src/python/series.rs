@@ -38,7 +38,6 @@ impl PySeries {
         let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
-
         let field = Field::new(name, DataType::Python);
         let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
         let series = data_array.cast(&dtype)?;
