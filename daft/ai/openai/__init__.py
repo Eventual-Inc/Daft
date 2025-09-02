@@ -74,4 +74,4 @@ class LMStudioProvider(OpenAIProvider):
         )
 
     def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
-        raise NotImplementedError("embed_image is not currently implemented for the OpenAI provider")
+        raise NotImplementedError("embed_image is not currently implemented for the LM Studio provider")
