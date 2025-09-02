@@ -255,9 +255,22 @@ fn generate_interactive_html(
     html.push(format!(
         r#"
         <script>
-        (function() {{
-            const serverUrl = 'http://{}:{}';
+        (async function() {{
+            const host = '{}';
+            const port = '{}';
             const dfId = '{}';
+
+            // Check if running in Google Colab and modify URL if needed
+            let serverUrl = 'http://' + host + ':' + port;
+            if (typeof google !== 'undefined' && google.colab && google.colab.kernel) {{
+                try {{
+                    const colabUrl = await google.colab.kernel.proxyPort(port, {{'cache': true}});
+                    serverUrl = colabUrl;
+                }} catch (error) {{
+                    console.warn('Failed to get Colab proxy URL, using original URL:', error);
+                }}
+            }}
+
             const dataframeElement = document.getElementById('dataframe-' + dfId);
             const cells = dataframeElement ? dataframeElement.querySelectorAll('td') : [];
             const sidePane = document.getElementById('side-pane-' + dfId);
