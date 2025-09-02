@@ -88,7 +88,7 @@ class UdfHandle:
         expr_projection = ExpressionsProjection(
             [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
         )
-        expr_projection_bytes = daft.pickle.dumps((project_expr.name(), expr_projection))
+        expr_projection_bytes = daft.pickle.dumps(expr_projection)
         self.handle_conn.send((_ENTER, expr_projection_bytes))
         response = self.handle_conn.recv()
         if response != _READY:

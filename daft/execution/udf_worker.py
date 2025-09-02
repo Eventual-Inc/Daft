@@ -45,16 +45,8 @@ def udf_event_loop(
 
             # We initialize after ready to avoid blocking the main thread
             if expression_projection is None:
-                input = daft.pickle.loads(expr_projection_bytes)
-                udf_name: str = input[0]
-                uninitialized_projection: ExpressionsProjection = input[1]
-                try:
-                    expression_projection = ExpressionsProjection(
-                        [e._initialize_udfs() for e in uninitialized_projection]
-                    )
-                except Exception as init_exc:
-                    error_note = f"User-defined function `{udf_name}` failed to initialize"
-                    raise UDFException(error_note) from init_exc
+                uninitialized_projection: ExpressionsProjection = daft.pickle.loads(expr_projection_bytes)
+                expression_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
             input_bytes = transport.read_and_release(name, size)
             input = MicroPartition.from_ipc_stream(input_bytes)
