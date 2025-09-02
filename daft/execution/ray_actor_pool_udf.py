@@ -94,6 +94,8 @@ async def start_udf_actors(
     # Wait for actors to be ready
     ready_futures = [asyncio.wrap_future(actor.__ray_ready__.remote().future()) for actor in actors]
     ready_refs, _ = await asyncio.wait(ready_futures, return_when=asyncio.ALL_COMPLETED, timeout=timeout)
+
+    # Verify that the __ray_ready__ calls were successful
     await asyncio.gather(*ready_refs)
 
     if not ready_refs:
@@ -101,6 +103,7 @@ async def start_udf_actors(
             f"UDF actors failed to start within {timeout} seconds, please increase the actor_udf_ready_timeout config via daft.set_execution_config(actor_udf_ready_timeout=timeout)"
         )
 
-    # Return all actors as long as at least one is ready, as some might come up later
-    handles = [UDFActorHandle(actor) for actor in actors]
-    return handles
+    # Return the ready actors
+    ready_indices = [ready_futures.index(ref) for ref in ready_refs]
+    ready_actors = [UDFActorHandle(actors[i]) for i in ready_indices]
+    return ready_actors
