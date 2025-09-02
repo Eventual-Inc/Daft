@@ -16,6 +16,7 @@ __all__ = [
     "Descriptor",
     "Embedding",
     "EmbeddingDimensions",
+    "Image",
 ]
 
 
@@ -47,8 +48,10 @@ if TYPE_CHECKING:
     from daft.dependencies import np
 
     Embedding: TypeAlias = np.typing.NDArray[Any]
+    Image: TypeAlias = np.ndarray[Any, Any]
 else:
     Embedding: TypeAlias = Any
+    Image: TypeAlias = Any
 
 
 @dataclass

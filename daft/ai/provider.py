@@ -7,13 +7,22 @@ from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.protocols import TextEmbedderDescriptor
+    from daft.ai.protocols import ImageEmbedderDescriptor, TextEmbedderDescriptor
 
 
 class ProviderImportError(ImportError):
     def __init__(self, dependencies: list[str]):
         deps = ", ".join(f"'{d}'" for d in dependencies)
         super().__init__(f"Missing required dependencies: {deps}. " f"Please install {deps} to use this provider.")
+
+
+def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.openai import LMStudioProvider
+
+        return LMStudioProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["openai"]) from e
 
 
 def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions]) -> Provider:
@@ -34,19 +43,20 @@ def load_sentence_transformers(name: str | None = None, **options: Any) -> Provi
         raise ProviderImportError(["sentence_transformers", "torch"]) from e
 
 
-def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
+def load_transformers(name: str | None = None, **options: Any) -> Provider:
     try:
-        from daft.ai.openai import LMStudioProvider
+        from daft.ai.transformers import TransformersProvider
 
-        return LMStudioProvider(name, **options)
+        return TransformersProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["openai"]) from e
+        raise ProviderImportError(["torch", "torchvision", "transformers", "Pillow"]) from e
 
 
 PROVIDERS: dict[str, Callable[..., Provider]] = {
+    "lm_studio": load_lm_studio,
     "openai": load_openai,
     "sentence_transformers": load_sentence_transformers,
-    "lm_studio": load_lm_studio,
+    "transformers": load_transformers,
 }
 
 
@@ -74,4 +84,9 @@ class Provider(ABC):
     @abstractmethod
     def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
         """Returns a TextEmbedderDescriptor for this provider."""
+        ...
+
+    @abstractmethod
+    def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
+        """Returns an ImageEmbedderDescriptor for this provider."""
         ...
