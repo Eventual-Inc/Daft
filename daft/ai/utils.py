@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import torch
-
 
 def get_device() -> torch.device:
     """Get the best available PyTorch device for computation.
@@ -11,6 +9,8 @@ def get_device() -> torch.device:
     2. MPS (Metal Performance Shaders) - for Apple Silicon Macs
     3. CPU - as fallback when no GPU acceleration is available
     """
+    import torch
+    
     device = (
         torch.device("cuda")
         if torch.cuda.is_available()
