@@ -111,7 +111,7 @@ impl InProgressShuffleCache {
             let writer = make_ipc_writer(
                 &partition_dir,
                 target_filesize,
-                Some(compression.unwrap_or("zstd")),
+                compression
             )?;
             writers.push(writer);
         }
