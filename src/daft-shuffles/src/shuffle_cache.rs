@@ -108,7 +108,11 @@ impl InProgressShuffleCache {
             let partition_dir = get_partition_dir(&shuffle_dirs, partition_idx);
             std::fs::create_dir_all(&partition_dir)?;
 
-            let writer = make_ipc_writer(&partition_dir, target_filesize, compression)?;
+            let writer = make_ipc_writer(
+                &partition_dir,
+                target_filesize,
+                Some(compression.unwrap_or("zstd")),
+            )?;
             writers.push(writer);
         }
 

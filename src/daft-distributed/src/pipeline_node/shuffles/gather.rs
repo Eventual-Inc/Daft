@@ -83,6 +83,7 @@ impl GatherNode {
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
             &(self_clone as Arc<dyn DistributedPipelineNode>),
+            None,
         )?;
 
         let _ = result_tx.send(task).await;

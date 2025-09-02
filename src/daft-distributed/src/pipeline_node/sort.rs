@@ -211,6 +211,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
             return Ok(());
@@ -242,6 +243,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -281,6 +283,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -312,6 +315,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
         }

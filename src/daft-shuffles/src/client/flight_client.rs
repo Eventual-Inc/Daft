@@ -40,8 +40,12 @@ impl ShuffleFlightClient {
             let channel = endpoint.connect().await.map_err(|e| {
                 DaftError::External(format!("Failed to connect to endpoint: {}", e).into())
             })?;
-            self.inner =
-                ClientState::Initialized(std::mem::take(address), FlightClient::new(channel));
+            let client = FlightClient::new(channel);
+            let inner = client.into_inner().max_decoding_message_size(usize::MAX);
+            self.inner = ClientState::Initialized(
+                std::mem::take(address),
+                FlightClient::new_from_inner(inner),
+            );
         }
         match &mut self.inner {
             ClientState::Uninitialized(_) => unreachable!("Client should be initialized"),
