@@ -9,11 +9,11 @@ from transformers import AutoConfig, AutoModel, AutoProcessor
 from daft import DataType
 from daft.ai.protocols import ImageEmbedder, ImageEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, Options
+from daft.ai.utils import get_device
 from daft.dependencies import pil_image
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Embedding
-    from daft.dependencies import np
+    from daft.ai.typing import Embedding, Image
 
 
 @dataclass
@@ -45,13 +45,7 @@ class TransformersImageEmbedder(ImageEmbedder):
     options: Options
 
     def __init__(self, model_name_or_path: str, **options: Any):
-        self.device = (
-            torch.device("cuda")
-            if torch.cuda.is_available()
-            else torch.device("mps")
-            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-            else torch.device("cpu")
-        )
+        self.device = get_device()
         self.model = AutoModel.from_pretrained(
             model_name_or_path,
             trust_remote_code=True,
@@ -60,7 +54,7 @@ class TransformersImageEmbedder(ImageEmbedder):
         self.processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, use_fast=True)
         self.options = options
 
-    def embed_image(self, images: list[np.ndarray[Any, Any]]) -> list[Embedding]:
+    def embed_image(self, images: list[Image]) -> list[Embedding]:
         # TODO(desmond): There's potential for image decoding and processing on the GPU with greater
         # performance. Methods differ a little between different models, so let's do it later.
         pil_images = [pil_image.fromarray(image) for image in images]

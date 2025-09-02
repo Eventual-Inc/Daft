@@ -6,17 +6,14 @@ pytest.importorskip("transformers")
 pytest.importorskip("torch")
 pytest.importorskip("PIL")
 
-from unittest.mock import patch
 
 import numpy as np
 import torch
 
-import daft
 from daft.ai.protocols import ImageEmbedderDescriptor
 from daft.ai.transformers import TransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
-from daft.functions.ai import embed_image
 from tests.benchmarks.conftest import IS_CI
 
 
@@ -81,30 +78,3 @@ def test_transformers_device_selection():
 
     embedder_device = next(embedder.model.parameters()).device
     assert expected_device in str(embedder_device)
-
-
-def test_transformers_pil_dependency_check():
-    """Test that the embedder properly checks for PIL availability."""
-    provider = TransformersProvider()
-    descriptor = provider.get_image_embedder("openai/clip-vit-base-patch32")
-
-    # This should work when PIL is available (which it should be due to pytest.importorskip).
-    embedder = descriptor.instantiate()
-    assert embedder is not None
-
-
-def test_transformers_pil_dependency_check_failure():
-    """Test that the embedder fails fast when PIL is not available."""
-    with patch("daft.dependencies.pil_image.module_available", return_value=False):
-        provider = TransformersProvider()
-
-        with pytest.raises(ImportError, match="Pillow is required for image processing but not available"):
-            provider.get_image_embedder("openai/clip-vit-base-patch32")
-
-        with pytest.raises(ImportError, match="Pillow is required for image processing but not available"):
-            test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-            (
-                daft.from_pydict({"image": [test_image]})
-                .select(daft.col("image").cast(daft.DataType.image()))
-                .select(embed_image(daft.col("image")))
-            )

@@ -3,7 +3,6 @@ from __future__ import annotations
 from daft.ai.provider import Provider
 
 from daft.ai.transformers.image_embedder import TransformersImageEmbedderDescriptor
-from daft.dependencies import pil_image
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -28,10 +27,6 @@ class TransformersProvider(Provider):
         return self._name
 
     def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
-        # Raise an error early if PIL is not available.
-        if not pil_image.module_available():
-            raise ImportError("Pillow is required for image processing but not available")
-
         return TransformersImageEmbedderDescriptor(model or "openai/clip-vit-base-patch32", options)
 
     def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:

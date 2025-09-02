@@ -40,7 +40,7 @@ def load_transformers(name: str | None = None, **options: Any) -> Provider:
 
         return TransformersProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["transformers", "torch", "torchvision"]) from e
+        raise ProviderImportError(["torch", "torchvision", "transformers", "Pillow"]) from e
 
 
 PROVIDERS: dict[str, Callable[..., Provider]] = {

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from daft.ai.typing import Descriptor
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Embedding, EmbeddingDimensions
-    from daft.dependencies import np
+    from daft.ai.typing import Embedding, EmbeddingDimensions, Image
 
 
 @runtime_checkable
@@ -31,7 +30,7 @@ class TextEmbedderDescriptor(Descriptor[TextEmbedder]):
 class ImageEmbedder(Protocol):
     """Protocol for image embedding implementations."""
 
-    def embed_image(self, image: list[np.ndarray[Any, Any]]) -> list[Embedding]:
+    def embed_image(self, images: list[Image]) -> list[Embedding]:
         """Embeds a batch of images into an embedding vector."""
         ...
 
