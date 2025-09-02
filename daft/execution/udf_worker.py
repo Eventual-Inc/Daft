@@ -70,7 +70,7 @@ def udf_event_loop(
         conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), exc_bytes))
     except Exception as e:
         try:
-            conn.send((_ERROR, TracebackException.from_exception(e)))
+            conn.send((_ERROR, TracebackException.from_exception(e).format()))
         except Exception:
             # If the connection is broken, it's because the parent process has died.
             # We can just exit here.
