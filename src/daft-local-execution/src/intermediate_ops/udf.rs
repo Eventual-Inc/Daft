@@ -300,7 +300,7 @@ impl UdfOperator {
     ) -> DaftResult<Self> {
         let project_unbound = project.inner().clone();
 
-        let num_udfs = count_udfs(&[project_unbound.clone()]);
+        let num_udfs = count_udfs(&project_unbound);
         assert_eq!(num_udfs, 1, "Expected only one udf in an udf project");
         let udf_properties = get_udf_properties(&project_unbound);
 

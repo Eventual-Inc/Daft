@@ -48,8 +48,9 @@ class _DaftFuncDecorator:
     - **Async row-wise** (1 row in, 1 row out) - created by decorating a Python async function
     - **Generator** (1 row in, N rows out) - created by decorating a Python generator function
 
-    Decorated functions accept both their original argument types and Daft Expressions, and return an Expression for lazy evaluation.
-    To run the original function, call `<your_function>.eval(<args>)`.
+    Decorated functions accept both their original argument types and Daft Expressions.
+    When any arguments are Expressions, they return a Daft Expression that can be used in DataFrame operations.
+    When called with their original arguments, they execute immediately and the behavior is the same as if the function was not decorated.
 
     Args:
         return_dtype: The data type that this function should return or yield. If not specified, it is derived from the function's return type hint.

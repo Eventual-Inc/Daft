@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
@@ -39,8 +40,8 @@ class UDFActorHandle:
         self.node_id = node_id
         self.actor = actor_ref
 
-    def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
-        return ray.get(self.actor.eval_input.remote(input))
+    async def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
+        return await self.actor.eval_input.remote(input)
 
     def is_on_current_node(self) -> bool:
         return self.node_id == ray.get_runtime_context().get_node_id()
@@ -49,7 +50,7 @@ class UDFActorHandle:
         ray.kill(self.actor)
 
 
-def start_udf_actors(
+async def start_udf_actors(
     projection: list[PyExpr],
     num_actors: int,
     num_gpus_per_actor: float,
@@ -67,6 +68,6 @@ def start_udf_actors(
         ).remote(expr_projection)
         for _ in range(num_actors)
     ]
-    node_ids = ray.get([actor.get_node_id.remote() for actor in actors])
+    node_ids = await asyncio.gather(*[actor.get_node_id.remote() for actor in actors])
     handles = [UDFActorHandle(node_id, actor) for actor, node_id in zip(actors, node_ids)]
     return handles

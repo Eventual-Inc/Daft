@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import time
 from typing import Any
 
 
@@ -79,13 +78,15 @@ class ProgressBar:
 
         if bar_id not in self.pbars:
             self._make_new_bar(bar_id, bar_name)
+            pb = self.pbars[bar_id]
         else:
             pb = self.pbars[bar_id]
             pb.total += 1
-            if hasattr(pb, "last_print_t"):
-                dt = time.time() - pb.last_print_t
-                if dt >= self._maxinterval:
-                    pb.refresh()
+
+        if self.use_ray_tqdm and hasattr(pb, "_dump_state"):
+            pb._dump_state(True)
+        else:
+            pb.refresh()
 
     def update_bar(self, bar_id: int) -> None:
         if self.disable:

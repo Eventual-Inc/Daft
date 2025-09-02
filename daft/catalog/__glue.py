@@ -408,7 +408,6 @@ class GlueParquetTable(GlueTable):
             file_path_column=None,
             hive_partitioning=self._hive_partitioning,
             coerce_int96_timestamp_unit=None,
-            schema_hints=None,
         )
 
     def append(self, df: DataFrame, **options: Any) -> None:
