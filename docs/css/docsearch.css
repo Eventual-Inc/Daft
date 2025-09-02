@@ -69,7 +69,7 @@
 }
 
 /* DARK MODE OVERRIDES */
-[data-md-color-scheme="slate"] {
+[data-md-color-scheme="slate"][data-md-color-primary="black"] {
     --docsearch-text-color: var(--md-default-fg-color);
     --docsearch-container-background: rgba(0, 0, 0, 0.6);
     --docsearch-modal-background: var(--md-default-bg-color);
