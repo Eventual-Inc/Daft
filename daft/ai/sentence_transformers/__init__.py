@@ -6,7 +6,7 @@ from daft.ai.sentence_transformers.text_embedder import SentenceTransformersText
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
+    from daft.ai.protocols import TextEmbedderDescriptor
     from daft.ai.typing import Options
 
 __all__ = [
@@ -27,5 +27,4 @@ class SentenceTransformersProvider(Provider):
         return self._name
 
     def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
-        # TODO: ASAP plumbing embedding dimensions, can also create a large default table for common models
-        return SentenceTransformersTextEmbedderDescriptor(model or "all-MiniLM-L6-v2", options)
+        return SentenceTransformersTextEmbedderDescriptor(model or "sentence-transformers/all-MiniLM-L6-v2", options)

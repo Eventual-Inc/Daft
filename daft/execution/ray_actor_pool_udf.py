@@ -56,7 +56,9 @@ async def get_ready_actors_by_location(
     current_node_id = ray.get_runtime_context().get_node_id()
 
     # Wait for actors to be ready
-    ready_futures = [handle.actor_ref().__ray_ready__.remote() for handle in actor_handles]
+    ready_futures = [
+        asyncio.wrap_future(handle.actor_ref().__ray_ready__.remote().future()) for handle in actor_handles
+    ]
     ready_refs, _ = await asyncio.wait(ready_futures, return_when=asyncio.ALL_COMPLETED, timeout=timeout)
     await asyncio.gather(*ready_refs)
 
@@ -100,7 +102,7 @@ async def start_udf_actors(
     ]
 
     # Wait for actors to be ready
-    ready_futures = [actor.__ray_ready__.remote() for actor in actors]
+    ready_futures = [asyncio.wrap_future(actor.__ray_ready__.remote().future()) for actor in actors]
     ready_refs, _ = await asyncio.wait(ready_futures, return_when=asyncio.ALL_COMPLETED, timeout=timeout)
     await asyncio.gather(*ready_refs)
 

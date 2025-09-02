@@ -100,12 +100,6 @@ Daft Expressions allow you to express some computation that needs to happen in a
         toc_label: Expression.url
         heading: Expression.url
 
-::: daft.expressions.expressions.ExpressionJsonNamespace
-    options:
-        filters: ["!^_"]
-        toc_label: Expression.json
-        heading: Expression.json
-
 ::: daft.expressions.expressions.ExpressionEmbeddingNamespace
     options:
         filters: ["!^_"]

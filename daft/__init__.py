@@ -139,6 +139,7 @@ from daft.io import (
     read_video_frames,
     read_warc,
     read_huggingface,
+    read_mcap,
 )
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
@@ -147,8 +148,6 @@ from daft.file import File
 
 import daft.context as context
 import daft.io as io
-
-to_struct = Expression.to_struct
 
 __all__ = [
     "Catalog",
@@ -225,6 +224,7 @@ __all__ = [
     "read_iceberg",
     "read_json",
     "read_lance",
+    "read_mcap",
     "read_parquet",
     "read_sql",
     "read_table",
@@ -243,7 +243,6 @@ __all__ = [
     "sql",
     "sql_expr",
     "struct",
-    "to_struct",
     "udf",
     "write_table",
 ]

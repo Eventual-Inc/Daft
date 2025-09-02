@@ -7,13 +7,13 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_runtime::get_compute_runtime;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use rand::Rng;
-use tokio::sync::Mutex;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -115,59 +115,15 @@ impl From<common_py_serde::PyObjectWrapper> for ActorHandle {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum ActorHandlesState {
-    Uninitialized(Vec<ActorHandle>),
-    Initialized(Vec<ActorHandle>),
-}
-
-impl ActorHandlesState {
-    #[cfg(feature = "python")]
-    async fn initialize(
-        &mut self,
-        timeout: usize,
-        task_locals: pyo3_async_runtimes::TaskLocals,
-    ) -> DaftResult<Vec<ActorHandle>> {
-        match self {
-            Self::Uninitialized(actor_handles) => {
-                // Filter for actors on the current node
-                let (local_actor_handles, non_local_actor_handles) =
-                    ActorHandle::get_actors_on_current_node(
-                        actor_handles.clone(),
-                        timeout,
-                        task_locals,
-                    )
-                    .await?;
-
-                // If no actors are on the current node, use all actors as fallback
-                let filtered_handles = if local_actor_handles.is_empty() {
-                    non_local_actor_handles
-                } else {
-                    local_actor_handles
-                };
-
-                // Update the state to initialized
-                *self = Self::Initialized(filtered_handles.clone());
-                Ok(filtered_handles)
-            }
-            Self::Initialized(handles) => {
-                // If already initialized, use the current handles
-                Ok(handles.clone())
-            }
-        }
-    }
-}
-
 pub(crate) struct DistributedActorPoolProjectState {
     actor_handle: ActorHandle,
 }
 
 pub(crate) struct DistributedActorPoolProjectOperator {
-    actor_handles: Mutex<ActorHandlesState>,
+    actor_handles: Vec<ActorHandle>,
     batch_size: Option<usize>,
     memory_request: u64,
     counter: AtomicUsize,
-    actor_ready_timeout: usize,
     #[cfg(feature = "python")]
     task_locals: pyo3_async_runtimes::TaskLocals,
 }
@@ -180,7 +136,6 @@ impl DistributedActorPoolProjectOperator {
         actor_ready_timeout: usize,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
-
         Self::new_with_task_locals(
             actor_handles,
             batch_size,
@@ -196,7 +151,23 @@ impl DistributedActorPoolProjectOperator {
         memory_request: u64,
         actor_ready_timeout: usize,
     ) -> DaftResult<Self> {
-        let task_locals = Python::with_gil(pyo3_async_runtimes::tokio::get_current_locals)?;
+        let (task_locals, task_locals_clone) = Python::with_gil(|py| {
+            let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
+            DaftResult::Ok((task_locals.clone_ref(py), task_locals))
+        })?;
+
+        let (local_actor_handles, remote_actor_handles) = get_compute_runtime()
+            .block_on_current_thread(ActorHandle::get_actors_on_current_node(
+                actor_handles,
+                actor_ready_timeout,
+                task_locals_clone,
+            ))?;
+
+        let actor_handles = match local_actor_handles.len() {
+            0 => remote_actor_handles,
+            _ => local_actor_handles,
+        };
+
         let init_counter = if actor_handles.is_empty() {
             0
         } else {
@@ -204,11 +175,10 @@ impl DistributedActorPoolProjectOperator {
         };
 
         Ok(Self {
-            actor_handles: Mutex::new(ActorHandlesState::Uninitialized(actor_handles)),
+            actor_handles,
             batch_size,
             memory_request,
             counter: AtomicUsize::new(init_counter),
-            actor_ready_timeout,
             task_locals,
         })
     }
@@ -279,15 +249,9 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         // Check if we need to initialize the filtered actor handles
         #[cfg(feature = "python")]
         {
-            let mut actor_handles_guard = self.actor_handles.lock().await;
-            let task_locals = Python::with_gil(|py| self.task_locals.clone_ref(py));
-            let filtered_handles = actor_handles_guard
-                .initialize(self.actor_ready_timeout, task_locals)
-                .await?;
-
             let next_actor_handle_idx =
-                self.counter.fetch_add(1, Ordering::SeqCst) % filtered_handles.len();
-            let next_actor_handle = &filtered_handles[next_actor_handle_idx];
+                self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
+            let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
             Ok(DistributedActorPoolProjectState {
                 actor_handle: next_actor_handle.clone(),
             })
@@ -301,12 +265,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        // If we have filtered actor handles, use those; otherwise fall back to original count
-        let actor_handles_guard = self.actor_handles.blocking_lock();
-        match &*actor_handles_guard {
-            ActorHandlesState::Initialized(handles) => Ok(handles.len()),
-            ActorHandlesState::Uninitialized(_) => Ok(0), // Not initialized yet
-        }
+        Ok(self.actor_handles.len())
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
