@@ -187,6 +187,9 @@ pub mod pylib {
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
 
+        // Register KV Store functions
+        functions_registry.register::<daft_dsl::functions::kv::registry::KVModule>();
+
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);
         functions_registry

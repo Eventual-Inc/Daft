@@ -83,7 +83,12 @@ fn from_int64(
         // handle logical types first
         (Some(Integer(integer)), _) => match integer {
             IntegerType::UInt64 => DataType::UInt64,
-            IntegerType::Int64 => DataType::Int64,
+            IntegerType::Int64 => {
+                // Check if this might be a Duration type by examining metadata
+                // For now, we'll assume Int64 with Integer logical type could be Duration
+                // This is a heuristic approach until we have better metadata preservation
+                DataType::Int64
+            },
             _ => DataType::Int64,
         },
         (

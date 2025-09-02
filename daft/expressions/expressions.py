@@ -365,6 +365,10 @@ class Expression:
         """
         return ExpressionBinaryNamespace.from_expression(self)
 
+    # NOTE: KV store operations have been moved to daft.functions.kv module
+    # Use daft.functions.kv.kv_get, kv_batch_get, kv_exists instead of .kv namespace
+    # This change follows the architecture suggestion from PR #5081 review
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)

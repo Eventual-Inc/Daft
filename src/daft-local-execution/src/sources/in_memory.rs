@@ -42,12 +42,14 @@ impl Source for InMemorySource {
         _io_stats: IOStatsRef,
         _chunk_size: Option<usize>,
     ) -> DaftResult<SourceStream<'static>> {
-        Ok(self
+        let result = Ok(self
             .data
             .as_ref()
             .unwrap_or_else(|| panic!("No data in InMemorySource"))
             .clone()
-            .to_partition_stream())
+            .to_partition_stream());
+
+        result
     }
 
     fn name(&self) -> NodeName {

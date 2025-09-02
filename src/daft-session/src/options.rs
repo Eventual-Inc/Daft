@@ -13,6 +13,7 @@ pub(crate) struct Options {
     pub curr_namespace: Option<Vec<String>>,
     pub curr_provider: Option<String>,
     pub curr_model: Option<String>,
+    pub curr_kv: Option<String>,
 }
 
 /// Identifier mode controls identifier resolution and name binding logic (tables, columns, views, etc).

@@ -673,3 +673,34 @@ impl From<&PyExpr> for crate::ExprRef {
         item.expr.clone()
     }
 }
+
+// KV Store ScalarUDF convenience functions
+#[pyfunction]
+pub fn kv_get_with_config(row_ids: PyExpr, kv_config: PyExpr) -> PyResult<PyExpr> {
+    Ok(
+        crate::functions::kv::functions::kv_get_with_config(row_ids.into(), kv_config.into())
+            .into(),
+    )
+}
+
+#[pyfunction]
+pub fn kv_batch_get_with_config(
+    row_ids: PyExpr,
+    kv_config: PyExpr,
+    batch_size: PyExpr,
+) -> PyResult<PyExpr> {
+    Ok(crate::functions::kv::functions::kv_batch_get_with_config(
+        row_ids.into(),
+        kv_config.into(),
+        batch_size.into(),
+    )
+    .into())
+}
+
+#[pyfunction]
+pub fn kv_exists_with_config(row_ids: PyExpr, kv_config: PyExpr) -> PyResult<PyExpr> {
+    Ok(
+        crate::functions::kv::functions::kv_exists_with_config(row_ids.into(), kv_config.into())
+            .into(),
+    )
+}
