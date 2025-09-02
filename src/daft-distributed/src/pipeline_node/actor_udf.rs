@@ -220,7 +220,6 @@ impl ActorUDF {
 
         let batch_size = self.udf_properties.batch_size;
         let schema = self.config.schema.clone();
-        let actor_ready_timeout = self.actor_ready_timeout;
         append_plan_to_existing_task(
             submittable_task,
             &(self.clone() as Arc<dyn DistributedPipelineNode>),
@@ -230,7 +229,6 @@ impl ActorUDF {
                     actors.clone(),
                     batch_size,
                     memory_request,
-                    actor_ready_timeout,
                     schema.clone(),
                     StatsState::NotMaterialized,
                 )

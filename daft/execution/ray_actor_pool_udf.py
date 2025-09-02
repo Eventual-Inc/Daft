@@ -7,6 +7,8 @@ from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 
 if TYPE_CHECKING:
+    from ray.actor import ActorHandle as RayActorHandle
+
     from daft.daft import PyExpr, PyMicroPartition
 
 try:
@@ -36,11 +38,11 @@ class UDFActor:
 
 
 class UDFActorHandle:
-    def __init__(self, actor_ref: ray.ObjectRef) -> None:
+    def __init__(self, actor_ref: RayActorHandle) -> None:
         self.actor = actor_ref
 
-    def actor_ref(self) -> ray.ObjectRef:
-        return self.actor
+    def actor_id(self) -> str:
+        return self.actor._actor_id.hex()
 
     async def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
         return await self.actor.eval_input.remote(input)
@@ -49,34 +51,22 @@ class UDFActorHandle:
         ray.kill(self.actor)
 
 
-async def get_ready_actors_by_location(
+def get_ready_actors_by_location(
     actor_handles: list[UDFActorHandle],
-    timeout: int,
 ) -> tuple[list[UDFActorHandle], list[UDFActorHandle]]:
+    from ray._private.state import actors
+
     current_node_id = ray.get_runtime_context().get_node_id()
 
-    # Wait for actors to be ready
-    ready_futures = [
-        asyncio.wrap_future(handle.actor_ref().__ray_ready__.remote().future()) for handle in actor_handles
-    ]
-    ready_refs, _ = await asyncio.wait(ready_futures, return_when=asyncio.ALL_COMPLETED, timeout=timeout)
-    await asyncio.gather(*ready_refs)
-
-    if not ready_refs:
-        raise RuntimeError(
-            f"UDF actors failed to start within {timeout} seconds, please increase the actor_udf_ready_timeout config via daft.set_execution_config(actor_udf_ready_timeout=timeout)"
-        )
-
-    # Get ready actor handles
-    ready_indices = [ready_futures.index(ref) for ref in ready_refs]
-    ready_handles = [actor_handles[i] for i in ready_indices]
-
-    # Get node IDs for ready actors
-    actor_node_ids = await asyncio.gather(*[actor_handles[i].actor_ref().get_node_id.remote() for i in ready_indices])
-
-    # Categorize by location
-    local_actors = [handle for handle, node_id in zip(ready_handles, actor_node_ids) if node_id == current_node_id]
-    remote_actors = [handle for handle, node_id in zip(ready_handles, actor_node_ids) if node_id != current_node_id]
+    local_actors = []
+    remote_actors = []
+    for actor_handle in actor_handles:
+        actor_id = actor_handle.actor_id()
+        actor_state = actors(actor_id)
+        if actor_state["Address"]["NodeID"] == current_node_id:
+            local_actors.append(actor_handle)
+        else:
+            remote_actors.append(actor_handle)
 
     return local_actors, remote_actors
 
@@ -91,7 +81,7 @@ async def start_udf_actors(
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
-    actors = [
+    actors: list[RayActorHandle] = [
         UDFActor.options(  # type: ignore
             scheduling_strategy="SPREAD",
             num_gpus=num_gpus_per_actor,

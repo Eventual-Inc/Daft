@@ -7,7 +7,6 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
@@ -33,42 +32,28 @@ pub(crate) struct ActorHandle {
 
 impl ActorHandle {
     #[cfg(feature = "python")]
-    async fn get_actors_on_current_node(
-        actor_handles: Vec<Self>,
-        timeout: usize,
-        task_locals: pyo3_async_runtimes::TaskLocals,
-    ) -> DaftResult<(Vec<Self>, Vec<Self>)> {
+    fn get_actors_on_current_node(actor_handles: Vec<Self>) -> DaftResult<(Vec<Self>, Vec<Self>)> {
         let actor_handles = actor_handles
             .into_iter()
             .map(|e| e.inner)
             .collect::<Vec<_>>();
 
-        let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
-                let actor_handles = actor_handles
-                    .into_iter()
-                    .map(|e| e.as_ref().clone_ref(py))
-                    .collect::<Vec<_>>();
-                let ray_actor_pool_udf_module =
-                    py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-                let coroutine = ray_actor_pool_udf_module.call_method1(
+        let (local_actors, remote_actors) = Python::with_gil(|py| {
+            let actor_handles = actor_handles
+                .into_iter()
+                .map(|e| e.as_ref().clone_ref(py))
+                .collect::<Vec<_>>();
+            let ray_actor_pool_udf_module =
+                py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+            let (local_actors, remote_actors) = ray_actor_pool_udf_module
+                .call_method1(
                     pyo3::intern!(py, "get_ready_actors_by_location"),
-                    (actor_handles, timeout),
-                )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine)
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
+                    (actor_handles,),
+                )?
+                .extract::<(Vec<PyObject>, Vec<PyObject>)>()?;
+            DaftResult::Ok((local_actors, remote_actors))
+        })?;
 
-        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
-            .await
-            .and_then(|result| {
-                Python::with_gil(|py| result.extract::<(Vec<PyObject>, Vec<PyObject>)>(py))
-                    .map_err(|e| e.into())
-            })?;
-
-        let (local_actors, remote_actors) = result;
         let local_actors = local_actors
             .into_iter()
             .map(|e| Self { inner: Arc::new(e) })
@@ -133,15 +118,9 @@ impl DistributedActorPoolProjectOperator {
         actor_handles: Vec<impl Into<ActorHandle>>,
         batch_size: Option<usize>,
         memory_request: u64,
-        actor_ready_timeout: usize,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
-        Self::new_with_task_locals(
-            actor_handles,
-            batch_size,
-            memory_request,
-            actor_ready_timeout,
-        )
+        Self::new_with_task_locals(actor_handles, batch_size, memory_request)
     }
 
     #[cfg(feature = "python")]
@@ -149,19 +128,11 @@ impl DistributedActorPoolProjectOperator {
         actor_handles: Vec<ActorHandle>,
         batch_size: Option<usize>,
         memory_request: u64,
-        actor_ready_timeout: usize,
     ) -> DaftResult<Self> {
-        let (task_locals, task_locals_clone) = Python::with_gil(|py| {
-            let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
-            DaftResult::Ok((task_locals.clone_ref(py), task_locals))
-        })?;
+        let task_locals = Python::with_gil(pyo3_async_runtimes::tokio::get_current_locals)?;
 
-        let (local_actor_handles, remote_actor_handles) = get_compute_runtime()
-            .block_on_current_thread(ActorHandle::get_actors_on_current_node(
-                actor_handles,
-                actor_ready_timeout,
-                task_locals_clone,
-            ))?;
+        let (local_actor_handles, remote_actor_handles) =
+            ActorHandle::get_actors_on_current_node(actor_handles)?;
 
         let actor_handles = match local_actor_handles.len() {
             0 => remote_actor_handles,
@@ -187,7 +158,6 @@ impl DistributedActorPoolProjectOperator {
         actor_handles: Vec<ActorHandle>,
         batch_size: Option<usize>,
         memory_request: u64,
-        _actor_ready_timeout: usize,
     ) -> DaftResult<Self> {
         unimplemented!("DistributedActorPoolProjectOperator::new_with_task_locals is not implemented without Python");
     }

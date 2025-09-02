@@ -279,7 +279,6 @@ impl LocalPhysicalPlan {
         actor_objects: Vec<PyObjectWrapper>,
         batch_size: Option<usize>,
         memory_request: u64,
-        actor_ready_timeout: usize,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
@@ -288,7 +287,6 @@ impl LocalPhysicalPlan {
             actor_objects,
             batch_size,
             memory_request,
-            actor_ready_timeout,
             schema,
             stats_state,
         })
@@ -889,7 +887,7 @@ impl LocalPhysicalPlan {
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite {  lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(new_child.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
-                Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, actor_ready_timeout, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, *actor_ready_timeout, schema.clone(), StatsState::NotMaterialized),
+                Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
                 Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
                 Self::IntoPartitions(IntoPartitions {  num_partitions, .. }) => Self::into_partitions(new_child.clone(), *num_partitions, StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
@@ -1001,7 +999,6 @@ pub struct DistributedActorPoolProject {
     pub actor_objects: Vec<PyObjectWrapper>,
     pub batch_size: Option<usize>,
     pub memory_request: u64,
-    pub actor_ready_timeout: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
