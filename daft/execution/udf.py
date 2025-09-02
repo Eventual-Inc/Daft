@@ -88,7 +88,7 @@ class UdfHandle:
         expr_projection = ExpressionsProjection(
             [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
         )
-        expr_projection_bytes = daft.pickle.dumps(expr_projection)
+        expr_projection_bytes = daft.pickle.dumps((project_expr.name(), expr_projection))
         self.handle_conn.send((_ENTER, expr_projection_bytes))
         response = self.handle_conn.recv()
         if response != _READY:
@@ -127,7 +127,7 @@ class UdfHandle:
                 base_exc.add_note("\n".join(response[2].format()).rstrip())  # type: ignore[attr-defined]
             raise UDFException(response[1]) from base_exc
         elif response[0] == _ERROR:
-            raise RuntimeError("UDF unexpectedly failed with traceback:\n" + "\n".join(response[1]))
+            raise RuntimeError("UDF unexpectedly failed with traceback:\n" + response[1])
         elif response[0] == _SUCCESS:
             out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)

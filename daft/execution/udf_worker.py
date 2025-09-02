@@ -45,9 +45,16 @@ def udf_event_loop(
 
             # We initialize after ready to avoid blocking the main thread
             if expression_projection is None:
-                uninitialized_projection: ExpressionsProjection = daft.pickle.loads(expr_projection_bytes)
-                initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
-                expression_projection = initialized_projection
+                input = daft.pickle.loads(expr_projection_bytes)
+                udf_name: str = input[0]
+                uninitialized_projection: ExpressionsProjection = input[1]
+                try:
+                    expression_projection = ExpressionsProjection(
+                        [e._initialize_udfs() for e in uninitialized_projection]
+                    )
+                except Exception as init_exc:
+                    error_note = f"User-defined function `{udf_name}` failed to initialize"
+                    raise UDFException(error_note) from init_exc
 
             input_bytes = transport.read_and_release(name, size)
             input = MicroPartition.from_ipc_stream(input_bytes)
@@ -69,10 +76,12 @@ def udf_event_loop(
             exc_bytes = None
         conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), exc_bytes))
     except Exception as e:
-        # If serialization fails, just send the traceback as a string
         try:
             tb = "\n".join(TracebackException.from_exception(e).format())
         except Exception:
+            # If serialization fails, just send the exception's repr
+            # This sometimes happens on 3.9 & 3.10, but unclear why
+            # The repr doesn't contain the full traceback
             tb = repr(e)
 
         try:
