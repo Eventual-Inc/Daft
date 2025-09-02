@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
+
 
 def get_device() -> torch.device:
     """Get the best available PyTorch device for computation.
@@ -10,7 +15,7 @@ def get_device() -> torch.device:
     3. CPU - as fallback when no GPU acceleration is available
     """
     import torch
-    
+
     device = (
         torch.device("cuda")
         if torch.cuda.is_available()
