@@ -30,7 +30,7 @@ class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.options
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        dimensions = AutoConfig.from_pretrained(self.model).hidden_size
+        dimensions = AutoConfig.from_pretrained(self.model, trust_remote_code=True).hidden_size
         return EmbeddingDimensions(size=dimensions, dtype=DataType.float32())
 
     def instantiate(self) -> TextEmbedder:
