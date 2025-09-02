@@ -56,7 +56,7 @@ class LMStudioProvider(OpenAIProvider):
         if "base_url" not in options:
             options["base_url"] = "http://localhost:1234/v1"
         else:
-            # Ensure base_url ends with /v1 for LM Studio compatibility
+            # Ensure base_url ends with /v1 for LM Studio compatibility.
             base_url = options["base_url"]
             if base_url is not None and not base_url.endswith("/v1"):
                 options["base_url"] = base_url.rstrip("/") + "/v1"
