@@ -63,10 +63,10 @@ class File:
         return file
 
     @staticmethod
-    def _from_tuple(tup: tuple[Any]) -> File:
-        inner = PyDaftFile._from_tuple(tuple)
+    def _from_tuple(t: tuple[Any]) -> File:
+        inner = PyDaftFile._from_tuple(t)
         file: File
-        if isinstance(tuple[0], str):
+        if isinstance(t[0], str):
             file = PathFile.__new__(PathFile)
         else:
             file = MemoryFile.__new__(MemoryFile)
