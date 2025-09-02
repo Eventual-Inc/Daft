@@ -1,7 +1,7 @@
 [dependencies]
 arrow-flight = "54.2.1"
 arrow-ipc = "54.2.1"
-arrow2 = {workspace = true, features = ["arrow", "io_flight", "io_ipc_read_async"]}
+arrow2 = {workspace = true, features = ["arrow", "io_flight", "io_ipc_read_async", "io_ipc_compression"]}
 async-channel = "2.3.1"
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
