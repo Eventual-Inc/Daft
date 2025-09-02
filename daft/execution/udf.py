@@ -53,7 +53,7 @@ class SharedMemoryTransport:
 
 
 class UdfHandle:
-    def __init__(self, udf_name: str, udf_expr: PyExpr) -> None:
+    def __init__(self, udf_expr: PyExpr) -> None:
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
@@ -86,7 +86,7 @@ class UdfHandle:
 
         # Serialize and send the expression projection
         expr_projection = ExpressionsProjection([Expression._from_pyexpr(udf_expr)])
-        expr_projection_bytes = daft.pickle.dumps((udf_name, expr_projection))
+        expr_projection_bytes = daft.pickle.dumps(expr_projection)
         self.handle_conn.send((_ENTER, expr_projection_bytes))
         response = self.handle_conn.recv()
         if response != _READY:
