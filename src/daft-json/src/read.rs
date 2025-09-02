@@ -526,7 +526,7 @@ async fn read_json_single_into_stream(
         b'{' => {
             let read_stream =
                 read_into_line_chunk_stream(reader, convert_options.limit, chunk_size);
-            let (projected_schema, schema_is_projection) = match convert_options.include_columns {
+            let projected_schema = match convert_options.include_columns {
                 Some(projection) => {
                     let mut field_map = schema
                         .fields
@@ -534,20 +534,15 @@ async fn read_json_single_into_stream(
                         .map(|f| (f.name.clone(), f))
                         .collect::<HashMap<_, _>>();
                     let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
-                    (
-                        arrow2::datatypes::Schema::from(projected_fields)
-                            .with_metadata(schema.metadata),
-                        true,
-                    )
+                    arrow2::datatypes::Schema::from(projected_fields).with_metadata(schema.metadata)
                 }
-                None => (schema, false),
+                None => schema,
             };
 
             Ok((
                 Box::pin(parse_into_column_array_chunk_stream(
                     read_stream,
                     projected_schema.clone().into(),
-                    schema_is_projection,
                 )?),
                 projected_schema,
             ))
@@ -578,7 +573,6 @@ where
 fn parse_into_column_array_chunk_stream(
     stream: impl LineChunkStream + Send,
     schema: Arc<arrow2::datatypes::Schema>,
-    schema_is_projection: bool,
 ) -> DaftResult<impl TableChunkStream + Send> {
     let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
     let daft_fields = Arc::new(
@@ -609,8 +603,8 @@ fn parse_into_column_array_chunk_stream(
                                 })
                         })
                         .collect::<super::Result<Vec<_>>>()?;
-                    let chunk = deserialize_records(&parsed, schema.as_ref(), schema_is_projection)
-                        .context(ArrowSnafu)?;
+                    let chunk =
+                        deserialize_records(&parsed, schema.as_ref()).context(ArrowSnafu)?;
                     let all_series = chunk
                         .into_iter()
                         .zip(daft_fields.iter())
@@ -621,11 +615,7 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(RecordBatch::new_unchecked(
-                        daft_schema.clone(),
-                        all_series,
-                        num_rows,
-                    ))
+                    RecordBatch::new_with_size(daft_schema.clone(), all_series, num_rows)
                 })();
                 let _ = send.send(result);
             });
@@ -695,19 +685,16 @@ mod tests {
             .iter()
             .map(|f| (f.name.clone(), f.clone()))
             .collect::<IndexMap<_, _>>();
-        let (schema, is_projection) = match &projection {
-            Some(projection) => (
-                projection
-                    .iter()
-                    .map(|c| field_map.swap_remove(c.as_str()).unwrap())
-                    .collect::<Vec<_>>()
-                    .into(),
-                true,
-            ),
-            None => (field_map.into_values().collect::<Vec<_>>().into(), false),
+        let schema = match &projection {
+            Some(projection) => projection
+                .iter()
+                .map(|c| field_map.swap_remove(c.as_str()).unwrap())
+                .collect::<Vec<_>>()
+                .into(),
+            None => field_map.into_values().collect::<Vec<_>>().into(),
         };
         // Deserialize JSON records into Arrow2 column arrays.
-        let columns = deserialize_records(&parsed, &schema, is_projection).unwrap();
+        let columns = deserialize_records(&parsed, &schema).unwrap();
         // Roundtrip columns with Daft for casting.
         let columns = columns
             .into_iter()
