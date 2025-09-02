@@ -369,6 +369,8 @@ impl DataType {
         }
     }
 
+    /// Check if this datatype can be converted into an Arrow datatype.
+    /// This includes checking if the associated arrays can be converted into Arrow arrays.
     #[inline]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()

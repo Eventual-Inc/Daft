@@ -14,6 +14,7 @@ from daft import col
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import UDFException
+from daft.exceptions import DaftCoreException
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
 from daft.recordbatch import MicroPartition
@@ -290,8 +291,12 @@ def test_class_udf_initialization_error(use_actor_pool):
         with pytest.raises(Exception):
             df.select(expr).collect()
     else:
-        with pytest.raises(RuntimeError, match="UDF INIT ERROR"):
+        with pytest.raises(UDFException) as exc_info:
             df.select(expr).collect()
+
+        assert str(exc_info.value).startswith("User-defined function")
+        assert str(exc_info.value).endswith("failed to initialize")
+        assert isinstance(exc_info.value.__cause__, RuntimeError) and str(exc_info.value.__cause__) == "UDF INIT ERROR"
 
 
 @pytest.mark.parametrize("use_actor_pool", [False, True])
@@ -684,6 +689,31 @@ def test_run_udf_on_separate_process(batch_size):
     current_pid = os.getpid()
     for pid in result.to_pydict()["udf_1"]:
         assert pid != current_pid
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Ray runner will always run UDFs on separate processes",
+)
+def test_udf_python_dtype():
+    """Test that running a UDF with a Python-dtype output column runs on the same process.
+
+    This is to avoid pickling the object across processes.
+    TODO: We may want to relax this assumption later.
+    """
+    df = daft.from_pydict({"a": [lambda: "foo"]})
+
+    @udf(return_dtype=DataType.string())
+    def udf_1(data):
+        return [f"{os.getpid()} {lam()}" for lam in data]
+
+    result = df.select(udf_1(col("a")).alias("udf_1"))
+    assert result.to_pydict() == {"udf_1": [f"{os.getpid()} foo"]}
+
+    udf1_process = udf_1.run_on_process(True)
+    with pytest.raises(DaftCoreException, match="because it has a Python-dtype input column `a`"):
+        result = df.select(udf1_process(col("a")).alias("udf_1"))
+        assert result.to_pydict() == {"udf_1": [f"{os.getpid()} foo"]}
 
 
 def test_udf_error_serialize_err():

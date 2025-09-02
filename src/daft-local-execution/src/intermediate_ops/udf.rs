@@ -233,6 +233,7 @@ pub(crate) struct UdfOperator {
     worker_count: AtomicUsize,
     concurrency: usize,
     memory_request: u64,
+    input_schema: SchemaRef,
 }
 
 impl UdfOperator {
@@ -241,6 +242,7 @@ impl UdfOperator {
         udf_properties: UDFProperties,
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
+        input_schema: &SchemaRef,
     ) -> DaftResult<Self> {
         // Determine optimal parallelism
         let resource_request = udf_properties.resource_request.as_ref();
@@ -267,6 +269,7 @@ impl UdfOperator {
             worker_count: AtomicUsize::new(0),
             concurrency,
             memory_request,
+            input_schema: input_schema.clone(),
         })
     }
 
@@ -363,11 +366,30 @@ impl IntermediateOperator for UdfOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
 
+        // Check if any inputs or the output are Python-dtype columns
+        // Those should by default run on the same thread
+        let is_arrow_dtype = self
+            .input_schema
+            .fields()
+            .iter()
+            .all(|f| f.dtype.is_arrow())
+            && self
+                .params
+                .expr
+                .inner()
+                .to_field(self.input_schema.as_ref())?
+                .dtype
+                .is_arrow();
+
         let mut udf_handle =
             UdfHandle::no_handle(self.params.clone(), self.params.expr.clone(), worker_count);
 
         if self.params.udf_properties.is_actor_pool_udf()
-            || self.params.udf_properties.use_process.unwrap_or(false)
+            || self
+                .params
+                .udf_properties
+                .use_process
+                .unwrap_or(is_arrow_dtype)
         {
             udf_handle.create_handle()?;
         }

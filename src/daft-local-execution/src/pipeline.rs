@@ -516,6 +516,7 @@ fn physical_plan_to_pipeline(
                 udf_properties.clone(),
                 passthrough_columns.clone(),
                 schema,
+                input.schema(),
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
