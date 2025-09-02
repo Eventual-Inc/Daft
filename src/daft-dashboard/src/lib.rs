@@ -264,7 +264,7 @@ fn generate_interactive_html(
             let serverUrl = 'http://' + host + ':' + port;
             if (typeof google !== 'undefined' && google.colab && google.colab.kernel) {{
                 try {{
-                    const colabUrl = await google.colab.kernel.proxyPort(port, {{'cache': true}});
+                    const colabUrl = await google.colab.kernel.proxyPort(port, {{cache: true}});
                     serverUrl = colabUrl;
                 }} catch (error) {{
                     console.warn('Failed to get Colab proxy URL, using original URL:', error);
