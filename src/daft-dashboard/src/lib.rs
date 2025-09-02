@@ -259,11 +259,14 @@ fn generate_interactive_html(
             const host = '{}';
             const port = '{}';
             const dfId = '{}';
-
+            console.log('host', host);
+            console.log('port', port);
+            console.log('dfId', dfId);
             // Check if running in Google Colab and modify URL if needed
             let serverUrl = 'http://' + host + ':' + port;
             if (typeof google !== 'undefined' && google.colab && google.colab.kernel) {{
                 try {{
+                    console.log('Getting Colab proxy URL, port', port);
                     const colabUrl = await google.colab.kernel.proxyPort(port, {{cache: true}});
                     serverUrl = colabUrl;
                 }} catch (error) {{
