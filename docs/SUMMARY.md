@@ -5,7 +5,7 @@
     * Common Use Cases
         * [Batch Inference](use-case/batch-inference.md)
     * Working with Modalities
-        * [Overview](modalities/index.md)
+        * [Modalities](modalities/index.md)
         * [Custom Modalities](modalities/custom.md)
         * [URLs and Files](modalities/urls.md)
         * [Text](modalities/text.md)
@@ -13,12 +13,12 @@
         * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
     * Running Custom Python Code
-        * [Overview](custom-code/index.md)
+        * [Custom Code](custom-code/index.md)
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
         * [Working with GPUs](custom-code/gpu.md)
         * [External APIs](custom-code/apis.md)
     * Data Connectors
-        * [Overview](connectors/index.md)
+        * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
@@ -33,7 +33,7 @@
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * [Scaling Out and Deployment](distributed.md)
     * Optimization and Debugging
-        * [Overview](optimization/index.md)
+        * [Optimization](optimization/index.md)
         * [Architecture](optimization/architecture.md)
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning](optimization/partitioning.md)
@@ -45,7 +45,7 @@
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
 * Examples
-    * [Overview](examples/index.md)
+    * [Examples](examples/index.md)
     * [Document Processing](examples/document-processing.md)
     * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
@@ -55,7 +55,7 @@
     * [MNIST Digit Classification](examples/mnist.md)
     * [Window Functions](examples/window-functions.md)
 * Python API
-    * [Overview](api/index.md)
+    * [Python API](api/index.md)
     * [AI](api/ai.md)
     * [I/O](api/io.md)
     * [DataFrame](api/dataframe.md)
@@ -73,7 +73,7 @@
     * [Configuration](api/config.md)
     * [Miscellaneous](api/misc.md)
 * SQL Reference
-    * [Overview](sql/index.md)
+    * [SQL Reference](sql/index.md)
     * Statements
         * [SELECT](sql/statements/select.md)
         * [SHOW](sql/statements/show.md)
