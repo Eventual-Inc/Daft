@@ -1,3 +1,4 @@
+mod runtime_env;
 mod runtime_py_object;
 mod udf;
 
@@ -61,7 +62,7 @@ use super::FunctionExpr;
 use crate::python::PyExpr;
 use crate::{
     Expr, ExprRef,
-    functions::scalar::ScalarFn,
+    functions::{python::runtime_env::RuntimeEnv, scalar::ScalarFn},
     python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn},
 };
 
@@ -122,6 +123,7 @@ pub struct LegacyPythonUDF {
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
+    pub runtime_env: Option<RuntimePyObject>,
 }
 
 impl LegacyPythonUDF {
@@ -140,6 +142,7 @@ impl LegacyPythonUDF {
             batch_size: None,
             concurrency: Some(4),
             use_process: None,
+            runtime_env: None,
         }
     }
 }
@@ -156,6 +159,7 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
+    runtime_env: Option<RuntimePyObject>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(LegacyPythonUDF {
@@ -168,6 +172,7 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            runtime_env,
         }),
         inputs: expressions.into(),
     })
@@ -298,6 +303,7 @@ pub struct UDFProperties {
     pub use_process: Option<bool>,
     pub max_retries: Option<usize>,
     pub on_error: Option<OnError>,
+    pub runtime_env: Option<RuntimeEnv>,
 }
 
 impl UDFProperties {
@@ -315,11 +321,16 @@ impl UDFProperties {
                             batch_size,
                             concurrency,
                             use_process,
+                            runtime_env,
                             ..
                         }),
                     ..
                 } => {
                     num_udfs += 1;
+                    let runtime_env = runtime_env
+                        .as_ref()
+                        .map(|env| env.clone().try_into())
+                        .transpose()?;
                     udf_properties = Some(Self {
                         name: name.as_ref().clone(),
                         resource_request: resource_request.clone(),
@@ -328,6 +339,7 @@ impl UDFProperties {
                         use_process: *use_process,
                         max_retries: None,
                         on_error: None,
+                        runtime_env,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
@@ -352,6 +364,7 @@ impl UDFProperties {
                         use_process: *use_process,
                         max_retries: *max_retries,
                         on_error: Some(*on_error),
+                        runtime_env: None,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
@@ -377,6 +390,7 @@ impl UDFProperties {
                         use_process: *use_process,
                         max_retries: *max_retries,
                         on_error: Some(*on_error),
+                        runtime_env: None,
                     });
                 }
                 _ => {}
