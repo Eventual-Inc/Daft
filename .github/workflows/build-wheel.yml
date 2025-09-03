@@ -145,15 +145,13 @@ jobs:
 
   test-wheels:
     name: Test built wheels
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ inputs.os }}
     needs: build
     if: ${{ inputs.run_tests }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
         runner: [native, ray]
-        arch: [x86_64]
         python-version: ['3.9', '3.11']
     env:
       package-name: daft
@@ -162,7 +160,7 @@ jobs:
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
-        pattern: wheels-*
+        pattern: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         merge-multiple: true
         path: dist
     - name: Set up Python ${{ matrix.python-version }}
@@ -181,7 +179,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source venv/bin/activate
-          pip install ray pytest pandas dist/*${{ matrix.arch }}*.whl --force-reinstall
+          pip install ray pytest pandas dist/*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |
