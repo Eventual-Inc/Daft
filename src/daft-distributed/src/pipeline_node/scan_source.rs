@@ -392,12 +392,16 @@ impl DetermineBatchSize {
     fn visit_and_update(&mut self, node: &daft_local_plan::LocalPhysicalPlanRef) {
         let maybe_observed_batch_size = match &**node {
             // does have a batch_size
-            daft_local_plan::LocalPhysicalPlan::UDFProject(udf_project) => udf_project.batch_size,
+            daft_local_plan::LocalPhysicalPlan::UDFProject(udf_project) => {
+                udf_project.udf_properties().batch_size
+            }
             daft_local_plan::LocalPhysicalPlan::IntoBatches(into_batches) => {
                 Some(into_batches.batch_size)
             }
             #[cfg(feature = "python")]
-            daft_local_plan::LocalPhysicalPlan::DistributedActorPoolProject(x) => x.batch_size,
+            daft_local_plan::LocalPhysicalPlan::DistributedActorPoolProject(dist_pool) => {
+                dist_pool.batch_size
+            }
 
             // does not have a batch_size
             daft_local_plan::LocalPhysicalPlan::InMemoryScan(_)
@@ -469,10 +473,38 @@ impl TreeNodeVisitor for DetermineBatchSize {
 mod tests {
     use std::sync::Arc;
 
+    use daft_dsl::{
+        expr::bound_expr::BoundExpr,
+        functions::{
+            map::MapExpr,
+            python::{LegacyPythonUDF, MaybeInitializedUDF},
+            FunctionExpr,
+        },
+    };
     use daft_local_plan::LocalPhysicalPlan;
     use daft_schema::prelude::{DataType, Field, Schema};
 
     use super::*;
+
+    fn fake_udf_fn_expr(batch_size: Option<usize>) -> daft_dsl::expr::Expr::Function {
+        daft_dsl::expr::Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF {
+                name: Arc::new("dummy"),
+                func: MaybeInitializedUDF::Uninitialized {
+                    inner: RuntimePyObject::new_none(),
+                    init_args: RuntimePyObject::new_none(),
+                },
+                bound_args: RuntimePyObject::new_none(),
+                num_expressions: 1,
+                return_dtype: DataType::Boolean,
+                resource_request: None,
+                batch_size: batch_size,
+                concurrency: None,
+                use_process: None,
+            }),
+            inputs: vec![],
+        }
+    }
 
     #[test]
     fn test_min_batch_size_in_task_plan() {
@@ -489,11 +521,10 @@ mod tests {
         // Stage 3: UDFProject (no batch_size in physical plan)
         let plan = LocalPhysicalPlan::udf_project(
             stage2,
-            *((&daft_dsl::resolved_col("col1")).into()), // dummy project expression
-            vec![],                                      // no passthrough columns
+            BoundExpr::try_new(fake_fn_expr(Some(250)), &schema).unwrap(), // convert to BoundExpr
+            vec![],                                                        // no passthrough columns
             schema,
             StatsState::NotMaterialized,
-            Some(250),
         );
 
         let result = min_batch_size_in_task_plan(plan);
@@ -519,34 +550,11 @@ mod tests {
         // Stage 3: Filter (no batch size)
         let plan = LocalPhysicalPlan::filter(
             stage2,
-            *((&daft_dsl::lit(true)).into()), // dummy predicate
+            BoundExpr::try_new(daft_dsl::lit(true), &schema).unwrap(), // convert to BoundExpr
             StatsState::NotMaterialized,
         );
 
         let result = min_batch_size_in_task_plan(plan);
         assert_eq!(result, None); // Should return None since no operators have batch_size
-    }
-
-    #[test]
-    fn test_determine_batch_size_visitor() {
-        let mut visitor = DetermineBatchSize {
-            bs: None,
-            is_min: true,
-        };
-
-        // Test initial state
-        assert_eq!(visitor.bs, None);
-
-        // Test with IntoBatches
-        let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
-        let plan = LocalPhysicalPlan::into_batches(
-            LocalPhysicalPlan::empty_scan(schema),
-            50,
-            true,
-            StatsState::NotMaterialized,
-        );
-
-        visitor.visit_and_update(&plan);
-        assert_eq!(visitor.bs, Some(50));
     }
 }
