@@ -132,18 +132,25 @@ Daft is a high-performance data engine providing simple and reliable data proces
     animation: daft-caret .9s steps(1,end) infinite;
   }
 
+  .daft-pipeline-component .cursor-fade {
+    color: #ff00ff;
+    animation: daft-cursor-fade 400ms ease-out forwards;
+  }
+
+  @keyframes daft-cursor-fade {
+    0% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
   @keyframes daft-caret {
     50% { opacity: 0; }
   }
 
-  .daft-pipeline-component .fade-in {
-    animation: daft-enter .45s ease both;
-  }
 
-  @keyframes daft-enter {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
 
   @media (max-width: 720px) {
     .daft-pipeline-component .stage-box {
@@ -396,7 +403,6 @@ async function typeTo(el, text) {
     if (!el) return; // Safety check for null elements
 
     const speed = 12 + Math.random() * 10;
-    el.classList.remove("fade-in");
     el.innerHTML = "";
     const span = document.createElement("span");
     span.className = "type";
@@ -414,7 +420,15 @@ async function typeTo(el, text) {
         span.innerHTML = formattedLines.join('\n') + '<span class="cursor">█</span>';
         await new Promise(r => setTimeout(r, speed));
     }
-    el.classList.add("fade-in");
+
+    // Let cursor blink for a moment, then fade away
+    const cursor = span.querySelector('.cursor');
+    if (cursor) {
+        setTimeout(() => {
+            cursor.classList.remove('cursor');
+            cursor.classList.add('cursor-fade');
+        }, 2200); // Keep blinking for N seconds before fading
+    }
 }
 
 // Cycle logic
