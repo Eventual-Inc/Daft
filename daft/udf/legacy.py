@@ -19,7 +19,6 @@ from .udf_v2 import check_serializable
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-
 InitArgsType: TypeAlias = Optional[tuple[tuple[Any, ...], dict[str, Any]]]
 UdfReturnType: TypeAlias = Union[Series, list[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
 UserDefinedPyFunc: TypeAlias = Callable[..., UdfReturnType]
