@@ -42,7 +42,7 @@ jobs:
         BASE=${{ github.base_ref || 'origin/main' }}
         git fetch origin $BASE --depth=1
 
-        if git diff --quiet origin/$BASE -- \
+        diff=$(git diff --quiet origin/$BASE -- \
           . \
           ':!.vscode/**' \
           ':!ci/**' \
@@ -58,8 +58,13 @@ jobs:
           ':!SECURITY.md' \
           ':!codecov.yml' \
           ':!mkdocs.yml' \
-          ':!AGENTS.md'
-        then
+          ':!AGENTS.md')
+        exit_code=$?
+
+        echo "diff: $diff"
+        echo "exit_code: $exit_code"
+
+        if [ $exit_code -ne 0 ] || [ -n "$diff" ]; then
           echo "skip=true" >> $GITHUB_OUTPUT
         else
           echo "skip=false" >> $GITHUB_OUTPUT
