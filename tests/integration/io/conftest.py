@@ -15,12 +15,7 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import TypeAlias
 
-import boto3
-import numpy as np
 import pytest
-import s3fs
-from botocore.config import Config
-from PIL import Image
 
 import daft
 
@@ -129,6 +124,8 @@ def minio_create_bucket(
 
     Yields a s3fs FileSystem
     """
+    import s3fs
+
     fs = s3fs.S3FileSystem(
         key=minio_io_config.s3.key_id,
         password=minio_io_config.s3.access_key,
@@ -152,6 +149,9 @@ def minio_create_public_bucket(
     Yields the bucket name.
     """
     # Create authenticated S3 client to set up the bucket.
+    import boto3
+    from botocore.config import Config
+
     s3_client = boto3.client(
         "s3",
         endpoint_url=minio_io_config.s3.endpoint_url,
@@ -261,6 +261,9 @@ def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Pat
 @pytest.fixture(scope="session")
 def image_data() -> YieldFixture[bytes]:
     """Bytes of a small image."""
+    import numpy as np
+    from PIL import Image
+
     bio = io.BytesIO()
     image = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     image.save(bio, format="JPEG")

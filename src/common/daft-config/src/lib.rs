@@ -73,7 +73,7 @@ pub struct DaftExecutionConfig {
     pub scantask_splitting_level: i32,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
-    pub use_experimental_distributed_engine: bool,
+    pub use_legacy_ray_runner: bool,
     pub min_cpu_per_task: f64,
 }
 
@@ -109,7 +109,7 @@ impl Default for DaftExecutionConfig {
             scantask_splitting_level: 1,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
-            use_experimental_distributed_engine: true,
+            use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
         }
     }
@@ -161,8 +161,7 @@ impl DaftExecutionConfig {
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
         if let Ok(val) = std::env::var(flotilla_env_var_name) {
-            cfg.use_experimental_distributed_engine =
-                !matches!(val.trim().to_lowercase().as_str(), "0" | "false");
+            cfg.use_legacy_ray_runner = matches!(val.trim().to_lowercase().as_str(), "0" | "false");
         }
         let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
         if let Ok(val) = std::env::var(min_cpu_var) {

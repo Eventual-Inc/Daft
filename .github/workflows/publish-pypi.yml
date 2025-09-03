@@ -7,6 +7,9 @@ on:
 
 env:
   PYTHON_VERSION: 3.11
+  UV_SYSTEM_PYTHON: 1
+  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_PROGRESS_BAR: 0
 
 defaults:
   run:
@@ -21,6 +24,7 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
+      run_tests: true
     strategy:
       fail-fast: false
       matrix:
