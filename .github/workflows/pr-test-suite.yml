@@ -663,7 +663,7 @@ jobs:
         path: unitycatalog
     - name: Start UC Server
       working-directory: ./unitycatalog
-      run: bin/start-uc-server &
+      run: bin/start-uc-server -p 3000 &
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
