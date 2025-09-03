@@ -55,6 +55,11 @@ impl UDFActors {
             None => (0.0, 1.0, 0),
         };
 
+        let runtime_env: Option<Py<PyAny>> = udf_properties
+            .runtime_env
+            .as_ref()
+            .and_then(|env| env.clone().try_into().ok());
+
         let result =
             common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
                 let ray_actor_pool_udf_module =
@@ -68,6 +73,7 @@ impl UDFActors {
                         cpu_request,
                         memory_request,
                         actor_ready_timeout,
+                        runtime_env,
                     ),
                 )
             })
@@ -254,6 +260,14 @@ impl PipelineNodeImpl for ActorUDF {
         } else {
             res.push("Resource request = None".to_string());
         }
+
+        if let Some(runtime_env) = self.udf_properties.runtime_env.clone() {
+            res.push(format!(
+                "Runtime env = {{ {} }}",
+                runtime_env.multiline_display().join(", ")
+            ));
+        }
+
         res
     }
 
