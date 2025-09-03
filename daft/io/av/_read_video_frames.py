@@ -202,6 +202,7 @@ class _VideoFramesSourceTask(DataSourceTask):
                 fit = abs(h - self.image_height) + abs(w - self.image_width)
                 if fit == 0:
                     yield fmt
+                    return
                 if fit < best_fit:
                     best_fmt = fmt
                     best_fit = fit
