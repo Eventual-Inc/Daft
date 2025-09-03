@@ -26,7 +26,7 @@ use crate::{
 #[derive(Debug)]
 
 enum UDFActors {
-    Uninitialized(Vec<BoundExpr>, UDFProperties),
+    Uninitialized(Vec<BoundExpr>, Box<UDFProperties>),
     Initialized { actors: Vec<PyObjectWrapper> },
 }
 
@@ -63,6 +63,11 @@ impl UDFActors {
                 None => (0.0, 0.0, 0),
             };
 
+        let runtime_env: Option<PyObject> = udf_properties
+            .runtime_env
+            .as_ref()
+            .and_then(|env| env.clone().try_into().ok());
+
         // Use async pattern similar to DistributedActorPoolProjectOperator
         let await_coroutine = async move {
             let result = Python::with_gil(|py| {
@@ -77,6 +82,7 @@ impl UDFActors {
                         cpu_request,
                         memory_request,
                         actor_ready_timeout,
+                        runtime_env,
                     ),
                 )?;
                 pyo3_async_runtimes::tokio::into_future(coroutine)
@@ -180,8 +186,10 @@ impl ActorUDF {
         mut input_task_stream: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
-        let mut udf_actors =
-            UDFActors::Uninitialized(self.projection.clone(), self.udf_properties.clone());
+        let mut udf_actors = UDFActors::Uninitialized(
+            self.projection.clone(),
+            Box::new(self.udf_properties.clone()),
+        );
 
         let mut running_tasks = JoinSet::new();
         while let Some(task) = input_task_stream.next().await {
@@ -260,6 +268,14 @@ impl ActorUDF {
         } else {
             res.push("Resource request = None".to_string());
         }
+
+        if let Some(runtime_env) = self.udf_properties.runtime_env.clone() {
+            res.push(format!(
+                "Runtime env = {{ {} }}",
+                runtime_env.multiline_display().join(", ")
+            ));
+        }
+
         res
     }
 }
