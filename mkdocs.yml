@@ -98,11 +98,12 @@ extra_css:
 - css/docsearch.css
 - https://cdn.jsdelivr.net/npm/@docsearch/css@3
 extra_javascript:
+- js/reo.js
 - js/custom.js
 - js/docsearch.js
+- js/install-tool.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
 - js/readthedocs.js
-- js/runllm.js
 # Extensions
 markdown_extensions:
 - admonition
@@ -208,3 +209,5 @@ plugins:
 - nav-hide-children:
     hide_children:
     - ["Python API", "Functions"]
+hooks:
+- docs/hooks.py

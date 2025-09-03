@@ -20,11 +20,14 @@ on:
         description: Whether to use link-time optimization (release-lto profile)
         type: boolean
         default: true
+      run_tests:
+        description: Whether to run tests on the built wheels
+        type: boolean
+        default: false
 
 env:
   PYTHON_VERSION: 3.11
   DAFT_ANALYTICS_ENABLED: '0'
-  UV_SYSTEM_PYTHON: 1
   RUST_DAFT_PKG_BUILD_TYPE: ${{ inputs.build_type }}
 
 defaults:
@@ -39,14 +42,29 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - uses: actions/setup-python@v5
+
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        if [[ "${{ inputs.os }}" == "windows" ]]; then
+          echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
+          source .venv/Scripts/activate
+        else
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          source .venv/bin/activate
+        fi
+        uv pip install twine yq setuptools_scm
+
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-    - run: pip install uv
-    - run: uv pip install twine yq setuptools_scm
 
     - name: Patch package version
       run: |
@@ -124,3 +142,48 @@ jobs:
       with:
         name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         path: dist
+
+  test-wheels:
+    name: Test built wheels
+    runs-on: ${{ matrix.os }}
+    needs: build
+    if: ${{ inputs.run_tests }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        runner: [native, ray]
+        arch: [x86_64]
+        python-version: ['3.9', '3.11']
+    env:
+      package-name: daft
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install wheel and test dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source venv/bin/activate
+          pip install ray pytest pandas dist/*${{ matrix.arch }}*.whl --force-reinstall
+          rm -rf daft
+    - name: Run dataframe tests
+      run: |
+        source venv/bin/activate
+        DAFT_RUNNER=${{ matrix.runner }} pytest tests/dataframe --durations=50

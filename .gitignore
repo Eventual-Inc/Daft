@@ -43,9 +43,6 @@ log/
 # helix editor
 .helix
 
-# uv
-uv.lock
-
 # dependencies
 node_modules
 
@@ -69,3 +66,7 @@ site
 # added by vim
 *.swp
 *.swo
+
+# AGENT Prompting Templates
+AGENTS.md
+CLAUDE.local.md

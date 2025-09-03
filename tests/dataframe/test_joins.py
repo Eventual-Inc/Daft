@@ -5,6 +5,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.context import get_context
 from daft.datatype import DataType
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table
@@ -15,7 +16,11 @@ def skip_invalid_join_strategies(join_strategy, join_type):
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:
-        if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
+        if not get_context().daft_execution_config.use_legacy_ray_runner and join_strategy == "sort_merge":
+            pytest.skip("Sort merge joins are not supported on Flotilla")
+        elif (
+            join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries"
+        ) and join_type != "inner":
             pytest.skip("Sort merge currently only supports inner joins")
         elif join_strategy == "broadcast" and join_type == "outer":
             pytest.skip("Broadcast join does not support outer joins")
@@ -1170,6 +1175,10 @@ def test_join_suffix_and_prefix(suffix, prefix, expected, make_df, with_morsel_s
 
 @pytest.mark.parametrize("left_partitions", [1, 2, 4])
 @pytest.mark.parametrize("right_partitions", [1, 2, 4])
+@pytest.mark.skipif(
+    not get_context().daft_execution_config.use_legacy_ray_runner,
+    reason="Cross joins are not supported on Flotilla",
+)
 def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size):
     df1 = make_df(
         {
@@ -1260,6 +1269,9 @@ def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size
     ],
 )
 def test_join_empty(join_type, repartition_nparts, left, right, expected, make_df, with_morsel_size):
+    if not get_context().daft_execution_config.use_legacy_ray_runner and join_type == "cross":
+        pytest.skip("Cross joins are not supported on Flotilla")
+
     left_df = make_df(
         left,
         repartition=repartition_nparts,

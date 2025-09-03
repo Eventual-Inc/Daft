@@ -29,12 +29,20 @@ impl PyDaftPlanningConfig {
         }
     }
 
-    #[pyo3(signature = (default_io_config=None))]
-    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
+    #[pyo3(signature = (default_io_config=None, enable_strict_filter_pushdown=None))]
+    fn with_config_values(
+        &mut self,
+        default_io_config: Option<PyIOConfig>,
+        enable_strict_filter_pushdown: Option<bool>,
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
+        }
+
+        if let Some(enable_strict_filter_pushdown) = enable_strict_filter_pushdown {
+            config.enable_strict_filter_pushdown = enable_strict_filter_pushdown;
         }
 
         Ok(Self {
@@ -47,6 +55,11 @@ impl PyDaftPlanningConfig {
         Ok(PyIOConfig {
             config: self.config.default_io_config.clone(),
         })
+    }
+
+    #[getter(enable_strict_filter_pushdown)]
+    fn enable_strict_filter_pushdown(&self) -> PyResult<bool> {
+        Ok(self.config.enable_strict_filter_pushdown)
     }
 }
 
@@ -101,8 +114,9 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
         scantask_splitting_level=None,
+        scantask_max_parallel=None,
         native_parquet_writer=None,
-        use_experimental_distributed_engine=None,
+        use_legacy_ray_runner=None,
         min_cpu_per_task=None,
     ))]
     fn with_config_values(
@@ -132,8 +146,9 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
+        scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
-        use_experimental_distributed_engine: Option<bool>,
+        use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -235,12 +250,16 @@ impl PyDaftExecutionConfig {
             config.scantask_splitting_level = scantask_splitting_level;
         }
 
+        if let Some(scantask_max_parallel) = scantask_max_parallel {
+            config.scantask_max_parallel = scantask_max_parallel;
+        }
+
         if let Some(native_parquet_writer) = native_parquet_writer {
             config.native_parquet_writer = native_parquet_writer;
         }
 
-        if let Some(use_experimental_distributed_engine) = use_experimental_distributed_engine {
-            config.use_experimental_distributed_engine = use_experimental_distributed_engine;
+        if let Some(use_legacy_ray_runner) = use_legacy_ray_runner {
+            config.use_legacy_ray_runner = use_legacy_ray_runner;
         }
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
@@ -364,8 +383,13 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn use_experimental_distributed_engine(&self) -> PyResult<bool> {
-        Ok(self.config.use_experimental_distributed_engine)
+    fn scantask_max_parallel(&self) -> PyResult<usize> {
+        Ok(self.config.scantask_max_parallel)
+    }
+
+    #[getter]
+    fn use_legacy_ray_runner(&self) -> PyResult<bool> {
+        Ok(self.config.use_legacy_ray_runner)
     }
 
     #[getter]

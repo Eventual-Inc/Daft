@@ -2073,6 +2073,7 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
     )
 }
 
+/// Check if the top-level expression is a UDF
 #[inline]
 pub fn is_udf(expr: &ExprRef) -> bool {
     matches!(
@@ -2084,23 +2085,19 @@ pub fn is_udf(expr: &ExprRef) -> bool {
     )
 }
 
-pub fn count_udfs(exprs: &[ExprRef]) -> usize {
-    exprs
-        .iter()
-        .map(|expr| {
-            let mut count = 0;
-            expr.apply(|e| {
-                if is_udf(e) {
-                    count += 1;
-                }
+/// Count the number of UDFs anywhere in the expression tree
+pub fn count_udfs(expr: &ExprRef) -> usize {
+    let mut count = 0;
+    expr.apply(|e| {
+        if is_udf(e) {
+            count += 1;
+        }
 
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            })
-            .unwrap();
+        Ok(common_treenode::TreeNodeRecursion::Continue)
+    })
+    .unwrap();
 
-            count
-        })
-        .sum()
+    count
 }
 
 pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {

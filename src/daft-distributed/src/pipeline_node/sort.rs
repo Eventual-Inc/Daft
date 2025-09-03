@@ -86,7 +86,7 @@ impl SortNode {
     }
 
     #[cfg(feature = "python")]
-    fn get_partition_boundaries(
+    async fn get_partition_boundaries(
         &self,
         input: Vec<MaterializedOutput>,
         num_partitions: usize,
@@ -105,35 +105,58 @@ impl SortNode {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let boundaries = Python::with_gil(|py| {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+        let (task_locals, py_object_refs, py_sort_by, descending, nulls_first) =
+            Python::with_gil(|py| {
+                let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
+                    .get()
+                    .expect("Python task locals not initialized")
+                    .clone_ref(py);
 
-            let py_object_refs = ray_partition_refs
-                .into_iter()
-                .map(|pr| pr.get_object_ref(py))
-                .collect::<Vec<_>>();
+                let py_object_refs = ray_partition_refs
+                    .into_iter()
+                    .map(|pr| pr.get_object_ref(py))
+                    .collect::<Vec<_>>();
 
-            let py_sort_by = self
-                .sort_by
-                .iter()
-                .map(|e| daft_dsl::python::PyExpr {
-                    expr: e.inner().clone(),
-                })
-                .collect::<Vec<_>>();
+                let py_sort_by = self
+                    .sort_by
+                    .iter()
+                    .map(|e| daft_dsl::python::PyExpr {
+                        expr: e.inner().clone(),
+                    })
+                    .collect::<Vec<_>>();
 
-            let boundaries = flotilla_module.call_method1(
-                pyo3::intern!(py, "get_boundaries"),
                 (
+                    task_locals,
                     py_object_refs,
                     py_sort_by,
                     self.descending.clone(),
                     self.nulls_first.clone(),
-                    num_partitions,
-                ),
-            )?;
-            let boundaries =
-                boundaries.extract::<daft_micropartition::python::PyMicroPartition>()?;
-            Ok::<_, PyErr>(boundaries)
+                )
+            });
+
+        let await_coroutine = async move {
+            let result = Python::with_gil(|py| {
+                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+
+                let coroutine = flotilla_module.call_method1(
+                    pyo3::intern!(py, "get_boundaries"),
+                    (
+                        py_object_refs,
+                        py_sort_by,
+                        descending,
+                        nulls_first,
+                        num_partitions,
+                    ),
+                )?;
+                pyo3_async_runtimes::tokio::into_future(coroutine)
+            })?
+            .await?;
+            DaftResult::Ok(result)
+        };
+
+        let boundaries = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
+        let boundaries = Python::with_gil(|py| {
+            boundaries.extract::<daft_micropartition::python::PyMicroPartition>(py)
         })?;
 
         let boundaries = boundaries
@@ -148,7 +171,7 @@ impl SortNode {
     }
 
     #[cfg(not(feature = "python"))]
-    fn get_partition_boundaries(
+    async fn get_partition_boundaries(
         &self,
         input: Vec<MaterializedOutput>,
         num_partitions: usize,
@@ -188,6 +211,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
             return Ok(());
@@ -219,6 +243,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -231,7 +256,9 @@ impl SortNode {
             .collect::<Vec<_>>();
 
         let num_partitions = self.child.config().clustering_spec.num_partitions();
-        let boundaries = self.get_partition_boundaries(sampled_outputs, num_partitions)?;
+        let boundaries = self
+            .get_partition_boundaries(sampled_outputs, num_partitions)
+            .await?;
 
         let partition_tasks = materialized_outputs
             .into_iter()
@@ -256,6 +283,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -287,6 +315,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
         }

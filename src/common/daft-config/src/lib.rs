@@ -71,8 +71,9 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
+    pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
-    pub use_experimental_distributed_engine: bool,
+    pub use_legacy_ray_runner: bool,
     pub min_cpu_per_task: f64,
 }
 
@@ -106,8 +107,9 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
+            scantask_max_parallel: 8,
             native_parquet_writer: true,
-            use_experimental_distributed_engine: true,
+            use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
         }
     }
@@ -137,6 +139,20 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
             cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
         }
+        let scantask_max_parallel_env_var_name = "DAFT_SCANTASK_MAX_PARALLEL";
+        if let Ok(val) = std::env::var(scantask_max_parallel_env_var_name) {
+            if val.trim().to_lowercase().as_str() == "auto" {
+                cfg.scantask_max_parallel = 0;
+            } else {
+                match val.parse::<usize>() {
+                    Ok(parallel) => cfg.scantask_max_parallel = parallel,
+                    Err(_) => eprintln!(
+                        "Invalid {} value: {}, using default {}",
+                        scantask_max_parallel_env_var_name, val, cfg.scantask_max_parallel
+                    ),
+                }
+            }
+        }
         let native_parquet_writer_env_var_name = "DAFT_NATIVE_PARQUET_WRITER";
         if let Ok(val) = std::env::var(native_parquet_writer_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "0" | "false")
@@ -145,8 +161,7 @@ impl DaftExecutionConfig {
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
         if let Ok(val) = std::env::var(flotilla_env_var_name) {
-            cfg.use_experimental_distributed_engine =
-                !matches!(val.trim().to_lowercase().as_str(), "0" | "false");
+            cfg.use_legacy_ray_runner = matches!(val.trim().to_lowercase().as_str(), "0" | "false");
         }
         let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
         if let Ok(val) = std::env::var(min_cpu_var) {

@@ -18,6 +18,7 @@ from daft.dependencies import np, pa
 from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
+from daft.udf._internal import check_fn_serializable
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -266,13 +267,6 @@ class UDF:
 
         # construct the UninitializedUdf here so that the constructed expressions can maintain equality
         if isinstance(self.inner, type):
-            if self.concurrency is None:
-                import warnings
-
-                warnings.warn(
-                    "Class UDF was created with `concurrency=None`. Consider setting the concurrency if UDF instances can be reused."
-                )
-
             self.wrapped_inner = UninitializedUdf(self.inner)
         else:
             self.wrapped_inner = UninitializedUdf(lambda: self.inner)
@@ -280,6 +274,7 @@ class UDF:
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
 
+        check_fn_serializable(self.inner, "@daft.udf")
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
 

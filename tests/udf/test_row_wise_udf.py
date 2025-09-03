@@ -60,7 +60,10 @@ def test_row_wise_udf_should_infer_dtype_from_function():
 
 
 def test_func_requires_return_dtype_when_no_annotation():
-    with pytest.raises(ValueError, match="return_dtype is required when function has no return annotation"):
+    with pytest.raises(
+        ValueError,
+        match="`@daft.func` requires either a return type hint or the `return_dtype` argument to be specified.",
+    ):
 
         @daft.func()
         def my_func(a: int, b: int):
@@ -87,7 +90,7 @@ def test_row_wise_udf_literal_eval():
     def my_stringify_and_sum(a: int, b: int) -> str:
         return f"{a + b}"
 
-    assert my_stringify_and_sum.eval(1, 2) == "3"
+    assert my_stringify_and_sum(1, 2) == "3"
 
 
 def test_row_wise_udf_kwargs():
@@ -95,8 +98,8 @@ def test_row_wise_udf_kwargs():
     def my_stringify_and_sum_repeat(a: int, b: int, repeat: int = 1) -> str:
         return f"{a + b}" * repeat
 
-    assert my_stringify_and_sum_repeat.eval(1, 2) == "3"
-    assert my_stringify_and_sum_repeat.eval(1, 2, 3) == "333"
+    assert my_stringify_and_sum_repeat(1, 2) == "3"
+    assert my_stringify_and_sum_repeat(1, 2, 3) == "333"
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     default_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y")))

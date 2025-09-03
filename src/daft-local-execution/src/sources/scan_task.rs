@@ -39,8 +39,6 @@ pub struct ScanTaskSource {
 }
 
 impl ScanTaskSource {
-    const MAX_PARALLEL_SCAN_TASKS: usize = 8;
-
     pub fn new(
         scan_tasks: Vec<Arc<ScanTask>>,
         pushdowns: Pushdowns,
@@ -48,6 +46,7 @@ impl ScanTaskSource {
         cfg: &DaftExecutionConfig,
     ) -> Self {
         // Determine the number of parallel tasks to run based on available CPU cores and row limits
+        let num_cpus = get_compute_pool_num_threads();
         let mut num_parallel_tasks = match pushdowns.limit {
             // If we have a row limit, we need to calculate how many parallel tasks we can run
             // without exceeding the limit
@@ -56,7 +55,7 @@ impl ScanTaskSource {
                 let mut remaining_rows = limit as f64;
 
                 // Only examine tasks up to the number of available CPU cores
-                for scan_task in scan_tasks.iter().take(Self::MAX_PARALLEL_SCAN_TASKS) {
+                for scan_task in scan_tasks.iter().take(num_cpus) {
                     match scan_task.approx_num_rows(Some(cfg)) {
                         // If we can estimate the number of rows for this task
                         Some(estimated_rows) => {
@@ -75,8 +74,19 @@ impl ScanTaskSource {
                 }
                 count
             }
-            // If there's no row limit, use all available CPU cores
-            None => Self::MAX_PARALLEL_SCAN_TASKS,
+            // If there's no row limit, use the configured parallelism, or all available CPU cores
+            // if configured value is 0
+            None => {
+                if cfg.scantask_max_parallel == 0 {
+                    log::info!(
+                        "The max parallelism of the scan tasks is configured to {}, using all available CPUs instead.",
+                        cfg.scantask_max_parallel
+                    );
+                    num_cpus
+                } else {
+                    cfg.scantask_max_parallel
+                }
+            }
         };
         num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
         Self {
@@ -213,11 +223,13 @@ impl TreeDisplay for ScanTaskSource {
                 .map(|st| st.size_bytes_on_disk().unwrap_or(0))
                 .sum();
 
+            let num_parallel_tasks = scan.num_parallel_tasks;
             #[allow(unused_mut)]
             let mut s = format!(
                 "ScanTaskSource:
 Num Scan Tasks = {num_scan_tasks}
 Estimated Scan Bytes = {total_bytes}
+Num Parallel Scan Tasks = {num_parallel_tasks}
 "
             );
             #[cfg(feature = "python")]

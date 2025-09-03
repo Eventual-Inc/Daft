@@ -12,7 +12,8 @@ use super::{
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
         PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
         ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
-        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
+        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -170,6 +171,7 @@ impl OptimizerBuilder {
             // UDFs and monotonically increasing ids.
             RuleBatch::new(
                 vec![
+                    Box::new(SplitUDFsFromFilters::new()),
                     Box::new(SplitUDFs::new()),
                     Box::new(PushDownProjection::new()),
                     Box::new(DetectMonotonicId::new()),

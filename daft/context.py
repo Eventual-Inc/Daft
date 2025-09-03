@@ -138,6 +138,7 @@ def planning_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
 def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
+    enable_strict_filter_pushdown: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control Daft plan construction behavior.
 
@@ -154,7 +155,7 @@ def set_planning_config(
     with ctx._lock:
         old_daft_planning_config = ctx._ctx._daft_planning_config if config is None else config
         new_daft_planning_config = old_daft_planning_config.with_config_values(
-            default_io_config=default_io_config,
+            default_io_config=default_io_config, enable_strict_filter_pushdown=enable_strict_filter_pushdown
         )
 
         ctx._ctx._daft_planning_config = new_daft_planning_config
@@ -199,8 +200,9 @@ def set_execution_config(
     flight_shuffle_dirs: list[str] | None = None,
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
+    scantask_max_parallel: int | None = None,
     native_parquet_writer: bool | None = None,
-    use_experimental_distributed_engine: bool | None = None,
+    use_legacy_ray_runner: bool | None = None,
     min_cpu_per_task: float | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -247,10 +249,10 @@ def set_execution_config(
         flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
+        scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
-        use_experimental_distributed_engine: Whether to use the experimental distributed engine on the ray runner. Defaults to `True`.
-            Note: Not all operations are currently supported, and daft will fallback to the current engine if necessary.
-        min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 1.
+        use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
+        min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -283,8 +285,9 @@ def set_execution_config(
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,
+            scantask_max_parallel=scantask_max_parallel,
             native_parquet_writer=native_parquet_writer,
-            use_experimental_distributed_engine=use_experimental_distributed_engine,
+            use_legacy_ray_runner=use_legacy_ray_runner,
             min_cpu_per_task=min_cpu_per_task,
         )
 

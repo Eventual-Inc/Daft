@@ -226,7 +226,16 @@ impl IOClient {
         let new_source = match source_type {
             SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::Http => {
-                HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+                let url = url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+
+                // Hugging Face requires special logic around cache busting. That logic is encapsulated in the HFSource.
+                match url.domain() {
+                    Some("huggingface.co") => {
+                        HFSource::get_client(&self.config.hf, &self.config.http).await?
+                            as Arc<dyn ObjectSource>
+                    }
+                    _ => HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>,
+                }
             }
             SourceType::S3 => {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
@@ -457,7 +466,10 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 Ok((SourceType::File, fixed_input))
             }
         }
-        "http" | "https" => Ok((SourceType::Http, fixed_input)),
+        "http" | "https" => match url.domain() {
+            Some("huggingface.co") => Ok((SourceType::HF, fixed_input)),
+            _ => Ok((SourceType::Http, fixed_input)),
+        },
         "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),

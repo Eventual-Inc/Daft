@@ -311,7 +311,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::default();
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
         let predicate = expr_resolver.resolve_single(predicate, self.plan.clone())?;
 
