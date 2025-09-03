@@ -40,7 +40,7 @@ def test_generator_udf_literal_eval():
         for _ in range(n):
             yield to_repeat
 
-    assert list(my_repeat.eval("foo", 3)) == ["foo", "foo", "foo"]
+    assert list(my_repeat("foo", 3)) == ["foo", "foo", "foo"]
 
 
 def test_generator_udf_typing_iterator():

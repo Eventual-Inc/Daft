@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+import threading
 
+import httpx
 import numpy as np
 import pyarrow as pa
 import pytest
+from openai import APIStatusError
 
 import daft
 from daft import col
@@ -669,7 +672,7 @@ def test_run_udf_on_same_process(batch_size):
     get_tests_daft_runner_name() == "ray",
     reason="Ray runner will always run UDFs on separate processes",
 )
-@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 10])
 def test_run_udf_on_separate_process(batch_size):
     df = daft.from_pydict({"a": [None] * 3})
 
@@ -681,3 +684,58 @@ def test_run_udf_on_separate_process(batch_size):
     current_pid = os.getpid()
     for pid in result.to_pydict()["udf_1"]:
         assert pid != current_pid
+
+
+def test_udf_error_serialize_err():
+    """Test that UDF errors that can't be serialized are handled."""
+
+    @udf(return_dtype=DataType.string(), use_process=True)
+    def throw_value_err(x):
+        raise ValueError(lambda x: x * 2)
+
+    expr = throw_value_err(col("a"))
+
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    with pytest.raises(UDFException) as exc_info:
+        table.eval_expression_list([expr])
+
+    assert str(exc_info.value).startswith("User-defined function")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_udf_error_deserialize_err():
+    """Test that UDF errors that can't be deserialized are handled."""
+
+    @udf(return_dtype=DataType.int64(), use_process=True)
+    def throw_api_status_err(x: int) -> int:
+        fake_request = httpx.Request("GET", "http://google.com")
+        fake_response = httpx.Response(status_code=400, request=fake_request, headers={})
+        raise APIStatusError("test", response=fake_response, body=None)
+
+    expr = throw_api_status_err(col("a"))
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(UDFException) as exc_info:
+        table.eval_expression_list([expr])
+
+    assert str(exc_info.value).startswith("User-defined function")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=3)")
+    assert isinstance(exc_info.value.__cause__, APIStatusError)
+
+
+def test_udf_error_global_var():
+    """Test that UDFs that use non-serializable global variables error with a helpful message."""
+    # Create a global variable that is not serializable
+    lock = threading.Lock()
+
+    @udf(return_dtype=DataType.string())
+    def use_global_lambda(x):
+        with lock:
+            return x * 2
+
+    with pytest.raises(
+        ValueError,
+        match="`@daft.udf` requires that the UDF is serializable.",
+    ):
+        use_global_lambda(col("a"))

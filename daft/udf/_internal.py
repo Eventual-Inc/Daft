@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import daft.pickle
 from daft.expressions.expressions import Expression
 
 if TYPE_CHECKING:
@@ -30,3 +31,14 @@ def get_expr_args(args: tuple[Any, ...], kwargs: dict[str, Any]) -> list[PyExpr]
         if isinstance(arg, Expression):
             expr_args.append(arg._expr)
     return expr_args
+
+
+def check_fn_serializable(fn: Any, source_decorator: str) -> None:
+    """Check that the function is serializable."""
+    # TODO: Expand this check to look at the global vars and identify the non-serializable one.
+    try:
+        _ = daft.pickle.dumps(fn)
+    except Exception as e:
+        raise ValueError(
+            f"`{source_decorator}` requires that the UDF is serializable. Please double-check that the function does not use any global variables.\n\nIf it does, please use the legacy `@daft.udf` with a class UDF instead and initialize the global in the `__init__` method."
+        ) from e

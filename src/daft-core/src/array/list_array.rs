@@ -235,4 +235,17 @@ impl Iterator for ListArrayIter<'_> {
             None
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.array.len() - self.idx,
+            Some(self.array.len() - self.idx),
+        )
+    }
+}
+
+impl ExactSizeIterator for ListArrayIter<'_> {
+    fn len(&self) -> usize {
+        self.array.len() - self.idx
+    }
 }

@@ -1,8 +1,8 @@
 * Guide
     * [Overview](index.md)
-    * [Installation](install.md)
     * [Quickstart](quickstart.md)
-    * Modalities
+    * [Installation](install.md)
+    * Working with Modalities
         * [Overview](modalities/index.md)
         * [Custom Modalities](modalities/custom.md)
         * [URLs and Files](modalities/urls.md)
@@ -27,6 +27,7 @@
         * [Hugging Face Datasets](connectors/huggingface.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
+        * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * [Scaling Out and Deployment](distributed.md)
     * Optimization and Debugging
