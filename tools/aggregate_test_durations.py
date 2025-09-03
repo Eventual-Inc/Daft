@@ -24,6 +24,7 @@ class TestDurationAggregator:
         self.test_times = []
         self.module_times = defaultdict(list)
         self.directory_times = defaultdict(list)
+        self.tests_analyzed = 0
 
     def parse_durations(self):
         """Parse test durations from pytest output file."""
@@ -34,10 +35,16 @@ class TestDurationAggregator:
             with open(self.filename) as f:
                 for line_num, line in enumerate(f, 1):
                     line = line.strip()
+
+                    # Check for duration lines
                     match = re.match(pattern, line)
                     if match:
                         time_str, phase, file_path, test_name = match.groups()
                         time_seconds = float(time_str)
+
+                        # Count 'call' phases as actual tests
+                        if phase == "call":
+                            self.tests_analyzed += 1
 
                         # Store individual test with phase information
                         self.test_times.append(
@@ -181,7 +188,7 @@ class TestDurationAggregator:
         max_time = max(test["time"] for test in self.test_times) if self.test_times else 0
         min_time = min(test["time"] for test in self.test_times) if self.test_times else 0
 
-        print(f"Total Test Phases: {total_tests}")
+        print(f"Tests Analyzed: {self.tests_analyzed}")
         print(f"Total Time: {total_time:.2f}s")
         print(f"Average Time: {avg_time:.2f}s")
         print(f"Max Time: {max_time:.2f}s")
@@ -212,6 +219,27 @@ class TestDurationAggregator:
         for row in phase_table_data:
             print(f"{row[0]:<10} {row[1]:<6} {row[2]:<10} {row[3]:<8} {row[4]:<8} {row[5]:<8}")
 
+    def print_slowest_tests(self):
+        """Print the slowest individual tests."""
+        print(f"\n{'='*80}")
+        print("SLOWEST INDIVIDUAL TESTS")
+        print(f"{'='*80}")
+
+        # Sort tests by time (descending)
+        sorted_tests = sorted(self.test_times, key=lambda x: x["time"], reverse=True)
+
+        # Take top 50
+        top_tests = sorted_tests[:50]
+
+        # Print header
+        print(f"{'Time':<8} {'Phase':<8} {'Test':<60}")
+        print("-" * 80)
+
+        # Print tests
+        for test in top_tests:
+            test_name = f"{test['file']}::{test['test']}"
+            print(f"{test['time']:<8.2f} {test['phase']:<8} {test_name:<60}")
+
     def run_analysis(self):
         """Run the complete analysis."""
         start_time = time.time()
@@ -227,6 +255,9 @@ class TestDurationAggregator:
 
         # Print summary
         self.print_summary()
+
+        # Print slowest individual tests
+        self.print_slowest_tests()
 
         # Print module-level aggregation
         self.print_results("SLOWEST TEST MODULES (FILES)", self.module_times, sort_key="total", limit=None)
