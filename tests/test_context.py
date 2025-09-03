@@ -135,7 +135,7 @@ print(daft.context.get_context()._runner.name)
 
 
 def test_in_ray_job():
-    """Test that Ray job ID environment variable is being picked up."""
+    """Test that Ray job ID environment variable is being detected."""
     autodetect_script = """
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})
