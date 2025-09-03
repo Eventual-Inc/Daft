@@ -1,7 +1,5 @@
 # AGENTS.md - Building and Testing Daft
 
-This document provides guidance for AI agents and developers on how to build and test the Daft project. While the project includes a comprehensive Makefile, this guide focuses on the direct commands and processes that agents can use to understand and work with the codebase.
-
 ## Project Overview
 
 Daft is a distributed query engine for large-scale multimodal data processing using Python or SQL, implemented in Rust with Python bindings. The project uses:
@@ -104,12 +102,6 @@ make test EXTRA_ARGS="-v --tb=short"
 
 ## Resources
 
-- [Project Documentation](https://docs.daft.ai)
+- [Library Documentation](https://docs.daft.ai)
 - [Contributing Guide](CONTRIBUTING.md)
-- [Rust Documentation](https://doc.rust-lang.org/)
-- [Maturin Documentation](https://maturin.rs/)
-- [uv Documentation](https://docs.astral.sh/uv/)
-
----
-
-This guide provides the essential information for AI agents to understand and work with the Daft project's build and testing processes. For more detailed information, refer to the project's documentation and contributing guidelines.
+- [GitHub Repo](https://github.com/Eventual-Inc/Daft)
