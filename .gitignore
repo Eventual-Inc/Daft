@@ -66,3 +66,7 @@ site
 # added by vim
 *.swp
 *.swo
+
+# AGENT Prompting Templates
+AGENTS.md
+CLAUDE.local.md
