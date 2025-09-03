@@ -317,6 +317,7 @@ fn make_new_task_from_materialized_outputs<F>(
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: F,
+    scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>>
 where
     F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
@@ -338,7 +339,7 @@ where
         plan,
         node.config().execution_config.clone(),
         psets,
-        SchedulingStrategy::Spread,
+        scheduling_strategy.unwrap_or(SchedulingStrategy::Spread),
         node.context().to_hashmap(),
     );
     Ok(SubmittableTask::new(task))
@@ -348,8 +349,15 @@ fn make_in_memory_task_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
+    scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    make_new_task_from_materialized_outputs(task_context, materialized_outputs, node, |input| input)
+    make_new_task_from_materialized_outputs(
+        task_context,
+        materialized_outputs,
+        node,
+        |input| input,
+        scheduling_strategy,
+    )
 }
 
 fn append_plan_to_existing_task<F>(
