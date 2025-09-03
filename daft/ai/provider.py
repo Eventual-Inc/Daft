@@ -18,7 +18,7 @@ class ProviderImportError(ImportError):
 
 def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
     try:
-        from daft.ai.openai import LMStudioProvider
+        from daft.ai.lm_studio.provider import LMStudioProvider
 
         return LMStudioProvider(name, **options)
     except ImportError as e:
