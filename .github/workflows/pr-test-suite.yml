@@ -67,7 +67,7 @@ jobs:
         echo "diff: $diff"
         echo "exit_code: $exit_code"
 
-        if [ $exit_code -ne 0 ] || [ -n "$diff" ]; then
+        if [ $exit_code -ne 0 ] || [ -z "$diff" ]; then
           echo "skip=true" >> $GITHUB_OUTPUT
         else
           echo "skip=false" >> $GITHUB_OUTPUT
