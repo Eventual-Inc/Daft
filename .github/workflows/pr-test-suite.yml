@@ -159,8 +159,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "pytest_output.txt"
+            if (output_to_file) print > "pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py pytest_output.txt
         coverage combine -a --data-file='.coverage' || true
@@ -186,8 +185,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "pytest_output.txt"
+            if (output_to_file) print > "pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py pytest_output.txt
         coverage combine -a --data-file='.coverage' || true
@@ -362,8 +360,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "tpch_pytest_output.txt"
+            if (output_to_file) print > "tpch_pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
@@ -455,18 +452,16 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "io_integration_pytest_output.txt"
+            if (output_to_file) print > "io_integration_pytest_output.txt" else print
         }'
         pytest tests/io -m 'integration' --durations=0 | awk '
         /slowest durations/ {
             output_to_file = 1
-            print >> "io_integration_pytest_output.txt"
+            print > "io_integration_pytest_output.txt"
             next
         }
         {
-            print
-            if (output_to_file) print >> "io_integration_pytest_output.txt"
+            if (output_to_file) print > "io_integration_pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py io_integration_pytest_output.txt
       env:
@@ -578,8 +573,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "io_credentialed_pytest_output.txt"
+            if (output_to_file) print > "io_credentialed_pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py io_credentialed_pytest_output.txt
       env:
@@ -675,8 +669,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "iceberg_pytest_output.txt"
+            if (output_to_file) print > "iceberg_pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
@@ -770,8 +763,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "sql_pytest_output.txt"
+            if (output_to_file) print > "sql_pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
@@ -867,8 +859,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "unity_pytest_output.txt"
+            if (output_to_file) print > "unity_pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
@@ -951,8 +942,7 @@ jobs:
             next
         }
         {
-            print
-            if (output_to_file) print > "ai_pytest_output.txt"
+            if (output_to_file) print > "ai_pytest_output.txt" else print
         }'
         python tools/aggregate_test_durations.py ai_pytest_output.txt
       env:
