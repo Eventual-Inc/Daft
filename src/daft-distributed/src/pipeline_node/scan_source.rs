@@ -130,55 +130,86 @@ impl ScanSourceNode {
             TaskContext::from((&self.context, task_id_counter.next())),
         )?);
 
-
         struct DetermineBatchSize {
-            bs: Option<u64>
+            bs: Option<u64>,
         }
 
-        impl TreeNodeVisitor for X {
+        impl DetermineBatchSize {
+            fn visit_and_update(&mut self, node: &daft_logical_plan::LogicalPlanRef) {
+                let maybe_observed_batch_size = match &**node {
+                    daft_logical_plan::LogicalPlan::UDFProject(udf_project) => {
+                        udf_project.udf_properties.batch_size.map(|bs| bs as u64)
+                    }
+                    daft_logical_plan::LogicalPlan::IntoBatches(into_batches) => {
+                        Some(into_batches.batch_size as u64)
+                    }
+                    daft_logical_plan::LogicalPlan::Source(_)
+                    | daft_logical_plan::LogicalPlan::Shard(_)
+                    | daft_logical_plan::LogicalPlan::Project(_)
+                    | daft_logical_plan::LogicalPlan::Filter(_)
+                    | daft_logical_plan::LogicalPlan::Limit(_)
+                    | daft_logical_plan::LogicalPlan::Offset(_)
+                    | daft_logical_plan::LogicalPlan::Explode(_)
+                    | daft_logical_plan::LogicalPlan::Unpivot(_)
+                    | daft_logical_plan::LogicalPlan::Sort(_)
+                    | daft_logical_plan::LogicalPlan::Repartition(_)
+                    | daft_logical_plan::LogicalPlan::Distinct(_)
+                    | daft_logical_plan::LogicalPlan::Aggregate(_)
+                    | daft_logical_plan::LogicalPlan::Pivot(_)
+                    | daft_logical_plan::LogicalPlan::Concat(_)
+                    | daft_logical_plan::LogicalPlan::Intersect(_)
+                    | daft_logical_plan::LogicalPlan::Union(_)
+                    | daft_logical_plan::LogicalPlan::Join(_)
+                    | daft_logical_plan::LogicalPlan::Sink(_)
+                    | daft_logical_plan::LogicalPlan::Sample(_)
+                    | daft_logical_plan::LogicalPlan::MonotonicallyIncreasingId(_)
+                    | daft_logical_plan::LogicalPlan::SubqueryAlias(_)
+                    | daft_logical_plan::LogicalPlan::Window(_)
+                    | daft_logical_plan::LogicalPlan::TopN(_) => None,
+                };
 
-            type Node = daft_logical_plan::LogicalPlanRef;
-            
-            /// Perform this action after we've visited this node's children. (Bottom-up)
-            fn f_down(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
-                match node {
-                    daft_logical_plan::LogicalPlan::Source(Source) => {},
-                    daft_logical_plan::LogicalPlan::Shard(Shard) => {},
-                    daft_logical_plan::LogicalPlan::Project(Project) => {},
-                    daft_logical_plan::LogicalPlan::UDFProject(UDFProject) => {},
-                    daft_logical_plan::LogicalPlan::Filter(Filter) => {},
-                    daft_logical_plan::LogicalPlan::IntoBatches(IntoBatches) => {},
-                    daft_logical_plan::LogicalPlan::Limit(Limit) => {},
-                    daft_logical_plan::LogicalPlan::Offset(Offset) => {},
-                    daft_logical_plan::LogicalPlan::Explode(Explode) => {},
-                    daft_logical_plan::LogicalPlan::Unpivot(Unpivot) => {},
-                    daft_logical_plan::LogicalPlan::Sort(Sort) => {},
-                    daft_logical_plan::LogicalPlan::Repartition(Repartition) => {},
-                    daft_logical_plan::LogicalPlan::Distinct(Distinct) => {},
-                    daft_logical_plan::LogicalPlan::Aggregate(Aggregate) => {},
-                    daft_logical_plan::LogicalPlan::Pivot(Pivot) => {},
-                    daft_logical_plan::LogicalPlan::Concat(Concat) => {},
-                    daft_logical_plan::LogicalPlan::Intersect(Intersect) => {},
-                    daft_logical_plan::LogicalPlan::Union(Union) => {},
-                    daft_logical_plan::LogicalPlan::Join(Join) => {},
-                    daft_logical_plan::LogicalPlan::Sink(Sink) => {},
-                    daft_logical_plan::LogicalPlan::Sample(Sample) => {},
-                    daft_logical_plan::LogicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId) => {},
-                    daft_logical_plan::LogicalPlan::SubqueryAlias(SubqueryAlias) => {},
-                    daft_logical_plan::LogicalPlan::Window(Window) => {},
-                    daft_logical_plan::LogicalPlan::TopN(TopN) => {},
+                if let Some(new_bs) = maybe_observed_batch_size {
+                    match self.bs {
+                        Some(existing_bs) => {
+                            if new_bs < existing_bs {
+                                self.bs = Some(new_bs);
+                            }
+                        }
+                        None => self.bs = Some(new_bs),
+                    }
                 }
+            }
+        }
+
+        impl TreeNodeVisitor for DetermineBatchSize {
+            type Node = daft_logical_plan::LogicalPlanRef;
+
+            /// Perform this action after we've visited this node's children. (Bottom-up)
+            fn f_down(
+                &mut self,
+                node: &Self::Node,
+            ) -> DaftResult<common_treenode::TreeNodeRecursion> {
+                self.visit_and_update(node);
                 Ok(common_treenode::TreeNodeRecursion::Continue)
             }
-            
+
             // Perform this action right before visiting the node's chidlren. (Top-down)
-            fn f_up(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+            fn f_up(
+                &mut self,
+                node: &Self::Node,
+            ) -> DaftResult<common_treenode::TreeNodeRecursion> {
+                self.visit_and_update(node);
                 Ok(common_treenode::TreeNodeRecursion::Continue)
             }
         }
 
         let p: Arc<LocalPhysicalPlan> = t.task().plan();
-        p.visit(X{});
+
+        let minimum_batch_size_in_plan = {
+            let mut find_batch_size = DetermineBatchSize { bs: None };
+            p.visit(&mut find_batch_size);
+            find_batch_size.bs
+        };
 
         // Step 1: Materialize the scan task to get ray data pointers
 
