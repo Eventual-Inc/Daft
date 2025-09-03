@@ -38,7 +38,7 @@ def session(skip_no_credential):
 @pytest.mark.integration()
 def test_embed_text_sanity_all_models(session):
     """This tests end-to-end doesn't throw for all models. It does not check outputs."""
-    from daft.ai.openai.text_embedder import _models
+    from daft.ai.openai.protocols.text_embedder import _models
 
     df = daft.from_pydict(
         {

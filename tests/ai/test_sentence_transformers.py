@@ -8,7 +8,7 @@ pytest.importorskip("torch")
 import torch
 
 from daft.ai.protocols import TextEmbedderDescriptor
-from daft.ai.sentence_transformers import SentenceTransformersProvider
+from daft.ai.sentence_transformers.provider import SentenceTransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
 from tests.benchmarks.conftest import IS_CI
