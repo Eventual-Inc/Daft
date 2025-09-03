@@ -142,7 +142,6 @@ impl DistributedPipelineNode for UDFNode {
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-                batch_size,
             )
         };
 

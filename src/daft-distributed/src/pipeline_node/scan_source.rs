@@ -477,7 +477,7 @@ mod tests {
         expr::bound_expr::BoundExpr,
         functions::{
             map::MapExpr,
-            python::{LegacyPythonUDF, MaybeInitializedUDF},
+            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
             FunctionExpr,
         },
     };
@@ -486,10 +486,10 @@ mod tests {
 
     use super::*;
 
-    fn fake_udf_fn_expr(batch_size: Option<usize>) -> daft_dsl::expr::Expr::Function {
+    fn fake_udf_fn_expr(batch_size: Option<usize>) -> daft_dsl::expr::Expr {
         daft_dsl::expr::Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF {
-                name: Arc::new("dummy"),
+                name: Arc::new("dummy".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),
                     init_args: RuntimePyObject::new_none(),
@@ -521,8 +521,8 @@ mod tests {
         // Stage 3: UDFProject (no batch_size in physical plan)
         let plan = LocalPhysicalPlan::udf_project(
             stage2,
-            BoundExpr::try_new(fake_fn_expr(Some(250)), &schema).unwrap(), // convert to BoundExpr
-            vec![],                                                        // no passthrough columns
+            BoundExpr::try_new(fake_udf_fn_expr(Some(250)), &schema).unwrap(), // convert to BoundExpr
+            vec![], // no passthrough columns
             schema,
             StatsState::NotMaterialized,
         );
