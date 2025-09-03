@@ -46,9 +46,6 @@ make build
 
 # Release build (slower compilation, faster runtime)
 make build-release
-
-# Build wheel without installation
-make build-whl
 ```
 
 ### Building Protocol Buffers
@@ -92,13 +89,6 @@ make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe"
 # Run with additional options
 make test EXTRA_ARGS="-v --tb=short"
 ```
-
-## Performance Considerations
-
-- **Development builds** are faster to compile but slower at runtime
-- **Release builds** take longer to compile but provide optimal performance
-- **Integration tests** may require significant time and resources
-- **Benchmark tests** should be run separately from regular test suites
 
 ## Resources
 
