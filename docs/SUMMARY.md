@@ -17,6 +17,8 @@
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
         * [Working with GPUs](custom-code/gpu.md)
         * [External APIs](custom-code/apis.md)
+    * Models and Providers
+        * [Overview](models/index.md)
     * Data Connectors
         * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
