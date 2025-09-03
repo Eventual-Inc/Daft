@@ -5,7 +5,6 @@ import re
 import numpy as np
 import pandas as pd
 import pytest
-from PIL import Image
 
 import daft
 from tests.utils import ANSI_ESCAPE
@@ -280,9 +279,11 @@ class MyObj:
 
 
 def test_repr_html_custom_hooks():
+    PIL = pytest.importorskip("PIL")
+
     td_style = dataframe_td_style(3)
 
-    img = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
+    img = PIL.Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     arr = np.ones((3, 3))
 
     df = daft.from_pydict(
