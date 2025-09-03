@@ -105,144 +105,27 @@ impl ScanSourceNode {
         task_id_counter: TaskIDCounter,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        batch_size: u64,
+        default_batch_size: usize,
     ) -> DaftResult<()> {
-        // TODO
-        // walk the plan and get the batch size of the next operator
+        // Step 1: walk the plan and get the minimum batch size declared by any operator
 
+        let submittable_task_scan = SubmittableTask::new(self.make_source_tasks(
+            vec![single_scan_task].into(),
+            TaskContext::from((&self.context, task_id_counter.next())),
+        )?);
+
+        let batch_size = min_batch_size_in_task_plan(submittable_task_scan.task().plan())
+            .unwrap_or(default_batch_size);
         if batch_size == 0 {
             return Err(
                 DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
             );
         }
-        let batch_size = match batch_size.try_into() {
-            Ok(bs) => bs,
-            Err(e) => {
-                return Err(DaftError::InternalError(format!(
-                "Batch size {batch_size} is too large to convert to usize on this platform: {e:?}"
-            ))
-                .into())
-            }
-        };
 
-        let t = SubmittableTask::new(self.make_source_tasks(
-            vec![single_scan_task].into(),
-            TaskContext::from((&self.context, task_id_counter.next())),
-        )?);
-
-        struct DetermineBatchSize {
-            bs: Option<usize>,
-        }
-
-        impl DetermineBatchSize {
-            fn visit_and_update(&mut self, node: &daft_local_plan::LocalPhysicalPlanRef) {
-                let maybe_observed_batch_size = match &**node {
-                    // does have a batch_size
-                    daft_local_plan::LocalPhysicalPlan::UDFProject(udf_project) => {
-                        udf_project.batch_size
-                    }
-                    daft_local_plan::LocalPhysicalPlan::IntoBatches(into_batches) => {
-                        Some(into_batches.batch_size)
-                    }
-                    #[cfg(feature = "python")]
-                    daft_local_plan::LocalPhysicalPlan::DistributedActorPoolProject(x) => {
-                        x.batch_size
-                    }
-
-                    // does not have a batch_size
-                    daft_local_plan::LocalPhysicalPlan::InMemoryScan(_)
-                    | daft_local_plan::LocalPhysicalPlan::PhysicalScan(_)
-                    | daft_local_plan::LocalPhysicalPlan::EmptyScan(_)
-                    | daft_local_plan::LocalPhysicalPlan::PlaceholderScan(_)
-                    | daft_local_plan::LocalPhysicalPlan::Project(_)
-                    | daft_local_plan::LocalPhysicalPlan::Filter(_)
-                    | daft_local_plan::LocalPhysicalPlan::Limit(_)
-                    | daft_local_plan::LocalPhysicalPlan::Explode(_)
-                    | daft_local_plan::LocalPhysicalPlan::Unpivot(_)
-                    | daft_local_plan::LocalPhysicalPlan::Sort(_)
-                    | daft_local_plan::LocalPhysicalPlan::TopN(_)
-                    | daft_local_plan::LocalPhysicalPlan::Sample(_)
-                    | daft_local_plan::LocalPhysicalPlan::MonotonicallyIncreasingId(_)
-                    | daft_local_plan::LocalPhysicalPlan::UnGroupedAggregate(_)
-                    | daft_local_plan::LocalPhysicalPlan::HashAggregate(_)
-                    | daft_local_plan::LocalPhysicalPlan::Dedup(_)
-                    | daft_local_plan::LocalPhysicalPlan::Pivot(_)
-                    | daft_local_plan::LocalPhysicalPlan::Concat(_)
-                    | daft_local_plan::LocalPhysicalPlan::HashJoin(_)
-                    | daft_local_plan::LocalPhysicalPlan::CrossJoin(_)
-                    | daft_local_plan::LocalPhysicalPlan::PhysicalWrite(_)
-                    | daft_local_plan::LocalPhysicalPlan::CommitWrite(_)
-                    | daft_local_plan::LocalPhysicalPlan::WindowPartitionOnly(_)
-                    | daft_local_plan::LocalPhysicalPlan::WindowPartitionAndOrderBy(_)
-                    | daft_local_plan::LocalPhysicalPlan::WindowPartitionAndDynamicFrame(_)
-                    | daft_local_plan::LocalPhysicalPlan::WindowOrderByOnly(_)
-                    | daft_local_plan::LocalPhysicalPlan::Repartition(_)
-                    | daft_local_plan::LocalPhysicalPlan::IntoPartitions(_) => None,
-                    #[cfg(feature = "python")]
-                    daft_local_plan::LocalPhysicalPlan::CatalogWrite(_)
-                    | daft_local_plan::LocalPhysicalPlan::LanceWrite(_)
-                    | daft_local_plan::LocalPhysicalPlan::DataSink(_) => None,
-                };
-
-                if let Some(new_bs) = maybe_observed_batch_size {
-                    match self.bs {
-                        Some(existing_bs) => {
-                            if new_bs < existing_bs {
-                                self.bs = Some(new_bs);
-                            }
-                        }
-                        None => self.bs = Some(new_bs),
-                    }
-                }
-            }
-        }
-
-        impl TreeNodeVisitor for DetermineBatchSize {
-            type Node = daft_local_plan::LocalPhysicalPlanRef;
-
-            /// Perform this action after we've visited this node's children. (Bottom-up)
-            fn f_down(
-                &mut self,
-                node: &Self::Node,
-            ) -> DaftResult<common_treenode::TreeNodeRecursion> {
-                self.visit_and_update(node);
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            }
-
-            // Perform this action right before visiting the node's chidlren. (Top-down)
-            fn f_up(
-                &mut self,
-                node: &Self::Node,
-            ) -> DaftResult<common_treenode::TreeNodeRecursion> {
-                self.visit_and_update(node);
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            }
-        }
-
-        let p: Arc<LocalPhysicalPlan> = t.task().plan();
-
-        let minimum_batch_size_in_plan = {
-            let mut find_batch_size = DetermineBatchSize { bs: None };
-            p.visit(&mut find_batch_size);
-            find_batch_size.bs
-        };
-
-        // Step 1: Materialize the scan task to get ray data pointers
-
-        // let plan_builder = move |input| {
-        //     LocalPhysicalPlan::into_batches(
-        //         input,
-        //         batch_size,
-        //         true, // Strict batch sizes
-        //         StatsState::NotMaterialized,
-        //     )
-        // };
+        // Step 2: Materialize the scan task to get ray data pointers
 
         let scan_and_into_batches_task = append_plan_to_existing_task(
-            SubmittableTask::new(self.make_source_tasks(
-                vec![single_scan_task].into(),
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )?),
+            submittable_task_scan,
             &(self.clone() as Arc<dyn DistributedPipelineNode>),
             &(move |input| {
                 LocalPhysicalPlan::into_batches(
@@ -253,7 +136,7 @@ impl ScanSourceNode {
                 )
             }),
         );
-        // a task with 2 operations:
+        // we created a task with 2 operations:
         //      (1) physical_scan
         //      (2) into_batches
 
@@ -261,36 +144,35 @@ impl ScanSourceNode {
             .submit(&scheduler_handle)?
             .await?;
 
-        /**
+        //
+        //     a single scan task generally corresponds to a single partition
+        //
+        //     could have multiple scan tasks in one file
+        //         e.g. parquet with row groups (constant time to offset into a row group)
+        //
+        // --- have ---
+        //
+        // 1. create scan task
+        // 2. materialize scan task
+        // 3. generate into batches task
+        // 4. "return" this
+        //
+        // --- want ---
+        //
+        // 1. create scan task
+        // 2. create into batches task and **append** to scan task
+        // 3. >> we cannot just *return* <<
+        //
+        // we need to inform the scheduler that it can move these "batches" around freely
+        // for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
+        //
 
-            a single scan task generally corresponds to a single partition
-
-            could have multiple scan tasks in one file
-                e.g. parquet with row groups (constant time to offset into a row group)
-
-        --- have ---
-
-        1. create scan task
-        2. materialize scan task
-        3. generate into batches task
-        4. "return" this
-
-        --- want ---
-
-        1. create scan task
-        2. create into batches task and **append** to scan task
-        3. >> we cannot just *return* <<
-
-        we need to inform the scheduler that it can move these "batches" around freely
-        for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
-
-         */
         if let Some(materialized_output) = maybe_materialized_output {
-            // Step 2: Split the materialized output into batches of size 'k'
+            // Step 3: Split the materialized output into batches of size 'k'
+
             let materialized_outputs = materialized_output.split_into_materialized_outputs();
 
-            // Step 3: Create into_batches tasks for each batch
-            // todo!("this won't work because materialized_outputs is a vec of length one, so .chunks(K) on [0] will be [0]");
+            // Step 4: Create in-memory tasks for each batch
 
             for batch in materialized_outputs.chunks(batch_size) {
                 let batch_materialized_outputs = batch.to_vec();
@@ -316,78 +198,6 @@ impl ScanSourceNode {
 
         Ok(())
     }
-
-    // async fn og_execute_optimized_scan(
-    //     self: Arc<Self>,
-    //     single_scan_task: ScanTaskLikeRef,
-    //     task_id_counter: TaskIDCounter,
-    //     result_tx: Sender<SubmittableTask<SwordfishTask>>,
-    //     scheduler_handle: SchedulerHandle<SwordfishTask>,
-    //     batch_size: u64,
-    // ) -> DaftResult<()> {
-    //     if batch_size == 0 {
-    //         return Err(
-    //             DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
-    //         );
-    //     }
-    //     let batch_size = match batch_size.try_into() {
-    //         Ok(bs) => bs,
-    //         Err(e) => {
-    //             return Err(DaftError::InternalError(format!(
-    //             "Batch size {batch_size} is too large to convert to usize on this platform: {e:?}"
-    //         ))
-    //             .into())
-    //         }
-    //     };
-
-    //     // Step 1: Materialize the scan task to get ray data pointers
-    //     let submit_single_scan_task = SubmittableTask::new(self.make_source_tasks(
-    //         vec![single_scan_task].into(),
-    //         TaskContext::from((&self.context, task_id_counter.next())),
-    //     )?);
-
-    //     let maybe_materialized_output = submit_single_scan_task.submit(&scheduler_handle)?.await?;
-
-    //     if let Some(materialized_output) = maybe_materialized_output {
-    //         // Step 2: Split the materialized output into batches of size 'k'
-    //         let materialized_outputs = materialized_output.split_into_materialized_outputs();
-
-    //         // Step 3: Create into_batches tasks for each batch
-    //         // todo!("this won't work because materialized_outputs is a vec of length one, so .chunks(K) on [0] will be [0]");
-
-    //         for batch in materialized_outputs.chunks(batch_size) {
-    //             let batch_materialized_outputs = batch.to_vec();
-
-    //             //
-
-    //             let task = make_new_task_from_materialized_outputs(
-    //                 TaskContext::from((&self.context, task_id_counter.next())),
-    //                 batch_materialized_outputs,
-    //                 &(self.clone() as Arc<dyn DistributedPipelineNode>),
-    //                 move |input| {
-    //                     LocalPhysicalPlan::into_batches(
-    //                         input,
-    //                         batch_size,
-    //                         true, // Strict batch sizes
-    //                         StatsState::NotMaterialized,
-    //                     )
-    //                 },
-    //             )?;
-
-    //             match result_tx.send(task).await {
-    //                 Ok(()) => (),
-    //                 Err(e) => {
-    //                     return Err(DaftError::InternalError(format!(
-    //                         "Failed to send internal batch to result channel: {e:?}"
-    //                     ))
-    //                     .into());
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
 
     fn make_source_tasks(
         &self,
@@ -560,5 +370,97 @@ Estimated Scan Bytes = {total_bytes}
 
     fn get_name(&self) -> String {
         self.name().to_string()
+    }
+}
+
+/// Looks at all nodes in the plan and gets the minimuim specified batch size.
+pub fn min_batch_size_in_task_plan(plan: Arc<LocalPhysicalPlan>) -> Option<usize> {
+    let mut find_batch_size = DetermineBatchSize {
+        bs: None,
+        is_min: true,
+    };
+    &plan.visit(&mut find_batch_size);
+    find_batch_size.bs
+}
+
+struct DetermineBatchSize {
+    bs: Option<usize>,
+    is_min: bool,
+}
+
+impl DetermineBatchSize {
+    fn visit_and_update(&mut self, node: &daft_local_plan::LocalPhysicalPlanRef) {
+        let maybe_observed_batch_size = match &**node {
+            // does have a batch_size
+            daft_local_plan::LocalPhysicalPlan::UDFProject(udf_project) => udf_project.batch_size,
+            daft_local_plan::LocalPhysicalPlan::IntoBatches(into_batches) => {
+                Some(into_batches.batch_size)
+            }
+            #[cfg(feature = "python")]
+            daft_local_plan::LocalPhysicalPlan::DistributedActorPoolProject(x) => x.batch_size,
+
+            // does not have a batch_size
+            daft_local_plan::LocalPhysicalPlan::InMemoryScan(_)
+            | daft_local_plan::LocalPhysicalPlan::PhysicalScan(_)
+            | daft_local_plan::LocalPhysicalPlan::EmptyScan(_)
+            | daft_local_plan::LocalPhysicalPlan::PlaceholderScan(_)
+            | daft_local_plan::LocalPhysicalPlan::Project(_)
+            | daft_local_plan::LocalPhysicalPlan::Filter(_)
+            | daft_local_plan::LocalPhysicalPlan::Limit(_)
+            | daft_local_plan::LocalPhysicalPlan::Explode(_)
+            | daft_local_plan::LocalPhysicalPlan::Unpivot(_)
+            | daft_local_plan::LocalPhysicalPlan::Sort(_)
+            | daft_local_plan::LocalPhysicalPlan::TopN(_)
+            | daft_local_plan::LocalPhysicalPlan::Sample(_)
+            | daft_local_plan::LocalPhysicalPlan::MonotonicallyIncreasingId(_)
+            | daft_local_plan::LocalPhysicalPlan::UnGroupedAggregate(_)
+            | daft_local_plan::LocalPhysicalPlan::HashAggregate(_)
+            | daft_local_plan::LocalPhysicalPlan::Dedup(_)
+            | daft_local_plan::LocalPhysicalPlan::Pivot(_)
+            | daft_local_plan::LocalPhysicalPlan::Concat(_)
+            | daft_local_plan::LocalPhysicalPlan::HashJoin(_)
+            | daft_local_plan::LocalPhysicalPlan::CrossJoin(_)
+            | daft_local_plan::LocalPhysicalPlan::PhysicalWrite(_)
+            | daft_local_plan::LocalPhysicalPlan::CommitWrite(_)
+            | daft_local_plan::LocalPhysicalPlan::WindowPartitionOnly(_)
+            | daft_local_plan::LocalPhysicalPlan::WindowPartitionAndOrderBy(_)
+            | daft_local_plan::LocalPhysicalPlan::WindowPartitionAndDynamicFrame(_)
+            | daft_local_plan::LocalPhysicalPlan::WindowOrderByOnly(_)
+            | daft_local_plan::LocalPhysicalPlan::Repartition(_)
+            | daft_local_plan::LocalPhysicalPlan::IntoPartitions(_) => None,
+            #[cfg(feature = "python")]
+            daft_local_plan::LocalPhysicalPlan::CatalogWrite(_)
+            | daft_local_plan::LocalPhysicalPlan::LanceWrite(_)
+            | daft_local_plan::LocalPhysicalPlan::DataSink(_) => None,
+        };
+
+        if let Some(new_bs) = maybe_observed_batch_size {
+            match self.bs {
+                Some(existing_bs) => {
+                    if (self.is_min && new_bs < existing_bs)
+                        || (!self.is_min && new_bs > existing_bs)
+                    {
+                        self.bs = Some(new_bs);
+                    }
+                }
+                None => self.bs = Some(new_bs),
+            }
+        }
+    }
+}
+
+impl TreeNodeVisitor for DetermineBatchSize {
+    type Node = daft_local_plan::LocalPhysicalPlanRef;
+
+    /// Perform this action after we've visited this node's children. (Bottom-up)
+    fn f_down(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+        self.visit_and_update(node);
+        Ok(common_treenode::TreeNodeRecursion::Continue)
+    }
+
+    // Perform this action right before visiting the node's chidlren. (Top-down)
+    fn f_up(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+        self.visit_and_update(node);
+        Ok(common_treenode::TreeNodeRecursion::Continue)
     }
 }

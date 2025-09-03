@@ -75,7 +75,7 @@ pub struct DaftExecutionConfig {
     pub native_parquet_writer: bool,
     pub use_legacy_ray_runner: bool,
     pub min_cpu_per_task: f64,
-    pub suggested_batch_size: u64,
+    pub suggested_batch_size: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -112,7 +112,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
-            suggested_batch_size: 1000,
+            suggested_batch_size: 16,
         }
     }
 }
@@ -178,7 +178,7 @@ impl DaftExecutionConfig {
         let suggested_batch_size_var = "DAFT_SUGGESTED_BATCH_SIZE";
         if let Ok(val) = std::env::var(suggested_batch_size_var) {
             match val
-                .parse::<u64>()
+                .parse::<usize>()
                 .map_err(|e| format!("{e}"))
                 .and_then(|bs| {
                     if bs == 0 {
