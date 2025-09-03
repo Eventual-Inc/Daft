@@ -4,6 +4,7 @@ use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
+use common_treenode::{TreeNode, TreeNodeVisitor};
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::SchemaRef;
@@ -129,7 +130,55 @@ impl ScanSourceNode {
             TaskContext::from((&self.context, task_id_counter.next())),
         )?);
 
+
+        struct DetermineBatchSize {
+            bs: Option<u64>
+        }
+
+        impl TreeNodeVisitor for X {
+
+            type Node = daft_logical_plan::LogicalPlanRef;
+            
+            /// Perform this action after we've visited this node's children. (Bottom-up)
+            fn f_down(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+                match node {
+                    daft_logical_plan::LogicalPlan::Source(Source) => {},
+                    daft_logical_plan::LogicalPlan::Shard(Shard) => {},
+                    daft_logical_plan::LogicalPlan::Project(Project) => {},
+                    daft_logical_plan::LogicalPlan::UDFProject(UDFProject) => {},
+                    daft_logical_plan::LogicalPlan::Filter(Filter) => {},
+                    daft_logical_plan::LogicalPlan::IntoBatches(IntoBatches) => {},
+                    daft_logical_plan::LogicalPlan::Limit(Limit) => {},
+                    daft_logical_plan::LogicalPlan::Offset(Offset) => {},
+                    daft_logical_plan::LogicalPlan::Explode(Explode) => {},
+                    daft_logical_plan::LogicalPlan::Unpivot(Unpivot) => {},
+                    daft_logical_plan::LogicalPlan::Sort(Sort) => {},
+                    daft_logical_plan::LogicalPlan::Repartition(Repartition) => {},
+                    daft_logical_plan::LogicalPlan::Distinct(Distinct) => {},
+                    daft_logical_plan::LogicalPlan::Aggregate(Aggregate) => {},
+                    daft_logical_plan::LogicalPlan::Pivot(Pivot) => {},
+                    daft_logical_plan::LogicalPlan::Concat(Concat) => {},
+                    daft_logical_plan::LogicalPlan::Intersect(Intersect) => {},
+                    daft_logical_plan::LogicalPlan::Union(Union) => {},
+                    daft_logical_plan::LogicalPlan::Join(Join) => {},
+                    daft_logical_plan::LogicalPlan::Sink(Sink) => {},
+                    daft_logical_plan::LogicalPlan::Sample(Sample) => {},
+                    daft_logical_plan::LogicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId) => {},
+                    daft_logical_plan::LogicalPlan::SubqueryAlias(SubqueryAlias) => {},
+                    daft_logical_plan::LogicalPlan::Window(Window) => {},
+                    daft_logical_plan::LogicalPlan::TopN(TopN) => {},
+                }
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            }
+            
+            // Perform this action right before visiting the node's chidlren. (Top-down)
+            fn f_up(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            }
+        }
+
         let p: Arc<LocalPhysicalPlan> = t.task().plan();
+        p.visit(X{});
 
         // Step 1: Materialize the scan task to get ray data pointers
 
