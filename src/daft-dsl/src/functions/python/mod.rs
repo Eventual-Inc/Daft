@@ -11,6 +11,7 @@ use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::{
     Bound, IntoPyObject, PyObject, PyResult, Python,
+    prelude::{PyAnyMethods, PyDictMethods},
     types::{PyDict, PyTuple},
 };
 pub use runtime_py_object::RuntimePyObject;
@@ -78,6 +79,7 @@ pub struct LegacyPythonUDF {
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
+    pub runtime_env: Option<RuntimePyObject>,
 }
 
 impl LegacyPythonUDF {
@@ -96,6 +98,7 @@ impl LegacyPythonUDF {
             batch_size: None,
             concurrency: Some(4),
             use_process: None,
+            runtime_env: None,
         }
     }
 }
@@ -112,6 +115,7 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
+    runtime_env: Option<RuntimePyObject>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(LegacyPythonUDF {
@@ -124,6 +128,7 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            runtime_env,
         }),
         inputs: expressions.into(),
     })
@@ -335,6 +340,59 @@ pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
     udf_name
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct RuntimeEnv {
+    pub conda_env: Option<String>,
+}
+
+impl RuntimeEnv {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut runtime_envs = vec![];
+        if let Some(conda_env) = &self.conda_env {
+            runtime_envs.push(format!("conda = {conda_env}"));
+        }
+        runtime_envs
+    }
+}
+
+impl TryFrom<RuntimePyObject> for RuntimeEnv {
+    type Error = DaftError;
+
+    fn try_from(rt_py_obj: RuntimePyObject) -> Result<Self, Self::Error> {
+        #[cfg(feature = "python")]
+        {
+            Python::with_gil(|py| {
+                let py_obj = rt_py_obj.unwrap();
+                let py_dict = py_obj.bind(py).downcast::<PyDict>().map_err(|e| {
+                    DaftError::ValueError(format!("Runtime PyObject isn't a PyDict: {}", e))
+                })?;
+
+                if let Some(conda_env) = py_dict
+                    .get_item("conda")
+                    .map_err(|e| DaftError::ValueError(format!("Failed to get conda env: {}", e)))?
+                {
+                    let conda_env_str = conda_env.extract::<String>().map_err(|e| {
+                        DaftError::ValueError(format!(
+                            "Failed to extract conda env as string: {}",
+                            e
+                        ))
+                    })?;
+
+                    return Ok(Self {
+                        conda_env: Some(conda_env_str),
+                    });
+                }
+                Ok(Self { conda_env: None })
+            })
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            Ok(Self { conda_env: None })
+        }
+    }
+}
+
 /// UDF name and settings
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UDFProperties {
@@ -343,6 +401,7 @@ pub struct UDFProperties {
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
+    pub runtime_env: Option<RuntimeEnv>,
 }
 
 impl UDFProperties {
@@ -363,17 +422,23 @@ pub fn get_udf_properties(expr: &ExprRef) -> UDFProperties {
                     batch_size,
                     concurrency,
                     use_process,
+                    runtime_env,
                     ..
                 }),
             ..
         } = e.as_ref()
         {
+            let runtime_env = runtime_env
+                .as_ref()
+                .map(|env| env.clone().try_into())
+                .transpose()?;
             udf_properties = Some(UDFProperties {
                 name: name.as_ref().clone(),
                 resource_request: resource_request.clone(),
                 batch_size: *batch_size,
                 concurrency: *concurrency,
                 use_process: *use_process,
+                runtime_env,
             });
         } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
             udf_properties = Some(UDFProperties {
@@ -382,6 +447,7 @@ pub fn get_udf_properties(expr: &ExprRef) -> UDFProperties {
                 batch_size: Some(512),
                 concurrency: None,
                 use_process: None,
+                runtime_env: None,
             });
         }
         Ok(TreeNodeRecursion::Continue)
