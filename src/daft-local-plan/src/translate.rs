@@ -102,6 +102,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 passthrough_columns,
                 udf_project.projected_schema.clone(),
                 udf_project.stats_state.clone(),
+                udf_project.udf_properties.batch_size.clone(),
             ))
         }
         LogicalPlan::Sample(sample) => {

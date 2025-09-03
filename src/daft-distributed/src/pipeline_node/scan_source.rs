@@ -16,7 +16,7 @@ use super::{
 use crate::{
     pipeline_node::{
         append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
-        make_new_task_from_materialized_outputs, NodeID,
+        make_new_task_from_materialized_outputs, udf, NodeID,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -131,41 +131,57 @@ impl ScanSourceNode {
         )?);
 
         struct DetermineBatchSize {
-            bs: Option<u64>,
+            bs: Option<usize>,
         }
 
         impl DetermineBatchSize {
-            fn visit_and_update(&mut self, node: &daft_logical_plan::LogicalPlanRef) {
+            fn visit_and_update(&mut self, node: &daft_local_plan::LocalPhysicalPlanRef) {
                 let maybe_observed_batch_size = match &**node {
-                    daft_logical_plan::LogicalPlan::UDFProject(udf_project) => {
-                        udf_project.udf_properties.batch_size.map(|bs| bs as u64)
+                    // does have a batch_size
+                    daft_local_plan::LocalPhysicalPlan::UDFProject(udf_project) => {
+                        udf_project.batch_size
                     }
-                    daft_logical_plan::LogicalPlan::IntoBatches(into_batches) => {
-                        Some(into_batches.batch_size as u64)
+                    daft_local_plan::LocalPhysicalPlan::IntoBatches(into_batches) => {
+                        Some(into_batches.batch_size)
                     }
-                    daft_logical_plan::LogicalPlan::Source(_)
-                    | daft_logical_plan::LogicalPlan::Shard(_)
-                    | daft_logical_plan::LogicalPlan::Project(_)
-                    | daft_logical_plan::LogicalPlan::Filter(_)
-                    | daft_logical_plan::LogicalPlan::Limit(_)
-                    | daft_logical_plan::LogicalPlan::Offset(_)
-                    | daft_logical_plan::LogicalPlan::Explode(_)
-                    | daft_logical_plan::LogicalPlan::Unpivot(_)
-                    | daft_logical_plan::LogicalPlan::Sort(_)
-                    | daft_logical_plan::LogicalPlan::Repartition(_)
-                    | daft_logical_plan::LogicalPlan::Distinct(_)
-                    | daft_logical_plan::LogicalPlan::Aggregate(_)
-                    | daft_logical_plan::LogicalPlan::Pivot(_)
-                    | daft_logical_plan::LogicalPlan::Concat(_)
-                    | daft_logical_plan::LogicalPlan::Intersect(_)
-                    | daft_logical_plan::LogicalPlan::Union(_)
-                    | daft_logical_plan::LogicalPlan::Join(_)
-                    | daft_logical_plan::LogicalPlan::Sink(_)
-                    | daft_logical_plan::LogicalPlan::Sample(_)
-                    | daft_logical_plan::LogicalPlan::MonotonicallyIncreasingId(_)
-                    | daft_logical_plan::LogicalPlan::SubqueryAlias(_)
-                    | daft_logical_plan::LogicalPlan::Window(_)
-                    | daft_logical_plan::LogicalPlan::TopN(_) => None,
+                    #[cfg(feature = "python")]
+                    daft_local_plan::LocalPhysicalPlan::DistributedActorPoolProject(x) => {
+                        x.batch_size
+                    }
+
+                    // does not have a batch_size
+                    daft_local_plan::LocalPhysicalPlan::InMemoryScan(_)
+                    | daft_local_plan::LocalPhysicalPlan::PhysicalScan(_)
+                    | daft_local_plan::LocalPhysicalPlan::EmptyScan(_)
+                    | daft_local_plan::LocalPhysicalPlan::PlaceholderScan(_)
+                    | daft_local_plan::LocalPhysicalPlan::Project(_)
+                    | daft_local_plan::LocalPhysicalPlan::Filter(_)
+                    | daft_local_plan::LocalPhysicalPlan::Limit(_)
+                    | daft_local_plan::LocalPhysicalPlan::Explode(_)
+                    | daft_local_plan::LocalPhysicalPlan::Unpivot(_)
+                    | daft_local_plan::LocalPhysicalPlan::Sort(_)
+                    | daft_local_plan::LocalPhysicalPlan::TopN(_)
+                    | daft_local_plan::LocalPhysicalPlan::Sample(_)
+                    | daft_local_plan::LocalPhysicalPlan::MonotonicallyIncreasingId(_)
+                    | daft_local_plan::LocalPhysicalPlan::UnGroupedAggregate(_)
+                    | daft_local_plan::LocalPhysicalPlan::HashAggregate(_)
+                    | daft_local_plan::LocalPhysicalPlan::Dedup(_)
+                    | daft_local_plan::LocalPhysicalPlan::Pivot(_)
+                    | daft_local_plan::LocalPhysicalPlan::Concat(_)
+                    | daft_local_plan::LocalPhysicalPlan::HashJoin(_)
+                    | daft_local_plan::LocalPhysicalPlan::CrossJoin(_)
+                    | daft_local_plan::LocalPhysicalPlan::PhysicalWrite(_)
+                    | daft_local_plan::LocalPhysicalPlan::CommitWrite(_)
+                    | daft_local_plan::LocalPhysicalPlan::WindowPartitionOnly(_)
+                    | daft_local_plan::LocalPhysicalPlan::WindowPartitionAndOrderBy(_)
+                    | daft_local_plan::LocalPhysicalPlan::WindowPartitionAndDynamicFrame(_)
+                    | daft_local_plan::LocalPhysicalPlan::WindowOrderByOnly(_)
+                    | daft_local_plan::LocalPhysicalPlan::Repartition(_)
+                    | daft_local_plan::LocalPhysicalPlan::IntoPartitions(_) => None,
+                    #[cfg(feature = "python")]
+                    daft_local_plan::LocalPhysicalPlan::CatalogWrite(_)
+                    | daft_local_plan::LocalPhysicalPlan::LanceWrite(_)
+                    | daft_local_plan::LocalPhysicalPlan::DataSink(_) => None,
                 };
 
                 if let Some(new_bs) = maybe_observed_batch_size {
@@ -182,7 +198,7 @@ impl ScanSourceNode {
         }
 
         impl TreeNodeVisitor for DetermineBatchSize {
-            type Node = daft_logical_plan::LogicalPlanRef;
+            type Node = daft_local_plan::LocalPhysicalPlanRef;
 
             /// Perform this action after we've visited this node's children. (Bottom-up)
             fn f_down(
