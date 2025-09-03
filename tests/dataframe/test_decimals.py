@@ -90,7 +90,7 @@ def test_decimal_stddev(prec, partitions) -> None:
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
 @pytest.mark.skipif(
-    get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
     reason="resource requests are not fully supported in Flotilla",
 )
 def test_decimal_grouped_sum(prec, partitions) -> None:
@@ -108,7 +108,7 @@ def test_decimal_grouped_sum(prec, partitions) -> None:
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
 @pytest.mark.skipif(
-    get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
     reason="resource requests are not fully supported in Flotilla",
 )
 def test_decimal_grouped_mean(prec, partitions) -> None:

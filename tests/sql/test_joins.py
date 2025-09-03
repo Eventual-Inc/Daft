@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft.context import get_context
 from tests.utils import sort_pydict
 
 
@@ -172,6 +173,10 @@ def test_join_qualifiers_with_alias(join_condition, selection):
     assert df_sql == expected
 
 
+@pytest.mark.skipif(
+    not get_context().daft_execution_config.use_legacy_ray_runner,
+    reason="Cross joins are not supported on Flotilla",
+)
 def test_cross_join():
     x = daft.from_pydict(
         {
