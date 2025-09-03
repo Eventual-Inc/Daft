@@ -106,6 +106,9 @@ impl ScanSourceNode {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         batch_size: u64,
     ) -> DaftResult<()> {
+        // TODO
+        // walk the plan and get the batch size of the next operator
+
         if batch_size == 0 {
             return Err(
                 DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
@@ -121,19 +124,23 @@ impl ScanSourceNode {
             }
         };
 
+        let t = SubmittableTask::new(self.make_source_tasks(
+            vec![single_scan_task].into(),
+            TaskContext::from((&self.context, task_id_counter.next())),
+        )?);
+
+        let p: Arc<LocalPhysicalPlan> = t.task().plan();
+
         // Step 1: Materialize the scan task to get ray data pointers
 
-        // use fn append_plan_to_existing_task
-        // TODO: put this bad boi as a method on SubmittableTask's impl
-
-        let plan_builder = move |input| {
-            LocalPhysicalPlan::into_batches(
-                input,
-                batch_size,
-                true, // Strict batch sizes
-                StatsState::NotMaterialized,
-            )
-        };
+        // let plan_builder = move |input| {
+        //     LocalPhysicalPlan::into_batches(
+        //         input,
+        //         batch_size,
+        //         true, // Strict batch sizes
+        //         StatsState::NotMaterialized,
+        //     )
+        // };
 
         let scan_and_into_batches_task = append_plan_to_existing_task(
             SubmittableTask::new(self.make_source_tasks(
@@ -141,7 +148,14 @@ impl ScanSourceNode {
                 TaskContext::from((&self.context, task_id_counter.next())),
             )?),
             &(self.clone() as Arc<dyn DistributedPipelineNode>),
-            &plan_builder,
+            &(move |input| {
+                LocalPhysicalPlan::into_batches(
+                    input,
+                    batch_size,
+                    true, // Strict batch sizes
+                    StatsState::NotMaterialized,
+                )
+            }),
         );
         // a task with 2 operations:
         //      (1) physical_scan
@@ -189,6 +203,7 @@ impl ScanSourceNode {
                     TaskContext::from((&self.context, task_id_counter.next())),
                     batch_materialized_outputs,
                     &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    None,
                 )?;
 
                 match result_tx.send(task).await {
@@ -206,77 +221,77 @@ impl ScanSourceNode {
         Ok(())
     }
 
-    async fn og_execute_optimized_scan(
-        self: Arc<Self>,
-        single_scan_task: ScanTaskLikeRef,
-        task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-        batch_size: u64,
-    ) -> DaftResult<()> {
-        if batch_size == 0 {
-            return Err(
-                DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
-            );
-        }
-        let batch_size = match batch_size.try_into() {
-            Ok(bs) => bs,
-            Err(e) => {
-                return Err(DaftError::InternalError(format!(
-                "Batch size {batch_size} is too large to convert to usize on this platform: {e:?}"
-            ))
-                .into())
-            }
-        };
+    // async fn og_execute_optimized_scan(
+    //     self: Arc<Self>,
+    //     single_scan_task: ScanTaskLikeRef,
+    //     task_id_counter: TaskIDCounter,
+    //     result_tx: Sender<SubmittableTask<SwordfishTask>>,
+    //     scheduler_handle: SchedulerHandle<SwordfishTask>,
+    //     batch_size: u64,
+    // ) -> DaftResult<()> {
+    //     if batch_size == 0 {
+    //         return Err(
+    //             DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
+    //         );
+    //     }
+    //     let batch_size = match batch_size.try_into() {
+    //         Ok(bs) => bs,
+    //         Err(e) => {
+    //             return Err(DaftError::InternalError(format!(
+    //             "Batch size {batch_size} is too large to convert to usize on this platform: {e:?}"
+    //         ))
+    //             .into())
+    //         }
+    //     };
 
-        // Step 1: Materialize the scan task to get ray data pointers
-        let submit_single_scan_task = SubmittableTask::new(self.make_source_tasks(
-            vec![single_scan_task].into(),
-            TaskContext::from((&self.context, task_id_counter.next())),
-        )?);
+    //     // Step 1: Materialize the scan task to get ray data pointers
+    //     let submit_single_scan_task = SubmittableTask::new(self.make_source_tasks(
+    //         vec![single_scan_task].into(),
+    //         TaskContext::from((&self.context, task_id_counter.next())),
+    //     )?);
 
-        let maybe_materialized_output = submit_single_scan_task.submit(&scheduler_handle)?.await?;
+    //     let maybe_materialized_output = submit_single_scan_task.submit(&scheduler_handle)?.await?;
 
-        if let Some(materialized_output) = maybe_materialized_output {
-            // Step 2: Split the materialized output into batches of size 'k'
-            let materialized_outputs = materialized_output.split_into_materialized_outputs();
+    //     if let Some(materialized_output) = maybe_materialized_output {
+    //         // Step 2: Split the materialized output into batches of size 'k'
+    //         let materialized_outputs = materialized_output.split_into_materialized_outputs();
 
-            // Step 3: Create into_batches tasks for each batch
-            // todo!("this won't work because materialized_outputs is a vec of length one, so .chunks(K) on [0] will be [0]");
+    //         // Step 3: Create into_batches tasks for each batch
+    //         // todo!("this won't work because materialized_outputs is a vec of length one, so .chunks(K) on [0] will be [0]");
 
-            for batch in materialized_outputs.chunks(batch_size) {
-                let batch_materialized_outputs = batch.to_vec();
+    //         for batch in materialized_outputs.chunks(batch_size) {
+    //             let batch_materialized_outputs = batch.to_vec();
 
-                //
+    //             //
 
-                let task = make_new_task_from_materialized_outputs(
-                    TaskContext::from((&self.context, task_id_counter.next())),
-                    batch_materialized_outputs,
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                    move |input| {
-                        LocalPhysicalPlan::into_batches(
-                            input,
-                            batch_size,
-                            true, // Strict batch sizes
-                            StatsState::NotMaterialized,
-                        )
-                    },
-                )?;
+    //             let task = make_new_task_from_materialized_outputs(
+    //                 TaskContext::from((&self.context, task_id_counter.next())),
+    //                 batch_materialized_outputs,
+    //                 &(self.clone() as Arc<dyn DistributedPipelineNode>),
+    //                 move |input| {
+    //                     LocalPhysicalPlan::into_batches(
+    //                         input,
+    //                         batch_size,
+    //                         true, // Strict batch sizes
+    //                         StatsState::NotMaterialized,
+    //                     )
+    //                 },
+    //             )?;
 
-                match result_tx.send(task).await {
-                    Ok(()) => (),
-                    Err(e) => {
-                        return Err(DaftError::InternalError(format!(
-                            "Failed to send internal batch to result channel: {e:?}"
-                        ))
-                        .into());
-                    }
-                }
-            }
-        }
+    //             match result_tx.send(task).await {
+    //                 Ok(()) => (),
+    //                 Err(e) => {
+    //                     return Err(DaftError::InternalError(format!(
+    //                         "Failed to send internal batch to result channel: {e:?}"
+    //                     ))
+    //                     .into());
+    //                 }
+    //             }
+    //         }
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     fn make_source_tasks(
         &self,
