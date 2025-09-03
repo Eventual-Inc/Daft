@@ -4,8 +4,8 @@ import pytest
 
 pytest.importorskip("openai")
 
-from daft.ai.openai import OpenAIProvider
-from daft.ai.openai.text_embedder import OpenAITextEmbedderDescriptor
+from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderDescriptor
+from daft.ai.openai.provider import OpenAIProvider
 
 
 def test_openai_provider_upsert():

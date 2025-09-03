@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
 use daft_dsl::{AggExpr, Expr, ExprRef};
@@ -65,7 +65,16 @@ impl OptimizerRule for PushDownAggregation {
                                             SourceInfo::Physical(new_external_info).into(),
                                         ))
                                         .into();
-                                        Ok(Transformed::yes(new_source))
+                                        // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
+                                        let new_aggregate = Aggregate::try_new(
+                                            new_source,
+                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(count_expr(
+                                                &aggregations[0],
+                                            )?)))],
+                                            groupby.clone(),
+                                        )?
+                                        .into();
+                                        Ok(Transformed::yes(new_aggregate))
                                     } else {
                                         Ok(Transformed::no(node.clone()))
                                     }
@@ -90,6 +99,15 @@ fn is_count_expr(expr: &ExprRef) -> Option<&CountMode> {
     match expr.as_ref() {
         Expr::Agg(AggExpr::Count(_, count_mode)) => Some(count_mode),
         _ => None,
+    }
+}
+
+fn count_expr(expr: &ExprRef) -> DaftResult<ExprRef> {
+    match expr.as_ref() {
+        Expr::Agg(AggExpr::Count(expr, _)) => Ok(expr.clone()),
+        _ => Err(DaftError::InternalError(
+            "Tried to get count expression from non-count expression".to_string(),
+        )),
     }
 }
 
@@ -150,6 +168,7 @@ mod tests {
                 CountMode::All,
             ))))),
         )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;

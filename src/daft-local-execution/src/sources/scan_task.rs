@@ -13,6 +13,7 @@ use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtim
 use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+use daft_dsl::{AggExpr, Expr};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
@@ -470,36 +471,50 @@ async fn stream_scan_task(
             chunk_size: chunk_size_from_config,
             ..
         }) => {
-            let parquet_chunk_size = chunk_size_from_config.or(chunk_size);
-            let inference_options =
-                ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
-
-            let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
-            let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
-                Some(row_groups.clone())
+            if let Some(aggregation) = &scan_task.pushdowns.aggregation
+                && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
+            {
+                daft_parquet::read::stream_parquet_count_pushdown(
+                    url,
+                    io_client,
+                    Some(io_stats),
+                    field_id_mapping.clone(),
+                    aggregation,
+                )
+                .await?
             } else {
-                None
-            };
-            let metadata = scan_task
-                .sources
-                .first()
-                .and_then(|s| s.get_parquet_metadata().cloned());
-            daft_parquet::read::stream_parquet(
-                url,
-                file_column_names.as_deref(),
-                scan_task.pushdowns.limit,
-                row_groups,
-                scan_task.pushdowns.filters.clone(),
-                io_client,
-                Some(io_stats),
-                &inference_options,
-                field_id_mapping.clone(),
-                metadata,
-                maintain_order,
-                delete_rows,
-                parquet_chunk_size,
-            )
-            .await?
+                let parquet_chunk_size = chunk_size_from_config.or(chunk_size);
+                let inference_options =
+                    ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+
+                let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
+                let row_groups =
+                    if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
+                        Some(row_groups.clone())
+                    } else {
+                        None
+                    };
+                let metadata = scan_task
+                    .sources
+                    .first()
+                    .and_then(|s| s.get_parquet_metadata().cloned());
+                daft_parquet::read::stream_parquet(
+                    url,
+                    file_column_names.as_deref(),
+                    scan_task.pushdowns.limit,
+                    row_groups,
+                    scan_task.pushdowns.filters.clone(),
+                    io_client,
+                    Some(io_stats),
+                    &inference_options,
+                    field_id_mapping.clone(),
+                    metadata,
+                    maintain_order,
+                    delete_rows,
+                    parquet_chunk_size,
+                )
+                .await?
+            }
         }
         FileFormatConfig::Csv(cfg) => {
             let schema_of_file = scan_task.schema.clone();

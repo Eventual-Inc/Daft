@@ -22,6 +22,10 @@ Daft has a Provider interface and model protocols for various inference APIs.
     options:
         heading_level: 3
 
+::: daft.ai.provider.load_transformers
+    options:
+        heading_level: 3
+
 ## Model Protocols
 
 ::: daft.ai.protocols.TextEmbedder
@@ -29,5 +33,13 @@ Daft has a Provider interface and model protocols for various inference APIs.
         heading_level: 3
 
 ::: daft.ai.protocols.TextEmbedderDescriptor
+    options:
+        heading_level: 3
+
+::: daft.ai.protocols.ImageEmbedder
+    options:
+        heading_level: 3
+
+::: daft.ai.protocols.ImageEmbedderDescriptor
     options:
         heading_level: 3
