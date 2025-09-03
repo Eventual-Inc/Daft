@@ -79,10 +79,14 @@ def embed_text(
     # load a TextEmbedderDescriptor from the resolved provider
     text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
-    # implemented as class-based UDF for now
-    expr = udf(return_dtype=text_embedder.get_dimensions().as_dtype(), concurrency=1, use_process=False)(
-        _TextEmbedderExpression
+    # implemented as a class-based udf for now
+    expr_callable = udf(
+        return_dtype=text_embedder.get_dimensions().as_dtype(),
+        concurrency=1,
+        use_process=False,
     )
+
+    expr = expr_callable(_TextEmbedderExpression)
     expr = expr.with_init_args(text_embedder)
     return expr(text)
 
@@ -112,8 +116,14 @@ def embed_image(
     from daft.ai.protocols import ImageEmbedder
 
     image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
-    expr = udf(return_dtype=image_embedder.get_dimensions().as_dtype(), concurrency=1, use_process=False)(
-        _ImageEmbedderExpression
+
+    # implemented as a class-based udf for now
+    expr_udf = udf(
+        return_dtype=image_embedder.get_dimensions().as_dtype(),
+        concurrency=1,
+        use_process=False,
     )
+
+    expr = expr_udf(_ImageEmbedderExpression)
     expr = expr.with_init_args(image_embedder)
     return expr(image)
