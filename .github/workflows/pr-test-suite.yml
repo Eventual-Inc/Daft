@@ -708,6 +708,7 @@ jobs:
         pytest tests/integration/unity -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: native
+        UNITY_CATALOG_PORT: 3000
     - name: Run Unity integration tests (ray)
       if: always()
       run: |
@@ -716,6 +717,7 @@ jobs:
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 0
+        UNITY_CATALOG_PORT: 3000
     - name: Run Unity integration tests (flotilla)
       if: always()
       run: |
@@ -724,6 +726,7 @@ jobs:
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 1
+        UNITY_CATALOG_PORT: 3000
     # Iceberg tests
     - name: Run Iceberg integration tests (native)
       if: always()
