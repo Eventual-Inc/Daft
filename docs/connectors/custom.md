@@ -163,7 +163,7 @@ data_source = TextFileDataSource([sample_file])
 
 ### Step 1: Implement the `DataSink` Interface
 
-Create a class that inherits from [`DataSink` class](../api/io.md#daft.io.sink.DataSink) and implements the required methods. Here's a simple example doing this with a custom local file writer.
+Create a class that inherits from [`DataSink`](../api/io.md#daft.io.sink.DataSink) and implements the required methods. Here's a simple example doing this with a custom local file writer.
 
 === "🐍 Python"
 ```python
