@@ -124,7 +124,6 @@ sample_file = "sample_text.txt"
 with open(sample_file, "w") as f:
     f.write("Alice was beginning to get very tired of sitting by her sister on the bank.\n")
     f.write("So she was considering in her own mind (as well as she could, for the hot day made her feel very sleepy and stupid),\n")
-    f.write("whether the pleasure of making a daisy-chain would be worth the trouble of getting up and picking the daisies,\n")
     f.write("when suddenly a White Rabbit with pink eyes ran close by her.\n")
     f.write("There was nothing so very remarkable in that;\n")
     f.write("nor did Alice think it so very much out of the way to hear the Rabbit say to itself, 'Oh dear! Oh dear! I shall be late!'\n")
@@ -150,8 +149,6 @@ data_source = TextFileDataSource([sample_file])
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ So she was considering in her… │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ whether the pleasure of makin… │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ when suddenly a White Rabbit … │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ There was nothing so very rem… │
@@ -159,7 +156,7 @@ data_source = TextFileDataSource([sample_file])
 │ nor did Alice think it so ver… │
 ╰────────────────────────────────╯
 
-(Showing first 6 of 6 rows)
+(Showing first 5 of 5 rows)
 ```
 
 ## Writing to a Custom Data Sink
@@ -298,7 +295,7 @@ class LocalFileDataSink(DataSink[dict]):
         """
         return micropartition.to_pylist()
 
-    def _write_data_to_files(self, data: list[Any]) -> list[dict]:
+    def _write_data_to_files(self, data: list[Any]) -> dict::
         """Write data to one or more files based on size limits.
 
         Args:
