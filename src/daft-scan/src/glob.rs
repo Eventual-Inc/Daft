@@ -353,7 +353,7 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn supports_count_pushdown(&self) -> bool {
-        false
+        self.file_format_config.file_format() == FileFormat::Parquet
     }
 
     fn multiline_display(&self) -> Vec<String> {

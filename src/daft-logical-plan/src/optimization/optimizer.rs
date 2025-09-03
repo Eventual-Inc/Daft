@@ -837,6 +837,7 @@ mod tests {
                 )))))
                 .with_columns(Some(Arc::new(vec!["a".to_string()]))),
         )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
         .build();
 
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
