@@ -233,7 +233,7 @@ impl<T: Task> Clone for SchedulerHandle<T> {
 }
 
 impl<T: Task> SchedulerHandle<T> {
-    fn new(scheduler_sender: SchedulerSender<T>) -> Self {
+    pub(crate) fn new(scheduler_sender: SchedulerSender<T>) -> Self {
         Self { scheduler_sender }
     }
 
