@@ -3,6 +3,8 @@ from __future__ import annotations
 import collections.abc
 import typing
 
+import pytest
+
 import daft
 
 
@@ -85,3 +87,44 @@ def test_generator_udf_collections_generator():
     df = df.select(my_gen_func(df["input"]).alias("output"))
 
     assert df.schema() == daft.Schema.from_pydict({"output": daft.DataType.string()})
+
+
+def test_generator_udf_unnest():
+    @daft.func(
+        return_dtype=daft.DataType.struct({"id": daft.DataType.int64(), "value": daft.DataType.string()}), unnest=True
+    )
+    def create_records(count: int, base_value: str):
+        for i in range(count):
+            yield {"id": i, "value": f"{base_value}_{i}"}
+
+    df = daft.from_pydict({"count": [2, 3, 1], "base": ["a", "b", "c"]})
+    result = df.select(create_records(df["count"], df["base"])).to_pydict()
+
+    expected = {"id": [0, 1, 0, 1, 2, 0], "value": ["a_0", "a_1", "b_0", "b_1", "b_2", "c_0"]}
+    assert result == expected
+
+
+def test_generator_udf_unnest_empty_generator():
+    @daft.func(
+        return_dtype=daft.DataType.struct({"x": daft.DataType.int64(), "y": daft.DataType.string()}), unnest=True
+    )
+    def empty_gen(n: int):
+        if n > 0:
+            yield {"x": n, "y": str(n)}
+
+    df = daft.from_pydict({"n": [0, 1, 2]})
+    result = df.select(empty_gen(df["n"])).to_pydict()
+
+    expected = {"x": [None, 1, 2], "y": [None, "1", "2"]}
+    assert result == expected
+
+
+def test_generator_udf_unnest_error_non_struct():
+    with pytest.raises(
+        ValueError, match="Expected Daft function `return_dtype` to be `DataType.struct` when `unnest=True`"
+    ):
+
+        @daft.func(return_dtype=daft.DataType.string(), unnest=True)
+        def invalid_unnest_generator(n: int):
+            for i in range(n):
+                yield str(i)
