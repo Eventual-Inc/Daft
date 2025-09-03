@@ -560,8 +560,8 @@ mod tests {
         assert_eq!(result, None); // Should return None since no operators have batch_size
     }
 
-    #[test]
-    fn test_auto_into_batches() {
+    #[tokio::test]
+    async fn test_auto_into_batches() {
         // TODO: construct a single scan task from an in-memory source
         let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
 
