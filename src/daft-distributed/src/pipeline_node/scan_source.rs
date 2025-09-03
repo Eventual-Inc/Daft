@@ -464,3 +464,89 @@ impl TreeNodeVisitor for DetermineBatchSize {
         Ok(common_treenode::TreeNodeRecursion::Continue)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_local_plan::LocalPhysicalPlan;
+    use daft_schema::prelude::{DataType, Field, Schema};
+
+    use super::*;
+
+    #[test]
+    fn test_min_batch_size_in_task_plan() {
+        // Test with a plan that has 3 stages: EmptyScan -> IntoBatches -> UDFProject
+        let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
+
+        // Stage 1: EmptyScan
+        let stage1 = LocalPhysicalPlan::empty_scan(schema.clone());
+
+        // Stage 2: IntoBatches with batch_size 200
+        let stage2 =
+            LocalPhysicalPlan::into_batches(stage1, 200, true, StatsState::NotMaterialized);
+
+        // Stage 3: UDFProject (no batch_size in physical plan)
+        let plan = LocalPhysicalPlan::udf_project(
+            stage2,
+            *((&daft_dsl::resolved_col("col1")).into()), // dummy project expression
+            vec![],                                      // no passthrough columns
+            schema,
+            StatsState::NotMaterialized,
+            Some(250),
+        );
+
+        let result = min_batch_size_in_task_plan(plan);
+        assert_eq!(result, Some(200)); // Should return the batch size from IntoBatches
+    }
+
+    #[test]
+    fn test_min_batch_size_no_batch_size() {
+        // Test with a plan that has 3 stages but no batch size: EmptyScan -> Project -> Filter
+        let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
+
+        // Stage 1: EmptyScan
+        let stage1 = LocalPhysicalPlan::empty_scan(schema.clone());
+
+        // Stage 2: Project (no batch size)
+        let stage2 = LocalPhysicalPlan::project(
+            stage1,
+            vec![], // empty projection
+            schema.clone(),
+            StatsState::NotMaterialized,
+        );
+
+        // Stage 3: Filter (no batch size)
+        let plan = LocalPhysicalPlan::filter(
+            stage2,
+            *((&daft_dsl::lit(true)).into()), // dummy predicate
+            StatsState::NotMaterialized,
+        );
+
+        let result = min_batch_size_in_task_plan(plan);
+        assert_eq!(result, None); // Should return None since no operators have batch_size
+    }
+
+    #[test]
+    fn test_determine_batch_size_visitor() {
+        let mut visitor = DetermineBatchSize {
+            bs: None,
+            is_min: true,
+        };
+
+        // Test initial state
+        assert_eq!(visitor.bs, None);
+
+        // Test with IntoBatches
+        let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
+        let plan = LocalPhysicalPlan::into_batches(
+            LocalPhysicalPlan::empty_scan(schema),
+            50,
+            true,
+            StatsState::NotMaterialized,
+        );
+
+        visitor.visit_and_update(&plan);
+        assert_eq!(visitor.bs, Some(50));
+    }
+}
