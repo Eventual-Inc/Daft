@@ -682,6 +682,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 use_process: None,
+                runtime_env: None,
             }),
             inputs,
         }
@@ -703,6 +704,7 @@ mod tests {
                 batch_size: Some(32),
                 concurrency: None,
                 use_process: None,
+                runtime_env: None,
             }),
             inputs,
         }
