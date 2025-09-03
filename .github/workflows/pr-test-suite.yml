@@ -32,7 +32,8 @@ jobs:
     - name: Detect non-trivial changes
       id: filter
       run: |
-        set -exo pipefail
+        set +e
+        set -xo pipefail
 
         # On main branch, we want to run all tests (no skipping)
         if [ "${{ github.ref }}" = "refs/heads/main" ]; then
