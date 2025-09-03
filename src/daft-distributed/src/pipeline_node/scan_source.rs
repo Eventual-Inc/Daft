@@ -15,8 +15,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{
-        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
-        make_new_task_from_materialized_outputs, udf, NodeID,
+        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs, NodeID,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -379,7 +378,7 @@ pub fn min_batch_size_in_task_plan(plan: Arc<LocalPhysicalPlan>) -> Option<usize
         bs: None,
         is_min: true,
     };
-    &plan.visit(&mut find_batch_size);
+    let _ = plan.visit(&mut find_batch_size);
     find_batch_size.bs
 }
 
@@ -474,7 +473,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_daft_config::DaftExecutionConfig;
-    use common_scan_info::{test::DummyScanOperator, ScanTaskLike};
+    use common_scan_info::{test::DummyScanOperator, ScanOperator, ScanTaskLike};
     use daft_dsl::{
         expr::bound_expr::BoundExpr,
         functions::{
@@ -566,43 +565,21 @@ mod tests {
         // TODO: construct a single scan task from an in-memory source
         let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
 
-        // Create a proper ScanTask with a file data source
-        // let scan_task = daft_scan::ScanTask::new(
-        //     vec![daft_scan::DataSource::File {
-        //         path: "test_file.parquet".to_string(),
-        //         chunk_spec: None,
-        //         size_bytes: Some(1000),
-        //         iceberg_delete_files: None,
-        //         metadata: Some(daft_scan::TableMetadata { length: 100 }),
-        //         partition_spec: None,
-        //         statistics: None,
-        //         parquet_metadata: None,
-        //     }],
-        //     Arc::new(common_file_formats::FileFormatConfig::Parquet(
-        //         common_file_formats::ParquetSourceConfig::default(),
-        //     )),
-        //     schema.clone(),
-        //     Arc::new(daft_scan::StorageConfig::new_internal(false, None)),
-        //     Pushdowns::default(),
-        //     None,
-        // );
-        let scan_task = DummyScanOperator {
-            schema: schema.clone(),
-            num_scan_tasks: 1,
-            num_rows_per_task: None,
-            supports_count_pushdown_flag: true,
-        };
-
         // Create a ScanSourceNode with is_map_only_pipeline = true
-        let stage_config = StageConfig::new(0, 0, Arc::new(DaftExecutionConfig::default()));
-
-        let st: ScanTaskLikeRef = Arc::new(scan_task);
-
         let scan_source_node = ScanSourceNode::new(
             0, // node_id
-            &stage_config,
+            &StageConfig::new(0, 0, Arc::new(DaftExecutionConfig::default())),
             Pushdowns::default(),
-            Arc::new(vec![st]), // wrap DummyScanOperator in Arc and trait object
+            Arc::new(
+                DummyScanOperator {
+                    schema: schema.clone(),
+                    num_scan_tasks: 1,
+                    num_rows_per_task: None,
+                    supports_count_pushdown_flag: true,
+                }
+                .to_scan_tasks(Pushdowns::default())
+                .unwrap(),
+            ),
             schema,
             Some(0), // logical_node_id
             true,    // is_map_only_pipeline = true to trigger optimized scan

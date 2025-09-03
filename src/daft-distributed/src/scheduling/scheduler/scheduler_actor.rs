@@ -7,17 +7,16 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_local_plan::LocalPhysicalPlanRef;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
 use super::{default::DefaultScheduler, linear::LinearScheduler, PendingTask, Scheduler};
 use crate::{
-    pipeline_node::{DistributedPipelineNode, MaterializedOutput},
+    pipeline_node::MaterializedOutput,
     scheduling::{
         dispatcher::Dispatcher,
-        task::{SwordfishTask, Task, TaskID},
+        task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
     statistics::{StatisticsEvent, StatisticsManagerRef},

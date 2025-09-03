@@ -134,7 +134,6 @@ impl DistributedPipelineNode for UDFNode {
         let project = self.project.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
-        let batch_size = self.udf_properties.batch_size.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::udf_project(
                 input,

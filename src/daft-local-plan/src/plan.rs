@@ -994,7 +994,7 @@ pub struct UDFProject {
 
 impl UDFProject {
     pub fn udf_properties(&self) -> UDFProperties {
-        get_udf_properties(&self.project.inner())
+        get_udf_properties(self.project.inner())
     }
 }
 
