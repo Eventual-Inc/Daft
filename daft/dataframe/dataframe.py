@@ -3147,6 +3147,8 @@ class DataFrame:
             return expr.max()
         elif op == "mean":
             return expr.mean()
+        elif op == "stddev":
+            return expr.stddev()
         elif op == "any_value":
             return expr.any_value()
         elif op == "list":
@@ -3231,7 +3233,7 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
-    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+    def stddev(self, *cols: ColumnInputType, ddof: int = 0) -> "DataFrame":
         """Performs a global standard deviation on the DataFrame.
 
         Args:
@@ -3255,7 +3257,7 @@ class DataFrame:
             (Showing first 1 of 1 rows)
 
         """
-        return self._apply_agg_fn(Expression.stddev, cols)
+        return self._apply_agg_fn(lambda col: col.stddev(ddof), cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -4600,7 +4602,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
 
-    def stddev(self, *cols: ColumnInputType) -> DataFrame:
+    def stddev(self, *cols: ColumnInputType, ddof: int = 0) -> DataFrame:
         """Performs grouped standard deviation on this GroupedDataFrame.
 
         Args:
@@ -4628,7 +4630,7 @@ class GroupedDataFrame:
             (Showing first 2 of 2 rows)
 
         """
-        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda col: col.stddev(ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.
