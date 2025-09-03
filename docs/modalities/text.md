@@ -95,6 +95,32 @@ model = "text-embedding-3-small"
 
     In this case you could either use a different model with a larger maximum context length, or could chunk your text into smaller segments before generating embeddings. See our [text embeddings guide](../examples/text-embeddings.md) for examples of text chunking strategies, or refer to the section below on [text chunking](#chunk-text-into-smaller-pieces).
 
+#### Using LM Studio
+
+[LM Studio](https://lmstudio.ai/) is a local AI model platform that lets you run Large Language Models like Qwen, Mistral, Gemma, or gpt-oss on your own machine. If you're running an LM studio server, Daft can use it as a provider for computing embeddings.
+
+First install the optional OpenAI dependency for Daft. This is needed because LM studio uses an OpenAI-compatible API.
+
+```bash
+pip install -U "daft[openai]"
+```
+
+LM Studio runs on `localhost` port `1234` by default, but you can customize the `base_url` as needed in Daft. In this example, we use the [`nomic-ai/nomic-embed-text-v1.5`](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5) embedding model.
+
+```python
+import daft
+from daft.ai.provider import load_provider
+from daft.functions.ai import embed_text
+
+provider = load_provider("lm_studio", base_url="http://127.0.0.1:1235")  # This base_url parameter is optional if you're using the defaults for LM Studio. You can modify this as needed.
+model = "text-embedding-nomic-embed-text-v1.5"  # Select a text embedding model that you've loaded into LM Studio.
+
+(
+    daft.read_huggingface("Open-Orca/OpenOrca")
+    .with_column("embedding", embed_text(daft.col("response"), provider=provider, model=model))
+    .show()
+)
+```
 
 ### How to work with embeddings
 
