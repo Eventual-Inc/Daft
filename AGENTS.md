@@ -1,97 +1,26 @@
-# AGENTS.md - Building and Testing Daft
-
-## Project Overview
-
-Daft is a distributed query engine for large-scale multimodal data processing using Python or SQL, implemented in Rust with Python bindings. The project uses:
-- **Rust** for the core engine implementation
-- **Python** for the user-facing API
-- **Maturin** for building Python extensions from Rust code
-- **uv** for Python dependency management
-- **pytest** for testing
-
-## Prerequisites
-
-Before building or testing, ensure you have the following installed:
-
-1. **Rust toolchain**: Install via [rustup](https://rustup.rs/)
-2. **Python 3.9+**: The project supports Python 3.9 and above
-3. **uv**: Python package manager (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
-4. **Additional tools** (for full functionality):
-   - `bun` for dashboard functionality
-   - `cmake` for certain dependencies
-   - `protoc` for protocol buffer compilation
-
-## Building the Project
-
-### Setting Up the Environment
-
-The project uses `uv` for dependency management, which is handled through the Makefile:
-
-```bash
-# Create virtual environment and install dependencies
-make .venv
-
-# Activate the virtual environment
-# Not necessary if you use the Makefile commands
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-### Building Rust Extensions
-
-The core of Daft is written in Rust and compiled to Python extensions using Maturin:
-
-```bash
-# Development build (faster compilation, slower runtime)
-make build
-
-# Release build (slower compilation, faster runtime)
-make build-release
-```
-
-### Building Protocol Buffers
-
-If any .proto files are modified, you will need to rebuild the protocol buffers:
-
-```bash
-# Build proto sources (requires protoc to be installed)
-make daft-proto
-```
-
-## Testing the Project
-
-### Test Configuration
-
-The project uses pytest with specific configuration in `pyproject.toml`:
-
-```toml
-[tool.pytest.ini_options]
-addopts = "-m 'not (integration or benchmark or hypothesis)'"
-minversion = "6.0"
-testpaths = ["tests"]
-```
-
-### Running Tests
-
-Tests can be run using the Makefile commands:
-
-```bash
-# Basic test run
-make test
-
-# Run with specific runner (required environment variable)
-DAFT_RUNNER=native make test
-DAFT_RUNNER=ray make test
-
-# Run specific test files or methods
-make test EXTRA_ARGS="-v tests/dataframe/test_select.py"
-make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe"
-
-# Run with additional options
-make test EXTRA_ARGS="-v --tb=short"
-```
+# AGENTS.md
 
 ## Resources
 
-- [Library Documentation](https://docs.daft.ai)
-- [Contributing Guide](CONTRIBUTING.md)
-- [GitHub Repo](https://github.com/Eventual-Inc/Daft)
+- [Library Documentation](https://docs.daft.ai) for the user-facing API
+- [Contributing Guide](CONTRIBUTING.md) for detailed development process
+- [GitHub Repo](https://github.com/Eventual-Inc/Daft) for issues, discussions, and PRs
+
+## Dev Workflow
+
+1) [Once] Set up Python environment and install dependencies: `make .venv`
+2) [Optional] Activate .venv: `source .venv/bin/activate`. Not necessary with Makefile commands.
+3) If Rust code is modified, rebuild: `make build`
+4) If `.proto` files are modified, rebuild protocol buffers code: `make daft-proto`
+5) Run tests. See [Testing Details](#testing-details).
+
+## Testing Details
+
+- `make test` runs tests in `tests/` directory. Uses `pytest` under the hood.
+  - Must set `DAFT_RUNNER` environment variable to `ray` or `native` to run the tests with the corresponding runner.
+    - Start with `DAFT_RUNNER=native` unless testing Ray or distributed code.
+  - `make test EXTRA_ARGS="..."` passes additional arguments to `pytest`.
+    - `make test EXTRA_ARGS="-v tests/dataframe/test_select.py"` runs the test in the given file.
+    - `make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe"` runs the given test method.
+  -  Default `integration`, `benchmark`, and `hypothesis` tests are disabled. Best to run on CI.
+- `make doctests` runs doctests in `daft/` directory. Tests docstrings in Daft APIs.
