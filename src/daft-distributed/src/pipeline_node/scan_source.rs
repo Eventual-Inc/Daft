@@ -108,6 +108,7 @@ impl ScanSourceNode {
     ) -> DaftResult<()> {
         // Step 1: walk the plan and get the minimum batch size declared by any operator
 
+        println!("step 1");
         let submittable_task_scan = SubmittableTask::new(self.make_source_tasks(
             vec![single_scan_task].into(),
             TaskContext::from((&self.context, task_id_counter.next())),
@@ -120,6 +121,7 @@ impl ScanSourceNode {
                 DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
             );
         }
+        println!("batch_size={batch_size}");
 
         // Step 2: Materialize the scan task to get ray data pointers
 
@@ -135,6 +137,8 @@ impl ScanSourceNode {
                 )
             }),
         );
+
+        println!("scan_and_into_batches_task={scan_and_into_batches_task:?}");
         // we created a task with 2 operations:
         //      (1) physical_scan
         //      (2) into_batches
@@ -142,6 +146,8 @@ impl ScanSourceNode {
         let maybe_materialized_output = scan_and_into_batches_task
             .submit(&scheduler_handle)?
             .await?;
+
+        println!("maybe_materialized_output={maybe_materialized_output:?}");
 
         //
         //     a single scan task generally corresponds to a single partition
@@ -169,6 +175,8 @@ impl ScanSourceNode {
         if let Some(materialized_output) = maybe_materialized_output {
             // Step 3: Split the materialized output into batches of size 'k'
 
+            println!("materialized_output={materialized_output:?}");
+
             let materialized_outputs = materialized_output.split_into_materialized_outputs();
 
             // Step 4: Create in-memory tasks for each batch
@@ -176,12 +184,16 @@ impl ScanSourceNode {
             for batch in materialized_outputs.chunks(batch_size) {
                 let batch_materialized_outputs = batch.to_vec();
 
+                println!("batch_materialized_outputs={batch_materialized_outputs:?}");
+
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     batch_materialized_outputs,
                     &(self.clone() as Arc<dyn DistributedPipelineNode>),
                     None,
                 )?;
+
+                println!("task={task:?}");
 
                 match result_tx.send(task).await {
                     Ok(()) => (),
@@ -484,9 +496,13 @@ mod tests {
     };
     use daft_local_plan::LocalPhysicalPlan;
     use daft_schema::prelude::{DataType, Field, Schema};
+    use futures::StreamExt;
 
     use super::*;
-    use crate::utils::channel::create_unbounded_channel;
+    use crate::{
+        pipeline_node::viz_distributed_pipeline_ascii, scheduling::scheduler::PendingTask,
+        utils::channel::create_unbounded_channel,
+    };
 
     fn fake_udf_fn_expr(batch_size: Option<usize>) -> daft_dsl::expr::Expr {
         daft_dsl::expr::Expr::Function {
@@ -585,11 +601,36 @@ mod tests {
             true,    // is_map_only_pipeline = true to trigger optimized scan
         );
 
-        let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
+        let (scheduler_sender, mut scheduler_receiver) = create_unbounded_channel();
         // TODO: call produce_tasks on this
         let mut stage_context = StageExecutionContext::new(SchedulerHandle::new(scheduler_sender));
 
-        let task_stream = scan_source_node.arced().produce_tasks(&mut stage_context);
+        println!("about to make task stream");
+
+        println!(
+            "visualized:\n{}",
+            viz_distributed_pipeline_ascii(&scan_source_node, true)
+        );
+
+        let task_stream: SubmittableTaskStream =
+            scan_source_node.arced().produce_tasks(&mut stage_context);
+
+        println!("made task stream");
+
+        match scheduler_receiver.recv().await {
+            Some(message) => {
+                println!("\n\nreceived task:\n{message:?}\n\n");
+            }
+            None => panic!("didn't receive anything!"),
+        }
+
+        task_stream
+            .task_stream
+            .enumerate()
+            .for_each(async |(i, task)| println!("{i:?} {task:?}"))
+            .await;
+
+        println!("done")
 
         // TODO: inspect the result and ensure that it has a new IntoBatches node
         // Note: This is a simplified test - in practice you'd need to:
