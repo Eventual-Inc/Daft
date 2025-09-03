@@ -510,8 +510,7 @@ def test_udf_with_error(use_actor_pool):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray"
-    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="requires Flotilla to be in use",
 )
 @pytest.mark.parametrize("use_actor_pool", [True, False])
@@ -550,8 +549,7 @@ def test_udf_retry_with_process_killed_ray(use_actor_pool):
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray"
-    and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Multiple UDFs on different columns fails on legacy ray runner",
 )
 def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
@@ -600,8 +598,7 @@ def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray"
-    and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Multiple UDFs on same column fails on legacy ray runner",
 )
 def test_multiple_udfs_same_column(batch_size, use_actor_pool):

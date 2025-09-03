@@ -14,7 +14,6 @@ from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
     get_tests_daft_runner_name() == "ray",
-    # and get_context().daft_execution_config.use_experimental_distributed_engine is False,
     reason="requires Native Runner to be in use",
 )
 
@@ -488,7 +487,12 @@ def test_range_window_sql():
         .collect()
     )
 
-    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "ts"], check_dtype=False)
+    assert_df_equals(
+        sql_result.to_pandas(),
+        daft_result.to_pandas(),
+        sort_key=["category", "ts"],
+        check_dtype=False,
+    )
 
 
 def test_range_window_desc_sql():
@@ -555,7 +559,12 @@ def test_range_window_desc_sql():
         .collect()
     )
 
-    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "ts"], check_dtype=False)
+    assert_df_equals(
+        sql_result.to_pandas(),
+        daft_result.to_pandas(),
+        sort_key=["category", "ts"],
+        check_dtype=False,
+    )
 
 
 def test_range_window_with_dates():
@@ -612,7 +621,10 @@ def test_range_window_with_dates():
     )
 
     assert_df_equals(
-        sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "date", "value"], check_dtype=False
+        sql_result.to_pandas(),
+        daft_result.to_pandas(),
+        sort_key=["category", "date", "value"],
+        check_dtype=False,
     )
 
 

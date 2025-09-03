@@ -304,22 +304,16 @@ class DataFrame:
             if get_context().get_or_create_runner().name != "native":
                 # Check if flotilla is enabled for distributed execution
                 daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.use_experimental_distributed_engine:
-                    try:
-                        from daft.daft import DistributedPhysicalPlan
+                if daft_execution_config.use_legacy_ray_runner:
+                    from daft.daft import DistributedPhysicalPlan
 
-                        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                            builder._builder, daft_execution_config
-                        )
-                        if format == "ascii":
-                            print_to_file(distributed_plan.repr_ascii(simple))
-                        elif format == "mermaid":
-                            print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
-                    except Exception:
-                        physical_plan_scheduler = builder.to_physical_plan_scheduler(
-                            get_context().daft_execution_config
-                        )
-                        print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+                    distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                        builder._builder, daft_execution_config
+                    )
+                    if format == "ascii":
+                        print_to_file(distributed_plan.repr_ascii(simple))
+                    elif format == "mermaid":
+                        print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
                 else:
                     physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
                     print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
