@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import re
 from typing import Any
 
 import numpy as np
 import pyarrow as pa
 
+import daft
 from daft.recordbatch import RecordBatch
 
 ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -47,3 +49,9 @@ def random_numerical_embedding(
         v = rng.random(size=(size,), dtype=np.float32)
         c = np.rint(v * mult_for_int_like)
         return c.astype(dtype)
+
+
+def explain_to_text(df: daft.DataFrame) -> str:
+    str_io = io.StringIO()
+    df.explain(show_all=True, file=str_io)
+    return str_io.getvalue().strip()
