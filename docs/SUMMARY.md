@@ -2,6 +2,8 @@
     * [Overview](index.md)
     * [Quickstart](quickstart.md)
     * [Installation](install.md)
+    * Common Use Cases
+        * [Batch Inference](use-case/batch-inference.md)
     * Working with Modalities
         * [Overview](modalities/index.md)
         * [Custom Modalities](modalities/custom.md)
