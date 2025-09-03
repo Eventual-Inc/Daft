@@ -132,6 +132,10 @@ Daft is a high-performance data engine providing simple and reliable data proces
     animation: daft-caret .9s steps(1,end) infinite;
   }
 
+  @keyframes daft-caret {
+    50% { opacity: 0; }
+  }
+
   .daft-pipeline-component .cursor-fade {
     color: #ff00ff;
     animation: daft-cursor-fade 400ms ease-out forwards;
@@ -148,10 +152,6 @@ Daft is a high-performance data engine providing simple and reliable data proces
       opacity: 0;
       transform: rotate(10deg);
     }
-  }
-
-  @keyframes daft-caret {
-    50% { opacity: 0; }
   }
 
   @media (max-width: 720px) {
