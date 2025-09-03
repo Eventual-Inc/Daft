@@ -83,7 +83,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         exclude:
         - daft-runner: native
-          flotilla: 1
+          flotilla: 0
         - daft-runner: ray
           pyarrow-version: 8.0.0
         - python-version: '3.9'
@@ -93,7 +93,7 @@ jobs:
         - python-version: '3.12'
           pyarrow-version: 8.0.0
         - os: macos-latest
-          flotilla: 1
+          flotilla: 0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
