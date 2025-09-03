@@ -57,7 +57,8 @@ jobs:
           ':!README.rst' \
           ':!SECURITY.md' \
           ':!codecov.yml' \
-          ':!mkdocs.yml'
+          ':!mkdocs.yml' \
+          ':!AGENTS.md' \
         then
           echo "skip=true" >> $GITHUB_OUTPUT
         else
