@@ -58,7 +58,7 @@ jobs:
           ':!SECURITY.md' \
           ':!codecov.yml' \
           ':!mkdocs.yml' \
-          ':!AGENTS.md' \
+          ':!AGENTS.md'
         then
           echo "skip=true" >> $GITHUB_OUTPUT
         else
