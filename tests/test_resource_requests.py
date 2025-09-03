@@ -143,7 +143,7 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
 @pytest.mark.skipif(
-    get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
     reason="resource requests are not fully supported in Flotilla",
 )
 def test_with_column_rayrunner():
@@ -163,7 +163,7 @@ def test_with_column_rayrunner():
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
 @pytest.mark.skipif(
-    get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
     reason="resource requests are not fully supported in Flotilla",
 )
 def test_with_column_folded_rayrunner():
@@ -212,7 +212,7 @@ def test_with_column_rayrunner_class():
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
 @pytest.mark.skipif(
-    get_context().daft_execution_config.use_experimental_distributed_engine is True,
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
     reason="resource requests are not fully supported in Flotilla",
 )
 def test_with_column_folded_rayrunner_class():

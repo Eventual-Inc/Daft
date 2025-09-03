@@ -1015,8 +1015,7 @@ def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size)
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray"
-    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Legacy ray runner does not support skipping shuffles on already partitioned data",
 )
 def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
