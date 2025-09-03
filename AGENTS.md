@@ -2,9 +2,9 @@
 
 ## Resources
 
-- [Library Documentation](https://docs.daft.ai) for the user-facing API
-- [Contributing Guide](CONTRIBUTING.md) for detailed development process
-- [GitHub Repo](https://github.com/Eventual-Inc/Daft) for issues, discussions, and PRs
+- https://docs.daft.ai for the user-facing API docs
+- CONTRIBUTING.md for detailed development process
+- https://github.com/Eventual-Inc/Daft for issues, discussions, and PRs
 
 ## Dev Workflow
 
