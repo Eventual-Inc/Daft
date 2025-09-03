@@ -210,7 +210,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         let right_on = BoundExpr::bind_all(&right_on, &right_node.config().schema)?;
 
         match join_strategy {
-            JoinStrategy::Hash => self.gen_hash_join_nodes(
+            // TODO(Flotilla MS3): Implement sort-merge join
+            JoinStrategy::Hash | JoinStrategy::SortMerge => self.gen_hash_join_nodes(
                 logical_node_id,
                 left_node,
                 right_node,
@@ -232,10 +233,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 &right_stats,
                 join.output_schema.clone(),
             ),
-            JoinStrategy::SortMerge => {
-                // TODO: Implement sort-merge join
-                todo!("FLOTILLA_MS?: Implement sort-merge join")
-            }
             JoinStrategy::Cross => {
                 // TODO: Implement cross join
                 todo!("FLOTILLA_MS?: Implement cross join")

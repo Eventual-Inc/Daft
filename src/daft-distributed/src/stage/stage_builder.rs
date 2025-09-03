@@ -7,6 +7,7 @@ use daft_logical_plan::{
     partitioning::ClusteringSpecRef, JoinStrategy, LogicalPlan, LogicalPlanRef,
 };
 use daft_schema::schema::SchemaRef;
+use tracing::warn;
 
 use super::{DataChannel, OutputChannel, Stage, StageID, StagePlan, StageType};
 
@@ -52,11 +53,12 @@ impl StagePlanBuilder {
             LogicalPlan::Join(join) => {
                 if join
                     .join_strategy
-                    .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+                    .is_some_and(|x| matches!(x, JoinStrategy::SortMerge))
                 {
-                    Err(DaftError::ValueError(
-                        "Sort merge joins are currently not supported on the new ray runner. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for sort merge joins.".to_string(),
-                    ))
+                    warn!(
+                        "Sort merge joins are currently not supported on the new ray runner, falling back to hash join. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for sort merge joins."
+                    );
+                    Ok(TreeNodeRecursion::Continue)
                 } else {
                     let (remaining_on, left_on, right_on, _) = join.on.split_eq_preds();
                     if !remaining_on.is_empty() || left_on.is_empty() || right_on.is_empty() {

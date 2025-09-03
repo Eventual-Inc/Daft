@@ -283,11 +283,11 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Join(join) => {
             if join
                 .join_strategy
-                .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+                .is_some_and(|x| !matches!(x, JoinStrategy::Hash))
             {
-                return Err(DaftError::not_implemented(
-                    "Only hash and broadcast join strategies are supported for now",
-                ));
+                log::warn!(
+                    "Only hash join strategy is supported on the native runner, falling back to hash join. Broadcast and sort merge joins are not implemented on the native runner as it is single node only."
+                );
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
