@@ -474,6 +474,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_daft_config::DaftExecutionConfig;
+    use common_scan_info::{test::DummyScanOperator, ScanTaskLike};
     use daft_dsl::{
         expr::bound_expr::BoundExpr,
         functions::{
@@ -485,9 +486,8 @@ mod tests {
     use daft_local_plan::LocalPhysicalPlan;
     use daft_schema::prelude::{DataType, Field, Schema};
 
-    use crate::utils::channel::create_unbounded_channel;
-
     use super::*;
+    use crate::utils::channel::create_unbounded_channel;
 
     fn fake_udf_fn_expr(batch_size: Option<usize>) -> daft_dsl::expr::Expr {
         daft_dsl::expr::Expr::Function {
@@ -525,7 +525,7 @@ mod tests {
         let plan = LocalPhysicalPlan::udf_project(
             stage2,
             BoundExpr::try_new(fake_udf_fn_expr(Some(250)), &schema).unwrap(), // convert to BoundExpr
-            vec![],                                                        // no passthrough columns
+            vec![], // no passthrough columns
             schema,
             StatsState::NotMaterialized,
         );
@@ -565,55 +565,61 @@ mod tests {
     fn test_auto_into_batches() {
         // TODO: construct a single scan task from an in-memory source
         let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
-        
-        // Create an in-memory scan task
-        let in_memory_info = daft_logical_plan::source_info::InMemoryInfo {
-            num_partitions: 1,
-            size_bytes: 1000,
-            num_rows: 100,
-            source_schema: schema.clone(),
-            cache_key: "".to_string(),
-            cache_entry: None,
-            clustering_spec: None,
-            source_stage_id: None,
+
+        // Create a proper ScanTask with a file data source
+        // let scan_task = daft_scan::ScanTask::new(
+        //     vec![daft_scan::DataSource::File {
+        //         path: "test_file.parquet".to_string(),
+        //         chunk_spec: None,
+        //         size_bytes: Some(1000),
+        //         iceberg_delete_files: None,
+        //         metadata: Some(daft_scan::TableMetadata { length: 100 }),
+        //         partition_spec: None,
+        //         statistics: None,
+        //         parquet_metadata: None,
+        //     }],
+        //     Arc::new(common_file_formats::FileFormatConfig::Parquet(
+        //         common_file_formats::ParquetSourceConfig::default(),
+        //     )),
+        //     schema.clone(),
+        //     Arc::new(daft_scan::StorageConfig::new_internal(false, None)),
+        //     Pushdowns::default(),
+        //     None,
+        // );
+        let scan_task = DummyScanOperator {
+            schema: schema.clone(),
+            num_scan_tasks: 1,
+            num_rows_per_task: None,
+            supports_count_pushdown_flag: true,
         };
-        
-        let scan_task = LocalPhysicalPlan::in_memory_scan(
-            in_memory_info,
-            StatsState::NotMaterialized,
-        );
-        
+
         // Create a ScanSourceNode with is_map_only_pipeline = true
-        let stage_config = StageConfig::new(
-            0,
-            0,
-            Arc::new(DaftExecutionConfig::default()),
-        );
-        
+        let stage_config = StageConfig::new(0, 0, Arc::new(DaftExecutionConfig::default()));
+
+        let st: ScanTaskLikeRef = Arc::new(scan_task);
+
         let scan_source_node = ScanSourceNode::new(
             0, // node_id
             &stage_config,
             Pushdowns::default(),
-            Arc::new(vec![scan_task]),
+            Arc::new(vec![st]), // wrap DummyScanOperator in Arc and trait object
             schema,
             Some(0), // logical_node_id
-            true, // is_map_only_pipeline = true to trigger optimized scan
+            true,    // is_map_only_pipeline = true to trigger optimized scan
         );
-        
+
         let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
         // TODO: call produce_tasks on this
-        let mut stage_context = StageExecutionContext::new(
-            SchedulerHandle::new(scheduler_sender)
-        );
-        
+        let mut stage_context = StageExecutionContext::new(SchedulerHandle::new(scheduler_sender));
+
         let task_stream = scan_source_node.arced().produce_tasks(&mut stage_context);
-        
+
         // TODO: inspect the result and ensure that it has a new IntoBatches node
         // Note: This is a simplified test - in practice you'd need to:
         // 1. Mock the scheduler handle properly
         // 2. Handle the async nature of the task stream
         // 3. Inspect the actual tasks produced
-        
+
         // For now, we just verify that the task stream was created successfully
         // SubmittableTaskStream doesn't have is_some(), so we just verify it exists
         // The actual verification would involve:
