@@ -111,12 +111,6 @@ jobs:
         source .venv/bin/activate
         PYTHONPATH=. python .github/ci-scripts/distributed_tpch.py
 
-    - name: Upload traces
-      uses: actions/upload-artifact@v4
-      with:
-        name: traces
-        path: traces
-
     - name: Spin down ray cluster
       if: always()
       run: |
