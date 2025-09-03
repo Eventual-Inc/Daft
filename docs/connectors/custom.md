@@ -19,7 +19,7 @@ You can also take a look at actual code references on how we implemented:
 
 ### Step 1: Implement the `DataSource` and `DataSourceTask` Interfaces
 
-Create a class that inherits from the [`DataSource` class](../api/io.md#daft.io.source.DataSource) and [`DataSourceTask` class](../api/io.md#daft.io.source.DataSourceTask), and implements the required methods. Here's a simple example doing this with a custom local file reader that reads each line from a file as a single String row.
+Create a class that inherits from [`DataSource`](../api/io.md#daft.io.source.DataSource), a class that inherits from [`DataSourceTask`](../api/io.md#daft.io.source.DataSourceTask), and implement the required methods. Here's a simple example doing this with a custom local file reader that reads each line from a file as a single String row.
 
 === "🐍 Python"
 ```python
@@ -163,7 +163,7 @@ data_source = TextFileDataSource([sample_file])
 
 ### Step 1: Implement the `DataSink` Interface
 
-Create a class that inherits the [`DataSink` class](../api/io.md#daft.io.sink.DataSink) and implements the required methods. Here's a simple example doing this with a custom local file writer.
+Create a class that inherits from [`DataSink`](../api/io.md#daft.io.sink.DataSink) and implements the required methods. Here's a simple example doing this with a custom local file writer.
 
 === "🐍 Python"
 ```python
@@ -186,7 +186,7 @@ class LocalFileDataSink(DataSink[dict]):
         self,
         output_dir: str | Path,
         filename_prefix: str = "data",
-        max_rows_per_file: int = 100
+        max_rows_per_file: int = 10
     ):
         """Initialize the local file data sink.
 
@@ -332,7 +332,7 @@ data = {
 local_file_data_sink = LocalFileDataSink(
     output_dir="./output_folder",
     filename_prefix="users",
-    max_rows_per_file=100
+    max_rows_per_file=10
 )
 
 (
