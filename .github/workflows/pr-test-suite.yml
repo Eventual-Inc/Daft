@@ -136,6 +136,16 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
+    - name: Detect Conda home path
+      run: |
+        if command -v conda &> /dev/null; then
+          CONDA_HOME_PATH=$(conda info --base)
+          echo "Conda home is $CONDA_HOME_PATH"
+          echo "CONDA_HOME=$CONDA_HOME_PATH" >> $GITHUB_ENV
+        else
+          echo "::warning::Conda not detected."
+        fi
+
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
@@ -171,6 +181,9 @@ jobs:
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
         CARGO_TARGET_DIR: ./target
+
+        RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
+        CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
