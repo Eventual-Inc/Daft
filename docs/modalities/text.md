@@ -112,7 +112,7 @@ import daft
 from daft.ai.provider import load_provider
 from daft.functions.ai import embed_text
 
-provider = load_provider("lm_studio", base_url="http://127.0.0.1:1235")  # This base_url parameter is optional if you're using the defaults for LM Studio. You can modify this as needed.
+provider = load_provider("lm_studio", base_url="http://127.0.0.1:1234/v1")  # This base_url parameter is optional if you're using the defaults for LM Studio. You can modify this as needed.
 model = "text-embedding-nomic-embed-text-v1.5"  # Select a text embedding model that you've loaded into LM Studio.
 
 (
