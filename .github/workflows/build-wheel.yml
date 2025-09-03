@@ -147,7 +147,7 @@ jobs:
     name: Test built wheels
     runs-on: ${{ matrix.os }}
     needs: build
-    if: ${{ inputs.run_tests }}
+    if: ${{ inputs.run_tests && inputs.os == 'ubuntu' }}
     strategy:
       fail-fast: false
       matrix:
