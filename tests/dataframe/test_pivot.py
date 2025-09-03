@@ -5,7 +5,7 @@ import pytest
 from daft.context import get_context
 
 pytestmark = pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner,
+    not get_context().daft_execution_config.use_legacy_ray_runner,
     reason="Pivot operations are not supported on the legacy ray runner",
 )
 
