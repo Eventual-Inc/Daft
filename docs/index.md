@@ -154,8 +154,6 @@ Daft is a high-performance data engine providing simple and reliable data proces
     50% { opacity: 0; }
   }
 
-
-
   @media (max-width: 720px) {
     .daft-pipeline-component .stage-box {
       padding: 8px;
