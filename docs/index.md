@@ -137,6 +137,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
   }
 
   .daft-pipeline-component .cursor-fade {
+    color: #ff00ff;
     animation: daft-cursor-fade 400ms ease-out forwards;
     transform-origin: bottom right;
     display: inline-block;
