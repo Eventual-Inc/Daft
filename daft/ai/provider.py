@@ -16,6 +16,15 @@ class ProviderImportError(ImportError):
         super().__init__(f"Missing required dependencies: {deps}. " f"Please install {deps} to use this provider.")
 
 
+def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.openai import LMStudioProvider
+
+        return LMStudioProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["openai"]) from e
+
+
 def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions]) -> Provider:
     try:
         from daft.ai.openai import OpenAIProvider
@@ -44,6 +53,7 @@ def load_transformers(name: str | None = None, **options: Any) -> Provider:
 
 
 PROVIDERS: dict[str, Callable[..., Provider]] = {
+    "lm_studio": load_lm_studio,
     "openai": load_openai,
     "sentence_transformers": load_sentence_transformers,
     "transformers": load_transformers,
