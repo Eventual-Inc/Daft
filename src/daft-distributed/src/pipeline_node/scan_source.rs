@@ -485,11 +485,10 @@ mod tests {
     use std::sync::Arc;
 
     use common_daft_config::DaftExecutionConfig;
-    use common_scan_info::{test::DummyScanOperator, ScanOperator, ScanTaskLike};
+    use common_scan_info::{test::DummyScanOperator, ScanOperator};
     use daft_dsl::{
         expr::bound_expr::BoundExpr,
         functions::{
-            map::MapExpr,
             python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
             FunctionExpr,
         },
@@ -500,8 +499,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        pipeline_node::viz_distributed_pipeline_ascii, scheduling::scheduler::PendingTask,
-        utils::channel::create_unbounded_channel,
+        pipeline_node::viz_distributed_pipeline_ascii, utils::channel::create_unbounded_channel,
     };
 
     fn fake_udf_fn_expr(batch_size: Option<usize>) -> daft_dsl::expr::Expr {
@@ -578,71 +576,76 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_into_batches() {
-        // TODO: construct a single scan task from an in-memory source
-        let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
+        let f = async |is_map_only_pipeline: bool| {
+            let n_expected_tasks = if is_map_only_pipeline { 2 } else { 1 };
 
-        // Create a ScanSourceNode with is_map_only_pipeline = true
-        let scan_source_node = ScanSourceNode::new(
-            0, // node_id
-            &StageConfig::new(0, 0, Arc::new(DaftExecutionConfig::default())),
-            Pushdowns::default(),
-            Arc::new(
-                DummyScanOperator {
-                    schema: schema.clone(),
-                    num_scan_tasks: 1,
-                    num_rows_per_task: None,
-                    supports_count_pushdown_flag: true,
+            // TODO: construct a single scan task from an in-memory source
+            let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
+
+            // Create a ScanSourceNode with is_map_only_pipeline = true
+            let scan_source_node = ScanSourceNode::new(
+                0, // node_id
+                &StageConfig::new(0, 0, Arc::new(DaftExecutionConfig::default())),
+                Pushdowns::default(),
+                Arc::new(
+                    DummyScanOperator {
+                        schema: schema.clone(),
+                        num_scan_tasks: 1,
+                        num_rows_per_task: None,
+                        supports_count_pushdown_flag: true,
+                    }
+                    .to_scan_tasks(Pushdowns::default())
+                    .unwrap(),
+                ),
+                schema,
+                Some(0), // logical_node_id
+                is_map_only_pipeline,
+            );
+
+            let (scheduler_sender, mut scheduler_receiver) = create_unbounded_channel();
+            // TODO: call produce_tasks on this
+            let mut stage_context =
+                StageExecutionContext::new(SchedulerHandle::new(scheduler_sender));
+
+            println!("about to make task stream");
+
+            println!(
+                "visualized:\n{}",
+                viz_distributed_pipeline_ascii(&scan_source_node, true)
+            );
+
+            let task_stream: SubmittableTaskStream =
+                scan_source_node.arced().produce_tasks(&mut stage_context);
+
+            println!("made task stream");
+
+            if is_map_only_pipeline {
+                match scheduler_receiver.recv().await {
+                    Some(message) => {
+                        println!("\n\nreceived task:\n{message:?}\n\n");
+                        assert!(message.task_context().logical_node_ids.len() == n_expected_tasks);
+                    }
+                    None => panic!("didn't receive anything!"),
                 }
-                .to_scan_tasks(Pushdowns::default())
-                .unwrap(),
-            ),
-            schema,
-            Some(0), // logical_node_id
-            true,    // is_map_only_pipeline = true to trigger optimized scan
-        );
-
-        let (scheduler_sender, mut scheduler_receiver) = create_unbounded_channel();
-        // TODO: call produce_tasks on this
-        let mut stage_context = StageExecutionContext::new(SchedulerHandle::new(scheduler_sender));
-
-        println!("about to make task stream");
-
-        println!(
-            "visualized:\n{}",
-            viz_distributed_pipeline_ascii(&scan_source_node, true)
-        );
-
-        let task_stream: SubmittableTaskStream =
-            scan_source_node.arced().produce_tasks(&mut stage_context);
-
-        println!("made task stream");
-
-        match scheduler_receiver.recv().await {
-            Some(message) => {
-                println!("\n\nreceived task:\n{message:?}\n\n");
             }
-            None => panic!("didn't receive anything!"),
-        }
 
-        task_stream
-            .task_stream
-            .enumerate()
-            .for_each(async |(i, task)| println!("{i:?} {task:?}"))
-            .await;
+            println!("iterating through task stream");
 
-        println!("done")
+            let final_tasks = task_stream.task_stream.collect::<Vec<_>>().await;
 
-        // TODO: inspect the result and ensure that it has a new IntoBatches node
-        // Note: This is a simplified test - in practice you'd need to:
-        // 1. Mock the scheduler handle properly
-        // 2. Handle the async nature of the task stream
-        // 3. Inspect the actual tasks produced
+            final_tasks
+                .iter()
+                .enumerate()
+                .for_each(|(i, task)| println!("{i:?} {task:?}"));
 
-        // For now, we just verify that the task stream was created successfully
-        // SubmittableTaskStream doesn't have is_some(), so we just verify it exists
-        // The actual verification would involve:
-        // - Collecting tasks from the stream
-        // - Checking that each task has an IntoBatches node in its plan
-        // - Verifying the batch size is set correctly
+            if !is_map_only_pipeline {
+                assert!(final_tasks.len() == n_expected_tasks);
+            }
+
+            println!("done");
+        };
+
+        f(true).await;
+        f(false).await;
     }
 }
