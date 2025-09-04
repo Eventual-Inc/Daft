@@ -145,10 +145,11 @@ def classify_text(
     model: str | None = None,
     **options: str,
 ) -> Expression:
-    """Returns an expression that embeds text using the specified embedding model and provider.
+    """Returns an expression that classifies text using the specified model and provider.
 
     Args:
         text (Expression): The input text column expression.
+        labels (str | list[str]): Label(s) for classification.
         provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
         model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
@@ -157,12 +158,11 @@ def classify_text(
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression: An expression representing the embedded text vectors.
+        Expression: An expression representing the most-probable label string.
     """
     from daft.ai._expressions import _TextClassificationExpression
     from daft.ai.protocols import TextClassifier
 
-    # load a TextEmbedderDescriptor from the resolved provider
     text_classifier = _resolve_provider(provider, "transformers").get_text_classifier(model, **options)
 
     # TODO(rchowell): classification with structured outputs will be more interesting
