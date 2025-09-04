@@ -1,0 +1,31 @@
+name: Force Merge Check
+
+on:
+  pull_request_target:
+    types: [labeled, synchronize, opened, reopened]
+
+jobs:
+  force-merge:
+    if: contains(github.event.pull_request.labels.*.name, 'force-merge')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check if user is in engineering team
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const prUser = context.payload.pull_request.user.login;
+          const { data: memberships } = await github.request(
+            'GET /orgs/Eventual-Inc/teams/engineering/memberships/{username}',
+            {
+              org: 'Eventual-Inc',
+              team_slug: 'engineering',
+              username: prUser,
+            }
+          ).catch(e => ({ data: null }));
+
+          if (!memberships || memberships.state !== "active") {
+            core.setFailed(`User ${prUser} is not in Eventual-Inc/engineering and cannot use the force-merge label.`);
+          } else {
+            console.log(`✅ User ${prUser} is in engineering team, force merge allowed.`);
+          }
