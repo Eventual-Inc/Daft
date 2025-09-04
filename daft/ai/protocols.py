@@ -36,7 +36,7 @@ class ImageEmbedder(Protocol):
 
 
 class ImageEmbedderDescriptor(Descriptor[ImageEmbedder]):
-    """Descriptor for a ImageEmbedder implementation."""
+    """Descriptor for an ImageEmbedder implementation."""
 
     @abstractmethod
     def get_dimensions(self) -> EmbeddingDimensions:
