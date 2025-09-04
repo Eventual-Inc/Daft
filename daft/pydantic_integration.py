@@ -20,7 +20,7 @@ from typing import Union, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from typing import Any, Callable, TypeVar
+    from typing import Any, TypeVar
 
     P = TypeVar("P", bound=BaseModel)
 
@@ -31,8 +31,8 @@ from .datatype import DataType
 
 __all__: Sequence[str] = (
     "daft_pyarrow_datatype",
-    "infer_daft_arrow_function_types",
     "pyarrow_datatype",
+    # "infer_daft_arrow_function_types",
 )
 
 
@@ -122,33 +122,33 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
     return inner_type
 
 
-def infer_daft_arrow_function_types(f: Callable[[Any, ...], Any]) -> tuple[DataType, DataType]:  # type: ignore
-    """Produces the Daft DataTypes for the given function's annotated input and output."""
-    try:
-        func_annos: dict[str, type] = f.__annotations__
-    except AttributeError as err:
-        raise ValueError(f"Need to supply type-annotated function, not: {f}") from err
+# def infer_daft_arrow_function_types(f: Callable[[Any, ...], Any]) -> tuple[DataType, DataType]:  # type: ignore
+#     """Produces the Daft DataTypes for the given function's annotated input and output."""
+#     try:
+#         func_annos: dict[str, type] = f.__annotations__
+#     except AttributeError as err:
+#         raise ValueError(f"Need to supply type-annotated function, not: {f}") from err
 
-    if len(func_annos) == 0:
-        raise ValueError(
-            "Need to provide type annotations to function! " f"Cannot infer input and output types of: {f}"
-        )
+#     if len(func_annos) == 0:
+#         raise ValueError(
+#             "Need to provide type annotations to function! " f"Cannot infer input and output types of: {f}"
+#         )
 
-    if len(func_annos) != 2:
-        raise ValueError(
-            "Function must have 1 input and 1 output. "
-            f"Found a total of {len(func_annos)} type annotations: {func_annos}"
-        )
+#     if len(func_annos) != 2:
+#         raise ValueError(
+#             "Function must have 1 input and 1 output. "
+#             f"Found a total of {len(func_annos)} type annotations: {func_annos}"
+#         )
 
-    if "return" not in func_annos:
-        raise ValueError(f"Function is missing annotated return type. Only found input types: {func_annos}")
+#     if "return" not in func_annos:
+#         raise ValueError(f"Function is missing annotated return type. Only found input types: {func_annos}")
 
-    # exactly 1 output ('return') and one input (the other named one)
+#     # exactly 1 output ('return') and one input (the other named one)
 
-    input_annos = dict(**func_annos)
-    del input_annos["return"]
-    input_daft = daft_pyarrow_datatype(func_annos[next(iter(input_annos.keys()))])
+#     input_annos = dict(**func_annos)
+#     del input_annos["return"]
+#     input_daft = daft_pyarrow_datatype(func_annos[next(iter(input_annos.keys()))])
 
-    output_daft = daft_pyarrow_datatype(func_annos["return"])
+#     output_daft = daft_pyarrow_datatype(func_annos["return"])
 
-    return input_daft, output_daft
+#     return input_daft, output_daft
