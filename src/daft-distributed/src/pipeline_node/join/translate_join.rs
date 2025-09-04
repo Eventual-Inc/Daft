@@ -1,7 +1,7 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::{expr::bound_expr::BoundExpr, is_partition_compatible, ExprRef};
 use daft_logical_plan::{
     ops::Join,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
@@ -77,8 +77,16 @@ impl LogicalPlanToPipelineNodeTranslator {
         let left_spec = left.config().clustering_spec.as_ref();
         let right_spec = right.config().clustering_spec.as_ref();
 
-        let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(_));
-        let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(_));
+        let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
+            && is_partition_compatible(
+                &left_spec.partition_by(),
+                left_on.iter().map(|e| e.inner()),
+            );
+        let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(..))
+            && is_partition_compatible(
+                &right_spec.partition_by(),
+                right_on.iter().map(|e| e.inner()),
+            );
         let num_left_partitions = left_spec.num_partitions();
         let num_right_partitions = right_spec.num_partitions();
 
