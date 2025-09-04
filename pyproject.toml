@@ -45,7 +45,7 @@ lance = ["pylance"]
 numpy = ["numpy"]
 openai = ["openai"]
 pandas = ["pandas"]
-pydantic = ["pydantic >= 2.0.0, < 3.0.0"]
+pydantic = ["pydantic >= 2.0.0, < 3.0.0", "pydantic-to-pyarrow>=0.1.6"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   # TODO: we temporarily limit ray<2.48.0 because https://github.com/Eventual-Inc/Daft/issues/5027
@@ -148,7 +148,8 @@ dev = [
   "mcap-ros2-support==0.5.5",
   "mcap-protobuf-support==0.5.3",
   # pydantic
-  "pydantic>=2.4.2"
+  "pydantic>=2.4.2",
+  "pydantic-to-pyarrow>=0.1.6"
 ]
 docs = [
   "markdown-exec",
