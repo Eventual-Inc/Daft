@@ -25,6 +25,8 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
+const BEFORE_I_WROTE_THE_TEST: bool = false;
+
 pub(crate) struct ScanSourceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -143,66 +145,78 @@ impl ScanSourceNode {
         //      (1) physical_scan
         //      (2) into_batches
 
-        let maybe_materialized_output = scan_and_into_batches_task
-            .submit(&scheduler_handle)?
-            .await?;
+        if BEFORE_I_WROTE_THE_TEST {
+            let maybe_materialized_output = scan_and_into_batches_task
+                .submit(&scheduler_handle)?
+                .await?;
 
-        println!("maybe_materialized_output={maybe_materialized_output:?}");
+            println!("maybe_materialized_output={maybe_materialized_output:?}");
 
-        //
-        //     a single scan task generally corresponds to a single partition
-        //
-        //     could have multiple scan tasks in one file
-        //         e.g. parquet with row groups (constant time to offset into a row group)
-        //
-        // --- have ---
-        //
-        // 1. create scan task
-        // 2. materialize scan task
-        // 3. generate into batches task
-        // 4. "return" this
-        //
-        // --- want ---
-        //
-        // 1. create scan task
-        // 2. create into batches task and **append** to scan task
-        // 3. >> we cannot just *return* <<
-        //
-        // we need to inform the scheduler that it can move these "batches" around freely
-        // for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
-        //
+            //
+            //     a single scan task generally corresponds to a single partition
+            //
+            //     could have multiple scan tasks in one file
+            //         e.g. parquet with row groups (constant time to offset into a row group)
+            //
+            // --- have ---
+            //
+            // 1. create scan task
+            // 2. materialize scan task
+            // 3. generate into batches task
+            // 4. "return" this
+            //
+            // --- want ---
+            //
+            // 1. create scan task
+            // 2. create into batches task and **append** to scan task
+            // 3. >> we cannot just *return* <<
+            //
+            // we need to inform the scheduler that it can move these "batches" around freely
+            // for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
+            //
 
-        if let Some(materialized_output) = maybe_materialized_output {
-            // Step 3: Split the materialized output into batches of size 'k'
+            if let Some(materialized_output) = maybe_materialized_output {
+                // Step 3: Split the materialized output into batches of size 'k'
 
-            println!("materialized_output={materialized_output:?}");
+                println!("materialized_output={materialized_output:?}");
 
-            let materialized_outputs = materialized_output.split_into_materialized_outputs();
+                let materialized_outputs = materialized_output.split_into_materialized_outputs();
 
-            // Step 4: Create in-memory tasks for each batch
+                // Step 4: Create in-memory tasks for each batch
 
-            for batch in materialized_outputs.chunks(batch_size) {
-                let batch_materialized_outputs = batch.to_vec();
+                for batch in materialized_outputs.chunks(batch_size) {
+                    let batch_materialized_outputs = batch.to_vec();
 
-                println!("batch_materialized_outputs={batch_materialized_outputs:?}");
+                    println!("batch_materialized_outputs={batch_materialized_outputs:?}");
 
-                let task = make_in_memory_task_from_materialized_outputs(
-                    TaskContext::from((&self.context, task_id_counter.next())),
-                    batch_materialized_outputs,
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                    None,
-                )?;
+                    let task = make_in_memory_task_from_materialized_outputs(
+                        TaskContext::from((&self.context, task_id_counter.next())),
+                        batch_materialized_outputs,
+                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        None,
+                    )?;
 
-                println!("task={task:?}");
+                    println!("task={task:?}");
 
-                match result_tx.send(task).await {
-                    Ok(()) => (),
-                    Err(e) => {
-                        return Err(DaftError::InternalError(format!(
-                            "Failed to send internal batch to result channel: {e:?}"
-                        ))
-                        .into());
+                    match result_tx.send(task).await {
+                        Ok(()) => (),
+                        Err(e) => {
+                            return Err(DaftError::InternalError(format!(
+                                "Failed to send internal batch to result channel: {e:?}"
+                            ))
+                            .into());
+                        }
                     }
+                }
+            }
+        } else {
+            match result_tx.send(scan_and_into_batches_task).await {
+                Ok(()) => (),
+                Err(e) => {
+                    return Err(DaftError::InternalError(format!(
+                        "Failed to send internal scan + into batches task to result channel: {e:?}"
+                    )))
+                    .into();
                 }
             }
         }
@@ -486,6 +500,7 @@ mod tests {
 
     use common_daft_config::DaftExecutionConfig;
     use common_scan_info::{test::DummyScanOperator, ScanOperator};
+    use common_treenode::TreeNodeRecursion;
     use daft_dsl::{
         expr::bound_expr::BoundExpr,
         functions::{
@@ -619,33 +634,50 @@ mod tests {
 
             println!("made task stream");
 
-            if is_map_only_pipeline {
-                match scheduler_receiver.recv().await {
-                    Some(message) => {
-                        println!("\n\nreceived task:\n{message:?}\n\n");
-                        assert!(message.task_context().logical_node_ids.len() == n_expected_tasks);
-                    }
-                    None => panic!("didn't receive anything!"),
-                }
-            }
+            // if is_map_only_pipeline {
+            //     match scheduler_receiver.recv().await {
+            //         Some(message) => {
+            //             println!("\n\nreceived task:\n{message:?}\n\n");
+            //             assert!(message.task_context().logical_node_ids.len() == n_expected_tasks);
+            //         }
+            //         None => panic!("didn't receive anything!"),
+            //     }
+            // }
 
             println!("iterating through task stream");
 
-            let final_tasks = task_stream.task_stream.collect::<Vec<_>>().await;
+            let mut final_tasks = task_stream.task_stream.collect::<Vec<_>>().await;
 
             final_tasks
                 .iter()
                 .enumerate()
                 .for_each(|(i, task)| println!("{i:?} {task:?}"));
 
-            if !is_map_only_pipeline {
-                assert!(final_tasks.len() == n_expected_tasks);
+            assert!(final_tasks.len() == 1);
+
+            let final_task = final_tasks.remove(0);
+
+            let mut count = 0;
+            let _ = final_task.task().plan().apply(|_| {
+                count += 1;
+                Ok(TreeNodeRecursion::Continue)
+            });
+
+            if is_map_only_pipeline {
+                // check that there's an into_batches part
+                assert!(count == 2);
+            } else {
+                // check only scan_sourc
+                assert!(count == 1);
             }
 
             println!("done");
         };
 
+        println!("is_map_only_pipeline=true!!!\n\n");
         f(true).await;
+
+        println!("\n\n\nis_map_only_pipeline=false!!!\n\n");
         f(false).await;
     }
 }
