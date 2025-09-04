@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -11,7 +12,8 @@ from daft.unity_catalog import UnityCatalog
 
 @pytest.fixture(scope="session")
 def local_unity_catalog() -> UnityCatalog:
-    endpoint = "http://127.0.0.1:8080"
+    port = os.environ.get("UNITY_CATALOG_PORT", 8080)
+    endpoint = f"http://127.0.0.1:{port}"
     max_retries = 25
     retry_delay = 5  # seconds
 

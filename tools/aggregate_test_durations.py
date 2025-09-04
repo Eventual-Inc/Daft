@@ -19,57 +19,58 @@ from typing import Optional
 
 
 class TestDurationAggregator:
-    def __init__(self, filename: str):
-        self.filename = filename
+    def __init__(self, filenames: list[str]):
+        self.filenames = filenames if isinstance(filenames, list) else [filenames]
         self.test_times = []
         self.module_times = defaultdict(list)
         self.directory_times = defaultdict(list)
         self.tests_analyzed = 0
 
     def parse_durations(self):
-        """Parse test durations from pytest output file."""
+        """Parse test durations from pytest output files."""
         # Pattern to match test timing lines (setup, teardown, call)
         pattern = r"^(\d+\.\d+)s (setup|teardown|call)\s+tests/([^:]+\.py)::([^\s]+)"
 
-        try:
-            with open(self.filename) as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
+        for filename in self.filenames:
+            try:
+                with open(filename) as f:
+                    for line_num, line in enumerate(f, 1):
+                        line = line.strip()
 
-                    # Check for duration lines
-                    match = re.match(pattern, line)
-                    if match:
-                        time_str, phase, file_path, test_name = match.groups()
-                        time_seconds = float(time_str)
+                        # Check for duration lines
+                        match = re.match(pattern, line)
+                        if match:
+                            time_str, phase, file_path, test_name = match.groups()
+                            time_seconds = float(time_str)
 
-                        # Count 'call' phases as actual tests
-                        if phase == "call":
-                            self.tests_analyzed += 1
+                            # Count 'call' phases as actual tests
+                            if phase == "call":
+                                self.tests_analyzed += 1
 
-                        # Store individual test with phase information
-                        self.test_times.append(
-                            {
-                                "time": time_seconds,
-                                "phase": phase,
-                                "file": file_path,
-                                "test": test_name,
-                                "line": line_num,
-                            }
-                        )
+                            # Store individual test with phase information
+                            self.test_times.append(
+                                {
+                                    "time": time_seconds,
+                                    "phase": phase,
+                                    "file": file_path,
+                                    "test": test_name,
+                                    "line": line_num,
+                                }
+                            )
 
-                        # Aggregate by module
-                        self.module_times[file_path].append(time_seconds)
+                            # Aggregate by module
+                            self.module_times[file_path].append(time_seconds)
 
-                        # Aggregate by directory - only count in the immediate parent directory
-                        dir_path = str(Path(file_path).parent)
-                        self.directory_times[dir_path].append(time_seconds)
+                            # Aggregate by directory - only count in the immediate parent directory
+                            dir_path = str(Path(file_path).parent)
+                            self.directory_times[dir_path].append(time_seconds)
 
-        except FileNotFoundError:
-            print(f"Error: File '{self.filename}' not found.")
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error reading file: {e}")
-            sys.exit(1)
+            except FileNotFoundError:
+                print(f"Error: File '{filename}' not found.")
+                sys.exit(1)
+            except Exception as e:
+                print(f"Error reading file '{filename}': {e}")
+                sys.exit(1)
 
     def calculate_stats(self, times: list[float]) -> dict[str, float]:
         """Calculate statistics for a list of times."""
@@ -244,13 +245,13 @@ class TestDurationAggregator:
         """Run the complete analysis."""
         start_time = time.time()
 
-        print(f"Analyzing test durations from: {self.filename}")
+        print(f"Analyzing test durations from: {', '.join(self.filenames)}")
         print("Note: All times are in seconds")
         print()
         self.parse_durations()
 
         if not self.test_times:
-            print("No test durations found in the file.")
+            print("No test durations found in the files.")
             return
 
         # Print summary
@@ -273,17 +274,18 @@ class TestDurationAggregator:
 
 def main():
     parser = argparse.ArgumentParser(description="Aggregate pytest test durations by different levels")
-    parser.add_argument("file", help="Pytest output file to analyze")
+    parser.add_argument("files", nargs="+", help="Pytest output file(s) to analyze")
 
     args = parser.parse_args()
 
-    # Check if file exists
-    if not Path(args.file).exists():
-        print(f"Error: File '{args.file}' does not exist.")
-        sys.exit(1)
+    # Check if all files exist
+    for file_path in args.files:
+        if not Path(file_path).exists():
+            print(f"Error: File '{file_path}' does not exist.")
+            sys.exit(1)
 
-    # Run analysis
-    aggregator = TestDurationAggregator(args.file)
+    # Run analysis with all files
+    aggregator = TestDurationAggregator(args.files)
     aggregator.run_analysis()
 
 

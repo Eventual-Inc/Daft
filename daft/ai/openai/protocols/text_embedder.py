@@ -67,7 +67,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             )
 
     def get_provider(self) -> str:
-        return "openai"
+        return self.provider_name
 
     def get_model(self) -> str:
         return self.model_name
