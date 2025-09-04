@@ -17,17 +17,23 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const prUser = context.payload.pull_request.user.login;
-          const { data: memberships } = await github.request(
-            'GET /orgs/Eventual-Inc/teams/engineering/memberships/{username}',
-            {
-              org: 'Eventual-Inc',
-              team_slug: 'engineering',
-              username: prUser,
-            }
-          ).catch(e => ({ data: null }));
 
-          if (!memberships || memberships.state !== "active") {
-            core.setFailed(`User ${prUser} is not in Eventual-Inc/engineering and cannot use the force-merge label.`);
-          } else {
-            console.log(`✅ User ${prUser} is in engineering team, force merge allowed.`);
+          try {
+            const { data: membership } = await github.request(
+              'GET /orgs/{org}/teams/{team_slug}/memberships/{username}',
+              {
+                org: 'Eventual-Inc',
+                team_slug: 'engineering',
+                username: prUser,
+              }
+            );
+
+            if (membership.state !== "active") {
+              core.setFailed(`User ${prUser} exists but is not active in Eventual-Inc/engineering.`);
+            } else {
+              console.log(`✅ User ${prUser} is in engineering team, force merge allowed.`);
+            }
+          } catch (error) {
+            core.error(`GitHub API request failed: ${error.message}`);
+            core.setFailed(`Could not verify membership for ${prUser}.`);
           }
