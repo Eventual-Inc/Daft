@@ -85,6 +85,8 @@ jobs:
           flotilla: 0
         - daft-runner: ray
           pyarrow-version: 8.0.0
+        - python-version: '3.12'
+          pyarrow-version: 8.0.0
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
