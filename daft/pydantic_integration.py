@@ -40,7 +40,8 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
     """Produces the appropriate Daft DataType given a Python type.
 
     Supports the following types:
-        - built-ins (str, int, float, bool)
+        - built-ins (str, int, float, bool, bytes)
+        - datetime instances
         - Pydantic BaseModel instances
         - lists
         - dicts
@@ -53,6 +54,10 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
 
 
 def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
+    """Determines the correct Arrow type to use for a given input type.
+
+    Follows same rules as :func:`daft_pyarrow_datatype`.
+    """
     if get_origin(f_type) is Union:
         targs = get_args(f_type)
         if len(targs) == 2:
@@ -113,7 +118,7 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
 
     elif issubclass(f_type, timedelta):
         raise NotImplementedError(
-            "TODO: handle conversion of (days, seconds, microseconds) " "into duration with a single unit!"
+            "TODO: handle conversion of (days, seconds, microseconds) into duration with a single unit!"
         )
         # inner_type = pyarrow.duration(timeunit=???)
     else:
