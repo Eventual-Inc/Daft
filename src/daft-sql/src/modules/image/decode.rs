@@ -1,5 +1,5 @@
 use daft_dsl::{Expr, ExprRef, Literal};
-use daft_functions::image::decode::{decode, ImageDecode};
+use daft_functions::image::decode::{ImageDecode, decode};
 use sqlparser::ast::FunctionArg;
 
 use crate::{
