@@ -56,7 +56,7 @@ impl ProbeTableState {
 
     fn add_tables(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
         if let Self::Building {
-            ref mut probe_table_builder,
+            probe_table_builder,
             projection,
             tables,
         } = self

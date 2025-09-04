@@ -321,7 +321,7 @@ fn materialize_scan_task(
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            let tables = crate::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let tables = crate::python::read_pyfunc_into_table_iter(scan_task.clone())?;
             tables.collect::<crate::Result<Vec<_>>>()?
         }
     };

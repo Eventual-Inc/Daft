@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use common_error::DaftResult;
 use daft_algebra::boolean::split_conjunction;
 use daft_dsl::{
+    Column, Expr, ExprRef, Operator, ResolvedColumn,
     common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
-    functions::{partitioning, FunctionExpr},
-    null_lit, resolved_col, Column, Expr, ExprRef, Operator, ResolvedColumn,
+    functions::{FunctionExpr, partitioning},
+    null_lit, resolved_col,
 };
 
 use crate::{PartitionField, PartitionTransform};
@@ -155,7 +156,9 @@ pub fn rewrite_predicate_for_partitioning(
             if let Some(ref source_field) = pf.source_field {
                 let prev_value = map.insert(source_field.name.as_str(), pf);
                 if let Some(prev_value) = prev_value {
-                    return Err(common_error::DaftError::ValueError(format!("Duplicate Partitioning Columns found on same source field: {source_field}\n1: {prev_value}\n2: {pf}")));
+                    return Err(common_error::DaftError::ValueError(format!(
+                        "Duplicate Partitioning Columns found on same source field: {source_field}\n1: {prev_value}\n2: {pf}"
+                    )));
                 }
             }
         }
@@ -177,8 +180,8 @@ pub fn rewrite_predicate_for_partitioning(
             // All transforms should work as is
             Expr::BinaryOp {
                 op: Eq,
-                ref left,
-                ref right,
+                left,
+                right,
             } => {
                 if let Some(pfield) = get_pfield_for_col(left) {
                     if let Some(tfm) = pfield.transform
@@ -216,8 +219,8 @@ pub fn rewrite_predicate_for_partitioning(
             // Should only work for Identity
             Expr::BinaryOp {
                 op: NotEq,
-                ref left,
-                ref right,
+                left,
+                right,
             } => {
                 if let Some(pfield) = get_pfield_for_col(left) {
                     if let Some(tfm) = pfield.transform
@@ -253,11 +256,7 @@ pub fn rewrite_predicate_for_partitioning(
             }
             // Binary Op for Lt | LtEq | Gt | GtEq
             // we need to relax Lt and LtEq and only allow certain Transforms
-            Expr::BinaryOp {
-                op,
-                ref left,
-                ref right,
-            } if matches!(op, Lt | LtEq | Gt | GtEq) => {
+            Expr::BinaryOp { op, left, right } if matches!(op, Lt | LtEq | Gt | GtEq) => {
                 let relaxed_op = match op {
                     Lt | LtEq => LtEq,
                     Gt | GtEq => GtEq,
@@ -297,10 +296,10 @@ pub fn rewrite_predicate_for_partitioning(
                 Ok(Transformed::no(expr))
             }
 
-            Expr::IsNull(ref expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
+            Expr::IsNull(expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
                 Transformed::yes(Expr::IsNull(resolved_col(pfield.field.name.as_str())).arced()),
             ),
-            Expr::NotNull(ref expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
+            Expr::NotNull(expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
                 Transformed::yes(Expr::NotNull(resolved_col(pfield.field.name.as_str())).arced()),
             ),
             _ => Ok(Transformed::no(expr)),

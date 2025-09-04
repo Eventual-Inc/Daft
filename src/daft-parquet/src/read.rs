@@ -368,7 +368,7 @@ async fn read_parquet_single(
 #[allow(clippy::too_many_arguments)]
 async fn stream_parquet_single(
     uri: String,
-    columns: Option<&[&str]>,
+    columns: Option<Vec<String>>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
@@ -382,7 +382,7 @@ async fn stream_parquet_single(
     chunk_size: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
-    let columns_to_return = columns.map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
+    let columns_to_return = columns.as_ref().map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
     let num_rows_to_return = num_rows;
     let mut num_rows_to_read = num_rows;
     let mut columns_to_read = columns.map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
@@ -410,7 +410,7 @@ async fn stream_parquet_single(
 
     let (metadata, table_stream) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_stream(
-            fixed_uri.as_ref(),
+            fixed_uri.to_string(),
             columns_to_return,
             columns_to_read,
             num_rows_to_return,
@@ -871,7 +871,7 @@ pub async fn read_parquet_bulk_async(
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_parquet(
     uri: &str,
-    columns: Option<&[&str]>,
+    columns: Option<Vec<String>>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,

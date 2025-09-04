@@ -203,7 +203,7 @@ pub struct RangesContainer {
 
 impl RangesContainer {
     pub async fn get_range_reader(
-        &self,
+        self: Arc<Self>,
         range: Range<usize>,
     ) -> DaftResult<impl futures::AsyncRead> {
         let mut current_pos = range.start;

@@ -1115,7 +1115,7 @@ pub fn read_sql_into_py_table(
 }
 
 pub fn read_pyfunc_into_table_iter(
-    scan_task: &ScanTaskRef,
+    scan_task: ScanTaskRef,
 ) -> crate::Result<impl Iterator<Item = crate::Result<RecordBatch>>> {
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)

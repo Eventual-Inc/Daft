@@ -16,7 +16,7 @@ union U {
 
 #[cfg(target_env = "gnu")]
 #[allow(non_upper_case_globals)]
-#[export_name = "_rjem_malloc_conf"]
+#[unsafe(export_name = "_rjem_malloc_conf")]
 pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     U {
         x: &b"oversize_threshold:1,background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000\0"[0],
@@ -26,7 +26,7 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
 
 #[cfg(target_os = "macos")]
 #[allow(non_upper_case_globals)]
-#[export_name = "_rjem_malloc_conf"]
+#[unsafe(export_name = "_rjem_malloc_conf")]
 pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     U {
         x: &b"oversize_threshold:1,background_thread:false,dirty_decay_ms:0,muzzy_decay_ms:0\0"[0],

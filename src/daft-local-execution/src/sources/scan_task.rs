@@ -6,7 +6,7 @@ use std::{
 
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
-use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
+use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
@@ -17,7 +17,7 @@ use daft_dsl::{AggExpr, Expr};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
+use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{ChunkSpec, ScanTask};
 use daft_warc::WarcConvertOptions;
 use futures::{FutureExt, Stream, StreamExt};
@@ -25,11 +25,11 @@ use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
-    channel::{create_channel, Sender},
+    TaskSet,
+    channel::{Sender, create_channel},
     ops::NodeType,
     pipeline::NodeName,
     sources::source::{Source, SourceStream},
-    TaskSet,
 };
 
 pub struct ScanTaskSource {
@@ -421,11 +421,11 @@ async fn stream_scan_task(
     maintain_order: bool,
     chunk_size: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
-    let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
-        v.iter()
-            .map(std::string::String::as_str)
-            .collect::<Vec<&str>>()
-    });
+    let pushdown_columns = scan_task
+        .pushdowns
+        .columns
+        .as_ref()
+        .map(|v| v.iter().cloned().collect::<Vec<_>>());
 
     let file_column_names = match (
         pushdown_columns,
@@ -437,15 +437,15 @@ async fn stream_scan_task(
         // If the ScanTask has a partition_spec, we elide reads of partition columns from the file
         (Some(columns), Some(partition_fillmap)) => Some(
             columns
-                .iter()
+                .into_iter()
                 .filter_map(|s| {
-                    if partition_fillmap.contains_key(s) {
+                    if partition_fillmap.contains_key(s.as_str()) {
                         None
                     } else {
-                        Some(*s)
+                        Some(s)
                     }
                 })
-                .collect::<Vec<&str>>(),
+                .collect::<Vec<_>>(),
         ),
     };
 
@@ -500,7 +500,7 @@ async fn stream_scan_task(
                     .and_then(|s| s.get_parquet_metadata().cloned());
                 daft_parquet::read::stream_parquet(
                     url,
-                    file_column_names.as_deref(),
+                    file_column_names,
                     scan_task.pushdowns.limit,
                     row_groups,
                     scan_task.pushdowns.filters.clone(),
@@ -623,7 +623,7 @@ async fn stream_scan_task(
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
             Box::pin(stream)
         }

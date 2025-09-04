@@ -145,7 +145,7 @@ impl GroupedAggregateState {
         global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
     ) -> DaftResult<()> {
         let Self::Accumulating {
-            ref mut inner_states,
+            inner_states,
             strategy,
             partial_agg_threshold,
             high_cardinality_threshold_ratio,
@@ -216,7 +216,7 @@ impl GroupedAggregateState {
 
     fn finalize(&mut self) -> Vec<Option<SinglePartitionAggregateState>> {
         let res = if let Self::Accumulating {
-            ref mut inner_states,
+            inner_states,
             ..
         } = self
         {

@@ -14,7 +14,7 @@ use daft_core::{
     utils::arrow::cast_array_for_daft_if_needed,
 };
 use daft_decoding::deserialize::deserialize_column;
-use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns, Expr};
+use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt};
@@ -26,9 +26,9 @@ use smallvec::SmallVec;
 use snafu::ResultExt;
 
 use crate::{
+    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu,
     metadata::read_csv_schema_single,
     read::{fields_to_projection_indices, tables_concat},
-    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu,
 };
 
 mod pool;
@@ -151,7 +151,7 @@ pub async fn read_csv_local(
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<RecordBatch> {
     let stream = stream_csv_local(
-        uri,
+        uri.to_string(),
         convert_options.clone(),
         parse_options.clone(),
         read_options,
@@ -193,7 +193,7 @@ pub async fn read_csv_local(
 
 /// Reads a single local CSV file in a streaming fashion.
 pub async fn stream_csv_local(
-    uri: &str,
+    uri: String,
     convert_options: Option<CsvConvertOptions>,
     parse_options: CsvParseOptions,
     read_options: Option<CsvReadOptions>,

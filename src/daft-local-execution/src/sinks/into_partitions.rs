@@ -18,7 +18,7 @@ pub(crate) enum IntoPartitionsState {
 
 impl IntoPartitionsState {
     fn push(&mut self, part: Arc<MicroPartition>) {
-        if let Self::Building(ref mut parts) = self {
+        if let Self::Building(parts) = self {
             parts.push(part);
         } else {
             panic!("IntoPartitionsSink should be in Building state");
@@ -26,7 +26,7 @@ impl IntoPartitionsState {
     }
 
     fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
-        let res = if let Self::Building(ref mut parts) = self {
+        let res = if let Self::Building(parts) = self {
             std::mem::take(parts)
         } else {
             panic!("IntoPartitionsSink should be in Building state");

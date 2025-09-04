@@ -35,7 +35,7 @@ pub(crate) enum TopNState {
 impl TopNState {
     /// Process a new micro-partition and update the top N values
     fn append(&mut self, part: Arc<MicroPartition>) {
-        let Self::Building(ref mut top_values) = self else {
+        let Self::Building(top_values) = self else {
             panic!("TopNSink should be in Building state");
         };
 

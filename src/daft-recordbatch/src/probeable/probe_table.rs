@@ -1,17 +1,15 @@
-use std::{
-    collections::{hash_map::RawEntryMut, HashMap},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     prelude::SchemaRef,
     utils::{
-        dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
+        dyn_compare::{MultiDynArrayComparator, build_dyn_multi_array_compare},
         identity_hash_set::{IdentityBuildHasher, IndexHash},
     },
 };
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 use crate::RecordBatch;
@@ -40,9 +38,11 @@ impl ProbeTable {
             );
         if let Some(null_equal_aware) = null_equal_aware {
             if null_equal_aware.len() != schema.len() {
-                return Err(DaftError::InternalError(
-                    format!("null_equal_aware should have the same length as the schema. Expected: {}, Found: {}",
-                            schema.len(), null_equal_aware.len())));
+                return Err(DaftError::InternalError(format!(
+                    "null_equal_aware should have the same length as the schema. Expected: {}, Found: {}",
+                    schema.len(),
+                    null_equal_aware.len()
+                )));
             }
         }
         let default_nulls_equal = vec![false; schema.len()];
@@ -65,11 +65,12 @@ impl ProbeTable {
         input: &'a RecordBatch,
     ) -> DaftResult<impl Iterator<Item = Option<&'a [u64]>> + 'a> {
         assert_eq!(self.schema.len(), input.schema.len());
-        assert!(self
-            .schema
-            .into_iter()
-            .zip(input.schema.fields())
-            .all(|(l, r)| l.dtype == r.dtype));
+        assert!(
+            self.schema
+                .into_iter()
+                .zip(input.schema.fields())
+                .all(|(l, r)| l.dtype == r.dtype)
+        );
 
         let hashes = input.hash_rows()?;
 

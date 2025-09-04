@@ -66,7 +66,7 @@ impl BruteForceJoinOrderer {
                     // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
                     let cur_cost = cardinality + left_cost + right_cost;
                     // Take the join with the lowest summed cardinality.
-                    if let Some(ref mut cur_min_cost) = min_cost {
+                    if let Some(cur_min_cost) = min_cost {
                         if *cur_min_cost > cur_cost {
                             *cur_min_cost = cur_cost;
                             *chosen_plan = Some(left.join(right, connections, cardinality));

@@ -76,13 +76,13 @@ impl From<Error> for DaftError {
 }
 
 async fn run_glob(
-    glob_path: &str,
+    glob_path: String,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     file_format: FileFormat,
 ) -> DaftResult<impl Stream<Item = DaftResult<FileMetadata>> + Send> {
-    let (_, parsed_glob_path) = parse_url(glob_path)?;
+    let (_, parsed_glob_path) = parse_url(&glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
     let stream = io_client
@@ -155,7 +155,7 @@ impl GlobScanOperator {
             "GlobScanOperator::try_new schema inference for {first_glob_path}"
         ));
         let mut paths = run_glob(
-            first_glob_path,
+            first_glob_path.clone(),
             Some(1),
             io_client.clone(),
             Some(io_stats.clone()),

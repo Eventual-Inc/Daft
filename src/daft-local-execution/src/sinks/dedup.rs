@@ -51,7 +51,7 @@ impl DedupState {
 
     fn push(&mut self, input: Arc<MicroPartition>, columns: &[BoundExpr]) -> DaftResult<()> {
         let Self::Accumulating {
-            ref mut inner_states,
+            inner_states,
         } = self
         else {
             panic!("DropDuplicatesSink should be in Accumulating state");
@@ -68,7 +68,7 @@ impl DedupState {
 
     fn finalize(&mut self) -> Vec<SinglePartitionDedupState> {
         let res = if let Self::Accumulating {
-            ref mut inner_states,
+            inner_states,
         } = self
         {
             std::mem::take(inner_states)

@@ -21,7 +21,7 @@ pub(crate) enum AggregateState {
 
 impl AggregateState {
     fn push(&mut self, part: Arc<MicroPartition>) {
-        if let Self::Accumulating(ref mut parts) = self {
+        if let Self::Accumulating(parts) = self {
             parts.push(part);
         } else {
             panic!("AggregateSink should be in Accumulating state");
@@ -29,7 +29,7 @@ impl AggregateState {
     }
 
     fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
-        let res = if let Self::Accumulating(ref mut parts) = self {
+        let res = if let Self::Accumulating(parts) = self {
             std::mem::take(parts)
         } else {
             panic!("AggregateSink should be in Accumulating state");

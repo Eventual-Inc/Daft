@@ -2,12 +2,12 @@ use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
-use common_runtime::{combine_stream, get_compute_runtime, RuntimeTask};
+use common_runtime::{RuntimeTask, combine_stream, get_compute_runtime};
 use daft_core::prelude::*;
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, stream::BoxStream};
 use itertools::Itertools;
 use rayon::{
     iter::ParallelIterator,
@@ -17,11 +17,10 @@ use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
-    determine_parquet_parallelism,
-    file::{build_row_ranges, RowGroupRange},
+    PARQUET_MORSEL_SIZE, determine_parquet_parallelism,
+    file::{RowGroupRange, build_row_ranges},
     infer_arrow_schema_from_metadata,
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
-    PARQUET_MORSEL_SIZE,
 };
 
 fn prune_fields_from_schema(
@@ -225,10 +224,10 @@ pub fn spawn_column_iters_to_table_task(
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 pub fn local_parquet_read_into_column_iters(
-    uri: &str,
-    columns: Option<&[String]>,
+    uri: String,
+    columns: Option<Vec<String>>,
     num_rows: Option<usize>,
-    row_groups: Option<&[i64]>,
+    row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
@@ -279,13 +278,13 @@ pub fn local_parquet_read_into_column_iters(
             .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
                 path: uri.to_string(),
             })?;
-    let schema = prune_fields_from_schema(inferred_schema.into(), columns)?;
+    let schema = prune_fields_from_schema(inferred_schema.into(), columns.as_deref())?;
     let daft_schema = Schema::from(&schema);
 
     let row_ranges = build_row_ranges(
         num_rows,
         0,
-        row_groups,
+        row_groups.as_deref(),
         predicate,
         &daft_schema,
         &metadata,
@@ -520,7 +519,7 @@ pub async fn local_parquet_read_async(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn local_parquet_stream(
-    uri: &str,
+    uri: String,
     original_columns: Option<Vec<String>>,
     columns: Option<Vec<String>>,
     original_num_rows: Option<usize>,
@@ -539,10 +538,10 @@ pub async fn local_parquet_stream(
 )> {
     let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
-        uri,
-        columns.as_deref(),
+        uri.clone(),
+        columns,
         num_rows,
-        row_groups.as_deref(),
+        row_groups,
         predicate.clone(),
         schema_infer_options,
         metadata,
