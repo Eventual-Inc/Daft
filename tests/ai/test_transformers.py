@@ -7,6 +7,8 @@ pytest.importorskip("torch")
 pytest.importorskip("PIL")
 
 
+import time
+
 import numpy as np
 import torch
 
@@ -46,7 +48,20 @@ def test_transformers_image_embedder_other(model_name, dimensions, run_model_in_
     assert descriptor.get_options() == mock_options
 
     if not IS_CI or run_model_in_ci:
-        embedder = descriptor.instantiate()
+        retry_delay = 5  # seconds
+        max_retries = 5
+
+        # retry instantiation because Hugging Face is flaky
+        for attempt in range(max_retries):
+            try:
+                embedder = descriptor.instantiate()
+            except OSError as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise e
+            else:
+                break
 
         # Test with a variety of image sizes and shapes that should be preprocessed correctly.
         # TODO(desmond): This doesn't work with greyscale images. I wonder if we should require users to cast
