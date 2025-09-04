@@ -110,7 +110,6 @@ impl ScanSourceNode {
     ) -> DaftResult<()> {
         // Step 1: walk the plan and get the minimum batch size declared by any operator
 
-        println!("step 1");
         let submittable_task_scan = SubmittableTask::new(self.make_source_tasks(
             vec![single_scan_task].into(),
             TaskContext::from((&self.context, task_id_counter.next())),
@@ -123,7 +122,6 @@ impl ScanSourceNode {
                 DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
             );
         }
-        println!("batch_size={batch_size}");
 
         // Step 2: Materialize the scan task to get ray data pointers
 
@@ -140,12 +138,13 @@ impl ScanSourceNode {
             }),
         );
 
-        println!("scan_and_into_batches_task={scan_and_into_batches_task:?}");
         // we created a task with 2 operations:
         //      (1) physical_scan
         //      (2) into_batches
 
         if BEFORE_I_WROTE_THE_TEST {
+            println!("scan_and_into_batches_task={scan_and_into_batches_task:?}");
+
             let maybe_materialized_output = scan_and_into_batches_task
                 .submit(&scheduler_handle)?
                 .await?;
@@ -592,9 +591,7 @@ mod tests {
     #[tokio::test]
     async fn test_auto_into_batches() {
         let f = async |is_map_only_pipeline: bool| {
-            let n_expected_tasks = if is_map_only_pipeline { 2 } else { 1 };
-
-            // TODO: construct a single scan task from an in-memory source
+            // println!("\n-------------------\nis_map_only_pipeline={is_map_only_pipeline:?}\n\n\n");
             let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
 
             // Create a ScanSourceNode with is_map_only_pipeline = true
@@ -622,17 +619,17 @@ mod tests {
             let mut stage_context =
                 StageExecutionContext::new(SchedulerHandle::new(scheduler_sender));
 
-            println!("about to make task stream");
+            // println!("about to make task stream");
 
-            println!(
-                "visualized:\n{}",
-                viz_distributed_pipeline_ascii(&scan_source_node, true)
-            );
+            // println!(
+            //     "visualized:\n{}",
+            //     viz_distributed_pipeline_ascii(&scan_source_node, true)
+            // );
 
             let task_stream: SubmittableTaskStream =
                 scan_source_node.arced().produce_tasks(&mut stage_context);
 
-            println!("made task stream");
+            // println!("made task stream");
 
             // if is_map_only_pipeline {
             //     match scheduler_receiver.recv().await {
@@ -644,15 +641,13 @@ mod tests {
             //     }
             // }
 
-            println!("iterating through task stream");
+            // println!("iterating through task stream");
 
             let mut final_tasks = task_stream.task_stream.collect::<Vec<_>>().await;
-
-            final_tasks
-                .iter()
-                .enumerate()
-                .for_each(|(i, task)| println!("{i:?} {task:?}"));
-
+            // final_tasks
+            //     .iter()
+            //     .enumerate()
+            //     .for_each(|(i, task)| println!("{i:?} {task:?}"));
             assert!(final_tasks.len() == 1);
 
             let final_task = final_tasks.remove(0);
@@ -667,17 +662,12 @@ mod tests {
                 // check that there's an into_batches part
                 assert!(count == 2);
             } else {
-                // check only scan_sourc
+                // check only scan source
                 assert!(count == 1);
             }
-
-            println!("done");
+            // println!("done");
         };
-
-        println!("is_map_only_pipeline=true!!!\n\n");
         f(true).await;
-
-        println!("\n\n\nis_map_only_pipeline=false!!!\n\n");
         f(false).await;
     }
 }
