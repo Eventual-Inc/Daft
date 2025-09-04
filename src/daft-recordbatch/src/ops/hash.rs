@@ -4,7 +4,7 @@ use daft_core::{
     datatypes::UInt64Array,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use crate::RecordBatch;
 

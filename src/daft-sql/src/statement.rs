@@ -2,7 +2,7 @@ use daft_catalog::Identifier;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::ast;
 
-use crate::{error::SQLPlannerResult, unsupported_sql_err, SQLPlanner};
+use crate::{SQLPlanner, error::SQLPlannerResult, unsupported_sql_err};
 
 /// Top-level planning structure
 #[derive(Debug, Clone)]
@@ -200,7 +200,7 @@ impl SQLPlanner<'_> {
                 )?),
             };
             return Ok(Statement::Use(Use { catalog, namespace }));
-        };
+        }
         unsupported_sql_err!("Expected `USE <catalog>` or USE <catalog>.<namespace>")
     }
 }

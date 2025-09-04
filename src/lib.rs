@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 #![allow(clippy::useless_conversion)]
 
 #[cfg(not(target_env = "msvc"))]

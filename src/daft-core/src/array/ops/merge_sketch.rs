@@ -1,8 +1,8 @@
 use common_error::{DaftError, DaftResult};
 
-use super::{from_arrow::FromArrow, DaftMergeSketchAggable};
+use super::{DaftMergeSketchAggable, from_arrow::FromArrow};
 use crate::{
-    array::{ops::GroupIndices, StructArray},
+    array::{StructArray, ops::GroupIndices},
     datatypes::*,
 };
 

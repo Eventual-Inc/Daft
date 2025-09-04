@@ -3,13 +3,13 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) enum IntoPartitionsState {
     Building(Vec<Arc<MicroPartition>>),

@@ -901,7 +901,7 @@ where
         let table = RecordBatch::new_unchecked(read_schema.clone(), chunk, num_rows);
         let table = if let Some(predicate) = &predicate {
             let predicate = BoundExpr::try_new(predicate.clone(), &read_schema)?;
-            let filtered = table.filter(&[predicate.clone()])?;
+            let filtered = table.filter(std::slice::from_ref(&predicate))?;
             if let Some(include_columns) = &include_columns {
                 let include_column_indices = include_columns
                     .iter()

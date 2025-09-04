@@ -4,8 +4,9 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
+        ExprRef,
         functions::{FunctionArg, FunctionArgs},
-        lit, ExprRef,
+        lit,
     };
 
     #[derive(FunctionArgs)]

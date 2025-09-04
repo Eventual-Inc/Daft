@@ -9,7 +9,8 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, Receiver},
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
+    channel::{Receiver, create_channel},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
@@ -17,7 +18,6 @@ use crate::{
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 
 pub enum BlockingSinkStatus<Op: BlockingSink> {

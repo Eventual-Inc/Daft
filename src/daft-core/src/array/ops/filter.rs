@@ -6,8 +6,8 @@ use common_error::DaftResult;
 use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
     array::{
-        growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
+        growable::{Growable, GrowableArray},
     },
     datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType, DataType},
 };

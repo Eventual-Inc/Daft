@@ -1,8 +1,8 @@
 use std::{
     borrow::Cow,
     sync::{
-        atomic::{self},
         Arc,
+        atomic::{self},
     },
 };
 

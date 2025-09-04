@@ -7,8 +7,8 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{
-        DaftNumericType, Decimal128Array, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type,
-        UInt32Type, UInt64Type, UInt8Type, Utf8Array,
+        DaftNumericType, Decimal128Array, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type,
+        UInt16Type, UInt32Type, UInt64Type, Utf8Array,
     },
     prelude::BinaryArray,
 };

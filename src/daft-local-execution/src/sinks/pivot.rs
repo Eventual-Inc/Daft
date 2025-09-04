@@ -4,13 +4,13 @@ use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -101,8 +101,10 @@ impl BlockingSink for PivotSink {
                         .chain(std::iter::once(&pivot_params.pivot_column))
                         .cloned()
                         .collect::<Vec<_>>();
-                    let agged =
-                        concated.agg(&[pivot_params.aggregation.clone()], &group_by_with_pivot)?;
+                    let agged = concated.agg(
+                        std::slice::from_ref(&pivot_params.aggregation),
+                        &group_by_with_pivot,
+                    )?;
                     let pivoted = Arc::new(agged.pivot(
                         &pivot_params.group_by,
                         pivot_params.pivot_column.clone(),

@@ -4,8 +4,8 @@ use daft_core::join::{JoinSide, JoinType};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Filter, Join},
     LogicalPlan, LogicalPlanRef,
+    ops::{Filter, Join},
 };
 
 /// Optimizer rule for pushing down join predicates that only need one side of the join.
@@ -95,7 +95,7 @@ impl OptimizerRule for PushDownJoinPredicate {
 
 #[cfg(test)]
 mod tests {
-    use daft_dsl::{left_col, resolved_col, right_col, ExprRef};
+    use daft_dsl::{ExprRef, left_col, resolved_col, right_col};
     use daft_schema::{dtype::DataType, field::Field};
     use rstest::rstest;
 

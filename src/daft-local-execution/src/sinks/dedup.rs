@@ -21,13 +21,13 @@ use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 #[derive(Default)]
 pub(crate) struct SinglePartitionDedupState {
@@ -50,10 +50,7 @@ impl DedupState {
     }
 
     fn push(&mut self, input: Arc<MicroPartition>, columns: &[BoundExpr]) -> DaftResult<()> {
-        let Self::Accumulating {
-            inner_states,
-        } = self
-        else {
+        let Self::Accumulating { inner_states } = self else {
             panic!("DropDuplicatesSink should be in Accumulating state");
         };
 
@@ -67,10 +64,7 @@ impl DedupState {
     }
 
     fn finalize(&mut self) -> Vec<SinglePartitionDedupState> {
-        let res = if let Self::Accumulating {
-            inner_states,
-        } = self
-        {
+        let res = if let Self::Accumulating { inner_states } = self {
             std::mem::take(inner_states)
         } else {
             panic!("DropDuplicatesSink should be in Accumulating state");

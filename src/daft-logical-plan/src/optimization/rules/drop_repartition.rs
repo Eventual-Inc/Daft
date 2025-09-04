@@ -51,13 +51,13 @@ mod tests {
     use daft_dsl::unresolved_col;
 
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::drop_repartition::DropRepartition,
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the DropRepartition rule registered, optimizes

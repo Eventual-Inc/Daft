@@ -5,8 +5,8 @@ use daft_core::{
     utils::supertype::try_get_collection_supertype,
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 

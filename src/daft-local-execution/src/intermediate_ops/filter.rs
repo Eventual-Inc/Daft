@@ -1,25 +1,25 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
 use common_error::DaftResult;
-use common_metrics::{snapshot, Stat, StatSnapshotSend};
+use common_metrics::{Stat, StatSnapshotSend, snapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
+    ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
-    ExecutionTaskSpawner,
+    runtime_stats::{CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY, RuntimeStats},
 };
 
 #[derive(Default)]

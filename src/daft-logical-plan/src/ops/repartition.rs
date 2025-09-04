@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{partitioning::RepartitionSpec, stats::StatsState, LogicalPlan};
+use crate::{LogicalPlan, partitioning::RepartitionSpec, stats::StatsState};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Repartition {

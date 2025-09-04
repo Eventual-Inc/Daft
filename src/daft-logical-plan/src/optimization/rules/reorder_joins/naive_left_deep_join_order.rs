@@ -38,17 +38,17 @@ mod tests {
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_schema::{dtype::DataType, field::Field};
-    use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
 
     use super::{JoinGraph, JoinOrderTree, JoinOrderer, NaiveLeftDeepJoinOrderer};
     use crate::{
+        LogicalPlanRef,
         optimization::rules::{
+            EnrichWithStats, MaterializeScans,
             reorder_joins::join_graph::{JoinAdjList, JoinNode},
             rule::OptimizerRule,
-            EnrichWithStats, MaterializeScans,
         },
         test::{dummy_scan_node_with_pushdowns, dummy_scan_operator_with_size},
-        LogicalPlanRef,
     };
 
     fn assert_order_contains_all_nodes(order: &JoinOrderTree, graph: &JoinGraph) {

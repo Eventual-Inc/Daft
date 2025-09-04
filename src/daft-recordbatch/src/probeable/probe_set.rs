@@ -37,14 +37,14 @@ impl ProbeSet {
             Self::DEFAULT_SIZE,
             Default::default(),
         );
-        if let Some(null_equal_aware) = nulls_equal_aware {
-            if null_equal_aware.len() != schema.len() {
-                return Err(DaftError::InternalError(format!(
-                    "null_equal_aware should have the same length as the schema. Expected: {}, Found: {}",
-                    schema.len(),
-                    null_equal_aware.len()
-                )));
-            }
+        if let Some(null_equal_aware) = nulls_equal_aware
+            && null_equal_aware.len() != schema.len()
+        {
+            return Err(DaftError::InternalError(format!(
+                "null_equal_aware should have the same length as the schema. Expected: {}, Found: {}",
+                schema.len(),
+                null_equal_aware.len()
+            )));
         }
         let default_nulls_equal = vec![false; schema.len()];
         let nulls_equal = nulls_equal_aware.unwrap_or_else(|| default_nulls_equal.as_ref());

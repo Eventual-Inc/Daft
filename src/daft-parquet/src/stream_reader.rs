@@ -36,7 +36,7 @@ fn prune_fields_from_schema(
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
             if avail_names.contains(col_name.as_str()) {
-                names_to_keep.insert(col_name.to_string());
+                names_to_keep.insert(col_name.clone());
             }
         }
         Ok(schema.filter(|_, field| names_to_keep.contains(&field.name)))
@@ -243,17 +243,14 @@ pub fn local_parquet_read_into_column_iters(
     let uri = uri
         .strip_prefix(LOCAL_PROTOCOL)
         .map(std::string::ToString::to_string)
-        .unwrap_or_else(|| uri.to_string());
+        .unwrap_or_else(|| uri.clone());
 
-    let reader = File::open(uri.clone()).with_context(|_| super::InternalIOSnafu {
-        path: uri.to_string(),
-    })?;
+    let reader =
+        File::open(uri.clone()).with_context(|_| super::InternalIOSnafu { path: uri.clone() })?;
     io_stats.as_ref().inspect(|ios| ios.mark_get_requests(1));
     let size = reader
         .metadata()
-        .with_context(|_| super::InternalIOSnafu {
-            path: uri.to_string(),
-        })?
+        .with_context(|_| super::InternalIOSnafu { path: uri.clone() })?
         .len();
 
     if size < 12 {
@@ -269,15 +266,13 @@ pub fn local_parquet_read_into_column_iters(
         None => read::read_metadata(&mut reader)
             .map(Arc::new)
             .with_context(|_| super::UnableToParseMetadataFromLocalFileSnafu {
-                path: uri.to_string(),
+                path: uri.clone(),
             })?,
     };
 
     let inferred_schema =
         infer_arrow_schema_from_metadata(&metadata, Some(schema_infer_options.into()))
-            .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
-                path: uri.to_string(),
-            })?;
+            .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu { path: uri.clone() })?;
     let schema = prune_fields_from_schema(inferred_schema.into(), columns.as_deref())?;
     let daft_schema = Schema::from(&schema);
 
@@ -554,7 +549,6 @@ pub async fn local_parquet_stream(
     let num_parallel_tasks = determine_parquet_parallelism(&schema_ref);
     let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
-    let owned_uri = uri.to_string();
     let compute_runtime = get_compute_runtime();
 
     let (output_senders, output_receivers): (Vec<_>, Vec<_>) = row_ranges
@@ -575,7 +569,7 @@ pub async fn local_parquet_stream(
                 column_iters.unwrap(),
                 rg_range,
                 schema_ref.clone(),
-                owned_uri.clone(),
+                uri.clone(),
                 predicate.clone(),
                 original_columns.clone(),
                 original_num_rows,

@@ -7,7 +7,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use crate::{AsyncFileWriter, WriterFactory};
 

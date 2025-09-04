@@ -19,8 +19,8 @@ use common_treenode::{Transformed, TreeNode};
 use join_graph::JoinGraphBuilder;
 
 use crate::{
-    optimization::rules::{reorder_joins::join_graph::JoinOrderer, OptimizerRule},
     LogicalPlan,
+    optimization::rules::{OptimizerRule, reorder_joins::join_graph::JoinOrderer},
 };
 
 // Reorder joins in a query tree.

@@ -174,13 +174,13 @@ mod tests {
 
     use super::{BruteForceJoinOrderer, JoinGraph, JoinOrderTree, JoinOrderer};
     use crate::{
+        LogicalPlanRef,
         optimization::rules::{
+            EnrichWithStats, MaterializeScans,
             reorder_joins::join_graph::{JoinAdjList, JoinNode},
             rule::OptimizerRule,
-            EnrichWithStats, MaterializeScans,
         },
         test::{dummy_scan_node_with_pushdowns, dummy_scan_operator_with_size},
-        LogicalPlanRef,
     };
 
     const PLACEHOLDER_CARDINALITY: usize = 0;

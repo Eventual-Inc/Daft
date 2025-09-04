@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 use pyo3::prelude::*;
 
-use super::{task::RayTaskResultHandle, RaySwordfishTask};
+use super::{RaySwordfishTask, task::RayTaskResultHandle};
 use crate::scheduling::{
     task::{SwordfishTask, Task, TaskContext, TaskDetails},
     worker::{Worker, WorkerId},

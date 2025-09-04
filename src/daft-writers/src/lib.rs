@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 mod batch;
 mod file;
 mod ipc;

@@ -625,11 +625,7 @@ impl<T> Transformed<T> {
     /// Returns self if self is transformed, otherwise returns other.
     #[must_use]
     pub fn or(self, other: Self) -> Self {
-        if self.transformed {
-            self
-        } else {
-            other
-        }
+        if self.transformed { self } else { other }
     }
 
     /// Maps a `Transformed<T>` to `Transformed<U>`,

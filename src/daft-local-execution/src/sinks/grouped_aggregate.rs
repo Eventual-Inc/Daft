@@ -13,13 +13,13 @@ use daft_dsl::expr::{
 };
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
@@ -215,11 +215,7 @@ impl GroupedAggregateState {
     }
 
     fn finalize(&mut self) -> Vec<Option<SinglePartitionAggregateState>> {
-        let res = if let Self::Accumulating {
-            inner_states,
-            ..
-        } = self
-        {
+        let res = if let Self::Accumulating { inner_states, .. } = self {
             std::mem::take(inner_states)
         } else {
             panic!("GroupedAggregateSink should be in Accumulating state");

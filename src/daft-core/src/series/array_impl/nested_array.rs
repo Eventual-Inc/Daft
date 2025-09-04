@@ -5,8 +5,8 @@ use common_error::{DaftError, DaftResult};
 use super::ArrayWrapper;
 use crate::{
     array::{
-        ops::{broadcast::Broadcastable, DaftIsNull, DaftNotNull, DaftSetAggable, GroupIndices},
         FixedSizeListArray, ListArray, StructArray,
+        ops::{DaftIsNull, DaftNotNull, DaftSetAggable, GroupIndices, broadcast::Broadcastable},
     },
     datatypes::{BooleanArray, DataType, Field},
     lit::Literal,

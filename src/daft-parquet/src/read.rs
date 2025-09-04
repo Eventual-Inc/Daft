@@ -13,20 +13,20 @@ use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
-use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns, ExprRef};
-use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
+use daft_io::{IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
+    Stream, StreamExt, TryStreamExt,
     future::{join_all, try_join_all},
     stream::BoxStream,
-    Stream, StreamExt, TryStreamExt,
 };
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{file::ParquetReaderBuilder, infer_arrow_schema_from_metadata, JoinSnafu};
+use crate::{JoinSnafu, file::ParquetReaderBuilder, infer_arrow_schema_from_metadata};
 
 #[cfg(feature = "python")]
 #[derive(Clone)]
@@ -382,10 +382,12 @@ async fn stream_parquet_single(
     chunk_size: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
-    let columns_to_return = columns.as_ref().map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
+    let columns_to_return = columns
+        .as_ref()
+        .map(|s| s.iter().map(|s| (*s).clone()).collect_vec());
     let num_rows_to_return = num_rows;
     let mut num_rows_to_read = num_rows;
-    let mut columns_to_read = columns.map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
+    let mut columns_to_read = columns.map(|s| s.iter().map(|s| (*s).clone()).collect_vec());
     let requested_columns = columns_to_read.as_ref().map(std::vec::Vec::len);
     if let Some(ref pred) = predicate {
         num_rows_to_read = None;
@@ -498,7 +500,7 @@ async fn stream_parquet_single(
                 || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
             {
                 return Err(super::Error::ParquetNumColumnMismatch {
-                    path: uri.to_string(),
+                    path: uri.clone(),
                     metadata_num_columns: expected_num_columns,
                     read_columns: table.num_columns(),
                 }
@@ -774,14 +776,14 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
     let runtime_handle = get_io_runtime(multithreaded_io);
 
     let columns = columns.map(|s| s.iter().map(|v| v.as_ref().to_string()).collect::<Vec<_>>());
-    if let Some(ref row_groups) = row_groups {
-        if row_groups.len() != uris.len() {
-            return Err(common_error::DaftError::ValueError(format!(
-                "Mismatch of length of `uris` and `row_groups`. {} vs {}",
-                uris.len(),
-                row_groups.len()
-            )));
-        }
+    if let Some(ref row_groups) = row_groups
+        && row_groups.len() != uris.len()
+    {
+        return Err(common_error::DaftError::ValueError(format!(
+            "Mismatch of length of `uris` and `row_groups`. {} vs {}",
+            uris.len(),
+            row_groups.len()
+        )));
     }
 
     let tables = runtime_handle.block_on_current_thread(read_parquet_bulk_async(
@@ -918,14 +920,14 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
 ) -> DaftResult<Vec<ParquetPyarrowChunk>> {
     let runtime_handle = get_io_runtime(multithreaded_io);
     let columns = columns.map(|s| s.iter().map(|v| v.as_ref().to_string()).collect::<Vec<_>>());
-    if let Some(ref row_groups) = row_groups {
-        if row_groups.len() != uris.len() {
-            return Err(common_error::DaftError::ValueError(format!(
-                "Mismatch of length of `uris` and `row_groups`. {} vs {}",
-                uris.len(),
-                row_groups.len()
-            )));
-        }
+    if let Some(ref row_groups) = row_groups
+        && row_groups.len() != uris.len()
+    {
+        return Err(common_error::DaftError::ValueError(format!(
+            "Mismatch of length of `uris` and `row_groups`. {} vs {}",
+            uris.len(),
+            row_groups.len()
+        )));
     }
     let tables = runtime_handle
         .block_on_current_thread(async move {

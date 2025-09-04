@@ -6,13 +6,13 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),

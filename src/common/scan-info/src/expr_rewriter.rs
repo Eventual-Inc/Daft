@@ -197,20 +197,19 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                } else if let Some(pfield) = get_pfield_for_col(right) {
-                    if let Some(tfm) = pfield.transform
-                        && tfm.supports_equals()
-                        && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
-                    {
-                        return Ok(Transformed::yes(
-                            Expr::BinaryOp {
-                                op: Eq,
-                                left: new_expr,
-                                right: resolved_col(pfield.field.name.as_str()),
-                            }
-                            .arced(),
-                        ));
-                    }
+                } else if let Some(pfield) = get_pfield_for_col(right)
+                    && let Some(tfm) = pfield.transform
+                    && tfm.supports_equals()
+                    && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
+                {
+                    return Ok(Transformed::yes(
+                        Expr::BinaryOp {
+                            op: Eq,
+                            left: new_expr,
+                            right: resolved_col(pfield.field.name.as_str()),
+                        }
+                        .arced(),
+                    ));
                 }
 
                 Ok(Transformed::no(expr))
@@ -236,20 +235,19 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                } else if let Some(pfield) = get_pfield_for_col(right) {
-                    if let Some(tfm) = pfield.transform
-                        && tfm.supports_not_equals()
-                        && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
-                    {
-                        return Ok(Transformed::yes(
-                            Expr::BinaryOp {
-                                op: NotEq,
-                                left: new_expr,
-                                right: resolved_col(pfield.field.name.as_str()),
-                            }
-                            .arced(),
-                        ));
-                    }
+                } else if let Some(pfield) = get_pfield_for_col(right)
+                    && let Some(tfm) = pfield.transform
+                    && tfm.supports_not_equals()
+                    && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
+                {
+                    return Ok(Transformed::yes(
+                        Expr::BinaryOp {
+                            op: NotEq,
+                            left: new_expr,
+                            right: resolved_col(pfield.field.name.as_str()),
+                        }
+                        .arced(),
+                    ));
                 }
 
                 Ok(Transformed::no(expr))
@@ -277,20 +275,19 @@ pub fn rewrite_predicate_for_partitioning(
                             .arced(),
                         ));
                     }
-                } else if let Some(pfield) = get_pfield_for_col(right) {
-                    if let Some(tfm) = pfield.transform
-                        && tfm.supports_comparison()
-                        && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
-                    {
-                        return Ok(Transformed::yes(
-                            Expr::BinaryOp {
-                                op: relaxed_op,
-                                left: new_expr,
-                                right: resolved_col(pfield.field.name.as_str()),
-                            }
-                            .arced(),
-                        ));
-                    }
+                } else if let Some(pfield) = get_pfield_for_col(right)
+                    && let Some(tfm) = pfield.transform
+                    && tfm.supports_comparison()
+                    && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
+                {
+                    return Ok(Transformed::yes(
+                        Expr::BinaryOp {
+                            op: relaxed_op,
+                            left: new_expr,
+                            right: resolved_col(pfield.field.name.as_str()),
+                        }
+                        .arced(),
+                    ));
                 }
 
                 Ok(Transformed::no(expr))

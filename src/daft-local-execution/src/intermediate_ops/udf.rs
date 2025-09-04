@@ -1,8 +1,8 @@
 use std::{
     ops::RangeInclusive,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
     vec,
@@ -15,29 +15,29 @@ use daft_core::prelude::SchemaRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
+    Expr,
     expr::{bound_expr::BoundExpr, count_udfs},
     functions::{
-        python::{get_udf_properties, UDFProperties},
         FunctionExpr,
+        python::{UDFProperties, get_udf_properties},
     },
-    Expr,
 };
+use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
-use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use rand::Rng;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
+    ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    ExecutionTaskSpawner,
 };
 
 const NUM_TEST_ITERATIONS_RANGE: RangeInclusive<usize> = 10..=20;
@@ -173,7 +173,7 @@ impl UdfHandle {
                 return Err(DaftError::InternalError(format!(
                     "Expected a Python UDF, got {}",
                     inner_expr
-                )))
+                )));
             }
         };
 

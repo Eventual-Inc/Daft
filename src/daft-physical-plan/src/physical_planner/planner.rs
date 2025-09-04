@@ -3,7 +3,7 @@ use std::{
     fmt::{self, Display},
     fs::File,
     io::Write,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{Arc, atomic::AtomicUsize},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -14,10 +14,10 @@ use common_treenode::{
     Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
 };
 use daft_logical_plan::{
+    LogicalPlan, LogicalPlanRef,
     ops::Source,
     optimization::OptimizerBuilder,
     source_info::{InMemoryInfo, SourceInfo},
-    LogicalPlan, LogicalPlanRef,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,8 +26,8 @@ use super::{
     translate::{adaptively_translate_single_logical_node, translate_single_logical_node},
 };
 use crate::{
-    ops::{InMemoryScan, PreviousStageScan},
     PhysicalPlan, PhysicalPlanRef,
+    ops::{InMemoryScan, PreviousStageScan},
 };
 
 static STAGE_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);

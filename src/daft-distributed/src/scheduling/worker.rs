@@ -49,7 +49,7 @@ pub(crate) trait WorkerManager: Send + Sync {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::sync::{atomic::AtomicBool, Mutex};
+    use std::sync::{Mutex, atomic::AtomicBool};
 
     use super::*;
     use crate::scheduling::tests::{MockTask, MockTaskResultHandle};
@@ -153,6 +153,7 @@ pub(super) mod tests {
         total_num_cpus: f64,
         total_num_gpus: f64,
         active_task_details: Arc<Mutex<HashMap<TaskContext, TaskDetails>>>,
+        #[allow(dead_code)]
         is_shutdown: Arc<AtomicBool>,
     }
 
@@ -181,6 +182,7 @@ pub(super) mod tests {
                 .insert(task.task_context(), TaskDetails::from(task));
         }
 
+        #[allow(dead_code)]
         pub fn shutdown(&self) {
             self.is_shutdown
                 .store(true, std::sync::atomic::Ordering::SeqCst);

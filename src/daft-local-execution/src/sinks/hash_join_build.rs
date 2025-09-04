@@ -1,17 +1,17 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
 use common_error::DaftResult;
-use common_metrics::{snapshot, Stat, StatSnapshotSend};
+use common_metrics::{Stat, StatSnapshotSend, snapshot};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{make_probeable_builder, ProbeState, ProbeableBuilder, RecordBatch};
+use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
 use itertools::Itertools;
 use tracing::{info_span, instrument};
 
@@ -20,11 +20,11 @@ use super::blocking_sink::{
     BlockingSinkStatus,
 };
 use crate::{
+    ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_RECEIVED_KEY},
+    runtime_stats::{CPU_US_KEY, ROWS_RECEIVED_KEY, RuntimeStats},
     state_bridge::BroadcastStateBridgeRef,
-    ExecutionTaskSpawner,
 };
 
 pub(crate) enum ProbeTableState {

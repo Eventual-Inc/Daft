@@ -6,10 +6,11 @@ use parquet2::{
     read::levels::get_bit_width,
 };
 
+use super::{
+    super::Pages,
+    utils::{DecodedState, MaybeNext, PageState},
+};
 use crate::{array::Array, bitmap::MutableBitmap, error::Result};
-
-use super::utils::{DecodedState, MaybeNext};
-use super::{super::Pages, utils::PageState};
 
 /// trait describing deserialized repetition and definition levels
 pub trait Nested: std::fmt::Debug + Send + Sync {
@@ -455,8 +456,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
 /// * `decoded`          - The state of our decoded values.
 /// * `decoder`          - The decoder for the leaf-level type.
 /// * `additional`       - The number of top-level rows to read for the current chunk. This is the
-///                        min of `chunk size - number of rows existing in the current chunk` and
-///                        `rows_remaining`.
+///   min of `chunk size - number of rows existing in the current chunk` and `rows_remaining`.
 #[allow(clippy::too_many_arguments)]
 fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     page: &mut NestedPage<'a>,

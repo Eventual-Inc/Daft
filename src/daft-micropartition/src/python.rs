@@ -9,25 +9,25 @@ use daft_core::{
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{
+    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
-    Expr,
 };
-use daft_io::{python::IOConfig, IOStatsContext};
+use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
+use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use daft_scan::{
-    python::pylib::PyScanTask, storage_config::StorageConfig, DataSource, ScanTask, ScanTaskRef,
+    DataSource, ScanTask, ScanTaskRef, python::pylib::PyScanTask, storage_config::StorageConfig,
 };
 use daft_stats::{TableMetadata, TableStatistics};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
+use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
 
 use crate::{
+    DaftCoreComputeSnafu, PyIOSnafu,
     micropartition::{MicroPartition, TableState},
     partitioning::MicroPartitionSet,
-    DaftCoreComputeSnafu, PyIOSnafu,
 };
 
 #[pyclass(module = "daft.daft", frozen)]

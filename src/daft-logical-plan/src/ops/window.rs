@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::{expr::window::WindowSpec, WindowExpr};
+use daft_dsl::{WindowExpr, expr::window::WindowSpec};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -41,7 +41,7 @@ pub struct Window {
     /// The window function names to map to the output schema.
     pub aliases: Vec<String>,
     /// The window specification (partition by, order by, frame, etc.)
-    pub window_spec: WindowSpec,
+    pub window_spec: Arc<WindowSpec>,
     /// The output schema.
     pub schema: Arc<Schema>,
     /// The plan statistics.
@@ -53,7 +53,7 @@ impl Window {
         input: Arc<LogicalPlan>,
         window_functions: Vec<WindowExpr>,
         aliases: Vec<String>,
-        window_spec: WindowSpec,
+        window_spec: Arc<WindowSpec>,
     ) -> Result<Self> {
         let input_schema = input.schema();
 

@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use daft_core::prelude::Schema;
 use daft_dsl::{
+    ExprRef,
     functions::{
-        scalar::ScalarFn, BuiltinScalarFn, FunctionArg, FunctionArgs, ScalarFunctionFactory,
-        FUNCTION_REGISTRY,
+        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, ScalarFunctionFactory,
+        scalar::ScalarFn,
     },
     python::PyExpr,
-    ExprRef,
 };
 use pyo3::{
+    Bound, PyResult,
     types::{PyDict, PyModule, PyModuleMethods, PyTuple},
-    wrap_pyfunction, Bound, PyResult,
+    wrap_pyfunction,
 };
 
 #[pyo3::pyclass]

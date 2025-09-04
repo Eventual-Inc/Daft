@@ -689,7 +689,7 @@ impl ParquetFileReader {
                 let concated_handle = tokio::task::spawn(async move {
                     let series_to_concat =
                         try_join_all(field_handles).await.context(JoinSnafu {
-                            path: owned_uri.to_string(),
+                            path: owned_uri.clone(),
                         })?;
                     let series_to_concat = series_to_concat
                         .into_iter()
@@ -717,7 +717,7 @@ impl ParquetFileReader {
         let all_series = try_join_all(all_handles)
             .await
             .context(JoinSnafu {
-                path: self.uri.to_string(),
+                path: self.uri.clone(),
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
@@ -861,7 +861,7 @@ impl ParquetFileReader {
                 let owned_uri = self.uri.clone();
                 let array_handle = tokio::task::spawn(async move {
                     let all_arrays = try_join_all(field_handles).await.context(JoinSnafu {
-                        path: owned_uri.to_string(),
+                        path: owned_uri.clone(),
                     })?;
                     let all_arrays = all_arrays.into_iter().collect::<DaftResult<Vec<_>>>()?;
                     let concated = all_arrays.concat();
@@ -874,7 +874,7 @@ impl ParquetFileReader {
         let all_field_arrays = try_join_all(all_handles)
             .await
             .context(JoinSnafu {
-                path: self.uri.to_string(),
+                path: self.uri.clone(),
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;

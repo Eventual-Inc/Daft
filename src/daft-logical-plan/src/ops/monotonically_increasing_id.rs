@@ -4,9 +4,9 @@ use daft_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     stats::StatsState,
-    LogicalPlan,
 };
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]

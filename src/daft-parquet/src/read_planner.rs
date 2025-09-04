@@ -2,7 +2,7 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use common_error::DaftResult;
-use daft_io::{range::GetRange, IOClient, IOStatsRef};
+use daft_io::{IOClient, IOStatsRef, range::GetRange};
 use futures::{StreamExt, TryStreamExt};
 use tokio::task::JoinHandle;
 
@@ -238,7 +238,10 @@ impl RangesContainer {
                 let start = entry.start;
                 let end = entry.end;
                 let len = end - start;
-                assert!(current_pos >= start && current_pos < end, "range: {range:?}, current_pos: {current_pos}, bytes_start: {start}, end: {end}");
+                assert!(
+                    current_pos >= start && current_pos < end,
+                    "range: {range:?}, current_pos: {current_pos}, bytes_start: {start}, end: {end}"
+                );
                 let start_offset = current_pos - start;
                 let end_offset = len.min(range.end - start);
                 needed_entries.push(entry);

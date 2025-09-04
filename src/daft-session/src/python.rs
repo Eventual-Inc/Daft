@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use daft_ai::{provider::ProviderRef, python::PyProviderWrapper};
 use daft_catalog::{
-    python::{pyobj_to_catalog, pyobj_to_table, PyIdentifier, PyTableSource},
     Identifier,
+    python::{PyIdentifier, PyTableSource, pyobj_to_catalog, pyobj_to_table},
 };
 use daft_dsl::functions::python::WrappedUDFClass;
 use pyo3::prelude::*;

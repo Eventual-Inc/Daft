@@ -1,21 +1,23 @@
 //! Memory maps regions defined on the IPC format into [`Array`].
-use std::collections::VecDeque;
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 mod array;
 
-use crate::array::Array;
-use crate::chunk::Chunk;
-use crate::datatypes::{DataType, Field};
-use crate::error::Error;
+use arrow_format::ipc::{planus::ReadAsRoot, Block, MessageRef, RecordBatchRef};
 
-use crate::io::ipc::read::file::{get_dictionary_batch, get_record_batch};
-use crate::io::ipc::read::{first_dict_field, Dictionaries, FileMetadata};
-use crate::io::ipc::read::{IpcBuffer, Node, OutOfSpecKind};
-use crate::io::ipc::{IpcField, CONTINUATION_MARKER};
-
-use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{Block, MessageRef, RecordBatchRef};
+use crate::{
+    array::Array,
+    chunk::Chunk,
+    datatypes::{DataType, Field},
+    error::Error,
+    io::ipc::{
+        read::{
+            file::{get_dictionary_batch, get_record_batch},
+            first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,
+        },
+        IpcField, CONTINUATION_MARKER,
+    },
+};
 
 fn read_message(
     mut bytes: &[u8],
@@ -190,7 +192,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
 
     let chunk = _mmap_record(
         &[field],
-        &[first_ipc_field.clone()],
+        std::slice::from_ref(first_ipc_field),
         data.clone(),
         batch,
         offset,

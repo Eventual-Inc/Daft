@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-#![feature(int_roundings)]
 #![feature(iterator_try_reduce)]
 #![feature(if_let_guard)]
 

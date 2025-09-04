@@ -516,7 +516,7 @@ async fn read_csv_single_into_stream(
     }
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats)
+            .single_url_get(uri.clone(), None, io_stats)
             .await?
         {
             GetResult::File(file) => {

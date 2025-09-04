@@ -432,7 +432,7 @@ async fn stream_scan_task(
         scan_task.partition_spec().map(|ps| ps.to_fill_map()),
     ) {
         (None, _) => None,
-        (Some(columns), None) => Some(columns.clone()),
+        (Some(columns), None) => Some(columns),
 
         // If the ScanTask has a partition_spec, we elide reads of partition columns from the file
         (Some(columns), Some(partition_fillmap)) => Some(
@@ -527,7 +527,7 @@ async fn stream_scan_task(
                 scan_task.pushdowns.limit,
                 file_column_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
                 col_names
                     .as_ref()
                     .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
@@ -563,7 +563,7 @@ async fn stream_scan_task(
                 scan_task.pushdowns.limit,
                 file_column_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
