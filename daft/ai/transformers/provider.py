@@ -32,13 +32,10 @@ class TransformersProvider(Provider):
             TransformersTextClassifierOptions,
         )
 
-        # Extract known options from TransformersTextClassifierOptions
-        transformers_options = {
-            k: v for k, v in options.items() if k in TransformersTextClassifierOptions.__annotations__
-        }
+        model_options = {k: v for k, v in options.items() if k in TransformersTextClassifierOptions.__annotations__}
 
         return TransformersTextClassifierDescriptor(
             provider_name=self._name,
             model_name=(model or "facebook/bart-large-mnli"),
-            model_options=transformers_options,  # type: ignore
+            model_options=model_options,  # type: ignore
         )
