@@ -6,20 +6,21 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-from .dependencies import pa, pydantic
+from .dependencies import pa
 
 try:
-    from pydantic import BaseModel
-    from pydantic_to_pyarrow import get_pyarrow_schema
+    from pyd import BaseModel
+    from pyd_arr import get_pyarrow_schema
 except ImportError as err:
     err.msg = f"pydantic is missing. Install with `pip install daft[pydantic]` or install your own compatible Pydantic version.\n{err.msg}"
     raise err
 
+from types import NoneType  # type: ignore
+from typing import Union, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from types import NoneType
-    from typing import Any, TypeVar, Union, get_args, get_origin
+    from typing import Any, Callable, TypeVar
 
     P = TypeVar("P", bound=BaseModel)
 
@@ -88,7 +89,7 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
     elif get_origin(f_type) is tuple:
         raise TypeError(f"Cannot support tuple types: {f_type}")
 
-    elif issubclass(f_type, pydantic.BaseModel):
+    elif issubclass(f_type, BaseModel):
         schema = get_pyarrow_schema(f_type)
         inner_type = pa.struct([(f, schema.field(f).type) for f in schema.names])
 
@@ -121,10 +122,10 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
     return inner_type
 
 
-def infer_daft_arrow_function_types(f: callable) -> tuple[DataType, DataType]:
+def infer_daft_arrow_function_types(f: Callable[[Any, ...], Any]) -> tuple[DataType, DataType]:  # type: ignore
     """Produces the Daft DataTypes for the given function's annotated input and output."""
     try:
-        func_annos: dict[str, type] = f.__annotations__  # type: ignore
+        func_annos: dict[str, type] = f.__annotations__
     except AttributeError as err:
         raise ValueError(f"Need to supply type-annotated function, not: {f}") from err
 
@@ -146,7 +147,7 @@ def infer_daft_arrow_function_types(f: callable) -> tuple[DataType, DataType]:
 
     input_annos = dict(**func_annos)
     del input_annos["return"]
-    input_daft = daft_pyarrow_datatype(func_annos[list(input_annos.keys())[0]])
+    input_daft = daft_pyarrow_datatype(func_annos[next(iter(input_annos.keys()))])
 
     output_daft = daft_pyarrow_datatype(func_annos["return"])
 
