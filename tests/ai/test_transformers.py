@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from daft.ai.protocols import ImageEmbedderDescriptor
-from daft.ai.transformers import TransformersProvider
+from daft.ai.transformers.provider import TransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
 from tests.benchmarks.conftest import IS_CI

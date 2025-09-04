@@ -10,7 +10,7 @@ import numpy as np
 from openai.types.create_embedding_response import CreateEmbeddingResponse
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
-from daft.ai.openai import LMStudioProvider
+from daft.ai.lm_studio.provider import LMStudioProvider
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 
 

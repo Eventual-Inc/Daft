@@ -1021,6 +1021,35 @@ pub async fn read_parquet_metadata_bulk(
     all_metadatas.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
+/// Optimized for count pushdowns: we can get the count from metadata without reading all data.
+pub async fn stream_parquet_count_pushdown(
+    url: &str,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    aggregation: &ExprRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let parquet_metadata =
+        read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
+
+    // Currently only CountMode::All is supported for count pushdown.
+    let count = parquet_metadata.num_rows;
+    let count_field = daft_core::datatypes::Field::new(
+        aggregation.name(),
+        daft_core::datatypes::DataType::UInt64,
+    );
+    let count_array =
+        UInt64Array::from_iter(count_field.clone(), std::iter::once(Some(count as u64)));
+    let count_batch = daft_recordbatch::RecordBatch::new_with_size(
+        Schema::new(vec![count_field]),
+        vec![count_array.into_series()],
+        1,
+    )?;
+    Ok(Box::pin(futures::stream::once(
+        async move { Ok(count_batch) },
+    )))
+}
+
 pub fn read_parquet_statistics(
     uris: &Series,
     io_client: Arc<IOClient>,

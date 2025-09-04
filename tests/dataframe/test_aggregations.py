@@ -13,6 +13,7 @@ from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
+from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table, sort_pydict
 
 
@@ -1014,7 +1015,7 @@ def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size)
 
 
 @pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner is True,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Legacy ray runner does not support skipping shuffles on already partitioned data",
 )
 def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
@@ -1025,7 +1026,7 @@ def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
     df.explain(True)
     captured = capsys.readouterr()
 
-    # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + final
+    # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + physical
     assert (
         captured.out.count("Repartition") == 3
     ), f"Expected 'Repartition' to appear 3 times, got {captured.out.count('Repartition')}\n{captured.out}"

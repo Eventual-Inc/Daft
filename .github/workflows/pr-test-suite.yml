@@ -32,6 +32,9 @@ jobs:
     - name: Detect non-trivial changes
       id: filter
       run: |
+        set +e
+        set -xo pipefail
+
         # On main branch, we want to run all tests (no skipping)
         if [ "${{ github.ref }}" = "refs/heads/main" ]; then
           echo "skip=false" >> $GITHUB_OUTPUT
@@ -57,7 +60,8 @@ jobs:
           ':!README.rst' \
           ':!SECURITY.md' \
           ':!codecov.yml' \
-          ':!mkdocs.yml'
+          ':!mkdocs.yml' \
+          ':!AGENTS.md'
         then
           echo "skip=true" >> $GITHUB_OUTPUT
         else
@@ -210,8 +214,8 @@ jobs:
 
   unit-tests:
     runs-on: ubuntu-latest
-    needs: [skipcheck, unit-test]
-    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
+    needs: unit-test
+    if: always()
     steps:
     - name: All tests ok
       if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
