@@ -128,14 +128,13 @@ jobs:
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
-    # Rust code coverage does not work on ubuntu-latest, so we only run it on macOS
-    # For more info: https://github.com/Eventual-Inc/Daft/issues/3801
+    - name: Setup upterm session
+      uses: owenthereal/action-upterm@v1
+
     - name: Build library and Test with pytest (Linux)
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         source .venv/bin/activate
-        source <(cargo llvm-cov show-env --export-prefix)
-        cargo llvm-cov clean --workspace --profraw-only
+        cargo llvm-cov clean --workspace
         maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
@@ -147,7 +146,6 @@ jobs:
         # output of `cargo llvm-cov show-env --export-prefix`
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
         LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
-        RUST_BACKTRACE: 1
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
