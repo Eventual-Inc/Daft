@@ -128,9 +128,6 @@ jobs:
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
-    - name: Setup upterm session
-      uses: owenthereal/action-upterm@v1
-
     - name: Build library and Test with pytest (Linux)
       run: |
         source .venv/bin/activate
