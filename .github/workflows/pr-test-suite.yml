@@ -46,7 +46,6 @@ jobs:
         git fetch origin $BASE --depth=1
 
         if git diff --quiet origin/$BASE -- \
-        if git diff --quiet origin/$BASE -- \
           . \
           ':!.vscode/**' \
           ':!ci/**' \

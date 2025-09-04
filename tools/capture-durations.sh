@@ -15,7 +15,7 @@ fi
 
 OUTPUT_FILE="$1"
 
-# Capture durations with awk
+# Redirect output to file after "slowest durations" line
 awk -v output_file="$OUTPUT_FILE" '
 /slowest durations/ {
     output_to_file = 1
