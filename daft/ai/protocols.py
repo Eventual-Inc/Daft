@@ -43,6 +43,7 @@ class ImageEmbedderDescriptor(Descriptor[ImageEmbedder]):
         """Returns the dimensions of the embeddings produced by the described ImageEmbedder."""
 
 
+@runtime_checkable
 class TextClassifier(Protocol):
     """Protocol for text classification implementations."""
 

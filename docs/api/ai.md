@@ -43,3 +43,11 @@ Daft has a Provider interface and model protocols for various inference APIs.
 ::: daft.ai.protocols.ImageEmbedderDescriptor
     options:
         heading_level: 3
+
+::: daft.ai.protocols.TextClassifier
+    options:
+        heading_level: 3
+
+::: daft.ai.protocols.TextClassifierDescriptor
+    options:
+        heading_level: 3

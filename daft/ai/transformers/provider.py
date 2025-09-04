@@ -27,10 +27,18 @@ class TransformersProvider(Provider):
         return TransformersImageEmbedderDescriptor(model or "openai/clip-vit-base-patch32", options)
 
     def get_text_classifier(self, model: str | None = None, **options: Any) -> TextClassifierDescriptor:
-        from daft.ai.transformers.protocols.text_classifier import TransformersTextClassifierDescriptor
+        from daft.ai.transformers.protocols.text_classifier import (
+            TransformersTextClassifierDescriptor,
+            TransformersTextClassifierOptions,
+        )
+
+        # Extract known options from TransformersTextClassifierOptions
+        transformers_options = {
+            k: v for k, v in options.items() if k in TransformersTextClassifierOptions.__annotations__
+        }
 
         return TransformersTextClassifierDescriptor(
             provider_name=self._name,
             model_name=(model or "facebook/bart-large-mnli"),
-            model_options=options,
+            model_options=transformers_options,  # type: ignore
         )
