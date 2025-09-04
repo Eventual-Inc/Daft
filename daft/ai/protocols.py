@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from daft.ai.typing import Descriptor
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Embedding, EmbeddingDimensions, Image
+    from daft.ai.typing import Embedding, EmbeddingDimensions, Image, Label
 
 
 @runtime_checkable
@@ -41,3 +41,15 @@ class ImageEmbedderDescriptor(Descriptor[ImageEmbedder]):
     @abstractmethod
     def get_dimensions(self) -> EmbeddingDimensions:
         """Returns the dimensions of the embeddings produced by the described ImageEmbedder."""
+
+
+class TextClassifier(Protocol):
+    """Protocol for text classification implementations."""
+
+    def classify_text(self, text: list[str], labels: Label | list[Label]) -> list[Label]:
+        """Classifies a batch of text strings using the given label(s)."""
+        ...
+
+
+class TextClassifierDescriptor(Descriptor[TextClassifier]):
+    """Descriptor for a TextClassifier implementation."""
