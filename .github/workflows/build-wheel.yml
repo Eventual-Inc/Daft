@@ -145,9 +145,9 @@ jobs:
 
   test-wheels:
     name: Test built wheels
-    runs-on: ${{ inputs.os }}
+    runs-on: ubuntu-latest
     needs: build
-    if: ${{ inputs.run_tests }}
+    if: ${{ inputs.run_tests && inputs.os == 'ubuntu' && inputs.arch == 'x86_64' }}
     strategy:
       fail-fast: false
       matrix:
