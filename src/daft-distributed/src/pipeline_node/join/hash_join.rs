@@ -1,12 +1,9 @@
-use std::{cmp::max, sync::Arc};
+use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{
-    partitioning::HashClusteringConfig, stats::StatsState, ClusteringSpec, JoinType,
-};
+use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState, JoinType};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
@@ -195,33 +192,5 @@ impl DistributedPipelineNode for HashJoinNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
-    }
-}
-
-pub(crate) fn gen_num_partitions(
-    left_spec: &ClusteringSpec,
-    right_spec: &ClusteringSpec,
-    cfg: &DaftExecutionConfig,
-) -> usize {
-    let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(_));
-    let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(_));
-    let num_left_partitions = left_spec.num_partitions();
-    let num_right_partitions = right_spec.num_partitions();
-
-    match (
-        is_left_hash_partitioned,
-        is_right_hash_partitioned,
-        num_left_partitions,
-        num_right_partitions,
-    ) {
-        (true, true, a, b) | (false, false, a, b) => max(a, b),
-        (_, _, 1, x) | (_, _, x, 1) => x,
-        (true, false, a, b) if (a as f64) >= (b as f64) * cfg.hash_join_partition_size_leniency => {
-            a
-        }
-        (false, true, a, b) if (b as f64) >= (a as f64) * cfg.hash_join_partition_size_leniency => {
-            b
-        }
-        (_, _, a, b) => max(a, b),
     }
 }
