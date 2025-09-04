@@ -1328,6 +1328,8 @@ all = [
     { name = "pandas" },
     { name = "py4j" },
     { name = "pyarrow" },
+    { name = "pydantic" },
+    { name = "pydantic-to-pyarrow" },
     { name = "pyiceberg" },
     { name = "pylance" },
     { name = "pyspark" },
@@ -1373,6 +1375,10 @@ openai = [
 ]
 pandas = [
     { name = "pandas" },
+]
+pydantic = [
+    { name = "pydantic" },
+    { name = "pydantic-to-pyarrow" },
 ]
 ray = [
     { name = "packaging" },
@@ -1453,6 +1459,7 @@ dev = [
     { name = "pyarrow" },
     { name = "pyarrow-stubs" },
     { name = "pydantic" },
+    { name = "pydantic-to-pyarrow" },
     { name = "pyiceberg" },
     { name = "pylance" },
     { name = "pymysql" },
@@ -1502,7 +1509,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'aws'" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'" },
     { name = "connectorx", marker = "extra == 'sql'" },
-    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "sentence-transformers", "spark", "sql", "transformers", "turbopuffer", "unity"], marker = "extra == 'all'" },
+    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "pydantic", "ray", "sentence-transformers", "spark", "sql", "transformers", "turbopuffer", "unity"], marker = "extra == 'all'" },
     { name = "deltalake", marker = "extra == 'deltalake'" },
     { name = "fsspec" },
     { name = "googleapis-common-protos", marker = "extra == 'spark'", specifier = ">=1.56.4" },
@@ -1521,6 +1528,8 @@ requires-dist = [
     { name = "py4j", marker = "extra == 'spark'", specifier = ">=0.10.9.7" },
     { name = "pyarrow", specifier = ">=8.0.0" },
     { name = "pyarrow", marker = "extra == 'hudi'", specifier = ">=8.0.0" },
+    { name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.0.0,<3.0.0" },
+    { name = "pydantic-to-pyarrow", marker = "extra == 'pydantic'", specifier = ">=0.1.6" },
     { name = "pyiceberg", marker = "extra == 'iceberg'", specifier = ">=0.7.0,<0.9.1" },
     { name = "pylance", marker = "extra == 'lance'" },
     { name = "pyspark", marker = "extra == 'spark'", specifier = "==3.5.5" },
@@ -1537,7 +1546,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'" },
 ]
-provides-extras = ["all", "aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "sentence-transformers", "transformers", "spark", "sql", "turbopuffer", "unity", "viz"]
+provides-extras = ["all", "aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "pydantic", "ray", "sentence-transformers", "transformers", "spark", "sql", "turbopuffer", "unity", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1583,6 +1592,8 @@ dev = [
     { name = "pyarrow", specifier = "==20.0.0" },
     { name = "pyarrow-stubs", specifier = "==19.4" },
     { name = "pydantic", specifier = "==2.10.6" },
+    { name = "pydantic", specifier = ">=2.4.2" },
+    { name = "pydantic-to-pyarrow", specifier = ">=0.1.6" },
     { name = "pyiceberg", specifier = "==0.7.0" },
     { name = "pylance", specifier = ">=0.20.0" },
     { name = "pymysql", specifier = "==1.1.0" },
@@ -5988,6 +5999,21 @@ wheels = [
 [package.optional-dependencies]
 pycountry = [
     { name = "pycountry", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
+]
+
+[[package]]
+name = "pydantic-to-pyarrow"
+version = "0.1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", marker = "python_full_version >= '3.12'" },
+    { name = "pyarrow" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/e9/77c78ac01de8e4a7b27d928aa3ae4377e271a74d5fe2c49c04c89002d48e/pydantic_to_pyarrow-0.1.6.tar.gz", hash = "sha256:519285df1eff07d606c46aa54f619da8e3eccb09d023593e02c90e2e2bef378c", size = 57495, upload-time = "2025-01-31T12:11:18.452Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/4b/a14496f596e6161622ee06a9cd0d6fbfc721fec8d11898407899b60c3e6d/pydantic_to_pyarrow-0.1.6-py3-none-any.whl", hash = "sha256:60ec966433a7856e84a69113b1ae9bc248e9ca1a9b688f1b9f344079fa9dddd3", size = 8330, upload-time = "2025-01-31T12:11:16.196Z" },
 ]
 
 [[package]]

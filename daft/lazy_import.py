@@ -14,10 +14,13 @@
 from __future__ import annotations
 
 import importlib
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from types import ModuleType
+
+logger = logging.getLogger(__name__)
 
 
 class LazyImport:
@@ -29,9 +32,10 @@ class LazyImport:
     modules as needed.
     """
 
-    def __init__(self, module_name: str):
+    def __init__(self, module_name: str, import_error_message: str | None = None) -> None:
         self._module_name = module_name
         self._module: ModuleType | None = None
+        self._import_error_message = import_error_message
 
     def module_available(self) -> bool:
         return self._load_module() is not None
@@ -41,7 +45,8 @@ class LazyImport:
             try:
                 self._module = importlib.import_module(self._module_name)
             except ImportError:
-                pass
+                if self._import_error_message is not None:
+                    logger.error("Could not import %s: %s", self._module_name, self._import_error_message)
         return self._module
 
     def __getattr__(self, name: str) -> Any:
