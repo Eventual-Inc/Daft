@@ -50,6 +50,14 @@ Depending on your use case, you may need to install Daft with additional depende
       </label>
 
       <label class="checkbox-item">
+        <input type="checkbox" id="vllm" data-extra="vllm">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>vLLM</strong> <code>vllm</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
         <input type="checkbox" id="ray" data-extra="ray">
         <span class="checkmark"></span>
         <div class="checkbox-content">
