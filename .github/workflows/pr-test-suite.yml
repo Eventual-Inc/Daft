@@ -132,6 +132,8 @@ jobs:
       if: ${{ (runner.os == 'Linux') }}
       run: |
         source .venv/bin/activate
+        source <(cargo llvm-cov show-env --export-prefix)
+        cargo llvm-cov clean --workspace --profraw-only
         maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
@@ -143,6 +145,7 @@ jobs:
         # output of `cargo llvm-cov show-env --export-prefix`
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
         LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        RUST_BACKTRACE: 1
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
