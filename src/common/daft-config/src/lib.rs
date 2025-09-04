@@ -112,7 +112,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
-            suggested_batch_size: 16,
+            suggested_batch_size: 5000,
         }
     }
 }
