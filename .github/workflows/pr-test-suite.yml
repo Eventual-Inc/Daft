@@ -93,6 +93,8 @@ jobs:
       with:
         tool-cache: false
 
+    - run: sudo apt install libgl1-mesa-glx
+
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
