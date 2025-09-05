@@ -93,7 +93,9 @@ jobs:
       with:
         tool-cache: false
 
-    - run: sudo apt install libgl1-mesa-glx
+    - run: |
+        sudo apt-get update
+        sudo apt-get install ffmpeg libsm6 libxext6 -y
 
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
