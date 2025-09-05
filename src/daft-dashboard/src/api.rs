@@ -16,11 +16,13 @@ use crate::{
 
 /// Ping the server to check if running
 async fn ping() -> StatusCode {
+    eprintln!("ping");
     StatusCode::NO_CONTENT
 }
 
 /// Get metadata about all known queries
 async fn get_queries(State(state): State<Arc<AppState>>) -> Json<Vec<QueryMetadata>> {
+    eprintln!("get_queries");
     let mut queries = state.queries();
 
     // Sort by status, then start time
@@ -68,13 +70,14 @@ async fn complete_query(
 
 /// All API routes
 pub fn api_routes() -> Router {
+    eprintln!("api_routes");
     Router::new()
-        .route("/ping", get(ping))
-        .route("/queries", get(get_queries))
-        .route("/queries", post(start_query))
+        .route("/api/ping", get(ping))
+        .route("/api/queries", get(get_queries))
+        .route("/api/queries", post(start_query))
         // Individual query endpoints
-        .route("/queries/:query_id", get(get_query))
-        .route("/queries/:query_id", post(complete_query))
-        .route("/queries/:query_id/dataframe", get(get_query_dataframe))
+        .route("/api/queries/:query_id", get(get_query))
+        .route("/api/queries/:query_id", post(complete_query))
+        .route("/api/queries/:query_id/dataframe", get(get_query_dataframe))
         .with_state(Arc::new(AppState::new()))
 }

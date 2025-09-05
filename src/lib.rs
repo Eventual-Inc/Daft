@@ -118,9 +118,14 @@ pub mod pylib {
 
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
-        refresh_logger(py)?;
-        init_tracing(crate::should_enable_chrome_trace());
-        init_opentelemetry_providers();
+        // refresh_logger(py)?;
+
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
+
+        // init_tracing(crate::should_enable_chrome_trace());
+        // init_opentelemetry_providers();
 
         common_daft_config::register_modules(m)?;
         common_system_info::register_modules(m)?;

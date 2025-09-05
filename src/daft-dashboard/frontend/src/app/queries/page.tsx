@@ -20,8 +20,8 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { useAtom } from "jotai";
-import { queryInfoAtom, QueryInfo, QueryInfoMap } from "@/atoms/queryInfo";
+import useSWR from "swr";
+import { QueryInfo, QueryInfoMap } from "@/types/queryInfo";
 import { toHumanReadableDate, delta } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
@@ -52,21 +52,29 @@ const columns = (queryInfoMap: QueryInfoMap) => [
     },
 ];
 
+// Fetcher function for SWR
+const fetcher = async (url: string): Promise<QueryInfoMap> => {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error("Failed to fetch queries");
+    }
+    const json: QueryInfo[] = await response.json();
+    const queryInfoMap: QueryInfoMap = {};
+    for (const queryInfo of json) {
+        queryInfoMap[queryInfo.id] = queryInfo;
+    }
+    return queryInfoMap;
+};
+
 export default function QueryList() {
-    const [queryInfo, setQueryInfo] = useAtom(queryInfoAtom);
-    React.useEffect(() => {
-        (async () => {
-            try {
-                const response = await fetch("http://localhost:3238/api/queries");
-                const json: QueryInfo[] = await response.json();
-                const queryInfoMap: QueryInfoMap = {};
-                for (const queryInfo of json) {
-                    queryInfoMap[queryInfo.id] = queryInfo;
-                }
-                setQueryInfo(queryInfoMap);
-            } catch { }
-        })();
-    }, []);
+    const { data: queryInfo = {}, error, isLoading } = useSWR<QueryInfoMap>(
+        "http://localhost:3238/api/queries",
+        fetcher,
+        {
+            refreshInterval: 5000, // Refresh every 5 seconds
+            revalidateOnFocus: true,
+        }
+    );
     const cols = columns(queryInfo);
     const table = useReactTable(React.useMemo(() => ({
         data: Object.values(queryInfo),
@@ -76,10 +84,30 @@ export default function QueryList() {
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
         enableSorting: true,
-    }), [queryInfo]));
+    }), [queryInfo, cols]));
     const router = useRouter();
 
     const spacing = (obj: { column: { columnDef: { accessorKey: string } } }) => `px-[20px] ${obj.column.columnDef.accessorKey === NAME ? "w-[70%]" : undefined}`;
+
+    if (error) {
+        return (
+            <div className="gap-4 space-y-4">
+                <div className="text-center text-red-500">
+                    Failed to load queries. Please try again.
+                </div>
+            </div>
+        );
+    }
+
+    if (isLoading) {
+        return (
+            <div className="gap-4 space-y-4">
+                <div className="text-center">
+                    Loading queries...
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="gap-4 space-y-4">

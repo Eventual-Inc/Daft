@@ -63,6 +63,8 @@ lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = "0.3"
 
 [features]
 # maturin will turn this on

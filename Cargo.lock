@@ -2401,6 +2401,8 @@ dependencies = [
  "pyo3-log",
  "sysinfo 0.32.1",
  "tikv-jemallocator",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2447,6 +2449,8 @@ dependencies = [
  "daft-dashboard",
  "pyo3",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

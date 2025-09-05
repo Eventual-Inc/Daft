@@ -3,6 +3,8 @@ clap = {version = "4.4", features = ["derive"]}
 daft-dashboard = {path = "../daft-dashboard"}
 pyo3 = {workspace = true, optional = true}
 tokio = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = "0.3"
 
 [features]
 python = ["dep:pyo3"]

@@ -1,5 +1,3 @@
-import { atomWithStorage } from "jotai/utils";
-
 export type QueryInfo = {
     id: string
     unoptimized_plan: string,
@@ -15,5 +13,3 @@ export type QueryInfoMap = {
 };
 
 export type Keys = keyof QueryInfo;
-
-export const queryInfoAtom = atomWithStorage<QueryInfoMap>("queryInfo", {});

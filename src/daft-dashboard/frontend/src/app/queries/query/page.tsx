@@ -2,8 +2,8 @@
 
 import { useSearchParams } from "next/navigation";
 import React, { useEffect } from "react";
-import { queryInfoAtom } from "@/atoms/queryInfo";
-import { useAtom } from "jotai";
+import useSWR from "swr";
+import { QueryInfo, QueryInfoMap } from "@/types/queryInfo";
 import mermaid from "mermaid";
 import {
     Card,
@@ -17,6 +17,20 @@ import { delta, toHumanReadableDate } from "@/lib/utils";
 mermaid.initialize({
     startOnLoad: true
 });
+
+// Fetcher function for SWR
+const fetcher = async (url: string): Promise<QueryInfoMap> => {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error("Failed to fetch queries");
+    }
+    const json: QueryInfo[] = await response.json();
+    const queryInfoMap: QueryInfoMap = {};
+    for (const queryInfo of json) {
+        queryInfoMap[queryInfo.id] = queryInfo;
+    }
+    return queryInfoMap;
+};
 
 function Mermaid({ chart }: { chart: string }) {
     useEffect(() => {
@@ -33,10 +47,43 @@ function Mermaid({ chart }: { chart: string }) {
 function SuspendedQueryPage() {
     const searchParams = useSearchParams();
     const id: string = searchParams.get("id")!;
-    const [queryInfo, _] = useAtom(queryInfoAtom);
+    const { data: queryInfo = {}, error, isLoading } = useSWR<QueryInfoMap>(
+        "http://localhost:3238/api/queries",
+        fetcher,
+        {
+            refreshInterval: 5000, // Refresh every 5 seconds
+            revalidateOnFocus: true,
+        }
+    );
+
+    if (error) {
+        return (
+            <div className="space-y-4">
+                <div className="text-center text-red-500">
+                    Failed to load query data. Please try again.
+                </div>
+            </div>
+        );
+    }
+
+    if (isLoading) {
+        return (
+            <div className="space-y-4">
+                <div className="text-center">
+                    Loading query data...
+                </div>
+            </div>
+        );
+    }
 
     if (!queryInfo || !queryInfo[id]) {
-        return (<></>);
+        return (
+            <div className="space-y-4">
+                <div className="text-center">
+                    Query not found.
+                </div>
+            </div>
+        );
     }
 
 
