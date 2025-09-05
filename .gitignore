@@ -28,8 +28,10 @@ log/
 # Added by cargo
 /target
 **/target/
-# pytest benchmarks
+
+# pytest
 .benchmarks
+.coverage*
 
 # Added by pyenv
 .python-version

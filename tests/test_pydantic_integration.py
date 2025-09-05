@@ -29,7 +29,7 @@ CHECK: list[tuple[type, DataType]] = [
 ]
 
 
-@pytest.mark.parameterize("in_type, expected", CHECK)
+@pytest.mark.parametrize("in_type, expected", CHECK)
 def test_builtins(in_type, expected):
     _test_logic(in_type, expected)
 
@@ -51,7 +51,7 @@ def test_simple_pydantic():
     _test_logic(Simple, SIMPLE_ARROW_DAFT_TYPE)
 
 
-@pytest.mark.parameterize(
+@pytest.mark.parametrize(
     "item_type, expected_inner",
     [
         (int, DataType.int64()),
@@ -75,7 +75,7 @@ def _dict_types() -> Iterator[tuple[type, DataType, type, DataType]]:
             yield (key_type, expected_key_type, value_type, expected_value_type)
 
 
-@pytest.mark.parameterize(
+@pytest.mark.parametrize(
     "key_type,expected_key_type,value_type,expected_value_type",
     list(_dict_types()),
 )

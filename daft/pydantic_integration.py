@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-from .dependencies import pa
+from .dependencies import pa, pyd, pyd_arr
 
 try:
-    from pyd import BaseModel
-    from pyd_arr import get_pyarrow_schema
+    BaseModel = pyd.BaseModel
+    get_pyarrow_schema = pyd_arr.get_pyarrow_schema
 except ImportError as err:
     err.msg = f"pydantic is missing. Install with `pip install daft[pydantic]` or install your own compatible Pydantic version.\n{err.msg}"
     raise err
@@ -20,11 +20,7 @@ from typing import Union, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from typing import Any, TypeVar
-
-    P = TypeVar("P", bound=BaseModel)
-
-    A = TypeVar("A", bound=pa.StructType)
+    from typing import Any
 
 
 from .datatype import DataType
