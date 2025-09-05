@@ -1,6 +1,6 @@
 use std::io::ErrorKind;
 
-use pyo3::{exceptions, pyclass, pyfunction, pymethods, PyErr, PyResult};
+use pyo3::{PyErr, PyResult, exceptions, pyclass, pyfunction, pymethods};
 use tokio::{
     runtime::{Builder, Runtime},
     sync::oneshot,

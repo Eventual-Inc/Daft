@@ -1,12 +1,12 @@
 use common_error::DaftResult;
 use common_metrics::{Stat, StatSnapshotSend};
 use common_tracing::flush_oltp_metrics_provider;
-use opentelemetry::{global, metrics::Counter, KeyValue};
+use opentelemetry::{KeyValue, global, metrics::Counter};
 
 use crate::{
     ops::NodeInfo,
     runtime_stats::{
-        subscribers::RuntimeStatsSubscriber, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
+        CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY, subscribers::RuntimeStatsSubscriber,
     },
 };
 

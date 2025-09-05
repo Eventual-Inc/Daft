@@ -6,8 +6,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    functions::{python::RuntimePyObject, scalar::ScalarFn},
     Expr, ExprRef,
+    functions::{python::RuntimePyObject, scalar::ScalarFn},
 };
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

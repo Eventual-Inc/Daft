@@ -4,9 +4,9 @@ use common_error::DaftResult;
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
+        DataArray, FixedSizeListArray, ListArray, StructArray,
         growable::{Growable, GrowableArray},
         ops::full::FullNull,
-        DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{BooleanArray, DaftPhysicalType, DataType},
     series::{IntoSeries, Series},

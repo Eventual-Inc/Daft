@@ -7,17 +7,17 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
+    DisplayLevel,
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
-    DisplayLevel,
 };
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream::BoxStream};
 use itertools::Itertools;
 use materialize::materialize_all_pipeline_outputs;
 
@@ -378,13 +378,12 @@ where
         task_context.add_logical_node_id(logical_node_id);
     }
 
-    let task = submittable_task.with_new_task(SwordfishTask::new(
+    submittable_task.with_new_task(SwordfishTask::new(
         task_context,
         new_plan,
         config,
         psets,
         scheduling_strategy,
         node.context().to_hashmap(),
-    ));
-    task
+    ))
 }

@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,

@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use arrow_flight::{client::FlightClient, decode::FlightRecordBatchStream, Ticket};
+use arrow_flight::{Ticket, client::FlightClient, decode::FlightRecordBatchStream};
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
@@ -16,7 +16,7 @@ enum ClientState {
     // The address of the flight server
     Uninitialized(String),
     // The address of the flight server and the flight client
-    Initialized(String, FlightClient),
+    Initialized(String, Box<FlightClient>),
 }
 
 pub struct ShuffleFlightClient {
@@ -44,7 +44,7 @@ impl ShuffleFlightClient {
             let inner = client.into_inner().max_decoding_message_size(usize::MAX);
             self.inner = ClientState::Initialized(
                 std::mem::take(address),
-                FlightClient::new_from_inner(inner),
+                Box::new(FlightClient::new_from_inner(inner)),
             );
         }
         match &mut self.inner {

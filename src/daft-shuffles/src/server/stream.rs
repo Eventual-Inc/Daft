@@ -1,7 +1,7 @@
 use std::io::Read;
 
-use arrow2::io::ipc::read::OutOfSpecKind;
 use arrow_flight::FlightData;
+use arrow2::io::ipc::read::OutOfSpecKind;
 use common_error::{DaftError, DaftResult};
 
 /// Reading state maintenance
@@ -99,7 +99,7 @@ fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> 
     match state.reader.read_exact(&mut meta_buf) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-            return Ok(StreamState::Continue(state))
+            return Ok(StreamState::Continue(state));
         }
         Err(e) => return Err(DaftError::from(e)),
     }

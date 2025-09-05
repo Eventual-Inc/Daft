@@ -2,7 +2,7 @@ use std::fmt;
 
 use indexmap::IndexMap;
 
-use crate::{tree::TreeDisplay, DisplayLevel};
+use crate::{DisplayLevel, tree::TreeDisplay};
 
 pub trait MermaidDisplay: TreeDisplay {
     fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String;

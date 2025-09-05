@@ -1,7 +1,7 @@
 use arrow2::array::Array;
 use common_error::DaftResult;
 
-use super::{as_arrow::AsArrow, DaftSumAggable};
+use super::{DaftSumAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};
 macro_rules! impl_daft_numeric_agg {
     ($T:ident, $AggType: ident) => {

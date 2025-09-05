@@ -9,7 +9,7 @@ use common_error::DaftResult;
 use super::DataArray;
 use crate::{
     array::prelude::*,
-    datatypes::{prelude::*, DaftPrimitiveType},
+    datatypes::{DaftPrimitiveType, prelude::*},
 };
 
 impl<T> DataArray<T>

@@ -3,7 +3,7 @@ use std::{env, sync::Arc, time::Duration};
 use common_error::{DaftError, DaftResult};
 use common_metrics::StatSnapshotSend;
 use common_runtime::get_io_runtime;
-use reqwest::{header, Client};
+use reqwest::{Client, header};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{ops::NodeInfo, runtime_stats::subscribers::RuntimeStatsSubscriber};
@@ -19,7 +19,9 @@ pub struct DashboardSubscriber {
 impl DashboardSubscriber {
     fn new_with_throttle_interval(interval: Duration) -> Self {
         let Ok(url) = env::var("DAFT_DASHBOARD_METRICS_URL") else {
-            panic!("DashboardSubscriber::new must only be called after checking if it's enabled via `DashboardSubscriber::is_enabled`")
+            panic!(
+                "DashboardSubscriber::new must only be called after checking if it's enabled via `DashboardSubscriber::is_enabled`"
+            )
         };
 
         static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);

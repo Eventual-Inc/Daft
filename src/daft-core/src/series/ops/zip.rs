@@ -5,7 +5,7 @@ use common_error::{DaftError, DaftResult};
 use daft_schema::{dtype::DataType, field::Field};
 
 use crate::{
-    array::{growable::make_growable, ListArray},
+    array::{ListArray, growable::make_growable},
     series::{IntoSeries, Series},
 };
 

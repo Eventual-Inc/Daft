@@ -73,7 +73,7 @@ repos:
   - id: fmt
     name: Rust code Formatting
     description: Format files with cargo fmt.
-    entry: cargo fmt
+    entry: cargo fmt --manifest-path Cargo.toml
     language: system
     types: [rust]
     args: [--]

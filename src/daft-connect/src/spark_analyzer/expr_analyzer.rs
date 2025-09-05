@@ -3,14 +3,13 @@ use std::sync::Arc;
 use daft_core::datatypes::IntervalValue;
 use daft_dsl::{PlanRef, UnresolvedColumn};
 use spark_connect::{
+    Expression,
     expression::{
-        self as spark_expr,
+        self as spark_expr, Literal, UnresolvedFunction,
         cast::{CastToType, EvalMode},
         literal::LiteralType,
         sort_order::{NullOrdering, SortDirection},
-        Literal, UnresolvedFunction,
     },
-    Expression,
 };
 use tracing::debug;
 
@@ -22,10 +21,10 @@ use crate::{
 };
 
 pub(crate) fn analyze_expr(expression: &Expression) -> ConnectResult<daft_dsl::ExprRef> {
-    if let Some(common) = &expression.common {
-        if common.origin.is_some() {
-            debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-        }
+    if let Some(common) = &expression.common
+        && common.origin.is_some()
+    {
+        debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
     }
 
     let Some(expr) = &expression.expr_type else {
@@ -41,7 +40,9 @@ pub(crate) fn analyze_expr(expression: &Expression) -> ConnectResult<daft_dsl::E
                 is_metadata_column,
             } = attr;
             if let Some(is_metadata_column) = is_metadata_column {
-                debug!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
+                debug!(
+                    "Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented"
+                );
             }
             if let Some(id) = plan_id {
                 let id = *id;
@@ -77,7 +78,9 @@ pub(crate) fn analyze_expr(expression: &Expression) -> ConnectResult<daft_dsl::E
             };
 
             let [name] = name.as_slice() else {
-                invalid_argument_err!("Alias name is required and currently only works with a single string; got {name:?}");
+                invalid_argument_err!(
+                    "Alias name is required and currently only works with a single string; got {name:?}"
+                );
             };
 
             if let Some(metadata) = metadata {

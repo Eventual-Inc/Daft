@@ -2,7 +2,7 @@ use std::{mem::swap, sync::Arc};
 
 use super::Growable;
 use crate::{
-    array::{pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{DataArray, pseudo_arrow::PseudoArrowArray},
     datatypes::{DataType, Field, PythonArray, PythonType},
     series::{IntoSeries, Series},
 };

@@ -6,8 +6,8 @@ use daft_core::{count_mode::CountMode, prelude::Schema};
 use daft_dsl::{AggExpr, Expr, ExprRef};
 
 use crate::{
-    logical_plan::Aggregate, ops::Source as LogicalSource, optimization::rules::OptimizerRule,
-    source_info::SourceInfo, LogicalPlan,
+    LogicalPlan, logical_plan::Aggregate, ops::Source as LogicalSource,
+    optimization::rules::OptimizerRule, source_info::SourceInfo,
 };
 
 /// Optimization rules for pushing Aggregation further into the logical plan.
@@ -124,9 +124,10 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col, unresolved_col, AggExpr, Expr};
+    use daft_dsl::{AggExpr, Expr, lit, resolved_col, unresolved_col};
 
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownAggregation,
@@ -135,7 +136,6 @@ mod tests {
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator_for_aggregation,
         },
-        LogicalPlan,
     };
 
     fn assert_optimized_plan_eq(

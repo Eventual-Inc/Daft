@@ -4,21 +4,20 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     join::JoinType,
     prelude::*,
-    python::{series::PySeries, PySchema},
+    python::{PySchema, series::PySeries},
 };
 use daft_dsl::{
+    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
-    Expr,
 };
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
-    ffi,
+    RecordBatch, ffi,
     file_info::{FileInfo, FileInfos},
     preview::{Preview, PreviewFormat, PreviewOptions},
-    RecordBatch,
 };
 
 #[pyclass]

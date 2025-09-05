@@ -1,11 +1,11 @@
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{functions::scalar::ScalarFn, resolved_col, Expr};
+use daft_dsl::{Expr, functions::scalar::ScalarFn, resolved_col};
 
 use crate::{
+    LogicalPlan, LogicalPlanRef,
     ops::{Explode, Project},
     optimization::rules::OptimizerRule,
-    LogicalPlan, LogicalPlanRef,
 };
 
 #[derive(Debug)]

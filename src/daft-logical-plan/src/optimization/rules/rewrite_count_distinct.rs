@@ -3,12 +3,12 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::prelude::CountMode;
-use daft_dsl::{resolved_col, AggExpr, Expr};
+use daft_dsl::{AggExpr, Expr, resolved_col};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Aggregate, Distinct, Project},
     LogicalPlan,
+    ops::{Aggregate, Distinct, Project},
 };
 
 /// Basic rewrite rule for converting `count_distinct(col)` to `count(distinct(col))`. Should only
@@ -100,12 +100,12 @@ mod tests {
 
     use super::RewriteCountDistinct;
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
     };
 
     fn assert_optimized_plan_eq(
@@ -220,10 +220,12 @@ mod tests {
 
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
-                vec![unresolved_col("a")
-                    .add(unresolved_col("b"))
-                    .count_distinct()
-                    .alias("a_plus_b_count_distinct")],
+                vec![
+                    unresolved_col("a")
+                        .add(unresolved_col("b"))
+                        .count_distinct()
+                        .alias("a_plus_b_count_distinct"),
+                ],
                 vec![],
             )?
             .build();
@@ -236,9 +238,11 @@ mod tests {
             ])?
             .distinct(Some(vec![unresolved_col("(a + b)")]))?
             .aggregate(
-                vec![unresolved_col("(a + b)")
-                    .count(CountMode::Valid)
-                    .alias("a_plus_b_count_distinct")],
+                vec![
+                    unresolved_col("(a + b)")
+                        .count(CountMode::Valid)
+                        .alias("a_plus_b_count_distinct"),
+                ],
                 vec![],
             )?
             .build();

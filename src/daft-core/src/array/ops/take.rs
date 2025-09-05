@@ -9,7 +9,7 @@ use crate::{
         growable::{Growable, GrowableArray},
         prelude::*,
     },
-    datatypes::{prelude::*, FileArray, IntervalArray},
+    datatypes::{FileArray, IntervalArray, prelude::*},
 };
 
 impl<T> DataArray<T>

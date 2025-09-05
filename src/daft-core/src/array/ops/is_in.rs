@@ -3,9 +3,9 @@ use std::collections::{BTreeSet, HashSet};
 use common_error::DaftResult;
 use common_hashable_float_wrapper::FloatWrapper;
 
-use super::{as_arrow::AsArrow, full::FullNull, DaftIsIn};
+use super::{DaftIsIn, as_arrow::AsArrow, full::FullNull};
 use crate::{
-    array::{prelude::*, DataArray},
+    array::{DataArray, prelude::*},
     datatypes::prelude::*,
 };
 

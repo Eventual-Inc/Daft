@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSinkStatus,
 };
 use crate::{
-    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
+    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
 };
 
 pub(crate) struct CrossJoinCollectState(Option<Vec<RecordBatch>>);

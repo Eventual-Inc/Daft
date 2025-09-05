@@ -7,8 +7,8 @@ use daft_core::join::JoinType;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Filter, Join},
     LogicalPlan,
+    ops::{Filter, Join},
 };
 
 /// Optimization rule for filtering out nulls from join keys.
@@ -172,13 +172,13 @@ mod tests {
     use daft_dsl::unresolved_col;
 
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::filter_null_join_key::FilterNullJoinKey,
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the FilterNullJoinKey rule registered, optimizes

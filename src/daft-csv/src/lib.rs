@@ -1,8 +1,3 @@
-#![feature(let_chains)]
-#![feature(trait_alias)]
-#![feature(trait_upcasting)]
-#![feature(test)]
-extern crate test;
 use common_error::DaftError;
 use snafu::Snafu;
 
@@ -15,7 +10,7 @@ pub mod read;
 mod schema;
 
 pub use metadata::read_csv_schema_bulk;
-pub use options::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+pub use options::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 pub use read::{read_csv, read_csv_bulk, stream_csv};

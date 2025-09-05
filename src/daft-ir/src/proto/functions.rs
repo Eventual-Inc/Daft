@@ -1,7 +1,7 @@
 use super::ProtoResult;
 use crate::{
     non_null, not_implemented_err,
-    proto::{from_proto, from_proto_vec, to_proto_vec, ToFromProto},
+    proto::{ToFromProto, from_proto, from_proto_vec, to_proto_vec},
 };
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.

@@ -3,8 +3,8 @@ use common_error::{DaftError, DaftResult};
 use super::full::FullNull;
 use crate::{
     array::{
-        growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
+        growable::{Growable, GrowableArray},
     },
     datatypes::{DaftArrayType, DaftPhysicalType, DataType},
 };

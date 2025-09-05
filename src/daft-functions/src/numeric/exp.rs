@@ -4,8 +4,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,7 @@ macro_rules! exp {
                         return Err(DaftError::TypeError(format!(
                             "Expected input to compute exp to be numeric, got {}",
                             field.dtype
-                        )))
+                        )));
                     }
                 };
                 Ok(Field::new(field.name, dtype))

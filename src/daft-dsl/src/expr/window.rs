@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
 use crate::{
-    expr::{
-        bound_expr::{BoundAggExpr, BoundWindowExpr},
-        Expr,
-    },
     WindowExpr,
+    expr::{
+        Expr,
+        bound_expr::{BoundAggExpr, BoundWindowExpr},
+    },
 };
 
 /// Represents a window frame boundary

@@ -1,5 +1,3 @@
-#![feature(hash_raw_entry)]
-#![feature(let_chains)]
 #![feature(iterator_try_collect)]
 
 use std::{
@@ -10,22 +8,23 @@ use std::{
 };
 
 use arrow2::{array::Array, chunk::Chunk};
-use common_display::table_display::{make_comfy_table, StrValue};
+use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
 use daft_core::{
     array::ops::{
-        full::FullNull, DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices,
+        DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
     },
     prelude::*,
 };
 use daft_dsl::{
+    AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
     expr::{
-        bound_expr::{BoundAggExpr, BoundExpr},
         BoundColumn,
+        bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::{scalar::ScalarFn, FunctionArgs, FunctionEvaluator},
-    null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
+    functions::{FunctionArgs, FunctionEvaluator, scalar::ScalarFn},
+    null_lit, resolved_col,
 };
 use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
@@ -42,7 +41,7 @@ mod repr_html;
 
 pub use growable::GrowableRecordBatch;
 pub use ops::{get_column_by_name, get_columns_by_name};
-pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
+pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_builder};
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -79,11 +78,18 @@ impl Hash for RecordBatch {
 #[inline]
 fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     if schema.len() != columns.len() {
-        return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.len(), columns.len())));
+        return Err(DaftError::SchemaMismatch(format!(
+            "While building a RecordBatch, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}",
+            schema.len(),
+            columns.len()
+        )));
     }
     for (field, series) in schema.into_iter().zip(columns.iter()) {
         if field != series.field() {
-            return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
+            return Err(DaftError::SchemaMismatch(format!(
+                "While building a RecordBatch, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}",
+                series.field()
+            )));
         }
     }
     Ok(())
@@ -111,7 +117,12 @@ impl RecordBatch {
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.into_iter().zip(columns.iter()) {
             if (series.len() != 1) && (series.len() != num_rows) {
-                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!(
+                    "While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}",
+                    field.name,
+                    series.len(),
+                    num_rows
+                )));
             }
         }
 
@@ -156,7 +167,12 @@ impl RecordBatch {
         // Validate Series lengths against provided num_rows
         for (field, series) in schema.into_iter().zip(columns.iter()) {
             if series.len() != num_rows {
-                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_size, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!(
+                    "While building a RecordBatch with RecordBatch::new_with_size, we found that the Series lengths did not match. Series named: {} had length: {} vs the specified RecordBatch length: {}",
+                    field.name,
+                    series.len(),
+                    num_rows
+                )));
             }
         }
 
@@ -200,7 +216,10 @@ impl RecordBatch {
     /// * `columns` - Columns to create a table from as [`Series`] objects
     pub fn from_nonempty_columns(columns: impl Into<Arc<Vec<Series>>>) -> DaftResult<Self> {
         let columns = columns.into();
-        assert!(!columns.is_empty(), "Cannot call RecordBatch::new() with empty columns. This indicates an internal error, please file an issue.");
+        assert!(
+            !columns.is_empty(),
+            "Cannot call RecordBatch::new() with empty columns. This indicates an internal error, please file an issue."
+        );
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()));
         let schema: SchemaRef = schema.into();
@@ -213,7 +232,12 @@ impl RecordBatch {
                 num_rows = series.len();
             }
             if series.len() != num_rows {
-                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_nonempty_columns, we found that the Series lengths did not match. Series named: {} had length: {} vs inferred RecordBatch length: {}", field.name, series.len(), num_rows)));
+                return Err(DaftError::ValueError(format!(
+                    "While building a RecordBatch with RecordBatch::new_with_nonempty_columns, we found that the Series lengths did not match. Series named: {} had length: {} vs inferred RecordBatch length: {}",
+                    field.name,
+                    series.len(),
+                    num_rows
+                )));
             }
         }
 
@@ -235,7 +259,11 @@ impl RecordBatch {
         // validate that we have a field for each array
         let schema: SchemaRef = schema.into();
         if schema.len() != arrays.len() {
-            value_err!("While building a RecordBatch with RecordBatch::from_arrow(), we found that the number of fields in the schema `{}` did not match the number of arrays `{}`", schema.len(), arrays.len());
+            value_err!(
+                "While building a RecordBatch with RecordBatch::from_arrow(), we found that the number of fields in the schema `{}` did not match the number of arrays `{}`",
+                schema.len(),
+                arrays.len()
+            );
         }
         // convert arrays to series and validate lengths
         let mut columns = vec![];
@@ -245,7 +273,12 @@ impl RecordBatch {
                 num_rows = array.len();
             }
             if array.len() != num_rows {
-                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::from_arrow(), we found that the array for field `{}` had length `{}` whereas the expected length is {}", &field.name, array.len(), num_rows)));
+                return Err(DaftError::ValueError(format!(
+                    "While building a RecordBatch with RecordBatch::from_arrow(), we found that the array for field `{}` had length `{}` whereas the expected length is {}",
+                    &field.name,
+                    array.len(),
+                    num_rows
+                )));
             }
             let field = Arc::new(field.clone());
             let column = Series::from_arrow(field, array)?;
@@ -312,7 +345,7 @@ impl RecordBatch {
         if num >= self.len() {
             Ok(self.clone())
         } else {
-            use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
+            use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
             let mut rng = match seed {
                 Some(seed) => StdRng::seed_from_u64(seed),
                 None => StdRng::from_rng(rand::thread_rng()).unwrap(),
@@ -932,9 +965,13 @@ impl RecordBatch {
         // Begin the header.
         res.push_str("<thead><tr>");
 
-        let header_style = format!("text-wrap: nowrap; width: calc(100vw / {}); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left", num_columns);
+        let header_style = format!(
+            "text-wrap: nowrap; width: calc(100vw / {}); min-width: 192px; overflow: hidden; text-overflow: ellipsis; text-align:left",
+            num_columns
+        );
 
         for field in self.schema.as_ref() {
+            #[allow(clippy::format_push_string)]
             res.push_str(&format!("<th style=\"{}\">", header_style));
             res.push_str(&html_escape::encode_text(&field.name));
             res.push_str("<br />");
@@ -948,7 +985,10 @@ impl RecordBatch {
         // Begin the body.
         res.push_str("<tbody>\n");
 
-        let body_style = format!("text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto", num_columns);
+        let body_style = format!(
+            "text-align:left; width: calc(100vw / {}); min-width: 192px; max-height: 100px; overflow: hidden; text-overflow: ellipsis; word-wrap: break-word; overflow-y: auto",
+            num_columns
+        );
 
         let (head_rows, tail_rows) = if self.len() > 10 {
             (5, 5)
@@ -961,6 +1001,7 @@ impl RecordBatch {
             res.push_str("<tr>");
 
             for (col_idx, col) in self.columns.iter().enumerate() {
+                #[allow(clippy::format_push_string)]
                 res.push_str(&format!(
                     "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
                     i, col_idx, body_style
@@ -986,6 +1027,7 @@ impl RecordBatch {
             res.push_str("<tr>");
 
             for (col_idx, col) in self.columns.iter().enumerate() {
+                #[allow(clippy::format_push_string)]
                 res.push_str(&format!(
                     "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
                     i, col_idx, body_style
@@ -1024,8 +1066,7 @@ impl RecordBatch {
     }
 
     pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
-        let chunk = Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect());
-        chunk
+        Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect())
     }
 }
 
@@ -1052,7 +1093,10 @@ impl TryFrom<RecordBatch> for FileInfos {
             if let [(idx, _)] = record_batch.schema.get_fields_with_name(name)[..] {
                 Ok(record_batch.get_column(idx))
             } else {
-                Err(DaftError::SchemaMismatch(format!("RecordBatch requires columns \"path\", \"size\", and \"num_rows\" to convert to FileInfos, found: {}", record_batch.schema)))
+                Err(DaftError::SchemaMismatch(format!(
+                    "RecordBatch requires columns \"path\", \"size\", and \"num_rows\" to convert to FileInfos, found: {}",
+                    record_batch.schema
+                )))
             }
         };
 

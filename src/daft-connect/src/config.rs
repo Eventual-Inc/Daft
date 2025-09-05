@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use spark_connect::{
-    config_request::{Get, GetAll, GetOption, GetWithDefault, IsModifiable, Set, Unset},
     ConfigResponse, KeyValue,
+    config_request::{Get, GetAll, GetOption, GetWithDefault, IsModifiable, Set, Unset},
 };
 use tonic::Status;
 
@@ -28,7 +28,9 @@ impl ConnectSession {
 
         for KeyValue { key, value } in operation.pairs {
             let Some(value) = value else {
-                let msg = format!("Missing value for key {key}. If you want to unset a value use the Unset operation");
+                let msg = format!(
+                    "Missing value for key {key}. If you want to unset a value use the Unset operation"
+                );
                 response.warnings.push(msg);
                 continue;
             };

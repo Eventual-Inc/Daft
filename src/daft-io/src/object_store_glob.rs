@@ -279,18 +279,18 @@ async fn ls_with_prefix_fallback(
     // Iterate and collect results into the `results_buffer`, but terminate early if too many directories are found
     let mut dir_count_so_far = 0;
     while let Some(fm) = fm_stream.next().await {
-        if let Ok(fm) = &fm {
-            if matches!(fm.filetype, FileType::Directory) {
-                dir_count_so_far += 1;
-                // STOP EARLY!!
-                // If the number of directory results are more than `max_dirs`, we terminate the function early,
-                // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
-                if max_dirs.is_some_and(|max_dirs| dir_count_so_far > max_dirs) {
-                    return (
-                        prefix_ls(source.clone(), uri.to_string(), page_size, io_stats),
-                        0,
-                    );
-                }
+        if let Ok(fm) = &fm
+            && matches!(fm.filetype, FileType::Directory)
+        {
+            dir_count_so_far += 1;
+            // STOP EARLY!!
+            // If the number of directory results are more than `max_dirs`, we terminate the function early,
+            // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
+            if max_dirs.is_some_and(|max_dirs| dir_count_so_far > max_dirs) {
+                return (
+                    prefix_ls(source.clone(), uri.to_string(), page_size, io_stats),
+                    0,
+                );
             }
         }
         results_buffer.push(fm);
@@ -509,8 +509,10 @@ pub async fn glob(
                                     if state.full_glob_matcher.is_match(fm.filepath.as_str()) =>
                                 {
                                     if let Some(e) = result_tx.send(Ok(fm)).await.err() {
-                                        log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
-                                    };
+                                        log::debug!(
+                                            "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                        );
+                                    }
                                 }
                                 _ => (),
                             }
@@ -519,7 +521,9 @@ pub async fn glob(
                         Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
                         Err(e) => {
                             if let Some(e) = result_tx.send(Err(e)).await.err() {
-                                log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                log::debug!(
+                                    "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                );
                             }
                         }
                     }
@@ -538,17 +542,20 @@ pub async fn glob(
                             Ok(fm) => {
                                 if matches!(fm.filetype, FileType::File)
                                     && state.full_glob_matcher.is_match(fm.filepath.as_str())
+                                    && let Some(e) = result_tx.send(Ok(fm)).await.err()
                                 {
-                                    if let Some(e) = result_tx.send(Ok(fm)).await.err() {
-                                        log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
-                                    }
+                                    log::debug!(
+                                        "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                    );
                                 }
                             }
                             // Silence NotFound errors when in wildcard "search" mode
                             Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
                             Err(e) => {
                                 if let Some(e) = result_tx.send(Err(e)).await.err() {
-                                    log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                    log::debug!(
+                                        "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                    );
                                 }
                             }
                         }
@@ -572,7 +579,9 @@ pub async fn glob(
                             {
                                 let fm = single_file_ls.files.drain(..).next().unwrap();
                                 if let Some(e) = result_tx.send(Ok(fm)).await.err() {
-                                    log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                    log::debug!(
+                                        "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                    );
                                 }
                             }
                         }
@@ -580,7 +589,9 @@ pub async fn glob(
                         Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
                         Err(e) => {
                             if let Some(e) = result_tx.send(Err(e)).await.err() {
-                                log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                log::debug!(
+                                    "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                );
                             }
                         }
                     }
@@ -637,7 +648,9 @@ pub async fn glob(
                                 if state.full_glob_matcher.is_match(fm.filepath.as_str()) =>
                             {
                                 if let Some(e) = result_tx.send(Ok(fm)).await.err() {
-                                    log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                    log::debug!(
+                                        "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                    );
                                 }
                             }
                             _ => (),
@@ -646,7 +659,9 @@ pub async fn glob(
                         Err(super::Error::NotFound { .. }) => (),
                         Err(e) => {
                             if let Some(e) = result_tx.send(Err(e)).await.err() {
-                                log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                log::debug!(
+                                    "Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}"
+                                );
                             }
                         }
                     }

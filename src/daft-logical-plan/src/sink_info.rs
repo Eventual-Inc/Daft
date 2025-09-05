@@ -6,7 +6,7 @@ use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use daft_core::prelude::Schema;
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use educe::Educe;
 use itertools::Itertools;
 #[cfg(feature = "python")]
