@@ -91,6 +91,10 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
     elif get_origin(f_type) is tuple:
         raise TypeError(f"Cannot support tuple types: {f_type}")
 
+    # bool must come before int in type checking!
+    elif issubclass(f_type, bool):
+        inner_type = pa.bool_()
+
     elif issubclass(f_type, BaseModel):
         schema = get_pyarrow_schema(f_type)
         inner_type = pa.struct([(f, schema.field(f).type) for f in schema.names])
@@ -103,9 +107,6 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
 
     elif issubclass(f_type, float):
         inner_type = pa.float64()
-
-    elif issubclass(f_type, bool):
-        inner_type = pa.bool_()
 
     elif issubclass(f_type, bytes):
         inner_type = pa.binary()
