@@ -143,7 +143,8 @@ jobs:
         source .venv/bin/activate
         maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest --cov=daft --ignore tests/integration --durations=50
+        pytest --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        python tools/aggregate_test_durations.py pytest_output.txt
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
@@ -160,7 +161,8 @@ jobs:
         cargo llvm-cov clean --workspace
         maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest --cov=daft --ignore tests/integration --durations=50
+        pytest --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        python tools/aggregate_test_durations.py pytest_output.txt
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
@@ -318,20 +320,23 @@ jobs:
     - name: Run TPCH integration tests (native)
       run: |
         source .venv/bin/activate
-        pytest tests/integration/test_tpch.py --durations=50
+        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run TPCH integration tests (ray)
       run: |
         source .venv/bin/activate
-        pytest tests/integration/test_tpch.py --durations=50
+        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 0
     - name: Run TPCH integration tests (flotilla)
       run: |
         source .venv/bin/activate
-        pytest tests/integration/test_tpch.py --durations=50
+        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 1
@@ -415,8 +420,9 @@ jobs:
     - name: Run IO integration tests
       run: |
         source .venv/bin/activate
-        pytest tests/integration/io -m 'integration and not benchmark' --durations=50
-        pytest tests/io -m 'integration' --durations=50
+        pytest tests/integration/io -m 'integration and not benchmark' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output.txt"
+        pytest tests/io -m 'integration' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output_2.txt"
+        python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
@@ -519,7 +525,8 @@ jobs:
     - name: Run IO integration tests
       run: |
         source .venv/bin/activate
-        pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=50
+        pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=0 | ./tools/capture-durations.sh "io_credentialed_pytest_output.txt"
+        python tools/aggregate_test_durations.py io_credentialed_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
@@ -597,20 +604,23 @@ jobs:
     - name: Run sql integration tests (native)
       run: |
         source .venv/bin/activate
-        pytest tests/integration/sql -m 'integration or not integration' --durations=50
+        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run sql integration tests (ray)
       run: |
         source .venv/bin/activate
-        pytest tests/integration/sql -m 'integration or not integration' --durations=50
+        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 0
     - name: Run sql integration tests (flotilla)
       run: |
         source .venv/bin/activate
-        pytest tests/integration/sql -m 'integration or not integration' --durations=50
+        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 1
@@ -705,7 +715,8 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/unity -m 'integration or not integration' --durations=50
+        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: native
         UNITY_CATALOG_PORT: 3000
@@ -713,7 +724,8 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/unity -m 'integration or not integration' --durations=50
+        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 0
@@ -722,7 +734,8 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/unity -m 'integration or not integration' --durations=50
+        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 1
@@ -732,14 +745,16 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/iceberg -m 'integration' --durations=50
+        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run Iceberg integration tests (ray)
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/iceberg -m 'integration' --durations=50
+        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 0
@@ -747,7 +762,8 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/iceberg -m 'integration' --durations=50
+        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 1
@@ -756,14 +772,16 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/delta_lake -m 'integration' --durations=50
+        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run Delta Lake integration tests (ray)
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/delta_lake -m 'integration' --durations=50
+        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 0
@@ -771,7 +789,8 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        pytest tests/integration/delta_lake -m 'integration' --durations=50
+        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         DAFT_FLOTILLA: 1
@@ -846,7 +865,8 @@ jobs:
     - name: Run AI provider integration tests
       run: |
         source .venv/bin/activate
-        pytest -m integration tests/integration/ai --credentials --durations=50
+        pytest -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_pytest_output.txt"
+        python tools/aggregate_test_durations.py ai_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
