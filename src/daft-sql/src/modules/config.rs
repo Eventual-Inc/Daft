@@ -371,6 +371,8 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let requester_pays = get_value!("requester_pays", Boolean)?;
             let force_virtual_addressing = get_value!("force_virtual_addressing", Boolean)?;
             let profile_name = get_value!("profile_name", Utf8)?;
+            let multipart_size = get_value!("multipart_size", UInt64)?;
+            let multipart_max_concurrency = get_value!("multipart_max_concurrency", UInt32)?;
             let default = S3Config::default();
             let s3_config = S3Config {
                 region_name,
@@ -396,6 +398,9 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(default.force_virtual_addressing),
                 profile_name,
+                multipart_size: multipart_size.unwrap_or(default.multipart_size),
+                multipart_max_concurrency: multipart_max_concurrency
+                    .unwrap_or(default.multipart_max_concurrency),
             };
 
             Ok(IOConfig {

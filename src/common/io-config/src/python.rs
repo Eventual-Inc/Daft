@@ -329,7 +329,9 @@ impl S3Config {
         check_hostname_ssl=None,
         requester_pays=None,
         force_virtual_addressing=None,
-        profile_name=None
+        profile_name=None,
+        multipart_size=None,
+        multipart_max_concurrency=None
     ))]
     pub fn new(
         region_name: Option<String>,
@@ -352,6 +354,8 @@ impl S3Config {
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
+        multipart_size: Option<u64>,
+        multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
         let def = crate::S3Config::default();
         Ok(Self {
@@ -388,6 +392,9 @@ impl S3Config {
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(def.force_virtual_addressing),
                 profile_name: profile_name.or(def.profile_name),
+                multipart_size: multipart_size.unwrap_or(def.multipart_size),
+                multipart_max_concurrency: multipart_max_concurrency
+                    .unwrap_or(def.multipart_max_concurrency),
             },
         })
     }
@@ -413,7 +420,9 @@ impl S3Config {
         check_hostname_ssl=None,
         requester_pays=None,
         force_virtual_addressing=None,
-        profile_name=None
+        profile_name=None,
+        multipart_size=None,
+        multipart_max_concurrency=None
     ))]
     pub fn replace(
         &self,
@@ -437,6 +446,8 @@ impl S3Config {
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
+        multipart_size: Option<u64>,
+        multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: crate::S3Config {
@@ -474,6 +485,9 @@ impl S3Config {
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(self.config.force_virtual_addressing),
                 profile_name: profile_name.or_else(|| self.config.profile_name.clone()),
+                multipart_size: multipart_size.unwrap_or(self.config.multipart_size),
+                multipart_max_concurrency: multipart_max_concurrency
+                    .unwrap_or(self.config.multipart_max_concurrency),
             },
         })
     }
