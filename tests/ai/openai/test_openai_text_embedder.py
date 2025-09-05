@@ -64,7 +64,7 @@ def test_invalid_model_name():
 
 
 def test_instantiate():
-    """Test that instantiate creates a proper OpenAITextEmbedder."""
+    """Test to instantiate a proper OpenAITextEmbedder with no mocks."""
     descriptor = OpenAITextEmbedderDescriptor(
         provider_name="openai",
         provider_options={"api_key": "test-key"},
