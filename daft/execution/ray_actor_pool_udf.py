@@ -56,6 +56,7 @@ async def start_udf_actors(
     num_gpus_per_actor: float,
     num_cpus_per_actor: float,
     memory_per_actor: float,
+    resources: dict[str, float],
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
@@ -65,6 +66,7 @@ async def start_udf_actors(
             num_gpus=num_gpus_per_actor,
             num_cpus=num_cpus_per_actor,
             memory=memory_per_actor,
+            resources=resources,
         ).remote(expr_projection)
         for _ in range(num_actors)
     ]

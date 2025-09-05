@@ -297,6 +297,7 @@ class UDF:
         num_cpus: float | None = _UnsetMarker,
         num_gpus: float | None = _UnsetMarker,
         memory_bytes: int | None = _UnsetMarker,
+        resources: dict[str, float] | None = None,
         batch_size: int | None = _UnsetMarker,
     ) -> UDF:
         """Replace the resource requests for running each instance of your UDF.
@@ -331,6 +332,8 @@ class UDF:
             new_resource_request = new_resource_request.with_num_gpus(num_gpus)
         if memory_bytes is not _UnsetMarker:
             new_resource_request = new_resource_request.with_memory_bytes(memory_bytes)
+        if resources is not None:
+            new_resource_request = new_resource_request.with_resources(resources)
 
         new_batch_size = self.batch_size if batch_size is _UnsetMarker else batch_size
 
@@ -461,6 +464,7 @@ def udf(
     num_cpus: float | None = None,
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
+    resources: dict[str, float] | None = None,
     batch_size: int | None = None,
     concurrency: int | None = None,
     use_process: bool | None = None,
@@ -478,6 +482,8 @@ def udf(
             the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
         memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
             this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+        resources: Custom resources to allocate each running instance of your UDF. see more
+            https://docs.ray.io/en/latest/ray-core/scheduling/resources.html#specify-node-resources
         batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
         concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
             UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
@@ -617,11 +623,12 @@ def udf(
 
         resource_request = (
             None
-            if num_cpus is None and num_gpus is None and memory_bytes is None
+            if num_cpus is None and num_gpus is None and memory_bytes is None and resources is None
             else ResourceRequest(
                 num_cpus=num_cpus,
                 num_gpus=num_gpus,
                 memory_bytes=memory_bytes,
+                resources=resources,
             )
         )
         udf = UDF(

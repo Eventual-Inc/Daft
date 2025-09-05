@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     hash::{Hash, Hasher},
     ops::Add,
 };
@@ -22,6 +23,7 @@ pub struct ResourceRequest {
     num_cpus: Option<f64>,
     num_gpus: Option<f64>,
     memory_bytes: Option<usize>,
+    resources: Option<HashMap<String, f64>>,
 }
 
 impl ResourceRequest {
@@ -29,6 +31,7 @@ impl ResourceRequest {
         num_cpus: Option<f64>,
         num_gpus: Option<f64>,
         memory_bytes: Option<usize>,
+        resources: Option<HashMap<String, f64>>,
     ) -> DaftResult<Self> {
         if let Some(num_gpus) = num_gpus {
             if num_gpus < 0.0 {
@@ -50,20 +53,31 @@ impl ResourceRequest {
             num_cpus,
             num_gpus,
             memory_bytes,
+            resources,
         })
     }
 
     #[must_use]
     pub fn default_cpu() -> Self {
-        Self::try_new_internal(Some(1.0), None, None).unwrap()
+        Self::try_new_internal(Some(1.0), None, None, None).unwrap()
     }
 
     pub fn or_num_cpus(&self, num_cpus: Option<f64>) -> DaftResult<Self> {
-        Self::try_new_internal(self.num_cpus.or(num_cpus), self.num_gpus, self.memory_bytes)
+        Self::try_new_internal(
+            self.num_cpus.or(num_cpus),
+            self.num_gpus,
+            self.memory_bytes,
+            self.resources.clone(),
+        )
     }
 
     pub fn or_num_gpus(&self, num_gpus: Option<f64>) -> DaftResult<Self> {
-        Self::try_new_internal(self.num_cpus, self.num_gpus.or(num_gpus), self.memory_bytes)
+        Self::try_new_internal(
+            self.num_cpus,
+            self.num_gpus.or(num_gpus),
+            self.memory_bytes,
+            self.resources.clone(),
+        )
     }
 
     pub fn or_memory_bytes(&self, memory_bytes: Option<usize>) -> DaftResult<Self> {
@@ -71,12 +85,28 @@ impl ResourceRequest {
             self.num_cpus,
             self.num_gpus,
             self.memory_bytes.or(memory_bytes),
+            self.resources.clone(),
+        )
+    }
+
+    pub fn or_resources(&self, resources: Option<HashMap<String, f64>>) -> DaftResult<Self> {
+        Self::try_new_internal(
+            self.num_cpus,
+            self.num_gpus,
+            self.memory_bytes,
+            self.resources.clone().map(|mut m| {
+                m.extend(resources.unwrap_or_default());
+                m
+            }),
         )
     }
 
     #[must_use]
     pub fn has_any(&self) -> bool {
-        self.num_cpus.is_some() || self.num_gpus.is_some() || self.memory_bytes.is_some()
+        self.num_cpus.is_some()
+            || self.num_gpus.is_some()
+            || self.memory_bytes.is_some()
+            || self.resources.is_some()
     }
 
     #[must_use]
@@ -90,6 +120,9 @@ impl ResourceRequest {
         }
         if let Some(memory_bytes) = self.memory_bytes {
             requests.push(format!("memory_bytes = {memory_bytes}"));
+        }
+        if let Some(resources) = &self.resources {
+            requests.extend(resources.iter().map(|(k, v)| format!("{k} = {v}")));
         }
         requests
     }
@@ -120,7 +153,13 @@ impl ResourceRequest {
         let max_num_cpus = lift(float_max, self.num_cpus, other.num_cpus);
         let max_num_gpus = lift(float_max, self.num_gpus, other.num_gpus);
         let max_memory_bytes = lift(std::cmp::max, self.memory_bytes, other.memory_bytes);
-        Self::try_new_internal(max_num_cpus, max_num_gpus, max_memory_bytes).unwrap()
+        Self::try_new_internal(
+            max_num_cpus,
+            max_num_gpus,
+            max_memory_bytes,
+            self.resources.clone(),
+        )
+        .unwrap()
     }
 
     pub fn max_all<ResourceRequestAsRef: AsRef<Self>>(
@@ -136,6 +175,7 @@ impl ResourceRequest {
             self.num_cpus.map(|x| x * factor),
             self.num_gpus.map(|x| x * factor),
             self.memory_bytes.map(|x| x * (factor as usize)),
+            self.resources.clone(),
         )
     }
 
@@ -150,6 +190,10 @@ impl ResourceRequest {
     pub fn memory_bytes(&self) -> Option<usize> {
         self.memory_bytes
     }
+
+    pub fn resources(&self) -> Option<HashMap<String, f64>> {
+        self.resources.clone()
+    }
 }
 
 impl Add for &ResourceRequest {
@@ -159,6 +203,10 @@ impl Add for &ResourceRequest {
             lift(Add::add, self.num_cpus, other.num_cpus),
             lift(Add::add, self.num_gpus, other.num_gpus),
             lift(Add::add, self.memory_bytes, other.memory_bytes),
+            self.resources.clone().map(|mut m| {
+                m.extend(other.resources.clone().unwrap_or_default());
+                m
+            }),
         )
     }
 }
@@ -177,6 +225,14 @@ impl Hash for ResourceRequest {
         self.num_cpus.map(FloatWrapper).hash(state);
         self.num_gpus.map(FloatWrapper).hash(state);
         self.memory_bytes.hash(state);
+        if let Some(resources) = &self.resources {
+            let mut sorted_resources: Vec<_> = resources.iter().collect();
+            sorted_resources.sort_by_key(|(k, _)| *k);
+            for (k, v) in sorted_resources {
+                k.hash(state);
+                FloatWrapper(*v).hash(state);
+            }
+        }
     }
 }
 
@@ -202,13 +258,19 @@ fn float_max(left: f64, right: f64) -> f64 {
 #[pymethods]
 impl ResourceRequest {
     #[new]
-    #[pyo3(signature = (num_cpus=None, num_gpus=None, memory_bytes=None))]
+    #[pyo3(signature = (num_cpus=None, num_gpus=None, memory_bytes=None, resources=None))]
     pub fn new(
         num_cpus: Option<f64>,
         num_gpus: Option<f64>,
         memory_bytes: Option<usize>,
+        resources: Option<HashMap<String, f64>>,
     ) -> PyResult<Self> {
-        Ok(Self::try_new_internal(num_cpus, num_gpus, memory_bytes)?)
+        Ok(Self::try_new_internal(
+            num_cpus,
+            num_gpus,
+            memory_bytes,
+            resources,
+        )?)
     }
 
     /// Take a field-wise max of the list of resource requests.
@@ -233,19 +295,44 @@ impl ResourceRequest {
         Ok(self.memory_bytes)
     }
 
+    #[getter]
+    pub fn get_resources(&self) -> PyResult<Option<HashMap<String, f64>>> {
+        Ok(self.resources.clone())
+    }
+
     #[pyo3(signature = (num_cpus))]
     pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> DaftResult<Self> {
-        Self::try_new_internal(num_cpus, self.num_gpus, self.memory_bytes)
+        Self::try_new_internal(
+            num_cpus,
+            self.num_gpus,
+            self.memory_bytes,
+            self.resources.clone(),
+        )
     }
 
     #[pyo3(signature = (num_gpus))]
     pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> DaftResult<Self> {
-        Self::try_new_internal(self.num_cpus, num_gpus, self.memory_bytes)
+        Self::try_new_internal(
+            self.num_cpus,
+            num_gpus,
+            self.memory_bytes,
+            self.resources.clone(),
+        )
     }
 
     #[pyo3(signature = (memory_bytes))]
     pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> DaftResult<Self> {
-        Self::try_new_internal(self.num_cpus, self.num_gpus, memory_bytes)
+        Self::try_new_internal(
+            self.num_cpus,
+            self.num_gpus,
+            memory_bytes,
+            self.resources.clone(),
+        )
+    }
+
+    #[pyo3(signature = (resources))]
+    pub fn with_resources(&self, resources: Option<HashMap<String, f64>>) -> DaftResult<Self> {
+        Self::try_new_internal(self.num_cpus, self.num_gpus, self.memory_bytes, resources)
     }
 
     fn __add__(&self, other: &Self) -> PyResult<Self> {
