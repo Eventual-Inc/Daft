@@ -5,23 +5,23 @@ use azure_core::auth::TokenCredential;
 use azure_identity::{
     ClientSecretCredential, DefaultAzureCredentialBuilder, TokenCredentialOptions,
 };
-use azure_storage::{prelude::*, CloudLocation};
+use azure_storage::{CloudLocation, prelude::*};
 use azure_storage_blobs::{
     blob::operations::GetBlobResponse,
-    container::{operations::BlobItem, Container},
+    container::{Container, operations::BlobItem},
     prelude::*,
 };
 use common_io_config::AzureConfig;
 use derive_builder::Builder;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
+    FileFormat, GetResult, InvalidRangeRequestSnafu,
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, GetResult, InvalidRangeRequestSnafu,
 };
 
 const AZURE_DELIMITER: &str = "/";
@@ -41,7 +41,9 @@ enum Error {
     ContinuationToken { token: String },
 
     // Generic client errors.
-    #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
+    #[snafu(display(
+        "Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."
+    ))]
     StorageAccountNotSet,
     #[snafu(display("Azure client generic error: {}", source))]
     AzureGeneric { source: azure_storage::Error },
@@ -270,7 +272,7 @@ impl AzureBlobSource {
         &self,
         protocol: &str,
         io_stats: Option<IOStatsRef>,
-    ) -> BoxStream<super::Result<FileMetadata>> {
+    ) -> BoxStream<'_, super::Result<FileMetadata>> {
         let protocol = protocol.to_string();
 
         // Paginated stream of results from Azure API call.
@@ -311,7 +313,7 @@ impl AzureBlobSource {
         prefix: &str,
         posix: bool,
         io_stats: Option<IOStatsRef>,
-    ) -> BoxStream<super::Result<FileMetadata>> {
+    ) -> BoxStream<'_, super::Result<FileMetadata>> {
         let container_client = self.blob_client.container_client(container_name);
 
         // Clone and own some references that we need for the lifetime of the stream.
@@ -400,7 +402,7 @@ impl AzureBlobSource {
                             // We would like to stop as soon as there is a file match,
                             // or if there is an error.
                             upper_results_stream
-                                .map_ok(|file_info| (file_info.filepath == full_path_with_trailing_delimiter))
+                                .map_ok(|file_info| file_info.filepath == full_path_with_trailing_delimiter)
                                 .try_skip_while(|is_match| futures::future::ready(Ok(!is_match)))
                                 .try_next()
                                 .await?
@@ -442,7 +444,7 @@ impl AzureBlobSource {
         prefix: &str,
         posix: &bool,
         io_stats: Option<IOStatsRef>,
-    ) -> BoxStream<super::Result<FileMetadata>> {
+    ) -> BoxStream<'_, super::Result<FileMetadata>> {
         // Calls Azure list_blobs with the prefix
         // and returns the result flattened and standardized into FileMetadata.
 

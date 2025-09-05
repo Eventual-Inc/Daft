@@ -1,9 +1,8 @@
 use arrow2::io::ipc::write::StreamWriter;
 use daft_recordbatch::RecordBatch;
 use spark_connect::{
-    analyze_plan_response,
+    AnalyzePlanResponse, DataType, ExecutePlanResponse, analyze_plan_response,
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
-    AnalyzePlanResponse, DataType, ExecutePlanResponse,
 };
 use uuid::Uuid;
 
@@ -53,9 +52,9 @@ impl ResponseBuilder<ExecutePlanResponse> {
     /// Send a result complete response to the client
     pub fn result_complete_response(&self) -> ExecutePlanResponse {
         ExecutePlanResponse {
-            session_id: self.session.to_string(),
-            server_side_session_id: self.server_side_session_id.to_string(),
-            operation_id: self.operation_id.to_string(),
+            session_id: self.session.clone(),
+            server_side_session_id: self.server_side_session_id.clone(),
+            operation_id: self.operation_id.clone(),
             response_id: Uuid::new_v4().to_string(),
             metrics: None,
             observed_metrics: vec![],

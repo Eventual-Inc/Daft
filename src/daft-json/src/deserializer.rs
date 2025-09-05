@@ -65,7 +65,7 @@ impl<'de> OrderPreservingDeserializer<'de> {
     }
 }
 
-pub fn to_value(s: &mut [u8]) -> simd_json::Result<Value> {
+pub fn to_value(s: &mut [u8]) -> simd_json::Result<Value<'_>> {
     match Deserializer::from_slice(s) {
         Ok(de) => Ok(OrderPreservingDeserializer::from_deserializer(de).parse()),
         Err(e) => Err(e),

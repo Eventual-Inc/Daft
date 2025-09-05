@@ -4,9 +4,10 @@ use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use daft_session::Session;
 
 use crate::{
+    SQLPlanner,
     error::{PlannerError, SQLPlannerResult},
     statement::{self, Statement},
-    unsupported_sql_err, SQLPlanner,
+    unsupported_sql_err,
 };
 
 /// Execute result is always a dataframe.

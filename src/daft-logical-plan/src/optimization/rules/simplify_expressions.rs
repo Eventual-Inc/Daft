@@ -49,11 +49,11 @@ mod test {
 
     use super::SimplifyExpressionsRule;
     use crate::{
+        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, SourceInfo,
         ops::{Filter, Project, Source},
         optimization::rules::OptimizerRule,
         source_info::PlaceHolderInfo,
         stats::StatsState,
-        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, SourceInfo,
     };
 
     fn make_source() -> LogicalPlanBuilder {

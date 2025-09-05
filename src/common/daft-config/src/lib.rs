@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 pub use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 

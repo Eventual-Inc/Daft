@@ -5,16 +5,16 @@ use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
-use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
+use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
-    stream::{once, BoxStream},
     Stream, StreamExt, TryStreamExt,
+    stream::{BoxStream, once},
 };
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{
-    futures::{try_future::Context, TryFutureExt, TryStreamExt as _},
     ResultExt,
+    futures::{TryFutureExt, TryStreamExt as _, try_future::Context},
 };
 use tokio::{
     fs::File,
@@ -24,10 +24,10 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::{
+    ArrowSnafu, ChunkSnafu, JoinSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
     decoding::deserialize_records,
     local::{read_json_array_impl, read_json_local},
     schema::read_json_schema_single,
-    ArrowSnafu, ChunkSnafu, JoinSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
 };
 
 type TableChunkResult =
@@ -443,7 +443,7 @@ async fn read_json_single_into_stream(
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats)
+            .single_url_get(uri.clone(), None, io_stats)
             .await?
         {
             GetResult::File(file) => {
@@ -641,9 +641,9 @@ mod tests {
 
     use super::read_json;
     use crate::{
+        JsonConvertOptions, JsonReadOptions,
         decoding::deserialize_records,
         inference::{column_types_map_to_fields, infer_records_schema},
-        JsonConvertOptions, JsonReadOptions,
     };
 
     fn check_equal_local_arrow2(

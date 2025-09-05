@@ -6,7 +6,7 @@ use daft_schema::field::Field;
 
 use crate::{
     datatypes::{DataType, TimeUnit},
-    series::{array_impl::IntoSeries, Series},
+    series::{Series, array_impl::IntoSeries},
 };
 
 impl Series {
@@ -322,7 +322,9 @@ impl Series {
 
     pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> DaftResult<Self> {
         match (self.data_type(), relative_to.data_type()) {
-            (DataType::Timestamp(self_tu,self_tz), DataType::Timestamp(start_tu,start_tz)) if self_tu == start_tu && self_tz == start_tz => {
+            (DataType::Timestamp(self_tu, self_tz), DataType::Timestamp(start_tu, start_tz))
+                if self_tu == start_tu && self_tz == start_tz =>
+            {
                 let ts_array = self.timestamp()?;
                 let relative_to = match relative_to.len() {
                     1 => relative_to.timestamp()?.get(0),
@@ -330,16 +332,18 @@ impl Series {
                         return Err(DaftError::ComputeError(format!(
                             "Expected 1 item for relative_to, got {}",
                             relative_to.len()
-                        )))
+                        )));
                     }
                 };
                 Ok(ts_array.truncate(interval, relative_to)?.into_series())
             }
-            (DataType::Timestamp(..), DataType::Timestamp(..)) => Err(DaftError::ComputeError(format!(
-                "Can only run truncate() operation if self and relative_to have the same timeunit and timezone, got {} {}",
-                self.data_type(),
-                relative_to.data_type()
-            ))),
+            (DataType::Timestamp(..), DataType::Timestamp(..)) => {
+                Err(DaftError::ComputeError(format!(
+                    "Can only run truncate() operation if self and relative_to have the same timeunit and timezone, got {} {}",
+                    self.data_type(),
+                    relative_to.data_type()
+                )))
+            }
             (DataType::Timestamp(..), DataType::Null) => {
                 let ts_array = self.timestamp()?;
                 Ok(ts_array.truncate(interval, None)?.into_series())

@@ -7,9 +7,9 @@ use arrow2::array::Array;
 use common_error::DaftResult;
 use fnv::FnvHashMap;
 
-use super::{as_arrow::AsArrow, IntoGroups};
+use super::{IntoGroups, as_arrow::AsArrow};
 use crate::{
-    array::{ops::IntoUniqueIdxs, DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::IntoUniqueIdxs},
     datatypes::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray,
         Float32Array, Float64Array, NullArray, Utf8Array,

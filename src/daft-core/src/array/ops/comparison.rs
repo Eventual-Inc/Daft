@@ -4,7 +4,7 @@ use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 use common_error::{DaftError, DaftResult};
 use num_traits::{NumCast, ToPrimitive};
 
-use super::{as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
+use super::{DaftCompare, DaftLogical, as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull};
 use crate::{
     array::DataArray,
     datatypes::{
@@ -1053,11 +1053,7 @@ impl DaftLogical<bool> for BooleanArray {
     }
 
     fn xor(&self, rhs: bool) -> Self::Output {
-        if rhs {
-            self.not()
-        } else {
-            Ok(self.clone())
-        }
+        if rhs { self.not() } else { Ok(self.clone()) }
     }
 }
 

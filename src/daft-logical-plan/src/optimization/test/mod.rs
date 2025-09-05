@@ -3,8 +3,8 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    optimization::{optimizer::RuleBatch, Optimizer, OptimizerConfig},
     LogicalPlan,
+    optimization::{Optimizer, OptimizerConfig, optimizer::RuleBatch},
 };
 
 /// Helper that creates an optimizer with the provided rules registered, optimizes

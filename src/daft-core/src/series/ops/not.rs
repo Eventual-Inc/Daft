@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::{
     datatypes::BooleanArray,
-    series::{array_impl::IntoSeries, Series},
+    series::{Series, array_impl::IntoSeries},
 };
 
 impl Not for &Series {

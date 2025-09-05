@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use daft_dsl::{
-    expr::bound_expr::BoundExpr,
-    functions::{scalar::ScalarFn, FunctionArgs},
-    python_udf::{PyScalarFn, RowWisePyFn},
     Column, ExprRef, ResolvedColumn,
+    expr::bound_expr::BoundExpr,
+    functions::{FunctionArgs, scalar::ScalarFn},
+    python_udf::{PyScalarFn, RowWisePyFn},
 };
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
@@ -290,7 +290,7 @@ fn translate_clustering_spec_expr(
     //  - Ok(expr) with expr being the translation, or
     //  - Err(()) if no translation is possible in the new projection.
 
-    use daft_dsl::{binary_op, Expr};
+    use daft_dsl::{Expr, binary_op};
 
     match clustering_spec_expr.as_ref() {
         Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {

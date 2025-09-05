@@ -6,17 +6,17 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState, Probeable, RecordBatch};
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use itertools::Itertools;
-use tracing::{info_span, instrument, Span};
+use tracing::{Span, info_span, instrument};
 
 use super::{
     base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkOutput},
     outer_hash_join_probe::IndexBitmapBuilder,
 };
 use crate::{
-    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
-    streaming_sink::base::StreamingSinkFinalizeResult, ExecutionTaskSpawner,
+    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
+    streaming_sink::base::StreamingSinkFinalizeResult,
 };
 
 pub(crate) enum AntiSemiProbeState {

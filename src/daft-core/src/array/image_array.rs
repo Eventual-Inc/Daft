@@ -118,7 +118,10 @@ impl ImageArray {
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
-            assert!(!(mode.get_dtype().to_arrow()? != arrow_dtype), "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
+            assert!(
+                !(mode.get_dtype().to_arrow()? != arrow_dtype),
+                "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}"
+            );
         }
         let data_array = ListArray::new(
             Field::new("data", DataType::List(Box::new((&arrow_dtype).into()))),

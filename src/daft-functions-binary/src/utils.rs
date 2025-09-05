@@ -122,7 +122,7 @@ pub(crate) fn create_broadcasted_fixed_size_binary_iter(
 pub(crate) fn create_broadcasted_numeric_iter<T, O>(
     arr: &DataArray<T>,
     len: usize,
-) -> BroadcastedNumericIter<T, O>
+) -> BroadcastedNumericIter<'_, T, O>
 where
     T: DaftIntegerType,
     T::Native: TryInto<O> + Ord,

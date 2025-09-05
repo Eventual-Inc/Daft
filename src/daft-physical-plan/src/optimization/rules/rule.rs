@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use common_treenode::{Transformed, TransformedResult};
 
-use crate::{optimization::optimizer::PhysicalOptimizerConfig, PhysicalPlanRef};
+use crate::{PhysicalPlanRef, optimization::optimizer::PhysicalOptimizerConfig};
 
 pub trait PhysicalOptimizerRule {
     fn rewrite(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>>;

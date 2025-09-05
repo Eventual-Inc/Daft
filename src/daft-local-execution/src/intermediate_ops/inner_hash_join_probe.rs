@@ -4,16 +4,16 @@ use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{get_columns_by_name, GrowableRecordBatch, ProbeState};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState, get_columns_by_name};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use tracing::{info_span, instrument, Span};
+use tracing::{Span, info_span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
-    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
+    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
 };
 
 pub(crate) enum InnerHashJoinProbeState {

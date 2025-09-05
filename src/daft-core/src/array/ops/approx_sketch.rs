@@ -2,9 +2,9 @@ use arrow2::array::Array;
 use common_error::DaftResult;
 use sketches_ddsketch::{Config, DDSketch};
 
-use super::{as_arrow::AsArrow, from_arrow::FromArrow, DaftApproxSketchAggable};
+use super::{DaftApproxSketchAggable, as_arrow::AsArrow, from_arrow::FromArrow};
 use crate::{
-    array::{ops::GroupIndices, StructArray},
+    array::{StructArray, ops::GroupIndices},
     datatypes::*,
 };
 
