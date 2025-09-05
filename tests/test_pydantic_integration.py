@@ -3,13 +3,15 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import NamedTuple, Optional
+from typing import Generic, NamedTuple, Optional, TypeVar
 
 import pytest
 from pydantic import BaseModel
 
 from daft import DataType
 from daft.pydantic_integration import daft_pyarrow_datatype
+
+T = TypeVar("T")
 
 
 def _test_logic(in_type: type, expected: type) -> None:
@@ -39,6 +41,12 @@ class Simple(BaseModel):
     age: int
 
 
+@dataclass(frozen=True)
+class SomeDataclass:
+    name: str
+    age: int
+
+
 SIMPLE_ARROW_DAFT_TYPE: DataType = DataType.struct(
     {
         "name": DataType.string(),
@@ -47,8 +55,46 @@ SIMPLE_ARROW_DAFT_TYPE: DataType = DataType.struct(
 )
 
 
-def test_simple_pydantic():
-    _test_logic(Simple, SIMPLE_ARROW_DAFT_TYPE)
+@dataclass(frozen=True)
+class SomeGenericDataclass(Generic[T]):
+    name: str
+    age: int
+    data: T
+
+
+class SimplePlus(Simple, Generic[T]):
+    data: T
+
+
+GENERIC_SIMPLE_ARROW_DAFT_TYPE = DataType.struct(
+    {
+        "name": DataType.string(),
+        "age": DataType.int64(),
+        "data": DataType.float64(),
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "inner_type,expected",
+    [
+        (Simple, SIMPLE_ARROW_DAFT_TYPE),
+        (SimplePlus[float], GENERIC_SIMPLE_ARROW_DAFT_TYPE),
+    ],
+)
+def test_pydantic(inner_type, expected):
+    _test_logic(inner_type, expected)
+
+
+@pytest.mark.parametrize(
+    "inner_type,expected",
+    [
+        (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
+        (SomeGenericDataclass[float], GENERIC_SIMPLE_ARROW_DAFT_TYPE),
+    ],
+)
+def test_dataclass(inner_type, expected):
+    _test_logic(inner_type, expected)
 
 
 @pytest.mark.parametrize(
@@ -60,6 +106,7 @@ def test_simple_pydantic():
         (bool, DataType.bool()),
         (bytes, DataType.binary()),
         (Simple, SIMPLE_ARROW_DAFT_TYPE),
+        (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
     ],
 )
 def test_list(item_type, expected_inner):
@@ -69,7 +116,10 @@ def test_list(item_type, expected_inner):
 
 
 def _dict_types() -> Iterator[tuple[type, DataType, type, DataType]]:
-    check: list[tuple[type, DataType]] = CHECK + [(Simple, SIMPLE_ARROW_DAFT_TYPE)]
+    check: list[tuple[type, DataType]] = CHECK + [
+        (Simple, SIMPLE_ARROW_DAFT_TYPE),
+        (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
+    ]
     for key_type, expected_key_type in check:
         for value_type, expected_value_type in check:
             yield (key_type, expected_key_type, value_type, expected_value_type)
@@ -112,68 +162,58 @@ class Complex(BaseModel):
 class Contains(BaseModel):
     name: str
     complex: Complex
+    a_dataclass: dict[str, SomeDataclass]
 
 
-def test_complex_pydantic_and_nested():
+def _expected_contains(*, is_generic: bool) -> DataType:
     fun = DataType.binary()
     fun.nullable = True
-
-    in_type = Contains
-    expected = DataType.struct(
+    inner = GENERIC_SIMPLE_ARROW_DAFT_TYPE if is_generic else SIMPLE_ARROW_DAFT_TYPE
+    return DataType.struct(
         {
             "name": DataType.string(),
             "complex": DataType.struct(
                 {
-                    "simples": DataType.list(SIMPLE_ARROW_DAFT_TYPE),
+                    "simples": DataType.list(inner),
                     "some": DataType.struct({"score": DataType.float64()}),
                     "thing": DataType.struct({"score": DataType.float64(), "testing_date": DataType.date()}),
                     "fun": fun,
                 }
             ),
+            "a_dataclass": DataType.map(DataType.string(), inner),
         }
     )
+
+
+def test_complex_pydantic_and_nested():
+    in_type = Contains
+    expected = _expected_contains(is_generic=False)
 
     _test_logic(in_type, expected)
     _test_logic(list[Contains], DataType.list(expected))
     _test_logic(dict[str, Contains], DataType.map(DataType.string(), expected))
 
 
-@dataclass(frozen=True)
-class SomeDataclass:
+class ComplexPlus(BaseModel, Generic[T]):
+    simples: list[SimplePlus[T]]
+    some: Something1
+    thing: Something2
+    fun: bytes | None
+
+
+class ContainsPlus(BaseModel, Generic[T]):
     name: str
-    age: int
+    complex: ComplexPlus[T]
+    a_dataclass: dict[str, SomeGenericDataclass[T]]
 
 
-from typing import Generic, TypeVar
+def test_complex_pydantic_and_nested_generic():
+    in_type = ContainsPlus[float]
+    expected = _expected_contains(is_generic=True)
 
-T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class SomeGenericDataclass(Generic[T]):
-    name: str
-    age: int
-    data: T
-
-
-@pytest.mark.parametrize(
-    "inner_type,expected",
-    [
-        # (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
-        (
-            SomeGenericDataclass[float],
-            DataType.struct(
-                {
-                    "name": DataType.string(),
-                    "age": DataType.int64(),
-                    "data": DataType.float64(),
-                }
-            ),
-        )
-    ],
-)
-def test_dataclass(inner_type, expected):
-    _test_logic(inner_type, expected)
+    _test_logic(in_type, expected)
+    _test_logic(list[Contains], DataType.list(expected))
+    _test_logic(dict[str, Contains], DataType.map(DataType.string(), expected))
 
 
 class SomeNamedTuple(NamedTuple):
