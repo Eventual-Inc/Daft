@@ -9,14 +9,14 @@ import pytest
 from pydantic import BaseModel
 
 from daft import DataType
-from daft.pydantic_integration import daft_pyarrow_datatype
+from daft.pydantic_integration import daft_dataype_for
 
 T = TypeVar("T")
 
 
 def _test_logic(in_type: type, expected: type) -> None:
     try:
-        actual = daft_pyarrow_datatype(in_type)
+        actual = daft_dataype_for(in_type)
     except Exception as err:  # type: ignore
         raise ValueError(f"Failed to convert {in_type} into {expected} due to: {err}") from err
     assert actual == expected, f"Expecting {expected} from {in_type} but got {actual}"
@@ -248,4 +248,4 @@ class SomeNamedTuple(NamedTuple):
 )
 def test_known_unsuported(in_type):
     with pytest.raises(TypeError):
-        daft_pyarrow_datatype(in_type)
+        daft_dataype_for(in_type)
