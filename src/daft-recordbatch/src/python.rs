@@ -12,7 +12,7 @@ use daft_dsl::{
     python::PyExpr,
 };
 use indexmap::IndexMap;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
 
 use crate::{
     RecordBatch, ffi,
@@ -535,6 +535,19 @@ impl PyRecordBatch {
     pub fn from_file_infos(file_infos: &FileInfos) -> PyResult<Self> {
         let table: RecordBatch = file_infos.try_into()?;
         Ok(table.into())
+    }
+
+    #[staticmethod]
+    pub fn from_ipc_stream(bytes: Bound<'_, PyBytes>, py: Python) -> PyResult<Self> {
+        let buffer = bytes.as_bytes();
+        let record_batch = py.allow_threads(|| RecordBatch::from_ipc_stream(buffer))?;
+        Ok(record_batch.into())
+    }
+
+    pub fn to_ipc_stream<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyBytes>> {
+        let buffer = py.allow_threads(|| self.record_batch.to_ipc_stream())?;
+        let bytes = PyBytes::new(py, &buffer);
+        Ok(bytes)
     }
 }
 

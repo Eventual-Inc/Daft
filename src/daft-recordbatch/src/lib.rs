@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
+    io::Cursor,
     sync::Arc,
 };
 
@@ -1067,6 +1068,44 @@ impl RecordBatch {
 
     pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
         Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect())
+    }
+
+    pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
+        let buffer = Vec::with_capacity(self.size_bytes());
+        let schema = self.schema.to_arrow()?;
+        let options = arrow2::io::ipc::write::WriteOptions { compression: None };
+        let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
+        writer.start(&schema, None)?;
+
+        let chunk = self.to_chunk();
+        writer.write(&chunk, None)?;
+
+        writer.finish()?;
+        let mut finished_buffer = writer.into_inner();
+        finished_buffer.shrink_to_fit();
+        Ok(finished_buffer)
+    }
+
+    pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
+        let mut cursor = Cursor::new(buffer);
+        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+        let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
+        let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+
+        let mut tables = reader
+            .into_iter()
+            .map(|state| {
+                let state = state?;
+                let arrow_chunk = match state {
+                    arrow2::io::ipc::read::StreamState::Some(chunk) => chunk,
+                    _ => panic!("State should not be waiting when reading from IPC buffer"),
+                };
+                Self::from_arrow(schema.clone(), arrow_chunk.into_arrays())
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        assert_eq!(tables.len(), 1);
+        Ok(tables.pop().expect("Expected exactly one table"))
     }
 }
 
