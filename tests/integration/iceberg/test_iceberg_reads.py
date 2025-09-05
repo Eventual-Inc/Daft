@@ -350,7 +350,7 @@ class TestIcebergCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in actual.out
 
         daft_count = df.collect().to_pydict()["count"][0]
 
