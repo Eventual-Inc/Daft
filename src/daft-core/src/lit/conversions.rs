@@ -9,7 +9,7 @@ use super::{FromLiteral, Literal, deserializer::LiteralDeserializer};
 use crate::python::{PyDataType, PyTimeUnit};
 use crate::{
     datatypes::IntervalValue,
-    prelude::{CountMode, DataType, ImageFormat, ImageMode, TimeUnit},
+    prelude::{CountMode, DataType, ImageFormat, ImageMode, ImageProperty, TimeUnit},
     series::Series,
 };
 
@@ -223,7 +223,8 @@ impl_float_fromliteral!(f32);
 impl_float_fromliteral!(f64);
 impl_pyobj_fromliteral!(IOConfig, common_io_config::python::IOConfig);
 impl_pyobj_fromliteral!(ImageMode, ImageMode);
-impl_pyobj_fromliteral!(ImageFormat, ImageFormat);
+impl_pyobj_fromliteral!(ImageProperty, ImageProperty);
 impl_pyobj_fromliteral!(CountMode, CountMode);
 impl_pyobj_fromliteral!(TimeUnit, PyTimeUnit);
 impl_pyobj_fromliteral!(DataType, PyDataType);
+impl_pyobj_fromliteral!(ImageFormat, ImageFormat);
