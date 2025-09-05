@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import pytest
 from pydantic import BaseModel
@@ -89,6 +89,11 @@ def test_date_and_time():
     _test_logic(datetime, DataType.date())
 
 
+def test_optional():
+    _test_logic(Optional[int], DataType.int64())
+    _test_logic(int | None, DataType.int64())
+
+
 class Something1(BaseModel):
     score: float
 
@@ -121,7 +126,7 @@ def test_complex_pydantic_and_nested():
                 {
                     "simples": DataType.list(SIMPLE_ARROW_DAFT_TYPE),
                     "some": DataType.struct({"score": DataType.float64()}),
-                    "thing": DataType.struct({"testing_date": DataType.date()}),
+                    "thing": DataType.struct({"score": DataType.float64(), "testing_date": DataType.date()}),
                     "fun": fun,
                 }
             ),

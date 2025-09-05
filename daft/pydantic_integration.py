@@ -15,7 +15,7 @@ except ImportError as err:
     err.msg = f"pydantic is missing. Install with `pip install daft[pydantic]` or install your own compatible Pydantic version.\n{err.msg}"
     raise err
 
-from types import NoneType  # type: ignore
+from types import NoneType, UnionType  # type: ignore
 from typing import Union, get_args, get_origin
 
 if TYPE_CHECKING:
@@ -46,7 +46,8 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
     Uses :func:`pyarrow_datatype` to determine the appropriate Arrow type, then uses that
     as the basis for the Daft data type.
     """
-    if get_origin(f_type) is Union:
+    print(f"\t{f_type=} | {type(f_type)=}")
+    if get_origin(f_type) is Union or get_origin(f_type) is UnionType:
         targs = get_args(f_type)
         if len(targs) == 2:
             if targs[0] is NoneType and targs[1] is not NoneType:
