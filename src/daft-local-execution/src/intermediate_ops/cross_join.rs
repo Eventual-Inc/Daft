@@ -142,7 +142,7 @@ impl IntermediateOperator for CrossJoinOperator {
         ]
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         Ok(CrossJoinState::new(self.state_bridge.clone()))
     }
 }
