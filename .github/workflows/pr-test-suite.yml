@@ -88,6 +88,11 @@ jobs:
         - python-version: '3.12'
           pyarrow-version: 8.0.0
     steps:
+    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
@@ -127,9 +132,6 @@ jobs:
       run: |
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
-
-    - name: Setup upterm session
-      uses: owenthereal/action-upterm@v1
 
     - name: Build library and Test with pytest (Linux)
       run: |
