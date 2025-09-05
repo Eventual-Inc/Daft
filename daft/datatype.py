@@ -7,6 +7,12 @@ from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
 from daft.dependencies import np, pa, pil_image
 
+__all__: tuple[str, ...] = (
+    "DataType",
+    "TimeUnit",
+    "get_super_ext_type",
+)
+
 if TYPE_CHECKING:
     import builtins
 
