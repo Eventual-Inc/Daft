@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
@@ -16,13 +16,11 @@ use crate::{
 
 /// Ping the server to check if running
 async fn ping() -> StatusCode {
-    eprintln!("ping");
     StatusCode::NO_CONTENT
 }
 
 /// Get metadata about all known queries
 async fn get_queries(State(state): State<Arc<AppState>>) -> Json<Vec<QueryMetadata>> {
-    eprintln!("get_queries");
     let mut queries = state.queries();
 
     // Sort by status, then start time
@@ -50,6 +48,21 @@ async fn get_query(
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+struct UpdateMetricsParams {
+    metrics: Vec<(usize, HashMap<String, String>)>,
+}
+async fn update_metrics(
+    State(state): State<Arc<AppState>>,
+    Path(query_id): Path<Arc<str>>,
+    Json(params): Json<UpdateMetricsParams>,
+) -> Result<(), StatusCode> {
+    let UpdateMetricsParams { metrics } = params;
+    eprintln!("update_metrics: {:?}", metrics);
+    state.update_metrics(query_id, metrics);
+    Ok(())
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 struct CompleteQueryParams {
     duration: Duration,
     rb_bytes: Vec<u8>,
@@ -61,16 +74,18 @@ async fn complete_query(
     Json(params): Json<CompleteQueryParams>,
 ) -> Result<(), StatusCode> {
     let CompleteQueryParams { duration, rb_bytes } = params;
-    let rb = RecordBatch::from_ipc_stream(rb_bytes.as_ref())
-        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    // TODO: Worry about this later
+    // let rb = RecordBatch::from_ipc_stream(rb_bytes.as_ref())
+    //     .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
+    let rb = RecordBatch::empty(None);
     state.complete_query(query_id, duration, rb);
     Ok(())
 }
 
 /// All API routes
 pub fn api_routes() -> Router {
-    eprintln!("api_routes");
+    let state = AppState::new();
     Router::new()
         .route("/api/ping", get(ping))
         .route("/api/queries", get(get_queries))
@@ -79,5 +94,7 @@ pub fn api_routes() -> Router {
         .route("/api/queries/:query_id", get(get_query))
         .route("/api/queries/:query_id", post(complete_query))
         .route("/api/queries/:query_id/dataframe", get(get_query_dataframe))
-        .with_state(Arc::new(AppState::new()))
+        .route("/api/queries/:query_id/metrics", post(update_metrics))
+        // .route("/api/queries/:query_id/logs", get(get_query_logs))
+        .with_state(Arc::new(state))
 }

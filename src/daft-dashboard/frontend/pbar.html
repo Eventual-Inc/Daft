@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daft Progress Monitor</title>
+  <style>
+    :root {
+      --bg-primary: #121212;
+      --bg-secondary: #1f2128;
+      --bg-accent: #14151a;
+      --daft-accent: #ff00ff;
+      --border-primary: #404040;
+      --border-secondary: #525252;
+      --border-subtle: #2a2a2a;
+      --text-primary: #ffffff;
+      --text-secondary: #d0d0d0;
+      --text-muted: #a0a0a0;
+      --text-subtle: #707070;
+      --accent-primary: #4dabf7;
+      --accent-light: #74c0fc;
+      --accent-subtle: #1a365d;
+      --success: #51cf66;
+      --error: #ff6b6b;
+      --purple: #9775fa;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .daft-monitor {
+      font-family: "Geist Mono", monospace;
+      font-optical-sizing: auto;
+      max-width: 100%;
+      color: var(--text-primary);
+      box-shadow: 0 3px 3px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+
+    /* Header Design */
+    .monitor-header {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-primary);
+    }
+    .left-header {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 10px;
+    }
+    .daft-logo {
+      display: flex;
+      align-items: center;
+      width: 50px;
+    }
+    .daft-logo a {
+      text-decoration: none;
+      color: inherit;
+      outline: none;
+    }
+    .dropdown {
+      margin: 0 10px;
+    }
+    .terminal-text {
+      font-size: 1.2em;
+      animation: terminal-text 0.5s steps(1) forwards;
+    }
+    .terminal-text::before {
+      content: var(--text, "{");
+    }
+    @keyframes terminal-text {
+      0% {
+        --text: "{";
+      }
+      16.6% {
+        --text: ">#";
+      }
+      33.2% {
+        --text: "d[:";
+      }
+      49.8% {
+        --text: "da=/";
+      }
+      66.4% {
+        --text: 'daf"';
+      }
+      83% {
+        --text: "daft";
+      }
+      100% {
+        --text: "daft";
+      }
+    }
+    .inline-block {
+      display: inline-block;
+      height: 15px;
+      width: 9px;
+      margin-left: 2px;
+      background-color: var(--daft-accent);
+      animation: blink 1.2s linear infinite;
+    }
+    @keyframes blink {
+      0% { opacity: 1; }
+      50% { opacity: 1; }
+      50.1% { opacity: 0; }
+      100% { opacity: 0; }
+    }
+
+    .header-content {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-left: 10px;
+    }
+    .header-tab {
+      flex: 0;
+      border-left: 1px solid var(--border-primary);
+      padding: 5px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .header-tab:hover {
+      background: var(--bg-secondary);
+    }
+
+    .header-tab.active {
+      background: var(--bg-secondary);
+    }
+
+    .header-tab.active .material-symbols-outlined {
+      color: var(--daft-accent);
+    }
+
+    .monitor-body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--bg-secondary);
+      transition: all 0.2s ease-out;
+      overflow: hidden;
+    }
+
+    .monitor-body.collapsed {
+      padding: 0;
+      height: 0;
+      opacity: 0;
+    }
+
+    .content-panel {
+      width: 100%;
+      display: none;
+    }
+
+    .content-panel.active {
+      display: block;
+    }
+
+    .dropdown {
+      margin: 0 10px;
+      cursor: pointer;
+      transition: transform 0.3s ease;
+    }
+    .dropdown.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    /* Fish cake spinning animation */
+    .spinning-fish-cake {
+      animation: spin 3s linear infinite;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .finished-text {
+      color: var(--success);
+      font-weight: 600;
+    }
+    .running-text {
+      color: var(--purple);
+      font-weight: 600;
+    }
+
+    .fish-container {
+      height: 1.3em;
+      position: relative;
+      top: -2px;
+      animation: up-down 1s alternate ease-in-out infinite;
+    }
+    @keyframes up-down {
+      to { transform: translateY(4px);}
+    }
+
+    .fish-swim {
+      animation: rotate 2s linear infinite;
+      transform-origin: center;
+    }
+    @keyframes rotate {
+      0% { transform: rotate(0deg); }
+      25% { transform: rotate(20deg); }
+      50% { transform: rotate(0deg); }
+      75% { transform: rotate(-20deg); }
+      100% { transform: rotate(0deg); }
+    }
+
+    .pbars {
+      width: 100%;
+    }
+    .pbar-headers{
+      background-color: var(--bg-accent);
+      display: grid;
+      grid-template-columns: 35px 65px 130px 80px 80px 1fr;
+      gap: 0;
+      align-items: center;
+      min-height: 35px;
+      border-top: 1px solid var(--border-secondary);
+      border-bottom: 1px solid var(--border-secondary);
+    }
+    .pbar-headers div {
+      padding: 0 8px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+    }
+    .pbar-rows {
+      margin: 0;
+      padding: 0;
+    }
+    .op-row {
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: 35px 65px 130px 80px 80px 1fr;
+      gap: 0;
+      align-items: center;
+      min-height: 35px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .op-row > div {
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      font-size: 0.92em;
+      font-weight: 300;
+      color: var(--text-secondary);
+    }
+    .op-loader {
+      row-gap: 8px;
+      height: 100%;
+    }
+    .op-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .op-status, .op-rows-in, .op-rows-out {
+      justify-content: flex-end;
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet">
+</head>
+<body data-theme="dark">
+  <div class="daft-monitor">
+    <div class="monitor-header">
+      <div class="left-header">
+        <span class="dropdown material-symbols-outlined">keyboard_double_arrow_down</span>
+        <div class="daft-logo">
+          <a href="https://docs.daft.ai/en/stable/" class="terminal-text" id="daft-logo-text"></a>
+          <span class="inline-block"></span>
+        </div>
+      </div>
+      <div class="header-content">
+
+        <div class="fish-container"><img src="fish.svg" class="fish-swim" /></div>
+        <span style="padding-left: 8px;">1hr 2m 30s <span class="running-text"> Running</span></span>
+      </div>
+
+      <div class="header-tab active" id="track-tab">
+        <span class="material-symbols-outlined">view_object_track</span>
+      </div>
+      <div class="header-tab">
+        <span class="material-symbols-outlined">close</span>
+      </div>
+    </div>
+
+    <div class="monitor-body">
+      <div class="content-panel active" id="track-panel">
+        <div class="track-contents">
+          <div class="pbars">
+            <div class="pbar-headers">
+              <div style="width: 25px;"></div>
+              <div class="op-status">Status</div>
+              <div style="width: 100px; flex: 0;">Name</div>
+              <div class="op-rows-in">Rows In</div>
+              <div class="op-rows-out">Rows Out</div>
+              <div style="flex: 1;">Extra Stats</div>
+            </div>
+            <div class="pbar-rows">
+              <div class="op-row">
+                <div class="op-loader">
+                  <img src="fish-cake-filled.svg" alt="Fish Cake" class="spinning-fish-cake" style="height: 20px; width: auto; margin-right: 10px;" />
+                </div>
+                <div class="op-status"><span>2m 30s</span></div>
+                <div class="op-name">Read Parquet</div>
+                <div class="op-rows-in">10,000</div>
+                <div class="op-rows-out">9,840</div>
+                <div class="duration">2.3s</div>
+              </div>
+              <div class="op-row">
+                <div class="op-loader">
+                  <img src="fish-cake-filled.svg" alt="Fish Cake" class="spinning-fish-cake" style="height: 20px; width: auto; margin-right: 10px;" />
+                </div>
+                <div class="op-status"><span>2m 30s</span></div>
+                <div class="op-name">Filter</div>
+                <div class="op-rows-in">9,800</div>
+                <div class="op-rows-out">9,780</div>
+                <div class="duration">1.8s</div>
+              </div>
+              <div class="op-row">
+                <div class="op-loader">
+                  <div class="fish-container"><img src="fish.svg" class="fish-swim" /></div>
+                </div>
+                <div class="op-status"><span>19s</span></div>
+                <div class="op-name">Sum</div>
+                <div class="op-rows-in">9,780</div>
+                <div class="op-rows-out">0</div>
+                <div class="duration">0.5s</div>
+              </div>
+            </tbody>
+          </table> 
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      // Hover on Daft logo to re-animate it
+      const logoText = document.querySelector('#daft-logo-text');
+      let isAnimating = false;
+      logoText.addEventListener('mouseenter', function() {
+        if (isAnimating) return;
+
+        logoText.style.animation = 'none';
+        logoText.offsetHeight; // Trigger reflow
+        logoText.style.animation = 'terminal-text 0.3s steps(1) forwards';
+        isAnimating = true;
+
+        setTimeout(() => {
+          isAnimating = false;
+        }, 300);
+      });
+
+      // Open / Close Body Button
+      const dropdownButton = document.querySelector('.dropdown');
+      const monitorBody = document.querySelector('.monitor-body');
+      let isCollapsed = false;
+
+      dropdownButton.addEventListener('click', function() {
+        isCollapsed = !isCollapsed;
+        
+        if (isCollapsed) {
+          monitorBody.classList.add('collapsed');
+          dropdownButton.classList.add('collapsed');
+        } else {
+          monitorBody.classList.remove('collapsed');
+          dropdownButton.classList.remove('collapsed');
+        }
+      });
+
+      // Initialize SSE connection
+      console.log('Initializing SSE connection to port:', 8080);
+      const eventSource = new EventSource(`http://localhost:${8080}/events`, {
+        withCredentials: false,
+      });
+
+      eventSource.addEventListener('initialize_node', function(event) {{
+        const data = JSON.parse(event.data);
+        console.log('Initialize node:', data);
+        // Handle initialize_node event
+      }});
+
+      eventSource.addEventListener('finalize_node', function(event) {{
+        const data = JSON.parse(event.data);
+        console.log('Finalize node:', data);
+        // Handle finalize_node event
+      }});
+
+      eventSource.addEventListener('handle_event', function(event) {{
+        const data = JSON.parse(event.data);
+        console.log('Handle event:', data);
+        // Handle handle_event event
+      }});
+
+      eventSource.onerror = function(event) {{
+        console.error('SSE Error:', event);
+      }};
+    })();
+  </script>
+</body>
+</html>

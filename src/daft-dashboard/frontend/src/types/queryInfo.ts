@@ -1,15 +1,26 @@
+export type QueryStatus = "Running" | "Completed" | "Failed";
+
+export type StartTime = {
+    secs_since_epoch: number,
+    nanos_since_epoch: number,
+};
+
 export type QueryInfo = {
-    id: string
+    name: string
     unoptimized_plan: string,
     optimized_plan: string,
-    plan_time_start: string
-    plan_time_end: string
-    run_id?: string
-    logs?: string
+    physical_plan: string,
 };
 
-export type QueryInfoMap = {
-    [_: string]: QueryInfo,
+export type QueryMetadata = {
+    info: QueryInfo,
+    start_time: StartTime,
+    status: QueryStatus,
+    duration?: string,
+}
+
+export type QueryMetadataMap = {
+    [_: string]: QueryMetadata,
 };
 
-export type Keys = keyof QueryInfo;
+export type Keys = keyof QueryMetadataMap;

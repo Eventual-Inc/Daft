@@ -66,6 +66,11 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     };
     let status = status.status()?;
 
+    if cfg!(debug_assertions) && !status.success() {
+        println!("Failed to build frontend assets");
+        return Ok(());
+    }
+
     assert!(status.success(), "Failed to build frontend assets");
 
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";

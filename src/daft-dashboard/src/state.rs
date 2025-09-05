@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -17,13 +18,23 @@ pub enum QueryStatus {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub struct OperatorInfo {
+    pub name: Arc<str>,
+    pub id: usize,
+    pub node_type: String,
+    pub node_category: String,
+    pub context: HashMap<String, String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct QueryInfo {
     /// Query ID from Runner
-    name: Arc<str>,
+    pub name: Arc<str>,
     // Plan Details
-    unoptimized_plan: Arc<str>,
-    optimized_plan: Arc<str>,
-    physical_plan: Arc<str>,
+    pub physical_plan: Arc<str>,
+    // Operators
+    pub operators: Vec<OperatorInfo>,
 }
 
 /// Metadata to return to clients
@@ -52,6 +63,7 @@ struct Query {
     // Additional Info
     // TODO: Logs
     // TODO: Metrics
+    metrics: HashMap<usize, HashMap<String, String>>,
     /// DataFrame Output
     df_output: Option<Arc<RecordBatch>>,
 }
@@ -94,6 +106,7 @@ impl AppState {
                 duration: None,
                 status: QueryStatus::Running,
                 df_output: None,
+                metrics: Default::default(),
             },
         );
     }
@@ -109,6 +122,17 @@ impl AppState {
         };
 
         Some(meta)
+    }
+
+    pub fn update_metrics(&self, query_id: Arc<str>, metrics: Vec<(usize, HashMap<String, String>)>) {
+        let mut query = self.queries.get_mut(&query_id).unwrap();
+        for (id, metrics) in metrics {
+            if let Some(existing_metrics) = query.metrics.get_mut(&id) { 
+                existing_metrics.extend(metrics);
+            } else {
+                query.metrics.insert(id, metrics);
+            }
+        }
     }
 
     pub fn complete_query(
