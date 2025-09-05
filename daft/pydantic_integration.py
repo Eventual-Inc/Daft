@@ -46,6 +46,14 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
     Uses :func:`pyarrow_datatype` to determine the appropriate Arrow type, then uses that
     as the basis for the Daft data type.
     """
+    return DataType.from_arrow_type(pyarrow_datatype(f_type))
+
+
+def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
+    """Determines the correct Arrow type to use for a given input type.
+
+    Follows same rules as :func:`daft_pyarrow_datatype`.
+    """
     if get_origin(f_type) is Union:
         targs = get_args(f_type)
         if len(targs) == 2:
@@ -55,7 +63,7 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
                 refined_inner = targs[0]
             else:
                 raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
-            inner_type = daft_pyarrow_datatype(refined_inner)
+            inner_type = pyarrow_datatype(refined_inner)
 
         else:
             raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
@@ -67,7 +75,7 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
                 f"Expected list type {f_type} with inner element type but " f"got {len(targs)} inner-types: {targs}"
             )
         element_type = targs[0]
-        inner_type = DataType.list(daft_pyarrow_datatype(element_type))
+        inner_type = pa.list_(pyarrow_datatype(element_type))
 
     elif get_origin(f_type) is dict:
         targs = get_args(f_type)
@@ -76,137 +84,44 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
                 f"Expected dict type {f_type} with inner key-value types but got " f"{len(targs)} inner-types: {targs}"
             )
         kt, vt = targs
-        pyarrow_kt = daft_pyarrow_datatype(kt)
-        pyarrow_vt = daft_pyarrow_datatype(vt)
-        inner_type = DataType.map(pyarrow_kt, pyarrow_vt)
+        pyarrow_kt = pyarrow_datatype(kt)
+        pyarrow_vt = pyarrow_datatype(vt)
+        inner_type = pa.map_(pyarrow_kt, pyarrow_vt)
 
     elif get_origin(f_type) is tuple:
         raise TypeError(f"Cannot support tuple types: {f_type}")
 
     elif issubclass(f_type, BaseModel):
         schema = get_pyarrow_schema(f_type)
-        inner_type = DataType.from_arrow_type(pa.struct([(f, schema.field(f).type) for f in schema.names]))
+        inner_type = pa.struct([(f, schema.field(f).type) for f in schema.names])
 
     elif issubclass(f_type, str):
-        inner_type = DataType.string()
+        inner_type = pa.string()
 
     elif issubclass(f_type, int):
-        inner_type = DataType.int64()
+        inner_type = pa.int64()
 
     elif issubclass(f_type, float):
-        inner_type = DataType.float64()
+        inner_type = pa.float64()
 
     elif issubclass(f_type, bool):
-        inner_type = DataType.bool()
+        inner_type = pa.bool_()
 
     elif issubclass(f_type, bytes):
-        inner_type = DataType.binary()
+        inner_type = pa.binary()
 
     elif issubclass(f_type, datetime):
-        inner_type = DataType.date()
+        inner_type = pa.date64()
 
     elif issubclass(f_type, timedelta):
         raise TypeError(
-            "Unimplemented: handle conversion of (days, seconds, microseconds) into duration with a single unit! "
-            "DataType.duration(timeunit=???)"
+            "Unimplemented: handle conversion of (days, seconds, microseconds) into duration with a single unit!"
         )
-
+        # inner_type = pyarrow.duration(timeunit=???)
     else:
         raise TypeError(f"Cannot handle general Python objects in Arrow: {f_type}")
 
     return inner_type
-
-
-# def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
-#     """Produces the appropriate Daft DataType given a Python type.
-
-#     Supports the following types:
-#         - built-ins (str, int, float, bool, bytes)
-#         - datetime instances
-#         - Pydantic BaseModel instances
-#         - lists
-#         - dicts
-#         - any combination of the above!
-
-#     Uses :func:`pyarrow_datatype` to determine the appropriate Arrow type, then uses that
-#     as the basis for the Daft data type.
-#     """
-#     return DataType.from_arrow_type(pyarrow_datatype(f_type))
-
-
-# def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
-#     """Determines the correct Arrow type to use for a given input type.
-
-#     Follows same rules as :func:`daft_pyarrow_datatype`.
-#     """
-#     if get_origin(f_type) is Union:
-#         targs = get_args(f_type)
-#         if len(targs) == 2:
-#             if targs[0] is NoneType and targs[1] is not NoneType:
-#                 refined_inner = targs[1]
-#             elif targs[0] is not NoneType and targs[1] is NoneType:
-#                 refined_inner = targs[0]
-#             else:
-#                 raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
-#             inner_type = pyarrow_datatype(refined_inner)
-
-#         else:
-#             raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
-
-#     elif get_origin(f_type) is list:
-#         targs = get_args(f_type)
-#         if len(targs) != 1:
-#             raise TypeError(
-#                 f"Expected list type {f_type} with inner element type but " f"got {len(targs)} inner-types: {targs}"
-#             )
-#         element_type = targs[0]
-#         inner_type = pa.list_(pyarrow_datatype(element_type))
-
-#     elif get_origin(f_type) is dict:
-#         targs = get_args(f_type)
-#         if len(targs) != 2:
-#             raise TypeError(
-#                 f"Expected dict type {f_type} with inner key-value types but got " f"{len(targs)} inner-types: {targs}"
-#             )
-#         kt, vt = targs
-#         pyarrow_kt = pyarrow_datatype(kt)
-#         pyarrow_vt = pyarrow_datatype(vt)
-#         inner_type = pa.map_(pyarrow_kt, pyarrow_vt)
-
-#     elif get_origin(f_type) is tuple:
-#         raise TypeError(f"Cannot support tuple types: {f_type}")
-
-#     elif issubclass(f_type, BaseModel):
-#         schema = get_pyarrow_schema(f_type)
-#         inner_type = pa.struct([(f, schema.field(f).type) for f in schema.names])
-
-#     elif issubclass(f_type, str):
-#         inner_type = pa.string()
-
-#     elif issubclass(f_type, int):
-#         inner_type = pa.int64()
-
-#     elif issubclass(f_type, float):
-#         inner_type = pa.float64()
-
-#     elif issubclass(f_type, bool):
-#         inner_type = pa.bool_()
-
-#     elif issubclass(f_type, bytes):
-#         inner_type = pa.binary()
-
-#     elif issubclass(f_type, datetime):
-#         inner_type = pa.date64()
-
-#     elif issubclass(f_type, timedelta):
-#         raise TypeError(
-#             "Unimplemented: handle conversion of (days, seconds, microseconds) into duration with a single unit!"
-#         )
-#         # inner_type = pyarrow.duration(timeunit=???)
-#     else:
-#         raise TypeError(f"Cannot handle general Python objects in Arrow: {f_type}")
-
-#     return inner_type
 
 
 # def infer_daft_arrow_function_types(f: Callable[[Any, ...], Any]) -> tuple[DataType, DataType]:  # type: ignore
