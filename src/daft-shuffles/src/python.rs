@@ -28,7 +28,7 @@ impl PyInProgressShuffleCache {
         num_partitions: usize,
         dirs: Vec<String>,
         node_id: String,
-        shuffle_stage_id: usize,
+        shuffle_stage_id: u64,
         target_filesize: usize,
         compression: Option<&str>,
         partition_by: Option<Vec<PyExpr>>,
@@ -131,11 +131,8 @@ impl PyFlightServerConnectionHandle {
 }
 
 #[pyfunction(name = "start_flight_server")]
-pub fn py_start_flight_server(
-    shuffle_cache: &PyShuffleCache,
-    ip: &str,
-) -> PyResult<PyFlightServerConnectionHandle> {
-    let handle = start_flight_server(shuffle_cache.cache.clone(), ip).unwrap();
+pub fn py_start_flight_server(ip: &str) -> PyResult<PyFlightServerConnectionHandle> {
+    let handle = start_flight_server(ip).unwrap();
     Ok(PyFlightServerConnectionHandle { handle })
 }
 

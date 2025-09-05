@@ -1887,6 +1887,7 @@ class RaySwordfishWorker:
         num_cpus: int,
         num_gpus: int,
         total_memory_bytes: int,
+        ip_address: str,
     ) -> None: ...
 
 class NativeExecutor:
@@ -2183,7 +2184,6 @@ class FlightServerConnectionHandle:
     def port(self) -> int: ...
 
 def start_flight_server(
-    shuffle_cache: ShuffleCache,
     ip: str,
 ) -> FlightServerConnectionHandle: ...
 
