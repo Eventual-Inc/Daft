@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import Field as DataclassField
 from dataclasses import is_dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, get_type_hints
@@ -21,7 +20,7 @@ from types import NoneType, UnionType  # type: ignore
 from typing import TypeVar, Union, get_args, get_origin
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Sequence
     from typing import Any
 
 
@@ -105,9 +104,6 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
 
         # handle a data class parameterized by generics
         if hasattr(f_type, "__origin__"):
-            import ipdb
-
-            ipdb.set_trace()
             generic_vars = get_args(f_type.__origin__.__orig_bases__[0])
             concrete_types = get_args(f_type)
             generic_to_type: dict[TypeVar, type] = dict(zip(generic_vars, concrete_types))
@@ -123,9 +119,6 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
         else:
             # straightforward: all concrete types
             for inner_f_name, inner_f_type in get_type_hints(f_type).items():
-                import ipdb
-
-                ipdb.set_trace()
                 field_names_types[inner_f_name] = _daft_datatype_for(inner_f_type)
 
         inner_type = DataType.struct(field_names_types)
@@ -137,7 +130,7 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
     elif issubclass(f_type, BaseModel):
         # schema = get_pyarrow_schema(f_type, allow_losing_tz=True)
         # inner_type = DataType.from_arrow_type(pa.struct([(f, schema.field(f).type) for f in schema.names]))
-        field_names_types: dict[str, DataType] = {}
+        field_names_types = {}
         for inner_f_name, inner_field_info in f_type.model_fields.items():
             field_names_types[inner_f_name] = _daft_datatype_for(inner_field_info.annotation)
         inner_type = DataType.struct(field_names_types)
@@ -167,71 +160,6 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
         raise TypeError(f"Cannot handle general Python objects in Arrow: {f_type}")
 
     return inner_type
-
-
-def _dataclass_field_types_defaults(
-    dataclass_type: type,
-) -> list[tuple[str, type]]:
-    """Obtain the fields & their expected types for the given @dataclass type."""
-    if hasattr(dataclass_type, "__origin__"):
-        dataclass_fields = dataclass_type.__origin__.__dataclass_fields__  # type: ignore
-        generic_to_concrete = dict(_align_generic_concrete(dataclass_type))
-
-        def handle_field(data_field: Field) -> Tuple[str, Type, Optional[Any]]:
-            if data_field.type in generic_to_concrete:
-                typ = generic_to_concrete[data_field.type]
-            elif hasattr(data_field.type, "__parameters__"):
-                tn = _fill(generic_to_concrete, data_field.type)
-                typ = _exec(data_field.type.__origin__, tn)
-            else:
-                typ = data_field.type
-            return data_field.name, typ, _default_of(data_field)
-
-    else:
-        dataclass_fields = dataclass_type.__dataclass_fields__  # type: ignore
-
-        def handle_field(data_field: Field) -> Tuple[str, Type, Optional[Any]]:
-            return data_field.name, data_field.type, _default_of(data_field)
-
-    return list(map(handle_field, dataclass_fields.values()))
-
-
-def _align_generic_concrete(
-    data_type_with_generics: type,
-) -> Iterator[tuple[type, type]]:
-    """Yields pairs of (parameterized type name, runtime type value) for the input type.
-
-    Accepts a class type that has parameterized generic types.
-    Returns an iterator that yields pairs of (generic type variable name, instantiated type).
-
-    NOTE: If the supplied type derives from a Sequence or Mapping,
-          then the generics will be handled appropriately.
-    """
-    try:
-        origin = data_type_with_generics.__origin__  # type: ignore
-        if issubclass(origin, Sequence):
-            generics = [TypeVar("T")]  # type: ignore
-            values = get_args(data_type_with_generics)
-        elif issubclass(origin, Mapping):
-            generics = [TypeVar("KT"), TypeVar("VT_co")]  # type: ignore
-            values = get_args(data_type_with_generics)
-        else:
-            # should be a dataclass
-            generics = origin.__parameters__  # type: ignore
-            values = get_args(data_type_with_generics)  # type: ignore
-        for g, v in zip(generics, values):
-            yield g, v  # type: ignore
-    except AttributeError as e:
-        raise ValueError(
-            f"Cannot find __origin__, __dataclass_fields__ on type '{data_type_with_generics}'",
-            e,
-        )
-
-
-def _default_of(data_field: DataclassField) -> Any | None:
-    return (
-        None if isinstance(data_field.default, _MISSING_TYPE) else serialize(data_field.default, no_none_values=False)
-    )
 
 
 # def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
