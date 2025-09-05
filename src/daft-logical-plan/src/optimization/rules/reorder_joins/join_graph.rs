@@ -8,13 +8,13 @@ use common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
 use daft_dsl::{
-    left_col, optimization::replace_columns_with_expressions, resolved_col, right_col, Expr,
-    ExprRef,
+    Expr, ExprRef, left_col, optimization::replace_columns_with_expressions, resolved_col,
+    right_col,
 };
 
 use crate::{
-    ops::{join::JoinPredicate, Filter, Join, Project},
     LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
+    ops::{Filter, Join, Project, join::JoinPredicate},
 };
 
 /// A JoinOrderTree is a tree that describes a join order between relations, which can range from left deep trees
@@ -237,9 +237,9 @@ impl JoinAdjList {
                     if right_neighbour_join_cond.left_on == right_on {
                         let plan1 = self.id_to_plan.get(&left_id).unwrap();
                         let plan2 = self.id_to_plan.get(&right_neighbour_id).unwrap();
-                        let node1 = JoinNode::new(left_on.to_string(), plan1.clone());
+                        let node1 = JoinNode::new(left_on.clone(), plan1.clone());
                         let node2 = JoinNode::new(
-                            right_neighbour_join_cond.right_on.to_string(),
+                            right_neighbour_join_cond.right_on.clone(),
                             plan2.clone(),
                         );
                         new_edges.push((node1, node2));
@@ -874,7 +874,9 @@ impl JoinGraphBuilder {
                     // Continue to children.
                     cur_node = input;
                 }
-                _ => unreachable!("process_linear_chain is only called with a linear chain of Project and Filters that end with a Join"),
+                _ => unreachable!(
+                    "process_linear_chain is only called with a linear chain of Project and Filters that end with a Join"
+                ),
             }
         }
         match &**cur_node {
@@ -888,7 +890,9 @@ impl JoinGraphBuilder {
             }) => {
                 let (remaining_on, left_on, right_on, _) = on.split_eq_preds();
                 if left_on.is_empty() || !remaining_on.is_empty() {
-                    unreachable!("JoinGraphBuilder::process_linear_chain should not be called with a join that is not orderable")
+                    unreachable!(
+                        "JoinGraphBuilder::process_linear_chain should not be called with a join that is not orderable"
+                    )
                 }
 
                 for l in &left_on {
@@ -1006,7 +1010,7 @@ mod tests {
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_core::prelude::*;
-    use daft_dsl::{resolved_col, unresolved_col, AggExpr, Expr};
+    use daft_dsl::{AggExpr, Expr, resolved_col, unresolved_col};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::JoinGraphBuilder;
@@ -1377,11 +1381,11 @@ mod tests {
         ]));
         // Check for non-join projections and filters at the end.
         // The join graph should only keep track of projections and filters that sit between joins.
-        assert!(
-            join_graph.contains_projections_and_filters(vec![&resolved_col("double")
-                .add(resolved_col("double"))
-                .alias("quad"),])
-        );
+        assert!(join_graph.contains_projections_and_filters(vec![
+                &resolved_col("double")
+                    .add(resolved_col("double"))
+                    .alias("quad"),
+            ]));
     }
 
     #[test]

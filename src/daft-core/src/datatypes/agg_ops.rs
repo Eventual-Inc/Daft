@@ -33,17 +33,20 @@ pub fn try_mean_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> 
             let s_max = std::cmp::min(p_prime, s + 4);
 
             if !(1..=38).contains(&p_prime) {
-                Err(DaftError::TypeError(
-                    format!("Cannot infer supertypes for mean on type: {} result precision: {p_prime} exceed bounds of [1, 38]", dtype)
-                ))
+                Err(DaftError::TypeError(format!(
+                    "Cannot infer supertypes for mean on type: {} result precision: {p_prime} exceed bounds of [1, 38]",
+                    dtype
+                )))
             } else if s_max > 38 {
-                Err(DaftError::TypeError(
-                    format!("Cannot infer supertypes for mean on type: {} result scale: {s_max} exceed bounds of [0, 38]", dtype)
-                ))
+                Err(DaftError::TypeError(format!(
+                    "Cannot infer supertypes for mean on type: {} result scale: {s_max} exceed bounds of [0, 38]",
+                    dtype
+                )))
             } else if s_max > p_prime {
-                Err(DaftError::TypeError(
-                    format!("Cannot infer supertypes for mean on type: {} result scale: {s_max} exceed precision {p_prime}", dtype)
-                ))
+                Err(DaftError::TypeError(format!(
+                    "Cannot infer supertypes for mean on type: {} result scale: {s_max} exceed precision {p_prime}",
+                    dtype
+                )))
             } else {
                 Ok(DataType::Decimal128(p_prime, s_max))
             }

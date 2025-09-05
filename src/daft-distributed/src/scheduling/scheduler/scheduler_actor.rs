@@ -11,7 +11,7 @@ use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, PendingTask, Scheduler};
+use super::{PendingTask, Scheduler, default::DefaultScheduler, linear::LinearScheduler};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
@@ -22,8 +22,8 @@ use crate::{
     statistics::{StatisticsEvent, StatisticsManagerRef},
     utils::{
         channel::{
-            create_oneshot_channel, create_unbounded_channel, OneshotReceiver, OneshotSender,
-            UnboundedReceiver, UnboundedSender,
+            OneshotReceiver, OneshotSender, UnboundedReceiver, UnboundedSender,
+            create_oneshot_channel, create_unbounded_channel,
         },
         joinset::JoinSet,
     },
@@ -380,8 +380,8 @@ mod tests {
         scheduling::{
             scheduler::test_utils::setup_workers,
             task::tests::MockTaskFailure,
-            tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
-            worker::{tests::MockWorkerManager, WorkerId},
+            tests::{MockTask, MockTaskBuilder, create_mock_partition_ref},
+            worker::{WorkerId, tests::MockWorkerManager},
         },
         utils::channel::create_channel,
     };

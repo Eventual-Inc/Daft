@@ -3,8 +3,9 @@ use std::fmt::{Display, Formatter};
 use common_error::DaftError;
 use indexmap::IndexMap;
 use serde::{
+    Deserializer,
     de::{self, Error},
-    forward_to_deserialize_any, Deserializer,
+    forward_to_deserialize_any,
 };
 
 use super::Literal;
@@ -152,25 +153,6 @@ pub struct LiteralDeserializer<'de> {
 // Owned deserializer
 pub struct OwnedLiteralDeserializer {
     lit: Literal,
-}
-
-// Helper struct for enum deserialization
-pub struct EnumDeserializer<'de> {
-    variant: &'de str,
-}
-
-impl<'de> serde::de::EnumAccess<'de> for EnumDeserializer<'de> {
-    type Error = LitError;
-    type Variant = UnitOnlyVariantAccess;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
-    where
-        V: serde::de::DeserializeSeed<'de>,
-    {
-        let variant = StringDeserializer(self.variant);
-        let val = seed.deserialize(variant)?;
-        Ok((val, UnitOnlyVariantAccess))
-    }
 }
 
 // Simple variant access that only supports unit variants

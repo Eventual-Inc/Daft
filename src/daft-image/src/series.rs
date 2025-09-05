@@ -25,9 +25,9 @@ fn image_decode_impl(
                     return Err(err);
                 }
                 log::warn!(
-                        "Error occurred during image decoding at index: {index} {} (falling back to Null)",
-                        err
-                    );
+                    "Error occurred during image decoding at index: {index} {} (falling back to Null)",
+                    err
+                );
                 None
             }
         };
@@ -53,8 +53,14 @@ fn image_decode_impl(
     // Fall back to UInt8 dtype if series is all nulls.
     let cached_dtype = cached_dtype.unwrap_or(DataType::UInt8);
     match cached_dtype {
-        DataType::UInt8 => Ok(image_array_from_img_buffers(ba.name(), img_bufs.as_slice(), mode)?),
-        _ => unimplemented!("Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."),
+        DataType::UInt8 => Ok(image_array_from_img_buffers(
+            ba.name(),
+            img_bufs.as_slice(),
+            mode,
+        )?),
+        _ => unimplemented!(
+            "Decoding images of dtype {cached_dtype:?} is not supported, only uint8 images are supported."
+        ),
     }
 }
 

@@ -250,7 +250,7 @@ impl WriterFactory for TargetBatchWriterFactory {
 mod tests {
 
     use super::*;
-    use crate::test::{make_dummy_mp, DummyWriterFactory};
+    use crate::test::{DummyWriterFactory, make_dummy_mp};
 
     #[tokio::test]
     async fn test_target_batch_writer_exact_batch() {

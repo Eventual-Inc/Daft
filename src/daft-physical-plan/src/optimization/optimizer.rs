@@ -1,8 +1,8 @@
 use common_error::DaftResult;
 
 use super::rules::{
-    drop_repartition::DropRepartitionPhysical, reorder_partition_keys::ReorderPartitionKeys,
     PhysicalOptimizerRuleBatch, PhysicalRuleExecutionStrategy,
+    drop_repartition::DropRepartitionPhysical, reorder_partition_keys::ReorderPartitionKeys,
 };
 use crate::PhysicalPlanRef;
 
@@ -77,9 +77,9 @@ mod tests {
 
     use super::{PhysicalOptimizer, PhysicalOptimizerRuleBatch};
     use crate::{
+        PhysicalPlan, PhysicalPlanRef,
         ops::{EmptyScan, Limit},
         optimization::{optimizer::PhysicalOptimizerConfig, rules::PhysicalOptimizerRule},
-        PhysicalPlan, PhysicalPlanRef,
     };
 
     fn create_dummy_plan(schema: SchemaRef, num_partitions: usize) -> PhysicalPlanRef {

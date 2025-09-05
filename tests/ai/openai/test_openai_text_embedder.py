@@ -12,7 +12,7 @@ from openai.types.create_embedding_response import CreateEmbeddingResponse
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
 from daft import DataType
-from daft.ai.openai.text_embedder import (
+from daft.ai.openai.protocols.text_embedder import (
     OpenAITextEmbedder,
     OpenAITextEmbedderDescriptor,
     _models,
@@ -64,7 +64,7 @@ def test_invalid_model_name():
 
 
 def test_instantiate():
-    """Test that instantiate creates a proper OpenAITextEmbedder."""
+    """Test to instantiate a proper OpenAITextEmbedder with no mocks."""
     descriptor = OpenAITextEmbedderDescriptor(
         provider_name="openai",
         provider_options={"api_key": "test-key"},
@@ -340,7 +340,7 @@ def test_descriptor_to_embedder_workflow():
         model_options={},
     )
 
-    with patch("daft.ai.openai.text_embedder.OpenAI") as mock_openai_class:
+    with patch("daft.ai.openai.protocols.text_embedder.OpenAI") as mock_openai_class:
         mock_client = Mock()
         mock_openai_class.return_value = mock_client
 

@@ -232,7 +232,7 @@ where
     ImageBuffer::from_raw(w, h, owned).unwrap()
 }
 
-fn image_buffer_vec_ref_to_cow<P, T>(input: &ImageBuffer<P, Vec<T>>) -> ImageBuffer<P, Cow<[T]>>
+fn image_buffer_vec_ref_to_cow<P, T>(input: &ImageBuffer<P, Vec<T>>) -> ImageBuffer<P, Cow<'_, [T]>>
 where
     P: image::Pixel<Subpixel = T>,
     Vec<T>: Deref<Target = [P::Subpixel]>,

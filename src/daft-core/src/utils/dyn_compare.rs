@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 
 use arrow2::array::{
-    dyn_ord::{build_dyn_array_compare, DynArrayComparator},
     Array,
+    dyn_ord::{DynArrayComparator, build_dyn_array_compare},
 };
 use common_error::{DaftError, DaftResult};
 use daft_schema::schema::Schema;

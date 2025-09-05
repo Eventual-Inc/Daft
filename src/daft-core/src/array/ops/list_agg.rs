@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
+use super::{DaftListAggable, GroupIndices, as_arrow::AsArrow};
 use crate::{
     array::{
-        growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
+        growable::{Growable, GrowableArray},
     },
     datatypes::DaftArrowBackedType,
     series::IntoSeries,

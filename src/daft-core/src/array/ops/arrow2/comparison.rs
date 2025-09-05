@@ -1,5 +1,5 @@
 use arrow2::{
-    array::{equal, ord::build_compare, Array, FixedSizeListArray, ListArray, PrimitiveArray},
+    array::{Array, FixedSizeListArray, ListArray, PrimitiveArray, equal, ord::build_compare},
     datatypes::DataType,
     error::Result,
 };

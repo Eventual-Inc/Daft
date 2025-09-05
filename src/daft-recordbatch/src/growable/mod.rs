@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::growable::{make_growable, Growable},
+    array::growable::{Growable, make_growable},
     series::Series,
 };
 

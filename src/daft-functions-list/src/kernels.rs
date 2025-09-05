@@ -4,9 +4,9 @@ use arrow2::offset::{Offsets, OffsetsBuffer};
 use common_error::DaftResult;
 use daft_core::{
     array::{
-        growable::{make_growable, Growable},
-        ops::arrow2::comparison::build_is_equal,
         FixedSizeListArray, ListArray, StructArray,
+        growable::{Growable, make_growable},
+        ops::arrow2::comparison::build_is_equal,
     },
     datatypes::try_mean_aggregation_supertype,
     kernels::search_sorted::build_is_valid,
@@ -18,8 +18,8 @@ use daft_core::{
     utils::identity_hash_set::IdentityBuildHasher,
 };
 use indexmap::{
-    map::{raw_entry_v1::RawEntryMut, RawEntryApiV1},
     IndexMap,
+    map::{RawEntryApiV1, raw_entry_v1::RawEntryMut},
 };
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
@@ -291,7 +291,7 @@ impl ListArrayExtension for ListArray {
         let start_iter = create_iter(start, self.len());
         let end_iter = match end {
             Some(end) => create_iter(end, self.len()),
-            None => Box::new(self.offsets().windows(2).map(|w| (w[1] - w[0]))),
+            None => Box::new(self.offsets().windows(2).map(|w| w[1] - w[0])),
         };
         get_slices_helper(
             self.offsets().iter().copied(),

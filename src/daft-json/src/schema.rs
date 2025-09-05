@@ -15,8 +15,8 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::{
-    inference::{column_types_map_to_fields, infer_records_schema},
     ArrowSnafu, JsonParseOptions, StdIOSnafu,
+    inference::{column_types_map_to_fields, infer_records_schema},
 };
 
 #[derive(Debug, Clone)]

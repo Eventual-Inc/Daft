@@ -118,7 +118,7 @@ crate-type = ["cdylib"]
 name = "daft"
 
 [package]
-edition = "2021"
+edition = "2024"
 name = "daft"
 publish = false
 version = "0.3.0-dev0"
@@ -278,6 +278,7 @@ daft-sql = {path = "src/daft-sql"}
 derive_builder = "0.20.2"
 educe = "0.6.0"
 futures = "0.3.30"
+hashbrown = "0.16"
 html-escape = "0.2.13"
 image = {version = "0.25.5", default-features = false}
 indexmap = "2.9.0"
@@ -454,5 +455,5 @@ wildcard_imports = "allow"
 zero_sized_map_values = "allow"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 version = "0.3.0-dev0"

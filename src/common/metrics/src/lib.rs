@@ -2,8 +2,8 @@ use std::{ops::Index, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
 use serde::{Deserialize, Serialize};
-pub use smallvec::smallvec;
 use smallvec::SmallVec;
+pub use smallvec::smallvec;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stat {

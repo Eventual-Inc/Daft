@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-use common_error::{value_err, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, value_err};
 use daft_core::{
     lit::{FromLiteral, Literal},
     prelude::{DataType, Utf8Array},

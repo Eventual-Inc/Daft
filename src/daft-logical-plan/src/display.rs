@@ -1,7 +1,7 @@
 pub mod json;
 use std::fmt::{self, Display};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 
 impl TreeDisplay for crate::LogicalPlan {
     fn display_as(&self, level: DisplayLevel) -> String {
@@ -40,8 +40,8 @@ pub(crate) mod test {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
-        LogicalPlanRef, SourceInfo,
+        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo, ops::Source,
+        source_info::PlaceHolderInfo,
     };
 
     pub(crate) fn plan_1() -> LogicalPlanRef {

@@ -10,20 +10,19 @@ use daft_dsl::{
     resolved_col,
 };
 use daft_logical_plan::{
-    partitioning::{HashRepartitionConfig, RepartitionSpec},
     LogicalPlan, LogicalPlanRef, SourceInfo,
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
 use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        concat::ConcatNode, distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
-        into_partitions::IntoPartitionsNode, limit::LimitNode,
+        DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
+        explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
+        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
         sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
         top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
-        DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -79,11 +78,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         info.clone(),
                         self.psets.clone(),
                         logical_node_id,
-                    ).arced(),
+                    )
+                    .arced(),
                     SourceInfo::Physical(info) => {
                         // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                         let scan_tasks = match &info.scan_state {
-                            ScanState::Operator(_) => unreachable!("ScanOperator should not be present in the optimized logical plan for pipeline node translation"),
+                            ScanState::Operator(_) => unreachable!(
+                                "ScanOperator should not be present in the optimized logical plan for pipeline node translation"
+                            ),
                             ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                         };
                         ScanSourceNode::new(
@@ -93,9 +95,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                             scan_tasks,
                             source.output_schema.clone(),
                             logical_node_id,
-                        ).arced()
+                        )
+                        .arced()
                     }
-                    SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),
+                    SourceInfo::PlaceHolder(_) => unreachable!(
+                        "PlaceHolder should not be present in the logical plan for pipeline node translation"
+                    ),
                 }
             }
             LogicalPlan::UDFProject(udf) if udf.is_actor_pool_udf() => {

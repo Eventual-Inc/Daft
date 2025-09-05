@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_scan::builder::JsonScanBuilder;
 
-use super::{expr_to_iocfg, try_coerce_list, SQLTableFunction};
+use super::{SQLTableFunction, expr_to_iocfg, try_coerce_list};
 use crate::{
     error::PlannerError, functions::SQLFunctionArguments, invalid_operation_err,
     schema::try_parse_schema,

@@ -1,12 +1,12 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     datatypes::{DataType, Field},
     prelude::{Schema, Series},
     series::IntoSeries,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
 use serde::{Deserialize, Serialize};
 

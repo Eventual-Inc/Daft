@@ -4,8 +4,8 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +41,7 @@ macro_rules! log {
                         return Err(DaftError::TypeError(format!(
                             "Expected input to log to be numeric, got {}",
                             field.dtype
-                        )))
+                        )));
                     }
                 };
                 Ok(Field::new(field.name, dtype))
@@ -105,7 +105,7 @@ impl ScalarUDF for Log {
                 return Err(DaftError::TypeError(format!(
                     "Expected input to log to be numeric, got {}",
                     field.dtype
-                )))
+                )));
             }
         };
         Ok(Field::new(field.name, dtype))

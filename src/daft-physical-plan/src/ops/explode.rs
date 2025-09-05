@@ -1,14 +1,14 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
-use daft_dsl::{optimization::get_required_columns, ExprRef};
+use daft_dsl::{ExprRef, optimization::get_required_columns};
 use daft_logical_plan::partitioning::{
     ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{impl_default_tree_display, PhysicalPlanRef};
+use crate::{PhysicalPlanRef, impl_default_tree_display};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Explode {

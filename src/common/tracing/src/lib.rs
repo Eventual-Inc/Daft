@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::sync::{Mutex, atomic::AtomicBool};
 
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{layer::SubscriberExt, prelude::*};
@@ -6,11 +6,11 @@ static TRACING_INIT: AtomicBool = AtomicBool::new(false);
 use std::{sync::LazyLock, time::Duration};
 
 use common_runtime::get_io_runtime;
-use opentelemetry::{global, trace::TracerProvider, KeyValue};
+use opentelemetry::{KeyValue, global, trace::TracerProvider};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    trace::{Sampler, SdkTracerProvider},
     Resource,
+    trace::{Sampler, SdkTracerProvider},
 };
 
 static CHROME_GUARD_HANDLE: LazyLock<Mutex<Option<tracing_chrome::FlushGuard>>> =
@@ -78,10 +78,10 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
 
 pub fn flush_oltp_metrics_provider() {
     let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
-    if let Some(meter_provider) = mg.as_ref() {
-        if let Err(e) = meter_provider.force_flush() {
-            println!("Failed to flush OTLP metrics provider: {}", e);
-        }
+    if let Some(meter_provider) = mg.as_ref()
+        && let Err(e) = meter_provider.force_flush()
+    {
+        println!("Failed to flush OTLP metrics provider: {}", e);
     }
 }
 
@@ -119,10 +119,10 @@ async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
 
 fn flush_oltp_tracer_provider() {
     let mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
-    if let Some(tracer_provider) = mg.as_ref() {
-        if let Err(e) = tracer_provider.force_flush() {
-            println!("Failed to flush OTLP tracer provider: {}", e);
-        }
+    if let Some(tracer_provider) = mg.as_ref()
+        && let Err(e) = tracer_provider.force_flush()
+    {
+        println!("Failed to flush OTLP tracer provider: {}", e);
     }
 }
 pub fn init_tracing(enable_chrome_trace: bool) {

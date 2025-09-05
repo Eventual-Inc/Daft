@@ -11,7 +11,7 @@ use crate::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
-    series::{array_impl::ArrayWrapper, Series},
+    series::{Series, array_impl::ArrayWrapper},
 };
 
 impl Series {

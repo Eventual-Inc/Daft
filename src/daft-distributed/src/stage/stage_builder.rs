@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_logical_plan::{
-    partitioning::ClusteringSpecRef, JoinStrategy, LogicalPlan, LogicalPlanRef,
+    JoinStrategy, LogicalPlan, LogicalPlanRef, partitioning::ClusteringSpecRef,
 };
 use daft_schema::schema::SchemaRef;
 use tracing::warn;

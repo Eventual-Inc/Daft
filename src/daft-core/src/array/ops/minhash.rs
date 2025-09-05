@@ -4,7 +4,7 @@ use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
 use daft_minhash::load_simd;
 
-use super::{as_arrow::AsArrow, DaftMinHash};
+use super::{DaftMinHash, as_arrow::AsArrow};
 use crate::{
     array::FixedSizeListArray,
     datatypes::{DataType, Field, Utf8Array},

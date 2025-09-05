@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_dsl::{ExprRef, exprs_to_schema};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

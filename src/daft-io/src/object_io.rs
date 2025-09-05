@@ -4,15 +4,15 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
 use futures::{
-    stream::{BoxStream, Stream},
     StreamExt,
+    stream::{BoxStream, Stream},
 };
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::{
-    local::{collect_file, LocalFile},
-    stats::IOStatsRef,
     FileFormat,
+    local::{LocalFile, collect_file},
+    stats::IOStatsRef,
 };
 
 pub struct StreamingRetryParams {
@@ -153,7 +153,9 @@ impl TryFrom<std::fs::FileType> for FileType {
         } else if value.is_file() {
             Ok(Self::File)
         } else if value.is_symlink() {
-            Err(DaftError::InternalError(format!("Symlinks should never be encountered when constructing FileMetadata, but got: {value:?}")))
+            Err(DaftError::InternalError(format!(
+                "Symlinks should never be encountered when constructing FileMetadata, but got: {value:?}"
+            )))
         } else {
             unreachable!(
                 "Can only be a directory, file, or symlink, but got: {:?}",
