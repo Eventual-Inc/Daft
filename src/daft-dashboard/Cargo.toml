@@ -1,5 +1,6 @@
 [dependencies]
 anyhow = "1.0"
+axum = "0.7"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 http-body-util = "0.1"
 hyper = {features = ["full"], version = "1.6"}
@@ -8,10 +9,16 @@ include_dir = "0.7.4"
 parking_lot = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde_json = "1.0"
+tower = "*"
+tower-http = {version = "*", features = ["fs", "trace", "cors"]}
+reqwest = {version = "*", features = ["stream", "json"]}
+tokio-stream = "*"
+dashmap = "6.1.0"
 log.workspace = true
 serde.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+futures.workspace = true
 
 [features]
 python = ["dep:pyo3", "daft-recordbatch/python"]
