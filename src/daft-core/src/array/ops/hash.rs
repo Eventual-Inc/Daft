@@ -13,10 +13,10 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
-        logical::{DateArray, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftPrimitiveType, Decimal128Array, FixedSizeBinaryArray,
-        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
-        UInt64Array, UInt8Array, Utf8Array,
+        Int8Array, Int16Array, Int32Array, Int64Array, NullArray, UInt8Array, UInt16Array,
+        UInt32Array, UInt64Array, Utf8Array,
+        logical::{DateArray, TimeArray, TimestampArray},
     },
     kernels,
     series::Series,

@@ -7,7 +7,7 @@ use crate::{
     array::ops::DaftLogical,
     datatypes::InferDataType,
     prelude::BooleanArray,
-    series::{utils::cast::cast_downcast_op, IntoSeries, Series},
+    series::{IntoSeries, Series, utils::cast::cast_downcast_op},
     with_match_integer_daft_types,
 };
 macro_rules! logical_op_not_implemented {

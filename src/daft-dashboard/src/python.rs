@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pyo3::{exceptions, pyclass, pyfunction, pymethods, PyErr, PyResult};
+use pyo3::{PyErr, PyResult, exceptions, pyclass, pyfunction, pymethods};
 use reqwest::blocking::Client;
 use tokio::{
     runtime::{Builder, Runtime},

@@ -140,17 +140,17 @@ pub fn make_comfy_table<S: AsRef<str>>(
                 .iter()
                 .map(|s| {
                     let mut str_val = s.str_value(i);
-                    if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width - DOTS.len() {
-                            str_val = format!(
-                                "{}{DOTS}",
-                                &str_val
-                                    .char_indices()
-                                    .take(max_col_width - DOTS.len())
-                                    .map(|(_, c)| c)
-                                    .collect::<String>()
-                            );
-                        }
+                    if let Some(max_col_width) = max_col_width
+                        && str_val.len() > max_col_width - DOTS.len()
+                    {
+                        str_val = format!(
+                            "{}{DOTS}",
+                            &str_val
+                                .char_indices()
+                                .take(max_col_width - DOTS.len())
+                                .map(|(_, c)| c)
+                                .collect::<String>()
+                        );
                     }
                     str_val
                 })
@@ -174,17 +174,17 @@ pub fn make_comfy_table<S: AsRef<str>>(
                 .iter()
                 .map(|s| {
                     let mut str_val = s.str_value(i);
-                    if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width - DOTS.len() {
-                            str_val = format!(
-                                "{}{DOTS}",
-                                &str_val
-                                    .char_indices()
-                                    .take(max_col_width - DOTS.len())
-                                    .map(|(_, c)| c)
-                                    .collect::<String>()
-                            );
-                        }
+                    if let Some(max_col_width) = max_col_width
+                        && str_val.len() > max_col_width - DOTS.len()
+                    {
+                        str_val = format!(
+                            "{}{DOTS}",
+                            &str_val
+                                .char_indices()
+                                .take(max_col_width - DOTS.len())
+                                .map(|(_, c)| c)
+                                .collect::<String>()
+                        );
                     }
                     str_val
                 })

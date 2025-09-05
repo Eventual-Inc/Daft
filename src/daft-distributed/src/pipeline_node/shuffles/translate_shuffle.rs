@@ -5,11 +5,11 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
+    DistributedPipelineNode, NodeID,
     shuffles::{
         gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
     },
     translate::LogicalPlanToPipelineNodeTranslator,
-    DistributedPipelineNode, NodeID,
 };
 
 impl LogicalPlanToPipelineNodeTranslator {

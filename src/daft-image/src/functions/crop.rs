@@ -1,8 +1,8 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
 use serde::{Deserialize, Serialize};
 
@@ -46,11 +46,9 @@ impl ScalarUDF for ImageCrop {
             }
             DataType::FixedSizeList(..) | DataType::List(..) => (),
             dtype => {
-                return Err(DaftError::TypeError(
-                    format!(
+                return Err(DaftError::TypeError(format!(
                     "bbox list field must be List with numeric child type or FixedSizeList with size 4, got {dtype}"
-                    )
-                ));
+                )));
             }
         }
 

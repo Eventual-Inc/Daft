@@ -6,10 +6,10 @@ use futures::io::{AsyncWrite, AsyncWriteExt};
 
 use super::{
     super::varint::VarIntAsyncWriter,
-    compact::{COMPACT_PROTOCOL_ID, COMPACT_VERSION},
-    compact_write::{collection_type_to_u8, type_to_u8},
     TFieldIdentifier, TListIdentifier, TMapIdentifier, TMessageIdentifier, TOutputStreamProtocol,
     TSetIdentifier, TStructIdentifier, TType,
+    compact::{COMPACT_PROTOCOL_ID, COMPACT_VERSION},
+    compact_write::{collection_type_to_u8, type_to_u8},
 };
 use crate::thrift::Result;
 

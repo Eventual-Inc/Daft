@@ -9,9 +9,9 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
+    ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    ExecutionTaskSpawner,
 };
 
 pub struct IntoBatchesOperator {

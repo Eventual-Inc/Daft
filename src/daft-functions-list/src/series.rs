@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::{growable::make_growable, ops::GroupIndices, ListArray},
+    array::{ListArray, growable::make_growable, ops::GroupIndices},
     prelude::{CountMode, DataType, Field, Int64Array, UInt64Array, Utf8Array},
     series::{IntoSeries, Series},
 };
@@ -44,7 +44,7 @@ impl SeriesListExtension for Series {
                 return Err(DaftError::TypeError(format!(
                     "List contains not implemented for {}",
                     dt
-                )))
+                )));
             }
         }?
         .into_series();

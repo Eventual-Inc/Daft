@@ -1,9 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{get, post},
-    Json, Router,
 };
 use daft_recordbatch::RecordBatch;
 use reqwest::StatusCode;

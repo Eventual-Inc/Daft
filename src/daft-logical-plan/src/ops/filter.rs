@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{estimated_selectivity, ExprRef};
+use daft_dsl::{ExprRef, estimated_selectivity};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self, CreationSnafu},
     stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

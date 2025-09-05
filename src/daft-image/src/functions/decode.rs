@@ -1,8 +1,8 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
 use serde::{Deserialize, Serialize};
 
@@ -53,7 +53,7 @@ impl ScalarUDF for ImageDecode {
                 return Err(DaftError::ValueError(format!(
                     "Invalid on_error value: {}",
                     on_error
-                )))
+                )));
             }
         };
 
@@ -86,7 +86,7 @@ impl ScalarUDF for ImageDecode {
         if let Some(on_error) = on_error {
             let f = on_error.to_field(schema)?;
             ensure!(f.dtype == DataType::Utf8, "on_error must be a string");
-        };
+        }
 
         Ok(Field::new(field.name, DataType::Image(mode)))
     }

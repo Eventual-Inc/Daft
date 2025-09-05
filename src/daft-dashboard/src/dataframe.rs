@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use daft_recordbatch::RecordBatch;
 use reqwest::StatusCode;
@@ -61,7 +61,8 @@ pub fn generate_interactive_html(
     // Start with the basic table HTML from repr_html
     let table_html = record_batch.repr_html();
     // Build the complete interactive HTML with side pane layout
-    let mut html = vec![r#"
+    let mut html = vec![
+        r#"
         <style>
         .dashboard-container {
             display: flex;
@@ -118,7 +119,8 @@ pub fn generate_interactive_html(
         <div class="dashboard-container">
             <div class="table-container">
         "#
-    .to_string()];
+        .to_string(),
+    ];
 
     // Add the table HTML with ID
     html.push(format!(

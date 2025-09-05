@@ -6,8 +6,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    stats::{PlanStats, StatsState},
     LogicalPlan,
+    stats::{PlanStats, StatsState},
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

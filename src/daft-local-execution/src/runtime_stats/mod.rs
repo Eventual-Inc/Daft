@@ -6,8 +6,8 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     task::{Context, Poll},
     time::{Duration, Instant},
@@ -24,9 +24,9 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::interval,
 };
-use tracing::{instrument::Instrumented, Instrument};
+use tracing::{Instrument, instrument::Instrumented};
 pub use values::{
-    DefaultRuntimeStats, RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
+    CPU_US_KEY, DefaultRuntimeStats, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY, RuntimeStats,
 };
 
 #[cfg(debug_assertions)]
@@ -36,8 +36,8 @@ use crate::{
     ops::NodeInfo,
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        dashboard::DashboardSubscriber, opentelemetry::OpenTelemetrySubscriber,
-        progress_bar::make_progress_bar_manager, RuntimeStatsSubscriber,
+        RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
+        opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
     },
 };
 
@@ -56,13 +56,17 @@ pub struct RuntimeStatsManagerHandle(Arc<mpsc::UnboundedSender<(usize, bool)>>);
 impl RuntimeStatsManagerHandle {
     pub fn activate_node(&self, node_id: usize) {
         if let Err(e) = self.0.send((node_id, true)) {
-            log::warn!("Unable to activate node: {node_id} because RuntimeStatsManager was already finished: {e}");
+            log::warn!(
+                "Unable to activate node: {node_id} because RuntimeStatsManager was already finished: {e}"
+            );
         }
     }
 
     pub fn finalize_node(&self, node_id: usize) {
         if let Err(e) = self.0.send((node_id, false)) {
-            log::warn!("Unable to finalize node: {node_id} because RuntimeStatsManager was already finished: {e}");
+            log::warn!(
+                "Unable to finalize node: {node_id} because RuntimeStatsManager was already finished: {e}"
+            );
         }
     }
 }
@@ -341,11 +345,11 @@ impl InitializingCountingReceiver {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::AtomicU64, Arc, Mutex};
+    use std::sync::{Arc, Mutex, atomic::AtomicU64};
 
     use common_error::DaftResult;
     use common_metrics::{Stat, StatSnapshotSend};
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
     use super::*;
     use crate::ops::{NodeCategory, NodeType};

@@ -3,8 +3,8 @@ use std::{
     panic::AssertUnwindSafe,
     pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, LazyLock, OnceLock,
+        atomic::{AtomicUsize, Ordering},
     },
     task::{Context, Poll},
 };
@@ -255,7 +255,7 @@ pub fn combine_stream<T, E>(
     stream: impl futures::Stream<Item = Result<T, E>> + Unpin,
     future: impl Future<Output = Result<(), E>>,
 ) -> impl futures::Stream<Item = Result<T, E>> {
-    use futures::{stream::unfold, StreamExt};
+    use futures::{StreamExt, stream::unfold};
 
     let initial_state = (Some(future), stream);
 

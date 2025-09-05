@@ -1,5 +1,5 @@
 use arrow2::{
-    array::{ord::DynComparator, PrimitiveArray},
+    array::{PrimitiveArray, ord::DynComparator},
     bitmap::Bitmap,
     types::Index,
 };

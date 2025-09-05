@@ -7,7 +7,7 @@ mod state;
 use std::{future::Future, io::ErrorKind, net::Ipv4Addr};
 
 use axum::Router;
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use tokio::net::TcpListener;

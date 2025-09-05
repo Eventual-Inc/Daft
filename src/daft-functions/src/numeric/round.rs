@@ -4,8 +4,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use num_traits::Pow;
 use serde::{Deserialize, Serialize};
@@ -94,6 +94,6 @@ fn f64_round(arr: &Float64Array, precision: i32) -> DaftResult<Float64Array> {
         arr.apply(|v| v.round())
     } else {
         let multiplier: f64 = 10.0.pow(precision);
-        arr.apply(|v| ((v * multiplier).round() / multiplier))
+        arr.apply(|v| (v * multiplier).round() / multiplier)
     }
 }

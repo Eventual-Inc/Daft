@@ -9,7 +9,7 @@ use arrow2::{
     bitmap::utils::SlicesIterator,
     compute::{
         self,
-        cast::{can_cast_types, cast, CastOptions},
+        cast::{CastOptions, can_cast_types, cast},
     },
     offset::Offsets,
 };
@@ -27,19 +27,19 @@ use {
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
+        DataArray, FixedSizeListArray, ListArray, StructArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
-        ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        ops::{DaftCompare, from_arrow::FromArrow, full::FullNull},
     },
     datatypes::{
+        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
+        NullArray, TimeUnit, UInt64Array, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
-        NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -649,12 +649,12 @@ fn append_values_from_numpy<
         .getattr(pyo3::intern!(py, "_dtype"))?
         .extract::<PyDataType>()?;
     let datatype = datatype.dtype;
-    if let Some(enforce_dtype) = enforce_dtype {
-        if enforce_dtype != &datatype {
-            return Err(DaftError::ValueError(format!(
-                "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
-            )));
-        }
+    if let Some(enforce_dtype) = enforce_dtype
+        && enforce_dtype != &datatype
+    {
+        return Err(DaftError::ValueError(format!(
+            "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
+        )));
     }
     if !datatype.is_numeric() {
         return Err(DaftError::ValueError(format!(
@@ -842,14 +842,18 @@ fn extract_python_to_vec<
                     };
 
                     if collected.is_err() {
-                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name());
+                        log::warn!(
+                            "Could not convert python object to list at index: {i} for input series: {}",
+                            python_objects.name()
+                        );
                     }
                     let collected: Vec<Tgt> = collected?;
                     if let Some(list_size) = list_size {
                         if collected.len() != list_size {
                             return Err(DaftError::ValueError(format!(
                                 "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                collected.len(), i
+                                collected.len(),
+                                i
                             )));
                         }
                     } else {
@@ -862,7 +866,9 @@ fn extract_python_to_vec<
                 } else {
                     return Err(DaftError::ValueError(format!(
                         "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
-                        i, object.getattr(pyo3::intern!(py, "__class__"))?)));
+                        i,
+                        object.getattr(pyo3::intern!(py, "__class__"))?
+                    )));
                 }
             }
         } else if let Some(list_size) = list_size {
@@ -1426,8 +1432,7 @@ impl TensorArray {
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast Tensor array to FixedShapeTensor array with type {:?}: Tensor array has shapes different than {:?};",
-                        dtype,
-                        shape,
+                        dtype, shape,
                     )));
                 }
                 let size = shape.iter().product::<u64>() as usize;
@@ -1774,8 +1779,7 @@ impl SparseTensorArray {
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast SparseTensor array to FixedShapeSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
-                        dtype,
-                        shape,
+                        dtype, shape,
                     )));
                 }
 
@@ -1865,8 +1869,7 @@ impl FixedShapeSparseTensorArray {
                 if size != target_size {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast FixedShapeSparseTensor array to FixedShapeTensor array with type {:?}: FixedShapeSparseTensor array has shapes different than {:?};",
-                        dtype,
-                        tensor_shape,
+                        dtype, tensor_shape,
                     )));
                 }
                 let n_values = size * non_zero_values_array.len();
@@ -2325,7 +2328,7 @@ impl StructArray {
 #[cfg(test)]
 mod tests {
     use arrow2::array::PrimitiveArray;
-    use rand::{rng, Rng};
+    use rand::{Rng, rng};
 
     use super::*;
     use crate::{
@@ -2506,7 +2509,8 @@ mod tests {
         );
 
         assert!(
-            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0)).is_err(),
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0))
+                .is_err(),
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
     }

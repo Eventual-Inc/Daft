@@ -8,14 +8,14 @@ use super::{DistributedPhysicalPlan, PlanID, PlanResult};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        scheduler::{spawn_default_scheduler_actor, SchedulerHandle},
+        scheduler::{SchedulerHandle, spawn_default_scheduler_actor},
         task::SwordfishTask,
         worker::{Worker, WorkerManager},
     },
     stage::StagePlan,
     statistics::{StatisticsEvent, StatisticsManagerRef},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         joinset::create_join_set,
         runtime::get_or_init_runtime,
     },
