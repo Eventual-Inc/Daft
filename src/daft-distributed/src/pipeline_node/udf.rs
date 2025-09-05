@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};

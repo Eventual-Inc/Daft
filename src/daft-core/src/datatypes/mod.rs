@@ -12,7 +12,7 @@ pub use agg_ops::{
 };
 use arrow2::{
     compute::comparison::Simd8,
-    types::{simd::Simd, NativeType},
+    types::{NativeType, simd::Simd},
 };
 // Import DataType enum
 pub use daft_schema::dtype::DataType;
@@ -20,14 +20,14 @@ pub use daft_schema::{
     field::{Field, FieldID, FieldRef},
     image_format::ImageFormat,
     image_mode::ImageMode,
-    time_unit::{format_string_has_offset, infer_timeunit_from_format_string, TimeUnit},
+    time_unit::{TimeUnit, format_string_has_offset, infer_timeunit_from_format_string},
 };
 pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 
-pub use crate::array::{file_array::FileArray, DataArray, FixedSizeListArray};
-use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
+pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
+use crate::array::{ListArray, StructArray, ops::as_arrow::AsArrow};
 
 pub mod interval;
 pub mod logical;

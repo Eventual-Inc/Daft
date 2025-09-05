@@ -4,18 +4,18 @@ use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use daft_core::prelude::Schema;
 use daft_dsl::{
-    expr::count_udfs,
-    functions::python::{get_udf_properties, UDFProperties},
     ExprRef,
+    expr::count_udfs,
+    functions::python::{UDFProperties, get_udf_properties},
 };
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{Error, Result},
     stats::StatsState,
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ impl UDFProject {
         project: ExprRef,
         passthrough_columns: Vec<ExprRef>,
     ) -> Result<Self> {
-        let num_udfs: usize = count_udfs(&[project.clone()]);
+        let num_udfs: usize = count_udfs(&project);
         if num_udfs != 1 {
             return Err(Error::CreationError {
                 source: DaftError::InternalError(format!(

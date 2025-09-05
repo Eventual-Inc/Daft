@@ -8,23 +8,23 @@ use std::{
 
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
-use futures::{stream::BoxStream, TryStreamExt};
+use futures::{TryStreamExt, stream::BoxStream};
 use regex::Regex;
 use reqwest_middleware::{
-    reqwest::header::{self, CONTENT_LENGTH, RANGE},
     ClientBuilder, ClientWithMiddleware,
+    reqwest::header::{self, CONTENT_LENGTH, RANGE},
 };
-use reqwest_retry::{policies::ExponentialBackoff, Jitter, RetryTransientMiddleware};
+use reqwest_retry::{Jitter, RetryTransientMiddleware, policies::ExponentialBackoff};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
+    FileFormat, InvalidRangeRequestSnafu,
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, InvalidRangeRequestSnafu,
 };
 
 const HTTP_DELIMITER: &str = "/";
@@ -72,9 +72,7 @@ enum Error {
     ))]
     UnableToParseUtf8Header { path: String, source: FromUtf8Error },
 
-    #[snafu(display(
-        "Unable to parse data as Utf8 while reading body for file: {path}. {source}"
-    ))]
+    #[snafu(display("Unable to parse data as Utf8 while reading body for file: {path}. {source}"))]
     UnableToParseUtf8Body {
         path: String,
         source: reqwest_middleware::reqwest::Error,
@@ -362,9 +360,7 @@ impl ObjectSource for HttpSource {
                 let text = response
                     .text()
                     .await
-                    .with_context(|_| UnableToParseUtf8BodySnafu {
-                        path: path.to_string(),
-                    })?;
+                    .with_context(|_| UnableToParseUtf8BodySnafu { path: path.clone() })?;
                 let file_metadatas = get_file_metadata_from_html(path.as_str(), text.as_str())?;
                 Ok(LSResult {
                     files: file_metadatas,
@@ -374,7 +370,7 @@ impl ObjectSource for HttpSource {
             // All other forms of content-type is treated as a raw file
             _ => Ok(LSResult {
                 files: vec![FileMetadata {
-                    filepath: path.to_string(),
+                    filepath: path.clone(),
                     filetype: FileType::File,
                     size: response.content_length(),
                 }],
@@ -392,7 +388,7 @@ impl ObjectSource for HttpSource {
 mod tests {
     use std::default;
 
-    use crate::{integrations::test_full_get, object_io::ObjectSource, HttpSource, Result};
+    use crate::{HttpSource, Result, integrations::test_full_get, object_io::ObjectSource};
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {

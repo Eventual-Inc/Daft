@@ -3,14 +3,13 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft.sql import SQLCatalog
 
 
 def test_sql_catalog_sanity():
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
-    catalog = {"a.b": df1}
+    bindings = {"a.b": df1}
     try:
-        actual = daft.sql('select * from "a.b"', catalog=SQLCatalog(catalog)).to_pydict()
+        actual = daft.sql('select * from "a.b"', **bindings).to_pydict()
         assert actual == df1.to_pydict()
     except Exception as e:
         assert False, f"Unexpected exception: {e}"
@@ -22,9 +21,9 @@ def test_sql_catalog_sanity():
 )
 def test_sql_catalog_table_names(table_name):
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
-    catalog = {table_name: df1}
+    bindings = {table_name: df1}
     try:
-        actual = daft.sql(f'select * from "{table_name}"', catalog=SQLCatalog(catalog)).to_pydict()
+        actual = daft.sql(f'select * from "{table_name}"', **bindings).to_pydict()
         assert actual == df1.to_pydict()
     except Exception as e:
         assert False, f"Unexpected exception: {e}"
@@ -41,18 +40,18 @@ def test_sql_catalog_table_names(table_name):
 )
 def test_sql_catalog_table_names_invalid(table_name):
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
-    catalog = SQLCatalog({table_name: df1})
+    bindings = {table_name: df1}
     # ok when delimited
-    _ = daft.sql(f'select * from "{table_name}"', catalog).to_pydict()
+    _ = daft.sql(f'select * from "{table_name}"', **bindings).to_pydict()
     # err when not delimited
     with pytest.raises(Exception):
-        _ = daft.sql(f"select * from {table_name}", catalog).to_pydict()
+        _ = daft.sql(f"select * from {table_name}", **bindings).to_pydict()
 
 
 def test_sql_register_globals():
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
-    catalog = SQLCatalog({"df2": df1})
+    bindings = {"df2": df1}
     try:
-        daft.sql("select * from df1", catalog=catalog, register_globals=False).collect()
+        daft.sql("select * from df1", **bindings, register_globals=False).collect()
     except Exception as e:
         assert True, f"Expected exception: {e}"

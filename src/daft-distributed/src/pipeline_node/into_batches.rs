@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
@@ -8,7 +8,7 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::{
-    make_new_task_from_materialized_outputs, DistributedPipelineNode, SubmittableTaskStream,
+    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
 };
 use crate::{
     pipeline_node::{
@@ -19,7 +19,7 @@ use crate::{
         task::{SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct IntoBatchesNode {
@@ -114,6 +114,7 @@ impl IntoBatchesNode {
                                 StatsState::NotMaterialized,
                             )
                         },
+                        None,
                     )?;
                     if result_tx.send(task).await.is_err() {
                         break;
@@ -136,6 +137,7 @@ impl IntoBatchesNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
         }

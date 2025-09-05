@@ -8,29 +8,29 @@ use arrow2::io::parquet::read::column_iter_to_arrays;
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::*;
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
-use futures::{future::try_join_all, stream::BoxStream, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, future::try_join_all, stream::BoxStream};
 use parquet2::{
+    FallibleStreamingIterator,
     page::{CompressedPage, Page},
     read::get_owned_page_stream_from_column_start,
-    FallibleStreamingIterator,
 };
 use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
+    JoinSnafu, OneShotRecvSnafu, PARQUET_MORSEL_SIZE, UnableToBindExpressionSnafu,
+    UnableToConvertRowGroupMetadataToStatsSnafu, UnableToCreateParquetPageStreamSnafu,
+    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
     determine_parquet_parallelism, infer_arrow_schema_from_metadata,
     metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics,
     stream_reader::spawn_column_iters_to_table_task,
-    JoinSnafu, OneShotRecvSnafu, UnableToBindExpressionSnafu,
-    UnableToConvertRowGroupMetadataToStatsSnafu, UnableToCreateParquetPageStreamSnafu,
-    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
 };
 
 pub struct ParquetReaderBuilder {
@@ -457,7 +457,7 @@ impl ParquetFileReader {
                                     start as usize..end as usize
                                 };
                                 let range_reader =
-                                    Box::pin(ranges.get_range_reader(byte_range).await?);
+                                    Box::pin(ranges.clone().get_range_reader(byte_range).await?);
                                 let compressed_page_stream =
                                     get_owned_page_stream_from_column_start(
                                         col,
@@ -602,7 +602,7 @@ impl ParquetFileReader {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
                             for range in needed_byte_ranges {
-                                let range_reader = ranges.get_range_reader(range).await?;
+                                let range_reader = ranges.clone().get_range_reader(range).await?;
                                 range_readers.push(Box::pin(range_reader));
                             }
 
@@ -689,7 +689,7 @@ impl ParquetFileReader {
                 let concated_handle = tokio::task::spawn(async move {
                     let series_to_concat =
                         try_join_all(field_handles).await.context(JoinSnafu {
-                            path: owned_uri.to_string(),
+                            path: owned_uri.clone(),
                         })?;
                     let series_to_concat = series_to_concat
                         .into_iter()
@@ -717,7 +717,7 @@ impl ParquetFileReader {
         let all_series = try_join_all(all_handles)
             .await
             .context(JoinSnafu {
-                path: self.uri.to_string(),
+                path: self.uri.clone(),
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
@@ -778,7 +778,7 @@ impl ParquetFileReader {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
                             for range in needed_byte_ranges {
-                                let range_reader = ranges.get_range_reader(range).await?;
+                                let range_reader = ranges.clone().get_range_reader(range).await?;
                                 range_readers.push(Box::pin(range_reader));
                             }
 
@@ -861,7 +861,7 @@ impl ParquetFileReader {
                 let owned_uri = self.uri.clone();
                 let array_handle = tokio::task::spawn(async move {
                     let all_arrays = try_join_all(field_handles).await.context(JoinSnafu {
-                        path: owned_uri.to_string(),
+                        path: owned_uri.clone(),
                     })?;
                     let all_arrays = all_arrays.into_iter().collect::<DaftResult<Vec<_>>>()?;
                     let concated = all_arrays.concat();
@@ -874,7 +874,7 @@ impl ParquetFileReader {
         let all_field_arrays = try_join_all(all_handles)
             .await
             .context(JoinSnafu {
-                path: self.uri.to_string(),
+                path: self.uri.clone(),
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;

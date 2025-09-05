@@ -8,11 +8,11 @@ use arrow2::{
 };
 use common_error::DaftResult;
 
-use super::{as_arrow::AsArrow, DaftConcatAggable};
+use super::{DaftConcatAggable, as_arrow::AsArrow};
 use crate::{
     array::{
-        growable::{make_growable, Growable},
         DataArray, ListArray,
+        growable::{Growable, make_growable},
     },
     prelude::Utf8Type,
 };
@@ -221,7 +221,7 @@ mod test {
     use common_error::DaftResult;
 
     use crate::{
-        array::{ops::DaftConcatAggable, ListArray},
+        array::{ListArray, ops::DaftConcatAggable},
         datatypes::{DataType, Field, Int64Array},
         series::IntoSeries,
     };

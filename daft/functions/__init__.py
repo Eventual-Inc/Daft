@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from .ai import embed_text
+from daft.functions.ai import (
+    classify_text,
+    embed_text,
+    embed_image,
+)
 from .bitwise import bitwise_and, bitwise_or, bitwise_xor, shift_left, shift_right
-from .columnar import (
+from daft.functions.columnar import (
     columns_sum,
     columns_mean,
     columns_avg,
@@ -87,6 +91,7 @@ __all__ = [
     "cast",
     "cbrt",
     "ceil",
+    "classify_text",
     "clip",
     "columns_avg",
     "columns_max",
@@ -100,6 +105,7 @@ __all__ = [
     "csc",
     "degrees",
     "dense_rank",
+    "embed_image",
     "embed_text",
     "eq_null_safe",
     "exp",

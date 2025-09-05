@@ -7,7 +7,7 @@ use daft_io::IOStatsContext;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
-use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
+use crate::{DaftCoreComputeSnafu, micropartition::MicroPartition};
 
 fn infer_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs

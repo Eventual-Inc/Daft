@@ -5,11 +5,11 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
+    LogicalPlan,
     ops::{
         Limit as LogicalLimit, Sort as LogicalSort, Source as LogicalSource, TopN as LogicalTopN,
     },
     source_info::SourceInfo,
-    LogicalPlan,
 };
 
 /// Optimization rules for pushing Limits further into the logical plan.
@@ -196,13 +196,13 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
+        LogicalPlan, LogicalPlanBuilder,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownLimit,
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
-        LogicalPlan, LogicalPlanBuilder,
     };
 
     /// Helper that creates an optimizer with the PushDownLimit rule registered, optimizes

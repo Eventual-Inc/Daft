@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_type_hints, overload
 
 from daft.daft import row_wise_udf
 
-from ._internal import get_expr_args, get_unique_function_name
+from ._internal import check_fn_serializable, get_expr_args, get_unique_function_name
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
@@ -33,9 +33,10 @@ class RowWiseUdf(Generic[P, T]):
     Row-wise functions are called with data from one row at a time, and map that to a single output value for that row.
     """
 
-    def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None):
+    def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool):
         self._inner = fn
         self.name = get_unique_function_name(fn)
+        self.unnest = unnest
 
         if return_dtype is None:
             type_hints = get_type_hints(fn)
@@ -47,16 +48,34 @@ class RowWiseUdf(Generic[P, T]):
             return_dtype = type_hints["return"]
         self.return_dtype = DataType._infer_type(return_dtype)
 
-    def eval(self, *args: P.args, **kwargs: P.kwargs) -> T:
-        """Run the decorated function eagerly and return the result immediately."""
-        return self._inner(*args, **kwargs)
+        if self.unnest and not self.return_dtype.is_struct():
+            raise ValueError(
+                f"Expected Daft function `return_dtype` to be `DataType.struct` when `unnest=True`, instead found: {self.return_dtype}"
+            )
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
+    @overload
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
+    @overload
+    def __call__(self, *args: Expression, **kwargs: Expression) -> Expression: ...
+    @overload
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression | T: ...
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
         expr_args = get_expr_args(args, kwargs)
+        check_fn_serializable(self._inner, "@daft.func")
 
-        return Expression._from_pyexpr(
+        # evaluate the function eagerly if there are no expression arguments
+        if len(expr_args) == 0:
+            return self._inner(*args, **kwargs)
+
+        expr = Expression._from_pyexpr(
             row_wise_udf(self.name, self._inner, self.return_dtype._dtype, (args, kwargs), expr_args)
         )
+
+        if self.unnest:
+            expr = expr.unnest()
+
+        return expr
 
 
 def __call_async_batch(

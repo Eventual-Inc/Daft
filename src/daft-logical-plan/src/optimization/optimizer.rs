@@ -12,7 +12,8 @@ use super::{
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
         PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
         ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
-        SplitGranularProjection, SplitUDFs, UnnestPredicateSubquery, UnnestScalarSubquery,
+        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -170,6 +171,7 @@ impl OptimizerBuilder {
             // UDFs and monotonically increasing ids.
             RuleBatch::new(
                 vec![
+                    Box::new(SplitUDFsFromFilters::new()),
                     Box::new(SplitUDFs::new()),
                     Box::new(PushDownProjection::new()),
                     Box::new(DetectMonotonicId::new()),
@@ -266,11 +268,7 @@ impl OptimizerBuilder {
     }
 
     pub fn when(self, condition: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if condition {
-            f(self)
-        } else {
-            self
-        }
+        if condition { f(self) } else { self }
     }
 }
 
@@ -383,19 +381,20 @@ mod tests {
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
-        functions::{python::LegacyPythonUDF, FunctionExpr},
-        lit, resolved_col, unresolved_col, AggExpr, Expr,
+        AggExpr, Expr,
+        functions::{FunctionExpr, python::LegacyPythonUDF},
+        lit, resolved_col, unresolved_col,
     };
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
+        LogicalPlan,
         ops::{Filter, Project, UDFProject},
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
             dummy_scan_operator_for_aggregation,
         },
-        LogicalPlan,
     };
 
     /// Test that the optimizer terminates early when the plan is not transformed
@@ -835,6 +834,7 @@ mod tests {
                 )))))
                 .with_columns(Some(Arc::new(vec!["a".to_string()]))),
         )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
         .build();
 
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();

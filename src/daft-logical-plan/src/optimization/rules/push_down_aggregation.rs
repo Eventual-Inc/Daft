@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
 use daft_dsl::{AggExpr, Expr, ExprRef};
 
 use crate::{
-    logical_plan::Aggregate, ops::Source as LogicalSource, optimization::rules::OptimizerRule,
-    source_info::SourceInfo, LogicalPlan,
+    LogicalPlan, logical_plan::Aggregate, ops::Source as LogicalSource,
+    optimization::rules::OptimizerRule, source_info::SourceInfo,
 };
 
 /// Optimization rules for pushing Aggregation further into the logical plan.
@@ -65,7 +65,16 @@ impl OptimizerRule for PushDownAggregation {
                                             SourceInfo::Physical(new_external_info).into(),
                                         ))
                                         .into();
-                                        Ok(Transformed::yes(new_source))
+                                        // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
+                                        let new_aggregate = Aggregate::try_new(
+                                            new_source,
+                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(count_expr(
+                                                &aggregations[0],
+                                            )?)))],
+                                            groupby.clone(),
+                                        )?
+                                        .into();
+                                        Ok(Transformed::yes(new_aggregate))
                                     } else {
                                         Ok(Transformed::no(node.clone()))
                                     }
@@ -93,6 +102,15 @@ fn is_count_expr(expr: &ExprRef) -> Option<&CountMode> {
     }
 }
 
+fn count_expr(expr: &ExprRef) -> DaftResult<ExprRef> {
+    match expr.as_ref() {
+        Expr::Agg(AggExpr::Count(expr, _)) => Ok(expr.clone()),
+        _ => Err(DaftError::InternalError(
+            "Tried to get count expression from non-count expression".to_string(),
+        )),
+    }
+}
+
 // Check if the count mode is supported for pushdown
 // Currently only CountMode::All is fully supported
 fn is_count_mode_supported(count_mode: &CountMode) -> bool {
@@ -106,9 +124,10 @@ mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col, unresolved_col, AggExpr, Expr};
+    use daft_dsl::{AggExpr, Expr, lit, resolved_col, unresolved_col};
 
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownAggregation,
@@ -117,7 +136,6 @@ mod tests {
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator_for_aggregation,
         },
-        LogicalPlan,
     };
 
     fn assert_optimized_plan_eq(
@@ -150,6 +168,7 @@ mod tests {
                 CountMode::All,
             ))))),
         )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;

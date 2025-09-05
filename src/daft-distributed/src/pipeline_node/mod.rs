@@ -7,17 +7,17 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
+    DisplayLevel,
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
-    DisplayLevel,
 };
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream::BoxStream};
 use itertools::Itertools;
 use materialize::materialize_all_pipeline_outputs;
 
@@ -317,6 +317,7 @@ fn make_new_task_from_materialized_outputs<F>(
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: F,
+    scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>>
 where
     F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
@@ -338,7 +339,7 @@ where
         plan,
         node.config().execution_config.clone(),
         psets,
-        SchedulingStrategy::Spread,
+        scheduling_strategy.unwrap_or(SchedulingStrategy::Spread),
         node.context().to_hashmap(),
     );
     Ok(SubmittableTask::new(task))
@@ -348,8 +349,15 @@ fn make_in_memory_task_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
+    scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    make_new_task_from_materialized_outputs(task_context, materialized_outputs, node, |input| input)
+    make_new_task_from_materialized_outputs(
+        task_context,
+        materialized_outputs,
+        node,
+        |input| input,
+        scheduling_strategy,
+    )
 }
 
 fn append_plan_to_existing_task<F>(
@@ -370,13 +378,12 @@ where
         task_context.add_logical_node_id(logical_node_id);
     }
 
-    let task = submittable_task.with_new_task(SwordfishTask::new(
+    submittable_task.with_new_task(SwordfishTask::new(
         task_context,
         new_plan,
         config,
         psets,
         scheduling_strategy,
         node.context().to_hashmap(),
-    ));
-    task
+    ))
 }

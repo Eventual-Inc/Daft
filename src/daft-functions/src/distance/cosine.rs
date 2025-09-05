@@ -1,4 +1,4 @@
-use common_error::{value_err, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, value_err};
 use daft_core::{datatypes::NumericNative, prelude::*};
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use serde::{Deserialize, Serialize};
@@ -38,12 +38,19 @@ impl ScalarUDF for CosineDistanceFunction {
                         compute_cosine_distance::<f64>(source_fixed_size_list, &query)
                     }
                     _ => {
-                        unreachable!("Expected inputs to 'cosine_distance' to have Int8|Float32|Float32 datatypes, instead got {}", source_dtype)
+                        unreachable!(
+                            "Expected inputs to 'cosine_distance' to have Int8|Float32|Float32 datatypes, instead got {}",
+                            source_dtype
+                        )
                     }
                 }
             }
             _ => {
-                unreachable!("Expected inputs to 'cosine_distance' to be fixed size list or embedding with the same dtype and size, instead got {} and {}", source.data_type(), query.data_type())
+                unreachable!(
+                    "Expected inputs to 'cosine_distance' to be fixed size list or embedding with the same dtype and size, instead got {} and {}",
+                    source.data_type(),
+                    query.data_type()
+                )
             }
         }?;
 
@@ -73,21 +80,31 @@ impl ScalarUDF for CosineDistanceFunction {
                 | DataType::Embedding(query_inner_dtype, query_size),
             ) => {
                 if source_inner_dtype != query_inner_dtype {
-                    value_err!("Expected inputs to 'cosine_distance' to have the same inner dtype, instead got {source_inner_dtype} and {query_inner_dtype}")
+                    value_err!(
+                        "Expected inputs to 'cosine_distance' to have the same inner dtype, instead got {source_inner_dtype} and {query_inner_dtype}"
+                    )
                 }
                 if !matches!(
                     source_inner_dtype.as_ref(),
                     DataType::Int8 | DataType::Float32 | DataType::Float64
                 ) {
-                    value_err!("Expected inputs to 'cosine_distance' to have Int8|Float32|Float64 inner dtype, instead got {source_inner_dtype}")
+                    value_err!(
+                        "Expected inputs to 'cosine_distance' to have Int8|Float32|Float64 inner dtype, instead got {source_inner_dtype}"
+                    )
                 }
                 if source_size != query_size {
-                    value_err!("Expected inputs to 'cosine_distance' to have the same size, instead got {source_size} and {query_size}")
+                    value_err!(
+                        "Expected inputs to 'cosine_distance' to have the same size, instead got {source_size} and {query_size}"
+                    )
                 }
                 Ok(Field::new(source.name, DataType::Float64))
             }
             _ => {
-                value_err!("Expected inputs to 'cosine_distance' to be fixed size list or embedding, instead got {} and {}", source.dtype, query.dtype)
+                value_err!(
+                    "Expected inputs to 'cosine_distance' to be fixed size list or embedding, instead got {} and {}",
+                    source.dtype,
+                    query.dtype
+                )
             }
         }
     }

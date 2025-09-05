@@ -7,9 +7,9 @@ use super::{ArrayWrapper, IntoSeries, Series};
 use crate::datatypes::PythonArray;
 use crate::{
     array::{
-        ops::{broadcast::Broadcastable, DaftListAggable, DaftSetAggable, GroupIndices},
-        prelude::*,
         DataArray,
+        ops::{DaftListAggable, DaftSetAggable, GroupIndices, broadcast::Broadcastable},
+        prelude::*,
     },
     datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray, IntervalArray},
     lit::Literal,

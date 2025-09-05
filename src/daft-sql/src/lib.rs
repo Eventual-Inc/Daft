@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 pub mod error;
 pub mod functions;
 
@@ -19,7 +17,6 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<python::PySqlCatalog>()?;
     parent.add_function(wrap_pyfunction!(python::sql_exec, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_datatype, parent)?)?;
@@ -32,10 +29,10 @@ mod tests {
     use std::sync::{Arc, LazyLock};
 
     use daft_core::prelude::*;
-    use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
+    use daft_dsl::{Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn, lit, unresolved_col};
     use daft_logical_plan::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
-        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        ClusteringSpec, JoinOptions, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo,
     };
     use daft_session::Session;
     use error::SQLPlannerResult;

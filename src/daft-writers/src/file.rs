@@ -159,12 +159,12 @@ impl AsyncFileWriter for TargetFileSizeWriter {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        if self.current_in_memory_bytes_written > 0 {
-            if let Some(result) = self.current_writer.close().await? {
-                self.results.push(result);
-                self.bytes_per_file
-                    .push(self.current_writer.bytes_written());
-            }
+        if self.current_in_memory_bytes_written > 0
+            && let Some(result) = self.current_writer.close().await?
+        {
+            self.results.push(result);
+            self.bytes_per_file
+                .push(self.current_writer.bytes_written());
         }
         self.is_closed = true;
         Ok(std::mem::take(&mut self.results))
@@ -215,7 +215,7 @@ impl WriterFactory for TargetFileSizeWriterFactory {
 mod tests {
 
     use super::*;
-    use crate::test::{make_dummy_mp, DummyWriterFactory};
+    use crate::test::{DummyWriterFactory, make_dummy_mp};
 
     #[tokio::test]
     async fn test_target_file_writer_exact_file() {

@@ -16,6 +16,8 @@ __all__ = [
     "Descriptor",
     "Embedding",
     "EmbeddingDimensions",
+    "Image",
+    "Label",
 ]
 
 
@@ -47,8 +49,10 @@ if TYPE_CHECKING:
     from daft.dependencies import np
 
     Embedding: TypeAlias = np.typing.NDArray[Any]
+    Image: TypeAlias = np.ndarray[Any, Any]
 else:
     Embedding: TypeAlias = Any
+    Image: TypeAlias = Any
 
 
 @dataclass
@@ -58,3 +62,6 @@ class EmbeddingDimensions:
 
     def as_dtype(self) -> DataType:
         return DataType.embedding(dtype=self.dtype, size=self.size)
+
+
+Label = str

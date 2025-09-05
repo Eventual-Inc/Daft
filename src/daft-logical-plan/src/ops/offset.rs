@@ -3,8 +3,8 @@ use std::sync::Arc;
 use daft_dsl::functions::prelude::{Deserialize, Serialize};
 
 use crate::{
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
+    stats::{ApproxStats, PlanStats, StatsState},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

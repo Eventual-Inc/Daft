@@ -90,7 +90,7 @@ def test_row_wise_udf_literal_eval():
     def my_stringify_and_sum(a: int, b: int) -> str:
         return f"{a + b}"
 
-    assert my_stringify_and_sum.eval(1, 2) == "3"
+    assert my_stringify_and_sum(1, 2) == "3"
 
 
 def test_row_wise_udf_kwargs():
@@ -98,8 +98,8 @@ def test_row_wise_udf_kwargs():
     def my_stringify_and_sum_repeat(a: int, b: int, repeat: int = 1) -> str:
         return f"{a + b}" * repeat
 
-    assert my_stringify_and_sum_repeat.eval(1, 2) == "3"
-    assert my_stringify_and_sum_repeat.eval(1, 2, 3) == "333"
+    assert my_stringify_and_sum_repeat(1, 2) == "3"
+    assert my_stringify_and_sum_repeat(1, 2, 3) == "333"
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     default_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y")))
@@ -123,3 +123,30 @@ def test_row_wise_async_udf():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
     assert async_df.to_pydict() == {"x": ["5", "7", "9"]}
+
+
+def test_row_wise_udf_unnest():
+    @daft.func(
+        return_dtype=daft.DataType.struct(
+            {"id": daft.DataType.int64(), "name": daft.DataType.string(), "score": daft.DataType.float64()}
+        ),
+        unnest=True,
+    )
+    def create_record(value: int):
+        return {"id": value, "name": f"item_{value}", "score": value * 1.5}
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+    result = df.select(create_record(col("value"))).to_pydict()
+
+    expected = {"id": [1, 2, 3], "name": ["item_1", "item_2", "item_3"], "score": [1.5, 3.0, 4.5]}
+    assert result == expected
+
+
+def test_row_wise_udf_unnest_error_non_struct():
+    with pytest.raises(
+        ValueError, match="Expected Daft function `return_dtype` to be `DataType.struct` when `unnest=True`"
+    ):
+
+        @daft.func(return_dtype=daft.DataType.int64(), unnest=True)
+        def invalid_unnest(a: int):
+            return a

@@ -1,12 +1,12 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::{trigonometry::TrigonometricFunction, DaftAtan2},
+    array::ops::{DaftAtan2, trigonometry::TrigonometricFunction},
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -43,7 +43,7 @@ macro_rules! trigonometry {
                         return Err(DaftError::TypeError(format!(
                             "Expected input to trigonometry to be numeric, got {}",
                             field.dtype
-                        )))
+                        )));
                     }
                 };
                 Ok(Field::new(field.name, dtype))
@@ -163,7 +163,7 @@ impl ScalarUDF for Atan2 {
             (dt1, dt2) => {
                 return Err(DaftError::TypeError(format!(
                     "Expected inputs to atan2 to be numeric, got {dt1} and {dt2}"
-                )))
+                )));
             }
         };
         Ok(Field::new(x_field.name, dtype))

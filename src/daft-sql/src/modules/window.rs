@@ -104,7 +104,9 @@ impl SQLFunction for SQLLag {
     }
 
     fn docstrings(&self, alias: &str) -> String {
-        format!("{alias}(value, offset, default) OVER() - Returns the value of the row offset rows before the current row")
+        format!(
+            "{alias}(value, offset, default) OVER() - Returns the value of the row offset rows before the current row"
+        )
     }
 
     fn arg_names(&self) -> &'static [&'static str] {
@@ -149,7 +151,9 @@ impl SQLFunction for SQLLead {
     }
 
     fn docstrings(&self, alias: &str) -> String {
-        format!("{alias}(value, offset, default) OVER() - Returns the value of the row offset rows after the current row")
+        format!(
+            "{alias}(value, offset, default) OVER() - Returns the value of the row offset rows after the current row"
+        )
     }
 
     fn arg_names(&self) -> &'static [&'static str] {

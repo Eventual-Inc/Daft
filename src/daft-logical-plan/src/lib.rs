@@ -1,6 +1,4 @@
-#![feature(let_chains)]
 #![feature(if_let_guard)]
-#![feature(iterator_try_reduce)]
 
 pub mod builder;
 pub mod display;
@@ -18,8 +16,8 @@ mod treenode;
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 #[cfg(feature = "python")]
 use common_file_formats::{
-    python::PyFileFormatConfig, CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig,
-    ParquetSourceConfig, WarcSourceConfig,
+    CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig,
+    python::PyFileFormatConfig,
 };
 pub use daft_core::join::{JoinStrategy, JoinType};
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};

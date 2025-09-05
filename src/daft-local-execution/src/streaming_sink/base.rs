@@ -9,9 +9,10 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
     channel::{
-        create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
-        Sender,
+        OrderingAwareReceiver, Receiver, Sender, create_channel,
+        create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
@@ -20,7 +21,6 @@ use crate::{
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 
 pub enum StreamingSinkOutput {
@@ -145,10 +145,10 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 state = result.0;
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
-                        if let Some(mp) = mp {
-                            if output_sender.send(mp).await.is_err() {
-                                return Ok(state);
-                            }
+                        if let Some(mp) = mp
+                            && output_sender.send(mp).await.is_err()
+                        {
+                            return Ok(state);
                         }
                         break;
                     }

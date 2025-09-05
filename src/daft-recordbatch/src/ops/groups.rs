@@ -1,8 +1,8 @@
 use common_error::DaftResult;
 use daft_core::{
     array::ops::{
-        arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow, GroupIndicesPair,
-        IntoGroups, IntoUniqueIdxs, VecIndices,
+        GroupIndicesPair, IntoGroups, IntoUniqueIdxs, VecIndices,
+        arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow,
     },
     datatypes::UInt64Array,
     series::Series,

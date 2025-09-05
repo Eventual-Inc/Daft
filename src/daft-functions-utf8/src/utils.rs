@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::DataArray,
     prelude::{
@@ -8,7 +8,7 @@ use daft_core::{
     },
     series::Series,
 };
-use daft_dsl::{functions::FunctionArgs, ExprRef};
+use daft_dsl::{ExprRef, functions::FunctionArgs};
 use itertools::Itertools;
 
 pub(crate) enum BroadcastedStrIter<'a> {

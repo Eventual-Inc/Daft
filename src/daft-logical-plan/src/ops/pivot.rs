@@ -8,9 +8,9 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     stats::StatsState,
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -16,8 +16,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    left_col, resolved_col, right_col, unresolved_col, Column, Expr, ExprRef, UnresolvedColumn,
-    WindowSpec,
+    Column, Expr, ExprRef, UnresolvedColumn, WindowSpec, left_col, resolved_col, right_col,
+    unresolved_col,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
@@ -34,12 +34,12 @@ use {
 };
 
 use crate::{
+    LogicalPlanRef,
     display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
-        self,
+        self, Limit, Offset, SetQuantifier, UnionStrategy,
         join::{JoinOptions, JoinPredicate},
-        Limit, Offset, SetQuantifier, UnionStrategy,
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
     partitioning::{
@@ -47,7 +47,6 @@ use crate::{
     },
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{InMemoryInfo, SourceInfo},
-    LogicalPlanRef,
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via
@@ -179,13 +178,13 @@ impl LogicalPlanBuilder {
             pushdowns.clone().unwrap_or_default(),
         ));
         // If file path column is specified, check that it doesn't conflict with any column names in the schema.
-        if let Some(file_path_column) = &scan_operator.0.file_path_column() {
-            if schema.names().contains(&(*file_path_column).to_string()) {
-                return Err(DaftError::ValueError(format!(
-                    "Attempting to make a Schema with a file path column name that already exists: {}",
-                    file_path_column
-                )));
-            }
+        if let Some(file_path_column) = &scan_operator.0.file_path_column()
+            && schema.names().contains(&(*file_path_column).to_string())
+        {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to make a Schema with a file path column name that already exists: {}",
+                file_path_column
+            )));
         }
         // Add generated fields to the schema.
         let schema_with_generated_fields = {
@@ -311,7 +310,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::default();
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
         let predicate = expr_resolver.resolve_single(predicate, self.plan.clone())?;
 

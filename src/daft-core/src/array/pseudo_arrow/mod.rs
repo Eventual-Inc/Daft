@@ -200,8 +200,8 @@
 use arrow2::{
     array::Array,
     bitmap::{
-        utils::{BitmapIter, ZipValidity},
         Bitmap,
+        utils::{BitmapIter, ZipValidity},
     },
     buffer::Buffer,
     datatypes::DataType,
@@ -241,7 +241,7 @@ impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
     }
 
     #[inline]
-    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<T>, BitmapIter> {
+    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<'_, T>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values().iter(), self.validity())
     }
 }
@@ -279,10 +279,10 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
     #[inline]
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         self.validity.as_mut().and_then(|bitmap| {
-            bitmap.slice_unchecked(offset, length);
+            unsafe { bitmap.slice_unchecked(offset, length) };
             (bitmap.unset_bits() > 0).then_some(bitmap)
         });
-        self.values.slice_unchecked(offset, length);
+        unsafe { self.values.slice_unchecked(offset, length) };
     }
 
     #[inline]
@@ -310,6 +310,8 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
     }
 
     fn change_type(&mut self, _: arrow2::datatypes::DataType) {
-        unimplemented!("PseudoArray doesn't hold a data type and therefore does not support the change_type API.")
+        unimplemented!(
+            "PseudoArray doesn't hold a data type and therefore does not support the change_type API."
+        )
     }
 }

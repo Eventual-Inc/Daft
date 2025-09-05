@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use common_treenode::TreeNode;
 use daft_dsl::{lit, resolved_col};
 use daft_logical_plan::{
-    builder::LogicalPlanBuilder, ops::Source, source_info::PlaceHolderInfo, ClusteringSpec,
-    LogicalPlan, LogicalPlanRef, SourceInfo,
+    ClusteringSpec, LogicalPlan, LogicalPlanRef, SourceInfo, builder::LogicalPlanBuilder,
+    ops::Source, source_info::PlaceHolderInfo,
 };
 use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
@@ -13,7 +13,7 @@ use crate::{
     plan::PlanID,
     scheduling::task::{TaskContext, TaskID},
     stage::StageID,
-    statistics::{http_subscriber::HttpSubscriber, PlanState, TaskExecutionStatus, TaskState},
+    statistics::{PlanState, TaskExecutionStatus, TaskState, http_subscriber::HttpSubscriber},
 };
 
 /// Create a test logical plan with proper plan IDs that match task context node IDs

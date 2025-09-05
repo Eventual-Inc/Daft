@@ -2,7 +2,7 @@ use std::cmp::min;
 
 #[cfg(feature = "python")]
 use common_py_serde::pickle_dumps;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]

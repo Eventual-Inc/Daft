@@ -9,7 +9,7 @@ use daft_dsl::{
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
-use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_physical_plan::extract_agg_expr;
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
@@ -283,11 +283,11 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Join(join) => {
             if join
                 .join_strategy
-                .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+                .is_some_and(|x| !matches!(x, JoinStrategy::Hash))
             {
-                return Err(DaftError::not_implemented(
-                    "Only hash and broadcast join strategies are supported for now",
-                ));
+                log::warn!(
+                    "Only hash join strategy is supported on the native runner, falling back to hash join. Broadcast and sort merge joins are not implemented on the native runner as it is single node only."
+                );
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
@@ -351,7 +351,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Repartition(repartition) => {
-            log::warn!("Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition");
+            log::warn!(
+                "Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition"
+            );
             translate(&repartition.input)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {

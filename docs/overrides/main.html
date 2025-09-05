@@ -25,6 +25,9 @@
 {% block site_meta %}
 {{ super() }}
 <meta name="readthedocs-addons-api-version" content="1" />
+{% if config.extra.rtd_version != 'stable' %}
+<meta name="robots" content="noindex">
+{% endif %}
 {% endblock %}
 
 <!-- Remove automatic appending of site name to page title -->

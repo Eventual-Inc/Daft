@@ -287,13 +287,17 @@ impl PyDataType {
     ) -> PyResult<Self> {
         match (height, width) {
             (Some(height), Some(width)) => {
-                let image_mode = mode.ok_or_else(|| PyValueError::new_err(
-                    "Image mode must be provided if specifying an image size.",
-                ))?;
+                let image_mode = mode.ok_or_else(|| {
+                    PyValueError::new_err(
+                        "Image mode must be provided if specifying an image size.",
+                    )
+                })?;
                 Ok(DataType::FixedShapeImage(image_mode, height, width).into())
             }
             (None, None) => Ok(DataType::Image(mode).into()),
-            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={height:?}, width={width:?}"))),
+            (_, _) => Err(PyValueError::new_err(format!(
+                "Height and width for image type must both be specified or both not specified, but got: height={height:?}, width={width:?}"
+            ))),
         }
     }
 

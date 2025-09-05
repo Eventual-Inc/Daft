@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
+use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec};
+use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{
@@ -19,7 +19,7 @@ use crate::{
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct ScanSourceNode {

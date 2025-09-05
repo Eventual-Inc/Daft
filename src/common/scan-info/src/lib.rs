@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 #![feature(if_let_guard)]
 
 mod expr_rewriter;
@@ -14,13 +13,13 @@ pub mod test;
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use daft_schema::schema::SchemaRef;
-pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
+pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
-pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
+pub use scan_task::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
 use serde::{Deserialize, Serialize};
 pub use sharder::{Sharder, ShardingStrategy};
 
