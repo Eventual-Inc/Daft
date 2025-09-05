@@ -41,10 +41,19 @@ class Simple(BaseModel):
     age: int
 
 
+class SimplePlus(Simple, Generic[T]):
+    data: T
+
+
 @dataclass(frozen=True)
 class SomeDataclass:
     name: str
     age: int
+
+
+@dataclass(frozen=True)
+class SomeGenericDataclass(SomeDataclass, Generic[T]):
+    data: T
 
 
 SIMPLE_ARROW_DAFT_TYPE: DataType = DataType.struct(
@@ -53,17 +62,6 @@ SIMPLE_ARROW_DAFT_TYPE: DataType = DataType.struct(
         "age": DataType.int64(),
     }
 )
-
-
-@dataclass(frozen=True)
-class SomeGenericDataclass(Generic[T]):
-    name: str
-    age: int
-    data: T
-
-
-class SimplePlus(Simple, Generic[T]):
-    data: T
 
 
 GENERIC_SIMPLE_ARROW_DAFT_TYPE = DataType.struct(
@@ -107,6 +105,8 @@ def test_dataclass(inner_type, expected):
         (bytes, DataType.binary()),
         (Simple, SIMPLE_ARROW_DAFT_TYPE),
         (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
+        (SimplePlus[float], GENERIC_SIMPLE_ARROW_DAFT_TYPE),
+        (SomeGenericDataclass[float], GENERIC_SIMPLE_ARROW_DAFT_TYPE),
     ],
 )
 def test_list(item_type, expected_inner):
@@ -119,6 +119,8 @@ def _dict_types() -> Iterator[tuple[type, DataType, type, DataType]]:
     check: list[tuple[type, DataType]] = CHECK + [
         (Simple, SIMPLE_ARROW_DAFT_TYPE),
         (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
+        (SimplePlus[float], GENERIC_SIMPLE_ARROW_DAFT_TYPE),
+        (SomeGenericDataclass[float], GENERIC_SIMPLE_ARROW_DAFT_TYPE),
     ]
     for key_type, expected_key_type in check:
         for value_type, expected_value_type in check:
@@ -165,35 +167,6 @@ class Contains(BaseModel):
     a_dataclass: dict[str, SomeDataclass]
 
 
-def _expected_contains(*, is_generic: bool) -> DataType:
-    fun = DataType.binary()
-    fun.nullable = True
-    inner = GENERIC_SIMPLE_ARROW_DAFT_TYPE if is_generic else SIMPLE_ARROW_DAFT_TYPE
-    return DataType.struct(
-        {
-            "name": DataType.string(),
-            "complex": DataType.struct(
-                {
-                    "simples": DataType.list(inner),
-                    "some": DataType.struct({"score": DataType.float64()}),
-                    "thing": DataType.struct({"score": DataType.float64(), "testing_date": DataType.date()}),
-                    "fun": fun,
-                }
-            ),
-            "a_dataclass": DataType.map(DataType.string(), inner),
-        }
-    )
-
-
-def test_complex_pydantic_and_nested():
-    in_type = Contains
-    expected = _expected_contains(is_generic=False)
-
-    _test_logic(in_type, expected)
-    _test_logic(list[Contains], DataType.list(expected))
-    _test_logic(dict[str, Contains], DataType.map(DataType.string(), expected))
-
-
 class ComplexPlus(BaseModel, Generic[T]):
     simples: list[SimplePlus[T]]
     some: Something1
@@ -207,13 +180,57 @@ class ContainsPlus(BaseModel, Generic[T]):
     a_dataclass: dict[str, SomeGenericDataclass[T]]
 
 
+def _expected_contains(*, is_generic: bool) -> DataType:
+    fun = DataType.binary()
+    fun.nullable = True
+    if is_generic:
+        return DataType.struct(
+            {
+                "name": DataType.string(),
+                "complex": DataType.struct(
+                    {
+                        "simples": DataType.list(GENERIC_SIMPLE_ARROW_DAFT_TYPE),
+                        "some": DataType.struct({"score": DataType.float64()}),
+                        "thing": DataType.struct({"score": DataType.float64(), "testing_date": DataType.date()}),
+                        "fun": fun,
+                    }
+                ),
+                "a_dataclass": DataType.map(DataType.string(), GENERIC_SIMPLE_ARROW_DAFT_TYPE),
+            }
+        )
+    else:
+        return DataType.struct(
+            {
+                "name": DataType.string(),
+                "complex": DataType.struct(
+                    {
+                        "simples": DataType.list(SIMPLE_ARROW_DAFT_TYPE),
+                        "some": DataType.struct({"score": DataType.float64()}),
+                        "thing": DataType.struct({"score": DataType.float64(), "testing_date": DataType.date()}),
+                        "fun": fun,
+                    }
+                ),
+                "a_dataclass": DataType.map(DataType.string(), SIMPLE_ARROW_DAFT_TYPE),
+            }
+        )
+
+
+def test_complex_pydantic_and_nested():
+    in_type = Contains
+    expected = _expected_contains(is_generic=False)
+
+    _test_logic(in_type, expected)
+    _test_logic(list[in_type], DataType.list(expected))
+    _test_logic(dict[str, in_type], DataType.map(DataType.string(), expected))
+
+
 def test_complex_pydantic_and_nested_generic():
     in_type = ContainsPlus[float]
     expected = _expected_contains(is_generic=True)
 
     _test_logic(in_type, expected)
-    _test_logic(list[Contains], DataType.list(expected))
-    _test_logic(dict[str, Contains], DataType.map(DataType.string(), expected))
+    _test_logic(list[in_type], DataType.list(expected))
+    _test_logic(dict[str, in_type], DataType.map(DataType.string(), expected))
 
 
 class SomeNamedTuple(NamedTuple):

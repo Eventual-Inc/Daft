@@ -17,7 +17,7 @@ except ImportError as err:
     raise err
 
 from types import NoneType, UnionType  # type: ignore
-from typing import TypeVar, Union, get_args, get_origin
+from typing import Generic, TypeVar, Union, get_args, get_origin
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -61,7 +61,6 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
 
 def _daft_datatype_for(f_type: type[Any]) -> DataType:
     """Implements logic of :func:`daft_pyarrow_datatype`."""
-    print(f"\t{f_type=} | {type(f_type)=}")
     if get_origin(f_type) is Union or get_origin(f_type) is UnionType:
         targs = get_args(f_type)
         if len(targs) == 2:
@@ -104,7 +103,13 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
 
         # handle a data class parameterized by generics
         if hasattr(f_type, "__origin__"):
-            generic_vars = get_args(f_type.__origin__.__orig_bases__[0])
+            for base in f_type.__origin__.__orig_bases__:
+                base_origin = get_origin(base)
+                if base_origin is not None and base_origin == Generic:
+                    generic_vars = get_args(base)
+                    break
+            else:
+                raise TypeError(f"@dataclass {f_type} has origin but doesn't extend Generic!")
             concrete_types = get_args(f_type)
             generic_to_type: dict[TypeVar, type] = dict(zip(generic_vars, concrete_types))
 
@@ -123,10 +128,6 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
 
         inner_type = DataType.struct(field_names_types)
 
-    # bool must come before int in type checking!
-    elif issubclass(f_type, bool):
-        inner_type = DataType.bool()
-
     elif issubclass(f_type, BaseModel):
         # schema = get_pyarrow_schema(f_type, allow_losing_tz=True)
         # inner_type = DataType.from_arrow_type(pa.struct([(f, schema.field(f).type) for f in schema.names]))
@@ -134,6 +135,10 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
         for inner_f_name, inner_field_info in f_type.model_fields.items():
             field_names_types[inner_f_name] = _daft_datatype_for(inner_field_info.annotation)
         inner_type = DataType.struct(field_names_types)
+
+    # bool must come before int in type checking!
+    elif issubclass(f_type, bool):
+        inner_type = DataType.bool()
 
     elif issubclass(f_type, str):
         inner_type = DataType.string()
