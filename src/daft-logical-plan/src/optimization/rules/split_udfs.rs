@@ -3,7 +3,6 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
-    expr::count_udfs,
     functions::{scalar::ScalarFn, BuiltinScalarFn},
     is_udf,
     optimization::{get_required_columns, requires_computation},
@@ -34,7 +33,7 @@ impl SplitUDFsFromFilters {
         filter: &Filter,
         plan: &Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        if count_udfs(&filter.predicate) > 0 {
+        if filter.predicate.exists(is_udf) {
             let col_name = format!("__SplitUDFsFromFilters_udf_{}__", count);
             *count += 1;
 
@@ -535,7 +534,7 @@ fn recursive_optimize_project(
     };
 
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
-    let (actor_pool_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
+    let (udf_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
         .partition(|expr| exists_skip_list_map(expr, is_udf));
 
@@ -569,13 +568,14 @@ fn recursive_optimize_project(
     let new_plan = {
         let mut child = new_plan;
 
-        for expr in actor_pool_stages {
+        for expr in udf_stages {
             let passthrough_columns = child
                 .schema()
                 .field_names()
                 .map(resolved_col)
                 .filter(|c| c.name() != expr.name())
                 .collect();
+
             child = LogicalPlan::UDFProject(UDFProject::try_new(child, expr, passthrough_columns)?)
                 .arced();
         }
@@ -727,8 +727,8 @@ mod tests {
             project_plan,
             indoc! { "
             Project: col(a), col(b)
-              UDFProject:
-              UDF foo = py_udf(col(a)) as b
+              UDF: foo
+              Expr = py_udf(col(a)) as b
               Passthrough Columns = col(a)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -762,25 +762,25 @@ mod tests {
             project_plan,
             indoc! {"
             Project: col(a), col(b), col(a_prime), col(b_prime)
-              UDFProject:
-              UDF foo = py_udf(col(__TruncateRootUDF_0-3-0__)) as b_prime
+              UDF: foo
+              Expr = py_udf(col(__TruncateRootUDF_0-3-0__)) as b_prime
               Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b), col(a_prime)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
-                UDFProject:
-                UDF foo = py_udf(col(__TruncateRootUDF_0-2-0__)) as a_prime
+                UDF: foo
+                Expr = py_udf(col(__TruncateRootUDF_0-2-0__)) as a_prime
                 Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
                 Concurrency = Some(8)
                 Resource request = { num_cpus = 8, num_gpus = 1 }
                   Project: col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
                     Project: col(a), col(b), col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__)
-                      UDFProject:
-                      UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-3-0__
+                      UDF: foo
+                      Expr = py_udf(col(b)) as __TruncateRootUDF_0-3-0__
                       Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-2-0__)
                       Concurrency = Some(8)
                       Resource request = { num_cpus = 8, num_gpus = 1 }
-                        UDFProject:
-                        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-2-0__
+                        UDF: foo
+                        Expr = py_udf(col(a)) as __TruncateRootUDF_0-2-0__
                         Passthrough Columns = col(a), col(b)
                         Concurrency = Some(8)
                         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -811,15 +811,15 @@ mod tests {
             project_plan.clone(),
             indoc! {"
 Project: col(a), col(b)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
   Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-1-0__), col(a)
       Project: col(a), col(__TruncateRootUDF_0-1-0__)
-        UDFProject:
-        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
+        UDF: foo
+        Expr = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
         Passthrough Columns = col(a)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -837,14 +837,14 @@ Project: col(a), col(b)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
 Passthrough Columns = col(a)
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
   Project: col(__TruncateRootUDF_0-1-0__), col(a)
-    UDFProject:
-    UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
+    UDF: foo
+    Expr = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
     Passthrough Columns = col(a)
     Concurrency = Some(8)
     Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -873,15 +873,15 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
             project_plan.clone(),
             indoc! {"
 Project: col(a)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-0-0__)
       Project: col(__TruncateRootUDF_0-0-0__)
-        UDFProject:
-        UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+        UDF: foo
+        Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
         Passthrough Columns = col(a)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -896,13 +896,13 @@ Project: col(a)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
 Passthrough Columns = None
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
-  UDFProject:
-  UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+  UDF: foo
+  Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
   Passthrough Columns = None
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -937,20 +937,20 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
             project_plan.clone(),
             indoc! {"
 Project: col(c)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
       Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
-        UDFProject:
-        UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
+        UDF: foo
+        Expr = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
         Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-0-0__)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
-          UDFProject:
-          UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+          UDF: foo
+          Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
           Passthrough Columns = col(a), col(b)
           Concurrency = Some(8)
           Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -966,18 +966,18 @@ Project: col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
 Passthrough Columns = None
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
-  UDFProject:
-  UDF foo = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
+  UDF: foo
+  Expr = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
-    UDFProject:
-    UDF foo = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
+    UDF: foo
+    Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
     Passthrough Columns = col(b)
     Concurrency = Some(8)
     Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1011,8 +1011,8 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
             project_plan.clone(),
             indoc! {"
 Project: col(c)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1020,13 +1020,13 @@ Project: col(c)
       Project: col(__TruncateRootUDF_0-0-0__)
         Project: col(__TruncateAnyUDFChildren_1-0-0__), col(__TruncateAnyUDFChildren_1-0-1__), col(__TruncateAnyUDFChildren_1-0-0__) + col(__TruncateAnyUDFChildren_1-0-1__) as __TruncateRootUDF_0-0-0__
           Project: col(__TruncateAnyUDFChildren_1-0-0__), col(__TruncateAnyUDFChildren_1-0-1__)
-            UDFProject:
-            UDF foo = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
+            UDF: foo
+            Expr = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
             Passthrough Columns = col(a), col(b), col(__TruncateAnyUDFChildren_1-0-0__)
             Concurrency = Some(8)
             Resource request = { num_cpus = 8, num_gpus = 1 }
-              UDFProject:
-              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
+              UDF: foo
+              Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
               Passthrough Columns = col(a), col(b)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1042,19 +1042,19 @@ Project: col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             project_plan,
             indoc! {"
-UDFProject:
-UDF foo = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
+UDF: foo
+Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
 Passthrough Columns = None
 Concurrency = Some(8)
 Resource request = { num_cpus = 8, num_gpus = 1 }
   Project: col(__TruncateAnyUDFChildren_1-0-0__) + col(__TruncateAnyUDFChildren_1-0-1__) as __TruncateRootUDF_0-0-0__
-    UDFProject:
-    UDF foo = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
+    UDF: foo
+    Expr = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
     Passthrough Columns = col(__TruncateAnyUDFChildren_1-0-0__)
     Concurrency = Some(8)
     Resource request = { num_cpus = 8, num_gpus = 1 }
-      UDFProject:
-      UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
+      UDF: foo
+      Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
       Passthrough Columns = col(b)
       Concurrency = Some(8)
       Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1088,8 +1088,8 @@ Resource request = { num_cpus = 8, num_gpus = 1 }
             project_plan,
             indoc! {"
 Project: col(a), col(c)
-  UDFProject:
-  UDF foo = py_udf(col(__TruncateRootUDF_0-1-0__)) as c
+  UDF: foo
+  Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
   Concurrency = Some(8)
   Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1097,8 +1097,8 @@ Project: col(a), col(c)
       Project: col(a), col(__TruncateRootUDF_0-1-0__)
         Project: col(__TruncateAnyUDFChildren_1-1-0__), col(a), col(a) + col(__TruncateAnyUDFChildren_1-1-0__) as __TruncateRootUDF_0-1-0__
           Project: col(a), col(__TruncateAnyUDFChildren_1-1-0__)
-            UDFProject:
-            UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_1-1-0__
+            UDF: foo
+            Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-1-0__
             Passthrough Columns = col(a)
             Concurrency = Some(8)
             Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1132,8 +1132,8 @@ Project: col(a), col(c)
         Project: col(a), col(result)
           Project: col(__TruncateAnyUDFChildren_0-1-0__), col(a), [col(a) + col(a)] + col(__TruncateAnyUDFChildren_0-1-0__) as result
             Project: col(a), col(__TruncateAnyUDFChildren_0-1-0__)
-              UDFProject:
-              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
+              UDF: foo
+              Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
               Passthrough Columns = col(a)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1176,8 +1176,8 @@ Project: col(a), col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             project,
             indoc! {"
-        UDFProject:
-        UDF foo = py_udf(col(c)) as udf_results
+        UDF: foo
+        Expr = py_udf(col(c)) as udf_results
         Passthrough Columns = None
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1207,7 +1207,7 @@ Project: col(a), col(c)
         // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
         let plan = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node,
-            mock_udf.alias("udf_results_0"),
+            mock_udf.clone().alias("udf_results_0"),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
@@ -1232,13 +1232,13 @@ Project: col(a), col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             plan,
             indoc! {"
-        UDFProject:
-        UDF foo = py_udf(col(a)) as udf_results_1
+        UDF: foo
+        Expr = py_udf(col(a)) as udf_results_1
         Passthrough Columns = col(udf_results_0)
         Concurrency = Some(8)
         Resource request = { num_cpus = 8, num_gpus = 1 }
-          UDFProject:
-          UDF foo = py_udf(col(a)) as udf_results_0
+          UDF: foo
+          Expr = py_udf(col(a)) as udf_results_0
           Passthrough Columns = col(a)
           Concurrency = Some(8)
           Resource request = { num_cpus = 8, num_gpus = 1 }
@@ -1304,8 +1304,8 @@ Project: col(a), col(c)
             indoc! {"
             Project: col(a), col(udf_results), col(b)
               Project: col(a), col(b), col(c), col(udf_results)
-                UDFProject:
-                UDF foo = py_udf(col(c)) as udf_results
+                UDF: foo
+                Expr = py_udf(col(c)) as udf_results
                 Passthrough Columns = col(a), col(b), col(c)
                 Concurrency = Some(8)
                 Resource request = { num_cpus = 8, num_gpus = 1 }
