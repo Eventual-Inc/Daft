@@ -1,0 +1,115 @@
+name: 'Setup Protobuf Compiler'
+description: 'Install protobuf compiler for all platforms with robust error handling'
+runs:
+  using: 'composite'
+  steps:
+  - name: Install protobuf compiler (Linux)
+    if: runner.os == 'Linux'
+    shell: bash
+    run: |
+      echo "🔧 Installing protobuf compiler on Linux..."
+      sudo apt-get update -qq
+      sudo apt-get install -y protobuf-compiler
+
+      # Verify installation
+      if command -v protoc >/dev/null 2>&1; then
+        echo "✅ protoc installed successfully: $(protoc --version)"
+        echo "📍 protoc location: $(which protoc)"
+      else
+        echo "❌ protoc installation failed"
+        exit 1
+      fi
+
+      # Ensure protoc is in PATH for subsequent steps
+      echo "$(dirname $(which protoc))" >> $GITHUB_PATH
+
+  - name: Install protobuf compiler (macOS)
+    if: runner.os == 'macOS'
+    shell: bash
+    run: |
+      echo "🔧 Installing protobuf compiler on macOS..."
+
+      # Check if protoc is already installed
+      if command -v protoc >/dev/null 2>&1; then
+        echo "✅ protoc already installed: $(protoc --version)"
+      else
+        # Install using brew
+        brew install protobuf
+      fi
+
+      # Verify installation
+      if command -v protoc >/dev/null 2>&1; then
+        echo "✅ protoc available: $(protoc --version)"
+        echo "📍 protoc location: $(which protoc)"
+      else
+        echo "❌ protoc installation failed"
+        exit 1
+      fi
+
+      # Ensure protoc is in PATH for subsequent steps
+      echo "$(dirname $(which protoc))" >> $GITHUB_PATH
+
+  - name: Install protobuf compiler (Windows)
+    if: runner.os == 'Windows'
+    shell: pwsh
+    run: |
+      Write-Host "🔧 Installing protobuf compiler on Windows..."
+
+      try {
+        # Try chocolatey first
+        choco install protoc -y
+        $protoc_path = Get-Command protoc -ErrorAction SilentlyContinue
+        if ($protoc_path) {
+          Write-Host "✅ protoc installed via chocolatey: $(protoc --version)"
+          Write-Host "📍 protoc location: $($protoc_path.Source)"
+        } else {
+          throw "protoc not found after chocolatey installation"
+        }
+      } catch {
+        Write-Host "⚠️ Chocolatey installation failed, trying manual installation..."
+
+        # Manual installation as fallback
+        $url = "https://github.com/protocolbuffers/protobuf/releases/latest/download/protoc-win64.zip"
+        $output = "$env:TEMP\protoc.zip"
+        $extract_path = "$env:TEMP\protoc"
+
+        try {
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Expand-Archive -Path $output -DestinationPath $extract_path -Force
+
+          # Add to PATH
+          $protoc_bin = "$extract_path\bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $protoc_bin
+
+          # Verify
+          $env:PATH = "$protoc_bin;$env:PATH"
+          $protoc_cmd = Get-Command protoc -ErrorAction SilentlyContinue
+          if ($protoc_cmd) {
+            Write-Host "✅ protoc installed manually: $(protoc --version)"
+          } else {
+            Write-Host "❌ protoc installation failed"
+            exit 1
+          }
+        } catch {
+          Write-Host "❌ Manual installation also failed: $_"
+          exit 1
+        }
+      }
+
+  - name: Verify protoc installation
+    shell: bash
+    run: |
+      echo "🔍 Final verification of protoc installation..."
+      if command -v protoc >/dev/null 2>&1; then
+        echo "✅ protoc is available in PATH"
+        echo "📋 Version: $(protoc --version)"
+        echo "📍 Location: $(which protoc)"
+        echo "🔧 PATH contains: $PATH"
+      else
+        echo "❌ protoc is not available in PATH"
+        echo "🔧 Current PATH: $PATH"
+        echo "🔍 Searching for protoc in common locations..."
+        find /usr -name "protoc" 2>/dev/null || true
+        find /usr/local -name "protoc" 2>/dev/null || true
+        exit 1
+      fi
