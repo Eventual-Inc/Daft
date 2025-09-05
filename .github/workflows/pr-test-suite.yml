@@ -140,21 +140,21 @@ jobs:
     - name: Build library and Test with pytest (Linux)
       run: |
         source .venv/bin/activate
-        cargo llvm-cov clean --workspace
+        # cargo llvm-cov clean --workspace
         maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
-        cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
+        # cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
         # output of `cargo llvm-cov show-env --export-prefix`
-        RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
-        CARGO_LLVM_COV: 1
-        CARGO_LLVM_COV_SHOW_ENV: 1
-        CARGO_LLVM_COV_TARGET_DIR: ./target
+        # RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
+        # LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        # CARGO_LLVM_COV: 1
+        # CARGO_LLVM_COV_SHOW_ENV: 1
+        # CARGO_LLVM_COV_TARGET_DIR: ./target
         CARGO_TARGET_DIR: ./target
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
