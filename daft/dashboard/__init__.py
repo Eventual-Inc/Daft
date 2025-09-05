@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def _should_run() -> bool:
-    enable_dashboard_str = os.environ.get(native.DAFT_DASHBOARD_ENV_ENABLED)
+    enable_dashboard_str = os.environ.get(native.DAFT_DASHBOARD_URL)
     if not enable_dashboard_str:
         return False
     try:
