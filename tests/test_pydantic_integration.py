@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from pydantic import BaseModel
 
@@ -15,16 +17,16 @@ def _test_logic(in_type: type, expected: type) -> None:
     assert actual == expected, f"Expecting {expected} from {in_type} but got {actual}"
 
 
-@pytest.mark.parameterize(
-    "in_type, expected",
-    [
-        (int, DataType.int64()),
-        (float, DataType.float64()),
-        (str, DataType.string()),
-        (bool, DataType.bool()),
-        (bytes, DataType.binary()),
-    ],
-)
+CHECK: list[tuple[type, DataType]] = [
+    (int, DataType.int64()),
+    (float, DataType.float64()),
+    (str, DataType.string()),
+    (bool, DataType.bool()),
+    (bytes, DataType.binary()),
+]
+
+
+@pytest.mark.parameterize("in_type, expected", CHECK)
 def test_builtins(in_type, expected):
     _test_logic(in_type, expected)
 
@@ -34,42 +36,47 @@ class Simple(BaseModel):
     age: int
 
 
+SIMPLE_ARROW_DAFT_TYPE = DataType.struct(
+    {
+        "name": DataType.string(),
+        "age": DataType.int64(),
+    }
+)
+
+
 def test_simple_pydantic():
-    _test_logic(
-        Simple,
-        DataType.struct(
-            {
-                "name": DataType.string(),
-                "age": DataType.int64(),
-            }
-        ),
-    )
+    _test_logic(Simple, SIMPLE_ARROW_DAFT_TYPE)
 
 
 @pytest.mark.parameterize(
-    "in_type, expected",
+    "item_type, expected_inner",
     [
-        (list[float], DataType.list(DataType.float64())),
-        (list[int], DataType.list(DataType.int64())),
-        (list[str], DataType.list(DataType.string())),
-        (list[bool], DataType.list(DataType.bool())),
-        (list[bytes], DataType.list(DataType.binary())),
-        (
-            list[Simple],
-            DataType.list(
-                DataType.struct(
-                    {
-                        "name": DataType.string(),
-                        "age": DataType.int64(),
-                    }
-                )
-            ),
-        ),
+        (int, DataType.int64()),
+        (float, DataType.float64()),
+        (str, DataType.string()),
+        (bool, DataType.bool()),
+        (bytes, DataType.binary()),
+        (Simple, SIMPLE_ARROW_DAFT_TYPE),
     ],
 )
-def test_list(in_type, expected):
+def test_list(item_type, expected_inner):
+    in_type = list[item_type]
+    expected = DataType.list(expected_inner)
     _test_logic(in_type, expected)
 
 
-def test_dict():
-    pass
+def _dict_types() -> Iterator[tuple[type, DataType, type, DataType]]:
+    check: list[tuple[type, DataType]] = CHECK + [(Simple, SIMPLE_ARROW_DAFT_TYPE)]
+    for key_type, expected_key_type in check:
+        for value_type, expected_value_type in check:
+            yield (key_type, expected_key_type, value_type, expected_value_type)
+
+
+@pytest.mark.parameterize(
+    "key_type,expected_key_type,value_type,expected_value_type",
+    list(_dict_types()),
+)
+def test_dict(key_type, expected_key_type, value_type, expected_value_type):
+    in_type = dict[key_type, value_type]
+    expected = DataType.map(expected_key_type, expected_value_type)
+    _test_logic(in_type, expected)
