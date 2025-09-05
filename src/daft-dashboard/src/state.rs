@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub enum QueryStatus {
     Running,
     Finished,
+    #[allow(dead_code)]
     Failed,
 }
 
@@ -126,6 +127,6 @@ impl AppState {
 
     pub fn get_query_dataframe(&self, query_id: Arc<str>) -> Option<Arc<RecordBatch>> {
         let query = self.queries.get(&query_id)?;
-        query.df_output.as_ref().cloned()
+        query.df_output.clone()
     }
 }

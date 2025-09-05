@@ -11,7 +11,7 @@ use tokio::{
 ///
 /// * If the server is running on a separate process, shutdown_signal will be None
 /// * Otherwise, shutdown_signal will be Some(sender) and the sender can be used to
-/// shutdown the server. Often for notebook environments.
+///   shutdown the server. Often for notebook environments.
 pub enum ConnectionHandle {
     Remote {
         url: String,
@@ -26,8 +26,8 @@ pub enum ConnectionHandle {
 impl ConnectionHandle {
     pub fn shutdown(self) {
         match self {
-            ConnectionHandle::Remote { .. } => (),
-            ConnectionHandle::Local {
+            Self::Remote { .. } => (),
+            Self::Local {
                 shutdown_tx,
                 join_handle,
                 ..
@@ -42,8 +42,8 @@ impl ConnectionHandle {
 
     pub fn url(&self) -> &str {
         match self {
-            ConnectionHandle::Local { url, .. } => url,
-            ConnectionHandle::Remote { url } => url,
+            Self::Local { url, .. } => url,
+            Self::Remote { url } => url,
         }
     }
 }
@@ -72,7 +72,8 @@ impl PyConnectionHandle {
 #[pymethods]
 impl PyConnectionHandle {
     fn shutdown(&mut self) -> PyResult<()> {
-        Ok(self.inner_take()?.shutdown())
+        self.inner_take()?.shutdown();
+        Ok(())
     }
 
     fn url(&self) -> PyResult<&str> {
@@ -128,23 +129,25 @@ impl PyConnectionHandle {
 /// * Otherwise, start a new server on an available port.
 #[pyfunction]
 pub fn connect() -> PyConnectionHandle {
-    if let Some(url) = std::env::var(super::DAFT_DASHBOARD_URL_ENV).ok() {
+    if let Ok(url) = std::env::var(super::DAFT_DASHBOARD_URL_ENV) {
         PyConnectionHandle::new(ConnectionHandle::Remote { url })
     } else {
         let listener = Runtime::new()
             .unwrap()
             .block_on(async { crate::make_listener().await.unwrap() });
         let url = listener.local_addr().unwrap().to_string();
-        let (shutdown_signal, shutdown_receiver) = oneshot::channel();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
         let handle = std::thread::spawn(move || {
             let rt = Builder::new_current_thread().enable_all().build().unwrap();
-            rt.block_on(async { super::launch_server(listener, shutdown_receiver).await })
+            rt.block_on(async {
+                super::launch_server(listener, async { shutdown_rx.await.unwrap() }).await;
+            });
         });
 
         PyConnectionHandle::new(ConnectionHandle::Local {
             join_handle: handle,
-            shutdown_tx: shutdown_signal,
+            shutdown_tx,
             url,
         })
     }

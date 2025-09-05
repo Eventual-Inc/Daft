@@ -4,13 +4,13 @@ mod dataframe;
 pub mod python;
 mod state;
 
-use std::{io::ErrorKind, net::Ipv4Addr};
+use std::{future::Future, io::ErrorKind, net::Ipv4Addr};
 
 use axum::Router;
 use include_dir::{include_dir, Dir};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use tokio::sync::oneshot;
+use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 
@@ -24,12 +24,12 @@ const DAFT_DASHBOARD_URL_ENV: &str = "DAFT_DASHBOARD_URL";
 // and contains all the static files for the dashboard.
 static ASSETS_DIR: Dir = include_dir!("$DASHBOARD_ASSETS_DIR");
 
-async fn make_listener() -> std::io::Result<tokio::net::TcpListener> {
+pub async fn make_listener() -> std::io::Result<TcpListener> {
     let mut port = DEFAULT_SERVER_PORT;
     let max_port = port + 100; // Try up to 100 ports after the default
 
     while port <= max_port {
-        match tokio::net::TcpListener::bind((DEFAULT_SERVER_ADDR, port)).await {
+        match TcpListener::bind((DEFAULT_SERVER_ADDR, port)).await {
             Ok(listener) => {
                 return Ok(listener);
             }
@@ -49,7 +49,10 @@ async fn make_listener() -> std::io::Result<tokio::net::TcpListener> {
     ))
 }
 
-async fn launch_server(listener: tokio::net::TcpListener, shutdown_rx: oneshot::Receiver<()>) {
+pub async fn launch_server(
+    listener: TcpListener,
+    shutdown_fn: impl Future<Output = ()> + Send + 'static,
+) {
     // Start an Axum server
     let app = Router::new()
         .merge(api::api_routes())
@@ -61,9 +64,7 @@ async fn launch_server(listener: tokio::net::TcpListener, shutdown_rx: oneshot::
         );
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            shutdown_rx.await.ok();
-        })
+        .with_graceful_shutdown(shutdown_fn)
         .await
         .unwrap();
 }

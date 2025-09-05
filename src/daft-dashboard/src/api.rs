@@ -1,13 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
 use axum::{
-    body::Bytes,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     routing::{get, post},
     Json, Router,
 };
 use daft_recordbatch::RecordBatch;
-use hyper::StatusCode;
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::{

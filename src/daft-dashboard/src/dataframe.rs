@@ -5,7 +5,7 @@ use axum::{
     Json,
 };
 use daft_recordbatch::RecordBatch;
-use hyper::StatusCode;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
@@ -51,6 +51,7 @@ pub async fn get_query_dataframe(
 
 // ----------------- Serving Interactive HTML ----------------- //
 
+#[allow(dead_code)]
 pub fn generate_interactive_html(
     record_batch: &RecordBatch,
     df_id: &str,
