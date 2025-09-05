@@ -1,3 +1,5 @@
+"""Columnar Functions."""
+
 from __future__ import annotations
 
 from daft.expressions import Expression, list_

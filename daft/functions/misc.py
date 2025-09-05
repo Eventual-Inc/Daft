@@ -1,3 +1,5 @@
+"""Miscellaneous Functions."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
@@ -143,9 +145,6 @@ def unnest(expr: Expression) -> Expression:
         ╰───────┴───────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
-        >>> # These are also equivalent syntactic sugars for above
-        >>> unnested_df = df.select(df["struct"].get("*"))
-        >>> unnested_df = df.select(df["struct"]["*"])
     """
     return expr["*"]
 
@@ -336,7 +335,7 @@ def fill_null(expr: Expression | Any, fill_value: Expression | Any) -> Expressio
         >>> from daft.functions import fill_null
         >>>
         >>> df = daft.from_pydict({"data": [1, None, 3]})
-        >>> df = df.select(fill_null(df["data"]))
+        >>> df = df.select(fill_null(df["data"], 2))
         >>> df.collect()
         ╭───────╮
         │ data  │
