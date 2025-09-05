@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import datetime
+from typing import NamedTuple
 
 import pytest
 from pydantic import BaseModel
@@ -36,7 +39,7 @@ class Simple(BaseModel):
     age: int
 
 
-SIMPLE_ARROW_DAFT_TYPE = DataType.struct(
+SIMPLE_ARROW_DAFT_TYPE: DataType = DataType.struct(
     {
         "name": DataType.string(),
         "age": DataType.int64(),
@@ -80,3 +83,72 @@ def test_dict(key_type, expected_key_type, value_type, expected_value_type):
     in_type = dict[key_type, value_type]
     expected = DataType.map(expected_key_type, expected_value_type)
     _test_logic(in_type, expected)
+
+
+class Something1(BaseModel):
+    score: float
+
+
+class Something2(Something1):
+    testing_date: datetime
+
+
+class Complex(BaseModel):
+    simples: list[Simple]
+    some: Something1
+    thing: Something2
+    fun: bytes | None
+
+
+class Contains(BaseModel):
+    name: str
+    complex: Complex
+
+
+def test_complex_pydantic_and_nested():
+    fun = DataType.binary()
+    fun.nullable = True
+
+    in_type = Contains
+    expected = DataType.struct(
+        {
+            "name": DataType.string(),
+            "complex": DataType.struct(
+                {
+                    "simples": DataType.list(SIMPLE_ARROW_DAFT_TYPE),
+                    "some": DataType.struct({"score": DataType.float64()}),
+                    "thing": DataType.struct({"testing_date": DataType.datetime()}),
+                    "fun": fun,
+                }
+            ),
+        }
+    )
+
+    _test_logic(in_type, expected)
+    _test_logic(list[Contains], DataType.list(expected))
+    _test_logic(dict[str, Contains], DataType.map(DataType.string(), expected))
+
+
+@dataclass(frozen=True)
+class SomeDataclass:
+    name: str
+    age: int
+
+
+class SomeNamedTuple(NamedTuple):
+    name: str
+    age: int
+
+
+@pytest.mark.parametrize(
+    "in_type",
+    [
+        SomeDataclass,
+        SomeNamedTuple,
+        tuple[int, str, float, bool, bytes],
+        int | str,
+    ],
+)
+def test_known_unsuported(in_type):
+    with pytest.raises(TypeError):
+        daft_pyarrow_datatype(in_type)

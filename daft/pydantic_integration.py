@@ -68,6 +68,8 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
             else:
                 raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
             inner_type = pyarrow_datatype(refined_inner)
+            inner_type.nullable = True
+
         else:
             raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
 
@@ -117,8 +119,8 @@ def pyarrow_datatype(f_type: type[Any]) -> pa.DataType:
         inner_type = pa.date64()
 
     elif issubclass(f_type, timedelta):
-        raise NotImplementedError(
-            "TODO: handle conversion of (days, seconds, microseconds) into duration with a single unit!"
+        raise TypeError(
+            "Unimplemented: handle conversion of (days, seconds, microseconds) into duration with a single unit!"
         )
         # inner_type = pyarrow.duration(timeunit=???)
     else:
