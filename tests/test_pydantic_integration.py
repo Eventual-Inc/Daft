@@ -85,6 +85,10 @@ def test_dict(key_type, expected_key_type, value_type, expected_value_type):
     _test_logic(in_type, expected)
 
 
+def test_date_and_time():
+    _test_logic(datetime, DataType.date())
+
+
 class Something1(BaseModel):
     score: float
 
@@ -117,7 +121,7 @@ def test_complex_pydantic_and_nested():
                 {
                     "simples": DataType.list(SIMPLE_ARROW_DAFT_TYPE),
                     "some": DataType.struct({"score": DataType.float64()}),
-                    "thing": DataType.struct({"testing_date": DataType.datetime()}),
+                    "thing": DataType.struct({"testing_date": DataType.date()}),
                     "fun": fun,
                 }
             ),
