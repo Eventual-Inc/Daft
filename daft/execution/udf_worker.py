@@ -46,8 +46,7 @@ def udf_event_loop(
             # We initialize after ready to avoid blocking the main thread
             if expression_projection is None:
                 uninitialized_projection: ExpressionsProjection = daft.pickle.loads(expr_projection_bytes)
-                initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
-                expression_projection = initialized_projection
+                expression_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
             input_bytes = transport.read_and_release(name, size)
             input = MicroPartition.from_ipc_stream(input_bytes)
@@ -70,7 +69,15 @@ def udf_event_loop(
         conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), exc_bytes))
     except Exception as e:
         try:
-            conn.send((_ERROR, TracebackException.from_exception(e)))
+            tb = "\n".join(TracebackException.from_exception(e).format())
+        except Exception:
+            # If serialization fails, just send the exception's repr
+            # This sometimes happens on 3.9 & 3.10, but unclear why
+            # The repr doesn't contain the full traceback
+            tb = repr(e)
+
+        try:
+            conn.send((_ERROR, tb))
         except Exception:
             # If the connection is broken, it's because the parent process has died.
             # We can just exit here.
