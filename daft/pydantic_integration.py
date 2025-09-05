@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import is_dataclass, Field as DataclassField
 import logging
+from dataclasses import Field as DataclassField
+from dataclasses import is_dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, get_type_hints
 
@@ -17,11 +18,11 @@ except ImportError as err:
     raise err
 
 from types import NoneType, UnionType  # type: ignore
-from typing import Union, get_args, get_origin
+from typing import TypeVar, Union, get_args, get_origin
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence, Mapping
-    from typing import Any, Iterator, TypeVar
+    from collections.abc import Iterator, Mapping, Sequence
+    from typing import Any
 
 
 from .datatype import DataType
@@ -47,21 +48,20 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
     Uses :func:`pyarrow_datatype` to determine the appropriate Arrow type, then uses that
     as the basis for the Daft data type.
     """
-
     try:
         return _daft_datatype_for(f_type)
     except TypeError as e:
         if str(e) == "issubclass() arg 1 must be a class":
             # drop the underlying error as it will be noise
-            raise TypeError(f"You must supply a type, not an instance of a type. You provided: {type(f_type)}={repr(f_type)}") from e
+            raise TypeError(
+                f"You must supply a type, not an instance of a type. You provided: {type(f_type)}={f_type!r}"
+            ) from e
         else:
             raise e
 
 
-
 def _daft_datatype_for(f_type: type[Any]) -> DataType:
-    """Implements logic of :func:`daft_pyarrow_datatype`.
-    """
+    """Implements logic of :func:`daft_pyarrow_datatype`."""
     print(f"\t{f_type=} | {type(f_type)=}")
     if get_origin(f_type) is Union or get_origin(f_type) is UnionType:
         targs = get_args(f_type)
@@ -100,27 +100,34 @@ def _daft_datatype_for(f_type: type[Any]) -> DataType:
     elif get_origin(f_type) is tuple:
         raise TypeError(f"Cannot support tuple types: {f_type}")
 
-    elif is_dataclass(f_type):
+    elif is_dataclass(f_type) or (hasattr(f_type, "__origin__") and is_dataclass(f_type.__origin__)):
         field_names_types: dict[str, DataType] = {}
 
         # handle a data class parameterized by generics
         if hasattr(f_type, "__origin__"):
-            hint_mapping: dict[str, TypeVar] = get_type_hints(f_type.__origin__)
-            name_to_field: dict[str, DataclassField] = f_type.__origin__.__dataclass_fields__
-            for inner_f_name, inner_f_field in name_to_field.items():
-                if isinstance(inner_f_field.type, TypeVar):
-                    field_names_types[inner_f_name] = _daft_datatype_for([name_to_field])
+            import ipdb
+
+            ipdb.set_trace()
+            generic_vars = get_args(f_type.__origin__.__orig_bases__[0])
+            concrete_types = get_args(f_type)
+            generic_to_type: dict[TypeVar, type] = dict(zip(generic_vars, concrete_types))
+
+            type_annotations: dict[str, type | TypeVar] = get_type_hints(f_type.__origin__)
+
+            for inner_f_name, inner_f_type_or_type_var in type_annotations.items():
+                if isinstance(inner_f_type_or_type_var, TypeVar):
+                    inner_f_type = generic_to_type[inner_f_type_or_type_var]
+                    field_names_types[inner_f_name] = _daft_datatype_for(inner_f_type)
                 else:
-                    field_names_types[inner_f_name] = _daft_datatype_for(inner_f_field.type)
+                    field_names_types[inner_f_name] = _daft_datatype_for(inner_f_type_or_type_var)
         else:
-            for inner_f_name, inner_f_field in f_type.__dataclass_fields__.items():
-                field_names_types[inner_f_name] = _daft_datatype_for(inner_f_field.type)
+            # straightforward: all concrete types
+            for inner_f_name, inner_f_type in get_type_hints(f_type).items():
+                import ipdb
 
+                ipdb.set_trace()
+                field_names_types[inner_f_name] = _daft_datatype_for(inner_f_type)
 
-
-        for inner_f_name, inner_f_type in f_type.__annotations__.items():
-            print(f"\t\t{inner_f_name=} | {inner_f_type=}")
-            field_names_types[inner_f_name] = _daft_datatype_for(inner_f_type)
         inner_type = DataType.struct(field_names_types)
 
     # bool must come before int in type checking!
@@ -188,6 +195,7 @@ def _dataclass_field_types_defaults(
 
     return list(map(handle_field, dataclass_fields.values()))
 
+
 def _align_generic_concrete(
     data_type_with_generics: type,
 ) -> Iterator[tuple[type, type]]:
@@ -222,9 +230,7 @@ def _align_generic_concrete(
 
 def _default_of(data_field: DataclassField) -> Any | None:
     return (
-        None
-        if isinstance(data_field.default, _MISSING_TYPE)
-        else serialize(data_field.default, no_none_values=False)
+        None if isinstance(data_field.default, _MISSING_TYPE) else serialize(data_field.default, no_none_values=False)
     )
 
 

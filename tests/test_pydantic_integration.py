@@ -143,19 +143,37 @@ class SomeDataclass:
     name: str
     age: int
 
-# @dataclass(frozen=True)
 
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class SomeGenericDataclass(Generic[T]):
+    name: str
+    age: int
+    data: T
 
 
 @pytest.mark.parametrize(
     "inner_type,expected",
     [
-        (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
-    ]
+        # (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
+        (
+            SomeGenericDataclass[float],
+            DataType.struct(
+                {
+                    "name": DataType.string(),
+                    "age": DataType.int64(),
+                    "data": DataType.float64(),
+                }
+            ),
+        )
+    ],
 )
 def test_dataclass(inner_type, expected):
     _test_logic(inner_type, expected)
-
 
 
 class SomeNamedTuple(NamedTuple):
