@@ -26,10 +26,10 @@ if TYPE_CHECKING:
 
 from .datatype import DataType
 
-__all__: Sequence[str] = ("daft_dataype_for",)
+__all__: Sequence[str] = ("daft_datatype_for",)
 
 
-def daft_dataype_for(f_type: type[Any]) -> DataType:
+def daft_datatype_for(f_type: type[Any]) -> DataType:
     """Produces the appropriate Daft DataType given a Python type.
 
     Supports the following types:
