@@ -174,7 +174,7 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="shuffle tests are meant for the ray runner and flight shuffle is not yet supported for flotilla",
 )
 @pytest.mark.parametrize(

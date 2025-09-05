@@ -18,6 +18,7 @@ from daft.daft import (
     RaySwordfishWorker,
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
+    start_flight_server,
 )
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
@@ -52,6 +53,12 @@ class RaySwordfishActor:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
+        self.ip = ray.util.get_node_ip_address()
+        self.server = start_flight_server(self.ip)
+        self.port = self.server.port()
+
+    def get_address(self) -> str:
+        return f"grpc://{self.ip}:{self.port}"
 
     async def run_plan(
         self,
@@ -193,6 +200,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
             )
+            ip_address = ray.get(actor.get_address.remote())
             actor_handle = RaySwordfishActorHandle(actor)
             handles.append(
                 RaySwordfishWorker(
@@ -201,6 +209,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                     int(node["Resources"]["CPU"]),
                     int(node["Resources"].get("GPU", 0)),
                     int(node["Resources"]["memory"]),
+                    ip_address,
                 )
             )
 

@@ -217,7 +217,7 @@ impl WorkerSnapshot {
         if task.resource_request().num_gpus() > 0.0 && self.available_num_gpus() == 0.0 {
             return false;
         }
-        self.available_num_cpus() >= task.resource_request().num_cpus()
+        self.active_task_details.is_empty()
     }
 }
 

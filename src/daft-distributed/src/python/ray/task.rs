@@ -51,6 +51,8 @@ pub(crate) struct RayTaskResultHandle {
     task_locals: Option<pyo3_async_runtimes::TaskLocals>,
     /// The worker id
     worker_id: WorkerId,
+    /// The ip address of the worker
+    ip_address: String,
 }
 
 impl RayTaskResultHandle {
@@ -61,6 +63,7 @@ impl RayTaskResultHandle {
         coroutine: PyObject,
         task_locals: pyo3_async_runtimes::TaskLocals,
         worker_id: WorkerId,
+        ip_address: String,
     ) -> Self {
         Self {
             task_context,
@@ -68,6 +71,7 @@ impl RayTaskResultHandle {
             coroutine: Some(coroutine),
             task_locals: Some(task_locals),
             worker_id,
+            ip_address,
         }
     }
 }
@@ -82,7 +86,7 @@ impl TaskResultHandle for RayTaskResultHandle {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
-
+        let ip_address = self.ip_address.clone();
         let await_coroutine = async move {
             let result = Python::with_gil(|py| {
                 pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
@@ -107,6 +111,7 @@ impl TaskResultHandle for RayTaskResultHandle {
                             .map(|ray_part_ref| Arc::new(ray_part_ref) as PartitionRef)
                             .collect(),
                         worker_id.clone(),
+                        ip_address.clone(),
                     );
 
                     TaskStatus::Success {

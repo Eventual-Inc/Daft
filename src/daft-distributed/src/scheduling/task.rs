@@ -448,7 +448,7 @@ pub(super) mod tests {
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: MaterializedOutput::new(vec![partition_ref], "".into()),
+                task_result: MaterializedOutput::new(vec![partition_ref], "".into(), "".into()),
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,
                 failure: None,

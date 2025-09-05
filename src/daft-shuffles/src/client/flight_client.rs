@@ -35,10 +35,10 @@ impl ShuffleFlightClient {
     async fn connect(&mut self) -> DaftResult<(&str, &mut FlightClient)> {
         if let ClientState::Uninitialized(address) = &mut self.inner {
             let endpoint = Endpoint::from_shared(address.clone()).map_err(|e| {
-                DaftError::External(format!("Failed to create endpoint: {}", e).into())
+                DaftError::External(format!("Failed to create endpoint: {:?}", e).into())
             })?;
             let channel = endpoint.connect().await.map_err(|e| {
-                DaftError::External(format!("Failed to connect to endpoint: {}", e).into())
+                DaftError::External(format!("Failed to connect to endpoint: {:?}", e).into())
             })?;
             let client = FlightClient::new(channel);
             let inner = client.into_inner().max_decoding_message_size(usize::MAX);
@@ -64,6 +64,35 @@ impl ShuffleFlightClient {
                 format!(
                     "Error fetching partition: {} from {}. {}",
                     partition_idx, address, e
+                )
+                .into(),
+            )
+        })?;
+        Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
+            stream,
+            done: false,
+            schema: self.schema.clone(),
+            fields: self
+                .schema
+                .fields()
+                .iter()
+                .map(|f| Arc::new(f.clone()))
+                .collect(),
+        })
+    }
+
+    pub async fn get_partition_with_shuffle_id(
+        &mut self,
+        shuffle_id: u64,
+        partition_idx: usize,
+    ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
+        let ticket = Ticket::new(format!("{}:{}", shuffle_id, partition_idx));
+        let (address, client) = self.connect().await?;
+        let stream = client.do_get(ticket).await.map_err(|e| {
+            DaftError::External(
+                format!(
+                    "Error fetching partition: {} from shuffle {} at {}. {}",
+                    partition_idx, shuffle_id, address, e
                 )
                 .into(),
             )

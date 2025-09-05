@@ -21,6 +21,7 @@ pub(crate) struct RaySwordfishWorker {
     total_memory_bytes: usize,
     num_gpus: f64,
     active_task_details: ActiveTaskDetails,
+    ip_address: String,
 }
 
 #[pymethods]
@@ -32,6 +33,7 @@ impl RaySwordfishWorker {
         num_cpus: f64,
         num_gpus: f64,
         total_memory_bytes: usize,
+        ip_address: String,
     ) -> Self {
         Self {
             worker_id: Arc::from(worker_id),
@@ -40,6 +42,7 @@ impl RaySwordfishWorker {
             num_gpus,
             total_memory_bytes,
             active_task_details: Default::default(),
+            ip_address,
         }
     }
 }
@@ -78,6 +81,7 @@ impl RaySwordfishWorker {
                 coroutine,
                 task_locals,
                 self.worker_id.clone(),
+                self.ip_address.clone(),
             );
             task_handles.push(ray_task_result_handle);
         }

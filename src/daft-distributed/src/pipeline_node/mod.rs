@@ -70,13 +70,15 @@ pub(crate) type NodeName = &'static str;
 pub(crate) struct MaterializedOutput {
     partition: Vec<PartitionRef>,
     worker_id: WorkerId,
+    ip_address: String,
 }
 
 impl MaterializedOutput {
-    pub fn new(partition: Vec<PartitionRef>, worker_id: WorkerId) -> Self {
+    pub fn new(partition: Vec<PartitionRef>, worker_id: WorkerId, ip_address: String) -> Self {
         Self {
             partition,
             worker_id,
+            ip_address,
         }
     }
 
@@ -90,14 +92,25 @@ impl MaterializedOutput {
         &self.worker_id
     }
 
-    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId) {
-        (self.partition, self.worker_id)
+    #[allow(dead_code)]
+    pub fn ip_address(&self) -> &String {
+        &self.ip_address
+    }
+
+    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId, String) {
+        (self.partition, self.worker_id, self.ip_address)
     }
 
     pub fn split_into_materialized_outputs(&self) -> Vec<Self> {
         self.partition
             .iter()
-            .map(|partition| Self::new(vec![partition.clone()], self.worker_id.clone()))
+            .map(|partition| {
+                Self::new(
+                    vec![partition.clone()],
+                    self.worker_id.clone(),
+                    self.ip_address.clone(),
+                )
+            })
             .collect()
     }
 
