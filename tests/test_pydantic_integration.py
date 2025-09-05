@@ -143,6 +143,20 @@ class SomeDataclass:
     name: str
     age: int
 
+# @dataclass(frozen=True)
+
+
+
+@pytest.mark.parametrize(
+    "inner_type,expected",
+    [
+        (SomeDataclass, SIMPLE_ARROW_DAFT_TYPE),
+    ]
+)
+def test_dataclass(inner_type, expected):
+    _test_logic(inner_type, expected)
+
+
 
 class SomeNamedTuple(NamedTuple):
     name: str
@@ -152,7 +166,6 @@ class SomeNamedTuple(NamedTuple):
 @pytest.mark.parametrize(
     "in_type",
     [
-        SomeDataclass,
         SomeNamedTuple,
         tuple[int, str, float, bool, bytes],
         int | str,

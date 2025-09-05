@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import is_dataclass, Field as DataclassField
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_type_hints
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +20,15 @@ from types import NoneType, UnionType  # type: ignore
 from typing import Union, get_args, get_origin
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-    from typing import Any
+    from collections.abc import Sequence, Mapping
+    from typing import Any, Iterator, TypeVar
 
 
 from .datatype import DataType
 
 __all__: Sequence[str] = (
     "daft_pyarrow_datatype",
-    "pyarrow_datatype",
+    # "pyarrow_datatype",
     # "infer_daft_arrow_function_types",
 )
 
@@ -46,6 +47,21 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
     Uses :func:`pyarrow_datatype` to determine the appropriate Arrow type, then uses that
     as the basis for the Daft data type.
     """
+
+    try:
+        return _daft_datatype_for(f_type)
+    except TypeError as e:
+        if str(e) == "issubclass() arg 1 must be a class":
+            # drop the underlying error as it will be noise
+            raise TypeError(f"You must supply a type, not an instance of a type. You provided: {type(f_type)}={repr(f_type)}") from e
+        else:
+            raise e
+
+
+
+def _daft_datatype_for(f_type: type[Any]) -> DataType:
+    """Implements logic of :func:`daft_pyarrow_datatype`.
+    """
     print(f"\t{f_type=} | {type(f_type)=}")
     if get_origin(f_type) is Union or get_origin(f_type) is UnionType:
         targs = get_args(f_type)
@@ -56,7 +72,7 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
                 refined_inner = targs[0]
             else:
                 raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
-            inner_type = daft_pyarrow_datatype(refined_inner)
+            inner_type = _daft_datatype_for(refined_inner)
 
         else:
             raise TypeError(f"Cannot convert a general union type {f_type} into a pyarrow.DataType!")
@@ -65,10 +81,10 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
         targs = get_args(f_type)
         if len(targs) != 1:
             raise TypeError(
-                f"Expected list type {f_type} with inner element type but " f"got {len(targs)} inner-types: {targs}"
+                f"Expected list type {f_type} with inner element type but got {len(targs)} inner-types: {targs}"
             )
         element_type = targs[0]
-        inner_type = DataType.list(daft_pyarrow_datatype(element_type))
+        inner_type = DataType.list(_daft_datatype_for(element_type))
 
     elif get_origin(f_type) is dict:
         targs = get_args(f_type)
@@ -77,12 +93,35 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
                 f"Expected dict type {f_type} with inner key-value types but got " f"{len(targs)} inner-types: {targs}"
             )
         kt, vt = targs
-        pyarrow_kt = daft_pyarrow_datatype(kt)
-        pyarrow_vt = daft_pyarrow_datatype(vt)
+        pyarrow_kt = _daft_datatype_for(kt)
+        pyarrow_vt = _daft_datatype_for(vt)
         inner_type = DataType.map(pyarrow_kt, pyarrow_vt)
 
     elif get_origin(f_type) is tuple:
         raise TypeError(f"Cannot support tuple types: {f_type}")
+
+    elif is_dataclass(f_type):
+        field_names_types: dict[str, DataType] = {}
+
+        # handle a data class parameterized by generics
+        if hasattr(f_type, "__origin__"):
+            hint_mapping: dict[str, TypeVar] = get_type_hints(f_type.__origin__)
+            name_to_field: dict[str, DataclassField] = f_type.__origin__.__dataclass_fields__
+            for inner_f_name, inner_f_field in name_to_field.items():
+                if isinstance(inner_f_field.type, TypeVar):
+                    field_names_types[inner_f_name] = _daft_datatype_for([name_to_field])
+                else:
+                    field_names_types[inner_f_name] = _daft_datatype_for(inner_f_field.type)
+        else:
+            for inner_f_name, inner_f_field in f_type.__dataclass_fields__.items():
+                field_names_types[inner_f_name] = _daft_datatype_for(inner_f_field.type)
+
+
+
+        for inner_f_name, inner_f_type in f_type.__annotations__.items():
+            print(f"\t\t{inner_f_name=} | {inner_f_type=}")
+            field_names_types[inner_f_name] = _daft_datatype_for(inner_f_type)
+        inner_type = DataType.struct(field_names_types)
 
     # bool must come before int in type checking!
     elif issubclass(f_type, bool):
@@ -93,7 +132,7 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
         # inner_type = DataType.from_arrow_type(pa.struct([(f, schema.field(f).type) for f in schema.names]))
         field_names_types: dict[str, DataType] = {}
         for inner_f_name, inner_field_info in f_type.model_fields.items():
-            field_names_types[inner_f_name] = daft_pyarrow_datatype(inner_field_info.annotation)
+            field_names_types[inner_f_name] = _daft_datatype_for(inner_field_info.annotation)
         inner_type = DataType.struct(field_names_types)
 
     elif issubclass(f_type, str):
@@ -116,10 +155,77 @@ def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
         raise TypeError(
             "Unimplemented: handle conversion of (days, seconds, microseconds) into duration with a single unit!"
         )
+
     else:
         raise TypeError(f"Cannot handle general Python objects in Arrow: {f_type}")
 
     return inner_type
+
+
+def _dataclass_field_types_defaults(
+    dataclass_type: type,
+) -> list[tuple[str, type]]:
+    """Obtain the fields & their expected types for the given @dataclass type."""
+    if hasattr(dataclass_type, "__origin__"):
+        dataclass_fields = dataclass_type.__origin__.__dataclass_fields__  # type: ignore
+        generic_to_concrete = dict(_align_generic_concrete(dataclass_type))
+
+        def handle_field(data_field: Field) -> Tuple[str, Type, Optional[Any]]:
+            if data_field.type in generic_to_concrete:
+                typ = generic_to_concrete[data_field.type]
+            elif hasattr(data_field.type, "__parameters__"):
+                tn = _fill(generic_to_concrete, data_field.type)
+                typ = _exec(data_field.type.__origin__, tn)
+            else:
+                typ = data_field.type
+            return data_field.name, typ, _default_of(data_field)
+
+    else:
+        dataclass_fields = dataclass_type.__dataclass_fields__  # type: ignore
+
+        def handle_field(data_field: Field) -> Tuple[str, Type, Optional[Any]]:
+            return data_field.name, data_field.type, _default_of(data_field)
+
+    return list(map(handle_field, dataclass_fields.values()))
+
+def _align_generic_concrete(
+    data_type_with_generics: type,
+) -> Iterator[tuple[type, type]]:
+    """Yields pairs of (parameterized type name, runtime type value) for the input type.
+
+    Accepts a class type that has parameterized generic types.
+    Returns an iterator that yields pairs of (generic type variable name, instantiated type).
+
+    NOTE: If the supplied type derives from a Sequence or Mapping,
+          then the generics will be handled appropriately.
+    """
+    try:
+        origin = data_type_with_generics.__origin__  # type: ignore
+        if issubclass(origin, Sequence):
+            generics = [TypeVar("T")]  # type: ignore
+            values = get_args(data_type_with_generics)
+        elif issubclass(origin, Mapping):
+            generics = [TypeVar("KT"), TypeVar("VT_co")]  # type: ignore
+            values = get_args(data_type_with_generics)
+        else:
+            # should be a dataclass
+            generics = origin.__parameters__  # type: ignore
+            values = get_args(data_type_with_generics)  # type: ignore
+        for g, v in zip(generics, values):
+            yield g, v  # type: ignore
+    except AttributeError as e:
+        raise ValueError(
+            f"Cannot find __origin__, __dataclass_fields__ on type '{data_type_with_generics}'",
+            e,
+        )
+
+
+def _default_of(data_field: DataclassField) -> Any | None:
+    return (
+        None
+        if isinstance(data_field.default, _MISSING_TYPE)
+        else serialize(data_field.default, no_none_values=False)
+    )
 
 
 # def daft_pyarrow_datatype(f_type: type[Any]) -> DataType:
