@@ -210,6 +210,38 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     }
 }
 
+// impl dyn DistributedPipelineNode {
+
+//     pub fn append_plan_to_existing_task<F>(
+//         self: &Arc<Self>,
+//         submittable_task: SubmittableTask<SwordfishTask>,
+//         plan_builder: &F,
+//     ) -> SubmittableTask<SwordfishTask>
+//     where
+//         F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
+//     {
+//         let plan = submittable_task.task().plan();
+//         let new_plan = plan_builder(plan);
+//         let scheduling_strategy = submittable_task.task().strategy().clone();
+//         let psets = submittable_task.task().psets().clone();
+//         let config = submittable_task.task().config().clone();
+//         let mut task_context = submittable_task.task().task_context();
+//         if let Some(logical_node_id) = self.context().logical_node_id {
+//             task_context.add_logical_node_id(logical_node_id);
+//         }
+
+//         let task = submittable_task.with_new_task(SwordfishTask::new(
+//             task_context,
+//             new_plan,
+//             config,
+//             psets,
+//             scheduling_strategy,
+//             self.context().to_hashmap(),
+//         ));
+//         task
+//     }
+// }
+
 /// Visualize a distributed pipeline as Mermaid markdown
 pub fn viz_distributed_pipeline_mermaid(
     root: &dyn DistributedPipelineNode,
@@ -360,7 +392,14 @@ fn make_in_memory_task_from_materialized_outputs(
     )
 }
 
-fn append_plan_to_existing_task<F>(
+/// Makes a new task that runs the supplied node and then runs the rest of the plan.
+///
+/// Use this function if you're inserting a new distributed pipeline node into an existing plan.
+///
+/// The node is the DistributedPipelineNode. The plan comes from the SubmittableTask.
+/// This function makes a new plan, encapsulated in a new SubmittedTask. This new plan
+/// will first run the node's action, then it runs the rest of the plan.
+pub fn append_plan_to_existing_task<F>(
     submittable_task: SubmittableTask<SwordfishTask>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,

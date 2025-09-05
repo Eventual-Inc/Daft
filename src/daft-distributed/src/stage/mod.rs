@@ -302,7 +302,7 @@ pub(crate) struct StageExecutionContext {
 }
 
 impl StageExecutionContext {
-    fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
+    pub(crate) fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
         let joinset = JoinSet::new();
         Self {
             scheduler_handle,

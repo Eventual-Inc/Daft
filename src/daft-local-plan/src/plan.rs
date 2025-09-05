@@ -12,7 +12,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
         BoundColumn,
     },
-    functions::python::get_resource_request,
+    functions::python::{get_resource_request, get_udf_properties, UDFProperties},
     Column, WindowExpr, WindowFrame, WindowSpec,
 };
 use daft_logical_plan::{
@@ -990,6 +990,12 @@ pub struct UDFProject {
     pub passthrough_columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl UDFProject {
+    pub fn udf_properties(&self) -> UDFProperties {
+        get_udf_properties(self.project.inner())
+    }
 }
 
 #[cfg(feature = "python")]
