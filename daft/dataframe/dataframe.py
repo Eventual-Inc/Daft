@@ -1472,6 +1472,7 @@ class DataFrame:
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
         schema: Optional[Schema] = None,
+        native: bool = False,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1687,10 +1688,13 @@ class DataFrame:
 
         @overload
         def __getitem__(self, item: int) -> Expression: ...
+
         @overload
         def __getitem__(self, item: str) -> Expression: ...
+
         @overload
         def __getitem__(self, item: slice) -> "DataFrame": ...
+
         @overload
         def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
 
@@ -4567,10 +4571,13 @@ class GroupedDataFrame:
 
         @overload
         def __getitem__(self, item: int) -> Expression: ...
+
         @overload
         def __getitem__(self, item: str) -> Expression: ...
+
         @overload
         def __getitem__(self, item: slice) -> DataFrame: ...
+
         @overload
         def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
 
