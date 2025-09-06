@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema as IcebergSchema
@@ -258,7 +258,15 @@ class IcebergScanOperator(ScanOperator):
     def _create_count_scan_task(self, pushdowns: PyPushdowns, field_name: str) -> Iterator[ScanTask]:
         """Create count pushdown scan task using Iceberg metadata."""
         try:
-            total_count = self._calculate_total_rows_from_metadata()
+            iceberg_tasks = self._table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
+            total_count = 0
+
+            # Aggregate row counts from all data files
+            for task in iceberg_tasks:
+                data_file = task.file
+                total_count += data_file.record_count
+                assert task.delete_files is None, "Delete files should be None for count pushdown"
+
             result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))
 
             logger.info("Created Iceberg count pushdown task with total_count=%d for field=%s", total_count, field_name)
@@ -276,112 +284,33 @@ class IcebergScanOperator(ScanOperator):
             logger.error("Failed to create Iceberg count pushdown task: %s, now falling back to regular scan", e)
             yield from self._create_regular_scan_tasks(pushdowns)
 
-    def _calculate_total_rows_from_metadata(self) -> int:
-        """Calculate total row count from Iceberg manifest metadata.
+    def _has_delete_files(self) -> bool:
+        """Check if the table has any delete files.
 
-        This method reads the manifest files to aggregate record_count information
-        from all data files without accessing the actual data.
-        """
-        try:
-            iceberg_tasks = self._table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
-
-            data_files_info = {}
-            delete_files_info = []
-            total_data_rows = 0
-            for task in iceberg_tasks:
-                data_file = task.file
-                data_file_path = data_file.file_path
-
-                # Store data file information
-                data_files_info[data_file_path] = {
-                    "record_count": data_file.record_count,
-                    "sequence_number": getattr(data_file, "sequence_number", 0),
-                    "partition": getattr(data_file, "partition", None),
-                }
-                total_data_rows += data_file.record_count
-
-                # Collect delete files with their metadata
-                for delete_file in task.delete_files:
-                    delete_files_info.append(
-                        {
-                            "file_path": delete_file.file_path,
-                            "record_count": delete_file.record_count,
-                            "sequence_number": getattr(delete_file, "sequence_number", 0),
-                            "content_type": getattr(
-                                delete_file, "content", None
-                            ),  # 1=position_delete, 2=equality_delete
-                            "equality_ids": getattr(delete_file, "equality_ids", None),
-                            "target_data_file": data_file_path,
-                            "partition": getattr(delete_file, "partition", None),
-                        }
-                    )
-
-            # Calculate effective deletions using improved logic
-            effective_deletions = self._calculate_effective_deletions(delete_files_info)
-
-            # Calculate final count (ensure non-negative)
-            final_count = max(0, total_data_rows - effective_deletions)
-
-            logger.info(
-                "Calculated Iceberg count from metadata: data_files=%d, total_data_rows=%d, "
-                "delete_files=%d, effective_deletions=%d, final_count=%d",
-                len(data_files_info),
-                total_data_rows,
-                len(delete_files_info),
-                effective_deletions,
-                final_count,
-            )
-
-            return final_count
-        except Exception as e:
-            logger.error("Failed to calculate total rows from Iceberg metadata: %s", e)
-            raise
-
-    def _calculate_effective_deletions(self, delete_files_info: list[dict[str, Any]]) -> int:
-        """Calculate the effective number of deletions considering overlaps and sequence numbers.
-
-        Args:
-            data_files_info: Dictionary mapping data file paths to their metadata
-            delete_files_info: List of delete file metadata dictionaries
+        This method quickly scans the table to determine if there are any delete files
+        present. If delete files are found, count pushdown should be disabled to avoid
+        complex delete file processing logic.
 
         Returns:
-            The effective number of deleted rows
+            True if the table has delete files, False otherwise
         """
         try:
-            # Use a simpler and more reliable approach
-            # The complex logic was causing issues with sequence number validation
-            # and position delete handling
+            # Get a limited scan to check for delete files
+            iceberg_tasks = self._table.scan(
+                limit=1,  # Only need to check if any delete files exist
+                snapshot_id=self._snapshot_id,
+            ).plan_files()
 
-            total_deletions = 0
+            # Check if any task has delete files
+            for task in iceberg_tasks:
+                if task.delete_files and len(task.delete_files) > 0:
+                    logger.debug("Found delete files in table, count pushdown will be disabled")
+                    return True
+            return False
 
-            # For now, use a conservative but reliable approach:
-            # Sum all delete file record counts, but avoid double counting
-            delete_file_paths = set()
-
-            for delete_info in delete_files_info:
-                delete_file_path = delete_info["file_path"]
-
-                # Avoid counting the same delete file multiple times
-                if delete_file_path not in delete_file_paths:
-                    delete_file_paths.add(delete_file_path)
-                    record_count = delete_info["record_count"]
-
-                    # Add the deletion count
-                    total_deletions += record_count
-
-                    logger.debug("Adding delete file %s with %d deletions", delete_file_path, record_count)
-
-            logger.debug(
-                "Total effective deletions calculated: %d from %d unique delete files",
-                total_deletions,
-                len(delete_file_paths),
-            )
-
-            return total_deletions
         except Exception as e:
-            logger.error("Error in delete file analysis: %s", e)
-            # Fallback to simple summation if even this fails
-            return sum(delete_info["record_count"] for delete_info in delete_files_info)
+            logger.warning("Error checking for delete files: %s, disabling count pushdown as precaution", e)
+            return True
 
     def can_absorb_filter(self) -> bool:
         return False
@@ -393,7 +322,7 @@ class IcebergScanOperator(ScanOperator):
         return True
 
     def supports_count_pushdown(self) -> bool:
-        return True
+        return True and not self._has_delete_files()
 
     def supported_count_modes(self) -> list[CountMode]:
         return [CountMode.All]
