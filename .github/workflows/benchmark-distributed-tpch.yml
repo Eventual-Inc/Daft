@@ -75,9 +75,13 @@ jobs:
       uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
-        version: "0.6.17"
-    - name: Install Daft and dev dependencies
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
       run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
         rm -rf daft
         uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
         uv pip install gspread ray[default] boto3
@@ -98,18 +102,17 @@ jobs:
         chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
     - name: Spin up and connect to ray cluster
       run: |
+        source .venv/bin/activate
         ray up ray.yaml -y
         ray dashboard ray.yaml &
 
     - name: Run benchmark and upload results to Google Sheets
-      run: PYTHONPATH=. python .github/ci-scripts/distributed_tpch.py
-
-    - name: Upload traces
-      uses: actions/upload-artifact@v4
-      with:
-        name: traces
-        path: traces
+      run: |
+        source .venv/bin/activate
+        PYTHONPATH=. python .github/ci-scripts/distributed_tpch.py
 
     - name: Spin down ray cluster
       if: always()
-      run: ray down ray.yaml -y
+      run: |
+        source .venv/bin/activate
+        ray down ray.yaml -y

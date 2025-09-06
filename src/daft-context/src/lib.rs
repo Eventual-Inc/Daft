@@ -312,19 +312,17 @@ fn parse_usize_env_var(var_name: &str) -> Option<usize> {
 #[cfg(feature = "python")]
 fn get_ray_runner_config_from_env() -> RunnerConfig {
     const DAFT_RAY_ADDRESS: &str = "DAFT_RAY_ADDRESS";
-    const RAY_ADDRESS: &str = "RAY_ADDRESS";
     const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
     const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
 
     let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
         log::warn!(
-            "Detected usage of the ${} environment variable. This will be deprecated, please use ${} instead.",
+            "Detected usage of the ${} environment variable. This will be deprecated, please use $RAY_ADDRESS instead.",
             DAFT_RAY_ADDRESS,
-            RAY_ADDRESS
         );
         Some(address)
     } else {
-        std::env::var(RAY_ADDRESS).ok()
+        None
     };
     let max_task_backlog = parse_usize_env_var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG);
     let force_client_mode = parse_bool_env_var(DAFT_RAY_FORCE_CLIENT_MODE);
