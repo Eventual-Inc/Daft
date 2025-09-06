@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import time
 
 from ray.job_submission import JobDetails, JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, upload_to_google_sheets
+from tools.ci_bench_utils import get_run_metadata
 
 
 async def tail_logs(client: JobSubmissionClient, submission_id: str) -> JobDetails:
@@ -29,7 +28,7 @@ SF_TO_S3_PATH = {
 def run_benchmark():
     results = {}
 
-    scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
+    scale_factor = 100
     if scale_factor not in SF_TO_S3_PATH:
         raise ValueError(
             f"TPC-H scale factor {scale_factor} not supported, expected one of the following: {SF_TO_S3_PATH.keys()}"
@@ -68,8 +67,8 @@ def main():
     daft.context.set_runner_native()
 
     metadata = get_run_metadata()
-    scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
-    num_workers = int(os.getenv("RAY_NUM_WORKERS"))
+    scale_factor = 100
+    num_workers = 4
 
     print("Starting warmup run...")
     run_benchmark()
@@ -82,7 +81,7 @@ def main():
     print("Results:")
     print(data_dict)
 
-    upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
+    # upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
 
 
 if __name__ == "__main__":
