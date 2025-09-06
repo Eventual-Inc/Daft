@@ -212,7 +212,9 @@ pub trait DaftMeanAggable {
 pub trait DaftStddevAggable {
     type Output;
     fn stddev(&self) -> Self::Output;
+    fn stddev_with_ddof(&self, ddof: i32) -> Self::Output;
     fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output;
+    fn grouped_stddev_with_ddof(&self, groups: &GroupIndices, ddof: i32) -> Self::Output;
 }
 
 pub trait DaftCompareAggable {

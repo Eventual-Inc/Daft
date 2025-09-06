@@ -366,6 +366,15 @@ impl ToFromProto for ir::AggExpr {
                     _ => not_implemented_err!("unrecognized aggregation function: {}", name),
                 }
             }
+            proto::AggVariant::StddevFunction(stddev_function) => {
+                let arg = stddev_function.args[0].clone();
+                let arg = ir::Expr::from_proto(arg)?.into();
+                let ddof = stddev_function.ddof;
+                Self::Stddev(StddevParams {
+                    child: arg,
+                    ddof,
+                })
+            }
             proto::AggVariant::ApproxPercentile(_) => {
                 not_implemented_err!("approx_percentile");
                 // let expr = from_proto_arc(non_null!(approx_percentile.expr))?;

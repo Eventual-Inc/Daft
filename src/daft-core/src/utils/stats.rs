@@ -75,9 +75,19 @@ pub fn calculate_mean(sum: f64, count: u64) -> Option<f64> {
 }
 
 pub fn calculate_stddev(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
-    stats.mean.map(|mean| {
+    calculate_stddev_with_ddof(stats, values, 0)
+}
+
+pub fn calculate_stddev_with_ddof(stats: Stats, values: impl Iterator<Item = f64>, ddof: i32) -> Option<f64> {
+    stats.mean.and_then(|mean| {
+        let count = stats.count as i32;
+        if count <= ddof {
+            return if count == 0 { None } else { Some(f64::NAN) };
+        }
+        
         let sum_of_squares = values.map(|value| (value - mean).powi(2)).sum::<f64>();
-        (sum_of_squares / stats.count).sqrt()
+        let divisor = (count - ddof) as f64;
+        Some((sum_of_squares / divisor).sqrt())
     })
 }
 
