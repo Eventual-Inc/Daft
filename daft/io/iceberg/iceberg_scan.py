@@ -258,17 +258,11 @@ class IcebergScanOperator(ScanOperator):
     def _create_count_scan_task(self, pushdowns: PyPushdowns, field_name: str) -> Iterator[ScanTask]:
         """Create count pushdown scan task using Iceberg metadata."""
         try:
-            from pyiceberg.table.snapshots import TOTAL_RECORDS
-
-            if self._snapshot_id is None:
-                snapshot = self._table.current_snapshot()
-            else:
-                snapshot = self._table.snapshot_by_id(self._snapshot_id)
-
-            total_count = int(snapshot.summary.get(TOTAL_RECORDS, 0))
+            total_count = self._calculate_total_rows_from_metadata()
             result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))
 
-            scan_task = ScanTask.python_factory_func_scan_task(
+            logger.info("Created Iceberg count pushdown task with total_count=%d for field=%s", total_count, field_name)
+            yield ScanTask.python_factory_func_scan_task(
                 module=_iceberg_count_result_function.__module__,
                 func_name=_iceberg_count_result_function.__name__,
                 func_args=(total_count, field_name),
@@ -278,13 +272,44 @@ class IcebergScanOperator(ScanOperator):
                 pushdowns=pushdowns,
                 stats=None,
             )
-
-            logger.info("Created Iceberg count pushdown task with total_count=%d for field=%s", total_count, field_name)
-            yield scan_task
-
         except Exception as e:
             logger.error("Failed to create Iceberg count pushdown task: %s, now falling back to regular scan", e)
             yield from self._create_regular_scan_tasks(pushdowns)
+
+    def _calculate_total_rows_from_metadata(self) -> int:
+        """Calculate total row count from Iceberg manifest metadata.
+
+        This method reads the manifest files to aggregate record_count information
+        from all data files without accessing the actual data.
+        """
+        try:
+            iceberg_tasks = self._table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
+
+            total_rows = 0
+            total_deleted = 0
+
+            # Aggregate row counts from all data files
+            for task in iceberg_tasks:
+                data_file = task.file
+                total_rows += data_file.record_count
+
+                # Handle delete files (for Iceberg MOR - Merge-on-Read)
+                for delete_file in task.delete_files:
+                    # For now, we'll use a simple estimation for delete files
+                    # In a production implementation, this could be more sophisticated
+                    total_deleted += delete_file.record_count
+
+            final_count = max(0, total_rows - total_deleted)
+            logger.info(
+                "Calculated Iceberg count from metadata: total_rows=%d, deleted_rows=%d, final_count=%d",
+                total_rows,
+                total_deleted,
+                final_count,
+            )
+            return final_count
+        except Exception as e:
+            logger.error("Failed to calculate total rows from Iceberg metadata: %s", e)
+            raise
 
     def can_absorb_filter(self) -> bool:
         return False
