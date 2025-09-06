@@ -394,6 +394,7 @@ class Expression:
         batch_size: int | None,
         concurrency: int | None,
         use_process: bool | None,
+        runtime_env: dict[builtins.str, Any] | None = None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _udf(
@@ -407,6 +408,7 @@ class Expression:
                 batch_size,
                 concurrency,
                 use_process,
+                runtime_env,
             )
         )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import threading
 
@@ -736,3 +737,34 @@ def test_udf_error_global_var():
         match="`@daft.udf` requires that the UDF is serializable.",
     ):
         use_global_lambda(col("a"))
+
+
+@pytest.mark.skipif(
+    get_context().get_or_infer_runner_type() == "native",
+    reason="Native Runner doesn't currently support the `@udf(runtime_env=...)` setting",
+)
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Legacy Ray Runner doesn't currently support the `@udf(runtime_env=...)` setting",
+)
+def test_udf_with_runtime_env():
+    def explain_str(df: daft.DataFrame) -> str:
+        str_io = io.StringIO()
+        df.explain(show_all=True, file=str_io)
+        return str_io.getvalue().strip()
+
+    @udf(return_dtype=daft.DataType.string(), num_cpus=0.1, num_gpus=0)
+    def gen_email(names):
+        return [f"user_{name}@daft.ai" for name in names]
+
+    input_df = daft.range(start=0, end=1024, partitions=100).with_column(
+        "name", col("id").apply(func=lambda x: f"user_{x}", return_dtype=DataType.string())
+    )
+
+    gen_email_udf = gen_email.override_options(runtime_env={"conda": "daft"})
+    df = input_df.with_column("email", gen_email_udf(col("name")))
+    assert "Runtime env = { conda = daft }" not in explain_str(df)
+
+    gen_email_udf = gen_email.override_options(runtime_env={"conda": "daft"}).with_concurrency(1)
+    df = input_df.with_column("email", gen_email_udf(col("name")))
+    assert "Runtime env = { conda = daft }" in explain_str(df)

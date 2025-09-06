@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
@@ -56,6 +56,7 @@ async def start_udf_actors(
     num_gpus_per_actor: float,
     num_cpus_per_actor: float,
     memory_per_actor: float,
+    runtime_env: dict[str, Any] | None,
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
@@ -65,6 +66,7 @@ async def start_udf_actors(
             num_gpus=num_gpus_per_actor,
             num_cpus=num_cpus_per_actor,
             memory=memory_per_actor,
+            runtime_env=runtime_env,
         ).remote(expr_projection)
         for _ in range(num_actors)
     ]
