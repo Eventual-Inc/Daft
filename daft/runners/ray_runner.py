@@ -1224,6 +1224,9 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> None:
         super().__init__()
 
+        print("ray address:", address)
+        print("RAY_ADDRESS env var:", os.getenv("RAY_ADDRESS"))
+
         self.ray_address = address
 
         if ray.is_initialized():
