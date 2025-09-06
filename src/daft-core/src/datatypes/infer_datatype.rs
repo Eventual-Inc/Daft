@@ -274,6 +274,15 @@ impl Add for InferDataType<'_> {
                         )),
                     }
                 },
+                // --------
+                // Binary
+                // --------
+                (DataType::Binary, DataType::Binary) | (DataType::Binary, DataType::FixedSizeBinary(_)) | (DataType::FixedSizeBinary(_), DataType::Binary) => {
+                    Ok(DataType::Binary)
+                }
+                (DataType::FixedSizeBinary(lsize), DataType::FixedSizeBinary(rsize)) => {
+                    Ok(DataType::FixedSizeBinary(lsize + rsize))
+                }
                 // ---- Interval + temporal ----
                 (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
                 // ---- Boolean + other ----

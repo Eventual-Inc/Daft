@@ -4,7 +4,7 @@ use arrow2::bitmap::utils::{BitmapIter, ZipValidity};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
-    prelude::{AsArrow, BinaryArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray},
+    prelude::{AsArrow, BinaryArray, DaftIntegerType, DaftNumericType},
 };
 
 pub(crate) enum BroadcastedBinaryIter<'a> {
@@ -16,11 +16,6 @@ pub(crate) enum BroadcastedBinaryIter<'a> {
             arrow2::bitmap::utils::BitmapIter<'a>,
         >,
     ),
-}
-
-pub(crate) enum BroadcastedFixedSizeBinaryIter<'a> {
-    Repeat(std::iter::RepeatN<Option<&'a [u8]>>),
-    NonRepeat(ZipValidity<&'a [u8], std::slice::ChunksExact<'a, u8>, BitmapIter<'a>>),
 }
 
 pub(crate) enum BroadcastedNumericIter<'a, T: 'a, U>
@@ -40,17 +35,6 @@ where
         >,
         std::marker::PhantomData<U>,
     ),
-}
-
-impl<'a> Iterator for BroadcastedFixedSizeBinaryIter<'a> {
-    type Item = Option<&'a [u8]>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            BroadcastedFixedSizeBinaryIter::Repeat(iter) => iter.next(),
-            BroadcastedFixedSizeBinaryIter::NonRepeat(iter) => iter.next(),
-        }
-    }
 }
 
 impl<'a> Iterator for BroadcastedBinaryIter<'a> {
@@ -105,17 +89,6 @@ pub(crate) fn create_broadcasted_binary_iter(
         BroadcastedBinaryIter::Repeat(std::iter::repeat_n(arr.as_arrow().get(0), len))
     } else {
         BroadcastedBinaryIter::NonRepeat(arr.as_arrow().iter())
-    }
-}
-
-pub(crate) fn create_broadcasted_fixed_size_binary_iter(
-    arr: &FixedSizeBinaryArray,
-    len: usize,
-) -> BroadcastedFixedSizeBinaryIter<'_> {
-    if arr.len() == 1 {
-        BroadcastedFixedSizeBinaryIter::Repeat(iter::repeat_n(arr.as_arrow().get(0), len))
-    } else {
-        BroadcastedFixedSizeBinaryIter::NonRepeat(arr.as_arrow().iter())
     }
 }
 

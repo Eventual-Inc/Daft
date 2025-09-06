@@ -3,9 +3,11 @@
     reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
 )]
 pub mod coalesce;
+pub mod concat;
 pub mod distance;
 pub mod float;
 pub mod hash;
+pub mod length;
 pub mod minhash;
 pub mod monotonically_increasing_id;
 pub mod numeric;
@@ -14,8 +16,10 @@ pub mod python;
 pub mod to_struct;
 
 use common_error::DaftError;
-use daft_dsl::functions::FunctionModule;
+use concat::Concat;
+use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 use hash::HashFunction;
+use length::Length;
 use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
@@ -49,19 +53,14 @@ macro_rules! invalid_argument_err {
     }};
 }
 
-pub struct HashFunctions;
+pub struct MiscFunctions;
 
-impl FunctionModule for HashFunctions {
-    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+impl FunctionModule for MiscFunctions {
+    fn register(parent: &mut FunctionRegistry) {
+        parent.add_fn(Concat);
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
-    }
-}
-
-pub struct ConversionFunctions;
-
-impl FunctionModule for ConversionFunctions {
-    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
     }
 }

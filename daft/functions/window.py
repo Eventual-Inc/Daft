@@ -1,3 +1,5 @@
+"""Window Functions."""
+
 from __future__ import annotations
 
 import daft.daft as native
