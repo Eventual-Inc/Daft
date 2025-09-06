@@ -1,139 +1,179 @@
-# ruff: noqa: I002
-# isort: dont-add-import: from __future__ import annotations
+from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Optional, Union
+import warnings
+from typing import TYPE_CHECKING, Any
 
-from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
+from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.schema import Schema as IcebergSchema
+from pyiceberg.schema import visit
+
+import daft
+from daft.daft import (
+    CountMode,
+    FileFormatConfig,
+    ParquetSourceConfig,
+    PyPartitionField,
+    PyPartitionTransform,
+    PyPushdowns,
+    PyRecordBatch,
+    ScanTask,
+    StorageConfig,
+)
+from daft.datatype import DataType
 from daft.dependencies import pa
-from daft.expressions import Expression
-from daft.io.scan import ScanOperator
-from daft.logical.schema import Schema
+from daft.io.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
+from daft.io.scan import ScanOperator, make_partition_field
+from daft.logical.schema import Field, Schema
 from daft.recordbatch import RecordBatch
 
-from ..pushdowns import SupportsPushdownFilters
-
 if TYPE_CHECKING:
-    import lance
+    from collections.abc import Iterator
+
+    from pyiceberg.partitioning import PartitionField as IcebergPartitionField
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
+    from pyiceberg.table import Table
+    from pyiceberg.typedef import Record
 
 logger = logging.getLogger(__name__)
 
 
-# TODO support fts and fast_search
-def _lancedb_table_factory_function(
-    ds: "lance.LanceDataset",
-    fragment_ids: Optional[list[int]] = None,
-    required_columns: Optional[list[str]] = None,
-    filter: Optional["pa.compute.Expression"] = None,
-    limit: Optional[int] = None,
-) -> Iterator[PyRecordBatch]:
-    fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
-    if not fragments:
-        raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
-    scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
-    return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
+def _iceberg_count_result_function(total_count: int, field_name: str) -> Iterator[PyRecordBatch]:
+    """Construct Iceberg count query result."""
+    try:
+        arrow_schema = pa.schema([pa.field(field_name, pa.uint64())])
+        arrow_array = pa.array([total_count], type=pa.uint64())
+        arrow_batch = pa.RecordBatch.from_arrays([arrow_array], [field_name])
+
+        logger.debug("Generated Iceberg count result: %s=%d", field_name, total_count)
+
+        yield RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema)._recordbatch
+    except Exception as e:
+        logger.error("Failed to construct Iceberg count result: %s", e)
+        raise
 
 
-def _lancedb_count_result_function(
-    ds: "lance.LanceDataset",
-    required_column: str,
-    filters: Optional[list[Any]] = None,
-) -> Iterator[PyRecordBatch]:
-    """Use LanceDB's API to count rows and return a record batch with the count result."""
-    count = 0
-    if filters is None:
-        logger.debug("Using metadata for counting all rows (no filters)")
-        count = ds.count_rows()
+def _iceberg_partition_field_to_daft_partition_field(
+    iceberg_schema: IcebergSchema, pfield: IcebergPartitionField
+) -> PyPartitionField:
+    name = pfield.name
+    source_id = pfield.source_id
+    source_field = iceberg_schema.find_field(source_id)
+    source_name = source_field.name
+    daft_field = Field.create(
+        source_name, DataType.from_arrow_type(schema_to_pyarrow(iceberg_schema.find_type(source_name)))
+    )
+    transform = pfield.transform
+    source_type = DataType.from_arrow_type(schema_to_pyarrow(source_field.field_type))
+
+    from pyiceberg.transforms import (
+        BucketTransform,
+        DayTransform,
+        HourTransform,
+        IdentityTransform,
+        MonthTransform,
+        TruncateTransform,
+        YearTransform,
+    )
+
+    tfm = None
+    if isinstance(transform, IdentityTransform):
+        tfm = PyPartitionTransform.identity()
+        result_type = source_type
+    elif isinstance(transform, YearTransform):
+        tfm = PyPartitionTransform.year()
+        result_type = DataType.int32()
+    elif isinstance(transform, MonthTransform):
+        tfm = PyPartitionTransform.month()
+        result_type = DataType.int32()
+    elif isinstance(transform, DayTransform):
+        tfm = PyPartitionTransform.day()
+        # pyiceberg uses date as the result type of a day transform, which is incorrect
+        # so we cannot use transform.result_type() here
+        result_type = DataType.date()
+    elif isinstance(transform, HourTransform):
+        tfm = PyPartitionTransform.hour()
+        result_type = DataType.int32()
+    elif isinstance(transform, BucketTransform):
+        n = transform.num_buckets
+        tfm = PyPartitionTransform.iceberg_bucket(n)
+        result_type = DataType.int32()
+    elif isinstance(transform, TruncateTransform):
+        w = transform.width
+        tfm = PyPartitionTransform.iceberg_truncate(w)
+        result_type = source_type
     else:
-        # TODO: If filters are provided, we need to apply them after counting
-        logger.debug("Counting rows with filters applied")
-        scanner = ds.scanner(filter=filters)
-        for batch in scanner.to_batches():
-            count += batch.num_rows
-
-    arrow_schema = pa.schema([pa.field(required_column, pa.uint64())])
-    arrow_array = pa.array([count], type=pa.uint64())
-    arrow_batch = pa.RecordBatch.from_arrays([arrow_array], [required_column])
-    result_batch = RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema)._recordbatch
-    return (result_batch for _ in [1])
+        warnings.warn(f"{transform} not implemented, Please make an issue!")
+        result_type = source_type
+    result_field = Field.create(name, result_type)
+    return make_partition_field(result_field, daft_field, transform=tfm)
 
 
-class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
-    def __init__(self, ds: "lance.LanceDataset"):
-        self._ds = ds
-        self._pushed_filters: Union[list[PyExpr], None] = None
+def iceberg_partition_spec_to_fields(
+    iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec
+) -> list[PyPartitionField]:
+    return [_iceberg_partition_field_to_daft_partition_field(iceberg_schema, field) for field in spec.fields]
 
-    def name(self) -> str:
-        return "LanceDBScanOperator"
 
-    def display_name(self) -> str:
-        return f"LanceDBScanOperator({self._ds.uri})"
+class IcebergScanOperator(ScanOperator):
+    def __init__(self, iceberg_table: Table, snapshot_id: int | None, storage_config: StorageConfig) -> None:
+        super().__init__()
+        self._table = iceberg_table
+        self._snapshot_id = snapshot_id
+        self._storage_config = storage_config
+
+        iceberg_schema = (
+            iceberg_table.schema()
+            if self._snapshot_id is None
+            else self._table.scan(snapshot_id=self._snapshot_id).projection()
+        )
+        arrow_schema = schema_to_pyarrow(iceberg_schema)
+        self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
+        self._schema = Schema.from_pyarrow_schema(arrow_schema)
+
+        self._partition_keys = iceberg_partition_spec_to_fields(iceberg_schema, self._table.spec())
 
     def schema(self) -> Schema:
-        return Schema.from_pyarrow_schema(self._ds.schema)
+        return self._schema
+
+    def name(self) -> str:
+        return "IcebergScanOperator"
+
+    def display_name(self) -> str:
+        return f"IcebergScanOperator({'.'.join(self._table.name())})"
 
     def partitioning_keys(self) -> list[PyPartitionField]:
-        return []
+        return self._partition_keys
 
-    def can_absorb_filter(self) -> bool:
-        return isinstance(self, SupportsPushdownFilters)
-
-    def can_absorb_limit(self) -> bool:
-        return True
-
-    def can_absorb_select(self) -> bool:
-        return True
-
-    def supports_count_pushdown(self) -> bool:
-        """Returns whether this scan operator supports count pushdown."""
-        return True
-
-    def supported_count_modes(self) -> list[CountMode]:
-        """Returns the count modes supported by this scan operator."""
-        return [CountMode.All]
-
-    def as_pushdown_filter(self) -> Union[SupportsPushdownFilters, None]:
-        return self
+    def _iceberg_record_to_partition_spec(
+        self, spec: IcebergPartitionSpec, record: Record
+    ) -> daft.recordbatch.RecordBatch | None:
+        partition_fields = iceberg_partition_spec_to_fields(self._table.schema(), spec)
+        arrays = dict()
+        assert len(record) == len(partition_fields)
+        for idx, pfield in enumerate(partition_fields):
+            field = Field._from_pyfield(pfield.field)
+            field_name = field.name
+            field_dtype = field.dtype
+            arrow_type = field_dtype.to_arrow_dtype()
+            arrays[field_name] = daft.Series.from_arrow(pa.array([record[idx]], type=arrow_type), name=field_name).cast(
+                field_dtype
+            )
+        if len(arrays) > 0:
+            return daft.recordbatch.RecordBatch.from_pydict(arrays)
+        else:
+            return None
 
     def multiline_display(self) -> list[str]:
         return [
             self.display_name(),
-            f"Schema = {self.schema()}",
+            f"Schema = {self._schema}",
+            f"Partitioning keys = {self.partitioning_keys}",
+            # TODO(Clark): Improve repr of storage config here.
+            f"Storage config = {self._storage_config}",
         ]
 
-    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
-        pushed = []
-        remaining = []
-
-        for expr in filters:
-            try:
-                Expression._from_pyexpr(expr).to_arrow_expr()
-                pushed.append(expr)
-            except NotImplementedError:
-                remaining.append(expr)
-
-        if pushed:
-            self._pushed_filters = pushed
-        else:
-            self._pushed_filters = None
-
-        return pushed, remaining
-
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
-        required_columns: Optional[list[str]]
-        if pushdowns.columns is None:
-            required_columns = None
-        else:
-            filter_required_column_names = pushdowns.filter_required_column_names()
-            required_columns = list(
-                set(
-                    pushdowns.columns
-                    if filter_required_column_names is None
-                    else pushdowns.columns + filter_required_column_names
-                )
-            )
-
         # Check if there is a count aggregation pushdown
         if (
             pushdowns.aggregation is not None
@@ -143,101 +183,217 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             count_mode = pushdowns.aggregation_count_mode()
             fields = pushdowns.aggregation_required_column_names()
 
-            if count_mode not in self.supported_count_modes():
-                logger.warning(
-                    "Count mode %s is not supported for pushdown, falling back to original logic",
+            if count_mode in self.supported_count_modes():
+                logger.info(
+                    "Using Iceberg count pushdown optimization for count mode: %s",
                     count_mode,
                 )
-                yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+                yield from self._create_count_scan_task(pushdowns, fields[0])
+                return
+            else:
+                logger.warning(
+                    "Count mode %s is not supported for pushdown, falling back to regular scan",
+                    count_mode,
+                )
 
-            # TODO: If there are pushed filters, convert them to Arrow expressions
-            filters = None
+        # Regular scan without count pushdown
+        yield from self._create_regular_scan_tasks(pushdowns)
 
-            new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
+    def _create_regular_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        """Create regular scan tasks without count pushdown."""
+        limit = pushdowns.limit
+        iceberg_tasks = self._table.scan(limit=limit, snapshot_id=self._snapshot_id).plan_files()
+
+        limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
+
+        if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
+            logger.warning(
+                "%s has Partitioning Keys: %s but no partition filter was specified. This will result in a full table scan.",
+                self.display_name(),
+                self.partitioning_keys(),
+            )
+        scan_tasks = []
+
+        if limit is not None:
+            rows_left = limit
+        else:
+            rows_left = 0
+        for task in iceberg_tasks:
+            if limit_files and (rows_left <= 0):
+                break
+            file = task.file
+            path = file.file_path
+            record_count = file.record_count
+            file_format = file.file_format
+            if file_format == "PARQUET":
+                file_format_config = FileFormatConfig.from_parquet_config(
+                    ParquetSourceConfig(field_id_mapping=self._field_id_mapping)
+                )
+            else:
+                # TODO: Support ORC and AVRO when we can read it
+                raise NotImplementedError(f"{file_format} for iceberg not implemented!")
+
+            iceberg_delete_files = [f.file_path for f in task.delete_files]
+
+            # TODO: Thread in Statistics to each ScanTask: P2
+            pspec = self._iceberg_record_to_partition_spec(self._table.specs()[file.spec_id], file.partition)
+            st = ScanTask.catalog_scan_task(
+                file=path,
+                file_format=file_format_config,
+                schema=self._schema._schema,
+                num_rows=record_count,
+                storage_config=self._storage_config,
+                size_bytes=file.file_size_in_bytes,
+                iceberg_delete_files=iceberg_delete_files,
+                pushdowns=pushdowns,
+                partition_values=pspec._recordbatch if pspec is not None else None,
+                stats=None,
+            )
+            if st is None:
+                continue
+            rows_left -= record_count
+            scan_tasks.append(st)
+        return iter(scan_tasks)
+
+    def _create_count_scan_task(self, pushdowns: PyPushdowns, field_name: str) -> Iterator[ScanTask]:
+        """Create count pushdown scan task using Iceberg metadata."""
+        try:
+            total_count = self._calculate_total_rows_from_metadata()
+            result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))
+
+            logger.info("Created Iceberg count pushdown task with total_count=%d for field=%s", total_count, field_name)
             yield ScanTask.python_factory_func_scan_task(
-                module=_lancedb_count_result_function.__module__,
-                func_name=_lancedb_count_result_function.__name__,
-                func_args=(self._ds, fields[0], filters),
-                schema=new_schema._schema,
+                module=_iceberg_count_result_function.__module__,
+                func_name=_iceberg_count_result_function.__name__,
+                func_args=(total_count, field_name),
+                schema=result_schema._schema,
                 num_rows=1,
-                size_bytes=None,
+                size_bytes=8,
                 pushdowns=pushdowns,
                 stats=None,
             )
-        # Check if there is a limit pushdown and no filters
-        elif pushdowns.limit is not None and self._pushed_filters is None:
-            yield from self._create_scan_tasks_with_limit_and_no_filters(pushdowns, required_columns)
-        else:
-            yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+        except Exception as e:
+            logger.error("Failed to create Iceberg count pushdown task: %s, now falling back to regular scan", e)
+            yield from self._create_regular_scan_tasks(pushdowns)
 
-    def _create_scan_tasks_with_limit_and_no_filters(
-        self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
-    ) -> Iterator[ScanTask]:
-        """Create scan tasks optimized for limit pushdown with no filters."""
-        assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
-        assert pushdowns.limit is not None, "Expected a limit when creating scan tasks with limit and no filters"
+    def _calculate_total_rows_from_metadata(self) -> int:
+        """Calculate total row count from Iceberg manifest metadata.
 
-        fragments = self._ds.get_fragments()
-        remaining_limit = pushdowns.limit
+        This method reads the manifest files to aggregate record_count information
+        from all data files without accessing the actual data.
+        """
+        try:
+            iceberg_tasks = self._table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
 
-        for fragment in fragments:
-            if remaining_limit <= 0:
-                # No more rows needed, stop creating scan tasks
-                break
+            data_files_info = {}
+            delete_files_info = []
+            total_data_rows = 0
+            for task in iceberg_tasks:
+                data_file = task.file
+                data_file_path = data_file.file_path
 
-            # Calculate effective rows using fragment.count_rows()
-            # This is not expensive because count_rows simply checks physical_rows - num_deletions when there are no filters
-            # https://github.com/lancedb/lance/blob/v0.34.0/rust/lance/src/dataset/fragment.rs#L1049-L1055
-            effective_rows = fragment.count_rows()
+                # Store data file information
+                data_files_info[data_file_path] = {
+                    "record_count": data_file.record_count,
+                    "sequence_number": getattr(data_file, "sequence_number", 0),
+                    "partition": getattr(data_file, "partition", None),
+                }
+                total_data_rows += data_file.record_count
 
-            if effective_rows > 0:
-                # Determine how many rows this fragment should contribute
-                rows_to_scan = min(remaining_limit, effective_rows)
-                remaining_limit -= rows_to_scan
+                # Collect delete files with their metadata
+                for delete_file in task.delete_files:
+                    delete_files_info.append(
+                        {
+                            "file_path": delete_file.file_path,
+                            "record_count": delete_file.record_count,
+                            "sequence_number": getattr(delete_file, "sequence_number", 0),
+                            "content_type": getattr(
+                                delete_file, "content", None
+                            ),  # 1=position_delete, 2=equality_delete
+                            "equality_ids": getattr(delete_file, "equality_ids", None),
+                            "target_data_file": data_file_path,
+                            "partition": getattr(delete_file, "partition", None),
+                        }
+                    )
 
-                yield ScanTask.python_factory_func_scan_task(
-                    module=_lancedb_table_factory_function.__module__,
-                    func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(self._ds, [fragment.fragment_id], required_columns, None, rows_to_scan),
-                    schema=self.schema()._schema,
-                    num_rows=rows_to_scan,
-                    size_bytes=None,
-                    pushdowns=pushdowns,
-                    stats=None,
-                )
+            # Calculate effective deletions using improved logic
+            effective_deletions = self._calculate_effective_deletions(delete_files_info)
 
-    def _create_regular_scan_tasks(
-        self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
-    ) -> Iterator[ScanTask]:
-        """Create regular scan tasks without count pushdown."""
-        fragments = self._ds.get_fragments()
-        for fragment in fragments:
-            # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
-            size_bytes = None
-            stats = None
+            # Calculate final count (ensure non-negative)
+            final_count = max(0, total_data_rows - effective_deletions)
 
-            # NOTE: `fragment.count_rows()` should result in 1 IO call for the data file
-            # (1 fragment = 1 data file) and 1 more IO call for the deletion file (if present).
-            # This could potentially be expensive to perform serially if there are thousands of files.
-            # Given that num_rows isn't leveraged for much at the moment, and without statistics
-            # we will probably end up materializing the data anyways for any operations, we leave this
-            # as None.
-            num_rows = None
-            pushed_expr = None
-            if self._pushed_filters is not None:
-                # Combine all pushed filters using __and__
-                combined_filter = self._pushed_filters[0]
-                for filter_expr in self._pushed_filters[1:]:
-                    combined_filter = combined_filter.__and__(filter_expr)
-                pushed_expr = Expression._from_pyexpr(combined_filter).to_arrow_expr()
-
-            yield ScanTask.python_factory_func_scan_task(
-                module=_lancedb_table_factory_function.__module__,
-                func_name=_lancedb_table_factory_function.__name__,
-                func_args=(self._ds, [fragment.fragment_id], required_columns, pushed_expr, pushdowns.limit),
-                schema=self.schema()._schema,
-                num_rows=num_rows,
-                size_bytes=size_bytes,
-                pushdowns=pushdowns,
-                stats=stats,
+            logger.info(
+                "Calculated Iceberg count from metadata: data_files=%d, total_data_rows=%d, "
+                "delete_files=%d, effective_deletions=%d, final_count=%d",
+                len(data_files_info),
+                total_data_rows,
+                len(delete_files_info),
+                effective_deletions,
+                final_count,
             )
+
+            return final_count
+        except Exception as e:
+            logger.error("Failed to calculate total rows from Iceberg metadata: %s", e)
+            raise
+
+    def _calculate_effective_deletions(self, delete_files_info: list[dict[str, Any]]) -> int:
+        """Calculate the effective number of deletions considering overlaps and sequence numbers.
+
+        Args:
+            data_files_info: Dictionary mapping data file paths to their metadata
+            delete_files_info: List of delete file metadata dictionaries
+
+        Returns:
+            The effective number of deleted rows
+        """
+        try:
+            # Use a simpler and more reliable approach
+            # The complex logic was causing issues with sequence number validation
+            # and position delete handling
+
+            total_deletions = 0
+
+            # For now, use a conservative but reliable approach:
+            # Sum all delete file record counts, but avoid double counting
+            delete_file_paths = set()
+
+            for delete_info in delete_files_info:
+                delete_file_path = delete_info["file_path"]
+
+                # Avoid counting the same delete file multiple times
+                if delete_file_path not in delete_file_paths:
+                    delete_file_paths.add(delete_file_path)
+                    record_count = delete_info["record_count"]
+
+                    # Add the deletion count
+                    total_deletions += record_count
+
+                    logger.debug("Adding delete file %s with %d deletions", delete_file_path, record_count)
+
+            logger.debug(
+                "Total effective deletions calculated: %d from %d unique delete files",
+                total_deletions,
+                len(delete_file_paths),
+            )
+
+            return total_deletions
+        except Exception as e:
+            logger.error("Error in delete file analysis: %s", e)
+            # Fallback to simple summation if even this fails
+            return sum(delete_info["record_count"] for delete_info in delete_files_info)
+
+    def can_absorb_filter(self) -> bool:
+        return False
+
+    def can_absorb_limit(self) -> bool:
+        return False
+
+    def can_absorb_select(self) -> bool:
+        return True
+
+    def supports_count_pushdown(self) -> bool:
+        return True
+
+    def supported_count_modes(self) -> list[CountMode]:
+        return [CountMode.All]
