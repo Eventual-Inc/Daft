@@ -265,7 +265,6 @@ class IcebergScanOperator(ScanOperator):
             for task in iceberg_tasks:
                 data_file = task.file
                 total_count += data_file.record_count
-                assert task.delete_files is None, "Delete files should be None for count pushdown"
 
             result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))
 
