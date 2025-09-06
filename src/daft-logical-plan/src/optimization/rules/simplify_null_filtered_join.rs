@@ -4,12 +4,12 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::predicate_removes_nulls;
 use daft_core::join::JoinType;
-use daft_dsl::{resolved_col, ExprRef};
+use daft_dsl::{ExprRef, resolved_col};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Filter, Join},
     LogicalPlan, LogicalPlanRef,
+    ops::{Filter, Join},
 };
 
 /// Left, right, and outer joins can be simplified if there is a filter on their null-producing side.

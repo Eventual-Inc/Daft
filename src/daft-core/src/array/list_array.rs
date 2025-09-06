@@ -37,7 +37,9 @@ impl ListArray {
                 if let Some(validity) = validity.as_ref()
                     && validity.len() != offsets.len_proxy()
                 {
-                    panic!("ListArray::new validity length does not match computed length from offsets")
+                    panic!(
+                        "ListArray::new validity length does not match computed length from offsets"
+                    )
                 }
                 assert!(
                     !(child_dtype.as_ref() != flat_child.data_type()),
@@ -45,7 +47,12 @@ impl ListArray {
                     child_dtype,
                     flat_child.data_type(),
                 );
-                assert!(*offsets.last() <= flat_child.len() as i64, "ListArray::new received offsets with last value {}, but child series has length {}", offsets.last(), flat_child.len());
+                assert!(
+                    *offsets.last() <= flat_child.len() as i64,
+                    "ListArray::new received offsets with last value {}, but child series has length {}",
+                    offsets.last(),
+                    flat_child.len()
+                );
             }
             _ => panic!(
                 "ListArray::new expected List datatype, but received field: {}",

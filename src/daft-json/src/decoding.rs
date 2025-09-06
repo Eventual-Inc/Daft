@@ -10,7 +10,7 @@ use arrow2::{
     error::{Error, Result},
     offset::Offsets,
     temporal_conversions,
-    types::{f16, NativeType, Offset},
+    types::{NativeType, Offset, f16},
 };
 use chrono::{Datelike, Timelike};
 use daft_decoding::deserialize::{
@@ -47,9 +47,9 @@ pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
             }
             _ => {
                 return Err(Error::ExternalFormat(format!(
-                "Each line in a newline-delimited JSON file must be a JSON object, but got: {:?}",
-                record.borrow()
-            )))
+                    "Each line in a newline-delimited JSON file must be a JSON object, but got: {:?}",
+                    record.borrow()
+                )));
             }
         }
     }

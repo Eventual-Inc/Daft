@@ -296,7 +296,7 @@ impl Div for &Decimal128Array {
                 self,
                 rhs,
                 arrow2::compute::arithmetics::decimal::div,
-                |l, r| ((l * scale) / r),
+                |l, r| (l * scale) / r,
             )
         } else {
             match (self.len(), rhs.len()) {
@@ -321,7 +321,7 @@ impl Div for &Decimal128Array {
                             self.data_type(),
                             self.len(),
                         )),
-                        Some(rhs) => self.apply(|lhs| ((lhs * scale) / rhs)),
+                        Some(rhs) => self.apply(|lhs| (lhs * scale) / rhs),
                     }
                 }
                 (1, _) => {
@@ -329,10 +329,8 @@ impl Div for &Decimal128Array {
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
                         Some(lhs) => {
-                            let values_iter = rhs
-                                .as_arrow()
-                                .iter()
-                                .map(|v| v.map(|v| ((lhs * scale) / *v)));
+                            let values_iter =
+                                rhs.as_arrow().iter().map(|v| v.map(|v| (lhs * scale) / *v));
                             Decimal128Array::from_iter(self.field.clone(), values_iter)
                         }
                     })

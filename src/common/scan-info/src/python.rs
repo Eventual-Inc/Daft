@@ -4,7 +4,7 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_core::count_mode::CountMode;
-    use daft_dsl::{python::PyExpr, AggExpr, Expr};
+    use daft_dsl::{AggExpr, Expr, python::PyExpr};
     use daft_schema::python::field::PyField;
     use pyo3::{exceptions::PyAttributeError, prelude::*, pyclass};
     use serde::{Deserialize, Serialize};

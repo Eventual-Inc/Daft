@@ -15,7 +15,11 @@ impl RecordBatch {
             )));
         }
         if self.num_columns() != descending.len() {
-            return Err(DaftError::ValueError(format!("Mismatch in number of arguments for `descending` in search sorted: num_columns: {} vs : descending.len() {}", self.num_columns(), descending.len())));
+            return Err(DaftError::ValueError(format!(
+                "Mismatch in number of arguments for `descending` in search sorted: num_columns: {} vs : descending.len() {}",
+                self.num_columns(),
+                descending.len()
+            )));
         }
 
         if self.num_columns() == 1 {

@@ -6,10 +6,10 @@ use pyo3::Python;
 
 use crate::{
     array::{
-        pseudo_arrow::PseudoArrowArray, DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, pseudo_arrow::PseudoArrowArray,
     },
     datatypes::{
-        logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
+        DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, logical::LogicalArray,
     },
     series::Series,
 };
@@ -197,7 +197,7 @@ mod tests {
     use common_error::DaftResult;
 
     use crate::{
-        array::{ops::full::FullNull, FixedSizeListArray, StructArray},
+        array::{FixedSizeListArray, StructArray, ops::full::FullNull},
         datatypes::{DataType, Field},
     };
 

@@ -9,19 +9,19 @@ use std::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{ResultExt, Snafu};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::{
-    object_io::{GetResult, ObjectSource},
     InvalidRangeRequestSnafu, Result,
+    object_io::{GetResult, ObjectSource},
 };
 use crate::{
+    FileFormat,
     object_io::{self, FileMetadata, LSResult},
     range::GetRange,
     stats::IOStatsRef,
-    FileFormat,
 };
 
 /// NOTE: We hardcode this even for Windows
@@ -391,9 +391,9 @@ mod tests {
     use std::{default, io::Write};
 
     use crate::{
+        HttpSource, LocalSource, Result,
         integrations::test_full_get,
         object_io::{FileMetadata, FileType, ObjectSource},
-        HttpSource, LocalSource, Result,
     };
 
     async fn write_remote_parquet_to_local_file(

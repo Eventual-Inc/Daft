@@ -4,7 +4,7 @@ use common_image::{BBox, CowImage};
 use daft_core::{
     array::{
         ops::image::{
-            fixed_image_array_from_img_buffers, image_array_from_img_buffers, AsImageObj,
+            AsImageObj, fixed_image_array_from_img_buffers, image_array_from_img_buffers,
         },
         prelude::*,
     },
@@ -12,7 +12,7 @@ use daft_core::{
     prelude::ImageArray,
 };
 
-use crate::{iters::ImageBufferIter, CountingWriter};
+use crate::{CountingWriter, iters::ImageBufferIter};
 
 pub trait ImageOps {
     fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray>;
@@ -217,7 +217,7 @@ fn encode_images<Arr: AsImageObj>(
     )
 }
 
-fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage>> {
+fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage<'_>>> {
     ImageBufferIter::new(images)
         .map(|img| img.map(|img| img.resize(w, h)))
         .collect::<Vec<_>>()

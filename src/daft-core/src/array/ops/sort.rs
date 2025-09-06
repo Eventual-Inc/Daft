@@ -10,14 +10,14 @@ use crate::datatypes::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
+        ExtensionArray, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray,
+        NullArray, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
-        ExtensionArray, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray,
-        NullArray, Utf8Array,
     },
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
     series::Series,

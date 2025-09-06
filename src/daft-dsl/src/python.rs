@@ -22,9 +22,9 @@ use pyo3::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ExprRef, Operator,
     expr::{Expr, WindowExpr},
     visitor::accept,
-    ExprRef, Operator,
 };
 
 #[pyfunction]
@@ -248,12 +248,12 @@ pub fn udf(
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
-    if let Some(batch_size) = batch_size {
-        if batch_size == 0 {
-            return Err(PyValueError::new_err(format!(
-                "Error creating UDF: batch size must be positive (got {batch_size})"
-            )));
-        }
+    if let Some(batch_size) = batch_size
+        && batch_size == 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "Error creating UDF: batch size must be positive (got {batch_size})"
+        )));
     }
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
@@ -490,7 +490,7 @@ impl PyExpr {
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
-        use crate::{binary_op, Operator};
+        use crate::{Operator, binary_op};
         match op {
             CompareOp::Lt => Ok(binary_op(Operator::Lt, self.into(), other.into()).into()),
             CompareOp::Le => Ok(binary_op(Operator::LtEq, self.into(), other.into()).into()),
@@ -600,7 +600,7 @@ impl PyExpr {
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
         let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, Arc::new(window_spec.clone()))),
         })
     }
 

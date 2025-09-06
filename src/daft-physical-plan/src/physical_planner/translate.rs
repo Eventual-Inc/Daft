@@ -1,5 +1,5 @@
 use std::{
-    cmp::{max, min, Ordering},
+    cmp::{Ordering, max, min},
     collections::HashMap,
     sync::Arc,
 };
@@ -7,10 +7,10 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
+use common_scan_info::{PhysicalScanInfo, SPLIT_AND_MERGE_PASS, ScanState};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    estimated_selectivity,
+    AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType, estimated_selectivity,
     expr::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
@@ -19,7 +19,7 @@ use daft_dsl::{
     functions::agg::merge_mean,
     is_partition_compatible,
     join::normalize_join_keys,
-    lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
+    lit, resolved_col,
 };
 use daft_functions::numeric::sqrt;
 use daft_functions_list::{count_distinct, distinct};
@@ -41,7 +41,7 @@ use daft_logical_plan::{
 };
 use indexmap::IndexSet;
 
-use crate::{ops::*, PhysicalPlan, PhysicalPlanRef};
+use crate::{PhysicalPlan, PhysicalPlanRef, ops::*};
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
@@ -108,7 +108,9 @@ pub(super) fn translate_single_logical_node(
                 Ok(scan)
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo { .. }) => {
-                panic!("Placeholder should not get to translation. This should have been optimized away");
+                panic!(
+                    "Placeholder should not get to translation. This should have been optimized away"
+                );
             }
         },
         LogicalPlan::Shard(_) => {
@@ -264,7 +266,9 @@ pub(super) fn translate_single_logical_node(
                             Ordering::Equal => {
                                 // # of output partitions == # of input partitions; this should have already short-circuited with
                                 // a repartition drop above.
-                                unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
+                                unreachable!(
+                                    "Simple repartitioning with same # of output partitions as the input; this should have been dropped."
+                                )
                             }
                             _ => PhysicalPlan::ShuffleExchange(
                                 ShuffleExchangeFactory::new(input_physical)
@@ -615,7 +619,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 }
                 AggExpr::CountDistinct(e) => {
                     AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
-                },
+                }
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
@@ -657,12 +661,10 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 },
             }
         }),
-        _ => Err(DaftError::InternalError(
-            format!(
-                "Expected non-agg expressions in aggregation to be factored out before plan translation. Got: {:?}",
-                expr
-            )
-        )),
+        _ => Err(DaftError::InternalError(format!(
+            "Expected non-agg expressions in aggregation to be factored out before plan translation. Got: {:?}",
+            expr
+        ))),
     }
 }
 
@@ -1883,9 +1885,9 @@ mod tests {
 
     use super::HashJoin;
     use crate::{
+        PhysicalPlan, PhysicalPlanRef,
         physical_planner::logical_to_physical,
         test::{dummy_scan_node, dummy_scan_operator},
-        PhysicalPlan, PhysicalPlanRef,
     };
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.

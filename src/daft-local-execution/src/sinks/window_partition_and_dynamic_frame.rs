@@ -3,13 +3,13 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
     WindowFrame,
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::{
     blocking_sink::{
@@ -18,7 +18,7 @@ use super::{
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<BoundAggExpr>,

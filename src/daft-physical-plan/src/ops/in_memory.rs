@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_logical_plan::{source_info::InMemoryInfo, ClusteringSpec};
+use common_display::{DisplayLevel, tree::TreeDisplay};
+use daft_logical_plan::{ClusteringSpec, source_info::InMemoryInfo};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 

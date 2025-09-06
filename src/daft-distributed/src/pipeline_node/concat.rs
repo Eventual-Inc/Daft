@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_logical_plan::{
-    partitioning::{ClusteringSpecRef, UnknownClusteringConfig},
     ClusteringSpec,
+    partitioning::{ClusteringSpecRef, UnknownClusteringConfig},
 };
 use daft_schema::prelude::SchemaRef;
 use futures::StreamExt;

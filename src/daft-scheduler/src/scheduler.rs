@@ -13,14 +13,13 @@ use daft_logical_plan::{DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, 
 #[cfg(feature = "python")]
 use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_physical_plan::{
-    logical_to_physical,
+    PhysicalPlan, PhysicalPlanRef, QueryStageOutput, logical_to_physical,
     ops::{
         ActorPoolProject, Aggregate, BroadcastJoin, Concat, Dedup, EmptyScan, Explode, Filter,
         HashJoin, InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
         SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, TopN,
         Unpivot,
     },
-    PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
 };
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
@@ -33,9 +32,8 @@ use {
     daft_logical_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
     pyo3::{
-        pyclass, pymethods,
+        Bound, Py, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
         types::{PyAnyMethods, PyDict, PyList},
-        Bound, Py, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
     },
 };
 
@@ -141,7 +139,7 @@ impl PartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Bound<PyAny>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Bound<'_, PyAny>> {
         let index = slf.index;
         slf.index += 1;
         slf.parts.bind(slf.py()).get_item(index).ok()
@@ -576,10 +574,14 @@ fn physical_plan_to_partition_tasks(
                             .getattr(pyo3::intern!(py, "fanout_random"))?
                             .call1((upstream_iter, random_clustering_config.num_partitions()))?,
                         daft_logical_plan::ClusteringSpec::Range(_) => {
-                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                            unimplemented!(
+                                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
+                            );
                         }
                         daft_logical_plan::ClusteringSpec::Unknown(_) => {
-                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                            unreachable!(
+                                "Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec"
+                            );
                         }
                     };
                     let reduced = py
@@ -619,10 +621,14 @@ fn physical_plan_to_partition_tasks(
                             .getattr(pyo3::intern!(py, "fanout_random"))?
                             .call1((merged, random_clustering_config.num_partitions()))?,
                         daft_logical_plan::ClusteringSpec::Range(_) => {
-                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                            unimplemented!(
+                                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
+                            );
                         }
                         daft_logical_plan::ClusteringSpec::Unknown(_) => {
-                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                            unreachable!(
+                                "Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec"
+                            );
                         }
                     };
                     let reduced = py
@@ -666,10 +672,14 @@ fn physical_plan_to_partition_tasks(
                                 shuffle_dirs,
                             ))?,
                         daft_logical_plan::ClusteringSpec::Range(_) => {
-                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                            unimplemented!(
+                                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
+                            );
                         }
                         daft_logical_plan::ClusteringSpec::Unknown(_) => {
-                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                            unreachable!(
+                                "Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec"
+                            );
                         }
                     };
                     Ok(shuffled.into())

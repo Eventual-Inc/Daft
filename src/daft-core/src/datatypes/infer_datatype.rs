@@ -154,17 +154,20 @@ impl InferDataType<'_> {
                 let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max;
 
                 let d_type = if !(1..=38).contains(&p_prime) {
-                    Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
-                    ))
+                    Err(DaftError::TypeError(format!(
+                        "Cannot infer supertypes for comparison on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]",
+                        self, other
+                    )))
                 } else if s_max > 38 {
-                    Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]", self, other)
-                    ))
+                    Err(DaftError::TypeError(format!(
+                        "Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]",
+                        self, other
+                    )))
                 } else if s_max > p_prime {
-                    Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed precision {p_prime}", self, other)
-                    ))
+                    Err(DaftError::TypeError(format!(
+                        "Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed precision {p_prime}",
+                        self, other
+                    )))
                 } else {
                     Ok(DataType::Decimal128(p_prime, s_max))
                 }?;

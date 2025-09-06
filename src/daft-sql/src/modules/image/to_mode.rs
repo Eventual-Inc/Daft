@@ -1,5 +1,5 @@
 use daft_dsl::{Expr, ExprRef, Literal};
-use daft_functions::image::to_mode::{image_to_mode, ImageToMode};
+use daft_functions::image::to_mode::{ImageToMode, image_to_mode};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use daft_micropartition::{python::PyMicroPartition, MicroPartition};
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
-use pyo3::{types::PyAnyMethods, PyObject, Python};
+use daft_micropartition::{MicroPartition, python::PyMicroPartition};
+use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
+use pyo3::{PyObject, Python, types::PyAnyMethods};
 
 use crate::AsyncFileWriter;
 

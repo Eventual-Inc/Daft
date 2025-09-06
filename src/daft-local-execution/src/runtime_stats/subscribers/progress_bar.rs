@@ -8,9 +8,9 @@ use itertools::Itertools;
 use log::Log;
 
 use crate::{
-    ops::{NodeCategory, NodeInfo},
-    runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStats, CPU_US_KEY},
     PythonPrintTarget, STDOUT,
+    ops::{NodeCategory, NodeInfo},
+    runtime_stats::{CPU_US_KEY, RuntimeStats, subscribers::RuntimeStatsSubscriber},
 };
 
 /// Convert statistics to a message for progress bars
@@ -223,7 +223,7 @@ pub fn make_progress_bar_manager(
 mod python {
     use std::collections::HashMap;
 
-    use pyo3::{types::PyAnyMethods, PyObject, Python};
+    use pyo3::{PyObject, Python, types::PyAnyMethods};
 
     use super::*;
     use crate::ops::NodeInfo;

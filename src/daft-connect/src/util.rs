@@ -61,10 +61,12 @@ mod tests {
         let addr = "localhost:10009";
         let result = parse_spark_connect_address(addr);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("must start with 'sc://'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must start with 'sc://'")
+        );
     }
 
     #[test]
@@ -86,10 +88,12 @@ mod tests {
         let addr = "";
         let result = parse_spark_connect_address(addr);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("must start with 'sc://'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must start with 'sc://'")
+        );
     }
 
     #[test]

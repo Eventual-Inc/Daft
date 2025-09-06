@@ -4,7 +4,7 @@ use daft_io::IOStatsContext;
 use daft_stats::TruthValue;
 use snafu::ResultExt;
 
-use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
+use crate::{DaftCoreComputeSnafu, micropartition::MicroPartition};
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[BoundExpr]) -> DaftResult<Self> {

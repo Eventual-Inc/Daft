@@ -5,8 +5,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
 use serde::{Deserialize, Serialize};
 
@@ -98,7 +98,7 @@ impl ScalarUDF for BinaryConcat {
                     "Expects inputs to concat to be binary, but received {} and {}",
                     format_field_type_for_error(&left),
                     format_field_type_for_error(&right),
-                )))
+                )));
             }
         })
     }

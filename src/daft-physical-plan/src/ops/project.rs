@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
-use daft_dsl::{functions::python::get_resource_request, ExprRef};
-use daft_logical_plan::partitioning::{translate_clustering_spec, ClusteringSpec};
+use daft_dsl::{ExprRef, functions::python::get_resource_request};
+use daft_logical_plan::partitioning::{ClusteringSpec, translate_clustering_spec};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +73,7 @@ mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col, unresolved_col, ExprRef};
+    use daft_dsl::{ExprRef, lit, resolved_col, unresolved_col};
     use daft_logical_plan::partitioning::{
         ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig,
     };
