@@ -5,8 +5,8 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
-    functions::{FunctionArgs, scalar::ScalarFn},
     expr::StddevParams,
+    functions::{FunctionArgs, scalar::ScalarFn},
     optimization,
     python_udf::{PyScalarFn, RowWisePyFn},
     resolved_col,

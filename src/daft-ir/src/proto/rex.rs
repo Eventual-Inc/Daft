@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::expr::StddevParams;
 
-use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
+use super::{ProtoResult, ToFromProto, from_proto, from_proto_arc};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
@@ -370,10 +370,7 @@ impl ToFromProto for ir::AggExpr {
                 let arg = stddev_function.args[0].clone();
                 let arg = ir::Expr::from_proto(arg)?.into();
                 let ddof = stddev_function.ddof;
-                Self::Stddev(StddevParams {
-                    child: arg,
-                    ddof,
-                })
+                Self::Stddev(StddevParams { child: arg, ddof })
             }
             proto::AggVariant::ApproxPercentile(_) => {
                 not_implemented_err!("approx_percentile");

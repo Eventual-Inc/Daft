@@ -12,9 +12,8 @@ use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType, estimated_selectivity,
     expr::{
-        bound_col,
+        StddevParams, bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
-        StddevParams,
     },
     functions::agg::merge_mean,
     is_partition_compatible,
@@ -640,7 +639,10 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
-                AggExpr::Stddev(StddevParams { child: e, ddof }) => AggExpr::Stddev(StddevParams { child: Expr::Alias(e, name.clone()).into(), ddof }),
+                AggExpr::Stddev(StddevParams { child: e, ddof }) => AggExpr::Stddev(StddevParams {
+                    child: Expr::Alias(e, name.clone()).into(),
+                    ddof,
+                }),
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
                 AggExpr::BoolAnd(e) => AggExpr::BoolAnd(Expr::Alias(e, name.clone()).into()),

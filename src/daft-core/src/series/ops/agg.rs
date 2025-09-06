@@ -184,7 +184,10 @@ impl Series {
                 let casted = self.cast(&DataType::Float64)?;
                 let casted = casted.f64()?;
                 let series = groups
-                    .map_or_else(|| casted.stddev_with_ddof(ddof), |groups| casted.grouped_stddev_with_ddof(groups, ddof))?
+                    .map_or_else(
+                        || casted.stddev_with_ddof(ddof),
+                        |groups| casted.grouped_stddev_with_ddof(groups, ddof),
+                    )?
                     .into_series();
                 Ok(series)
             }

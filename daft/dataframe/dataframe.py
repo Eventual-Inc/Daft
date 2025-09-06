@@ -4630,7 +4630,7 @@ class GroupedDataFrame:
             (Showing first 2 of 2 rows)
 
         """
-        return self._apply_agg_fn(lambda col: col.stddev(ddof), cols)
+        return self.df._apply_agg_fn(lambda col: col.stddev(ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.
