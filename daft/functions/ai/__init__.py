@@ -16,8 +16,11 @@ from daft.ai.provider import Provider
 if TYPE_CHECKING:
     from daft.ai.protocols import TextEmbedderDescriptor
     from daft.utils import ColumnInputType
+    from daft.ai.typing import Label
 
 __all__ = [
+    "classify_text",
+    "embed_image",
     "embed_text",
 ]
 
@@ -127,3 +130,51 @@ def embed_image(
     expr = expr_udf(_ImageEmbedderExpression)
     expr = expr.with_init_args(image_embedder)
     return expr(image)
+
+
+##
+# CLASSIFY FUNCTIONS
+##
+
+
+def classify_text(
+    text: Expression,
+    labels: Label | list[Label],
+    *,
+    provider: str | Provider | None = None,
+    model: str | None = None,
+    **options: str,
+) -> Expression:
+    """Returns an expression that classifies text using the specified model and provider.
+
+    Args:
+        text (Expression): The input text column expression.
+        labels (str | list[str]): Label(s) for classification.
+        provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
+        model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        **options: Any additional options to pass for the model.
+
+    Note:
+        Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
+
+    Returns:
+        Expression: An expression representing the most-probable label string.
+    """
+    from daft.ai._expressions import _TextClassificationExpression
+    from daft.ai.protocols import TextClassifier
+
+    text_classifier = _resolve_provider(provider, "transformers").get_text_classifier(model, **options)
+
+    # TODO(rchowell): classification with structured outputs will be more interesting
+    label_list = [labels] if isinstance(labels, str) else labels
+
+    # implemented as a class-based udf for now
+    expr_callable = udf(
+        return_dtype=DataType.string(),
+        concurrency=1,
+        use_process=False,
+    )
+
+    expr = expr_callable(_TextClassificationExpression)
+    expr = expr.with_init_args(text_classifier, label_list)
+    return expr(text)
