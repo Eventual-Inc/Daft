@@ -247,7 +247,25 @@ class TestIcebergCountPushdown:
     @pytest.mark.integration()
     @pytest.mark.parametrize(
         "table_name",
-        WORKING_SHOW_COLLECT,
+        [
+            "test_all_types",
+            "test_limit",
+            "test_null_nan",
+            "test_null_nan_rewritten",
+            "test_partitioned_by_bucket",
+            "test_partitioned_by_days",
+            "test_partitioned_by_hours",
+            "test_partitioned_by_identity",
+            "test_partitioned_by_months",
+            "test_partitioned_by_truncate",
+            "test_partitioned_by_years",
+            "test_table_sanitized_character",
+            "test_table_version",
+            "test_uuid_and_fixed_unpartitioned",
+            "test_add_new_column",
+            "test_new_column_with_no_data",
+            "test_table_rename",
+        ],
     )
     def test_count_pushdown_basic(self, table_name, local_iceberg_catalog, capsys):
         """Test count pushdown on partitioned tables."""
@@ -260,6 +278,35 @@ class TestIcebergCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
         assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in actual.out
+
+        daft_count = df.collect().to_pydict()["count"][0]
+
+        # Compare with PyIceberg count
+        iceberg_count = len(tab.scan().to_arrow())
+
+        assert daft_count == iceberg_count
+
+    @pytest.mark.integration()
+    @pytest.mark.parametrize(
+        "table_name",
+        [
+            "test_positional_mor_deletes",
+            "test_positional_mor_double_deletes",
+            "test_overlapping_deletes",
+            "test_mixed_delete_types",
+        ],
+    )
+    def test_count_pushdown_with_delete_files(self, table_name, local_iceberg_catalog, capsys):
+        """Test count with delete files, should not use pushdown optimization."""
+        catalog_name, pyiceberg_catalog = local_iceberg_catalog
+        tab = pyiceberg_catalog.load_table(f"default.{table_name}")
+
+        # Test Daft count with pushdown on partitioned table
+        df = daft.read_table(f"{catalog_name}.default.{table_name}").count()
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
 
         daft_count = df.collect().to_pydict()["count"][0]
 
