@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import builtins
 import math
 import warnings
 from collections.abc import Iterable, Iterator
@@ -24,7 +23,6 @@ from daft.daft import (
     ResourceRequest,
     initialize_udfs,
     resolved_col,
-    sql_datatype,
     unresolved_col,
 )
 from daft.daft import PyExpr as _PyExpr
@@ -43,6 +41,8 @@ from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
+    import builtins
+
     from daft.dependencies import pc
     from daft.io import IOConfig
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -1076,213 +1076,132 @@ class Expression:
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
-        Args:
-            mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
+        Tip: See Also
+            [`daft.functions.count`](https://docs.daft.ai/en/stable/api/functions/count)
         """
-        if isinstance(mode, builtins.str):
-            mode = CountMode.from_count_mode_str(mode)
-        expr = self._expr.count(mode)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import count
+
+        return count(self, mode=mode)
 
     def count_distinct(self) -> Expression:
-        expr = self._expr.count_distinct()
-        return Expression._from_pyexpr(expr)
+        """Counts the number of distinct values in the expression.
+
+        Tip: See Also
+            [`daft.functions.count_distinct`](https://docs.daft.ai/en/stable/api/functions/count_distinct)
+        """
+        from daft.functions import count_distinct
+
+        return count_distinct(self)
 
     def sum(self) -> Expression:
-        """Calculates the sum of the values in the expression."""
-        expr = self._expr.sum()
-        return Expression._from_pyexpr(expr)
+        """Calculates the sum of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.sum`](https://docs.daft.ai/en/stable/api/functions/sum/)
+        """
+        from daft.functions import sum
+
+        return sum(self)
 
     def approx_count_distinct(self) -> Expression:
         """Calculates the approximate number of non-`NULL` distinct values in the expression.
 
-        Approximation is performed using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
-
-        Examples:
-            A global calculation of approximate distinct values in a non-NULL column:
-
-            >>> import daft
-            >>> df = daft.from_pydict({"values": [1, 2, 3, None]})
-            >>> df = df.agg(
-            ...     df["values"].approx_count_distinct().alias("distinct_values"),
-            ... )
-            >>> df.show()
-            ╭─────────────────╮
-            │ distinct_values │
-            │ ---             │
-            │ UInt64          │
-            ╞═════════════════╡
-            │ 3               │
-            ╰─────────────────╯
-            <BLANKLINE>
-            (Showing first 1 of 1 rows)
+        Tip: See Also
+              [`daft.functions.approx_count_distinct`](https://docs.daft.ai/en/stable/api/functions/approx_count_distinct/)
         """
-        expr = self._expr.approx_count_distinct()
-        return Expression._from_pyexpr(expr)
+        from daft.functions import approx_count_distinct
+
+        return approx_count_distinct(self)
 
     def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
         """Calculates the approximate percentile(s) for a column of numeric values.
 
-        For numeric columns, we use the [sketches_ddsketch crate](https://docs.rs/sketches-ddsketch/latest/sketches_ddsketch/index.html).
-        This is a Rust implementation of the paper [DDSketch: A Fast and Fully-Mergeable Quantile Sketch with Relative-Error Guarantees (Masson et al.)](https://arxiv.org/pdf/1908.10693)
-
-        1. Null values are ignored in the computation of the percentiles
-        2. If all values are Null then the result will also be Null
-        3. If ``percentiles`` are supplied as a single float, then the resultant column is a ``Float64`` column
-        4. If ``percentiles`` is supplied as a list, then the resultant column is a ``FixedSizeList[Float64; N]`` column, where ``N`` is the length of the supplied list.
-
-        Args:
-            percentiles: the percentile(s) at which to find approximate values at. Can be provided as a single
-                float or a list of floats.
-
-        Returns:
-            A new expression representing the approximate percentile(s). If `percentiles` was a single float, this will be a new `Float64` expression. If `percentiles` was a list of floats, this will be a new expression with type: `FixedSizeList[Float64, len(percentiles)]`.
-
-        Examples:
-            A global calculation of approximate percentiles:
-
-            >>> import daft
-            >>> df = daft.from_pydict({"scores": [1, 2, 3, 4, 5, None]})
-            >>> df = df.agg(
-            ...     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
-            ...     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
-            ... )
-            >>> df.show()
-            ╭─────────────────────┬────────────────────────────────╮
-            │ approx_median_score ┆ approx_percentiles_scores      │
-            │ ---                 ┆ ---                            │
-            │ Float64             ┆ FixedSizeList[Float64; 3]      │
-            ╞═════════════════════╪════════════════════════════════╡
-            │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
-            ╰─────────────────────┴────────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 1 of 1 rows)
-
-            A grouped calculation of approximate percentiles:
-
-            >>> df = daft.from_pydict({"class": ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
-            >>> df = (
-            ...     df.groupby("class")
-            ...     .agg(
-            ...         df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
-            ...         df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
-            ...     )
-            ...     .sort("class")
-            ... )
-            >>> df.show()
-            ╭───────┬─────────────────────┬────────────────────────────────╮
-            │ class ┆ approx_median_score ┆ approx_percentiles_scores      │
-            │ ---   ┆ ---                 ┆ ---                            │
-            │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
-            ╞═══════╪═════════════════════╪════════════════════════════════╡
-            │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ c     ┆ None                ┆ None                           │
-            ╰───────┴─────────────────────┴────────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
+        Tip: See Also
+            [`daft.functions.approx_percentiles`](https://docs.daft.ai/en/stable/api/functions/approx_percentiles/)
         """
-        expr = self._expr.approx_percentiles(percentiles)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import approx_percentiles
+
+        return approx_percentiles(self, percentiles)
 
     def mean(self) -> Expression:
-        """Calculates the mean of the values in the expression."""
-        expr = self._expr.mean()
-        return Expression._from_pyexpr(expr)
+        """Calculates the mean of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.mean`](https://docs.daft.ai/en/stable/api/functions/mean/)
+        """
+        from daft.functions import mean
+
+        return mean(self)
 
     def stddev(self) -> Expression:
-        """Calculates the standard deviation of the values in the expression."""
-        expr = self._expr.stddev()
-        return Expression._from_pyexpr(expr)
+        """Calculates the standard deviation of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.stddev`](https://docs.daft.ai/en/stable/api/functions/stddev/)
+        """
+        from daft.functions import stddev
+
+        return stddev(self)
 
     def min(self) -> Expression:
-        """Calculates the minimum value in the expression."""
-        expr = self._expr.min()
-        return Expression._from_pyexpr(expr)
+        """Calculates the minimum value in the expression.
+
+        Tip: See Also
+            [`daft.functions.min`](https://docs.daft.ai/en/stable/api/functions/min/)
+        """
+        from daft.functions import min
+
+        return min(self)
 
     def max(self) -> Expression:
-        """Calculates the maximum value in the expression."""
-        expr = self._expr.max()
-        return Expression._from_pyexpr(expr)
+        """Calculates the maximum value in the expression.
+
+        Tip: See Also
+            [`daft.functions.max`](https://docs.daft.ai/en/stable/api/functions/max/)
+        """
+        from daft.functions import max
+
+        return max(self)
 
     def bool_and(self) -> Expression:
         """Calculates the boolean AND of all values in a list.
 
-        For each list:
-        - Returns True if all non-null values are True
-        - Returns False if any non-null value is False
-        - Returns null if the list is empty or contains only null values
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
-            >>> df.with_column("result", df["values"].list.bool_and()).collect()
-            ╭───────────────┬─────────╮
-            │ values        ┆ result  │
-            │ ---           ┆ ---     │
-            │ List[Boolean] ┆ Boolean │
-            ╞═══════════════╪═════════╡
-            │ [true, true]  ┆ true    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [true, false] ┆ false   │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [None, None]  ┆ None    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []            ┆ None    │
-            ╰───────────────┴─────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
+        Tip: See Also
+            [`daft.functions.bool_and`](https://docs.daft.ai/en/stable/api/functions/bool_and/)
         """
-        expr = self._expr.bool_and()
-        return Expression._from_pyexpr(expr)
+        from daft.functions import bool_and
+
+        return bool_and(self)
 
     def bool_or(self) -> Expression:
         """Calculates the boolean OR of all values in a list.
 
-        For each list:
-        - Returns True if any non-null value is True
-        - Returns False if all non-null values are False
-        - Returns null if the list is empty or contains only null values
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
-            >>> df.with_column("result", df["values"].list.bool_or()).collect()
-            ╭────────────────┬─────────╮
-            │ values         ┆ result  │
-            │ ---            ┆ ---     │
-            │ List[Boolean]  ┆ Boolean │
-            ╞════════════════╪═════════╡
-            │ [true, false]  ┆ true    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [false, false] ┆ false   │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ [None, None]   ┆ None    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ []             ┆ None    │
-            ╰────────────────┴─────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
+        Tip: See Also
+            [`daft.functions.bool_or`](https://docs.daft.ai/en/stable/api/functions/bool_or/)
         """
-        expr = self._expr.bool_or()
-        return Expression._from_pyexpr(expr)
+        from daft.functions import bool_or
+
+        return bool_or(self)
 
     def any_value(self, ignore_nulls: bool = False) -> Expression:
         """Returns any value in the expression.
 
-        Args:
-            ignore_nulls: whether to ignore null values when selecting the value. Defaults to False.
+        Tip: See Also
+            [`daft.functions.any_value`](https://docs.daft.ai/en/stable/api/functions/any_value/)
         """
-        expr = self._expr.any_value(ignore_nulls)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import any_value
+
+        return any_value(self, ignore_nulls=ignore_nulls)
 
     def skew(self) -> Expression:
-        """Calculates the skewness of the values from the expression."""
-        expr = self._expr.skew()
-        return Expression._from_pyexpr(expr)
+        """Calculates the skewness of the values from the expression.
+
+        Tip: See Also
+            [`daft.functions.skew`](https://docs.daft.ai/en/stable/api/functions/skew/)
+        """
+        from daft.functions import skew
+
+        return skew(self)
 
     def agg_list(self) -> Expression:
         """Aggregates the values in the expression into a list."""
@@ -1603,82 +1522,42 @@ class Expression:
     def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type.
 
-        Args:
-            format (Literal["json"]): The serialization format.
-            dtype: The target data type to deserialize into.
-
-        Returns:
-            Expression: A new expression with the deserialized value.
+        Tip: See Also
+            [`daft.functions.deserialize`](https://docs.daft.ai/en/stable/api/functions/deserialize/)
         """
-        if isinstance(dtype, str):
-            dtype = DataType._from_pydatatype(sql_datatype(dtype))
-        else:
-            assert isinstance(dtype, (DataType, type))
-            dtype = DataType._infer_type(dtype)
-        return self._eval_expressions("deserialize", format, dtype._dtype)
+        from daft.functions import deserialize
+
+        return deserialize(self, format=format, dtype=dtype)
 
     def try_deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type, inserting nulls on failures.
 
-        Args:
-            format (Literal["json"]): The serialization format.
-            dtype: The target data type to deserialize into.
-
-        Returns:
-            Expression: A new expression with the deserialized value (or null).
+        Tip: See Also
+            [`daft.functions.try_deserialize`](https://docs.daft.ai/en/stable/api/functions/try_deserialize/)
         """
-        if isinstance(dtype, str):
-            dtype = DataType._from_pydatatype(sql_datatype(dtype))
-        else:
-            assert isinstance(dtype, (DataType, type))
-            dtype = DataType._infer_type(dtype)
-        return self._eval_expressions("try_deserialize", format, dtype._dtype)
+        from daft.functions import try_deserialize
+
+        return try_deserialize(self, format=format, dtype=dtype)
 
     def serialize(self, format: Literal["json"]) -> Expression:
         """Serializes the expression as a string using the specified format.
 
-        Args:
-            format (Literal["json"]): The serialization format.
-
-        Returns:
-            Expression: A new expression with the serialized string.
+        Tip: See Also
+            [`daft.functions.serialize`](https://docs.daft.ai/en/stable/api/functions/serialize/)
         """
-        return self._eval_expressions("serialize", format)
+        from daft.functions import serialize
+
+        return serialize(self, format=format)
 
     def jq(self, filter: builtins.str) -> Expression:
         """Applies a [jq](https://jqlang.github.io/jq/manual/) filter to the expression (string), returning the results as a string.
 
-        Args:
-            file (str): The jq filter.
-
-        Returns:
-            Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
-
-        Warning:
-            This expression uses [jaq](https://github.com/01mf02/jaq) as its filter executor which can differ from the
-            [jq](https://jqlang.org/) command-line tool. Please consult [jq vs. jaq](https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq)
-            for a detailed look into possible differences.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"col": ['{"a": 1}', '{"a": 2}', '{"a": 3}']})
-            >>> df.with_column("res", df["col"].jq(".a")).collect()
-            ╭──────────┬──────╮
-            │ col      ┆ res  │
-            │ ---      ┆ ---  │
-            │ Utf8     ┆ Utf8 │
-            ╞══════════╪══════╡
-            │ {"a": 1} ┆ 1    │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ {"a": 2} ┆ 2    │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ {"a": 3} ┆ 3    │
-            ╰──────────┴──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
+        Tip: See Also
+            [`daft.functions.jq`](https://docs.daft.ai/en/stable/api/functions/jq/)
         """
-        return self._eval_expressions("jq", filter)
+        from daft.functions import jq
+
+        return jq(self, filter)
 
     def name(self) -> builtins.str:
         return self._expr.name()
@@ -1914,6 +1793,16 @@ class Expression:
         from daft.functions import length
 
         return length(self)
+
+    def concat(self, other: Expression | builtins.str | bytes) -> Expression:
+        """Concatenate two string expressions.
+
+        Tip: See also
+            [`daft.functions.concat`](https://docs.daft.ai/en/stable/api/functions/concat/)
+        """
+        from daft.functions import concat
+
+        return concat(self, other)
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
@@ -3451,40 +3340,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def concat(self, other: str | Expression) -> Expression:
-        """Concatenates two string expressions together.
-
-        Args:
-            other (Expression): a string expression to concatenate with
-
-        Returns:
-            Expression: a String expression which is `self` concatenated with `other`
-
-        Note:
-            Another (easier!) way to invoke this functionality is using the Python `+` operator which is
-            aliased to using `.str.concat`. These are equivalent:
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"], "y": ["a", "b", "c"]})
-            >>> df.select(col("x").str.concat(col("y"))).collect()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ fooa │
-            ├╌╌╌╌╌╌┤
-            │ barb │
-            ├╌╌╌╌╌╌┤
-            │ bazc │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        # Delegate to + operator implementation.
-        other_expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr) + other_expr
+        """(DEPRECATED) Please use `daft.functions.concat` instead."""
+        warnings.warn(
+            "`Expression.str.concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.concat` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().concat(other)
 
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from the first regex match in each string in a string column.
@@ -5132,39 +4993,12 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         return self._to_expression().length()
 
     def concat(self, other: Expression) -> Expression:
-        r"""Concatenates two binary strings.
-
-        Args:
-            other: The binary string to concatenate with, can be either an Expression or a bytes literal
-
-        Returns:
-            Expression: A binary expression containing the concatenated strings
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict(
-            ...     {"a": [b"Hello", b"\\xff\\xfe", b"", b"World"], "b": [b" World", b"\\x00", b"empty", b"!"]}
-            ... )
-            >>> df = df.select(df["a"].binary.concat(df["b"]))
-            >>> df.show()
-            ╭────────────────────╮
-            │ a                  │
-            │ ---                │
-            │ Binary             │
-            ╞════════════════════╡
-            │ b"Hello World"     │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"\\xff\\xfe\\x00" │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"empty"           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"World!"          │
-            ╰────────────────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
-
-        """
-        return self._eval_expressions("binary_concat", other)
+        """(DEPRECATED) Please use `daft.functions.concat` instead."""
+        warnings.warn(
+            "`Expression.binary.concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.concat` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().concat(other)
 
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a slice of each binary string.

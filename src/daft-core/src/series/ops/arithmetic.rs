@@ -54,6 +54,16 @@ impl Add for &Series {
                 Ok(cast_downcast_op!(lhs, rhs, &DataType::Utf8, Utf8Array, add)?.into_series())
             }
             // ----------------
+            // Binary
+            // ----------------
+            DataType::Binary => {
+                Ok(cast_downcast_op!(lhs, rhs, &DataType::Binary, BinaryArray, add)?.into_series())
+            }
+            DataType::FixedSizeBinary(_) => Ok(lhs
+                .downcast::<FixedSizeBinaryArray>()?
+                .add(rhs.downcast::<FixedSizeBinaryArray>()?)?
+                .into_series()),
+            // ----------------
             // Numeric types
             // ----------------
             output_type if output_type.is_numeric() => {

@@ -1,12 +1,27 @@
 from __future__ import annotations
 
-from daft.functions.ai import (
+from .ai import (
     classify_text,
     embed_text,
     embed_image,
 )
+from .agg import (
+    count,
+    count_distinct,
+    sum,
+    approx_count_distinct,
+    approx_percentiles,
+    mean,
+    stddev,
+    min,
+    max,
+    bool_and,
+    bool_or,
+    any_value,
+    skew,
+)
 from .bitwise import bitwise_and, bitwise_or, bitwise_xor, shift_left, shift_right
-from daft.functions.columnar import (
+from .columnar import (
     columns_sum,
     columns_mean,
     columns_avg,
@@ -30,6 +45,7 @@ from .misc import (
     minhash,
     explode,
     length,
+    concat,
 )
 from .numeric import (
     abs,
@@ -68,15 +84,18 @@ from .numeric import (
     expm1,
     between,
 )
+from .str import deserialize, try_deserialize, serialize, jq
 from .window import (
     row_number,
     rank,
     dense_rank,
 )
 
-
 __all__ = [
     "abs",
+    "any_value",
+    "approx_count_distinct",
+    "approx_percentiles",
     "arccos",
     "arccosh",
     "arcsin",
@@ -88,6 +107,8 @@ __all__ = [
     "bitwise_and",
     "bitwise_or",
     "bitwise_xor",
+    "bool_and",
+    "bool_or",
     "cast",
     "cbrt",
     "ceil",
@@ -98,13 +119,17 @@ __all__ = [
     "columns_mean",
     "columns_min",
     "columns_sum",
+    "concat",
     "cos",
     "cosh",
     "cosine_distance",
     "cot",
+    "count",
+    "count_distinct",
     "csc",
     "degrees",
     "dense_rank",
+    "deserialize",
     "embed_image",
     "embed_text",
     "eq_null_safe",
@@ -118,6 +143,7 @@ __all__ = [
     "hash",
     "is_in",
     "is_null",
+    "jq",
     "length",
     "llm_generate",
     "ln",
@@ -125,6 +151,9 @@ __all__ = [
     "log1p",
     "log2",
     "log10",
+    "max",
+    "mean",
+    "min",
     "minhash",
     "monotonically_increasing_id",
     "negate",
@@ -134,13 +163,18 @@ __all__ = [
     "round",
     "row_number",
     "sec",
+    "serialize",
     "shift_left",
     "shift_right",
     "sign",
     "sin",
     "sinh",
+    "skew",
     "sqrt",
+    "stddev",
+    "sum",
     "tan",
     "tanh",
+    "try_deserialize",
     "unnest",
 ]

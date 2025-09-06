@@ -4,7 +4,7 @@ use arrow2::{
     datatypes::DataType as ArrowType,
     offset::Offsets,
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     datatypes::{BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray},
@@ -14,7 +14,6 @@ use daft_core::{
 use crate::utils::*;
 
 pub trait BinaryArrayExtension: Sized {
-    fn binary_concat(&self, other: &Self) -> DaftResult<Self>;
     fn binary_slice<I, J>(
         &self,
         start: &DataArray<I>,
@@ -40,39 +39,6 @@ pub trait BinaryArrayExtension: Sized {
 }
 
 impl BinaryArrayExtension for BinaryArray {
-    fn binary_concat(&self, other: &Self) -> DaftResult<Self> {
-        let self_arrow = self.as_arrow();
-        let other_arrow = other.as_arrow();
-
-        if self_arrow.len() == 0 || other_arrow.len() == 0 {
-            return Ok(Self::from((
-                self.name(),
-                Box::new(arrow2::array::BinaryArray::<i64>::new_empty(
-                    self_arrow.data_type().clone(),
-                )),
-            )));
-        }
-
-        let output_len = if self_arrow.len() == 1 || other_arrow.len() == 1 {
-            std::cmp::max(self_arrow.len(), other_arrow.len())
-        } else {
-            self_arrow.len()
-        };
-
-        let self_iter = create_broadcasted_binary_iter(self, output_len);
-        let other_iter = create_broadcasted_binary_iter(other, output_len);
-
-        let arrow_result = self_iter
-            .zip(other_iter)
-            .map(|(left_val, right_val)| match (left_val, right_val) {
-                (Some(left), Some(right)) => Some([left, right].concat()),
-                _ => None,
-            })
-            .collect::<arrow2::array::BinaryArray<i64>>();
-
-        Ok(Self::from((self.name(), Box::new(arrow_result))))
-    }
-
     fn binary_slice<I, J>(
         &self,
         start: &DataArray<I>,
@@ -280,50 +246,6 @@ impl BinaryArrayExtension for BinaryArray {
 }
 
 impl BinaryArrayExtension for FixedSizeBinaryArray {
-    fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {
-        let self_arrow = self.as_arrow();
-        let other_arrow = other.as_arrow();
-        let self_size = self_arrow.size();
-        let other_size = other_arrow.size();
-        let combined_size = self_size + other_size;
-
-        // Create a new FixedSizeBinaryArray with the combined size
-        let mut values = Vec::with_capacity(self_arrow.len() * combined_size);
-        let mut validity = arrow2::bitmap::MutableBitmap::new();
-
-        let output_len = if self_arrow.len() == 1 || other_arrow.len() == 1 {
-            std::cmp::max(self_arrow.len(), other_arrow.len())
-        } else {
-            self_arrow.len()
-        };
-
-        let self_iter = create_broadcasted_fixed_size_binary_iter(self, output_len);
-        let other_iter = create_broadcasted_fixed_size_binary_iter(other, output_len);
-
-        for (val1, val2) in self_iter.zip(other_iter) {
-            match (val1, val2) {
-                (Some(val1), Some(val2)) => {
-                    values.extend_from_slice(val1);
-                    values.extend_from_slice(val2);
-                    validity.push(true);
-                }
-                _ => {
-                    values.extend(std::iter::repeat_n(0u8, combined_size));
-                    validity.push(false);
-                }
-            }
-        }
-
-        // Create a new FixedSizeBinaryArray with the combined size
-        let result = arrow2::array::FixedSizeBinaryArray::try_new(
-            arrow2::datatypes::DataType::FixedSizeBinary(combined_size),
-            values.into(),
-            Some(validity.into()),
-        )?;
-
-        Ok(Self::from((self.name(), Box::new(result))))
-    }
-
     /// For binary-to-binary transforms (both encode & decode).
     fn transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
     where

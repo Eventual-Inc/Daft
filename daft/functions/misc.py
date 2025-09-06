@@ -465,12 +465,13 @@ def explode(expr: Expression) -> Expression:
         [`DataFrame.explode`](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.explain)
 
     Examples:
+        Explode one column, broadcast the rest:
+
         >>> import daft
         >>> from daft.functions import explode
         >>>
         >>> df = daft.from_pydict({"id": [1, 2, 3], "sentence": ["lorem ipsum", "foo bar baz", "hi"]})
         >>>
-        >>> # Explode one column, broadcast the rest
         >>> df.with_column("word", explode(df["sentence"].split(" "))).show()
         ╭───────┬─────────────┬───────╮
         │ id    ┆ sentence    ┆ word  │
@@ -491,8 +492,9 @@ def explode(expr: Expression) -> Expression:
         ╰───────┴─────────────┴───────╯
         <BLANKLINE>
         (Showing first 6 of 6 rows)
-        >>>
-        >>> # Explode multiple columns with the same lengths
+
+        Explode multiple columns with the same lengths:
+
         >>> df.select(
         ...     explode(df["sentence"].split(" ")).alias("word"),
         ...     explode(df["sentence"].capitalize().split(" ")).alias("capitalized_word"),
@@ -517,7 +519,9 @@ def explode(expr: Expression) -> Expression:
         <BLANKLINE>
         (Showing first 6 of 6 rows)
         >>>
-        >>> # This will error because exploded lengths are different:
+
+        This will error because exploded lengths are different:
+
         >>> # df.select(
         >>> #     df["sentence"]
         >>> #             .str.split(" ")
@@ -566,9 +570,8 @@ def length(expr: Expression | str | bytes | list[Any]) -> Expression:
         (Showing first 3 of 3 rows)
 
         Binary length:
-        >>> import daft
         >>> df = daft.from_pydict({"x": [b"foo", b"bar", None]})
-        >>> df = df.select(df["x"].binary.length())
+        >>> df = df.select(length(df["x"]))
         >>> df.show()
         ╭────────╮
         │ x      │
@@ -585,9 +588,6 @@ def length(expr: Expression | str | bytes | list[Any]) -> Expression:
         (Showing first 3 of 3 rows)
 
         List length:
-        >>> import daft
-        >>> from daft.functions import length
-        >>>
         >>> df = daft.from_pydict({"x": [[1, 2, 3], [4, 5], None]})
         >>> df = df.select(length(df["x"]))
         >>> df.show()
@@ -606,3 +606,58 @@ def length(expr: Expression | str | bytes | list[Any]) -> Expression:
         (Showing first 3 of 3 rows)
     """
     return Expression._call_builtin_scalar_fn("length", expr)
+
+
+def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> Expression:
+    r"""Concatenates two string or binary values.
+
+    Returns:
+        Expression: an expression with the same type as the inputs
+
+    Examples:
+        String concatenation:
+
+        >>> import daft
+        >>> from daft.functions import concat
+        >>>
+        >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"], "y": ["a", "b", "c"]})
+        >>> df.select(concat(df["x"], df["y"])).collect()
+        ╭──────╮
+        │ x    │
+        │ ---  │
+        │ Utf8 │
+        ╞══════╡
+        │ fooa │
+        ├╌╌╌╌╌╌┤
+        │ barb │
+        ├╌╌╌╌╌╌┤
+        │ bazc │
+        ╰──────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Binary concatenation:
+
+        >>> df = daft.from_pydict(
+        ...     {"a": [b"Hello", b"\\xff\\xfe", b"", b"World"], "b": [b" World", b"\\x00", b"empty", b"!"]}
+        ... )
+        >>> df = df.select(concat(df["a"], df["b"]))
+        >>> df.show()
+        ╭────────────────────╮
+        │ a                  │
+        │ ---                │
+        │ Binary             │
+        ╞════════════════════╡
+        │ b"Hello World"     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b"\\xff\\xfe\\x00" │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b"empty"           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b"World!"          │
+        ╰────────────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("concat", left, right)
