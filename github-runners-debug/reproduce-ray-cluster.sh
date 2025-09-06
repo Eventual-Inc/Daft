@@ -35,7 +35,7 @@ source .venv/bin/activate
 
 # Install dependencies
 echo "Installing dependencies..."
-uv pip install daft
+uv pip install daft==0.5.6
 uv pip install ray[default] boto3
 
 # Generate ray configuration

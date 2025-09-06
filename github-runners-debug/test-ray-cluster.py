@@ -10,6 +10,7 @@ ray.init()
 # Simple distributed computation
 @ray.remote
 def compute_square(x):
+    time.sleep(10)
     return x * x
 
 

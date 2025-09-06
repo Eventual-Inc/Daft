@@ -1,12 +1,12 @@
 import os
 from datetime import datetime, timezone
 
-import gspread
-
 import daft
 
 
 def upload_to_google_sheets(worksheet, data):
+    import gspread
+
     gc = gspread.service_account()
 
     sh = gc.open_by_url(

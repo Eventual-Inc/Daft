@@ -80,6 +80,7 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
 
 
 def main(parquet_path, q):
+    daft.context.set_runner_ray("ray://127.0.0.1:10001")
     s3_config_from_env = S3Config.from_env()
     io_config = IOConfig(s3=s3_config_from_env)
 
