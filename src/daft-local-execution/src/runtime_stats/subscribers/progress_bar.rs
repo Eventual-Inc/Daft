@@ -141,7 +141,11 @@ impl IndicatifProgressBarManager {
             total_len = self.total.to_string().len(),
         );
 
-        let formatted_prefix = format!("{:>1$}", node_info.name, MAX_PIPELINE_NAME_LEN);
+        let formatted_prefix = if node_info.name.len() > MAX_PIPELINE_NAME_LEN {
+            format!("{}...", &node_info.name[..MAX_PIPELINE_NAME_LEN - 3])
+        } else {
+            format!("{:>1$}", node_info.name, MAX_PIPELINE_NAME_LEN)
+        };
 
         let pb = indicatif::ProgressBar::new_spinner()
             .with_style(
@@ -199,7 +203,7 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     }
 }
 
-pub const MAX_PIPELINE_NAME_LEN: usize = 18;
+pub const MAX_PIPELINE_NAME_LEN: usize = 22;
 
 pub fn make_progress_bar_manager(
     node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)],

@@ -5,15 +5,13 @@ use opentelemetry::{KeyValue, global, metrics::Counter};
 
 use crate::{
     ops::NodeInfo,
-    runtime_stats::{
-        CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY, subscribers::RuntimeStatsSubscriber,
-    },
+    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, subscribers::RuntimeStatsSubscriber},
 };
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
     rows_received: Counter<u64>,
-    rows_emitted: Counter<u64>,
+    rows_out: Counter<u64>,
     cpu_us: Counter<u64>,
 }
 
@@ -24,7 +22,7 @@ impl OpenTelemetrySubscriber {
             rows_received: meter
                 .u64_counter("daft.runtime_stats.rows_received")
                 .build(),
-            rows_emitted: meter.u64_counter("daft.runtime_stats.rows_emitted").build(),
+            rows_out: meter.u64_counter("daft.runtime_stats.rows_out").build(),
             cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
         }
     }
@@ -56,8 +54,8 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
 
             for (k, v) in event.iter() {
                 match (k, v) {
-                    (ROWS_RECEIVED_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
-                    (ROWS_EMITTED_KEY, Stat::Count(v)) => self.rows_emitted.add(*v, &attributes),
+                    (ROWS_IN_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
+                    (ROWS_OUT_KEY, Stat::Count(v)) => self.rows_out.add(*v, &attributes),
                     (CPU_US_KEY, Stat::Count(v)) => self.cpu_us.add(*v, &attributes),
                     _ => {}
                 }

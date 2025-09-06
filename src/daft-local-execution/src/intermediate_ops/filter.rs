@@ -19,14 +19,14 @@ use crate::{
     ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY, RuntimeStats},
+    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
 };
 
 #[derive(Default)]
 pub struct FilterStats {
     cpu_us: AtomicU64,
-    rows_received: AtomicU64,
-    rows_emitted: AtomicU64,
+    rows_in: AtomicU64,
+    rows_out: AtomicU64,
 }
 
 impl RuntimeStats for FilterStats {
@@ -36,28 +36,28 @@ impl RuntimeStats for FilterStats {
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
         let cpu_us = self.cpu_us.load(ordering);
-        let rows_received = self.rows_received.load(ordering);
-        let rows_emitted = self.rows_emitted.load(ordering);
+        let rows_in = self.rows_in.load(ordering);
+        let rows_out = self.rows_out.load(ordering);
 
-        let selectivity = if rows_received == 0 {
+        let selectivity = if rows_in == 0 {
             100.0
         } else {
-            (rows_emitted as f64 / rows_received as f64) * 100.0
+            (rows_out as f64 / rows_in as f64) * 100.0
         };
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
-            ROWS_RECEIVED_KEY; Stat::Count(rows_received),
-            ROWS_EMITTED_KEY; Stat::Count(rows_emitted),
+            ROWS_IN_KEY; Stat::Count(rows_in),
+            ROWS_OUT_KEY; Stat::Count(rows_out),
             "selectivity"; Stat::Percent(selectivity),
         ]
     }
 
-    fn add_rows_received(&self, rows: u64) {
-        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.fetch_add(rows, Ordering::Relaxed);
     }
 
-    fn add_rows_emitted(&self, rows: u64) {
-        self.rows_emitted.fetch_add(rows, Ordering::Relaxed);
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.fetch_add(rows, Ordering::Relaxed);
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {

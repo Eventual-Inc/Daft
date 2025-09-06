@@ -25,9 +25,7 @@ use tokio::{
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
-pub use values::{
-    CPU_US_KEY, DefaultRuntimeStats, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY, RuntimeStats,
-};
+pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats};
 
 #[cfg(debug_assertions)]
 use crate::runtime_stats::subscribers::debug::DebugSubscriber;
@@ -293,7 +291,7 @@ impl CountingSender {
     }
     #[inline]
     pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
-        self.rt.add_rows_emitted(v.len() as u64);
+        self.rt.add_rows_out(v.len() as u64);
         self.sender.send(v).await?;
         Ok(())
     }
@@ -337,7 +335,7 @@ impl InitializingCountingReceiver {
             {
                 self.stats_manager.activate_node(self.node_id);
             }
-            self.rt.add_rows_received(v.len() as u64);
+            self.rt.add_rows_in(v.len() as u64);
         }
         v
     }
@@ -445,7 +443,7 @@ mod tests {
         handle.activate_node(0);
 
         // Send first event
-        node_stat.add_rows_received(100);
+        node_stat.add_rows_in(100);
         assert_eq!(
             mock_state.get_total_calls(),
             0,
@@ -453,7 +451,7 @@ mod tests {
         );
 
         // Send second event rapidly (within throttle interval)
-        node_stat.add_rows_received(100);
+        node_stat.add_rows_in(100);
         sleep(Duration::from_millis(50)).await;
 
         // Should only get 1 call due to throttling
@@ -464,11 +462,11 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_RECEIVED_KEY, Stat::Count(200))
+            (ROWS_IN_KEY, Stat::Count(200))
         );
 
         // Wait for throttle interval to pass, then send another event
-        node_stat.add_rows_received(300);
+        node_stat.add_rows_in(300);
         sleep(Duration::from_millis(50)).await;
 
         // Should now get a second call
@@ -479,7 +477,7 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_RECEIVED_KEY, Stat::Count(500))
+            (ROWS_IN_KEY, Stat::Count(500))
         );
     }
 
@@ -503,7 +501,7 @@ mod tests {
 
         handle.activate_node(0);
 
-        node_stat.add_rows_received(100);
+        node_stat.add_rows_in(100);
         sleep(Duration::from_millis(50)).await;
 
         // Both subscribers should receive the event
@@ -553,7 +551,7 @@ mod tests {
         let handle = stats_manager.handle();
 
         handle.activate_node(0);
-        node_stat.add_rows_received(100);
+        node_stat.add_rows_in(100);
         sleep(Duration::from_millis(50)).await;
 
         // Mock subscriber should still receive event despite other failing
@@ -566,18 +564,18 @@ mod tests {
 
         // Test initial state
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_RECEIVED_KEY, Stat::Count(0)));
-        assert_eq!(stats[2], (ROWS_EMITTED_KEY, Stat::Count(0)));
+        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(0)));
+        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(0)));
 
         // Test incremental updates
-        node_stat.add_rows_received(100);
-        node_stat.add_rows_received(50);
+        node_stat.add_rows_in(100);
+        node_stat.add_rows_out(50);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_RECEIVED_KEY, Stat::Count(150)));
+        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(150)));
 
-        node_stat.add_rows_emitted(75);
+        node_stat.add_rows_out(75);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[2], (ROWS_EMITTED_KEY, Stat::Count(75)));
+        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(75)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -597,7 +595,7 @@ mod tests {
         let handle = stats_manager.handle();
 
         // No events yet because no nodes are initialized
-        node_stat.add_rows_received(100);
+        node_stat.add_rows_in(100);
         sleep(Duration::from_millis(50)).await;
         assert_eq!(state.get_total_calls(), 0);
 
@@ -608,7 +606,7 @@ mod tests {
         // Now we should get an event
         assert_eq!(state.get_total_calls(), 1);
         let event = state.get_latest_event();
-        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
+        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -631,8 +629,8 @@ mod tests {
         handle.activate_node(0);
 
         // Simulate a fast query that completes within the throttle interval (500ms)
-        node_stat.add_rows_received(100);
-        node_stat.add_rows_emitted(50);
+        node_stat.add_rows_in(100);
+        node_stat.add_rows_out(50);
         node_stat.add_cpu_us(1000);
 
         handle.finalize_node(0);
@@ -648,7 +646,7 @@ mod tests {
             event[0],
             (CPU_US_KEY, Stat::Duration(Duration::from_millis(1)))
         );
-        assert_eq!(event[1], (ROWS_RECEIVED_KEY, Stat::Count(100)));
-        assert_eq!(event[2], (ROWS_EMITTED_KEY, Stat::Count(50)));
+        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
+        assert_eq!(event[2], (ROWS_OUT_KEY, Stat::Count(50)));
     }
 }
