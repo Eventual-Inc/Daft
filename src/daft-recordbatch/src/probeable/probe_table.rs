@@ -19,7 +19,6 @@ pub struct ProbeTable<T: ProbeContent> {
     hash_table: HashMap<IndexHash, T, IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
     compare_fn: MultiDynArrayComparator,
-    num_groups: usize,
     num_rows: usize,
 }
 
@@ -28,7 +27,7 @@ impl<T: ProbeContent> ProbeTable<T> {
     const TABLE_IDX_SHIFT: usize = 36;
     const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
 
-    const DEFAULT_SIZE: usize = 20;
+    const DEFAULT_SIZE: usize = 32;
 
     pub(crate) fn new(schema: SchemaRef, null_equal_aware: Option<&Vec<bool>>) -> DaftResult<Self> {
         let hash_table = HashMap::<IndexHash, T, IdentityBuildHasher>::with_capacity_and_hasher(
@@ -54,7 +53,6 @@ impl<T: ProbeContent> ProbeTable<T> {
             hash_table,
             tables: vec![],
             compare_fn,
-            num_groups: 0,
             num_rows: 0,
         })
     }
@@ -152,7 +150,6 @@ impl<T: ProbeContent> ProbeTable<T> {
                         },
                         val,
                     );
-                    self.num_groups += 1;
                 }
                 RawEntryMut::Occupied(mut entry) => {
                     entry.get_mut().add_row(idx as u64);

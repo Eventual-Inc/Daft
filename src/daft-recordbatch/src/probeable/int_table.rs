@@ -16,17 +16,25 @@ where
     T::Native: Ord + std::hash::Hash,
 {
     hash_table: HashMap<T::Native, V>,
+    num_tables: usize,
 }
 
 impl<T: DaftIntegerType, V: ProbeContent> IntProbeTable<T, V>
 where
     T::Native: Ord + std::hash::Hash,
 {
+    // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
+    const TABLE_IDX_SHIFT: usize = 36;
+    const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
+
     const DEFAULT_SIZE: usize = 32;
 
     pub(crate) fn new() -> DaftResult<Self> {
         let hash_table = HashMap::with_capacity(Self::DEFAULT_SIZE);
-        Ok(Self { hash_table })
+        Ok(Self {
+            hash_table,
+            num_tables: 0,
+        })
     }
 
     fn probe<'a>(
@@ -45,9 +53,11 @@ where
                 continue;
             };
 
-            self.hash_table.entry(*h).or_default().add_row(i as u64);
+            let idx = (self.num_tables << Self::TABLE_IDX_SHIFT) | i;
+            self.hash_table.entry(*h).or_default().add_row(idx as u64);
         }
 
+        self.num_tables += 1;
         Ok(())
     }
 }
@@ -59,7 +69,11 @@ where
     fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
         let iter = self.probe(table.get_column(0).downcast::<DataArray<T>>()?)?;
         let converted_iter = iter.map(|opt| V::to_indices(opt));
-        Ok(IndicesMapper::new(Box::new(converted_iter), 0, u64::MAX))
+        Ok(IndicesMapper::new(
+            Box::new(converted_iter),
+            Self::TABLE_IDX_SHIFT,
+            Self::LOWER_MASK,
+        ))
     }
 
     fn probe_exists<'a>(
