@@ -168,7 +168,6 @@ def cast(expr: Expression | Any, dtype: DataTypeLike) -> Expression:
         (Showing first 3 of 3 rows)
 
         Example with python type and sql types:
-        >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3]})
         >>> df = df.select(
         ...     df["a"].cast(str).alias("str"),

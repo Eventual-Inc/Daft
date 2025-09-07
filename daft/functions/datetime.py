@@ -318,7 +318,7 @@ def unix_date(expr: Expression | datetime.datetime | datetime.date) -> Expressio
         Expression: a UInt64 expression
 
     Examples:
-        >>> from datetime import datetime
+        >>> import datetime
         >>> import daft
         >>> from daft.functions import unix_date
         >>> df = daft.from_pydict(
@@ -1031,3 +1031,88 @@ def total_days(expr: Expression | datetime.timedelta) -> Expression:
         (Showing first 6 of 6 rows)
     """
     return Expression._call_builtin_scalar_fn("total_days", expr)
+
+
+def to_date(expr: Expression | str, format: str) -> Expression:
+    """Converts a string to a date using the specified format.
+
+    Returns:
+        Expression: a Date expression which is parsed by given format
+
+    Note:
+        The format must be a valid date format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import to_date
+        >>> df = daft.from_pydict({"x": ["2021-01-01", "2021-01-02", None]})
+        >>> df = df.with_column("date", to_date(df["x"], "%Y-%m-%d"))
+        >>> df.show()
+        ╭────────────┬────────────╮
+        │ x          ┆ date       │
+        │ ---        ┆ ---        │
+        │ Utf8       ┆ Date       │
+        ╞════════════╪════════════╡
+        │ 2021-01-01 ┆ 2021-01-01 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-01-02 ┆ 2021-01-02 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None       ┆ None       │
+        ╰────────────┴────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("to_date", expr, format=format)
+
+
+def to_datetime(expr: Expression | str, format: str, timezone: str | None = None) -> Expression:
+    """Converts a string to a datetime using the specified format and timezone.
+
+    Returns:
+        Expression: a DateTime expression which is parsed by given format and timezone
+
+    Note:
+        The format must be a valid datetime format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import to_datetime
+        >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123", "2021-01-02 12:30:00.456", None]})
+        >>> df = df.with_column("datetime", to_datetime(df["x"], "%Y-%m-%d %H:%M:%S%.3f"))
+        >>> df.show()
+        ╭─────────────────────────┬───────────────────────────────╮
+        │ x                       ┆ datetime                      │
+        │ ---                     ┆ ---                           │
+        │ Utf8                    ┆ Timestamp(Milliseconds, None) │
+        ╞═════════════════════════╪═══════════════════════════════╡
+        │ 2021-01-01 00:00:00.123 ┆ 2021-01-01 00:00:00.123       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-01-02 12:30:00.456 ┆ 2021-01-02 12:30:00.456       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None                    ┆ None                          │
+        ╰─────────────────────────┴───────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        If a timezone is provided, the datetime will be parsed in that timezone
+
+        >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
+        >>> df = df.with_column("datetime", to_datetime(df["x"], "%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai"))
+        >>> df.show()
+        ╭───────────────────────────────┬────────────────────────────────────────────────╮
+        │ x                             ┆ datetime                                       │
+        │ ---                           ┆ ---                                            │
+        │ Utf8                          ┆ Timestamp(Milliseconds, Some("Asia/Shanghai")) │
+        ╞═══════════════════════════════╪════════════════════════════════════════════════╡
+        │ 2021-01-01 00:00:00.123 +0800 ┆ 2021-01-01 00:00:00.123 CST                    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-02 12:30:00.456 CST                    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None                          ┆ None                                           │
+        ╰───────────────────────────────┴────────────────────────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("to_datetime", expr, format=format, timezone=timezone)

@@ -38,7 +38,7 @@ from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import Series, item_to_series
+from daft.series import Series
 
 if TYPE_CHECKING:
     import builtins
@@ -1955,6 +1955,299 @@ class Expression:
 
         return total_days(self)
 
+    def to_date(self, format: builtins.str) -> Expression:
+        """Converts a string to a date using the specified format.
+
+        Tip: See also
+            [`daft.functions.to_date`](https://docs.daft.ai/en/stable/api/functions/to_date/)
+        """
+        from daft.functions import to_date
+
+        return to_date(self, format)
+
+    def to_datetime(self, format: builtins.str, timezone: builtins.str | None = None) -> Expression:
+        """Converts a string to a datetime using the specified format and timezone.
+
+        Tip: See also
+            [`daft.functions.to_datetime`](https://docs.daft.ai/en/stable/api/functions/to_datetime/)
+        """
+        from daft.functions import to_datetime
+
+        return to_datetime(self, format, timezone)
+
+    def contains(self, substr: builtins.str | Expression) -> Expression:
+        """Checks whether each string contains the given pattern in a string column.
+
+        Tip: See also
+            [`daft.functions.contains`](https://docs.daft.ai/en/stable/api/functions/contains/)
+        """
+        from daft.functions import contains
+
+        return contains(self, substr)
+
+    def split(self, pattern: builtins.str | Expression, regex: bool = False) -> Expression:
+        """Splits each string on the given literal or regex pattern, into a list of strings.
+
+        Tip: See also
+            [`daft.functions.split`](https://docs.daft.ai/en/stable/api/functions/split/)
+        """
+        from daft.functions import split
+
+        return split(self, pattern, regex)
+
+    def lower(self) -> Expression:
+        """Convert UTF-8 string to all lowercase.
+
+        Tip: See also
+            [`daft.functions.lower`](https://docs.daft.ai/en/stable/api/functions/lower/)
+        """
+        from daft.functions import lower
+
+        return lower(self)
+
+    def upper(self) -> Expression:
+        """Convert UTF-8 string to all upper.
+
+        Tip: See also
+            [`daft.functions.upper`](https://docs.daft.ai/en/stable/api/functions/upper/)
+        """
+        from daft.functions import upper
+
+        return upper(self)
+
+    def lstrip(self) -> Expression:
+        """Strip whitespace from the left side of a UTF-8 string.
+
+        Tip: See also
+            [`daft.functions.lstrip`](https://docs.daft.ai/en/stable/api/functions/lstrip/)
+        """
+        from daft.functions import lstrip
+
+        return lstrip(self)
+
+    def rstrip(self) -> Expression:
+        """Strip whitespace from the right side of a UTF-8 string.
+
+        Tip: See also
+            [`daft.functions.rstrip`](https://docs.daft.ai/en/stable/api/functions/rstrip/)
+        """
+        from daft.functions import rstrip
+
+        return rstrip(self)
+
+    def reverse(self) -> Expression:
+        """Reverse a UTF-8 string.
+
+        Tip: See also
+            [`daft.functions.reverse`](https://docs.daft.ai/en/stable/api/functions/reverse/)
+        """
+        from daft.functions import reverse
+
+        return reverse(self)
+
+    def capitalize(self) -> Expression:
+        """Capitalize a UTF-8 string.
+
+        Tip: See also
+            [`daft.functions.capitalize`](https://docs.daft.ai/en/stable/api/functions/capitalize/)
+        """
+        from daft.functions import capitalize
+
+        return capitalize(self)
+
+    def left(self, nchars: int | Expression) -> Expression:
+        """Gets the n (from nchars) left-most characters of each string.
+
+        Tip: See also
+            [`daft.functions.left`](https://docs.daft.ai/en/stable/api/functions/left/)
+        """
+        from daft.functions import left
+
+        return left(self, nchars)
+
+    def right(self, nchars: int | Expression) -> Expression:
+        """Gets the n (from nchars) right-most characters of each string.
+
+        Tip: See also
+            [`daft.functions.right`](https://docs.daft.ai/en/stable/api/functions/right/)
+        """
+        from daft.functions import right
+
+        return right(self, nchars)
+
+    def rpad(self, length: int | Expression, pad: builtins.str | Expression) -> Expression:
+        """Right-pads each string by truncating or padding with the character.
+
+        Tip: See also
+            [`daft.functions.rpad`](https://docs.daft.ai/en/stable/api/functions/rpad/)
+        """
+        from daft.functions import rpad
+
+        return rpad(self, length, pad)
+
+    def lpad(self, length: int | Expression, pad: builtins.str | Expression) -> Expression:
+        """Left-pads each string by truncating or padding with the character.
+
+        Tip: See also
+            [`daft.functions.lpad`](https://docs.daft.ai/en/stable/api/functions/lpad/)
+        """
+        from daft.functions import lpad
+
+        return lpad(self, length, pad)
+
+    def repeat(self, n: int | Expression) -> Expression:
+        """Repeats each string n times.
+
+        Tip: See also
+            [`daft.functions.repeat`](https://docs.daft.ai/en/stable/api/functions/repeat/)
+        """
+        from daft.functions import repeat
+
+        return repeat(self, n)
+
+    def like(self, pattern: builtins.str | Expression) -> Expression:
+        """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
+
+        Tip: See also
+            [`daft.functions.like`](https://docs.daft.ai/en/stable/api/functions/like/)
+        """
+        from daft.functions import like
+
+        return like(self, pattern)
+
+    def ilike(self, pattern: builtins.str | Expression) -> Expression:
+        """Checks whether each string matches the given SQL ILIKE pattern, case insensitive.
+
+        Tip: See also
+            [`daft.functions.ilike`](https://docs.daft.ai/en/stable/api/functions/ilike/)
+        """
+        from daft.functions import ilike
+
+        return ilike(self, pattern)
+
+    def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
+        """Extract a substring from a string, starting at a specified index and extending for a given length.
+
+        Tip: See also
+            [`daft.functions.substr`](https://docs.daft.ai/en/stable/api/functions/substr/)
+        """
+        from daft.functions import substr
+
+        return substr(self, start, length)
+
+    def endswith(self, suffix: builtins.str | Expression) -> Expression:
+        """Checks whether each string ends with the given pattern in a string column.
+
+        Tip: See also
+            [`daft.functions.endswith`](https://docs.daft.ai/en/stable/api/functions/endswith/)
+        """
+        from daft.functions import endswith
+
+        return endswith(self, suffix)
+
+    def startswith(self, prefix: builtins.str | Expression) -> Expression:
+        """Checks whether each string starts with the given pattern in a string column.
+
+        Tip: See also
+            [`daft.functions.startswith`](https://docs.daft.ai/en/stable/api/functions/startswith/)
+        """
+        from daft.functions import startswith
+
+        return startswith(self, prefix)
+
+    def normalize(
+        self,
+        *,
+        remove_punct: bool = False,
+        lowercase: bool = False,
+        nfd_unicode: bool = False,
+        white_space: bool = False,
+    ) -> Expression:
+        """Normalizes a string for more useful deduplication.
+
+        Tip: See also
+            [`daft.functions.normalize`](https://docs.daft.ai/en/stable/api/functions/normalize/)
+        """
+        from daft.functions import normalize
+
+        return normalize(
+            self, remove_punct=remove_punct, lowercase=lowercase, nfd_unicode=nfd_unicode, white_space=white_space
+        )
+
+    def tokenize_encode(
+        self,
+        tokens_path: builtins.str,
+        *,
+        io_config: IOConfig | None = None,
+        pattern: builtins.str | None = None,
+        special_tokens: builtins.str | None = None,
+        use_special_tokens: bool | None = None,
+    ) -> Expression:
+        """Encodes each string as a list of integer tokens using a tokenizer.
+
+        Tip: See also
+            [`daft.functions.tokenize_encode`](https://docs.daft.ai/en/stable/api/functions/tokenize_encode/)
+        """
+        from daft.functions import tokenize_encode
+
+        return tokenize_encode(
+            self,
+            tokens_path,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
+            use_special_tokens=use_special_tokens,
+        )
+
+    def tokenize_decode(
+        self,
+        tokens_path: builtins.str,
+        *,
+        io_config: IOConfig | None = None,
+        pattern: builtins.str | None = None,
+        special_tokens: builtins.str | None = None,
+    ) -> Expression:
+        """Decodes each list of integer tokens into a string using a tokenizer.
+
+        Tip: See also
+            [`daft.functions.tokenize_decode`](https://docs.daft.ai/en/stable/api/functions/tokenize_decode/)
+        """
+        from daft.functions import tokenize_decode
+
+        return tokenize_decode(
+            self,
+            tokens_path,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
+        )
+
+    def count_matches(
+        self,
+        patterns: Any,
+        *,
+        whole_words: bool = False,
+        case_sensitive: bool = True,
+    ) -> Expression:
+        """Counts the number of times a pattern, or multiple patterns, appear in a string.
+
+        Tip: See also
+            [`daft.functions.count_matches`](https://docs.daft.ai/en/stable/api/functions/count_matches/)
+        """
+        from daft.functions import count_matches
+
+        return count_matches(self, patterns, whole_words=whole_words, case_sensitive=case_sensitive)
+
+    def length_bytes(self) -> Expression:
+        """Retrieves the length for a UTF-8 string column in bytes.
+
+        Tip: See also
+            [`daft.functions.length_bytes`](https://docs.daft.ai/en/stable/api/functions/length_bytes/)
+        """
+        from daft.functions import length_bytes
+
+        return length_bytes(self)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -2464,37 +2757,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.str` attribute."""
 
     def contains(self, substr: str | Expression) -> Expression:
-        """Checks whether each string contains the given pattern in a string column.
-
-        Args:
-            pattern: pattern to search for as a literal string, or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value contains the provided pattern
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
-            >>> df = df.select(df["x"].str.contains("o"))
-            >>> df.show()
-            ╭─────────╮
-            │ x       │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        substr_expr = Expression._to_expression(substr)._expr
-        f = native.get_function_from_registry("utf8_contains")
-        return Expression._from_pyexpr(f(self._expr, substr_expr))
+        """(DEPRECATED) Please use `daft.functions.contains` instead."""
+        warnings.warn(
+            "`Expression.str.contains` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.contains` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().contains(substr)
 
     def match(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given regular expression pattern in a string column.
@@ -2529,124 +2797,28 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
-        """Checks whether each string ends with the given pattern in a string column.
-
-        Args:
-            pattern: pattern to search for as a literal string, or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value ends with the provided pattern
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["geftdaft", "lazy", "daft.io"]})
-            >>> df.with_column("match", df["x"].str.endswith("daft")).collect()
-            ╭──────────┬─────────╮
-            │ x        ┆ match   │
-            │ ---      ┆ ---     │
-            │ Utf8     ┆ Boolean │
-            ╞══════════╪═════════╡
-            │ geftdaft ┆ true    │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ lazy     ┆ false   │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ daft.io  ┆ false   │
-            ╰──────────┴─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        suffix_expr = Expression._to_expression(suffix)._expr
-        f = native.get_function_from_registry("ends_with")
-
-        return Expression._from_pyexpr(f(self._expr, suffix_expr))
+        """(DEPRECATED) Please use `daft.functions.endswith` instead."""
+        warnings.warn(
+            "`Expression.str.endswith` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.endswith` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().endswith(suffix)
 
     def startswith(self, prefix: str | Expression) -> Expression:
-        """Checks whether each string starts with the given pattern in a string column.
-
-        Args:
-            pattern: pattern to search for as a literal string, or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value starts with the provided pattern
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["geftdaft", "lazy", "daft.io"]})
-            >>> df.with_column("match", df["x"].str.startswith("daft")).collect()
-            ╭──────────┬─────────╮
-            │ x        ┆ match   │
-            │ ---      ┆ ---     │
-            │ Utf8     ┆ Boolean │
-            ╞══════════╪═════════╡
-            │ geftdaft ┆ false   │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ lazy     ┆ false   │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ daft.io  ┆ true    │
-            ╰──────────┴─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        prefix_expr = Expression._to_expression(prefix)._expr
-        f = native.get_function_from_registry("starts_with")
-
-        return Expression._from_pyexpr(f(self._expr, prefix_expr))
+        """(DEPRECATED) Please use `daft.functions.startswith` instead."""
+        warnings.warn(
+            "`Expression.str.startswith` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.startswith` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().startswith(prefix)
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
-        r"""Splits each string on the given literal or regex pattern, into a list of strings.
-
-        Args:
-            pattern: The pattern on which each string should be split, or a column to pick such patterns from.
-            regex: Whether the pattern is a regular expression. Defaults to False.
-
-        Returns:
-            Expression: A List[Utf8] expression containing the string splits for each string in the column.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": ["daft.distributed.query", "a.b.c", "1.2.3"]})
-            >>> df.with_column("split", df["data"].str.split(".")).collect()
-            ╭────────────────────────┬────────────────────────────╮
-            │ data                   ┆ split                      │
-            │ ---                    ┆ ---                        │
-            │ Utf8                   ┆ List[Utf8]                 │
-            ╞════════════════════════╪════════════════════════════╡
-            │ daft.distributed.query ┆ [daft, distributed, query] │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ a.b.c                  ┆ [a, b, c]                  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1.2.3                  ┆ [1, 2, 3]                  │
-            ╰────────────────────────┴────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            Split on a regex pattern
-
-            >>> import daft
-            >>> df = daft.from_pydict({"data": ["daft.distributed...query", "a.....b.c", "1.2...3.."]})
-            >>> df.with_column("split", df["data"].str.split(r"\.+", regex=True)).collect()
-            ╭──────────────────────────┬────────────────────────────╮
-            │ data                     ┆ split                      │
-            │ ---                      ┆ ---                        │
-            │ Utf8                     ┆ List[Utf8]                 │
-            ╞══════════════════════════╪════════════════════════════╡
-            │ daft.distributed...query ┆ [daft, distributed, query] │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ a.....b.c                ┆ [a, b, c]                  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1.2...3..                ┆ [1, 2, 3, ]                │
-            ╰──────────────────────────┴────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-
-        """
-        pattern_expr = Expression._to_expression(pattern)
-        f_name = "regexp_split" if regex else "split"
-        f = native.get_function_from_registry(f_name)
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.split` instead."""
+        warnings.warn(
+            "`Expression.str.split` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.split` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().split(pattern, regex=regex)
 
     def concat(self, other: str | Expression) -> Expression:
         """(DEPRECATED) Please use `daft.functions.concat` instead."""
@@ -2845,267 +3017,76 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return self._to_expression().length()
 
     def length_bytes(self) -> Expression:
-        """Retrieves the length for a UTF-8 string column in bytes.
-
-        Returns:
-            Expression: an UInt64 expression with the length of each string
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["😉test", "hey̆", "baz"]})
-            >>> df = df.select(df["x"].str.length_bytes())
-            >>> df.show()
-            ╭────────╮
-            │ x      │
-            │ ---    │
-            │ UInt64 │
-            ╞════════╡
-            │ 8      │
-            ├╌╌╌╌╌╌╌╌┤
-            │ 5      │
-            ├╌╌╌╌╌╌╌╌┤
-            │ 3      │
-            ╰────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("length_bytes")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.length_bytes` instead."""
+        warnings.warn(
+            "`Expression.str.length_bytes` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.length_bytes` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().length_bytes()
 
     def lower(self) -> Expression:
-        """Convert UTF-8 string to all lowercase.
-
-        Returns:
-            Expression: a String expression which is `self` lowercased
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["FOO", "BAR", "BAZ"]})
-            >>> df = df.select(df["x"].str.lower())
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ foo  │
-            ├╌╌╌╌╌╌┤
-            │ bar  │
-            ├╌╌╌╌╌╌┤
-            │ baz  │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("lower")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.lower` instead."""
+        warnings.warn(
+            "`Expression.str.lower` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.lower` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().lower()
 
     def upper(self) -> Expression:
-        """Convert UTF-8 string to all upper.
-
-        Returns:
-            Expression: a String expression which is `self` uppercased
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
-            >>> df = df.select(df["x"].str.upper())
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ FOO  │
-            ├╌╌╌╌╌╌┤
-            │ BAR  │
-            ├╌╌╌╌╌╌┤
-            │ BAZ  │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("upper")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.upper` instead."""
+        warnings.warn(
+            "`Expression.str.upper` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.upper` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().upper()
 
     def lstrip(self) -> Expression:
-        """Strip whitespace from the left side of a UTF-8 string.
-
-        Returns:
-            Expression: a String expression which is `self` with leading whitespace stripped
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz"]})
-            >>> df = df.select(df["x"].str.lstrip())
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ foo  │
-            ├╌╌╌╌╌╌┤
-            │ bar  │
-            ├╌╌╌╌╌╌┤
-            │ baz  │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("lstrip")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.lstrip` instead."""
+        warnings.warn(
+            "`Expression.str.lstrip` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.lstrip` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().lstrip()
 
     def rstrip(self) -> Expression:
-        """Strip whitespace from the right side of a UTF-8 string.
-
-        Returns:
-            Expression: a String expression which is `self` with trailing whitespace stripped
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz   "]})
-            >>> df = df.select(df["x"].str.rstrip())
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ foo  │
-            ├╌╌╌╌╌╌┤
-            │ bar  │
-            ├╌╌╌╌╌╌┤
-            │ baz  │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("rstrip")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.rstrip` instead."""
+        warnings.warn(
+            "`Expression.str.rstrip` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.rstrip` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().rstrip()
 
     def reverse(self) -> Expression:
-        """Reverse a UTF-8 string.
-
-        Returns:
-            Expression: a String expression which is `self` reversed
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
-            >>> df = df.select(df["x"].str.reverse())
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ oof  │
-            ├╌╌╌╌╌╌┤
-            │ rab  │
-            ├╌╌╌╌╌╌┤
-            │ zab  │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("reverse")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.reverse` instead."""
+        warnings.warn(
+            "`Expression.str.reverse` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.reverse` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().reverse()
 
     def capitalize(self) -> Expression:
-        """Capitalize a UTF-8 string.
-
-        Returns:
-            Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
-            >>> df = df.select(df["x"].str.capitalize())
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ Foo  │
-            ├╌╌╌╌╌╌┤
-            │ Bar  │
-            ├╌╌╌╌╌╌┤
-            │ Baz  │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("capitalize")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.capitalize` instead."""
+        warnings.warn(
+            "`Expression.str.capitalize` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.capitalize` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().capitalize()
 
     def left(self, nchars: int | Expression) -> Expression:
-        """Gets the n (from nchars) left-most characters of each string.
-
-        Returns:
-            Expression: a String expression which is the `n` left-most characters of `self`
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.left(4))
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ daft │
-            ├╌╌╌╌╌╌┤
-            │ quer │
-            ├╌╌╌╌╌╌┤
-            │ engi │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        nchars_expr = Expression._to_expression(nchars)
-        f = native.get_function_from_registry("left")
-        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.left` instead."""
+        warnings.warn(
+            "`Expression.str.left` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.left` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().left(nchars)
 
     def right(self, nchars: int | Expression) -> Expression:
-        """Gets the n (from nchars) right-most characters of each string.
-
-        Returns:
-            Expression: a String expression which is the `n` right-most characters of `self`
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "distributed", "engine"]})
-            >>> df = df.select(df["x"].str.right(4))
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ daft │
-            ├╌╌╌╌╌╌┤
-            │ uted │
-            ├╌╌╌╌╌╌┤
-            │ gine │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        nchars_expr = Expression._to_expression(nchars)
-        f = native.get_function_from_registry("right")
-        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.right` instead."""
+        warnings.warn(
+            "`Expression.str.right` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.right` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().right(nchars)
 
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string.
@@ -3141,293 +3122,68 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(f(self._expr, substr_expr._expr))
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
-        """Right-pads each string by truncating or padding with the character.
-
-        Returns:
-            Expression: a String expression which is `self` truncated or right-padded with the pad character
-
-        Note:
-            If the string is longer than the specified length, it will be truncated.
-            The pad character must be a single character.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.rpad(6, "0"))
-            >>> df.show()
-            ╭────────╮
-            │ x      │
-            │ ---    │
-            │ Utf8   │
-            ╞════════╡
-            │ daft00 │
-            ├╌╌╌╌╌╌╌╌┤
-            │ query0 │
-            ├╌╌╌╌╌╌╌╌┤
-            │ engine │
-            ╰────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        length_expr = Expression._to_expression(length)
-        pad_expr = Expression._to_expression(pad)
-        f = native.get_function_from_registry("rpad")
-
-        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.rpad` instead."""
+        warnings.warn(
+            "`Expression.str.rpad` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.rpad` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().rpad(length, pad)
 
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
-        """Left-pads each string by truncating on the right or padding with the character.
-
-        Returns:
-            Expression: a String expression which is `self` truncated or left-padded with the pad character
-
-        Note:
-            If the string is longer than the specified length, it will be truncated on the right.
-            The pad character must be a single character.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.lpad(6, "0"))
-            >>> df.show()
-            ╭────────╮
-            │ x      │
-            │ ---    │
-            │ Utf8   │
-            ╞════════╡
-            │ 00daft │
-            ├╌╌╌╌╌╌╌╌┤
-            │ 0query │
-            ├╌╌╌╌╌╌╌╌┤
-            │ engine │
-            ╰────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        length_expr = Expression._to_expression(length)
-        pad_expr = Expression._to_expression(pad)
-        f = native.get_function_from_registry("lpad")
-        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.lpad` instead."""
+        warnings.warn(
+            "`Expression.str.lpad` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.lpad` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().lpad(length, pad)
 
     def repeat(self, n: int | Expression) -> Expression:
-        """Repeats each string n times.
-
-        Returns:
-            Expression: a String expression which is `self` repeated `n` times
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.repeat(5))
-            >>> df.show()
-            ╭────────────────────────────────╮
-            │ x                              │
-            │ ---                            │
-            │ Utf8                           │
-            ╞════════════════════════════════╡
-            │ daftdaftdaftdaftdaft           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ queryqueryqueryqueryquery      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ engineengineengineengineengin… │
-            ╰────────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        n_expr = Expression._to_expression(n)
-        f = native.get_function_from_registry("repeat")
-        return Expression._from_pyexpr(f(self._expr, n_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.repeat` instead."""
+        warnings.warn(
+            "`Expression.str.repeat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.repeat` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().repeat(n)
 
     def like(self, pattern: str | Expression) -> Expression:
-        """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value matches the provided pattern
-
-        Note:
-            Use % as a multiple-character wildcard or _ as a single-character wildcard.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.like("daf%"))
-            >>> df.show()
-            ╭─────────╮
-            │ x       │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        pattern_expr = Expression._to_expression(pattern)
-        f = native.get_function_from_registry("like")
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.like` instead."""
+        warnings.warn(
+            "`Expression.str.like` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.like` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().like(pattern)
 
     def ilike(self, pattern: str | Expression) -> Expression:
-        """Checks whether each string matches the given SQL LIKE pattern, case insensitive.
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value matches the provided pattern
-
-        Note:
-            Use % as a multiple-character wildcard or _ as a single-character wildcard.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.ilike("%ft%"))
-            >>> df.show()
-            ╭─────────╮
-            │ x       │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        pattern_expr = Expression._to_expression(pattern)
-        f = native.get_function_from_registry("ilike")
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.ilike` instead."""
+        warnings.warn(
+            "`Expression.str.ilike` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.ilike` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().ilike(pattern)
 
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
-        """Extract a substring from a string, starting at a specified index and extending for a given length.
-
-        Returns:
-            Expression: A String expression representing the extracted substring.
-
-        Note:
-            If `length` is not provided, the substring will include all characters from `start` to the end of the string.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.substr(2, 4))
-            >>> df.show()
-            ╭──────╮
-            │ x    │
-            │ ---  │
-            │ Utf8 │
-            ╞══════╡
-            │ ft   │
-            ├╌╌╌╌╌╌┤
-            │ ery  │
-            ├╌╌╌╌╌╌┤
-            │ gine │
-            ╰──────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        start_expr = Expression._to_expression(start)
-        length_expr = Expression._to_expression(length)
-        f = native.get_function_from_registry("substr")
-        return Expression._from_pyexpr(f(self._expr, start_expr._expr, length_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.substr` instead."""
+        warnings.warn(
+            "`Expression.str.substr` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.substr` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().substr(start, length)
 
     def to_date(self, format: str) -> Expression:
-        """Converts a string to a date using the specified format.
-
-        Returns:
-            Expression: a Date expression which is parsed by given format
-
-        Note:
-            The format must be a valid date format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["2021-01-01", "2021-01-02", None]})
-            >>> df = df.with_column("date", df["x"].str.to_date("%Y-%m-%d"))
-            >>> df.show()
-            ╭────────────┬────────────╮
-            │ x          ┆ date       │
-            │ ---        ┆ ---        │
-            │ Utf8       ┆ Date       │
-            ╞════════════╪════════════╡
-            │ 2021-01-01 ┆ 2021-01-01 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-02 ┆ 2021-01-02 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ None       ┆ None       │
-            ╰────────────┴────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        format_expr = Expression._to_expression(format)._expr
-        f = native.get_function_from_registry("to_date")
-        return Expression._from_pyexpr(f(self._expr, format=format_expr))
+        """(DEPRECATED) Please use `daft.functions.to_date` instead."""
+        warnings.warn(
+            "`Expression.str.to_date` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.to_date` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().to_date(format)
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
-        """Converts a string to a datetime using the specified format and timezone.
-
-        Returns:
-            Expression: a DateTime expression which is parsed by given format and timezone
-
-        Note:
-            The format must be a valid datetime format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123", "2021-01-02 12:30:00.456", None]})
-            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f"))
-            >>> df.show()
-            ╭─────────────────────────┬───────────────────────────────╮
-            │ x                       ┆ datetime                      │
-            │ ---                     ┆ ---                           │
-            │ Utf8                    ┆ Timestamp(Milliseconds, None) │
-            ╞═════════════════════════╪═══════════════════════════════╡
-            │ 2021-01-01 00:00:00.123 ┆ 2021-01-01 00:00:00.123       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-02 12:30:00.456 ┆ 2021-01-02 12:30:00.456       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ None                    ┆ None                          │
-            ╰─────────────────────────┴───────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            If a timezone is provided, the datetime will be parsed in that timezone
-
-            >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
-            >>> df = df.with_column(
-            ...     "datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai")
-            ... )
-            >>> df.show()
-            ╭───────────────────────────────┬────────────────────────────────────────────────╮
-            │ x                             ┆ datetime                                       │
-            │ ---                           ┆ ---                                            │
-            │ Utf8                          ┆ Timestamp(Milliseconds, Some("Asia/Shanghai")) │
-            ╞═══════════════════════════════╪════════════════════════════════════════════════╡
-            │ 2021-01-01 00:00:00.123 +0800 ┆ 2021-01-01 00:00:00.123 CST                    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-02 12:30:00.456 CST                    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ None                          ┆ None                                           │
-            ╰───────────────────────────────┴────────────────────────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        format_expr = Expression._to_expression(format)._expr
-        timezone_expr = Expression._to_expression(timezone)._expr
-        f = native.get_function_from_registry("to_datetime")
-        return Expression._from_pyexpr(f(self._expr, format=format_expr, timezone=timezone_expr))
+        """(DEPRECATED) Please use `daft.functions.to_datetime` instead."""
+        warnings.warn(
+            "`Expression.str.to_datetime` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.to_datetime` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().to_datetime(format, timezone)
 
     def normalize(
         self,
@@ -3437,56 +3193,16 @@ class ExpressionStringNamespace(ExpressionNamespace):
         nfd_unicode: bool = False,
         white_space: bool = False,
     ) -> Expression:
-        r"""Normalizes a string for more useful deduplication.
-
-        Args:
-            remove_punct: Whether to remove all punctuation (ASCII).
-            lowercase: Whether to convert the string to lowercase.
-            nfd_unicode: Whether to normalize and decompose Unicode characters according to NFD.
-            white_space: Whether to normalize whitespace, replacing newlines etc with spaces and removing double spaces.
-
-        Returns:
-            Expression: a String expression which is normalized.
-
-        Note:
-            All processing options are off by default.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \nWORLD!!!!"]})
-            >>> df = df.with_column(
-            ...     "normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True)
-            ... )
-            >>> df.show()
-            ╭───────────────┬─────────────╮
-            │ x             ┆ normalized  │
-            │ ---           ┆ ---         │
-            │ Utf8          ┆ Utf8        │
-            ╞═══════════════╪═════════════╡
-            │ hello world   ┆ hello world │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ Hello, world! ┆ hello world │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ HELLO,        ┆ hello world │
-            │ WORLD!!!!     ┆             │
-            ╰───────────────┴─────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        remove_punct_expr = Expression._to_expression(remove_punct)._expr
-        lowercase_expr = Expression._to_expression(lowercase)._expr
-        nfd_unicode_expr = Expression._to_expression(nfd_unicode)._expr
-        white_space_expr = Expression._to_expression(white_space)._expr
-        f = native.get_function_from_registry("normalize")
-        return Expression._from_pyexpr(
-            f(
-                self._expr,
-                remove_punct=remove_punct_expr,
-                lowercase=lowercase_expr,
-                nfd_unicode=nfd_unicode_expr,
-                white_space=white_space_expr,
-            )
+        """(DEPRECATED) Please use `daft.functions.normalize` instead."""
+        warnings.warn(
+            "`Expression.str.normalize` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.normalize` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().normalize(
+            remove_punct=remove_punct,
+            lowercase=lowercase,
+            nfd_unicode=nfd_unicode,
+            white_space=white_space,
         )
 
     def tokenize_encode(
@@ -3498,35 +3214,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
         special_tokens: str | None = None,
         use_special_tokens: bool | None = None,
     ) -> Expression:
-        """Encodes each string as a list of integer tokens using a tokenizer.
-
-        Uses https://github.com/openai/tiktoken for tokenization.
-
-        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
-        loading tokens from a file in tiktoken format.
-
-        Args:
-            tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
-            io_config (optional): IOConfig to use when accessing remote storage.
-            pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
-            special_tokens (optional): Name of the set of special tokens to use. Currently only "llama3" supported. Necessary if loading from a file.
-            use_special_tokens (optional): Whether or not to parse special tokens included in input. Disabled by default. Automatically enabled if `special_tokens` is provided.
-
-        Returns:
-            Expression: An expression with the encodings of the strings as lists of unsigned 32-bit integers.
-
-        Note:
-            If using this expression with Llama 3 tokens, note that Llama 3 does some extra preprocessing on
-            strings in certain edge cases. This may result in slightly different encodings in these cases.
-
-        """
-        return self._eval_expressions(
-            "tokenize_encode",
+        """(DEPRECATED) Please use `daft.functions.tokenize_encode` instead."""
+        warnings.warn(
+            "`Expression.str.tokenize_encode` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.tokenize_encode` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().tokenize_encode(
             tokens_path=tokens_path,
-            use_special_tokens=use_special_tokens,
             io_config=io_config,
             pattern=pattern,
             special_tokens=special_tokens,
+            use_special_tokens=use_special_tokens,
         )
 
     def tokenize_decode(
@@ -3537,24 +3235,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern: str | None = None,
         special_tokens: str | None = None,
     ) -> Expression:
-        """Decodes each list of integer tokens into a string using a tokenizer.
-
-        Uses [https://github.com/openai/tiktoken](https://github.com/openai/tiktoken) for tokenization.
-
-        Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
-        loading tokens from a file in tiktoken format.
-
-        Args:
-            tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
-            io_config (optional): IOConfig to use when accessing remote storage.
-            pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
-            special_tokens (optional): Name of the set of special tokens to use. Currently only "llama3" supported. Necessary if loading from a file.
-
-        Returns:
-            Expression: An expression with decoded strings.
-        """
-        return self._eval_expressions(
-            "tokenize_decode",
+        """(DEPRECATED) Please use `daft.functions.tokenize_decode` instead."""
+        warnings.warn(
+            "`Expression.str.tokenize_decode` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.tokenize_decode` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().tokenize_decode(
             tokens_path=tokens_path,
             io_config=io_config,
             pattern=pattern,
@@ -3568,38 +3254,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
         whole_words: bool = False,
         case_sensitive: bool = True,
     ) -> Expression:
-        """Counts the number of times a pattern, or multiple patterns, appear in a string.
-
-        If whole_words is true, then matches are only counted if they are whole words. This
-        also applies to multi-word strings. For example, on the string "abc def", the strings
-        "def" and "abc def" would be matched, but "bc de", "abc d", and "abc " (with the space)
-        would not.
-
-        If case_sensitive is false, then case will be ignored. This only applies to ASCII
-        characters; unicode uppercase/lowercase will still be considered distinct.
-
-        Args:
-            patterns: A pattern or a list of patterns.
-            whole_words: Whether to only match whole word(s). Defaults to false.
-            case_sensitive: Whether the matching should be case sensitive. Defaults to true.
-
-        Note:
-            If a pattern is a substring of another pattern, the longest pattern is matched first.
-            For example, in the string "hello world", with patterns "hello", "world", and "hello world",
-            one match is counted for "hello world".
-        """
-        if isinstance(patterns, str):
-            patterns = [patterns]
-        if not isinstance(patterns, Expression):
-            series = item_to_series("items", patterns)
-            patterns = Expression._from_pyexpr(_list_lit(series._series))
-
-        whole_words_expr = Expression._to_expression(whole_words)._expr
-        case_sensitive_expr = Expression._to_expression(case_sensitive)._expr
-        f = native.get_function_from_registry("count_matches")
-
-        return Expression._from_pyexpr(
-            f(self._expr, patterns._expr, whole_words=whole_words_expr, case_sensitive=case_sensitive_expr)
+        """(DEPRECATED) Please use `daft.functions.count_matches` instead."""
+        warnings.warn(
+            "`Expression.str.count_matches` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.count_matches` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().count_matches(
+            patterns,
+            whole_words=whole_words,
+            case_sensitive=case_sensitive,
         )
 
 
