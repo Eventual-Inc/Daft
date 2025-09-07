@@ -541,9 +541,9 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
             }
-            Self::Stddev(StddevParams { child: expr, .. }) => {
+            Self::Stddev(StddevParams { child: expr, ddof }) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_stddev()"))
+                FieldID::new(format!("{child_id}.local_stddev(ddof={ddof})"))
             }
             Self::Min(expr) => {
                 let child_id = expr.semantic_id(schema);
