@@ -299,6 +299,7 @@ opentelemetry_sdk = "0.29"
 parking_lot = "0.12.3"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
+profiler = {path = "/Users/rohit/Projects/Profiler"}
 proptest = "1.5.0"
 prost = "0.13.5"
 prost-types = "0.13.5"
