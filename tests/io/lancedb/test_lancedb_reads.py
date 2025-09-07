@@ -194,18 +194,60 @@ class TestLanceDBCountPushdown:
         result = df.to_pydict()
         assert result == {"count": [6]}
 
-    def test_count_no_pushdown_with_filter(self, dataset_path, capsys):
-        """Test count(*) does not use pushdown when filter is present."""
+    def test_count_with_filter_pushdown(self, dataset_path, capsys):
+        """Test count(*) uses filter+count pushdown when filter is present."""
         df = daft.read_lance(dataset_path).filter(col("b").is_null()).count()
 
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "Pushdowns: {projection: [a], aggregation: count(col(a), All)}" not in actual.out
-        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" not in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+        assert "Pushdowns:" in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [2]}
+
+    def test_count_with_many_filters_pushdown(self, dataset_path, capsys):
+        """Test count(*) uses filter+count pushdown when filter is present."""
+        df = daft.read_lance(dataset_path).filter(col("b").is_null() & col("c").is_null()).count()
+
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+        assert "Pushdowns:" in actual.out
+
+        result = df.to_pydict()
+        assert result == {"count": [2]}
+
+    def test_count_with_complex_filter_pushdown(self, dataset_path, capsys):
+        """Test count(*) with complex filter conditions for filter+count pushdown."""
+        df = daft.read_lance(dataset_path).filter((col("c") > 3) & ~col("b").is_null()).count()
+
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+        assert "Aggregation pushdown" in actual.out
+        assert "Filter pushdown" in actual.out
+
+        result = df.to_pydict()
+        assert result == {"count": [1]}
+
+    def test_count_with_filter_and_select_pushdown(self, dataset_path, capsys):
+        """Test count(*) with both filter and select operations for filter+count pushdown."""
+        df = daft.read_lance(dataset_path).filter(col("b").is_not_null()).select("a", "b").count()
+
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        # Should use filter+count pushdown
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+        assert "Pushdowns:" in actual.out
+
+        result = df.to_pydict()
+        # Expected: rows where b is not null (4 rows: indices 0, 2, 4, 5)
+        assert result == {"count": [4]}
 
     def test_edge_case_empty_dataset(self, tmp_path_factory, capsys):
         """Test count pushdown on an empty dataset."""

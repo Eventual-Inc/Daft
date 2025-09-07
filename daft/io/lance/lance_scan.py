@@ -3,7 +3,7 @@
 
 import logging
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
 from daft.dependencies import pa
@@ -38,24 +38,24 @@ def _lancedb_table_factory_function(
 def _lancedb_count_result_function(
     ds: "lance.LanceDataset",
     required_column: str,
-    filters: Optional[list[Any]] = None,
+    filters: Optional["pa.compute.Expression"] = None,
 ) -> Iterator[PyRecordBatch]:
-    """Use LanceDB's API to count rows and return a record batch with the count result."""
+    """Enhanced LanceDB count function that supports filters for filter+count pushdown optimization."""
     count = 0
+
     if filters is None:
         logger.debug("Using metadata for counting all rows (no filters)")
         count = ds.count_rows()
     else:
-        # TODO: If filters are provided, we need to apply them after counting
-        logger.debug("Counting rows with filters applied")
+        logger.debug("Counting rows with filters applied using Lance scanner")
         scanner = ds.scanner(filter=filters)
-        for batch in scanner.to_batches():
-            count += batch.num_rows
+        count = sum(batch.num_rows for batch in scanner.to_batches())
 
     arrow_schema = pa.schema([pa.field(required_column, pa.uint64())])
     arrow_array = pa.array([count], type=pa.uint64())
     arrow_batch = pa.RecordBatch.from_arrays([arrow_array], [required_column])
     result_batch = RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema)._recordbatch
+
     return (result_batch for _ in [1])
 
 
@@ -149,11 +149,17 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     count_mode,
                 )
                 yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+                return
 
-            # TODO: If there are pushed filters, convert them to Arrow expressions
             filters = None
+            if self._pushed_filters is not None:
+                combined_filter = self._pushed_filters[0]
+                for filter_expr in self._pushed_filters[1:]:
+                    combined_filter = combined_filter.__and__(filter_expr)
+                filters = Expression._from_pyexpr(combined_filter).to_arrow_expr()
 
             new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
+
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_count_result_function.__module__,
                 func_name=_lancedb_count_result_function.__name__,
