@@ -1,5 +1,5 @@
 use std::{
-    iter::{repeat_n, RepeatN},
+    iter::{RepeatN, repeat_n},
     slice::{ChunksExact, Iter},
 };
 
@@ -10,9 +10,9 @@ use arrow2::{
 
 use crate::{
     array::{
+        DataArray,
         ops::as_arrow::AsArrow,
         prelude::{NullArray, Utf8Array},
-        DataArray,
     },
     datatypes::{BinaryArray, BooleanArray, DaftPrimitiveType, FixedSizeBinaryArray},
 };

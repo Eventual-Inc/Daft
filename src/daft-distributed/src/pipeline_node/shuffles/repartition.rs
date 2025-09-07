@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
@@ -8,8 +8,8 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -17,7 +17,7 @@ use crate::{
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_stream,
     },
 };

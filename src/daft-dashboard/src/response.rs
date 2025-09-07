@@ -1,5 +1,5 @@
 use http_body_util::{BodyExt, Empty, Full};
-use hyper::{header, Response, StatusCode};
+use hyper::{Response, StatusCode, header};
 use serde::Serialize;
 
 use crate::Res;

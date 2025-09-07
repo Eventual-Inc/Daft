@@ -1,6 +1,6 @@
 use common_error::DaftError;
 use daft_dsl::{Expr, ExprRef, Literal};
-use daft_functions::image::encode::{encode, ImageEncode};
+use daft_functions::image::encode::{ImageEncode, encode};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},

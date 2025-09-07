@@ -2,6 +2,8 @@
 #![allow(unused_unsafe)]
 // don't want to deal with this right now
 #![allow(deprecated)]
+#![allow(mismatched_lifetime_syntaxes)]
+#![allow(unused_parens)]
 //
 #![allow(clippy::len_without_is_empty)]
 // this landed on 1.60. Let's not force everyone to bump just yet
@@ -17,6 +19,8 @@
 #![allow(clippy::unnecessary_map_or)]
 #![allow(clippy::manual_div_ceil)]
 #![allow(clippy::map_all_any_identity)]
+#![allow(clippy::manual_repeat_n)]
+#![allow(clippy::manual_is_multiple_of)]
 #![allow(unexpected_cfgs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]

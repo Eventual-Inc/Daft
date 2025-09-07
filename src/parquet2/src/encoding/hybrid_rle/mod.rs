@@ -6,9 +6,8 @@ pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use decoder::Decoder;
 pub use encoder::{encode_bool, encode_u32};
 
-use crate::error::Error;
-
 use super::bitpacked;
+use crate::error::Error;
 
 /// The two possible states of an RLE-encoded run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,7 +23,7 @@ pub enum HybridEncoded<'a> {
 enum State<'a> {
     None,
     Bitpacked(bitpacked::Decoder<'a, u32>),
-    Rle(std::iter::Take<std::iter::Repeat<u32>>),
+    Rle(std::iter::RepeatN<u32>),
     // Add a special branch for a single value to
     // adhere to the strong law of small numbers.
     Single(Option<u32>),
@@ -56,7 +55,7 @@ fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a
             if additional == 1 {
                 State::Single(Some(value))
             } else {
-                State::Rle(std::iter::repeat(value).take(additional))
+                State::Rle(std::iter::repeat_n(value, additional))
             }
         }
         None => State::None,

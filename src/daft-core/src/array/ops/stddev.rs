@@ -3,8 +3,8 @@ use common_error::DaftResult;
 
 use crate::{
     array::{
-        ops::{DaftStddevAggable, GroupIndices},
         DataArray,
+        ops::{DaftStddevAggable, GroupIndices},
     },
     datatypes::Float64Type,
     utils::stats,

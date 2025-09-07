@@ -8,7 +8,7 @@ use crate::{
         task::Task,
     },
     utils::{
-        channel::{create_channel, Receiver, Sender},
+        channel::{Receiver, Sender, create_channel},
         joinset::{JoinSet, OrderedJoinSet},
         stream::JoinableForwardingStream,
     },
@@ -97,16 +97,16 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use common_partitioning::PartitionRef;
-    use futures::{stream, StreamExt};
+    use futures::{StreamExt, stream};
     use rand::{Rng, SeedableRng};
 
     use super::*;
     use crate::{
         scheduling::{
-            scheduler::{spawn_default_scheduler_actor, SubmittableTask},
+            scheduler::{SubmittableTask, spawn_default_scheduler_actor},
             tests::{
-                create_mock_partition_ref, setup_workers, MockTask, MockTaskBuilder,
-                MockTaskFailure, MockWorkerManager,
+                MockTask, MockTaskBuilder, MockTaskFailure, MockWorkerManager,
+                create_mock_partition_ref, setup_workers,
             },
             worker::WorkerId,
         },

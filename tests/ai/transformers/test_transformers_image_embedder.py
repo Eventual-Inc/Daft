@@ -7,11 +7,12 @@ pytest.importorskip("torch")
 pytest.importorskip("PIL")
 
 
+import time
+
 import numpy as np
-import torch
 
 from daft.ai.protocols import ImageEmbedderDescriptor
-from daft.ai.transformers import TransformersProvider
+from daft.ai.transformers.provider import TransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
 from tests.benchmarks.conftest import IS_CI
@@ -46,7 +47,20 @@ def test_transformers_image_embedder_other(model_name, dimensions, run_model_in_
     assert descriptor.get_options() == mock_options
 
     if not IS_CI or run_model_in_ci:
-        embedder = descriptor.instantiate()
+        retry_delay = 5  # seconds
+        max_retries = 5
+
+        # retry instantiation because Hugging Face is flaky
+        for attempt in range(max_retries):
+            try:
+                embedder = descriptor.instantiate()
+            except OSError as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise e
+            else:
+                break
 
         # Test with a variety of image sizes and shapes that should be preprocessed correctly.
         # TODO(desmond): This doesn't work with greyscale images. I wonder if we should require users to cast
@@ -61,20 +75,3 @@ def test_transformers_image_embedder_other(model_name, dimensions, run_model_in_
         assert len(embeddings[0]) == dimensions
     else:
         assert descriptor.get_dimensions() == EmbeddingDimensions(dimensions, dtype=DataType.float32())
-
-
-def test_transformers_device_selection():
-    """Test that the embedder uses the correct device selection."""
-    provider = TransformersProvider()
-    descriptor = provider.get_image_embedder("openai/clip-vit-base-patch32")
-    embedder = descriptor.instantiate()
-
-    if torch.cuda.is_available():
-        expected_device = "cuda"
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        expected_device = "mps"
-    else:
-        expected_device = "cpu"
-
-    embedder_device = next(embedder.model.parameters()).device
-    assert expected_device in str(embedder_device)

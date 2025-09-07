@@ -17,6 +17,7 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false, features = ["arrow"]}
+hashbrown = {workspace = true}
 parking_lot = {workspace = true}
 parquet = {version = "54.2.1"}
 pyo3 = {workspace = true, optional = true}

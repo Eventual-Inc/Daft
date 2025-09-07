@@ -132,7 +132,7 @@ fn base64_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 fn deflate_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
-    use flate2::{write::DeflateEncoder, Compression};
+    use flate2::{Compression, write::DeflateEncoder};
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)
@@ -142,7 +142,7 @@ fn deflate_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 fn gzip_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
-    use flate2::{write::GzEncoder, Compression};
+    use flate2::{Compression, write::GzEncoder};
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)
@@ -163,7 +163,7 @@ fn utf8_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 fn zlib_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
-    use flate2::{write::ZlibEncoder, Compression};
+    use flate2::{Compression, write::ZlibEncoder};
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)

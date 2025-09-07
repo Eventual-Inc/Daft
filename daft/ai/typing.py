@@ -17,6 +17,7 @@ __all__ = [
     "Embedding",
     "EmbeddingDimensions",
     "Image",
+    "Label",
 ]
 
 
@@ -61,3 +62,6 @@ class EmbeddingDimensions:
 
     def as_dtype(self) -> DataType:
         return DataType.embedding(dtype=self.dtype, size=self.size)
+
+
+Label = str

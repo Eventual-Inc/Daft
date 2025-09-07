@@ -58,20 +58,19 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
             DataType::List(Box::new(sql_dtype_to_dtype(inner_type)?))
         }
         SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, Some(size))) => {
-            DataType::FixedSizeList(
-                Box::new(sql_dtype_to_dtype(inner_type)?),
-                *size as usize,
-            )
+            DataType::FixedSizeList(Box::new(sql_dtype_to_dtype(inner_type)?), *size as usize)
         }
 
         // ---------------------------------
         // binary
         // ---------------------------------
-        SQLDataType::Bytea
-        | SQLDataType::Blob(_)
-        | SQLDataType::Varbinary(_) => use_instead!(dtype, "`binary` or `bytes`"),
+        SQLDataType::Bytea | SQLDataType::Blob(_) | SQLDataType::Varbinary(_) => {
+            use_instead!(dtype, "`binary` or `bytes`")
+        }
         SQLDataType::Binary(None) | SQLDataType::Bytes(None) => DataType::Binary,
-        SQLDataType::Binary(Some(n_bytes)) | SQLDataType::Bytes(Some(n_bytes)) => DataType::FixedSizeBinary(*n_bytes as usize),
+        SQLDataType::Binary(Some(n_bytes)) | SQLDataType::Bytes(Some(n_bytes)) => {
+            DataType::FixedSizeBinary(*n_bytes as usize)
+        }
 
         // ---------------------------------
         // boolean
@@ -81,22 +80,34 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         // signed integer
         // ---------------------------------
         SQLDataType::Int2(_) => use_instead!(dtype, "`int16` or `smallint`"),
-        SQLDataType::Int4(_) | SQLDataType::MediumInt(_)  => use_instead!(dtype, "`int32`, `integer`, or `int`"),
-        SQLDataType::Int8(_) => use_instead!(dtype, "`int64` or `bigint` for 64-bit integer, or `tinyint` for 8-bit integer"),
+        SQLDataType::Int4(_) | SQLDataType::MediumInt(_) => {
+            use_instead!(dtype, "`int32`, `integer`, or `int`")
+        }
+        SQLDataType::Int8(_) => use_instead!(
+            dtype,
+            "`int64` or `bigint` for 64-bit integer, or `tinyint` for 8-bit integer"
+        ),
         SQLDataType::TinyInt(_) => DataType::Int8,
         SQLDataType::SmallInt(_) | SQLDataType::Int16 => DataType::Int16,
-        SQLDataType::Int(_) | SQLDataType::Integer(_) | SQLDataType::Int32  => DataType::Int32,
+        SQLDataType::Int(_) | SQLDataType::Integer(_) | SQLDataType::Int32 => DataType::Int32,
         SQLDataType::BigInt(_) | SQLDataType::Int64 => DataType::Int64,
 
         // ---------------------------------
         // unsigned integer
         // ---------------------------------
         SQLDataType::UnsignedInt2(_) => use_instead!(dtype, "`smallint unsigned` or `uint16`"),
-        SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => use_instead!(dtype, "`int unsigned` or `uint32`"),
-        SQLDataType::UnsignedInt8(_) => use_instead!(dtype, "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer"),
+        SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => {
+            use_instead!(dtype, "`int unsigned` or `uint32`")
+        }
+        SQLDataType::UnsignedInt8(_) => use_instead!(
+            dtype,
+            "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer"
+        ),
         SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
         SQLDataType::UnsignedSmallInt(_) | SQLDataType::UInt16 => DataType::UInt16,
-        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) | SQLDataType::UInt32 => DataType::UInt32,
+        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) | SQLDataType::UInt32 => {
+            DataType::UInt32
+        }
         SQLDataType::UnsignedBigInt(_) | SQLDataType::UInt64 => DataType::UInt64,
         // ---------------------------------
         // float
@@ -122,13 +133,15 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         // ---------------------------------
         // decimal
         // ---------------------------------
-        SQLDataType::Dec(info) | SQLDataType::Numeric(info) |SQLDataType::Decimal(info) => match *info {
-            ExactNumberInfo::PrecisionAndScale(p, s) => {
-                DataType::Decimal128(p as usize, s as usize)
+        SQLDataType::Dec(info) | SQLDataType::Numeric(info) | SQLDataType::Decimal(info) => {
+            match *info {
+                ExactNumberInfo::PrecisionAndScale(p, s) => {
+                    DataType::Decimal128(p as usize, s as usize)
+                }
+                ExactNumberInfo::Precision(p) => DataType::Decimal128(p as usize, 0),
+                ExactNumberInfo::None => DataType::Decimal128(38, 9),
             }
-            ExactNumberInfo::Precision(p) => DataType::Decimal128(p as usize, 0),
-            ExactNumberInfo::None => DataType::Decimal128(38, 9),
-        },
+        }
         // ---------------------------------
         // temporal
         // ---------------------------------
@@ -140,9 +153,7 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         },
         SQLDataType::Datetime(_) => unsupported_sql_err!("`datetime` is not supported"),
         SQLDataType::Timestamp(prec, tz) => match tz {
-            TimezoneInfo::None => {
-                DataType::Timestamp(timeunit_from_precision(*prec)?, None)
-            }
+            TimezoneInfo::None => DataType::Timestamp(timeunit_from_precision(*prec)?, None),
             _ => unsupported_sql_err!("`timestamp` with timezone"),
         },
         // ---------------------------------
@@ -187,7 +198,9 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         }
         SQLDataType::Custom(name, properties) => match name.to_string().to_lowercase().as_str() {
             "tensor" => match properties.as_slice() {
-                [] => invalid_operation_err!("must specify inner datatype with 'tensor'. ex: `tensor(int)` or `tensor(int, 10, 10, 10)`"),
+                [] => invalid_operation_err!(
+                    "must specify inner datatype with 'tensor'. ex: `tensor(int)` or `tensor(int, 10, 10, 10)`"
+                ),
                 [inner_dtype] => {
                     let inner_dtype = try_parse_dtype(inner_dtype)?;
                     DataType::Tensor(Box::new(inner_dtype))
@@ -198,9 +211,7 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
                         .iter()
                         .map(|p| {
                             p.parse().map_err(|_| {
-                                PlannerError::invalid_operation(
-                                    "invalid tensor shape".to_string(),
-                                )
+                                PlannerError::invalid_operation("invalid tensor shape".to_string())
                             })
                         })
                         .collect::<SQLPlannerResult<Vec<_>>>()?;
@@ -214,8 +225,7 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
                         PlannerError::invalid_operation("invalid image mode".to_string())
                     })?;
                     DataType::Image(Some(mode))
-
-                },
+                }
                 [mode, height, width] => {
                     let mode = mode.parse().map_err(|_| {
                         PlannerError::invalid_operation("invalid image mode".to_string())
@@ -397,7 +407,10 @@ mod test {
     #[case("int2 unsigned", "`smallint unsigned` or `uint16`")]
     #[case("int4 unsigned", "`int unsigned` or `uint32`")]
     #[case("mediumint unsigned", "`int unsigned` or `uint32`")]
-    #[case("int8 unsigned", "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer")]
+    #[case(
+        "int8 unsigned",
+        "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer"
+    )]
     #[case("float4", "`float32` or `real`")]
     #[case("char", "`string`, `text`, or `varchar`")]
     #[case("char varying", "`string`, `text`, or `varchar`")]

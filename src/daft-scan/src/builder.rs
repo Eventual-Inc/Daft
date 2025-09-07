@@ -7,7 +7,7 @@ use common_file_formats::{
 use common_io_config::IOConfig;
 use common_scan_info::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
-use daft_logical_plan::{builder::IntoGlobPath, LogicalPlanBuilder};
+use daft_logical_plan::{LogicalPlanBuilder, builder::IntoGlobPath};
 use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
 use {crate::python::pylib::ScanOperatorHandle, pyo3::prelude::*};

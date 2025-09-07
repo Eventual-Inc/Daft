@@ -9,7 +9,7 @@ use std::{
 };
 
 use common_display::table_display::StrValue;
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use common_file::DaftFile;
 use common_hashable_float_wrapper::FloatWrapper;
 use common_image::{CowImage, Image};

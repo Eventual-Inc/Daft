@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use indexmap::IndexSet;
 
-use crate::{deduplicate_expr_names, ExprRef};
+use crate::{ExprRef, deduplicate_expr_names};
 
 pub fn get_common_join_cols<'a>(
     left_schema: &'a SchemaRef,

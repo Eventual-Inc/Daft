@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::{binary_op, null_lit, Operator};
+use daft_dsl::{Operator, binary_op, null_lit};
 use daft_functions::{coalesce::Coalesce, float::IsNan};
 use daft_sql::sql_expr;
 use spark_connect::Expression;

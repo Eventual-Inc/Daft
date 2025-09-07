@@ -1,19 +1,19 @@
 use std::{path::PathBuf, sync::Arc};
 
 use arrow_array::RecordBatch as ArrowRecordBatch;
-use arrow_json::{writer::LineDelimited, LineDelimitedWriter, WriterBuilder};
+use arrow_json::{LineDelimitedWriter, WriterBuilder, writer::LineDelimited};
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
-use daft_io::{parse_url, IOConfig, SourceType};
+use daft_io::{IOConfig, SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
+    AsyncFileWriter,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
-    AsyncFileWriter,
 };
 
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.

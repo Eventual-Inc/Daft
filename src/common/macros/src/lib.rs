@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 mod function_args;
 
 use proc_macro_error::proc_macro_error;

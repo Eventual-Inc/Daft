@@ -2,7 +2,7 @@ use daft_dsl::ExprRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{impl_default_tree_display, PhysicalPlanRef};
+use crate::{PhysicalPlanRef, impl_default_tree_display};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Dedup {

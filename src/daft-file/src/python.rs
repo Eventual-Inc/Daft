@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use daft_io::{python::IOConfig, GetRange, IOStatsRef, ObjectSource};
+use daft_io::{GetRange, IOStatsRef, ObjectSource, python::IOConfig};
 use pyo3::{
     exceptions::{PyIOError, PyValueError},
     prelude::*,
@@ -336,11 +336,11 @@ impl Seek for ObjectSourceReader {
     }
 }
 fn map_get_error(e: daft_io::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("Get failed: {}", e))
+    io::Error::other(format!("Get failed: {}", e))
 }
 fn map_bytes_error(e: daft_io::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("Bytes failed: {}", e))
+    io::Error::other(format!("Bytes failed: {}", e))
 }
 fn map_async_error(e: DaftError) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("Async context failed: {}", e))
+    io::Error::other(format!("Async context failed: {}", e))
 }

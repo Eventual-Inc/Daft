@@ -43,9 +43,11 @@ impl FixedSizeListArray {
                         validity.len() * size,
                     )
                 }
-                assert!(!(child_dtype.as_ref() != flat_child.data_type()), "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
-                        child_dtype,
-                        flat_child.data_type(),
+                assert!(
+                    !(child_dtype.as_ref() != flat_child.data_type()),
+                    "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
+                    child_dtype,
+                    flat_child.data_type(),
                 );
             }
             _ => panic!(
