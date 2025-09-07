@@ -74,7 +74,7 @@ pub fn left(input: ExprRef, nchars: ExprRef) -> ExprRef {
 fn left_impl<I>(arr: &Utf8Array, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
 where
     I: DaftIntegerType,
-    <I as DaftNumericType>::Native: Ord,
+    <I as DaftNumericType>::Native: Ord + std::hash::Hash,
 {
     let (is_full_null, expected_size) = parse_inputs(arr, &[nchars])
         .map_err(|e| DaftError::ValueError(format!("Error in left: {e}")))?;

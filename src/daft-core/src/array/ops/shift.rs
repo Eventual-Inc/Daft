@@ -11,7 +11,7 @@ use crate::{
 impl<T> DataArray<T>
 where
     T: DaftIntegerType,
-    T::Native: PrimInt,
+    T::Native: PrimInt + std::hash::Hash,
 {
     pub fn shift_left(&self, rhs: &DataArray<UInt64Type>) -> DaftResult<Self> {
         self.binary_apply(rhs, |lhs, rhs| lhs.shl(rhs as usize))

@@ -68,12 +68,12 @@ pub fn build_multi_array_bicompare(
 impl<T> DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: Ord,
+    <T as DaftNumericType>::Native: Ord + std::hash::Hash,
 {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
 
@@ -95,7 +95,7 @@ where
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -167,7 +167,7 @@ impl Float32Array {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
 
@@ -189,7 +189,7 @@ impl Float32Array {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -261,7 +261,7 @@ impl Float64Array {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
 
@@ -283,7 +283,7 @@ impl Float64Array {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -355,7 +355,7 @@ impl Decimal128Array {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
 
@@ -377,7 +377,7 @@ impl Decimal128Array {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -449,7 +449,7 @@ impl NullArray {
     pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         DataArray::<I>::arange(self.name(), 0_i64, self.len() as i64, 1)
     }
@@ -462,7 +462,7 @@ impl NullArray {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -492,7 +492,7 @@ impl BooleanArray {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let options = arrow2::compute::sort::SortOptions {
             descending,
@@ -513,7 +513,7 @@ impl BooleanArray {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
@@ -588,7 +588,7 @@ macro_rules! impl_binary_like_sort {
             ) -> DaftResult<DataArray<I>>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
             {
                 let options = arrow2::compute::sort::SortOptions {
                     descending,
@@ -612,7 +612,7 @@ macro_rules! impl_binary_like_sort {
             ) -> DaftResult<DataArray<I>>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
             {
                 let first_desc = *descending.first().unwrap();
                 let first_nulls_first = *nulls_first.first().unwrap();
@@ -682,7 +682,7 @@ impl FixedSizeBinaryArray {
     pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         todo!("impl argsort for FixedSizeBinaryArray")
     }
@@ -694,7 +694,7 @@ impl FixedSizeBinaryArray {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         todo!("impl argsort_multikey for FixedSizeBinaryArray")
     }

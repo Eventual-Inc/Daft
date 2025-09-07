@@ -51,7 +51,7 @@ fn pad_impl<I>(
 ) -> DaftResult<Utf8Array>
 where
     I: DaftIntegerType,
-    <I as DaftNumericType>::Native: Ord,
+    <I as DaftNumericType>::Native: Ord + std::hash::Hash,
 {
     let input_length = arr.len();
     let other_lengths = [length.len(), padchar.len()];

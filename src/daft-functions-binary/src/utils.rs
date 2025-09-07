@@ -26,7 +26,7 @@ pub(crate) enum BroadcastedFixedSizeBinaryIter<'a> {
 pub(crate) enum BroadcastedNumericIter<'a, T: 'a, U>
 where
     T: DaftIntegerType,
-    T::Native: TryInto<U> + Ord,
+    T::Native: TryInto<U> + Ord + std::hash::Hash,
 {
     Repeat(
         std::iter::RepeatN<Option<<T as DaftNumericType>::Native>>,
@@ -67,7 +67,7 @@ impl<'a> Iterator for BroadcastedBinaryIter<'a> {
 impl<'a, T: 'a, U> Iterator for BroadcastedNumericIter<'a, T, U>
 where
     T: DaftIntegerType + Clone,
-    T::Native: TryInto<U> + Ord,
+    T::Native: TryInto<U> + Ord + std::hash::Hash,
 {
     type Item = DaftResult<Option<U>>;
 
@@ -125,7 +125,7 @@ pub(crate) fn create_broadcasted_numeric_iter<T, O>(
 ) -> BroadcastedNumericIter<'_, T, O>
 where
     T: DaftIntegerType,
-    T::Native: TryInto<O> + Ord,
+    T::Native: TryInto<O> + Ord + std::hash::Hash,
 {
     if arr.len() == 1 {
         BroadcastedNumericIter::Repeat(

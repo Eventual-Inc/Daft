@@ -1,10 +1,15 @@
+mod int_table;
 mod probe_table;
 mod probes;
 
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
+use daft_core::prelude::{
+    DataType, Int8Type, Int16Type, Int32Type, Int64Type, SchemaRef, UInt8Type, UInt16Type,
+    UInt32Type, UInt64Type,
+};
+use int_table::ProbeTableBuilder as IntProbeTableBuilder;
 use probe_table::ProbeTableBuilder;
 use probes::{ProbeContent, ProbeExists, ProbeIndices};
 
@@ -18,15 +23,67 @@ pub fn make_probeable_builder(
     track_indices: bool,
 ) -> DaftResult<Box<dyn ProbeableBuilder>> {
     if track_indices {
-        Ok(Box::new(ProbeTableBuilder::<ProbeIndices>::new(
-            schema,
-            nulls_equal_aware,
-        )?))
+        match (schema.len() == 1).then(|| &schema[0].dtype) {
+            Some(DataType::Int8) => Ok(Box::new(
+                IntProbeTableBuilder::<Int8Type, ProbeIndices>::new()?,
+            )),
+            Some(DataType::Int16) => Ok(Box::new(
+                IntProbeTableBuilder::<Int16Type, ProbeIndices>::new()?,
+            )),
+            Some(DataType::Int32) => Ok(Box::new(
+                IntProbeTableBuilder::<Int32Type, ProbeIndices>::new()?,
+            )),
+            Some(DataType::Int64) => Ok(Box::new(
+                IntProbeTableBuilder::<Int64Type, ProbeIndices>::new()?,
+            )),
+            Some(DataType::UInt8) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt8Type, ProbeIndices>::new()?,
+            )),
+            Some(DataType::UInt16) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt16Type, ProbeIndices>::new()?,
+            )),
+            Some(DataType::UInt32) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt32Type, ProbeIndices>::new()?,
+            )),
+            Some(DataType::UInt64) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt64Type, ProbeIndices>::new()?,
+            )),
+            _ => Ok(Box::new(ProbeTableBuilder::<ProbeIndices>::new(
+                schema,
+                nulls_equal_aware,
+            )?)),
+        }
     } else {
-        Ok(Box::new(ProbeTableBuilder::<ProbeExists>::new(
-            schema,
-            nulls_equal_aware,
-        )?))
+        match (schema.len() == 1).then(|| &schema[0].dtype) {
+            Some(DataType::Int8) => Ok(Box::new(
+                IntProbeTableBuilder::<Int8Type, ProbeExists>::new()?,
+            )),
+            Some(DataType::Int16) => Ok(Box::new(
+                IntProbeTableBuilder::<Int16Type, ProbeExists>::new()?,
+            )),
+            Some(DataType::Int32) => Ok(Box::new(
+                IntProbeTableBuilder::<Int32Type, ProbeExists>::new()?,
+            )),
+            Some(DataType::Int64) => Ok(Box::new(
+                IntProbeTableBuilder::<Int64Type, ProbeExists>::new()?,
+            )),
+            Some(DataType::UInt8) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt8Type, ProbeExists>::new()?,
+            )),
+            Some(DataType::UInt16) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt16Type, ProbeExists>::new()?,
+            )),
+            Some(DataType::UInt32) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt32Type, ProbeExists>::new()?,
+            )),
+            Some(DataType::UInt64) => Ok(Box::new(
+                IntProbeTableBuilder::<UInt64Type, ProbeExists>::new()?,
+            )),
+            _ => Ok(Box::new(ProbeTableBuilder::<ProbeExists>::new(
+                schema,
+                nulls_equal_aware,
+            )?)),
+        }
     }
 }
 

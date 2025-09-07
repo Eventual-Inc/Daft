@@ -79,7 +79,7 @@ pub fn utf8_repeat(input: ExprRef, ntimes: ExprRef) -> ExprRef {
 fn repeat_impl<I>(arr: &Utf8Array, n: &DataArray<I>) -> DaftResult<Utf8Array>
 where
     I: DaftIntegerType,
-    <I as DaftNumericType>::Native: Ord,
+    <I as DaftNumericType>::Native: Ord + std::hash::Hash,
 {
     let (is_full_null, expected_size) = parse_inputs(arr, &[n])
         .map_err(|e| DaftError::ValueError(format!("Error in repeat: {e}")))?;
