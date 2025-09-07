@@ -1,12 +1,12 @@
-mod probe_set;
 mod probe_table;
+mod probes;
 
 use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use probe_set::{ProbeSet, ProbeSetBuilder};
-use probe_table::{ProbeTable, ProbeTableBuilder};
+use probe_table::ProbeTableBuilder;
+use probes::{ProbeContent, ProbeExists, ProbeIndices};
 
 use crate::RecordBatch;
 
@@ -18,15 +18,15 @@ pub fn make_probeable_builder(
     track_indices: bool,
 ) -> DaftResult<Box<dyn ProbeableBuilder>> {
     if track_indices {
-        Ok(Box::new(ProbeTableBuilder(ProbeTable::new(
+        Ok(Box::new(ProbeTableBuilder::<ProbeIndices>::new(
             schema,
             nulls_equal_aware,
-        )?)))
+        )?))
     } else {
-        Ok(Box::new(ProbeSetBuilder(ProbeSet::new(
+        Ok(Box::new(ProbeTableBuilder::<ProbeExists>::new(
             schema,
             nulls_equal_aware,
-        )?)))
+        )?))
     }
 }
 
