@@ -1565,154 +1565,32 @@ class Expression:
     def over(self, window: Window) -> Expression:
         """Apply the expression as a window function.
 
-        Args:
-            window: The window specification (created using ``daft.Window``)
-                defining partitioning, ordering, and framing.
-
-        Examples:
-            >>> import daft
-            >>> from daft import Window, col
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "group": ["A", "A", "A", "B", "B", "B"],
-            ...         "date": ["2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04", "2020-01-05", "2020-01-06"],
-            ...         "value": [1, 2, 3, 4, 5, 6],
-            ...     }
-            ... )
-            >>> window_spec = Window().partition_by("group").order_by("date")
-            >>> df = df.with_column("cumulative_sum", col("value").sum().over(window_spec))
-            >>> df.sort(["group", "date"]).show()
-            ╭───────┬────────────┬───────┬────────────────╮
-            │ group ┆ date       ┆ value ┆ cumulative_sum │
-            │ ---   ┆ ---        ┆ ---   ┆ ---            │
-            │ Utf8  ┆ Utf8       ┆ Int64 ┆ Int64          │
-            ╞═══════╪════════════╪═══════╪════════════════╡
-            │ A     ┆ 2020-01-01 ┆ 1     ┆ 1              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A     ┆ 2020-01-02 ┆ 2     ┆ 3              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A     ┆ 2020-01-03 ┆ 3     ┆ 6              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B     ┆ 2020-01-04 ┆ 4     ┆ 4              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B     ┆ 2020-01-05 ┆ 5     ┆ 9              │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B     ┆ 2020-01-06 ┆ 6     ┆ 15             │
-            ╰───────┴────────────┴───────┴────────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-
-        Returns:
-            Expression: The result of applying this expression as a window function.
+        Tip: See Also
+            [`daft.functions.over`](https://docs.daft.ai/en/stable/api/functions/over/)
         """
-        expr = self._expr.over(window._spec)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import over
+
+        return over(self, window)
 
     def lag(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a previous row within a window partition.
 
-        Args:
-            offset: The number of rows to shift backward. Must be >= 0.
-            default: Value to use when no previous row exists. Can be a column reference.
-
-        Returns:
-            Expression: Value from the row `offset` positions before the current row.
-
-        Examples:
-            >>> import daft
-            >>> from daft import Window, col
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "category": ["A", "A", "A", "B", "B", "B"],
-            ...         "value": [1, 2, 3, 4, 5, 6],
-            ...         "default_val": [10, 20, 30, 40, 50, 60],
-            ...     }
-            ... )
-            >>>
-            >>> # Simple lag with null default
-            >>> window = Window().partition_by("category").order_by("value")
-            >>> df = df.with_column("lagged", col("value").lag(1).over(window))
-            >>>
-            >>> # Lag with column reference as default
-            >>> df = df.with_column("lagged_with_default", col("value").lag(1, default=col("default_val")).over(window))
-            >>> df.sort(["category", "value"]).show()
-            ╭──────────┬───────┬─────────────┬────────┬─────────────────────╮
-            │ category ┆ value ┆ default_val ┆ lagged ┆ lagged_with_default │
-            │ ---      ┆ ---   ┆ ---         ┆ ---    ┆ ---                 │
-            │ Utf8     ┆ Int64 ┆ Int64       ┆ Int64  ┆ Int64               │
-            ╞══════════╪═══════╪═════════════╪════════╪═════════════════════╡
-            │ A        ┆ 1     ┆ 10          ┆ None   ┆ 10                  │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A        ┆ 2     ┆ 20          ┆ 1      ┆ 1                   │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A        ┆ 3     ┆ 30          ┆ 2      ┆ 2                   │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B        ┆ 4     ┆ 40          ┆ None   ┆ 40                  │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B        ┆ 5     ┆ 50          ┆ 4      ┆ 4                   │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B        ┆ 6     ┆ 60          ┆ 5      ┆ 5                   │
-            ╰──────────┴───────┴─────────────┴────────┴─────────────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
+        Tip: See Also
+              [`daft.functions.lag`](https://docs.daft.ai/en/stable/api/functions/lag/)
         """
-        if default is not None:
-            default = Expression._to_expression(default)
-        expr = self._expr.offset(-offset, default._expr if default is not None else None)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import lag
+
+        return lag(self, offset=offset, default=default)
 
     def lead(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a future row within a window partition.
 
-        Args:
-            offset: The number of rows to shift forward. Must be >= 0.
-            default: Value to use when no future row exists. Can be a column reference.
-
-        Returns:
-            Expression: Value from the row `offset` positions after the current row.
-
-        Examples:
-            >>> import daft
-            >>> from daft import Window, col
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "category": ["A", "A", "A", "B", "B", "B"],
-            ...         "value": [1, 2, 3, 4, 5, 6],
-            ...         "default_val": [10, 20, 30, 40, 50, 60],
-            ...     }
-            ... )
-            >>>
-            >>> # Simple lag with null default
-            >>> window = Window().partition_by("category").order_by("value")
-            >>> df = df.with_column("lead", col("value").lead(1).over(window))
-            >>>
-            >>> # Lead with column reference as default
-            >>> df = df.with_column("lead_with_default", col("value").lead(1, default=col("default_val")).over(window))
-            >>> df.sort(["category", "value"]).show()
-            ╭──────────┬───────┬─────────────┬───────┬───────────────────╮
-            │ category ┆ value ┆ default_val ┆ lead  ┆ lead_with_default │
-            │ ---      ┆ ---   ┆ ---         ┆ ---   ┆ ---               │
-            │ Utf8     ┆ Int64 ┆ Int64       ┆ Int64 ┆ Int64             │
-            ╞══════════╪═══════╪═════════════╪═══════╪═══════════════════╡
-            │ A        ┆ 1     ┆ 10          ┆ 2     ┆ 2                 │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A        ┆ 2     ┆ 20          ┆ 3     ┆ 3                 │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A        ┆ 3     ┆ 30          ┆ None  ┆ 30                │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B        ┆ 4     ┆ 40          ┆ 5     ┆ 5                 │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B        ┆ 5     ┆ 50          ┆ 6     ┆ 6                 │
-            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B        ┆ 6     ┆ 60          ┆ None  ┆ 60                │
-            ╰──────────┴───────┴─────────────┴───────┴───────────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
+        Tip: See Also
+              [`daft.functions.lead`](https://docs.daft.ai/en/stable/api/functions/lead/)
         """
-        if default is not None:
-            default = Expression._to_expression(default)
-        expr = self._expr.offset(offset, default._expr if default is not None else None)
-        return Expression._from_pyexpr(expr)
+        from daft.functions import lead
+
+        return lead(self, offset=offset, default=default)
 
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
@@ -1804,6 +1682,279 @@ class Expression:
 
         return concat(self, other)
 
+    def download(
+        self,
+        max_connections: int = 32,
+        on_error: Literal["raise", "null"] = "raise",
+        io_config: IOConfig | None = None,
+    ) -> Expression:
+        """Treats each string as a URL, and downloads the bytes contents as a bytes column.
+
+        Tip: See also
+            [`daft.functions.download`](https://docs.daft.ai/en/stable/api/functions/download/)
+        """
+        from daft.functions import download
+
+        return download(self, max_connections, on_error, io_config)
+
+    def upload(
+        self,
+        location: builtins.str | Expression,
+        max_connections: int = 32,
+        on_error: Literal["raise", "null"] = "raise",
+        io_config: IOConfig | None = None,
+    ) -> Expression:
+        """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
+
+        Tip: See also
+            [`daft.functions.upload`](https://docs.daft.ai/en/stable/api/functions/upload/)
+        """
+        from daft.functions import upload
+
+        return upload(self, location, max_connections, on_error, io_config)
+
+    def date(self) -> Expression:
+        """Retrieves the date for a datetime column."""
+        from daft.functions import date
+
+        return date(self)
+
+    def day(self) -> Expression:
+        """Retrieves the day for a datetime column.
+
+        Tip: See also
+            [`daft.functions.day`](https://docs.daft.ai/en/stable/api/functions/day/)
+        """
+        from daft.functions import day
+
+        return day(self)
+
+    def hour(self) -> Expression:
+        """Retrieves the hour for a datetime column.
+
+        Tip: See also
+            [`daft.functions.hour`](https://docs.daft.ai/en/stable/api/functions/hour/)
+        """
+        from daft.functions import hour
+
+        return hour(self)
+
+    def minute(self) -> Expression:
+        """Retrieves the minute for a datetime column.
+
+        Tip: See also
+            [`daft.functions.minute`](https://docs.daft.ai/en/stable/api/functions/minute/)
+        """
+        from daft.functions import minute
+
+        return minute(self)
+
+    def second(self) -> Expression:
+        """Retrieves the second for a datetime column.
+
+        Tip: See also
+            [`daft.functions.second`](https://docs.daft.ai/en/stable/api/functions/second/)
+        """
+        from daft.functions import second
+
+        return second(self)
+
+    def millisecond(self) -> Expression:
+        """Retrieves the millisecond for a datetime column.
+
+        Tip: See also
+            [`daft.functions.millisecond`](https://docs.daft.ai/en/stable/api/functions/millisecond/)
+        """
+        from daft.functions import millisecond
+
+        return millisecond(self)
+
+    def microsecond(self) -> Expression:
+        """Retrieves the microsecond for a datetime column.
+
+        Tip: See also
+            [`daft.functions.microsecond`](https://docs.daft.ai/en/stable/api/functions/microsecond/)
+        """
+        from daft.functions import microsecond
+
+        return microsecond(self)
+
+    def nanosecond(self) -> Expression:
+        """Retrieves the nanosecond for a datetime column.
+
+        Tip: See also
+            [`daft.functions.nanosecond`](https://docs.daft.ai/en/stable/api/functions/nanosecond/)
+        """
+        from daft.functions import nanosecond
+
+        return nanosecond(self)
+
+    def unix_date(self) -> Expression:
+        """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
+
+        Tip: See also
+            [`daft.functions.unix_date`](https://docs.daft.ai/en/stable/api/functions/unix_date/)
+        """
+        from daft.functions import unix_date
+
+        return unix_date(self)
+
+    def time(self) -> Expression:
+        """Retrieves the time for a datetime column."""
+        from daft.functions import time
+
+        return time(self)
+
+    def month(self) -> Expression:
+        """Retrieves the month for a datetime column.
+
+        Tip: See also
+            [`daft.functions.month`](https://docs.daft.ai/en/stable/api/functions/month/)
+        """
+        from daft.functions import month
+
+        return month(self)
+
+    def quarter(self) -> Expression:
+        """Retrieves the quarter for a datetime column.
+
+        Tip: See also
+            [`daft.functions.quarter`](https://docs.daft.ai/en/stable/api/functions/quarter/)
+        """
+        from daft.functions import quarter
+
+        return quarter(self)
+
+    def year(self) -> Expression:
+        """Retrieves the year for a datetime column.
+
+        Tip: See also
+            [`daft.functions.year`](https://docs.daft.ai/en/stable/api/functions/year/)
+        """
+        from daft.functions import year
+
+        return year(self)
+
+    def day_of_week(self) -> Expression:
+        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
+
+        Tip: See also
+            [`daft.functions.day_of_week`](https://docs.daft.ai/en/stable/api/functions/day_of_week/)
+        """
+        from daft.functions import day_of_week
+
+        return day_of_week(self)
+
+    def day_of_month(self) -> Expression:
+        """Retrieves the day of the month for a datetime column.
+
+        Tip: See also
+            [`daft.functions.day_of_month`](https://docs.daft.ai/en/stable/api/functions/day_of_month/)
+        """
+        from daft.functions import day_of_month
+
+        return day_of_month(self)
+
+    def day_of_year(self) -> Expression:
+        """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
+
+        Tip: See also
+            [`daft.functions.day_of_year`](https://docs.daft.ai/en/stable/api/functions/day_of_year/)
+        """
+        from daft.functions import day_of_year
+
+        return day_of_year(self)
+
+    def week_of_year(self) -> Expression:
+        """Retrieves the week of the year for a datetime column.
+
+        Tip: See also
+            [`daft.functions.week_of_year`](https://docs.daft.ai/en/stable/api/functions/week_of_year/)
+        """
+        from daft.functions import week_of_year
+
+        return week_of_year(self)
+
+    def strftime(self, format: builtins.str | None = None) -> Expression:
+        """Converts a datetime/date column to a string column.
+
+        Tip: See also
+            [`daft.functions.strftime`](https://docs.daft.ai/en/stable/api/functions/strftime/)
+        """
+        from daft.functions import strftime
+
+        return strftime(self, format)
+
+    def total_seconds(self) -> Expression:
+        """Calculates the total number of seconds for a duration column.
+
+        Tip: See also
+            [`daft.functions.total_seconds`](https://docs.daft.ai/en/stable/api/functions/total_seconds/)
+        """
+        from daft.functions import total_seconds
+
+        return total_seconds(self)
+
+    def total_milliseconds(self) -> Expression:
+        """Calculates the total number of milliseconds for a duration column.
+
+        Tip: See also
+            [`daft.functions.total_milliseconds`](https://docs.daft.ai/en/stable/api/functions/total_milliseconds/)
+        """
+        from daft.functions import total_milliseconds
+
+        return total_milliseconds(self)
+
+    def total_microseconds(self) -> Expression:
+        """Calculates the total number of microseconds for a duration column.
+
+        Tip: See also
+            [`daft.functions.total_microseconds`](https://docs.daft.ai/en/stable/api/functions/total_microseconds/)
+        """
+        from daft.functions import total_microseconds
+
+        return total_microseconds(self)
+
+    def total_nanoseconds(self) -> Expression:
+        """Calculates the total number of nanoseconds for a duration column.
+
+        Tip: See also
+            [`daft.functions.total_nanoseconds`](https://docs.daft.ai/en/stable/api/functions/total_nanoseconds/)
+        """
+        from daft.functions import total_nanoseconds
+
+        return total_nanoseconds(self)
+
+    def total_minutes(self) -> Expression:
+        """Calculates the total number of minutes for a duration column.
+
+        Tip: See also
+            [`daft.functions.total_minutes`](https://docs.daft.ai/en/stable/api/functions/total_minutes/)
+        """
+        from daft.functions import total_minutes
+
+        return total_minutes(self)
+
+    def total_hours(self) -> Expression:
+        """Calculates the total number of hours for a duration column.
+
+        Tip: See also
+            [`daft.functions.total_hours`](https://docs.daft.ai/en/stable/api/functions/total_hours/)
+        """
+        from daft.functions import total_hours
+
+        return total_hours(self)
+
+    def total_days(self) -> Expression:
+        """Calculates the total number of days for a duration column.
+
+        Tip: See also
+            [`daft.functions.total_days`](https://docs.daft.ai/en/stable/api/functions/total_days/)
+        """
+        from daft.functions import total_days
+
+        return total_days(self)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -1866,58 +2017,15 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
     ) -> Expression:
-        """Treats each string as a URL, and downloads the bytes contents as a bytes column.
-
-        Args:
-            max_connections: The maximum number of connections to use per thread to use for downloading URLs. Defaults to 32.
-            on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
-                the error but fallback to a Null value. Defaults to "raise".
-            io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
-                with `max_connections` that is passed in as a kwarg.
-
-        Returns:
-            Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
-
-        Note:
-            If you are observing excessive S3 issues (such as timeouts, DNS errors or slowdown errors) during URL downloads,
-            you may wish to reduce the value of ``max_connections`` (defaults to 32) to reduce the amount of load you are placing
-            on your S3 servers.
-
-            Alternatively, if you are running on machines with lower number of cores but very high network bandwidth, you can increase
-            ``max_connections`` to get higher throughput with additional parallelism
-
-        """
-        multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
-        io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-
-        if io_config.unity.endpoint is None:
-            try:
-                from daft.catalog.__unity import UnityCatalog
-            except ImportError:
-                pass
-            else:
-                from daft.session import current_catalog
-
-                catalog = current_catalog()
-                if isinstance(catalog, UnityCatalog):
-                    unity_catalog = catalog._inner
-                    io_config = io_config.replace(unity=unity_catalog.to_io_config().unity)
-
-        max_connections_expr = Expression._to_expression(max_connections)._expr
-        on_error_expr = Expression._to_expression(on_error)._expr
-        multi_thread_expr = Expression._to_expression(multi_thread)._expr
-        io_config_expr = Expression._to_expression(io_config)._expr
-
-        f = native.get_function_from_registry("url_download")
-
-        return Expression._from_pyexpr(
-            f(
-                self._expr,
-                multi_thread=multi_thread_expr,
-                on_error=on_error_expr,
-                max_connections=max_connections_expr,
-                io_config=io_config_expr,
-            )
+        """(DEPRECATED) Please use `daft.functions.download` instead."""
+        warnings.warn(
+            "`Expression.url.download` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.download` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().download(
+            max_connections=max_connections,
+            on_error=on_error,
+            io_config=io_config,
         )
 
     def upload(
@@ -1927,52 +2035,16 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
     ) -> Expression:
-        """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
-
-        Files will be written into the location (folder(s)) with a generated UUID filename, and the result
-        will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
-
-        Args:
-            location: a folder location or column of folder locations to upload data into
-            max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
-            on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log
-                the error but fallback to a Null value. Defaults to "raise".
-            io_config: IOConfig to use when uploading data
-
-        Returns:
-            Expression: a String expression containing the written filepath
-
-        Examples:
-            >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
-
-            Upload to row-specific URLs
-
-            >>> col("data").url.upload(col("paths"))  # doctest: +SKIP
-
-        """
-        location_expr = Expression._to_expression(location)._expr
-        multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
-        # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
-        # if the user gave an expression, we assume that each row has a specific url to upload to.
-        # Consider moving the check for is_single_folder to a lower IR.
-        is_single_folder = isinstance(location, str)
-        io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-        max_connections_expr = Expression._to_expression(max_connections)._expr
-        on_error_expr = Expression._to_expression(on_error)._expr
-        multi_thread_expr = Expression._to_expression(multi_thread)._expr
-        io_config_expr = Expression._to_expression(io_config)._expr
-        is_single_folder_expr = Expression._to_expression(is_single_folder)._expr
-        f = native.get_function_from_registry("url_upload")
-        return Expression._from_pyexpr(
-            f(
-                self._expr,
-                location_expr,
-                max_connections=max_connections_expr,
-                on_error=on_error_expr,
-                multi_thread=multi_thread_expr,
-                is_single_folder=is_single_folder_expr,
-                io_config=io_config_expr,
-            )
+        """(DEPRECATED) Please use `daft.functions.upload` instead."""
+        warnings.warn(
+            "`Expression.url.upload` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.upload` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().upload(
+            location=location,
+            max_connections=max_connections,
+            on_error=on_error,
+            io_config=io_config,
         )
 
 
@@ -2112,611 +2184,140 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.dt` attribute."""
 
     def date(self) -> Expression:
-        """Retrieves the date for a datetime column.
-
-        Returns:
-            Expression: a Date expression
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "x": [
-            ...             datetime.datetime(2021, 1, 1, 5, 1, 1),
-            ...             datetime.datetime(2021, 1, 2, 6, 1, 59),
-            ...             datetime.datetime(2021, 1, 3, 7, 2, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df = df.with_column("date", df["x"].dt.date())
-            >>> df.show()
-            ╭───────────────────────────────┬────────────╮
-            │ x                             ┆ date       │
-            │ ---                           ┆ ---        │
-            │ Timestamp(Microseconds, None) ┆ Date       │
-            ╞═══════════════════════════════╪════════════╡
-            │ 2021-01-01 05:01:01           ┆ 2021-01-01 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-02 06:01:59           ┆ 2021-01-02 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-03 07:02:00           ┆ 2021-01-03 │
-            ╰───────────────────────────────┴────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("date")
+        """(DEPRECATED) Please use `daft.functions.date` instead."""
+        warnings.warn(
+            "`Expression.dt.date` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.date` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().date()
 
     def day(self) -> Expression:
-        """Retrieves the day for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the day extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "x": [
-            ...             datetime.datetime(2021, 1, 1, 5, 1, 1),
-            ...             datetime.datetime(2021, 1, 2, 6, 1, 59),
-            ...             datetime.datetime(2021, 1, 3, 7, 2, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df = df.with_column("day", df["x"].dt.day())
-            >>> df.show()
-            ╭───────────────────────────────┬────────╮
-            │ x                             ┆ day    │
-            │ ---                           ┆ ---    │
-            │ Timestamp(Microseconds, None) ┆ UInt32 │
-            ╞═══════════════════════════════╪════════╡
-            │ 2021-01-01 05:01:01           ┆ 1      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-02 06:01:59           ┆ 2      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-03 07:02:00           ┆ 3      │
-            ╰───────────────────────────────┴────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("day")
+        """(DEPRECATED) Please use `daft.functions.day` instead."""
+        warnings.warn(
+            "`Expression.dt.day` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.day` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().day()
 
     def hour(self) -> Expression:
-        """Retrieves the day for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the day extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "x": [
-            ...             datetime.datetime(2021, 1, 1, 5, 1, 1),
-            ...             datetime.datetime(2021, 1, 2, 6, 1, 59),
-            ...             datetime.datetime(2021, 1, 3, 7, 2, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df = df.with_column("hour", df["x"].dt.hour())
-            >>> df.show()
-            ╭───────────────────────────────┬────────╮
-            │ x                             ┆ hour   │
-            │ ---                           ┆ ---    │
-            │ Timestamp(Microseconds, None) ┆ UInt32 │
-            ╞═══════════════════════════════╪════════╡
-            │ 2021-01-01 05:01:01           ┆ 5      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-02 06:01:59           ┆ 6      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-03 07:02:00           ┆ 7      │
-            ╰───────────────────────────────┴────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("hour")
+        """(DEPRECATED) Please use `daft.functions.hour` instead."""
+        warnings.warn(
+            "`Expression.dt.hour` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.hour` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().hour()
 
     def minute(self) -> Expression:
-        """Retrieves the minute for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the minute extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "x": [
-            ...             datetime.datetime(2021, 1, 1, 5, 1, 1),
-            ...             datetime.datetime(2021, 1, 2, 6, 1, 59),
-            ...             datetime.datetime(2021, 1, 3, 7, 2, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df = df.with_column("minute", df["x"].dt.minute())
-            >>> df.show()
-            ╭───────────────────────────────┬────────╮
-            │ x                             ┆ minute │
-            │ ---                           ┆ ---    │
-            │ Timestamp(Microseconds, None) ┆ UInt32 │
-            ╞═══════════════════════════════╪════════╡
-            │ 2021-01-01 05:01:01           ┆ 1      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-02 06:01:59           ┆ 1      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-03 07:02:00           ┆ 2      │
-            ╰───────────────────────────────┴────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("minute")
+        """(DEPRECATED) Please use `daft.functions.minute` instead."""
+        warnings.warn(
+            "`Expression.dt.minute` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.minute` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().minute()
 
     def second(self) -> Expression:
-        """Retrieves the second for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the second extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "x": [
-            ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
-            ...             datetime.datetime(2021, 1, 1, 0, 1, 59),
-            ...             datetime.datetime(2021, 1, 1, 0, 2, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df = df.with_column("second", df["x"].dt.second())
-            >>> df.show()
-            ╭───────────────────────────────┬────────╮
-            │ x                             ┆ second │
-            │ ---                           ┆ ---    │
-            │ Timestamp(Microseconds, None) ┆ UInt32 │
-            ╞═══════════════════════════════╪════════╡
-            │ 2021-01-01 00:01:01           ┆ 1      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01 00:01:59           ┆ 59     │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01 00:02:00           ┆ 0      │
-            ╰───────────────────────────────┴────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("second")
+        """(DEPRECATED) Please use `daft.functions.second` instead."""
+        warnings.warn(
+            "`Expression.dt.second` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.second` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().second()
 
     def millisecond(self) -> Expression:
-        """Retrieves the millisecond for a datetime column.
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
-            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
-            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
-            ...         ]
-            ...     }
-            ... )
-            >>> df = df.select(daft.col("datetime").dt.millisecond())
-            >>> df.show()
-            ╭──────────╮
-            │ datetime │
-            │ ---      │
-            │ UInt32   │
-            ╞══════════╡
-            │ 0        │
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 500      │
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 60       │
-            ╰──────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-        """
-        return self._eval_expressions("millisecond")
+        """(DEPRECATED) Please use `daft.functions.millisecond` instead."""
+        warnings.warn(
+            "`Expression.dt.millisecond` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.millisecond` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().millisecond()
 
     def microsecond(self) -> Expression:
-        """Retrieves the microsecond for a datetime column.
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
-            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
-            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.select(daft.col("datetime").dt.microsecond()).show()
-            ╭──────────╮
-            │ datetime │
-            │ ---      │
-            │ UInt32   │
-            ╞══════════╡
-            │ 0        │
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 500000   │
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 60000    │
-            ╰──────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("microsecond")
+        """(DEPRECATED) Please use `daft.functions.microsecond` instead."""
+        warnings.warn(
+            "`Expression.dt.microsecond` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.microsecond` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().microsecond()
 
     def nanosecond(self) -> Expression:
-        """Retrieves the nanosecond for a datetime column.
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
-            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
-            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
-            ...         ]
-            ...     }
-            ... )
-            >>>
-            >>> df.select(daft.col("datetime").dt.nanosecond()).show()
-            ╭───────────╮
-            │ datetime  │
-            │ ---       │
-            │ UInt32    │
-            ╞═══════════╡
-            │ 0         │
-            ├╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 500000000 │
-            ├╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 60000000  │
-            ╰───────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("nanosecond")
+        """(DEPRECATED) Please use `daft.functions.nanosecond` instead."""
+        warnings.warn(
+            "`Expression.dt.nanosecond` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.nanosecond` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().nanosecond()
 
     def unix_date(self) -> Expression:
-        """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
-
-        Returns:
-            Expression: a UInt64 expression
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
-            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
-            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
-            ...         ]
-            ...     }
-            ... )
-            >>>
-            >>> df.select(daft.col("datetime").alias("unix_date").dt.unix_date()).show()
-            ╭───────────╮
-            │ unix_date │
-            │ ---       │
-            │ UInt64    │
-            ╞═══════════╡
-            │ 2922      │
-            ├╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 20009     │
-            ├╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 34699     │
-            ╰───────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("unix_date")
+        """(DEPRECATED) Please use `daft.functions.unix_date` instead."""
+        warnings.warn(
+            "`Expression.dt.unix_date` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.unix_date` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().unix_date()
 
     def time(self) -> Expression:
-        """Retrieves the time for a datetime column.
-
-        Returns:
-            Expression: a Time expression
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "x": [
-            ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
-            ...             datetime.datetime(2021, 1, 1, 12, 1, 59),
-            ...             datetime.datetime(2021, 1, 1, 23, 59, 59),
-            ...         ],
-            ...     }
-            ... )
-            >>> df = df.with_column("time", df["x"].dt.time())
-            >>> df.show()
-            ╭───────────────────────────────┬────────────────────╮
-            │ x                             ┆ time               │
-            │ ---                           ┆ ---                │
-            │ Timestamp(Microseconds, None) ┆ Time(Microseconds) │
-            ╞═══════════════════════════════╪════════════════════╡
-            │ 2021-01-01 00:01:01           ┆ 00:01:01           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01 12:01:59           ┆ 12:01:59           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01 23:59:59           ┆ 23:59:59           │
-            ╰───────────────────────────────┴────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("time")
+        """(DEPRECATED) Please use `daft.functions.time` instead."""
+        warnings.warn(
+            "`Expression.dt.time` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.time` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().time()
 
     def month(self) -> Expression:
-        """Retrieves the month for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the month extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
-            ...             datetime.datetime(2024, 6, 4, 0, 0, 0),
-            ...             datetime.datetime(2024, 5, 5, 0, 0, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("month", df["datetime"].dt.month()).collect()
-            ╭───────────────────────────────┬────────╮
-            │ datetime                      ┆ month  │
-            │ ---                           ┆ ---    │
-            │ Timestamp(Microseconds, None) ┆ UInt32 │
-            ╞═══════════════════════════════╪════════╡
-            │ 2024-07-03 00:00:00           ┆ 7      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2024-06-04 00:00:00           ┆ 6      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ 2024-05-05 00:00:00           ┆ 5      │
-            ╰───────────────────────────────┴────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("month")
+        """(DEPRECATED) Please use `daft.functions.month` instead."""
+        warnings.warn(
+            "`Expression.dt.month` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.month` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().month()
 
     def quarter(self) -> Expression:
-        """Retrieves the quarter for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the quarter extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime.datetime(2024, 1, 1, 0, 0, 0),
-            ...             datetime.datetime(2023, 7, 4, 0, 0, 0),
-            ...             datetime.datetime(2022, 12, 5, 0, 0, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("quarter", df["datetime"].dt.quarter()).collect()
-            ╭───────────────────────────────┬─────────╮
-            │ datetime                      ┆ quarter │
-            │ ---                           ┆ ---     │
-            │ Timestamp(Microseconds, None) ┆ UInt32  │
-            ╞═══════════════════════════════╪═════════╡
-            │ 2024-01-01 00:00:00           ┆ 1       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 2023-07-04 00:00:00           ┆ 3       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 2022-12-05 00:00:00           ┆ 4       │
-            ╰───────────────────────────────┴─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("quarter")
+        """(DEPRECATED) Please use `daft.functions.quarter` instead."""
+        warnings.warn(
+            "`Expression.dt.quarter` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.quarter` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().quarter()
 
     def year(self) -> Expression:
-        """Retrieves the year for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the year extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
-            ...             datetime.datetime(2023, 7, 4, 0, 0, 0),
-            ...             datetime.datetime(2022, 7, 5, 0, 0, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("year", df["datetime"].dt.year()).collect()
-            ╭───────────────────────────────┬───────╮
-            │ datetime                      ┆ year  │
-            │ ---                           ┆ ---   │
-            │ Timestamp(Microseconds, None) ┆ Int32 │
-            ╞═══════════════════════════════╪═══════╡
-            │ 2024-07-03 00:00:00           ┆ 2024  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2023-07-04 00:00:00           ┆ 2023  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2022-07-05 00:00:00           ┆ 2022  │
-            ╰───────────────────────────────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("year")
+        """(DEPRECATED) Please use `daft.functions.year` instead."""
+        warnings.warn(
+            "`Expression.dt.year` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.year` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().year()
 
     def day_of_week(self) -> Expression:
-        """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
-
-        Returns:
-            Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
-            ...             datetime.datetime(2024, 7, 4, 0, 0, 0),
-            ...             datetime.datetime(2024, 7, 5, 0, 0, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("day_of_week", df["datetime"].dt.day_of_week()).collect()
-            ╭───────────────────────────────┬─────────────╮
-            │ datetime                      ┆ day_of_week │
-            │ ---                           ┆ ---         │
-            │ Timestamp(Microseconds, None) ┆ UInt32      │
-            ╞═══════════════════════════════╪═════════════╡
-            │ 2024-07-03 00:00:00           ┆ 2           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-07-04 00:00:00           ┆ 3           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-07-05 00:00:00           ┆ 4           │
-            ╰───────────────────────────────┴─────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("day_of_week")
+        """(DEPRECATED) Please use `daft.functions.day_of_week` instead."""
+        warnings.warn(
+            "`Expression.dt.day_of_week` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.day_of_week` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().day_of_week()
 
     def day_of_month(self) -> Expression:
-        """Retrieves the day of the month for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the day_of_month extracted from a datetime column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime(2024, 1, 1, 0, 0, 0),
-            ...             datetime(2024, 2, 1, 0, 0, 0),
-            ...             datetime(2024, 12, 31, 0, 0, 0),
-            ...             datetime(2023, 12, 31, 0, 0, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("day_of_month", df["datetime"].dt.day_of_month()).collect()
-            ╭───────────────────────────────┬──────────────╮
-            │ datetime                      ┆ day_of_month │
-            │ ---                           ┆ ---          │
-            │ Timestamp(Microseconds, None) ┆ UInt32       │
-            ╞═══════════════════════════════╪══════════════╡
-            │ 2024-01-01 00:00:00           ┆ 1            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-02-01 00:00:00           ┆ 1            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-12-31 00:00:00           ┆ 31           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2023-12-31 00:00:00           ┆ 31           │
-            ╰───────────────────────────────┴──────────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
-        """
-        return self._eval_expressions("day_of_month")
+        """(DEPRECATED) Please use `daft.functions.day_of_month` instead."""
+        warnings.warn(
+            "`Expression.dt.day_of_month` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.day_of_month` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().day_of_month()
 
     def day_of_year(self) -> Expression:
-        """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
-
-        Returns:
-            Expression: a UInt32 expression with just the day_of_year extracted from a datetime column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime(2024, 1, 1, 0, 0, 0),
-            ...             datetime(2024, 2, 1, 0, 0, 0),
-            ...             datetime(2024, 12, 31, 0, 0, 0),  # 2024 is a leap year
-            ...             datetime(2023, 12, 31, 0, 0, 0),  # not leap year
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("day_of_year", df["datetime"].dt.day_of_year()).collect()
-            ╭───────────────────────────────┬─────────────╮
-            │ datetime                      ┆ day_of_year │
-            │ ---                           ┆ ---         │
-            │ Timestamp(Microseconds, None) ┆ UInt32      │
-            ╞═══════════════════════════════╪═════════════╡
-            │ 2024-01-01 00:00:00           ┆ 1           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-02-01 00:00:00           ┆ 32          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-12-31 00:00:00           ┆ 366         │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2023-12-31 00:00:00           ┆ 365         │
-            ╰───────────────────────────────┴─────────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
-        """
-        return self._eval_expressions("day_of_year")
+        """(DEPRECATED) Please use `daft.functions.day_of_year` instead."""
+        warnings.warn(
+            "`Expression.dt.day_of_year` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.day_of_year` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().day_of_year()
 
     def week_of_year(self) -> Expression:
-        """Retrieves the week of the year for a datetime column.
-
-        Returns:
-            Expression: a UInt32 expression with just the week_of_year extracted from a datetime column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime(2024, 1, 1, 0, 0, 0),
-            ...             datetime(2024, 2, 1, 0, 0, 0),
-            ...             datetime(2024, 12, 31, 0, 0, 0),  # part of week 1 of 2025 according to ISO 8601 standard
-            ...             datetime(2023, 12, 31, 0, 0, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("week_of_year", df["datetime"].dt.week_of_year()).collect()
-            ╭───────────────────────────────┬──────────────╮
-            │ datetime                      ┆ week_of_year │
-            │ ---                           ┆ ---          │
-            │ Timestamp(Microseconds, None) ┆ UInt32       │
-            ╞═══════════════════════════════╪══════════════╡
-            │ 2024-01-01 00:00:00           ┆ 1            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-02-01 00:00:00           ┆ 5            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2024-12-31 00:00:00           ┆ 1            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2023-12-31 00:00:00           ┆ 52           │
-            ╰───────────────────────────────┴──────────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
-        """
-        return self._eval_expressions("week_of_year")
+        """(DEPRECATED) Please use `daft.functions.week_of_year` instead."""
+        warnings.warn(
+            "`Expression.dt.week_of_year` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.week_of_year` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().week_of_year()
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
@@ -2795,360 +2396,68 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return self._eval_expressions("to_unix_epoch", time_unit=time_unit)
 
     def strftime(self, format: str | None = None) -> Expression:
-        """Converts a datetime/date column to a string column.
-
-        Args:
-            format: The format to use for the conversion. If None, defaults to ISO 8601 format.
-
-        Note:
-            The format must be a valid datetime format string. (defaults to ISO 8601 format)
-            See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
-
-
-        Examples:
-            >>> import daft
-            >>> from datetime import datetime, date
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
-            ...         "datetimes": [
-            ...             datetime(2023, 1, 1, 12, 1),
-            ...             datetime(2023, 1, 2, 12, 0, 0, 0),
-            ...             datetime(2023, 1, 3, 12, 0, 0, 999_999),
-            ...         ],
-            ...     }
-            ... )
-            >>> df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
-            >>> df.select(
-            ...     daft.col("dates").dt.strftime().alias("iso_date"),
-            ...     daft.col("dates").dt.strftime(format="%m/%d/%Y").alias("custom_date"),
-            ...     daft.col("datetimes").dt.strftime().alias("iso_datetime"),
-            ...     daft.col("datetimes_s").dt.strftime().alias("iso_datetime_s"),
-            ...     daft.col("datetimes_s").dt.strftime(format="%Y/%m/%d %H:%M:%S").alias("custom_datetime"),
-            ... ).show()
-            ╭────────────┬─────────────┬────────────────────────────┬─────────────────────┬─────────────────────╮
-            │ iso_date   ┆ custom_date ┆ iso_datetime               ┆ iso_datetime_s      ┆ custom_datetime     │
-            │ ---        ┆ ---         ┆ ---                        ┆ ---                 ┆ ---                 │
-            │ Utf8       ┆ Utf8        ┆ Utf8                       ┆ Utf8                ┆ Utf8                │
-            ╞════════════╪═════════════╪════════════════════════════╪═════════════════════╪═════════════════════╡
-            │ 2023-01-01 ┆ 01/01/2023  ┆ 2023-01-01T12:01:00.000000 ┆ 2023-01-01T12:01:00 ┆ 2023/01/01 12:01:00 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2023-01-02 ┆ 01/02/2023  ┆ 2023-01-02T12:00:00.000000 ┆ 2023-01-02T12:00:00 ┆ 2023/01/02 12:00:00 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2023-01-03 ┆ 01/03/2023  ┆ 2023-01-03T12:00:00.999999 ┆ 2023-01-03T12:00:00 ┆ 2023/01/03 12:00:00 │
-            ╰────────────┴─────────────┴────────────────────────────┴─────────────────────┴─────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-        """
-        return self._eval_expressions("strftime", format=format)
+        """(DEPRECATED) Please use `daft.functions.strftime` instead."""
+        warnings.warn(
+            "`Expression.dt.strftime` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.strftime` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().strftime(format=format)
 
     def total_seconds(self) -> Expression:
-        """Calculates the total number of seconds for a duration column.
-
-        Returns:
-            Expression: a UInt64 expression with the total number of seconds for a duration column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date, datetime, time, timedelta
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "duration": [
-            ...             timedelta(seconds=1),
-            ...             timedelta(milliseconds=1),
-            ...             timedelta(microseconds=1),
-            ...             timedelta(days=1),
-            ...             timedelta(hours=1),
-            ...             timedelta(minutes=1),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_seconds()).show()
-            ╭────────────────────────┬───────────────╮
-            │ duration               ┆ Total Seconds │
-            │ ---                    ┆ ---           │
-            │ Duration[Microseconds] ┆ Int64         │
-            ╞════════════════════════╪═══════════════╡
-            │ 1s                     ┆ 1             │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1000µs                 ┆ 0             │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1µs                    ┆ 0             │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1d                     ┆ 86400         │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1h                     ┆ 3600          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1m                     ┆ 60            │
-            ╰────────────────────────┴───────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-        """
-        return self._eval_expressions("total_seconds")
+        """(DEPRECATED) Please use `daft.functions.total_seconds` instead."""
+        warnings.warn(
+            "`Expression.dt.total_seconds` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.total_seconds` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().total_seconds()
 
     def total_milliseconds(self) -> Expression:
-        """Calculates the total number of milliseconds for a duration column.
-
-        Returns:
-            Expression: a UInt64 expression with the total number of milliseconds for a duration column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date, datetime, time, timedelta
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "duration": [
-            ...             timedelta(seconds=1),
-            ...             timedelta(milliseconds=1),
-            ...             timedelta(microseconds=1),
-            ...             timedelta(days=1),
-            ...             timedelta(hours=1),
-            ...             timedelta(minutes=1),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("Total Milliseconds", daft.col("duration").dt.total_milliseconds()).show()
-            ╭────────────────────────┬────────────────────╮
-            │ duration               ┆ Total Milliseconds │
-            │ ---                    ┆ ---                │
-            │ Duration[Microseconds] ┆ Int64              │
-            ╞════════════════════════╪════════════════════╡
-            │ 1s                     ┆ 1000               │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1000µs                 ┆ 1                  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1µs                    ┆ 0                  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1d                     ┆ 86400000           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1h                     ┆ 3600000            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1m                     ┆ 60000              │
-            ╰────────────────────────┴────────────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-        """
-        return self._eval_expressions("total_milliseconds")
+        """(DEPRECATED) Please use `daft.functions.total_milliseconds` instead."""
+        warnings.warn(
+            "`Expression.dt.total_milliseconds` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.total_milliseconds` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().total_milliseconds()
 
     def total_microseconds(self) -> Expression:
-        """Calculates the total number of microseconds for a duration column.
-
-        Returns:
-            Expression: a UInt64 expression with the total number of microseconds for a duration column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date, datetime, time, timedelta
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "duration": [
-            ...             timedelta(seconds=1),
-            ...             timedelta(milliseconds=1),
-            ...             timedelta(microseconds=1),
-            ...             timedelta(days=1),
-            ...             timedelta(hours=1),
-            ...             timedelta(minutes=1),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("Total Microseconds", daft.col("duration").dt.total_microseconds()).show()
-            ╭────────────────────────┬────────────────────╮
-            │ duration               ┆ Total Microseconds │
-            │ ---                    ┆ ---                │
-            │ Duration[Microseconds] ┆ Int64              │
-            ╞════════════════════════╪════════════════════╡
-            │ 1s                     ┆ 1000000            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1000µs                 ┆ 1000               │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1µs                    ┆ 1                  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1d                     ┆ 86400000000        │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1h                     ┆ 3600000000         │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1m                     ┆ 60000000           │
-            ╰────────────────────────┴────────────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-        """
-        return self._eval_expressions("total_microseconds")
+        """(DEPRECATED) Please use `daft.functions.total_microseconds` instead."""
+        warnings.warn(
+            "`Expression.dt.total_microseconds` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.total_microseconds` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().total_microseconds()
 
     def total_nanoseconds(self) -> Expression:
-        """Calculates the total number of nanoseconds for a duration column.
-
-        Returns:
-            Expression: a UInt64 expression with the total number of nanoseconds for a duration column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date, datetime, time, timedelta
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "duration": [
-            ...             timedelta(seconds=1),
-            ...             timedelta(milliseconds=1),
-            ...             timedelta(microseconds=1),
-            ...             timedelta(days=1),
-            ...             timedelta(hours=1),
-            ...             timedelta(minutes=1),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("Total Nanoseconds", daft.col("duration").dt.total_nanoseconds()).show()
-            ╭────────────────────────┬───────────────────╮
-            │ duration               ┆ Total Nanoseconds │
-            │ ---                    ┆ ---               │
-            │ Duration[Microseconds] ┆ Int64             │
-            ╞════════════════════════╪═══════════════════╡
-            │ 1s                     ┆ 1000000000        │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1000µs                 ┆ 1000000           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1µs                    ┆ 1000              │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1d                     ┆ 86400000000000    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1h                     ┆ 3600000000000     │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1m                     ┆ 60000000000       │
-            ╰────────────────────────┴───────────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-        """
-        return self._eval_expressions("total_nanoseconds")
+        """(DEPRECATED) Please use `daft.functions.total_nanoseconds` instead."""
+        warnings.warn(
+            "`Expression.dt.total_nanoseconds` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.total_nanoseconds` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().total_nanoseconds()
 
     def total_minutes(self) -> Expression:
-        """Calculates the total number of minutes for a duration column.
-
-        Returns:
-            Expression: a UInt64 expression with the total number of minutes for a duration column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date, datetime, time, timedelta
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "duration": [
-            ...             timedelta(seconds=1),
-            ...             timedelta(milliseconds=1),
-            ...             timedelta(microseconds=1),
-            ...             timedelta(days=1),
-            ...             timedelta(hours=1),
-            ...             timedelta(minutes=1),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("Total Minutes", daft.col("duration").dt.total_minutes()).show()
-            ╭────────────────────────┬───────────────╮
-            │ duration               ┆ Total Minutes │
-            │ ---                    ┆ ---           │
-            │ Duration[Microseconds] ┆ Int64         │
-            ╞════════════════════════╪═══════════════╡
-            │ 1s                     ┆ 0             │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1000µs                 ┆ 0             │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1µs                    ┆ 0             │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1d                     ┆ 1440          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1h                     ┆ 60            │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1m                     ┆ 1             │
-            ╰────────────────────────┴───────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-        """
-        return self._eval_expressions("total_minutes")
+        """(DEPRECATED) Please use `daft.functions.total_minutes` instead."""
+        warnings.warn(
+            "`Expression.dt.total_minutes` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.total_minutes` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().total_minutes()
 
     def total_hours(self) -> Expression:
-        """Calculates the total number of hours for a duration column.
-
-        Returns:
-            Expression: a UInt64 expression with the total number of hours for a duration column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date, datetime, time, timedelta
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "duration": [
-            ...             timedelta(seconds=1),
-            ...             timedelta(milliseconds=1),
-            ...             timedelta(microseconds=1),
-            ...             timedelta(days=1),
-            ...             timedelta(hours=1),
-            ...             timedelta(minutes=1),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("Total Hours", daft.col("duration").dt.total_hours()).show()
-            ╭────────────────────────┬─────────────╮
-            │ duration               ┆ Total Hours │
-            │ ---                    ┆ ---         │
-            │ Duration[Microseconds] ┆ Int64       │
-            ╞════════════════════════╪═════════════╡
-            │ 1s                     ┆ 0           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1000µs                 ┆ 0           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1µs                    ┆ 0           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1d                     ┆ 24          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1h                     ┆ 1           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1m                     ┆ 0           │
-            ╰────────────────────────┴─────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-        """
-        return self._eval_expressions("total_hours")
+        """(DEPRECATED) Please use `daft.functions.total_hours` instead."""
+        warnings.warn(
+            "`Expression.dt.total_hours` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.total_hours` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().total_hours()
 
     def total_days(self) -> Expression:
-        """Calculates the total number of days for a duration column.
-
-        Returns:
-            Expression: a UInt64 expression with the total number of days for a duration column
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date, datetime, time, timedelta
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "duration": [
-            ...             timedelta(seconds=1),
-            ...             timedelta(milliseconds=1),
-            ...             timedelta(microseconds=1),
-            ...             timedelta(days=1),
-            ...             timedelta(hours=1),
-            ...             timedelta(minutes=1),
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("Total Days", daft.col("duration").dt.total_days()).show()
-            ╭────────────────────────┬────────────╮
-            │ duration               ┆ Total Days │
-            │ ---                    ┆ ---        │
-            │ Duration[Microseconds] ┆ Int64      │
-            ╞════════════════════════╪════════════╡
-            │ 1s                     ┆ 0          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1000µs                 ┆ 0          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1µs                    ┆ 0          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1d                     ┆ 1          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1h                     ┆ 0          │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1m                     ┆ 0          │
-            ╰────────────────────────┴────────────╯
-            <BLANKLINE>
-            (Showing first 6 of 6 rows)
-        """
-        return self._eval_expressions("total_days")
+        """(DEPRECATED) Please use `daft.functions.total_days` instead."""
+        warnings.warn(
+            "`Expression.dt.total_days` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.total_days` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().total_days()
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
