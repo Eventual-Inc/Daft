@@ -1180,53 +1180,59 @@ class Expression:
 
         return skew(self)
 
+    def list_agg(self) -> Expression:
+        """Aggregates the values in the expression into a list.
+
+        Tip: See Also
+            [`daft.functions.list_agg`](https://docs.daft.ai/en/stable/api/functions/list_agg/)
+        """
+        from daft.functions import list_agg
+
+        return list_agg(self)
+
     def agg_list(self) -> Expression:
-        """Aggregates the values in the expression into a list."""
-        expr = self._expr.agg_list()
-        return Expression._from_pyexpr(expr)
+        """(DEPRECATED) Please use `daft.functions.list_agg` instead."""
+        warnings.warn(
+            "`Expression.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.list_agg` instead.",
+            category=DeprecationWarning,
+        )
+        return self.list_agg()
+
+    def list_agg_distinct(self) -> Expression:
+        """Aggregates the values in the expression into a list of distinct values (ignoring nulls).
+
+        Tip: See Also
+            [`daft.functions.list_agg_distinct`](https://docs.daft.ai/en/stable/api/functions/list_agg_distinct/)
+        """
+        from daft.functions import list_agg_distinct
+
+        return list_agg_distinct(self)
 
     def agg_set(self) -> Expression:
-        """Aggregates the values in the expression into a set (ignoring nulls).
+        """(DEPRECATED) Please use `daft.functions.list_agg_distinct` instead."""
+        warnings.warn(
+            "`Expression.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.list_agg_distinct` instead.",
+            category=DeprecationWarning,
+        )
+        return self.list_agg_distinct()
 
-        Returns:
-            Expression: A List expression containing the distinct values from the input
+    def string_agg(self) -> Expression:
+        """Aggregates the values in the expression into a single string by concatenating them.
 
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"values": [1, 1, None, 2, 2, None]})
-            >>> df.agg(df["values"].agg_set().alias("distinct_values")).show()
-            ╭─────────────────╮
-            │ distinct_values │
-            │ ---             │
-            │ List[Int64]     │
-            ╞═════════════════╡
-            │ [1, 2]          │
-            ╰─────────────────╯
-            <BLANKLINE>
-            (Showing first 1 of 1 rows)
-
-            Note that null values are ignored by default:
-
-            >>> df = daft.from_pydict({"values": [None, None, None]})
-            >>> df.agg(df["values"].agg_set().alias("distinct_values")).show()
-            ╭─────────────────╮
-            │ distinct_values │
-            │ ---             │
-            │ List[Null]      │
-            ╞═════════════════╡
-            │ []              │
-            ╰─────────────────╯
-            <BLANKLINE>
-            (Showing first 1 of 1 rows)
-
+        Tip: See Also
+            [`daft.functions.string_agg`](https://docs.daft.ai/en/stable/api/functions/string_agg/)
         """
-        expr = self._expr.agg_set()
-        return Expression._from_pyexpr(expr)
+        from daft.functions import string_agg
+
+        return string_agg(self)
 
     def agg_concat(self) -> Expression:
-        """Aggregates the values in the expression into a single string by concatenating them."""
-        expr = self._expr.agg_concat()
-        return Expression._from_pyexpr(expr)
+        """(DEPRECATED) Please use `daft.functions.string_agg` instead."""
+        warnings.warn(
+            "`Expression.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.string_agg` instead.",
+            category=DeprecationWarning,
+        )
+        return self.string_agg()
 
     def _explode(self) -> Expression:
         f = native.get_function_from_registry("explode")
@@ -1410,91 +1416,85 @@ class Expression:
 
         return minhash(self, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function)
 
-    def encode(self, codec: EncodingCodec) -> Expression:
-        r"""Encodes the expression (binary strings) using the specified codec.
+    def encode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+        """Encode binary or string values using the specified character set.
 
-        Args:
-            codec (str): encoding codec (deflate, gzip, zlib)
-
-        Returns:
-            Expression: A new expression, of type `binary`, with the encoded value.
-
-        Note:
-            This inputs either a string or binary and returns a binary.
-            If the input value is a string and 'utf-8' is the codec, then it's just a cast to binary.
-            If the input value is a binary and 'utf-8' is the codec, we verify the bytes are valid utf-8.
-
-        Examples:
-            >>> import daft
-            >>> from daft import col
-            >>> df = daft.from_pydict({"text": [b"hello, world!"]})  # binary
-            >>> df.select(col("text").encode("zlib")).show()
-            ╭────────────────────────────────╮
-            │ text                           │
-            │ ---                            │
-            │ Binary                         │
-            ╞════════════════════════════════╡
-            │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
-            ╰────────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 1 of 1 rows)
-
-            >>> import daft
-            >>> from daft import col
-            >>> df = daft.from_pydict({"text": ["hello, world!"]})  # string
-            >>> df.select(col("text").encode("zlib")).show()
-            ╭────────────────────────────────╮
-            │ text                           │
-            │ ---                            │
-            │ Binary                         │
-            ╞════════════════════════════════╡
-            │ b"x\x9c\xcbH\xcd\xc9\xc9\xd7Q… │
-            ╰────────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 1 of 1 rows)
-
+        Tip: See Also
+            [`daft.functions.encode`](https://docs.daft.ai/en/stable/api/functions/encode/)
         """
-        return self._eval_expressions("encode", codec=codec)
+        from daft.functions import encode
 
-    def decode(self, codec: EncodingCodec) -> Expression:
-        """Decodes the expression (binary strings) using the specified codec.
+        return encode(self, charset=charset)
 
-        Args:
-            codec (str): decoding codec (deflate, gzip, zlib)
+    def decode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+        """Decodes binary values using the specified character set.
 
-        Returns:
-            Expression: A new expression with the decoded values.
-
-        Note:
-            This inputs a binary and returns either a binary or string. For now,
-            only decoding with 'utf-8' returns a string.
-
-        Examples:
-            >>> import daft
-            >>> import zlib
-            >>> from daft import col
-            >>> df = daft.from_pydict({"bytes": [zlib.compress(b"hello, world!")]})
-            >>> df.select(col("bytes").decode("zlib")).show()
-            ╭──────────────────╮
-            │ bytes            │
-            │ ---              │
-            │ Binary           │
-            ╞══════════════════╡
-            │ b"hello, world!" │
-            ╰──────────────────╯
-            <BLANKLINE>
-            (Showing first 1 of 1 rows)
-
+        Tip: See Also
+            [`daft.functions.decode`](https://docs.daft.ai/en/stable/api/functions/decode/)
         """
-        return self._eval_expressions("decode", codec=codec)
+        from daft.functions import decode
 
-    def try_encode(self, codec: EncodingCodec) -> Expression:
-        """Encodes or returns null, see `Expression.encode`."""
-        return self._eval_expressions("try_encode", codec=codec)
+        return decode(self, charset=charset)
 
-    def try_decode(self, codec: EncodingCodec) -> Expression:
-        """Decodes or returns null, see `Expression.decode`."""
-        return self._eval_expressions("try_decode", codec=codec)
+    def try_encode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+        """Encode or null if unsuccessful.
+
+        Tip: See Also
+            [`daft.functions.try_encode`](https://docs.daft.ai/en/stable/api/functions/try_encode/)
+        """
+        from daft.functions import try_encode
+
+        return try_encode(self, charset=charset)
+
+    def try_decode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+        """Decode or null if unsuccessful.
+
+        Tip: See Also
+            [`daft.functions.try_decode`](https://docs.daft.ai/en/stable/api/functions/try_decode/)
+        """
+        from daft.functions import try_decode
+
+        return try_decode(self, charset=charset)
+
+    def compress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+        """Compress binary or string values using the specified codec.
+
+        Tip: See Also
+            [`daft.functions.compress`](https://docs.daft.ai/en/stable/api/functions/compress/)
+        """
+        from daft.functions import compress
+
+        return compress(self, codec=codec)
+
+    def decompress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+        """Decompress binary values using the specified codec.
+
+        Tip: See Also
+            [`daft.functions.decompress`](https://docs.daft.ai/en/stable/api/functions/decompress/)
+        """
+        from daft.functions import decompress
+
+        return decompress(self, codec=codec)
+
+    def try_compress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+        """Compress or null if unsuccessful.
+
+        Tip: See Also
+            [`daft.functions.try_compress`](https://docs.daft.ai/en/stable/api/functions/try_compress/)
+        """
+        from daft.functions import try_compress
+
+        return try_compress(self, codec=codec)
+
+    def try_decompress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+        """Decompress or null if unsuccessful.
+
+        Tip: See Also
+            [`daft.functions.try_decompress`](https://docs.daft.ai/en/stable/api/functions/try_decompress/)
+        """
+        from daft.functions import try_decompress
+
+        return try_decompress(self, codec=codec)
 
     def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type.
@@ -1590,34 +1590,23 @@ class Expression:
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
 
-    def url_parse(self) -> Expression:
-        """Parses URLs in a string column and extracts URL components.
+    def parse_url(self) -> Expression:
+        """Parse string URLs and extract URL components.
 
-        Returns:
-            Expression: a Struct expression containing the parsed URL components:
-                - scheme (str): The URL scheme (e.g., "https", "http")
-                - username (str): The username, if present
-                - password (str): The password, if present
-                - host (str): The hostname or IP address
-                - port (int): The port number, if specified
-                - path (str): The path component
-                - query (str): The query string, if present
-                - fragment (str): The fragment/anchor, if present
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict(
-            ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
-            ... )
-            >>> # Parse URLs and expand all components
-            >>> df.select(daft.col("urls").url_parse()).select(daft.col("urls").struct.get("*")).collect()  # doctest: +SKIP
-
-        Note:
-            Invalid URLs will result in null values for all components.
-            The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
+        Tip: See Also
+            [`daft.functions.parse_url`](https://docs.daft.ai/en/stable/api/functions/parse_url/)
         """
-        f = native.get_function_from_registry("url_parse")
-        return Expression._from_pyexpr(f(self._expr))
+        from daft.functions import parse_url
+
+        return parse_url(self)
+
+    def url_parse(self) -> Expression:
+        """(DEPRECATED) Please use `daft.functions.parse_url` instead."""
+        warnings.warn(
+            "`Expression.url_parse` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.parse_url` instead.",
+            category=DeprecationWarning,
+        )
+        return self.parse_url()
 
     def explode(self) -> Expression:
         """Explode a list expression.

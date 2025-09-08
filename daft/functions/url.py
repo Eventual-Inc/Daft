@@ -143,3 +143,34 @@ def upload(
         is_single_folder=is_single_folder,
         io_config=io_config,
     )
+
+
+def parse_url(expr: Expression) -> Expression:
+    """Parse string URLs and extract URL components.
+
+    Returns:
+        Expression: a Struct expression containing the parsed URL components:
+            - scheme (str): The URL scheme (e.g., "https", "http")
+            - username (str): The username, if present
+            - password (str): The password, if present
+            - host (str): The hostname or IP address
+            - port (int): The port number, if specified
+            - path (str): The path component
+            - query (str): The query string, if present
+            - fragment (str): The fragment/anchor, if present
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import parse_url
+        >>>
+        >>> df = daft.from_pydict(
+        ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
+        ... )
+        >>> # Parse URLs and expand all components
+        >>> df.select(parse_url(df["urls"]).unnest()).collect()  # doctest: +SKIP
+
+    Note:
+        Invalid URLs will result in null values for all components.
+        The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
+    """
+    return Expression._call_builtin_scalar_fn("url_parse", expr)

@@ -19,7 +19,11 @@ from .agg import (
     bool_or,
     any_value,
     skew,
+    list_agg,
+    list_agg_distinct,
+    string_agg,
 )
+from .binary import encode, try_encode, compress, try_compress, decode, try_decode, decompress, try_decompress
 from .bitwise import bitwise_and, bitwise_or, bitwise_xor, shift_left, shift_right
 from .columnar import (
     columns_sum,
@@ -73,6 +77,7 @@ from .list import (
     list_sort,
     list_distinct,
     list_map,
+    explode,
 )
 from .llm import llm_generate
 from .misc import (
@@ -87,7 +92,6 @@ from .misc import (
     is_in,
     hash,
     minhash,
-    explode,
     length,
     concat,
     coalesce,
@@ -159,7 +163,7 @@ from .str import (
     count_matches,
     length_bytes,
 )
-from .url import download, upload
+from .url import download, upload, parse_url
 from .window import (
     row_number,
     rank,
@@ -200,6 +204,7 @@ __all__ = [
     "columns_mean",
     "columns_min",
     "columns_sum",
+    "compress",
     "concat",
     "contains",
     "cos",
@@ -216,13 +221,16 @@ __all__ = [
     "day_of_month",
     "day_of_week",
     "day_of_year",
+    "decode",
     "decode_image",
+    "decompress",
     "degrees",
     "dense_rank",
     "deserialize",
     "download",
     "embed_image",
     "embed_text",
+    "encode",
     "encode_image",
     "endswith",
     "eq_null_safe",
@@ -245,6 +253,8 @@ __all__ = [
     "length",
     "length_bytes",
     "like",
+    "list_agg",
+    "list_agg_distinct",
     "list_bool_and",
     "list_bool_or",
     "list_count",
@@ -279,6 +289,7 @@ __all__ = [
     "normalize",
     "not_null",
     "over",
+    "parse_url",
     "quarter",
     "radians",
     "rank",
@@ -304,6 +315,7 @@ __all__ = [
     "startswith",
     "stddev",
     "strftime",
+    "string_agg",
     "substr",
     "sum",
     "tan",
@@ -320,7 +332,11 @@ __all__ = [
     "total_minutes",
     "total_nanoseconds",
     "total_seconds",
+    "try_compress",
+    "try_decode",
+    "try_decompress",
     "try_deserialize",
+    "try_encode",
     "unix_date",
     "unnest",
     "upload",

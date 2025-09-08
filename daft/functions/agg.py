@@ -214,3 +214,53 @@ def any_value(expr: Expression, ignore_nulls: bool = False) -> Expression:
 def skew(expr: Expression) -> Expression:
     """Calculates the skewness of the values from the expression."""
     return Expression._from_pyexpr(expr._expr.skew())
+
+
+def list_agg(expr: Expression) -> Expression:
+    """Aggregates the values in the expression into a list."""
+    return Expression._from_pyexpr(expr._expr.agg_list())
+
+
+def list_agg_distinct(expr: Expression) -> Expression:
+    """Aggregates the values in the expression into a list of distinct values (ignoring nulls).
+
+    Returns:
+        Expression: A List expression containing the distinct values from the input
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_agg_distinct
+        >>>
+        >>> df = daft.from_pydict({"values": [1, 1, None, 2, 2, None]})
+        >>> df.agg(list_agg_distinct(df["values"]).alias("distinct_values")).show()
+        ╭─────────────────╮
+        │ distinct_values │
+        │ ---             │
+        │ List[Int64]     │
+        ╞═════════════════╡
+        │ [1, 2]          │
+        ╰─────────────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+
+        Note that null values are ignored by default:
+
+        >>> df = daft.from_pydict({"values": [None, None, None]})
+        >>> df.agg(list_agg_distinct(df["values"]).alias("distinct_values")).show()
+        ╭─────────────────╮
+        │ distinct_values │
+        │ ---             │
+        │ List[Null]      │
+        ╞═════════════════╡
+        │ []              │
+        ╰─────────────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+
+    """
+    return Expression._from_pyexpr(expr._expr.agg_set())
+
+
+def string_agg(expr: Expression) -> Expression:
+    """Aggregates the values in the expression into a single string by concatenating them."""
+    return Expression._from_pyexpr(expr._expr.agg_concat())
