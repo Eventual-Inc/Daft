@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from daft.expressions import Expression
 
+if TYPE_CHECKING:
+    from daft.expressions.expressions import COMPRESSION_CODEC, ENCODING_CHARSET
 
-def encode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expression:
+
+def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Encode binary or string values using the specified character set.
 
     Args:
         expr: The expression to encode.
-        charset: The encoding character set.
+        charset: The encoding character set (utf-8, base64).
 
     Returns:
         Expression: A binary expression with the encoded value.
@@ -25,21 +28,35 @@ def encode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expression:
     return Expression._call_builtin_scalar_fn("encode", expr, codec=charset)
 
 
-def decode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expression:
+def decode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Decodes binary values using the specified character set.
 
     Args:
         expr: The expression to decode.
-        charset: The decoding character set.
+        charset: The decoding character set (utf-8, base64).
 
     Returns:
         Expression: A string expression with the decoded values.
 
+    Examples:
+        >>> import daft
+        >>> from daft.functions import decode
+        >>> df = daft.from_pydict({"bytes": [b"aGVsbG8sIHdvcmxkIQ=="]})
+        >>> df.select(decode(df["bytes"], "base64")).show()
+        ╭──────────────────╮
+        │ bytes            │
+        │ ---              │
+        │ Binary           │
+        ╞══════════════════╡
+        │ b"hello, world!" │
+        ╰──────────────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
     """
     return Expression._call_builtin_scalar_fn("decode", expr, codec=charset)
 
 
-def try_encode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expression:
+def try_encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Encode or null if unsuccessful.
 
     Tip: See Also
@@ -48,7 +65,7 @@ def try_encode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expressio
     return Expression._call_builtin_scalar_fn("try_encode", expr, codec=charset)
 
 
-def try_decode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expression:
+def try_decode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Decode or null if unsuccessful.
 
     Tip: See Also
@@ -57,7 +74,7 @@ def try_decode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expressio
     return Expression._call_builtin_scalar_fn("try_decode", expr, codec=charset)
 
 
-def compress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+def compress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
     r"""Compress binary or string values using the specified codec.
 
     Args:
@@ -98,7 +115,7 @@ def compress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib"]) 
     return Expression._call_builtin_scalar_fn("encode", expr, codec=codec)
 
 
-def decompress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+def decompress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
     """Decompress binary values using the specified codec.
 
     Args:
@@ -128,7 +145,7 @@ def decompress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib"]
     return Expression._call_builtin_scalar_fn("decode", expr, codec=codec)
 
 
-def try_compress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+def try_compress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
     """Compress or null if unsuccessful.
 
     Tip: See Also
@@ -137,7 +154,7 @@ def try_compress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib
     return Expression._call_builtin_scalar_fn("try_encode", expr, codec=codec)
 
 
-def try_decompress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+def try_decompress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
     """Decompress or null if unsuccessful.
 
     Tip: See Also

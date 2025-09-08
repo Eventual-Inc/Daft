@@ -48,6 +48,9 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
+    ENCODING_CHARSET = Literal["utf-8", "utf8", "base64"]
+    COMPRESSION_CODEC = Literal["deflate", "gzip", "gz", "zlib"]
+
 
 def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
@@ -1420,7 +1423,7 @@ class Expression:
 
         return minhash(self, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function)
 
-    def encode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+    def encode(self, charset: ENCODING_CHARSET) -> Expression:
         """Encode binary or string values using the specified character set.
 
         Tip: See Also
@@ -1430,7 +1433,7 @@ class Expression:
 
         return encode(self, charset=charset)
 
-    def decode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+    def decode(self, charset: ENCODING_CHARSET) -> Expression:
         """Decodes binary values using the specified character set.
 
         Tip: See Also
@@ -1440,7 +1443,7 @@ class Expression:
 
         return decode(self, charset=charset)
 
-    def try_encode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+    def try_encode(self, charset: ENCODING_CHARSET) -> Expression:
         """Encode or null if unsuccessful.
 
         Tip: See Also
@@ -1450,7 +1453,7 @@ class Expression:
 
         return try_encode(self, charset=charset)
 
-    def try_decode(self, charset: Literal["utf-8", "utf8"] = "utf-8") -> Expression:
+    def try_decode(self, charset: ENCODING_CHARSET) -> Expression:
         """Decode or null if unsuccessful.
 
         Tip: See Also
@@ -1460,7 +1463,7 @@ class Expression:
 
         return try_decode(self, charset=charset)
 
-    def compress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+    def compress(self, codec: COMPRESSION_CODEC) -> Expression:
         """Compress binary or string values using the specified codec.
 
         Tip: See Also
@@ -1470,7 +1473,7 @@ class Expression:
 
         return compress(self, codec=codec)
 
-    def decompress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+    def decompress(self, codec: COMPRESSION_CODEC) -> Expression:
         """Decompress binary values using the specified codec.
 
         Tip: See Also
@@ -1480,7 +1483,7 @@ class Expression:
 
         return decompress(self, codec=codec)
 
-    def try_compress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+    def try_compress(self, codec: COMPRESSION_CODEC) -> Expression:
         """Compress or null if unsuccessful.
 
         Tip: See Also
@@ -1490,7 +1493,7 @@ class Expression:
 
         return try_compress(self, codec=codec)
 
-    def try_decompress(self, codec: Literal["deflate", "gzip", "gz", "zlib"]) -> Expression:
+    def try_decompress(self, codec: COMPRESSION_CODEC) -> Expression:
         """Decompress or null if unsuccessful.
 
         Tip: See Also
