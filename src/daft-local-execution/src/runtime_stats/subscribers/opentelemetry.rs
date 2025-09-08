@@ -10,7 +10,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
-    rows_received: Counter<u64>,
+    rows_in: Counter<u64>,
     rows_out: Counter<u64>,
     cpu_us: Counter<u64>,
 }
@@ -19,9 +19,7 @@ impl OpenTelemetrySubscriber {
     pub fn new() -> Self {
         let meter = global::meter("runtime_stats");
         Self {
-            rows_received: meter
-                .u64_counter("daft.runtime_stats.rows_received")
-                .build(),
+            rows_in: meter.u64_counter("daft.runtime_stats.rows_in").build(),
             rows_out: meter.u64_counter("daft.runtime_stats.rows_out").build(),
             cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
         }
@@ -54,7 +52,7 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
 
             for (k, v) in event.iter() {
                 match (k, v) {
-                    (ROWS_IN_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
+                    (ROWS_IN_KEY, Stat::Count(v)) => self.rows_in.add(*v, &attributes),
                     (ROWS_OUT_KEY, Stat::Count(v)) => self.rows_out.add(*v, &attributes),
                     (CPU_US_KEY, Stat::Count(v)) => self.cpu_us.add(*v, &attributes),
                     _ => {}
