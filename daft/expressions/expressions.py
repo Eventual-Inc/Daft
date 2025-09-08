@@ -2400,6 +2400,16 @@ class Expression:
 
         return coalesce(self, *others)
 
+    def date_trunc(self, interval: builtins.str, relative_to: Expression | None = None) -> Expression:
+        """Truncates the datetime column to the specified interval.
+
+        Tip: See Also
+            [`daft.functions.date_trunc`](https://docs.daft.ai/en/stable/api/functions/date_trunc/)
+        """
+        from daft.functions import date_trunc
+
+        return date_trunc(interval, self, relative_to=relative_to)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -2765,43 +2775,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return self._to_expression().week_of_year()
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
-        """Truncates the datetime column to the specified interval.
-
-        Args:
-            interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
-            relative_to: Optional timestamp to truncate relative to. If not provided, truncates to the start of the Unix epoch: 1970-01-01 00:00:00.
-
-        Returns:
-            Expression: a DateTime expression truncated to the specified interval
-
-        Examples:
-            >>> import daft, datetime
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "datetime": [
-            ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
-            ...             datetime.datetime(2021, 1, 1, 0, 1, 59),
-            ...             datetime.datetime(2021, 1, 1, 0, 2, 0),
-            ...         ],
-            ...     }
-            ... )
-            >>> df.with_column("truncated", df["datetime"].dt.truncate("1 minute")).collect()
-            ╭───────────────────────────────┬───────────────────────────────╮
-            │ datetime                      ┆ truncated                     │
-            │ ---                           ┆ ---                           │
-            │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
-            ╞═══════════════════════════════╪═══════════════════════════════╡
-            │ 2021-01-01 00:01:01           ┆ 2021-01-01 00:01:00           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01 00:01:59           ┆ 2021-01-01 00:01:00           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021-01-01 00:02:00           ┆ 2021-01-01 00:02:00           │
-            ╰───────────────────────────────┴───────────────────────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        return self._eval_expressions("truncate", relative_to, interval=interval)
+        """(DEPRECATED) Please use `daft.functions.date_trunc` instead."""
+        warnings.warn(
+            "`Expression.dt.truncate` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.date_trunc` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().date_trunc(interval, relative_to=relative_to)
 
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).

@@ -1112,3 +1112,47 @@ def to_datetime(expr: Expression, format: str, timezone: str | None = None) -> E
 
     """
     return Expression._call_builtin_scalar_fn("to_datetime", expr, format=format, timezone=timezone)
+
+
+def date_trunc(interval: str, expr: Expression, relative_to: Expression | None = None) -> Expression:
+    """Truncates the datetime column to the specified interval.
+
+    Args:
+        interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
+        expr: The datetime expression to truncate.
+        relative_to (optional): Timestamp to truncate relative to. If not provided, truncates to the start of the Unix epoch: 1970-01-01 00:00:00.
+
+    Returns:
+        Expression: a DateTime expression truncated to the specified interval
+
+    Examples:
+        >>> import datetime
+        >>> import daft
+        >>> from daft.functions import date_trunc
+        >>>
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "datetime": [
+        ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
+        ...             datetime.datetime(2021, 1, 1, 0, 1, 59),
+        ...             datetime.datetime(2021, 1, 1, 0, 2, 0),
+        ...         ],
+        ...     }
+        ... )
+        >>> df.with_column("truncated", date_trunc("1 minute", df["datetime"])).collect()
+        ╭───────────────────────────────┬───────────────────────────────╮
+        │ datetime                      ┆ truncated                     │
+        │ ---                           ┆ ---                           │
+        │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+        ╞═══════════════════════════════╪═══════════════════════════════╡
+        │ 2021-01-01 00:01:01           ┆ 2021-01-01 00:01:00           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-01-01 00:01:59           ┆ 2021-01-01 00:01:00           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-01-01 00:02:00           ┆ 2021-01-01 00:02:00           │
+        ╰───────────────────────────────┴───────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("truncate", expr, relative_to, interval=interval)

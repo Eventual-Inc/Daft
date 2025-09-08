@@ -60,6 +60,7 @@ from .datetime import (
     total_days,
     to_date,
     to_datetime,
+    date_trunc,
 )
 from .embedding import cosine_distance
 from .image import resize, crop, encode_image, decode_image
@@ -217,6 +218,7 @@ __all__ = [
     "crop",
     "csc",
     "date",
+    "date_trunc",
     "day",
     "day_of_month",
     "day_of_week",
