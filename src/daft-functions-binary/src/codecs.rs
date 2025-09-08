@@ -123,7 +123,7 @@ impl FromStr for Codec {
 
 #[inline]
 fn base64_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
 
     Ok(STANDARD.encode(input).into_bytes())
 }
@@ -175,7 +175,7 @@ fn zlib_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 
 #[inline]
 fn base64_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
     STANDARD
         .decode(input)
         .map_err(|e| DaftError::ValueError(format!("Invalid base64 input: {}", e)))
