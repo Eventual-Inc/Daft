@@ -31,7 +31,7 @@ def shift_left(expr: Expression, num_bits: Expression) -> Expression:
 
     Args:
         expr: The expression to shift.
-        num_bits: he number of bits to shift the expression to the left
+        num_bits: The number of bits to shift the expression to the left
     """
     expr = Expression._to_expression(expr)
     num_bits = Expression._to_expression(num_bits)

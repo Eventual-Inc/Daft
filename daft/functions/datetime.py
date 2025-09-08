@@ -464,7 +464,7 @@ def year(expr: Expression) -> Expression:
     """Retrieves the year for a datetime column.
 
     Returns:
-        Expression: a UInt32 expression with just the year extracted from a datetime column
+        Expression: a Int32 expression with just the year extracted from a datetime column
 
     Examples:
         >>> import datetime

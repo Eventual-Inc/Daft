@@ -3,7 +3,7 @@ use arrow2::{
     bitmap::MutableBitmap,
     datatypes::DataType,
 };
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 pub fn add_binary_arrays(
     lhs: &BinaryArray<i64>,
@@ -30,7 +30,13 @@ pub fn add_binary_arrays(
             .map(|lval| add_nullable(lval, rval))
             .collect::<BinaryArray<i64>>()
     } else {
-        assert_eq!(lhs.len(), rhs.len());
+        if lhs.len() != rhs.len() {
+            return Err(DaftError::ValueError(format!(
+                "Array length mismatch when adding binary arrays: {} != {}",
+                lhs.len(),
+                rhs.len()
+            )));
+        }
 
         lhs.iter()
             .zip(rhs)
@@ -78,7 +84,13 @@ pub fn add_fixed_size_binary_arrays(
             add_nullable(lval, rval, &mut values, &mut validity, combined_size);
         }
     } else {
-        assert_eq!(lhs.len(), rhs.len());
+        if lhs.len() != rhs.len() {
+            return Err(DaftError::ValueError(format!(
+                "Array length mismatch when adding fixed size arrays: {} != {}",
+                lhs.len(),
+                rhs.len()
+            )));
+        }
 
         for (lval, rval) in lhs.iter().zip(rhs) {
             add_nullable(lval, rval, &mut values, &mut validity, combined_size);

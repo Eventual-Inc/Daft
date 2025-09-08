@@ -58,7 +58,7 @@ def build_function_category_map() -> list[FunctionCategory]:
         categories[module_name].functions.append(fn)
 
     if len(not_functions) > 0:
-        raise ValueError(f"Expected all `daft.functions` exports to be functions, found: {fn_name}")
+        raise ValueError(f"Expected all `daft.functions` exports to be functions, found: {not_functions}")
 
     if len(no_docstrings) > 0:
         raise ValueError(

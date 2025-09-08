@@ -302,7 +302,7 @@ def explode(expr: Expression) -> Expression:
     If exploding multiple columns at once, all list lengths must match.
 
     Tip: See also
-        [`DataFrame.explode`](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.explain)
+        [`DataFrame.explode`](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.explode)
 
     Examples:
         Explode one column, broadcast the rest:

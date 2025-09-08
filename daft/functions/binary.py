@@ -12,7 +12,7 @@ def encode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expression:
 
     Args:
         expr: The expression to encode.
-        charset (optional): The encoding character set. Defaults to "utf-8".
+        charset: The encoding character set.
 
     Returns:
         Expression: A binary expression with the encoded value.
@@ -29,7 +29,8 @@ def decode(expr: Expression, charset: Literal["utf-8", "utf8"]) -> Expression:
     """Decodes binary values using the specified character set.
 
     Args:
-        charset (optional): The decoding character set. Defaults to "utf-8".
+        expr: The expression to decode.
+        charset: The decoding character set.
 
     Returns:
         Expression: A string expression with the decoded values.
@@ -101,6 +102,7 @@ def decompress(expr: Expression, codec: Literal["deflate", "gzip", "gz", "zlib"]
     """Decompress binary values using the specified codec.
 
     Args:
+        expr: The expression to decompress.
         codec: The decompression codec (deflate, gzip, zlib)
 
     Returns:

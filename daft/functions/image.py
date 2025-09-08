@@ -28,7 +28,7 @@ def crop(expr: Expression, bbox: tuple[int, int, int, int] | Expression) -> Expr
 
     Args:
         expr: Expression to crop.
-        bbox (tuple[float, float, float, float] | Expression): Either a tuple of (x, y, width, height)
+        bbox (tuple[int, int, int, int] | Expression): Either a tuple of (x, y, width, height)
             parameters for cropping, or a List Expression where each element is a length 4 List
             which represents the bounding box for the crop
 
@@ -75,7 +75,7 @@ def decode_image(
             errors relating to unsupported types.
 
     Returns:
-        Expression: An Image expression represnting an image column.
+        Expression: An Image expression representing an image column.
     """
     return Expression._call_builtin_scalar_fn("image_decode", expr, on_error=on_error, mode=mode)
 

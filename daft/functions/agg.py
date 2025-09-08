@@ -152,10 +152,10 @@ def max(expr: Expression) -> Expression:
 def bool_and(expr: Expression) -> Expression:
     """Calculates the boolean AND of all values in the expression.
 
-    For each list:
+    For each group:
     - Returns True if all non-null values are True
     - Returns False if any non-null value is False
-    - Returns null if the list is empty or contains only null values
+    - Returns null if the group is empty or contains only null values
 
     Examples:
         >>> import daft
@@ -178,10 +178,10 @@ def bool_and(expr: Expression) -> Expression:
 def bool_or(expr: Expression) -> Expression:
     """Calculates the boolean OR of all values in the expression.
 
-    For each list:
+    For each group:
     - Returns True if any non-null value is True
     - Returns False if all non-null values are False
-    - Returns null if the list is empty or contains only null values
+    - Returns null if the group is empty or contains only null values
 
     Examples:
         >>> import daft

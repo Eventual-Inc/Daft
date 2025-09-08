@@ -269,7 +269,7 @@ def lead(expr: Expression, offset: int = 1, default: Expression | None = None) -
         ...     }
         ... )
         >>>
-        >>> # Simple lag with null default
+        >>> # Simple lead with null default
         >>> window = daft.Window().partition_by("category").order_by("value")
         >>> df = df.with_column("lead", lead(df["value"], 1).over(window))
         >>>

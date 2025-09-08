@@ -159,14 +159,14 @@ def format(f_string: str, *args: Expression | str) -> Expression:
 
 
 def contains(expr: Expression, substr: str | Expression) -> Expression:
-    """Checks whether each string contains the given pattern in a string column.
+    """Checks whether each string contains the given substring in a string column.
 
     Args:
         expr: The expression to check.
-        pattern: pattern to search for as a literal string, or as a column to pick values from
+        substr: The substring to search for as a literal string, or as a column to pick values from
 
     Returns:
-        Expression: a Boolean expression indicating whether each value contains the provided pattern
+        Expression: a Boolean expression indicating whether each value contains the provided substring
 
     Examples:
         >>> import daft
@@ -684,14 +684,14 @@ def substr(expr: Expression, start: int | Expression, length: int | Expression |
 
 
 def endswith(expr: Expression, suffix: str | Expression) -> Expression:
-    """Checks whether each string ends with the given pattern in a string column.
+    """Checks whether each string ends with the given suffix in a string column.
 
     Args:
         expr: The expression to check.
-        pattern: pattern to search for as a literal string, or as a column to pick values from
+        suffix: The suffix to search for as a literal string, or as a column to pick values from
 
     Returns:
-        Expression: a Boolean expression indicating whether each value ends with the provided pattern
+        Expression: a Boolean expression indicating whether each value ends with the provided suffix
 
     Examples:
         >>> import daft
@@ -717,14 +717,14 @@ def endswith(expr: Expression, suffix: str | Expression) -> Expression:
 
 
 def startswith(expr: Expression, prefix: str | Expression) -> Expression:
-    """Checks whether each string starts with the given pattern in a string column.
+    """Checks whether each string starts with the given prefix in a string column.
 
     Args:
         expr: The expression to check.
-        pattern: pattern to search for as a literal string, or as a column to pick values from
+        prefix: The prefix to search for as a literal string, or as a column to pick values from
 
     Returns:
-        Expression: a Boolean expression indicating whether each value starts with the provided pattern
+        Expression: a Boolean expression indicating whether each value starts with the provided prefix
 
     Examples:
         >>> import daft
@@ -1115,7 +1115,6 @@ def replace(
         expr: The string expression to be replaced
         search: The substring to replace
         replacement: The replacement string
-        regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
 
     Returns:
         Expression: a String expression with patterns replaced by the replacement string
@@ -1155,7 +1154,6 @@ def regexp_replace(
         expr: The string expression to be replaced
         pattern: The pattern to replace
         replacement: The replacement string
-        regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
 
     Returns:
         Expression: a String expression with patterns replaced by the replacement string

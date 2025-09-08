@@ -80,7 +80,7 @@ impl ScalarUDF for Length {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the length of the string"
+        "Returns the length of the string, binary, or list"
     }
 }
 
