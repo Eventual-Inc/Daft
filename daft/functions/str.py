@@ -1165,7 +1165,7 @@ def regexp_replace(
         >>> from daft.functions import regexp_replace
         >>>
         >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
-        >>> df.with_column("replace", regexp_replace(df["data"], r"o+", "a", regex=True)).collect()
+        >>> df.with_column("replace", regexp_replace(df["data"], r"o+", "a")).collect()
         ╭───────┬─────────╮
         │ data  ┆ replace │
         │ ---   ┆ ---     │
