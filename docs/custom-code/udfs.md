@@ -179,7 +179,7 @@ In addition, you can pass in arguments to the `__init__` method using `.with_ini
     df = df.with_column("image_classifications", RunMistral(df["image"]))
     ```
 
-See the `TextEmbedder` UDF in our [document processing example](../examples/document-processing.md) for a complete demonstration of using a class UDF with concurrency.
+See the `TextEmbedder` UDF in our [document processing example](../examples/document-processing.md) for a practical implementation using a class UDF with concurrency.
 
 ### Resource Requests
 
