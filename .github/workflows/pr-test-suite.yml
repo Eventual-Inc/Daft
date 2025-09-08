@@ -81,7 +81,8 @@ jobs:
         pyarrow-version: [8.0.0, 19.0.1]
         flotilla: [1, 0]
         os: [ubuntu-latest, macos-latest]
-        on-main: ${{ github.ref == 'refs/heads/main' }}
+        on-main:
+        - ${{ github.ref == 'refs/heads/main' }}
         exclude:
         - daft-runner: native
           flotilla: 0
