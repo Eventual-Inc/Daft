@@ -189,7 +189,7 @@ def contains(expr: Expression, substr: str | Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._call_builtin_scalar_fn("utf8_contains", expr, substr=substr)
+    return Expression._call_builtin_scalar_fn("utf8_contains", expr, substr)
 
 
 def split(expr: Expression, pattern: str | Expression, regex: bool = False) -> Expression:
@@ -243,7 +243,7 @@ def split(expr: Expression, pattern: str | Expression, regex: bool = False) -> E
 
     """
     f_name = "regexp_split" if regex else "split"
-    return Expression._call_builtin_scalar_fn(f_name, expr, pattern=pattern)
+    return Expression._call_builtin_scalar_fn(f_name, expr, pattern)
 
 
 def lower(expr: Expression) -> Expression:
@@ -562,7 +562,7 @@ def repeat(expr: Expression, n: int | Expression) -> Expression:
 
     Examples:
         >>> import daft
-        from daft.functions import repeat
+        >>> from daft.functions import repeat
         >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
         >>> df = df.select(repeat(df["x"], 5))
         >>> df.show()
