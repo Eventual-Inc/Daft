@@ -5,28 +5,28 @@ from __future__ import annotations
 from daft.expressions import Expression
 
 
-def bitwise_and(left: Expression | int, right: Expression | int) -> Expression:
+def bitwise_and(left: Expression, right: Expression) -> Expression:
     """Bitwise AND of two integer expressions."""
     left = Expression._to_expression(left)
     right = Expression._to_expression(right)
     return Expression._from_pyexpr(left._expr & right._expr)
 
 
-def bitwise_or(left: Expression | int, right: Expression | int) -> Expression:
+def bitwise_or(left: Expression, right: Expression) -> Expression:
     """Bitwise OR of two integer expressions."""
     left = Expression._to_expression(left)
     right = Expression._to_expression(right)
     return Expression._from_pyexpr(left._expr | right._expr)
 
 
-def bitwise_xor(left: Expression | int, right: Expression | int) -> Expression:
+def bitwise_xor(left: Expression, right: Expression) -> Expression:
     """Bitwise XOR of two integer expressions."""
     left = Expression._to_expression(left)
     right = Expression._to_expression(right)
     return Expression._from_pyexpr(left._expr ^ right._expr)
 
 
-def shift_left(expr: Expression | int, num_bits: Expression | int) -> Expression:
+def shift_left(expr: Expression, num_bits: Expression) -> Expression:
     """Shifts the bits of an integer expression to the left (``expr << num_bits``).
 
     Args:
@@ -38,7 +38,7 @@ def shift_left(expr: Expression | int, num_bits: Expression | int) -> Expression
     return Expression._from_pyexpr(expr._expr << num_bits._expr)
 
 
-def shift_right(expr: Expression | int, num_bits: Expression | int) -> Expression:
+def shift_right(expr: Expression, num_bits: Expression) -> Expression:
     """Shifts the bits of an integer expression to the right (``expr >> num_bits``).
 
     Args:

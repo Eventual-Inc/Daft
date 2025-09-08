@@ -58,6 +58,8 @@ from .datetime import (
     to_datetime,
 )
 from .embedding import cosine_distance
+from .image import resize, crop
+from .list import value_counts, chunk
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
@@ -174,6 +176,7 @@ __all__ = [
     "cast",
     "cbrt",
     "ceil",
+    "chunk",
     "classify_text",
     "clip",
     "columns_avg",
@@ -190,6 +193,7 @@ __all__ = [
     "count",
     "count_distinct",
     "count_matches",
+    "crop",
     "csc",
     "date",
     "day",
@@ -250,6 +254,7 @@ __all__ = [
     "radians",
     "rank",
     "repeat",
+    "resize",
     "reverse",
     "right",
     "round",
@@ -291,6 +296,7 @@ __all__ = [
     "unnest",
     "upload",
     "upper",
+    "value_counts",
     "week_of_year",
     "year",
 ]

@@ -10,11 +10,11 @@ from daft.expressions import Expression, col, lit
 from daft.series import item_to_series
 
 
-def deserialize(expr: Expression | str, format: Literal["json"], dtype: DataTypeLike) -> Expression:
+def deserialize(expr: Expression, format: Literal["json"], dtype: DataTypeLike) -> Expression:
     """Deserializes a string using the specified format and data type.
 
     Args:
-        expr: The expression or string to deserialize.
+        expr: The expression to deserialize.
         format (Literal["json"]): The serialization format.
         dtype: The target data type to deserialize into.
 
@@ -29,11 +29,11 @@ def deserialize(expr: Expression | str, format: Literal["json"], dtype: DataType
     return Expression._call_builtin_scalar_fn("deserialize", expr, format=format, dtype=dtype._dtype)
 
 
-def try_deserialize(expr: Expression | str, format: Literal["json"], dtype: DataTypeLike) -> Expression:
+def try_deserialize(expr: Expression, format: Literal["json"], dtype: DataTypeLike) -> Expression:
     """Deserializes a string using the specified format and data type, inserting nulls on failures.
 
     Args:
-        expr: The expression or string to deserialize.
+        expr: The expression to deserialize.
         format (Literal["json"]): The serialization format.
         dtype: The target data type to deserialize into.
 
@@ -48,11 +48,11 @@ def try_deserialize(expr: Expression | str, format: Literal["json"], dtype: Data
     return Expression._call_builtin_scalar_fn("try_deserialize", expr, format=format, dtype=dtype._dtype)
 
 
-def serialize(expr: Expression | Any, format: Literal["json"]) -> Expression:
+def serialize(expr: Expression, format: Literal["json"]) -> Expression:
     """Serializes a value to a string using the specified format.
 
     Args:
-        expr: The expression or value to serialize.
+        expr: The expression to serialize.
         format (Literal["json"]): The serialization format.
 
     Returns:
@@ -61,11 +61,11 @@ def serialize(expr: Expression | Any, format: Literal["json"]) -> Expression:
     return Expression._call_builtin_scalar_fn("serialize", expr, format=format)
 
 
-def jq(expr: Expression | str, filter: str) -> Expression:
+def jq(expr: Expression, filter: str) -> Expression:
     """Applies a [jq](https://jqlang.github.io/jq/manual/) filter to a string, returning the results as a string.
 
     Args:
-        expr: The expression or string to apply the jq filter to.
+        expr: The expression to apply the jq filter to.
         filter (str): The jq filter to apply.
 
     Returns:
@@ -158,11 +158,11 @@ def format(f_string: str, *args: Expression | str) -> Expression:
     return result
 
 
-def contains(expr: Expression | str, substr: str | Expression) -> Expression:
+def contains(expr: Expression, substr: str | Expression) -> Expression:
     """Checks whether each string contains the given pattern in a string column.
 
     Args:
-        expr: The expression or string to check.
+        expr: The expression to check.
         pattern: pattern to search for as a literal string, or as a column to pick values from
 
     Returns:
@@ -192,11 +192,11 @@ def contains(expr: Expression | str, substr: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("utf8_contains", expr, substr=substr)
 
 
-def split(expr: Expression | str, pattern: str | Expression, regex: bool = False) -> Expression:
+def split(expr: Expression, pattern: str | Expression, regex: bool = False) -> Expression:
     r"""Splits each string on the given literal or regex pattern, into a list of strings.
 
     Args:
-        expr: The expression or string to split.
+        expr: The expression to split.
         pattern: The pattern on which each string should be split, or a column to pick such patterns from.
         regex: Whether the pattern is a regular expression. Defaults to False.
 
@@ -246,7 +246,7 @@ def split(expr: Expression | str, pattern: str | Expression, regex: bool = False
     return Expression._call_builtin_scalar_fn(f_name, expr, pattern=pattern)
 
 
-def lower(expr: Expression | str) -> Expression:
+def lower(expr: Expression) -> Expression:
     """Convert UTF-8 string to all lowercase.
 
     Returns:
@@ -276,7 +276,7 @@ def lower(expr: Expression | str) -> Expression:
     return Expression._call_builtin_scalar_fn("lower", expr)
 
 
-def upper(expr: Expression | str) -> Expression:
+def upper(expr: Expression) -> Expression:
     """Convert UTF-8 string to all upper.
 
     Returns:
@@ -306,7 +306,7 @@ def upper(expr: Expression | str) -> Expression:
     return Expression._call_builtin_scalar_fn("upper", expr)
 
 
-def lstrip(expr: Expression | str) -> Expression:
+def lstrip(expr: Expression) -> Expression:
     """Strip whitespace from the left side of a UTF-8 string.
 
     Returns:
@@ -336,7 +336,7 @@ def lstrip(expr: Expression | str) -> Expression:
     return Expression._call_builtin_scalar_fn("lstrip", expr)
 
 
-def rstrip(expr: Expression | str) -> Expression:
+def rstrip(expr: Expression) -> Expression:
     """Strip whitespace from the right side of a UTF-8 string.
 
     Returns:
@@ -366,7 +366,7 @@ def rstrip(expr: Expression | str) -> Expression:
     return Expression._call_builtin_scalar_fn("rstrip", expr)
 
 
-def reverse(expr: Expression | str) -> Expression:
+def reverse(expr: Expression) -> Expression:
     """Reverse a UTF-8 string.
 
     Returns:
@@ -396,7 +396,7 @@ def reverse(expr: Expression | str) -> Expression:
     return Expression._call_builtin_scalar_fn("reverse", expr)
 
 
-def capitalize(expr: Expression | str) -> Expression:
+def capitalize(expr: Expression) -> Expression:
     """Capitalize a UTF-8 string.
 
     Returns:
@@ -426,7 +426,7 @@ def capitalize(expr: Expression | str) -> Expression:
     return Expression._call_builtin_scalar_fn("capitalize", expr)
 
 
-def left(expr: Expression | str, nchars: int | Expression) -> Expression:
+def left(expr: Expression, nchars: int | Expression) -> Expression:
     """Gets the n (from nchars) left-most characters of each string.
 
     Returns:
@@ -456,7 +456,7 @@ def left(expr: Expression | str, nchars: int | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("left", expr, nchars)
 
 
-def right(expr: Expression | str, nchars: int | Expression) -> Expression:
+def right(expr: Expression, nchars: int | Expression) -> Expression:
     """Gets the n (from nchars) right-most characters of each string.
 
     Returns:
@@ -486,7 +486,7 @@ def right(expr: Expression | str, nchars: int | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("right", expr, nchars)
 
 
-def rpad(expr: Expression | str, length: int | Expression, pad: str | Expression) -> Expression:
+def rpad(expr: Expression, length: int | Expression, pad: str | Expression) -> Expression:
     """Right-pads each string by truncating or padding with the character.
 
     Returns:
@@ -520,7 +520,7 @@ def rpad(expr: Expression | str, length: int | Expression, pad: str | Expression
     return Expression._call_builtin_scalar_fn("rpad", expr, length, pad)
 
 
-def lpad(expr: Expression | str, length: int | Expression, pad: str | Expression) -> Expression:
+def lpad(expr: Expression, length: int | Expression, pad: str | Expression) -> Expression:
     """Left-pads each string by truncating on the right or padding with the character.
 
     Returns:
@@ -554,7 +554,7 @@ def lpad(expr: Expression | str, length: int | Expression, pad: str | Expression
     return Expression._call_builtin_scalar_fn("lpad", expr, length, pad)
 
 
-def repeat(expr: Expression | str, n: int | Expression) -> Expression:
+def repeat(expr: Expression, n: int | Expression) -> Expression:
     """Repeats each string n times.
 
     Returns:
@@ -584,7 +584,7 @@ def repeat(expr: Expression | str, n: int | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("repeat", expr, n)
 
 
-def like(expr: Expression | str, pattern: str | Expression) -> Expression:
+def like(expr: Expression, pattern: str | Expression) -> Expression:
     """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
 
     Returns:
@@ -617,7 +617,7 @@ def like(expr: Expression | str, pattern: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("like", expr, pattern)
 
 
-def ilike(expr: Expression | str, pattern: str | Expression) -> Expression:
+def ilike(expr: Expression, pattern: str | Expression) -> Expression:
     """Checks whether each string matches the given SQL ILIKE pattern, case insensitive.
 
     Returns:
@@ -650,7 +650,7 @@ def ilike(expr: Expression | str, pattern: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("ilike", expr, pattern)
 
 
-def substr(expr: Expression | str, start: int | Expression, length: int | Expression | None = None) -> Expression:
+def substr(expr: Expression, start: int | Expression, length: int | Expression | None = None) -> Expression:
     """Extract a substring from a string, starting at a specified index and extending for a given length.
 
     Returns:
@@ -683,11 +683,11 @@ def substr(expr: Expression | str, start: int | Expression, length: int | Expres
     return Expression._call_builtin_scalar_fn("substr", expr, start, length)
 
 
-def endswith(expr: Expression | str, suffix: str | Expression) -> Expression:
+def endswith(expr: Expression, suffix: str | Expression) -> Expression:
     """Checks whether each string ends with the given pattern in a string column.
 
     Args:
-        expr: The expression or string to check.
+        expr: The expression to check.
         pattern: pattern to search for as a literal string, or as a column to pick values from
 
     Returns:
@@ -716,11 +716,11 @@ def endswith(expr: Expression | str, suffix: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("ends_with", expr, suffix)
 
 
-def startswith(expr: Expression | str, prefix: str | Expression) -> Expression:
+def startswith(expr: Expression, prefix: str | Expression) -> Expression:
     """Checks whether each string starts with the given pattern in a string column.
 
     Args:
-        expr: The expression or string to check.
+        expr: The expression to check.
         pattern: pattern to search for as a literal string, or as a column to pick values from
 
     Returns:
@@ -750,7 +750,7 @@ def startswith(expr: Expression | str, prefix: str | Expression) -> Expression:
 
 
 def normalize(
-    expr: Expression | str,
+    expr: Expression,
     *,
     remove_punct: bool = False,
     lowercase: bool = False,
@@ -760,7 +760,7 @@ def normalize(
     r"""Normalizes a string for more useful deduplication.
 
     Args:
-        expr: The expression or string to normalize.
+        expr: The expression to normalize.
         remove_punct: Whether to remove all punctuation (ASCII).
         lowercase: Whether to convert the string to lowercase.
         nfd_unicode: Whether to normalize and decompose Unicode characters according to NFD.
@@ -805,7 +805,7 @@ def normalize(
 
 
 def tokenize_encode(
-    expr: Expression | str,
+    expr: Expression,
     tokens_path: str,
     *,
     io_config: IOConfig | None = None,
@@ -821,7 +821,7 @@ def tokenize_encode(
     loading tokens from a file in tiktoken format.
 
     Args:
-        expr: The expression or string to encode.
+        expr: The expression to encode.
         tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
         io_config (optional): IOConfig to use when accessing remote storage.
         pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
@@ -848,7 +848,7 @@ def tokenize_encode(
 
 
 def tokenize_decode(
-    expr: Expression | str,
+    expr: Expression,
     tokens_path: str,
     *,
     io_config: IOConfig | None = None,
@@ -863,7 +863,7 @@ def tokenize_decode(
     loading tokens from a file in tiktoken format.
 
     Args:
-        expr: The expression or list of integer tokens to decode.
+        expr: The expression to decode.
         tokens_path: The name of a built-in tokenizer, or the path to a token file (supports downloading).
         io_config (optional): IOConfig to use when accessing remote storage.
         pattern (optional): Regex pattern to use to split strings in tokenization step. Necessary if loading from a file.
@@ -883,7 +883,7 @@ def tokenize_decode(
 
 
 def count_matches(
-    expr: Expression | str,
+    expr: Expression,
     patterns: Any,
     *,
     whole_words: bool = False,
@@ -900,7 +900,7 @@ def count_matches(
     characters; unicode uppercase/lowercase will still be considered distinct.
 
     Args:
-        expr: The expression or string to check.
+        expr: The expression to check.
         patterns: A pattern or a list of patterns.
         whole_words: Whether to only match whole word(s). Defaults to false.
         case_sensitive: Whether the matching should be case sensitive. Defaults to true.
@@ -921,7 +921,7 @@ def count_matches(
     )
 
 
-def length_bytes(expr: Expression | str) -> Expression:
+def length_bytes(expr: Expression) -> Expression:
     """Retrieves the length for a UTF-8 string column in bytes.
 
     Returns:

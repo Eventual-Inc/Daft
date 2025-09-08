@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from daft.expressions import Expression
 
-if TYPE_CHECKING:
-    import datetime
 
-
-def date(expr: Expression | datetime.datetime) -> Expression:
+def date(expr: Expression) -> Expression:
     """Retrieves the date for a datetime column.
 
     Returns:
@@ -49,7 +44,7 @@ def date(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("date", expr)
 
 
-def day(expr: Expression | datetime.datetime) -> Expression:
+def day(expr: Expression) -> Expression:
     """Retrieves the day for a datetime column.
 
     Returns:
@@ -88,7 +83,7 @@ def day(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("day", expr)
 
 
-def hour(expr: Expression | datetime.datetime) -> Expression:
+def hour(expr: Expression) -> Expression:
     """Retrieves the hour for a datetime column.
 
     Returns:
@@ -127,7 +122,7 @@ def hour(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("hour", expr)
 
 
-def minute(expr: Expression | datetime.datetime) -> Expression:
+def minute(expr: Expression) -> Expression:
     """Retrieves the minute for a datetime column.
 
     Returns:
@@ -166,7 +161,7 @@ def minute(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("minute", expr)
 
 
-def second(expr: Expression | datetime.datetime) -> Expression:
+def second(expr: Expression) -> Expression:
     """Retrieves the second for a datetime column.
 
     Returns:
@@ -205,7 +200,7 @@ def second(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("second", expr)
 
 
-def millisecond(expr: Expression | datetime.datetime) -> Expression:
+def millisecond(expr: Expression) -> Expression:
     """Retrieves the millisecond for a datetime column.
 
     Examples:
@@ -240,7 +235,7 @@ def millisecond(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("millisecond", expr)
 
 
-def microsecond(expr: Expression | datetime.datetime) -> Expression:
+def microsecond(expr: Expression) -> Expression:
     """Retrieves the microsecond for a datetime column.
 
     Examples:
@@ -275,7 +270,7 @@ def microsecond(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("microsecond", expr)
 
 
-def nanosecond(expr: Expression | datetime.datetime) -> Expression:
+def nanosecond(expr: Expression) -> Expression:
     """Retrieves the nanosecond for a datetime column.
 
     Examples:
@@ -311,7 +306,7 @@ def nanosecond(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("nanosecond", expr)
 
 
-def unix_date(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def unix_date(expr: Expression) -> Expression:
     """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
 
     Returns:
@@ -350,7 +345,7 @@ def unix_date(expr: Expression | datetime.datetime | datetime.date) -> Expressio
     return Expression._call_builtin_scalar_fn("unix_date", expr)
 
 
-def time(expr: Expression | datetime.datetime) -> Expression:
+def time(expr: Expression) -> Expression:
     """Retrieves the time for a datetime column.
 
     Returns:
@@ -389,7 +384,7 @@ def time(expr: Expression | datetime.datetime) -> Expression:
     return Expression._call_builtin_scalar_fn("time", expr)
 
 
-def month(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def month(expr: Expression) -> Expression:
     """Retrieves the month for a datetime column.
 
     Returns:
@@ -427,7 +422,7 @@ def month(expr: Expression | datetime.datetime | datetime.date) -> Expression:
     return Expression._call_builtin_scalar_fn("month", expr)
 
 
-def quarter(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def quarter(expr: Expression) -> Expression:
     """Retrieves the quarter for a datetime column.
 
     Returns:
@@ -465,7 +460,7 @@ def quarter(expr: Expression | datetime.datetime | datetime.date) -> Expression:
     return Expression._call_builtin_scalar_fn("quarter", expr)
 
 
-def year(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def year(expr: Expression) -> Expression:
     """Retrieves the year for a datetime column.
 
     Returns:
@@ -503,7 +498,7 @@ def year(expr: Expression | datetime.datetime | datetime.date) -> Expression:
     return Expression._call_builtin_scalar_fn("year", expr)
 
 
-def day_of_week(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def day_of_week(expr: Expression) -> Expression:
     """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
 
     Returns:
@@ -541,7 +536,7 @@ def day_of_week(expr: Expression | datetime.datetime | datetime.date) -> Express
     return Expression._call_builtin_scalar_fn("day_of_week", expr)
 
 
-def day_of_month(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def day_of_month(expr: Expression) -> Expression:
     """Retrieves the day of the month for a datetime column.
 
     Returns:
@@ -581,7 +576,7 @@ def day_of_month(expr: Expression | datetime.datetime | datetime.date) -> Expres
     return Expression._call_builtin_scalar_fn("day_of_month", expr)
 
 
-def day_of_year(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def day_of_year(expr: Expression) -> Expression:
     """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
 
     Returns:
@@ -621,7 +616,7 @@ def day_of_year(expr: Expression | datetime.datetime | datetime.date) -> Express
     return Expression._call_builtin_scalar_fn("day_of_year", expr)
 
 
-def week_of_year(expr: Expression | datetime.datetime | datetime.date) -> Expression:
+def week_of_year(expr: Expression) -> Expression:
     """Retrieves the week of the year for a datetime column.
 
     Returns:
@@ -661,10 +656,11 @@ def week_of_year(expr: Expression | datetime.datetime | datetime.date) -> Expres
     return Expression._call_builtin_scalar_fn("week_of_year", expr)
 
 
-def strftime(expr: Expression | datetime.datetime | datetime.date, format: str | None = None) -> Expression:
+def strftime(expr: Expression, format: str | None = None) -> Expression:
     """Converts a datetime/date column to a string column.
 
     Args:
+        expr: The datetime or date expression to convert.
         format: The format to use for the conversion. If None, defaults to ISO 8601 format.
 
     Note:
@@ -711,7 +707,7 @@ def strftime(expr: Expression | datetime.datetime | datetime.date, format: str |
     return Expression._call_builtin_scalar_fn("strftime", expr, format)
 
 
-def total_seconds(expr: Expression | datetime.timedelta) -> Expression:
+def total_seconds(expr: Expression) -> Expression:
     """Calculates the total number of seconds for a duration column.
 
     Returns:
@@ -757,7 +753,7 @@ def total_seconds(expr: Expression | datetime.timedelta) -> Expression:
     return Expression._call_builtin_scalar_fn("total_seconds", expr)
 
 
-def total_milliseconds(expr: Expression | datetime.timedelta) -> Expression:
+def total_milliseconds(expr: Expression) -> Expression:
     """Calculates the total number of milliseconds for a duration column.
 
     Returns:
@@ -803,7 +799,7 @@ def total_milliseconds(expr: Expression | datetime.timedelta) -> Expression:
     return Expression._call_builtin_scalar_fn("total_milliseconds", expr)
 
 
-def total_microseconds(expr: Expression | datetime.timedelta) -> Expression:
+def total_microseconds(expr: Expression) -> Expression:
     """Calculates the total number of microseconds for a duration column.
 
     Returns:
@@ -849,7 +845,7 @@ def total_microseconds(expr: Expression | datetime.timedelta) -> Expression:
     return Expression._call_builtin_scalar_fn("total_microseconds", expr)
 
 
-def total_nanoseconds(expr: Expression | datetime.timedelta) -> Expression:
+def total_nanoseconds(expr: Expression) -> Expression:
     """Calculates the total number of nanoseconds for a duration column.
 
     Returns:
@@ -895,7 +891,7 @@ def total_nanoseconds(expr: Expression | datetime.timedelta) -> Expression:
     return Expression._call_builtin_scalar_fn("total_nanoseconds", expr)
 
 
-def total_minutes(expr: Expression | datetime.timedelta) -> Expression:
+def total_minutes(expr: Expression) -> Expression:
     """Calculates the total number of minutes for a duration column.
 
     Returns:
@@ -941,7 +937,7 @@ def total_minutes(expr: Expression | datetime.timedelta) -> Expression:
     return Expression._call_builtin_scalar_fn("total_minutes", expr)
 
 
-def total_hours(expr: Expression | datetime.timedelta) -> Expression:
+def total_hours(expr: Expression) -> Expression:
     """Calculates the total number of hours for a duration column.
 
     Returns:
@@ -987,7 +983,7 @@ def total_hours(expr: Expression | datetime.timedelta) -> Expression:
     return Expression._call_builtin_scalar_fn("total_hours", expr)
 
 
-def total_days(expr: Expression | datetime.timedelta) -> Expression:
+def total_days(expr: Expression) -> Expression:
     """Calculates the total number of days for a duration column.
 
     Returns:
@@ -1033,7 +1029,7 @@ def total_days(expr: Expression | datetime.timedelta) -> Expression:
     return Expression._call_builtin_scalar_fn("total_days", expr)
 
 
-def to_date(expr: Expression | str, format: str) -> Expression:
+def to_date(expr: Expression, format: str) -> Expression:
     """Converts a string to a date using the specified format.
 
     Returns:
@@ -1066,7 +1062,7 @@ def to_date(expr: Expression | str, format: str) -> Expression:
     return Expression._call_builtin_scalar_fn("to_date", expr, format=format)
 
 
-def to_datetime(expr: Expression | str, format: str, timezone: str | None = None) -> Expression:
+def to_datetime(expr: Expression, format: str, timezone: str | None = None) -> Expression:
     """Converts a string to a datetime using the specified format and timezone.
 
     Returns:

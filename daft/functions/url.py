@@ -41,7 +41,7 @@ def _override_io_config_max_connections(max_connections: int, io_config: IOConfi
 
 
 def download(
-    expr: Expression | str,
+    expr: Expression,
     max_connections: int = 32,
     on_error: Literal["raise", "null"] = "raise",
     io_config: IOConfig | None = None,
@@ -49,7 +49,7 @@ def download(
     """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
     Args:
-        expr: The expression or string URL to download.
+        expr: The expression to download.
         max_connections: The maximum number of connections to use per thread to use for downloading URLs. Defaults to 32.
         on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
             the error but fallback to a Null value. Defaults to "raise".
@@ -94,7 +94,7 @@ def download(
 
 
 def upload(
-    expr: Expression | bytes,
+    expr: Expression,
     location: str | Expression,
     max_connections: int = 32,
     on_error: Literal["raise", "null"] = "raise",
@@ -106,7 +106,7 @@ def upload(
     will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
     Args:
-        expr: The expression or bytes to upload.
+        expr: The expression to upload.
         location: a folder location or column of folder locations to upload data into
         max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
         on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log

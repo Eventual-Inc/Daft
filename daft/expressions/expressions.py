@@ -701,8 +701,8 @@ class Expression:
 
     def clip(
         self,
-        min: Expression | int | builtins.float | None = None,
-        max: Expression | int | builtins.float | None = None,
+        min: Expression | None = None,
+        max: Expression | None = None,
     ) -> Expression:
         """Clips an expression to the given minimum and maximum values.
 
@@ -2248,6 +2248,46 @@ class Expression:
 
         return length_bytes(self)
 
+    def value_counts(self) -> Expression:
+        """Counts the occurrences of each distinct value in the list.
+
+        Tip: See also
+            [`daft.functions.value_counts`](https://docs.daft.ai/en/stable/api/functions/value_counts/)
+        """
+        from daft.functions import value_counts
+
+        return value_counts(self)
+
+    def chunk(self, size: int) -> Expression:
+        """Splits each list into chunks of the given size.
+
+        Tip: See also
+            [`daft.functions.chunk`](https://docs.daft.ai/en/stable/api/functions/chunk/)
+        """
+        from daft.functions import chunk
+
+        return chunk(self, size)
+
+    def resize(self, w: int, h: int) -> Expression:
+        """Resize image into the provided width and height.
+
+        Tip: See also
+            [`daft.functions.resize`](https://docs.daft.ai/en/stable/api/functions/resize/)
+        """
+        from daft.functions import resize
+
+        return resize(self, w, h)
+
+    def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
+        """Crops images with the provided bounding box.
+
+        Tip: See also
+            [`daft.functions.crop`](https://docs.daft.ai/en/stable/api/functions/crop/)
+        """
+        from daft.functions import crop
+
+        return crop(self, bbox)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -3305,38 +3345,12 @@ class ExpressionListNamespace(ExpressionNamespace):
         return self._eval_expressions("list_join", delimiter)
 
     def value_counts(self) -> Expression:
-        """Counts the occurrences of each distinct value in the list.
-
-        Returns:
-            Expression: A Map<X, UInt64> expression where the keys are distinct elements from the
-                        original list of type X, and the values are UInt64 counts representing
-                        the number of times each element appears in the list.
-
-        Note:
-            This function does not work for nested types. For example, it will not produce a map
-            with lists as keys.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
-            >>> df.with_column("value_counts", df["letters"].list.value_counts()).collect()
-            ╭──────────────┬───────────────────╮
-            │ letters      ┆ value_counts      │
-            │ ---          ┆ ---               │
-            │ List[Utf8]   ┆ Map[Utf8: UInt64] │
-            ╞══════════════╪═══════════════════╡
-            │ [a, b, a]    ┆ [{key: a,         │
-            │              ┆ value: 2,         │
-            │              ┆ }, {key: …        │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ [b, c, b, c] ┆ [{key: b,         │
-            │              ┆ value: 2,         │
-            │              ┆ }, {key: …        │
-            ╰──────────────┴───────────────────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
-        """
-        return self._eval_expressions("list_value_counts")
+        """(DEPRECATED) Please use `daft.functions.value_counts` instead."""
+        warnings.warn(
+            "`Expression.list.value_counts` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.value_counts` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().value_counts()
 
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
@@ -3382,14 +3396,12 @@ class ExpressionListNamespace(ExpressionNamespace):
         return self._eval_expressions("list_slice", start, end)
 
     def chunk(self, size: int) -> Expression:
-        """Splits each list into chunks of the given size.
-
-        Args:
-            size: size of chunks to split the list into. Must be greater than 0
-        Returns:
-            Expression: an expression with lists of fixed size lists of the type of the list values
-        """
-        return self._eval_expressions("list_chunk", size)
+        """(DEPRECATED) Please use `daft.functions.chunk` instead."""
+        warnings.warn(
+            "`Expression.list.chunk` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.chunk` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().chunk(size)
 
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
@@ -3831,40 +3843,20 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(f(self._expr, image_format=image_format_expr))
 
     def resize(self, w: int, h: int) -> Expression:
-        """Resize image into the provided width and height.
-
-        Args:
-            w: Desired width of the resized image.
-            h: Desired height of the resized image.
-
-        Returns:
-            Expression: An Image expression representing an image column of the resized images.
-        """
-        width = lit(w)._expr
-        height = lit(h)._expr
-        f = native.get_function_from_registry("image_resize")
-        return Expression._from_pyexpr(f(self._expr, w=width, h=height))
+        """(DEPRECATED) Please use `daft.functions.resize` instead."""
+        warnings.warn(
+            "`Expression.image.resize` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.resize` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().resize(w, h)
 
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
-        """Crops images with the provided bounding box.
-
-        Args:
-            bbox (tuple[float, float, float, float] | Expression): Either a tuple of (x, y, width, height)
-                parameters for cropping, or a List Expression where each element is a length 4 List
-                which represents the bounding box for the crop
-
-        Returns:
-            Expression: An Image expression representing the cropped image
-        """
-        if not isinstance(bbox, Expression):
-            if len(bbox) != 4 or not all([isinstance(x, int) for x in bbox]):
-                raise ValueError(
-                    f"Expected `bbox` to be either a tuple of 4 ints or an Expression but received: {bbox}"
-                )
-            bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
-        assert isinstance(bbox, Expression)
-        f = native.get_function_from_registry("image_crop")
-        return Expression._from_pyexpr(f(self._expr, bbox._expr))
+        """(DEPRECATED) Please use `daft.functions.crop` instead."""
+        warnings.warn(
+            "`Expression.image.crop` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.crop` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().crop(bbox)
 
     def to_mode(self, mode: str | ImageMode) -> Expression:
         if isinstance(mode, str):

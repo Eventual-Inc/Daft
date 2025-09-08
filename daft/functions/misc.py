@@ -90,7 +90,7 @@ def unnest(expr: Expression) -> Expression:
     return expr["*"]
 
 
-def eq_null_safe(left: Expression | Any, right: Expression | Any) -> Expression:
+def eq_null_safe(left: Expression, right: Expression) -> Expression:
     """Performs a null-safe equality comparison between two expressions.
 
     Unlike regular equality (==), null-safe equality (<=> or IS NOT DISTINCT FROM):
@@ -106,7 +106,7 @@ def eq_null_safe(left: Expression | Any, right: Expression | Any) -> Expression:
     return Expression._from_pyexpr(left._expr.eq_null_safe(right._expr))
 
 
-def cast(expr: Expression | Any, dtype: DataTypeLike) -> Expression:
+def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
     """Casts an expression to the given datatype if possible.
 
     The following combinations of datatype casting is valid:
@@ -200,7 +200,7 @@ def cast(expr: Expression | Any, dtype: DataTypeLike) -> Expression:
     return Expression._from_pyexpr(expr._expr.cast(dtype._dtype))
 
 
-def is_null(expr: Expression | Any) -> Expression:
+def is_null(expr: Expression) -> Expression:
     """Checks if values in the Expression are Null (a special value indicating missing data).
 
     Returns:
@@ -232,7 +232,7 @@ def is_null(expr: Expression | Any) -> Expression:
     return Expression._from_pyexpr(expr._expr.is_null())
 
 
-def not_null(expr: Expression | Any) -> Expression:
+def not_null(expr: Expression) -> Expression:
     """Checks if values in the Expression are not Null (a special value indicating missing data).
 
     Returns:
@@ -264,7 +264,7 @@ def not_null(expr: Expression | Any) -> Expression:
     return Expression._from_pyexpr(expr._expr.not_null())
 
 
-def fill_null(expr: Expression | Any, fill_value: Expression | Any) -> Expression:
+def fill_null(expr: Expression, fill_value: Expression) -> Expression:
     """Fills null values in the Expression with the provided fill_value.
 
     Returns:
@@ -297,7 +297,7 @@ def fill_null(expr: Expression | Any, fill_value: Expression | Any) -> Expressio
     return Expression._from_pyexpr(expr._expr.fill_null(fill_value._expr))
 
 
-def is_in(expr: Expression | Any, other: Any) -> Expression:
+def is_in(expr: Expression, other: Any) -> Expression:
     """Checks if values in the Expression are in the provided list.
 
     Returns:
@@ -338,7 +338,7 @@ def is_in(expr: Expression | Any, other: Any) -> Expression:
 
 
 def hash(
-    expr: Expression | Any,
+    expr: Expression,
     seed: Any | None = None,
     hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash",
 ) -> Expression:
@@ -365,7 +365,7 @@ def hash(
 
 
 def minhash(
-    expr: Expression | str,
+    expr: Expression,
     *,
     num_hashes: int,
     ngram_size: int,
@@ -476,7 +476,7 @@ def explode(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("explode", expr)
 
 
-def length(expr: Expression | str | bytes | list[Any]) -> Expression:
+def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 
     The behavior depends on the input type:
