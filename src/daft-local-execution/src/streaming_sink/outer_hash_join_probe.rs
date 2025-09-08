@@ -362,18 +362,22 @@ impl OuterHashJoinProbeSink {
                     let build_side_idx = build_side_prefix_sums[build_side_table_idx as usize]
                         + build_row_idx as usize;
                     bitmap_builder.mark_used(build_side_idx);
-                    build_side_idxs.push(build_side_idx as u64);
+                    build_side_idxs.push(Some(build_side_idx as u64));
                     probe_side_idxs.push(probe_row_idx as u64);
                 }
             } else {
                 // if there's no match, we should still emit the probe side and fill the build side with nulls
-                build_side_idxs.push(build_side_table.len() as u64);
+                build_side_idxs.push(None);
                 probe_side_idxs.push(probe_row_idx as u64);
             }
         }
 
         let build_side_table = {
-            let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
+            let indices_as_series = UInt64Array::from_regular_iter(
+                Field::new("indices", DataType::UInt64),
+                build_side_idxs.into_iter(),
+            )?
+            .into_series();
             build_side_table.take(&indices_as_series)?
         };
 
