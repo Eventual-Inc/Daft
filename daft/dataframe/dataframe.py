@@ -2971,6 +2971,46 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+            Example with Null values and empty lists:
+
+            >>> df2 = daft.from_pydict(
+            ...     {"id": [1, 2, 3, 4], "values": [[1, 2], [], None, [3]], "labels": [["a", "b"], [], None, ["c"]]}
+            ... )
+            >>> df2.collect()
+            ╭───────┬─────────────┬────────────╮
+            │ id    ┆ values      ┆ labels     │
+            │ ---   ┆ ---         ┆ ---        │
+            │ Int64 ┆ List[Int64] ┆ List[Utf8] │
+            ╞═══════╪═════════════╪════════════╡
+            │ 1     ┆ [1, 2]      ┆ [a, b]     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ []          ┆ []         │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None        ┆ None       │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ [3]         ┆ [c]        │
+            ╰───────┴─────────────┴────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+            >>> df2.explode(df2["values"], df2["labels"]).collect()
+            ╭───────┬────────┬────────╮
+            │ id    ┆ values ┆ labels │
+            │ ---   ┆ ---    ┆ ---    │
+            │ Int64 ┆ Int64  ┆ Utf8   │
+            ╞═══════╪════════╪════════╡
+            │ 1     ┆ 1      ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1     ┆ 2      ┆ b      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ None   ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None   ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 3      ┆ c      │
+            ╰───────┴────────┴────────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
         """
         parsed_exprs = self.__column_input_to_expression(columns)
         builder = self._builder.explode(parsed_exprs)
