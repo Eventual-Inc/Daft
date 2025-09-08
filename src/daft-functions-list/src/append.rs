@@ -62,7 +62,7 @@ impl ScalarUDF for ListAppend {
             input_exploded.dtype
         );
 
-        Ok(input.to_exploded_field()?.to_list_field())
+        Ok(input_exploded.to_list_field())
     }
 }
 
