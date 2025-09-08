@@ -31,7 +31,7 @@ def fixed_table():
 
 
 def test_list_append_basic(table):
-    df = table.eval_expression_list([col("col").list.append(col("values"))])
+    df = table.eval_expression_list([col("col").list_append(col("values"))])
     result = df.to_pydict()
 
     expected = [
@@ -49,7 +49,7 @@ def test_list_append_basic(table):
 
 
 def test_list_append_with_literal(table):
-    df = table.eval_expression_list([col("col").list.append(lit("z"))])
+    df = table.eval_expression_list([col("col").list_append(lit("z"))])
     result = df.to_pydict()
 
     expected = [
@@ -67,7 +67,7 @@ def test_list_append_with_literal(table):
 
 
 def test_fixed_list_append_basic(fixed_table):
-    df = fixed_table.eval_expression_list([col("col").list.append(col("values"))])
+    df = fixed_table.eval_expression_list([col("col").list_append(col("values"))])
     result = df.to_pydict()
 
     expected = [
@@ -84,7 +84,7 @@ def test_fixed_list_append_basic(fixed_table):
 
 
 def test_fixed_list_append_literal(fixed_table):
-    df = fixed_table.eval_expression_list([col("col").list.append(lit("b"))])
+    df = fixed_table.eval_expression_list([col("col").list_append(lit("b"))])
     result = df.to_pydict()
 
     expected = [
