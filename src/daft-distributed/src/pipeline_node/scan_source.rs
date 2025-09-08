@@ -8,6 +8,7 @@ use common_treenode::{TreeNode, TreeNodeVisitor};
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, ClusteringSpec};
 use daft_schema::schema::SchemaRef;
+use itertools::Batching;
 
 use super::{
     DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
@@ -115,8 +116,11 @@ impl ScanSourceNode {
             TaskContext::from((&self.context, task_id_counter.next())),
         )?);
 
-        let batch_size = min_batch_size_in_task_plan(submittable_task_scan.task().plan())
-            .unwrap_or(default_batch_size);
+        // TODO: good idea, but this (1) needs to be done **begore** we construct the scan task node
+        //       it needs the logical plan and (2) this should be a follow up PR on its own
+        // let batch_size = min_batch_size_in_task_plan(submittable_task_scan.task().plan())
+        //     .unwrap_or(default_batch_size);
+        let batch_size = default_batch_size;
         if batch_size == 0 {
             return Err(
                 DaftError::InternalError("Batch size must be greater than 0".to_string()).into(),
@@ -138,87 +142,128 @@ impl ScanSourceNode {
             }),
         );
 
+        let maybe_materialized_output = scan_and_into_batches_task
+            .submit(&scheduler_handle)?
+            .await?;
+
+        // inside it's an array of partition refs
+
+        // NOTE: if it's none, then the file was empty so we return nothing :)
+        if let Some(materialized) = maybe_materialized_output {
+            let parts = materialized.split_into_materialized_outputs();
+
+            // Step 3: emit these new batched tasks downstream
+            for p in parts {
+                let task = make_in_memory_task_from_materialized_outputs(
+                    TaskContext::from((&self.context, task_id_counter.next())),
+                    // An in-memory scan task can read from *multiple* partitions
+                    // that's why it wants a vec[materialized] here.
+                    //
+                    // We instead want to make a single in-memory scan from each of the
+                    // materialized paritions we recieved from the scheduler (`parts`).
+                    //
+                    // This is why we are passing in a single materialized partition here
+                    // as a vector of 1.
+                    vec![p],
+                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    None,
+                )?;
+
+                println!("task={task:?}");
+
+                match result_tx.send(task).await {
+                    Ok(()) => (),
+                    Err(e) => {
+                        return Err(DaftError::InternalError(format!(
+                            "Failed to send internal batch to result channel: {e:?}"
+                        ))
+                        .into());
+                    }
+                }
+            }
+        }
+
         // we created a task with 2 operations:
         //      (1) physical_scan
         //      (2) into_batches
 
-        if BEFORE_I_WROTE_THE_TEST {
-            println!("scan_and_into_batches_task={scan_and_into_batches_task:?}");
+        // if BEFORE_I_WROTE_THE_TEST {
+        //     println!("scan_and_into_batches_task={scan_and_into_batches_task:?}");
 
-            let maybe_materialized_output = scan_and_into_batches_task
-                .submit(&scheduler_handle)?
-                .await?;
+        // let maybe_materialized_output = scan_and_into_batches_task
+        //     .submit(&scheduler_handle)?
+        //     .await?;
 
-            println!("maybe_materialized_output={maybe_materialized_output:?}");
+        //     println!("maybe_materialized_output={maybe_materialized_output:?}");
 
-            //
-            //     a single scan task generally corresponds to a single partition
-            //
-            //     could have multiple scan tasks in one file
-            //         e.g. parquet with row groups (constant time to offset into a row group)
-            //
-            // --- have ---
-            //
-            // 1. create scan task
-            // 2. materialize scan task
-            // 3. generate into batches task
-            // 4. "return" this
-            //
-            // --- want ---
-            //
-            // 1. create scan task
-            // 2. create into batches task and **append** to scan task
-            // 3. >> we cannot just *return* <<
-            //
-            // we need to inform the scheduler that it can move these "batches" around freely
-            // for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
-            //
+        //     //
+        //     //     a single scan task generally corresponds to a single partition
+        //     //
+        //     //     could have multiple scan tasks in one file
+        //     //         e.g. parquet with row groups (constant time to offset into a row group)
+        //     //
+        //     // --- have ---
+        //     //
+        //     // 1. create scan task
+        //     // 2. materialize scan task
+        //     // 3. generate into batches task
+        //     // 4. "return" this
+        //     //
+        //     // --- want ---
+        //     //
+        //     // 1. create scan task
+        //     // 2. create into batches task and **append** to scan task
+        //     // 3. >> we cannot just *return* <<
+        //     //
+        //     // we need to inform the scheduler that it can move these "batches" around freely
+        //     // for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
+        //     //
 
-            if let Some(materialized_output) = maybe_materialized_output {
-                // Step 3: Split the materialized output into batches of size 'k'
+        //     if let Some(materialized_output) = maybe_materialized_output {
+        //         // Step 3: Split the materialized output into batches of size 'k'
 
-                println!("materialized_output={materialized_output:?}");
+        //         println!("materialized_output={materialized_output:?}");
 
-                let materialized_outputs = materialized_output.split_into_materialized_outputs();
+        //         let materialized_outputs = materialized_output.split_into_materialized_outputs();
 
-                // Step 4: Create in-memory tasks for each batch
+        //         // Step 4: Create in-memory tasks for each batch
 
-                for batch in materialized_outputs.chunks(batch_size) {
-                    let batch_materialized_outputs = batch.to_vec();
+        //         for batch in materialized_outputs.chunks(batch_size) {
+        //             let batch_materialized_outputs = batch.to_vec();
 
-                    println!("batch_materialized_outputs={batch_materialized_outputs:?}");
+        //             println!("batch_materialized_outputs={batch_materialized_outputs:?}");
 
-                    let task = make_in_memory_task_from_materialized_outputs(
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                        batch_materialized_outputs,
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
-                        None,
-                    )?;
+        //             let task = make_in_memory_task_from_materialized_outputs(
+        //                 TaskContext::from((&self.context, task_id_counter.next())),
+        //                 batch_materialized_outputs,
+        //                 &(self.clone() as Arc<dyn DistributedPipelineNode>),
+        //                 None,
+        //             )?;
 
-                    println!("task={task:?}");
+        //             println!("task={task:?}");
 
-                    match result_tx.send(task).await {
-                        Ok(()) => (),
-                        Err(e) => {
-                            return Err(DaftError::InternalError(format!(
-                                "Failed to send internal batch to result channel: {e:?}"
-                            ))
-                            .into());
-                        }
-                    }
-                }
-            }
-        } else {
-            match result_tx.send(scan_and_into_batches_task).await {
-                Ok(()) => (),
-                Err(e) => {
-                    return Err(DaftError::InternalError(format!(
-                        "Failed to send internal scan + into batches task to result channel: {e:?}"
-                    )))
-                    .into();
-                }
-            }
-        }
+        //             match result_tx.send(task).await {
+        //                 Ok(()) => (),
+        //                 Err(e) => {
+        //                     return Err(DaftError::InternalError(format!(
+        //                         "Failed to send internal batch to result channel: {e:?}"
+        //                     ))
+        //                     .into());
+        //                 }
+        //             }
+        //         }
+        //     }
+        // } else {
+        //     match result_tx.send(scan_and_into_batches_task).await {
+        //         Ok(()) => (),
+        //         Err(e) => {
+        //             return Err(DaftError::InternalError(format!(
+        //                 "Failed to send internal scan + into batches task to result channel: {e:?}"
+        //             )))
+        //             .into();
+        //         }
+        //     }
+        // }
 
         Ok(())
     }
