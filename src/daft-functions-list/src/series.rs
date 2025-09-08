@@ -29,6 +29,7 @@ pub trait SeriesListExtension: Sized {
     fn list_count_distinct(&self) -> DaftResult<Self>;
     fn list_fill(&self, num: &Int64Array) -> DaftResult<Self>;
     fn list_distinct(&self) -> DaftResult<Self>;
+    fn list_append(&self, other: &Self) -> DaftResult<Self>;
 }
 
 impl SeriesListExtension for Series {
@@ -337,6 +338,51 @@ impl SeriesListExtension for Series {
             growable.build()?,
             OffsetsBuffer::try_from(offsets)?,
             input.validity().cloned(),
+        );
+
+        Ok(list_array.into_series())
+    }
+
+    fn list_append(&self, other: &Self) -> DaftResult<Self> {
+        let input = if let DataType::FixedSizeList(inner_type, _) = self.data_type() {
+            self.cast(&DataType::List(inner_type.clone()))?
+        } else {
+            self.clone()
+        };
+        let input = input.list()?;
+
+        let other = other.cast(input.child_data_type())?;
+        let mut growable = make_growable(
+            self.name(),
+            input.child_data_type(),
+            vec![&input.flat_child, &other],
+            false,
+            input.flat_child.len() + other.len(),
+        );
+
+        let offsets = input.offsets();
+        let mut new_lengths = Vec::with_capacity(input.len());
+        for i in 0..self.len() {
+            if input.is_valid(i) {
+                let start = *offsets.get(i).unwrap();
+                let end = *offsets.get(i + 1).unwrap();
+                let list_size = end - start;
+                growable.extend(0, start as usize, list_size as usize);
+                new_lengths.push((list_size + 1) as usize);
+            } else {
+                new_lengths.push(1);
+            }
+
+            growable.extend(1, i, 1);
+        }
+
+        let child_arr = growable.build()?;
+        let new_offsets = arrow2::offset::Offsets::try_from_lengths(new_lengths.into_iter())?;
+        let list_array = ListArray::new(
+            input.field.clone(),
+            child_arr,
+            new_offsets.into(),
+            None, // All outputs are valid because of the append
         );
 
         Ok(list_array.into_series())
