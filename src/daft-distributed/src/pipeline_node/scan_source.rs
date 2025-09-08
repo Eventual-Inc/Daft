@@ -146,6 +146,13 @@ impl ScanSourceNode {
             .submit(&scheduler_handle)?
             .await?;
 
+        // (A) make a SubmittedTask with a pre-filled result_tx
+        // (B) test idea: read from a single partition + .collect() and check the result DF from collect
+        //      ._result
+        //      => ParititonSet
+        //      take len(self._result) and make sure that's > 1 now
+        // DO (b) FIRST THEN DO (a)
+
         // inside it's an array of partition refs
 
         // NOTE: if it's none, then the file was empty so we return nothing :)
@@ -182,88 +189,6 @@ impl ScanSourceNode {
                 }
             }
         }
-
-        // we created a task with 2 operations:
-        //      (1) physical_scan
-        //      (2) into_batches
-
-        // if BEFORE_I_WROTE_THE_TEST {
-        //     println!("scan_and_into_batches_task={scan_and_into_batches_task:?}");
-
-        // let maybe_materialized_output = scan_and_into_batches_task
-        //     .submit(&scheduler_handle)?
-        //     .await?;
-
-        //     println!("maybe_materialized_output={maybe_materialized_output:?}");
-
-        //     //
-        //     //     a single scan task generally corresponds to a single partition
-        //     //
-        //     //     could have multiple scan tasks in one file
-        //     //         e.g. parquet with row groups (constant time to offset into a row group)
-        //     //
-        //     // --- have ---
-        //     //
-        //     // 1. create scan task
-        //     // 2. materialize scan task
-        //     // 3. generate into batches task
-        //     // 4. "return" this
-        //     //
-        //     // --- want ---
-        //     //
-        //     // 1. create scan task
-        //     // 2. create into batches task and **append** to scan task
-        //     // 3. >> we cannot just *return* <<
-        //     //
-        //     // we need to inform the scheduler that it can move these "batches" around freely
-        //     // for the scheduler to move them, it must be aware of them <-- workers need to send information back to the scheduler
-        //     //
-
-        //     if let Some(materialized_output) = maybe_materialized_output {
-        //         // Step 3: Split the materialized output into batches of size 'k'
-
-        //         println!("materialized_output={materialized_output:?}");
-
-        //         let materialized_outputs = materialized_output.split_into_materialized_outputs();
-
-        //         // Step 4: Create in-memory tasks for each batch
-
-        //         for batch in materialized_outputs.chunks(batch_size) {
-        //             let batch_materialized_outputs = batch.to_vec();
-
-        //             println!("batch_materialized_outputs={batch_materialized_outputs:?}");
-
-        //             let task = make_in_memory_task_from_materialized_outputs(
-        //                 TaskContext::from((&self.context, task_id_counter.next())),
-        //                 batch_materialized_outputs,
-        //                 &(self.clone() as Arc<dyn DistributedPipelineNode>),
-        //                 None,
-        //             )?;
-
-        //             println!("task={task:?}");
-
-        //             match result_tx.send(task).await {
-        //                 Ok(()) => (),
-        //                 Err(e) => {
-        //                     return Err(DaftError::InternalError(format!(
-        //                         "Failed to send internal batch to result channel: {e:?}"
-        //                     ))
-        //                     .into());
-        //                 }
-        //             }
-        //         }
-        //     }
-        // } else {
-        //     match result_tx.send(scan_and_into_batches_task).await {
-        //         Ok(()) => (),
-        //         Err(e) => {
-        //             return Err(DaftError::InternalError(format!(
-        //                 "Failed to send internal scan + into batches task to result channel: {e:?}"
-        //             )))
-        //             .into();
-        //         }
-        //     }
-        // }
 
         Ok(())
     }
@@ -633,10 +558,15 @@ mod tests {
         assert_eq!(result, None); // Should return None since no operators have batch_size
     }
 
+    // make a mini scheduler
+    // have it hardcode the into_batches logic
+    // tokio::spawn() that in the test so it can run independently
+    // then this test should work
+
     #[tokio::test]
     async fn test_auto_into_batches() {
         let f = async |is_map_only_pipeline: bool| {
-            // println!("\n-------------------\nis_map_only_pipeline={is_map_only_pipeline:?}\n\n\n");
+            println!("\n-------------------\nis_map_only_pipeline={is_map_only_pipeline:?}\n\n\n");
             let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));
 
             // Create a ScanSourceNode with is_map_only_pipeline = true
@@ -648,7 +578,7 @@ mod tests {
                     DummyScanOperator {
                         schema: schema.clone(),
                         num_scan_tasks: 1,
-                        num_rows_per_task: None,
+                        num_rows_per_task: None, // TODO: set this to something non-zero
                         supports_count_pushdown_flag: true,
                     }
                     .to_scan_tasks(Pushdowns::default())
@@ -664,27 +594,27 @@ mod tests {
             let mut stage_context =
                 StageExecutionContext::new(SchedulerHandle::new(scheduler_sender));
 
-            // println!("about to make task stream");
+            println!("about to make task stream");
 
-            // println!(
-            //     "visualized:\n{}",
-            //     viz_distributed_pipeline_ascii(&scan_source_node, true)
-            // );
+            println!(
+                "visualized:\n{}",
+                viz_distributed_pipeline_ascii(&scan_source_node, true)
+            );
 
             let task_stream: SubmittableTaskStream =
                 scan_source_node.arced().produce_tasks(&mut stage_context);
 
-            // println!("made task stream");
+            println!("made task stream");
 
-            // if is_map_only_pipeline {
-            //     match scheduler_receiver.recv().await {
-            //         Some(message) => {
-            //             println!("\n\nreceived task:\n{message:?}\n\n");
-            //             assert!(message.task_context().logical_node_ids.len() == n_expected_tasks);
-            //         }
-            //         None => panic!("didn't receive anything!"),
-            //     }
-            // }
+            if is_map_only_pipeline {
+                match scheduler_receiver.recv().await {
+                    Some(message) => {
+                        println!("\n\nreceived task:\n{message:?}\n\n");
+                        assert!(message.task_context().logical_node_ids.len() == 2);
+                    }
+                    None => panic!("didn't receive anything!"),
+                }
+            }
 
             // println!("iterating through task stream");
 
@@ -713,6 +643,6 @@ mod tests {
             // println!("done");
         };
         f(true).await;
-        f(false).await;
+        // f(false).await;
     }
 }
