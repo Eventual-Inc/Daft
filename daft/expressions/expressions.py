@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
+    EncodingCodec = Literal["base64", "deflate", "gzip", "gz", "utf-8", "utf8", "zlib"]
 
 
 def lit(value: object) -> Expression:
@@ -1595,7 +1595,7 @@ class Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Args:
-            codec (str): encoding codec (deflate, gzip, zlib)
+            codec (str): encoding codec (base64, deflate, gzip, zlib)
 
         Returns:
             Expression: A new expression, of type `binary`, with the encoded value.
@@ -1641,7 +1641,7 @@ class Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Args:
-            codec (str): decoding codec (deflate, gzip, zlib)
+            codec (str): decoding codec (base64, deflate, gzip, zlib)
 
         Returns:
             Expression: A new expression with the decoded values.
@@ -1651,6 +1651,20 @@ class Expression:
             only decoding with 'utf-8' returns a string.
 
         Examples:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"bytes": [b"aGVsbG8sIHdvcmxkIQ=="]})
+            >>> df.select(col("bytes").decode("base64")).show()
+            ╭──────────────────╮
+            │ bytes            │
+            │ ---              │
+            │ Binary           │
+            ╞══════════════════╡
+            │ b"hello, world!" │
+            ╰──────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
             >>> import daft
             >>> import zlib
             >>> from daft import col
