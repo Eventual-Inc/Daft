@@ -569,7 +569,7 @@ mod tests {
 
         // Test incremental updates
         node_stat.add_rows_in(100);
-        node_stat.add_rows_out(50);
+        node_stat.add_rows_in(50);
         let stats = node_stat.snapshot();
         assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(150)));
 
