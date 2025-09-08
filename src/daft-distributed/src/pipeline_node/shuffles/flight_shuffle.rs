@@ -21,7 +21,7 @@ use crate::{
 };
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
-    ((context.stage_id as u64) << 48) | ((context.plan_id as u64) << 32) | (context.node_id as u64)
+    rand::random::<u64>()
 }
 
 pub(crate) struct FlightShuffleNode {
@@ -89,6 +89,7 @@ impl FlightShuffleNode {
             self.repartition_spec.var_name()
         )];
         res.extend(self.repartition_spec.multiline_display());
+        res.push(format!("Shuffle ID: {}", self.shuffle_id));
         res
     }
 
@@ -112,6 +113,8 @@ impl FlightShuffleNode {
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+
+        println!("shuffle id: {}, num server addresses: {}", self.shuffle_id, server_addresses.len());
 
         // For each partition group, create tasks that read from flight servers
         for partition_idx in 0..self.num_partitions {

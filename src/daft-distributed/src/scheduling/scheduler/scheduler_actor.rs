@@ -166,11 +166,11 @@ where
             }
 
             // 3: Send autoscaling request if needed
-            let autoscaling_request = scheduler.get_autoscaling_request();
-            if let Some(request) = autoscaling_request {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
-                worker_manager.try_autoscale(request)?;
-            }
+            // let autoscaling_request = scheduler.get_autoscaling_request();
+            // if let Some(request) = autoscaling_request {
+            //     tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
+            //     worker_manager.try_autoscale(request)?;
+            // }
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick
             tokio::select! {

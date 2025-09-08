@@ -2,6 +2,7 @@ use std::{fs::File, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use common_runtime::get_io_runtime;
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -33,7 +34,7 @@ impl IPCWriter {
     fn get_or_create_writer(
         &mut self,
         schema: &Schema,
-    ) -> DaftResult<&mut arrow2::io::ipc::write::StreamWriter<File>> {
+    ) -> DaftResult<arrow2::io::ipc::write::StreamWriter<File>> {
         if self.writer.is_none() {
             let file = File::create(self.file_path.as_str())?;
             let options = arrow2::io::ipc::write::WriteOptions {
@@ -43,7 +44,7 @@ impl IPCWriter {
             writer.start(&schema.to_arrow()?, None)?;
             self.writer = Some(writer);
         }
-        Ok(self.writer.as_mut().unwrap())
+        Ok(self.writer.take().unwrap())
     }
 }
 
@@ -56,13 +57,22 @@ impl AsyncFileWriter for IPCWriter {
         assert!(!self.is_closed, "Writer is closed");
 
         let size_bytes = data.size_bytes().unwrap_or(0);
-        let writer = self.get_or_create_writer(&data.schema())?;
-        let tables = data.get_tables()?;
-        for table in tables.iter() {
-            let chunk = table.to_chunk();
-            writer.write(&chunk, None)?;
-        }
-        self.bytes_written += writer.bytes_written();
+        let mut writer = self.get_or_create_writer(&data.schema())?;
+        let io_runtime = get_io_runtime(true);
+        let (writer, bytes_written) = io_runtime
+            .spawn_blocking(move || {
+                let tables = data.get_tables()?;
+                let mut bytes_written = 0;
+                for table in tables.iter() {
+                    let chunk = table.to_chunk();
+                    writer.write(&chunk, None)?;
+                    bytes_written += chunk.len();
+                }
+                DaftResult::Ok((writer, bytes_written))
+            })
+            .await??;
+        self.writer.replace(writer);
+        self.bytes_written += bytes_written;
         Ok(size_bytes)
     }
 

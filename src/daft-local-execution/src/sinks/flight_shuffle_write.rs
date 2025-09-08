@@ -156,7 +156,7 @@ impl BlockingSink for FlightShuffleWriteSink {
             &self.shuffle_dirs,
             next_id.to_string(),
             self.shuffle_id,
-            1024 * 1024 * 10,            // 10MB target file size
+            1024 * 1024 * 100,            // 10MB target file size
             self.compression.as_deref(), // No compression
             self.partition_by.clone(),   // Use the partition_by expressions from repartition_spec
         )?;

@@ -8,6 +8,7 @@ use arrow_flight::{
 };
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
+use daft_core::prelude::Schema;
 use futures::{Stream, StreamExt, TryStreamExt};
 use tokio::sync::{Mutex, OnceCell};
 use tonic::{transport::Server, Request, Response, Status};
@@ -125,9 +126,11 @@ impl FlightService for ShuffleFlightServer {
             .parse::<usize>()
             .map_err(|e| Status::invalid_argument(format!("Invalid partition index: {}", e)))?;
 
-        let shuffle_caches = self.get_shuffle_caches(shuffle_id).await.ok_or_else(|| {
-            Status::not_found(format!("Shuffle cache not found for id: {}", shuffle_id))
-        })?;
+        let shuffle_caches = self.get_shuffle_caches(shuffle_id).await.unwrap_or_default();
+        if shuffle_caches.is_empty() {
+            let shuffle_cache_ids = self.shuffle_caches.lock().await.keys().cloned().collect::<Vec<_>>();
+            println!("Shuffle cache not found for id: {}, only have: {:?}", shuffle_id, shuffle_cache_ids);
+        }
 
         let file_paths = shuffle_caches
             .iter()
@@ -150,10 +153,8 @@ impl FlightService for ShuffleFlightServer {
             .try_flatten();
 
         let schema = shuffle_caches
-            .first()
-            .unwrap()
-            .schema()
-            .to_arrow()
+            .first().map(|cache| cache.schema().to_arrow())
+            .unwrap_or_else(|| Schema::empty().to_arrow())
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
 
         let flight_schema = FlightData {
@@ -223,6 +224,7 @@ pub async fn register_shuffle_cache(
     shuffle_id: u64,
     shuffle_cache: Arc<ShuffleCache>,
 ) -> DaftResult<()> {
+    println!("Registering shuffle cache for id: {}", shuffle_id);
     let server = ShuffleFlightServer::get_or_create_global().await;
     server
         .register_shuffle_cache(shuffle_id, shuffle_cache)

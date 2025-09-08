@@ -6,7 +6,8 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
-use futures::{StreamExt, TryStreamExt};
+use daft_recordbatch::RecordBatch;
+use futures::{Stream, StreamExt, TryStreamExt};
 use tokio::sync::{Mutex, OnceCell, Semaphore};
 
 use crate::client::flight_client::ShuffleFlightClient;
@@ -25,7 +26,7 @@ impl FlightClientManager {
         for address in addresses {
             clients.insert(
                 address.clone(),
-                ShuffleFlightClient::new(address, schema.clone()),
+                ShuffleFlightClient::new(address),
             );
         }
         Self {
@@ -52,7 +53,7 @@ impl FlightClientManager {
             if !clients.contains_key(&address) {
                 clients.insert(
                     address.clone(),
-                    ShuffleFlightClient::new(address, self.schema.clone()),
+                    ShuffleFlightClient::new(address),
                 );
             }
         }
@@ -95,7 +96,8 @@ impl FlightClientManager {
         &self,
         shuffle_id: u64,
         partition: usize,
-    ) -> DaftResult<Arc<MicroPartition>> {
+        schema: SchemaRef,
+    ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>>> {
         let _permit =
             self.semaphore.acquire().await.map_err(|e| {
                 DaftError::InternalError(format!("Failed to acquire semaphore: {}", e))
@@ -105,16 +107,12 @@ impl FlightClientManager {
             futures::future::try_join_all(
                 clients
                     .values_mut()
-                    .map(|client| client.get_partition_with_shuffle_id(shuffle_id, partition)),
+                    .map(|client| client.get_partition_with_shuffle_id(shuffle_id, partition, schema.clone())),
             )
             .await?
         };
-        let schema = self.schema.clone();
         let record_batches = futures::stream::iter(remote_streams.into_iter())
-            .flatten_unordered(None)
-            .try_collect::<Vec<_>>()
-            .await?;
-        let mp = MicroPartition::new_loaded(schema, record_batches.into(), None);
-        Ok(Arc::new(mp))
+            .flatten_unordered(None);
+        Ok(record_batches)
     }
 }

@@ -21,14 +21,12 @@ enum ClientState {
 
 pub struct ShuffleFlightClient {
     inner: ClientState,
-    schema: SchemaRef,
 }
 
 impl ShuffleFlightClient {
-    pub fn new(address: String, schema: SchemaRef) -> Self {
+    pub fn new(address: String) -> Self {
         Self {
             inner: ClientState::Uninitialized(address),
-            schema,
         }
     }
 
@@ -68,23 +66,25 @@ impl ShuffleFlightClient {
                 .into(),
             )
         })?;
-        Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
-            stream,
-            done: false,
-            schema: self.schema.clone(),
-            fields: self
-                .schema
-                .fields()
-                .iter()
-                .map(|f| Arc::new(f.clone()))
-                .collect(),
-        })
+        // Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
+        //     stream,
+        //     done: false,
+        //     schema: self.schema.clone(),
+        //     fields: self
+        //         .schema
+        //         .fields()
+        //         .iter()
+        //         .map(|f| Arc::new(f.clone()))
+        //         .collect(),
+        // })
+        todo!()
     }
 
     pub async fn get_partition_with_shuffle_id(
         &mut self,
         shuffle_id: u64,
         partition_idx: usize,
+        schema: SchemaRef,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
         let ticket = Ticket::new(format!("{}:{}", shuffle_id, partition_idx));
         let (address, client) = self.connect().await?;
@@ -100,9 +100,8 @@ impl ShuffleFlightClient {
         Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
             stream,
             done: false,
-            schema: self.schema.clone(),
-            fields: self
-                .schema
+            schema: schema.clone(),
+            fields: schema
                 .fields()
                 .iter()
                 .map(|f| Arc::new(f.clone()))

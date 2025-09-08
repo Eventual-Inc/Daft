@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -49,6 +50,11 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
+        tmp_shuffle_dir = "/tmp/daft_shuffle"
+        if os.path.exists(tmp_shuffle_dir):
+            import shutil
+            shutil.rmtree(tmp_shuffle_dir)
+
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
@@ -179,9 +185,15 @@ class RaySwordfishActorHandle:
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)
 
+last_checked = None
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
-    handles = []
+    global last_checked
+    if last_checked is not None and time.monotonic() - last_checked < 10:
+        return []
+    last_checked = time.monotonic()
+
+    actors = []
     for node in ray.nodes():
         if (
             "Resources" in node
@@ -200,18 +212,20 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
             )
-            ip_address = ray.get(actor.get_address.remote())
-            actor_handle = RaySwordfishActorHandle(actor)
-            handles.append(
-                RaySwordfishWorker(
-                    node["NodeID"],
-                    actor_handle,
-                    int(node["Resources"]["CPU"]),
-                    int(node["Resources"].get("GPU", 0)),
-                    int(node["Resources"]["memory"]),
-                    ip_address,
-                )
-            )
+            actors.append({"actor": actor, "node_id": node["NodeID"], "resources": node["Resources"]})
+
+    ip_addresses = ray.get([actor["actor"].get_address.remote() for actor in actors])
+    handles = [
+        RaySwordfishWorker(
+            actor["node_id"],
+            RaySwordfishActorHandle(actor["actor"]),
+            int(actor["resources"]["CPU"]),
+            int(actor["resources"].get("GPU", 0)),
+            int(actor["resources"]["memory"]),
+            ip_address,
+        )  
+        for actor, ip_address in zip(actors, ip_addresses)
+    ]   
 
     return handles
 

@@ -312,7 +312,6 @@ async fn writer_task(
     rx: async_channel::Receiver<Arc<MicroPartition>>,
     mut writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
-    let compute_runtime = get_compute_runtime();
     let mut schema = None;
     let mut total_rows_written = 0;
     let mut total_bytes_written = 0;
@@ -322,12 +321,7 @@ async fn writer_task(
         }
         total_rows_written += partition.len();
         total_bytes_written += partition.size_bytes().expect("size_bytes should be Some");
-        writer = compute_runtime
-            .spawn(async move {
-                writer.write(partition).await?;
-                DaftResult::Ok(writer)
-            })
-            .await??;
+        writer.write(partition).await?;
     }
     let file_path_tables = writer.close().await?;
 
