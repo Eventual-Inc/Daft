@@ -59,10 +59,20 @@ impl Add for &Series {
             DataType::Binary => {
                 Ok(cast_downcast_op!(lhs, rhs, &DataType::Binary, BinaryArray, add)?.into_series())
             }
-            DataType::FixedSizeBinary(_) => Ok(lhs
-                .downcast::<FixedSizeBinaryArray>()?
-                .add(rhs.downcast::<FixedSizeBinaryArray>()?)?
-                .into_series()),
+            DataType::FixedSizeBinary(_) => {
+                if lhs.data_type().is_null() || rhs.data_type().is_null() {
+                    Ok(Series::full_null(
+                        lhs.name(),
+                        &output_type,
+                        std::cmp::max(lhs.len(), rhs.len()),
+                    ))
+                } else {
+                    Ok(lhs
+                        .downcast::<FixedSizeBinaryArray>()?
+                        .add(rhs.downcast::<FixedSizeBinaryArray>()?)?
+                        .into_series())
+                }
+            }
             // ----------------
             // Numeric types
             // ----------------

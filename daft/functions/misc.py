@@ -518,7 +518,7 @@ def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> E
         (Showing first 4 of 4 rows)
 
     """
-    return Expression._call_builtin_scalar_fn("concat", left, right)
+    return Expression._to_expression(left) + Expression._to_expression(right)
 
 
 def coalesce(*args: Expression) -> Expression:

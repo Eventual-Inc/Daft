@@ -20,7 +20,14 @@ def plus_type_validation(lhs: DataType, rhs: DataType) -> bool:
     """Checks whether these input types are resolvable for the + operation."""
     # Plus only works for certain types
     for arg in (lhs, rhs):
-        if not (is_numeric(arg) or (arg == DataType.string()) or (arg == DataType.bool()) or (arg == DataType.null())):
+        if not (
+            is_numeric(arg)
+            or (arg == DataType.string())
+            or (arg == DataType.bool())
+            or (arg == DataType.null())
+            or arg.is_binary()
+            or arg.is_fixed_size_binary()
+        ):
             return False
 
     return has_supertype(lhs, rhs)

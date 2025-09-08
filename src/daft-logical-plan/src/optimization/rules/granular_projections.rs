@@ -214,8 +214,7 @@ impl SplitGranularProjection {
 mod tests {
 
     use common_scan_info::Pushdowns;
-    use daft_dsl::{Column, ExprRef, ResolvedColumn, lit};
-    use daft_functions::concat::Concat;
+    use daft_dsl::{Column, ExprRef, Operator, ResolvedColumn, lit};
     use daft_functions_binary::{BinaryDecode, Codec};
     use daft_functions_uri::download::UrlDownload;
     use daft_functions_utf8::{Capitalize, capitalize, lower};
@@ -365,13 +364,12 @@ mod tests {
             Pushdowns::default(),
         )
         .select(vec![
-            ExprRef::from(BuiltinScalarFn::new(
-                Concat,
-                vec![
-                    BuiltinScalarFn::new(UrlDownload, vec![capitalize(resolved_col("url"))]).into(),
-                    resolved_col("extra"),
-                ],
-            ))
+            Arc::new(Expr::BinaryOp {
+                op: Operator::Plus,
+                left: BuiltinScalarFn::new(UrlDownload, vec![capitalize(resolved_col("url"))])
+                    .into(),
+                right: resolved_col("extra"),
+            })
             .alias("url_data"),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
                 .alias("name_lower"),
@@ -408,7 +406,10 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<Concat>()
+            Expr::BinaryOp {
+                op: Operator::Plus,
+                ..
+            }
         ));
 
         // Check that the top level project has a single child, which is a project

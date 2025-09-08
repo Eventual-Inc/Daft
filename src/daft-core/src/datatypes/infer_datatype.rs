@@ -250,7 +250,7 @@ impl Add for InferDataType<'_> {
                 (dtype @ DataType::Null, other) | (other, dtype @ DataType::Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
-                        DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
+                        DataType::Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", dtype, other)
                         )),
                         other if other.is_physical() => Ok(other.clone()),
