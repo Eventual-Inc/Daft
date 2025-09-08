@@ -1,5 +1,21 @@
 # Examples
 
+<div class="example-card">
+  <a href="./minhash-dedupe" class="example-image-link">
+    <div class="example-image">
+      <img src="../img/minhash-dedupe-cover.png" alt="Deduplication Tutorial" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+      <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);">
+        <span>📈</span>
+      </div>
+      <div class="example-overlay">
+        <h3>MinHash Deduplication on Common Crawl</h3>
+        <p> Deduplicate web text at scale with MinHash, LSH, and Connected Components.</p>
+      </div>
+    </div>
+  </a>
+</div>
+
+
 <div class="examples-grid">
   <div class="example-card">
     <a href="./document-processing" class="example-image-link">
