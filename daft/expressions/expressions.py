@@ -48,8 +48,6 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8zlib"]
-
 
 def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
@@ -701,9 +699,12 @@ class Expression:
         return sign(self)
 
     def signum(self) -> Expression:
-        """The signum of a numeric expression."""
-        f = native.get_function_from_registry("sign")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.sign` instead."""
+        warnings.warn(
+            "`Expression.image.signum` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.sign` instead.",
+            category=DeprecationWarning,
+        )
+        return self.sign()
 
     def negate(self) -> Expression:
         """The negative of a numeric expression.
@@ -716,9 +717,12 @@ class Expression:
         return negate(self)
 
     def negative(self) -> Expression:
-        """The negative of a numeric expression."""
-        f = native.get_function_from_registry("negative")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.negate` instead."""
+        warnings.warn(
+            "`Expression.image.negative` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.negate` instead.",
+            category=DeprecationWarning,
+        )
+        return self.negate()
 
     def round(self, decimals: Expression | int = 0) -> Expression:
         """The round of a numeric expression.
@@ -2410,6 +2414,84 @@ class Expression:
 
         return date_trunc(interval, self, relative_to=relative_to)
 
+    def regexp(self, pattern: builtins.str | Expression) -> Expression:
+        """Check whether each string matches the given regular expression pattern in a string column.
+
+        Tip: See Also
+            [`daft.functions.regexp`](https://docs.daft.ai/en/stable/api/functions/regexp/)
+        """
+        from daft.functions import regexp
+
+        return regexp(self, pattern)
+
+    def regexp_extract(self, pattern: builtins.str | Expression, index: int = 0) -> Expression:
+        """Extracts the specified match group from the first regex match in each string in a string column.
+
+        Tip: See Also
+            [`daft.functions.regexp_extract`](https://docs.daft.ai/en/stable/api/functions/regexp_extract/)
+        """
+        from daft.functions import regexp_extract
+
+        return regexp_extract(self, pattern, index=index)
+
+    def regexp_extract_all(self, pattern: builtins.str | Expression, index: int = 0) -> Expression:
+        r"""Extracts the specified match group from all regex matches in each string in a string column.
+
+        Tip: See Also
+            [`daft.functions.regexp_extract_all`](https://docs.daft.ai/en/stable/api/functions/regexp_extract_all/)
+        """
+        from daft.functions import regexp_extract_all
+
+        return regexp_extract_all(self, pattern, index=index)
+
+    def replace(
+        self,
+        search: builtins.str | Expression,
+        replacement: builtins.str | Expression,
+    ) -> Expression:
+        """Replaces all occurrences of a substring in a string with a replacement string.
+
+        Tip: See Also
+            [`daft.functions.replace`](https://docs.daft.ai/en/stable/api/functions/replace/)
+        """
+        from daft.functions import replace
+
+        return replace(self, search, replacement)
+
+    def regexp_replace(
+        self,
+        pattern: builtins.str | Expression,
+        replacement: builtins.str | Expression,
+    ) -> Expression:
+        """Replaces all occurrences of a regex pattern in a string column with a replacement string.
+
+        Tip: See Also
+            [`daft.functions.regexp_replace`](https://docs.daft.ai/en/stable/api/functions/regexp_replace/)
+        """
+        from daft.functions import regexp_replace
+
+        return regexp_replace(self, pattern, replacement)
+
+    def index(self, substr: builtins.str | Expression) -> Expression:
+        """Returns the index of the first occurrence of the substring in each string.
+
+        Tip: See Also
+            [`daft.functions.index`](https://docs.daft.ai/en/stable/api/functions/index/)
+        """
+        from daft.functions import index
+
+        return index(self, substr)
+
+    def convert_image(self, mode: builtins.str | ImageMode) -> Expression:
+        """Convert an image expression to the specified mode.
+
+        Tip: See Also
+            [`daft.functions.convert_image`](https://docs.daft.ai/en/stable/api/functions/convert_image/)
+        """
+        from daft.functions import convert_image
+
+        return convert_image(self, mode)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -2896,36 +2978,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return self._to_expression().contains(substr)
 
     def match(self, pattern: str | Expression) -> Expression:
-        """Checks whether each string matches the given regular expression pattern in a string column.
-
-        Args:
-            pattern: Regex pattern to search for as string or as a column to pick values from
-
-        Returns:
-            Expression: a Boolean expression indicating whether each value matches the provided pattern
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
-            >>> df.with_column("match", df["x"].str.match("ba.")).collect()
-            ╭──────┬─────────╮
-            │ x    ┆ match   │
-            │ ---  ┆ ---     │
-            │ Utf8 ┆ Boolean │
-            ╞══════╪═════════╡
-            │ foo  ┆ false   │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ bar  ┆ true    │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ baz  ┆ true    │
-            ╰──────┴─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        pattern_expr = Expression._to_expression(pattern)
-        f = native.get_function_from_registry("regexp_match")
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.regexp` instead."""
+        warnings.warn(
+            "`Expression.str.match` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.regexp` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().regexp(pattern)
 
     def endswith(self, suffix: str | Expression) -> Expression:
         """(DEPRECATED) Please use `daft.functions.endswith` instead."""
@@ -2960,121 +3018,20 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return self._to_expression().concat(other)
 
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
-        r"""Extracts the specified match group from the first regex match in each string in a string column.
-
-        Args:
-            pattern: The regex pattern to extract
-            index: The index of the regex match group to extract
-
-        Returns:
-            Expression: a String expression with the extracted regex match
-
-        Note:
-            If index is 0, the entire match is returned.
-            If the pattern does not match or the group does not exist, a null value is returned.
-
-        Examples:
-            >>> import daft
-            >>> regex = r"(\d)(\d*)"
-            >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
-            >>> df.with_column("match", df["x"].str.extract(regex)).collect()
-            ╭─────────┬───────╮
-            │ x       ┆ match │
-            │ ---     ┆ ---   │
-            │ Utf8    ┆ Utf8  │
-            ╞═════════╪═══════╡
-            │ 123-456 ┆ 123   │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 789-012 ┆ 789   │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 345-678 ┆ 345   │
-            ╰─────────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            Extract the first capture group
-
-            >>> df.with_column("match", df["x"].str.extract(regex, 1)).collect()
-            ╭─────────┬───────╮
-            │ x       ┆ match │
-            │ ---     ┆ ---   │
-            │ Utf8    ┆ Utf8  │
-            ╞═════════╪═══════╡
-            │ 123-456 ┆ 1     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 789-012 ┆ 7     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 345-678 ┆ 3     │
-            ╰─────────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-
-        Tip: See Also
-            [extract_all](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
-        """
-        pattern_expr = Expression._to_expression(pattern)
-        idx = Expression._to_expression(index)
-        f = native.get_function_from_registry("regexp_extract")
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
+        """(DEPRECATED) Please use `daft.functions.regexp_extract` instead."""
+        warnings.warn(
+            "`Expression.str.extract` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_extract` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().regexp_extract(pattern, index)
 
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
-        r"""Extracts the specified match group from all regex matches in each string in a string column.
-
-        Args:
-            pattern: The regex pattern to extract
-            index: The index of the regex match group to extract
-
-        Returns:
-            Expression: a List[Utf8] expression with the extracted regex matches
-
-        Note:
-            This expression always returns a list of strings.
-            If index is 0, the entire match is returned. If the pattern does not match or the group does not exist, an empty list is returned.
-
-        Examples:
-            >>> import daft
-            >>> regex = r"(\d)(\d*)"
-            >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
-            >>> df.with_column("match", df["x"].str.extract_all(regex)).collect()
-            ╭─────────┬────────────╮
-            │ x       ┆ match      │
-            │ ---     ┆ ---        │
-            │ Utf8    ┆ List[Utf8] │
-            ╞═════════╪════════════╡
-            │ 123-456 ┆ [123, 456] │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 789-012 ┆ [789, 012] │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 345-678 ┆ [345, 678] │
-            ╰─────────┴────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            Extract the first capture group
-
-            >>> df.with_column("match", df["x"].str.extract_all(regex, 1)).collect()
-            ╭─────────┬────────────╮
-            │ x       ┆ match      │
-            │ ---     ┆ ---        │
-            │ Utf8    ┆ List[Utf8] │
-            ╞═════════╪════════════╡
-            │ 123-456 ┆ [1, 4]     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 789-012 ┆ [7, 0]     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 345-678 ┆ [3, 6]     │
-            ╰─────────┴────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        Tip: See Also
-            [extract](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
-        """
-        pattern_expr = Expression._to_expression(pattern)
-        idx = Expression._to_expression(index)
-        f = native.get_function_from_registry("regexp_extract_all")
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
+        """(DEPRECATED) Please use `daft.functions.regexp_extract_all` instead."""
+        warnings.warn(
+            "`Expression.str.extract_all` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_extract_all` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().regexp_extract_all(pattern, index)
 
     def replace(
         self,
@@ -3082,62 +3039,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
         replacement: str | Expression,
         regex: bool = False,
     ) -> Expression:
-        """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
-
-        Args:
-            pattern: The pattern to replace
-            replacement: The replacement string
-            regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
-
-        Returns:
-            Expression: a String expression with patterns replaced by the replacement string
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
-            >>> df.with_column("replace", df["data"].str.replace("ba", "123")).collect()
-            ╭──────┬─────────╮
-            │ data ┆ replace │
-            │ ---  ┆ ---     │
-            │ Utf8 ┆ Utf8    │
-            ╞══════╪═════════╡
-            │ foo  ┆ foo     │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ bar  ┆ 123r    │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ baz  ┆ 123z    │
-            ╰──────┴─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-            Replace with a regex pattern
-
-            >>> import daft
-            >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
-            >>> df.with_column("replace", df["data"].str.replace(r"o+", "a", regex=True)).collect()
-            ╭───────┬─────────╮
-            │ data  ┆ replace │
-            │ ---   ┆ ---     │
-            │ Utf8  ┆ Utf8    │
-            ╞═══════╪═════════╡
-            │ foo   ┆ fa      │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ fooo  ┆ fa      │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ foooo ┆ fa      │
-            ╰───────┴─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        pattern_expr = Expression._to_expression(pattern)
-        replacement_expr = Expression._to_expression(replacement)
+        """(DEPRECATED) Please use `daft.functions.replace` or `daft.functions.regexp_replace` instead."""
+        warnings.warn(
+            "`Expression.str.replace` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.replace` or `daft.functions.regexp_replace` instead.",
+            category=DeprecationWarning,
+        )
         if regex:
-            f_name = "regexp_replace"
+            return self._to_expression().regexp_replace(pattern, replacement)
         else:
-            f_name = "replace"
-        f = native.get_function_from_registry(f_name)
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, replacement_expr._expr))
+            return self._to_expression().replace(pattern, replacement)
 
     def length(self) -> Expression:
         """(DEPRECATED) Please use `daft.functions.length` instead."""
@@ -3220,37 +3130,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return self._to_expression().right(nchars)
 
     def find(self, substr: str | Expression) -> Expression:
-        """Returns the index of the first occurrence of the substring in each string.
-
-        Returns:
-            Expression: an Int64 expression with the index of the first occurrence of the substring in each string
-
-        Note:
-            The returned index is 0-based. If the substring is not found, -1 is returned.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": ["daft", "query daft", "df_daft"]})
-            >>> df = df.select(df["x"].str.find("daft"))
-            >>> df.show()
-            ╭───────╮
-            │ x     │
-            │ ---   │
-            │ Int64 │
-            ╞═══════╡
-            │ 0     │
-            ├╌╌╌╌╌╌╌┤
-            │ 6     │
-            ├╌╌╌╌╌╌╌┤
-            │ 3     │
-            ╰───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        substr_expr = Expression._to_expression(substr)
-        f = native.get_function_from_registry("find")
-        return Expression._from_pyexpr(f(self._expr, substr_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.index` instead."""
+        warnings.warn(
+            "`Expression.str.find` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.index` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().index(substr)
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """(DEPRECATED) Please use `daft.functions.rpad` instead."""
@@ -3759,13 +3644,12 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return self._to_expression().crop(bbox)
 
     def to_mode(self, mode: str | ImageMode) -> Expression:
-        if isinstance(mode, str):
-            mode = ImageMode.from_mode_string(mode.upper())
-        if not isinstance(mode, ImageMode):
-            raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        image_mode = lit(mode)._expr
-        f = native.get_function_from_registry("to_mode")
-        return Expression._from_pyexpr(f(self._expr, mode=image_mode))
+        """(DEPRECATED) Please use `daft.functions.convert_image` instead."""
+        warnings.warn(
+            "`Expression.image.to_mode` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.convert_image` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().convert_image(mode)
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):

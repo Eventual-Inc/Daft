@@ -78,3 +78,12 @@ def decode_image(
         Expression: An Image expression represnting an image column.
     """
     return Expression._call_builtin_scalar_fn("image_decode", expr, on_error=on_error, mode=mode)
+
+
+def convert_image(expr: Expression, mode: str | ImageMode) -> Expression:
+    """Convert an image expression to the specified mode."""
+    if isinstance(mode, str):
+        mode = ImageMode.from_mode_string(mode.upper())
+    if not isinstance(mode, ImageMode):
+        raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
+    return Expression._call_builtin_scalar_fn("to_mode", expr, mode=mode)

@@ -949,3 +949,270 @@ def length_bytes(expr: Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("length_bytes", expr)
+
+
+def regexp(expr: Expression, pattern: str | Expression) -> Expression:
+    """Check whether each string matches the given regular expression pattern in a string column.
+
+    Args:
+        expr: String expression to search in
+        pattern: Regex pattern to search for as string or as a column to pick values from
+
+    Returns:
+        Expression: a Boolean expression indicating whether each value matches the provided pattern
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import regexp
+        >>>
+        >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+        >>> df.with_column("match", regexp(df["x"], "ba.")).collect()
+        ╭──────┬─────────╮
+        │ x    ┆ match   │
+        │ ---  ┆ ---     │
+        │ Utf8 ┆ Boolean │
+        ╞══════╪═════════╡
+        │ foo  ┆ false   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ bar  ┆ true    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ baz  ┆ true    │
+        ╰──────┴─────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("regexp_match", expr, pattern)
+
+
+def regexp_extract(expr: Expression, pattern: str | Expression, index: int = 0) -> Expression:
+    r"""Extracts the specified match group from the first regex match in each string in a string column.
+
+    Args:
+        expr: String expression to extract from
+        pattern: The regex pattern to extract
+        index: The index of the regex match group to extract
+
+    Returns:
+        Expression: a String expression with the extracted regex match
+
+    Note:
+        If index is 0, the entire match is returned.
+        If the pattern does not match or the group does not exist, a null value is returned.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import regexp_extract
+        >>>
+        >>> regex = r"(\d)(\d*)"
+        >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
+        >>> df.with_column("match", regexp_extract(df["x"], regex)).collect()
+        ╭─────────┬───────╮
+        │ x       ┆ match │
+        │ ---     ┆ ---   │
+        │ Utf8    ┆ Utf8  │
+        ╞═════════╪═══════╡
+        │ 123-456 ┆ 123   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ 789   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ 345   │
+        ╰─────────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Extract the first capture group
+
+        >>> df.with_column("match", regexp_extract(df["x"], regex, 1)).collect()
+        ╭─────────┬───────╮
+        │ x       ┆ match │
+        │ ---     ┆ ---   │
+        │ Utf8    ┆ Utf8  │
+        ╞═════════╪═══════╡
+        │ 123-456 ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ 7     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ 3     │
+        ╰─────────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+
+    Tip: See Also
+        [`regexp_extract_all`](https://docs.daft.ai/en/stable/api/functions/regexp_extract_all/)
+    """
+    return Expression._call_builtin_scalar_fn("regexp_extract", expr, pattern, index)
+
+
+def regexp_extract_all(expr: Expression, pattern: str | Expression, index: int = 0) -> Expression:
+    r"""Extracts the specified match group from all regex matches in each string in a string column.
+
+    Args:
+        expr: String expression to extract from
+        pattern: The regex pattern to extract
+        index: The index of the regex match group to extract
+
+    Returns:
+        Expression: a List[Utf8] expression with the extracted regex matches
+
+    Note:
+        This expression always returns a list of strings.
+        If index is 0, the entire match is returned. If the pattern does not match or the group does not exist, an empty list is returned.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import regexp_extract_all
+        >>>
+        >>> regex = r"(\d)(\d*)"
+        >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
+        >>> df.with_column("match", regexp_extract_all(df["x"], regex)).collect()
+        ╭─────────┬────────────╮
+        │ x       ┆ match      │
+        │ ---     ┆ ---        │
+        │ Utf8    ┆ List[Utf8] │
+        ╞═════════╪════════════╡
+        │ 123-456 ┆ [123, 456] │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ [789, 012] │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ [345, 678] │
+        ╰─────────┴────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Extract the first capture group
+
+        >>> df.with_column("match", regexp_extract_all(df["x"], regex, 1)).collect()
+        ╭─────────┬────────────╮
+        │ x       ┆ match      │
+        │ ---     ┆ ---        │
+        │ Utf8    ┆ List[Utf8] │
+        ╞═════════╪════════════╡
+        │ 123-456 ┆ [1, 4]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ [7, 0]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ [3, 6]     │
+        ╰─────────┴────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    Tip: See Also
+        [`regexp_extract`](https://docs.daft.ai/en/stable/api/functions/regexp_extract/)
+    """
+    return Expression._call_builtin_scalar_fn("regexp_extract_all", expr, pattern, index)
+
+
+def replace(
+    expr: Expression,
+    search: str | Expression,
+    replacement: str | Expression,
+) -> Expression:
+    """Replaces all occurrences of a substring in a string with a replacement string.
+
+    Args:
+        expr: The string expression to be replaced
+        search: The substring to replace
+        replacement: The replacement string
+        regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
+
+    Returns:
+        Expression: a String expression with patterns replaced by the replacement string
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import replace
+        >>>
+        >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
+        >>> df.with_column("replace", replace(df["data"], "ba", "123")).collect()
+        ╭──────┬─────────╮
+        │ data ┆ replace │
+        │ ---  ┆ ---     │
+        │ Utf8 ┆ Utf8    │
+        ╞══════╪═════════╡
+        │ foo  ┆ foo     │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ bar  ┆ 123r    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ baz  ┆ 123z    │
+        ╰──────┴─────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("replace", expr, search, replacement)
+
+
+def regexp_replace(
+    expr: Expression,
+    pattern: str | Expression,
+    replacement: str | Expression,
+) -> Expression:
+    """Replaces all occurrences of a regex pattern in a string column with a replacement string.
+
+    Args:
+        expr: The string expression to be replaced
+        pattern: The pattern to replace
+        replacement: The replacement string
+        regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
+
+    Returns:
+        Expression: a String expression with patterns replaced by the replacement string
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import regexp_replace
+        >>>
+        >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
+        >>> df.with_column("replace", regexp_replace(df["data"], r"o+", "a", regex=True)).collect()
+        ╭───────┬─────────╮
+        │ data  ┆ replace │
+        │ ---   ┆ ---     │
+        │ Utf8  ┆ Utf8    │
+        ╞═══════╪═════════╡
+        │ foo   ┆ fa      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ fooo  ┆ fa      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ foooo ┆ fa      │
+        ╰───────┴─────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("regexp_replace", expr, pattern, replacement)
+
+
+def index(expr: Expression, substr: str | Expression) -> Expression:
+    """Returns the index of the first occurrence of the substring in each string.
+
+    Returns:
+        Expression: an Int64 expression with the index of the first occurrence of the substring in each string
+
+    Note:
+        The returned index is 0-based. If the substring is not found, -1 is returned.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import index
+        >>>
+        >>> df = daft.from_pydict({"x": ["daft", "query daft", "df_daft"]})
+        >>> df = df.select(index(df["x"], "daft"))
+        >>> df.show()
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 0     │
+        ├╌╌╌╌╌╌╌┤
+        │ 6     │
+        ├╌╌╌╌╌╌╌┤
+        │ 3     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("find", expr, substr)

@@ -63,7 +63,7 @@ from .datetime import (
     date_trunc,
 )
 from .embedding import cosine_distance
-from .image import resize, crop, encode_image, decode_image
+from .image import resize, crop, encode_image, decode_image, convert_image
 from .list import (
     value_counts,
     chunk,
@@ -163,6 +163,12 @@ from .str import (
     tokenize_encode,
     count_matches,
     length_bytes,
+    regexp,
+    regexp_extract,
+    regexp_extract_all,
+    replace,
+    regexp_replace,
+    index,
 )
 from .url import download, upload, parse_url
 from .window import (
@@ -208,6 +214,7 @@ __all__ = [
     "compress",
     "concat",
     "contains",
+    "convert_image",
     "cos",
     "cosh",
     "cosine_distance",
@@ -246,6 +253,7 @@ __all__ = [
     "hash",
     "hour",
     "ilike",
+    "index",
     "is_in",
     "is_null",
     "jq",
@@ -295,7 +303,12 @@ __all__ = [
     "quarter",
     "radians",
     "rank",
+    "regexp",
+    "regexp_extract",
+    "regexp_extract_all",
+    "regexp_replace",
     "repeat",
+    "replace",
     "resize",
     "reverse",
     "right",
