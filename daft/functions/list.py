@@ -374,3 +374,33 @@ def explode(expr: Expression) -> Expression:
         >>> # ).show()
     """
     return Expression._call_builtin_scalar_fn("explode", expr)
+
+
+def list_append(expr: Expression, other: Expression) -> Expression:
+    """Appends a value to each list in the column.
+
+    Args:
+        other: A value or column of values to append to each list
+
+    Returns:
+        Expression: An expression with the updated lists
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_append
+        >>>
+        >>> df = daft.from_pydict({"a": [[1, 2], [3, 4, 5]], "b": [10, 11]})
+        >>> df.with_column("combined", list_append(df["a"], df["b"])).show()
+        ╭─────────────┬───────┬───────────────╮
+        │ a           ┆ b     ┆ combined      │
+        │ ---         ┆ ---   ┆ ---           │
+        │ List[Int64] ┆ Int64 ┆ List[Int64]   │
+        ╞═════════════╪═══════╪═══════════════╡
+        │ [1, 2]      ┆ 10    ┆ [1, 2, 10]    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [3, 4, 5]   ┆ 11    ┆ [3, 4, 5, 11] │
+        ╰─────────────┴───────┴───────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_append", expr, other)

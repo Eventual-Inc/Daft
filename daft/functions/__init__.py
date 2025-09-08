@@ -79,6 +79,7 @@ from .list import (
     list_distinct,
     list_map,
     explode,
+    list_append,
 )
 from .llm import llm_generate
 from .misc import (
@@ -265,6 +266,7 @@ __all__ = [
     "like",
     "list_agg",
     "list_agg_distinct",
+    "list_append",
     "list_bool_and",
     "list_bool_or",
     "list_count",

@@ -2498,56 +2498,12 @@ class Expression:
     def list_append(self, other: Expression) -> Expression:
         """Appends a value to each list in the column.
 
-        Args:
-            other: A value or column of values to append to each list
-
-        Returns:
-            Expression: An expression with the updated lists
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"a": [[1, 2], [3, 4, 5]], "b": [10, 11]})
-            >>> df.with_column("combined", df["a"].list_append(df["b"])).show()
-            ╭─────────────┬───────┬───────────────╮
-            │ a           ┆ b     ┆ combined      │
-            │ ---         ┆ ---   ┆ ---           │
-            │ List[Int64] ┆ Int64 ┆ List[Int64]   │
-            ╞═════════════╪═══════╪═══════════════╡
-            │ [1, 2]      ┆ 10    ┆ [1, 2, 10]    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ [3, 4, 5]   ┆ 11    ┆ [3, 4, 5, 11] │
-            ╰─────────────┴───────┴───────────────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
+        Tip: See Also
+            [`daft.functions.list_append`](https://docs.daft.ai/en/stable/api/functions/list_append/)
         """
-        return self._eval_expressions("list_append", other)
+        from daft.functions import list_append
 
-    def list_append(self, other: Expression) -> Expression:
-        """Appends a value to each list in the column.
-
-        Args:
-            other: A value or column of values to append to each list
-
-        Returns:
-            Expression: An expression with the updated lists
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"a": [[1, 2], [3, 4, 5]], "b": [10, 11]})
-            >>> df.with_column("combined", df["a"].list_append(df["b"])).show()
-            ╭─────────────┬───────┬───────────────╮
-            │ a           ┆ b     ┆ combined      │
-            │ ---         ┆ ---   ┆ ---           │
-            │ List[Int64] ┆ Int64 ┆ List[Int64]   │
-            ╞═════════════╪═══════╪═══════════════╡
-            │ [1, 2]      ┆ 10    ┆ [1, 2, 10]    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ [3, 4, 5]   ┆ 11    ┆ [3, 4, 5, 11] │
-            ╰─────────────┴───────┴───────────────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
-        """
-        return self._eval_expressions("list_append", other)
+        return list_append(self, other)
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
