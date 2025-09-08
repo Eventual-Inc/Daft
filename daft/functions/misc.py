@@ -601,3 +601,36 @@ def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> E
 
     """
     return Expression._call_builtin_scalar_fn("concat", left, right)
+
+
+def coalesce(*args: Expression) -> Expression:
+    """Returns the first non-null value in a list of expressions. If all inputs are null, returns null.
+
+    Args:
+        *args: Two or more expressions to coalesce
+
+    Returns:
+        Expression: Expression containing first non-null value encountered when evaluating arguments in order
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import coalesce
+        >>> df = daft.from_pydict({"x": [1, None, 3], "y": [None, 2, None]})
+        >>> df = df.with_column("first_valid", coalesce(df["x"], df["y"]))
+        >>> df.show()
+        ╭───────┬───────┬─────────────╮
+        │ x     ┆ y     ┆ first_valid │
+        │ ---   ┆ ---   ┆ ---         │
+        │ Int64 ┆ Int64 ┆ Int64       │
+        ╞═══════╪═══════╪═════════════╡
+        │ 1     ┆ None  ┆ 1           │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None  ┆ 2     ┆ 2           │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ None  ┆ 3           │
+        ╰───────┴───────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("coalesce", *args)

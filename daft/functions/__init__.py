@@ -58,8 +58,22 @@ from .datetime import (
     to_datetime,
 )
 from .embedding import cosine_distance
-from .image import resize, crop
-from .list import value_counts, chunk
+from .image import resize, crop, encode_image, decode_image
+from .list import (
+    value_counts,
+    chunk,
+    list_join,
+    list_count,
+    list_sum,
+    list_mean,
+    list_min,
+    list_max,
+    list_bool_and,
+    list_bool_or,
+    list_sort,
+    list_distinct,
+    list_map,
+)
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
@@ -76,6 +90,7 @@ from .misc import (
     explode,
     length,
     concat,
+    coalesce,
 )
 from .numeric import (
     abs,
@@ -179,6 +194,7 @@ __all__ = [
     "chunk",
     "classify_text",
     "clip",
+    "coalesce",
     "columns_avg",
     "columns_max",
     "columns_mean",
@@ -200,12 +216,14 @@ __all__ = [
     "day_of_month",
     "day_of_week",
     "day_of_year",
+    "decode_image",
     "degrees",
     "dense_rank",
     "deserialize",
     "download",
     "embed_image",
     "embed_text",
+    "encode_image",
     "endswith",
     "eq_null_safe",
     "exp",
@@ -227,6 +245,17 @@ __all__ = [
     "length",
     "length_bytes",
     "like",
+    "list_bool_and",
+    "list_bool_or",
+    "list_count",
+    "list_distinct",
+    "list_join",
+    "list_map",
+    "list_max",
+    "list_mean",
+    "list_min",
+    "list_sort",
+    "list_sum",
     "llm_generate",
     "ln",
     "log",
