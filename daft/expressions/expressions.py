@@ -2052,6 +2052,33 @@ class Expression:
         f = native.get_function_from_registry("explode")
         return Expression._from_pyexpr(f(self._expr))
 
+    def list_append(self, other: Expression) -> Expression:
+        """Appends a value to each list in the column.
+
+        Args:
+            other: A value or column of values to append to each list
+
+        Returns:
+            Expression: An expression with the updated lists
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [[1, 2], [3, 4, 5]], "b": [10, 11]})
+            >>> df.with_column("combined", df["a"].list_append(df["b"])).show()
+            ╭─────────────┬───────┬───────────────╮
+            │ a           ┆ b     ┆ combined      │
+            │ ---         ┆ ---   ┆ ---           │
+            │ List[Int64] ┆ Int64 ┆ List[Int64]   │
+            ╞═════════════╪═══════╪═══════════════╡
+            │ [1, 2]      ┆ 10    ┆ [1, 2, 10]    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [3, 4, 5]   ┆ 11    ┆ [3, 4, 5, 11] │
+            ╰─────────────┴───────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return self._eval_expressions("list_append", other)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
