@@ -1,14 +1,17 @@
 use std::{borrow::Cow, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{prelude::{SchemaRef, UInt64Array}, series::IntoSeries};
+use daft_core::{
+    prelude::{SchemaRef, UInt64Array},
+    series::IntoSeries,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState, get_columns_by_name};
+use daft_recordbatch::{ProbeState, get_columns_by_name};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use tracing::{Span, info_span, instrument};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
@@ -50,8 +53,6 @@ pub struct InnerHashJoinProbeOperator {
 }
 
 impl InnerHashJoinProbeOperator {
-    const DEFAULT_GROWABLE_SIZE: usize = 20;
-
     pub fn new(
         probe_on: Vec<BoundExpr>,
         left_schema: &SchemaRef,

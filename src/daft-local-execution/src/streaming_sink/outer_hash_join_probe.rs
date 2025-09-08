@@ -11,11 +11,11 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState, RecordBatch, get_columns_by_name};
+use daft_recordbatch::{ProbeState, RecordBatch, get_columns_by_name};
 use futures::{StreamExt, stream};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use tracing::{Span, info_span, instrument};
+use tracing::{Span, instrument};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
@@ -297,7 +297,11 @@ impl OuterHashJoinProbeSink {
         }
 
         let build_side_table = {
-            let indices_as_series = UInt64Array::from_regular_iter(Field::new("indices", DataType::UInt64), build_side_idxs.into_iter())?.into_series();
+            let indices_as_series = UInt64Array::from_regular_iter(
+                Field::new("indices", DataType::UInt64),
+                build_side_idxs.into_iter(),
+            )?
+            .into_series();
             build_side_table.take(&indices_as_series)?
         };
 

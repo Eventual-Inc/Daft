@@ -8,7 +8,7 @@ use daft_core::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState, Probeable, RecordBatch};
+use daft_recordbatch::{ProbeState, Probeable};
 use futures::{StreamExt, stream};
 use itertools::Itertools;
 use tracing::{Span, info_span, instrument};
@@ -61,8 +61,6 @@ pub(crate) struct AntiSemiProbeSink {
 }
 
 impl AntiSemiProbeSink {
-    const DEFAULT_GROWABLE_SIZE: usize = 20;
-
     pub fn new(
         probe_on: Vec<BoundExpr>,
         join_type: &JoinType,
