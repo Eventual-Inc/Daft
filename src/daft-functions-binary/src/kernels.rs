@@ -27,9 +27,9 @@ pub trait BinaryArrayExtension: Sized {
     ) -> DaftResult<BinaryArray>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: Ord + TryInto<usize>,
+        <I as DaftNumericType>::Native: Ord + TryInto<usize> + std::hash::Hash,
         J: DaftIntegerType,
-        <J as DaftNumericType>::Native: Ord + TryInto<usize>;
+        <J as DaftNumericType>::Native: Ord + TryInto<usize> + std::hash::Hash;
     fn transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>;
@@ -95,9 +95,9 @@ impl BinaryArrayExtension for BinaryArray {
     ) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: Ord + TryInto<usize>,
+        <I as DaftNumericType>::Native: Ord + TryInto<usize> + std::hash::Hash,
         J: DaftIntegerType,
-        <J as DaftNumericType>::Native: Ord + TryInto<usize>,
+        <J as DaftNumericType>::Native: Ord + TryInto<usize> + std::hash::Hash,
     {
         let self_arrow = self.as_arrow();
         let output_len = if self_arrow.len() == 1 {
@@ -503,9 +503,9 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     ) -> DaftResult<BinaryArray>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: Ord + TryInto<usize>,
+        <I as DaftNumericType>::Native: Ord + TryInto<usize> + std::hash::Hash,
         J: DaftIntegerType,
-        <J as DaftNumericType>::Native: Ord + TryInto<usize>,
+        <J as DaftNumericType>::Native: Ord + TryInto<usize> + std::hash::Hash,
     {
         self.cast(&DataType::Binary)?
             .binary()?

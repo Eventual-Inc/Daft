@@ -19,7 +19,7 @@ where
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.field.clone(), result))
@@ -33,7 +33,7 @@ macro_rules! impl_dataarray_take {
             pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
             {
                 let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
                 Self::try_from((self.field.clone(), result))
@@ -48,7 +48,7 @@ macro_rules! impl_logicalarray_take {
             pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
             {
                 let new_array = self.physical.take(idx)?;
                 Ok(Self::new(self.field.clone(), new_array))
@@ -83,7 +83,7 @@ impl FixedSizeBinaryArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let mut growable = Self::make_growable(
             self.name(),
@@ -113,7 +113,7 @@ impl crate::datatypes::PythonArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         use arrow2::array::Array;
         use pyo3::prelude::*;
@@ -175,7 +175,7 @@ impl FixedSizeListArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let mut growable = Self::make_growable(
             self.name(),
@@ -204,7 +204,7 @@ impl ListArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let child_capacity = idx
             .as_arrow()
@@ -245,7 +245,7 @@ impl StructArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: arrow2::types::Index + std::hash::Hash,
     {
         let idx_as_u64 = idx.cast(&DataType::UInt64)?;
         let taken_validity = self.validity().map(|v| {

@@ -221,15 +221,14 @@ impl OuterHashJoinProbeSink {
             false,
             tables.iter().map(|t| t.len()).sum(),
         )?;
+        drop(_growables);
 
         let input_tables = input.get_tables()?;
-        let mut probe_side_growable =
-            GrowableRecordBatch::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
-
-        drop(_growables);
+        let mut probe_side_tables = Vec::with_capacity(input.len());
         {
             let _loop = info_span!("OuterHashJoinProbeSink::eval_and_probe").entered();
-            for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
+            for table in input_tables.iter() {
+                let mut probe_idxs = Vec::with_capacity(table.len());
                 let join_keys = table.eval_expression_list(probe_on)?;
                 let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
@@ -243,14 +242,16 @@ impl OuterHashJoinProbeSink {
                                 build_row_idx as usize,
                                 1,
                             );
-                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                            probe_idxs.push(probe_row_idx as u64);
                         }
                     }
                 }
+                let probe_idxs = UInt64Array::from(("probe_idxs", probe_idxs)).into_series();
+                probe_side_tables.push(table.take(&probe_idxs)?);
             }
         }
         let build_side_table = build_side_growable.build()?;
-        let probe_side_table = probe_side_growable.build()?;
+        let probe_side_table = RecordBatch::concat(&probe_side_tables)?;
 
         let final_table = if join_type == JoinType::Left {
             let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
@@ -288,15 +289,14 @@ impl OuterHashJoinProbeSink {
             true,
             tables.iter().map(|t| t.len()).sum(),
         )?;
+        drop(_growables);
 
         let input_tables = input.get_tables()?;
-        let mut probe_side_growable =
-            GrowableRecordBatch::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
-
-        drop(_growables);
+        let mut probe_side_tables = Vec::with_capacity(input.len());
         {
             let _loop = info_span!("OuterHashJoinProbeSink::eval_and_probe").entered();
-            for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
+            for table in input_tables.iter() {
+                let mut probe_idxs = Vec::with_capacity(table.len());
                 let join_keys = table.eval_expression_list(probe_on)?;
                 let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
@@ -308,18 +308,20 @@ impl OuterHashJoinProbeSink {
                                 build_row_idx as usize,
                                 1,
                             );
-                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                            probe_idxs.push(probe_row_idx as u64);
                         }
                     } else {
                         // if there's no match, we should still emit the probe side and fill the build side with nulls
                         build_side_growable.add_nulls(1);
-                        probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                        probe_idxs.push(probe_row_idx as u64);
                     }
                 }
+                let probe_idxs = UInt64Array::from(("probe_idxs", probe_idxs)).into_series();
+                probe_side_tables.push(table.take(&probe_idxs)?);
             }
         }
         let build_side_table = build_side_growable.build()?;
-        let probe_side_table = probe_side_growable.build()?;
+        let probe_side_table = RecordBatch::concat(&probe_side_tables)?;
 
         let final_table = if join_type == JoinType::Left {
             let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?;
@@ -361,15 +363,14 @@ impl OuterHashJoinProbeSink {
             true,
             tables.iter().map(|t| t.len()).sum(),
         )?;
+        drop(_growables);
 
         let input_tables = input.get_tables()?;
-        let mut probe_side_growable =
-            GrowableRecordBatch::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
-
-        drop(_growables);
+        let mut probe_side_tables = Vec::with_capacity(input.len());
         {
             let _loop = info_span!("OuterHashJoinProbeSink::eval_and_probe").entered();
-            for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
+            for table in input_tables.iter() {
+                let mut probe_idxs = Vec::with_capacity(table.len());
                 let join_keys = table.eval_expression_list(probe_on)?;
                 let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
@@ -380,18 +381,20 @@ impl OuterHashJoinProbeSink {
                             let build_row_idx = build_row_idx as usize;
                             bitmap_builder.mark_used(build_side_table_idx, build_row_idx);
                             build_side_growable.extend(build_side_table_idx, build_row_idx, 1);
-                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                            probe_idxs.push(probe_row_idx as u64);
                         }
                     } else {
                         // if there's no match, we should still emit the probe side and fill the build side with nulls
                         build_side_growable.add_nulls(1);
-                        probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                        probe_idxs.push(probe_row_idx as u64);
                     }
                 }
+                let probe_idxs = UInt64Array::from(("probe_idxs", probe_idxs)).into_series();
+                probe_side_tables.push(table.take(&probe_idxs)?);
             }
         }
         let build_side_table = build_side_growable.build()?;
-        let probe_side_table = probe_side_growable.build()?;
+        let probe_side_table = RecordBatch::concat(&probe_side_tables)?;
 
         #[allow(deprecated)]
         let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?

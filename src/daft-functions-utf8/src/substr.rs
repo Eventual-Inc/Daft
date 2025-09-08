@@ -111,9 +111,9 @@ fn substr_impl<I, J>(
 ) -> DaftResult<Utf8Array>
 where
     I: DaftIntegerType,
-    <I as DaftNumericType>::Native: Ord,
+    <I as DaftNumericType>::Native: Ord + std::hash::Hash,
     J: DaftIntegerType,
-    <J as DaftNumericType>::Native: Ord,
+    <J as DaftNumericType>::Native: Ord + std::hash::Hash,
 {
     let name = arr.name();
     let (is_full_null, expected_size) = parse_inputs(arr, &[start])
