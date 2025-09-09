@@ -19,7 +19,7 @@ DOI: 10.1109/SEQUEN.1997.666900
 
 The Common Crawl corpus contains petabytes of data, with its oldest entries dating back to 2008, including raw web page data, metadata extracts, and text extracts.
 
-Deduplication is a helpful top-of-funnel strategy for improve dataset quality and is commonly used to improve generalization in LLM training, RAG, and Search.
+Deduplication is a helpful top-of-funnel strategy for improving dataset quality and is commonly used to improve generalization in LLM training, RAG, and Search.
 
 ---
 
@@ -66,9 +66,9 @@ We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/b
 
 ### (Optional) AWS Authentication
 
-Crawl data is free to access by anyone from anywhere. The data is hosted by Amazon Web Services’ Open Data Sets Sponsorships program on the bucket s3://commoncrawl/, located in the US-East-1 (Northern Virginia) AWS Region. The most performative means of accessing Common crawl is through s3, so  if you plan to process a lot of data you'll want to authenticate with a `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+Crawl data is free to access by anyone from anywhere. The data is hosted by Amazon Web Services’ Open Data Sets Sponsorships program on the bucket s3://commoncrawl/, located in the US-East-1 (Northern Virginia) AWS Region. The most performant means of accessing Common crawl is through s3, so if you plan to process a lot of data you'll want to authenticate with a `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
-However, Common Crawl data can also be accessed without authentication, anonymously via it's http endpoint.
+However, Common Crawl data can also be accessed without authentication, anonymously via its HTTP endpoint.
 
 ```python
 import daft
@@ -107,7 +107,7 @@ df_warc.show(3)
 ```
 
 ```python
-# Lets investigate the different types of payloads we have:
+# Let's investigate the different types of payloads we have:
 df_warc.select("WARC-Identified-Payload-Type").distinct().show()
 ```
 
@@ -132,7 +132,7 @@ def remove_http_headers(x: str) -> str:
 # Filter the dataframe to only include text/html payloads
 df_html = df_warc.where(col("WARC-Identified-Payload-Type")== "text/html")
 
-# Seperate the http headers from the payloads
+# Separate the HTTP headers from the payloads
 df_html = (
     df_html
     .with_column("content_raw", remove_http_headers(col("warc_content").try_decode("utf-8")))
@@ -145,7 +145,7 @@ df_html = (
 ```python
 from selectolax.parser import HTMLParser
 
-# Define a UDF to extract text from HTML content, Specifically (article, main, p, h1, h2, h3, li)
+# Define a UDF to extract text from HTML content, specifically (article, main, p, h1, h2, h3, li)
 @daft.func()
 def extract_blocks(html: str) -> list[str]:
     tree = HTMLParser(html)
@@ -183,7 +183,7 @@ df_text.show(3)
 ```
 
 ```python
-# Drop Un-needed Columns
+# Drop unneeded columns
 df_ready = (
     df_text
     .select(index_col, content_col)
@@ -194,7 +194,7 @@ df_ready = (
 
 So far we have extracted the text out of each html document into blocks. Now we move to normalize the text blocks to prepare for the MinHash operation.
 
-*Note: It is recommended to run your preprocessing pipeline seperately from your minhash deduplication workload.*
+*Note: It is recommended to run your preprocessing pipeline separately from your minhash deduplication workload.*
 
 See docs: [normalize](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
 
@@ -320,8 +320,8 @@ print(B, R, K)
 assert B * R == K
 ```
 
-Before we move to Band Generation, we need to hash our `index_col` to `int` to make downstream processing easier.
-We will keep track of the map and introduce a new column with a monotonically increasing id.  
+Before we move to band generation, we need to hash our `index_col` to `int` to make downstream processing easier.
+We will keep track of the map and introduce a new column with a monotonically increasing id.
 
 ```python
 from daft.functions import monotonically_increasing_id
@@ -591,17 +591,17 @@ b_final = b
 
 ### Constructing Component Assignments
 
-After the alternating star operations converge, we have a **stable edge list** that implicitly defines connected components.  
-The final step is to turn this edge list into an explicit **assignment table**:  
+After the alternating star operations converge, we have a **stable edge list** that implicitly defines connected components.
+The final step is to turn this edge list into an explicit **assignment table**:
 `[node_id → component_representative]`.
 
 We do this in three small, deterministic steps:
 
-1. **Collect every node** that appears in the graph (sources *and* destinations).  
-2. **For each node**, find the **smallest node ID** it is directly connected to (its tentative root).  
-   - Nodes with no outgoing edges simply become their own root.  
-3. **Materialize the result** as a DataFrame with columns `["u", "rep"]`, where  
-   - `u` is the original node ID,  
+1. **Collect every node** that appears in the graph (sources *and* destinations).
+2. **For each node**, find the **smallest node ID** it is directly connected to (its tentative root).
+   - Nodes with no outgoing edges simply become their own root.
+3. **Materialize the result** as a DataFrame with columns `["u", "rep"]`, where
+   - `u` is the original node ID,
    - `rep` is the globally smallest node in its component (the canonical representative).
 
 This table is what we use to filter duplicates: keep only the row whose `index` equals its `rep`, discarding the rest.
@@ -920,7 +920,7 @@ Why this is helpful/important
 
 Where to take it next
 
-- Your use case will most likely specializes in a specific domain or area of expertise so filter content for whats most relevent to you.
+- Your use case will most likely specialize in a specific domain or area of expertise so filter content for what's most relevant to you.
 - Experiment with Tuning K and the LSH similarity threshold to balance recall vs precision at your scale
 - Persist intermediate artifacts (minhashes, bands, edges) to accelerate iterations
 - Add domain/language filters and stronger boilerplate removal before hashing
