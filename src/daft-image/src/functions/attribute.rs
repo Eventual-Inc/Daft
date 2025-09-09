@@ -1,8 +1,8 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
 use daft_schema::image_property::ImageProperty;
 use serde::{Deserialize, Serialize};
