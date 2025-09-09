@@ -1,13 +1,12 @@
 # MinHash Deduplication of Web Text in Common-Crawl
 
-<a target="_blank" href="https://colab.research.google.com/github/everettVT/daft-minhash-dedupe/blob/main/workload/minhash_dedupe_common_crawl.ipynb">
+<a target="_blank" href="https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/minhash_dedupe/minhash_dedupe_common_crawl.ipynb">
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 
-
 In this notebook we will be performing the MinHash Deduplication algorithm over extracted text from html documents in the common crawl dataset.
 
-If you google "minhash deduplication" you'll find a variety of sources that can walk you through the aglorithm. [Finding Near Duplicates with Jaccard Similarity and MinHash by Nelson Elhage](https://blog.nelhage.com/post/fuzzy-dedup/) is a great place to start, but if you are looking for the canonical reference for the MinHash deduplication algorithm, it originates from the seminal paper by Andrei Z. Broder, published in 1997, titled:
+If you google "minhash deduplication" you'll find a variety of sources that can walk you through the algorithm. [Finding Near Duplicates with Jaccard Similarity and MinHash by Nelson Elhage](https://blog.nelhage.com/post/fuzzy-dedup/) is a great place to start, but if you are looking for the canonical reference for the MinHash deduplication algorithm, it originates from the seminal paper by Andrei Z. Broder, published in 1997, titled:
 
 ```text
 "On the resemblance and containment of documents"
@@ -25,8 +24,9 @@ Deduplication is a helpful top-of-funnel strategy for improve dataset quality an
 ---
 
 ## Table of Contents
+
 - [Quickstart](#quickstart)
-- [Loading & Preprocessing](#loading-html)
+- [Loading Common Crawl](#loading-html-documents-from-common-crawl)
 - [Preprocessing](#preprocessing)
 - [Text Normalization](#text-normalization)
 - [Minhash](#minhash)
@@ -112,6 +112,7 @@ df_warc.select("WARC-Identified-Payload-Type").distinct().show()
 ```
 
 ## Preprocessing
+
 Since we are primarily concerned with text, we will focus on `text/html` payloads, extracting text content from html body and normalizing the text itself.
 
 ```python
@@ -212,7 +213,7 @@ df_norm.select(index_col, content_col, "content_normalized").show(3)
 
 ### MinHash
 
-Normally when you perform a minhash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually. This involves choosing n-gram sizes, selecting appropriate hash functions, and determining the number of permutations for your MinHash signatures.
+Normally when you perform a minhash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually.
 
 Luckily, daft has a built in [minhash expression](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.Expression.minhash).
 
@@ -236,6 +237,7 @@ df_minhash.select(index_col, content_col, "min_hashes").show(3)
 LSH Banding involves splitting each document's MinHash signature into bands and rows, where documents with identical bands are considered candidate pairs for similarity comparison. This technique dramatically reduces the number of comparisons needed by only comparing documents that share at least one identical band, making near-duplicate detection scalable for large datasets
 
 Next, we will:
+
 1. Use the optimal_param function to determine the best band (b) and row (r) parameters for our LSH bucketing
 2. Split each document's minhash vector into `B` bands of `R` rows each
 3. Create buckets by hashing each band's signature, grouping similar documents together
@@ -327,11 +329,12 @@ from daft.functions import monotonically_increasing_id
 df_minhash = df_minhash.with_column("node_id", monotonically_increasing_id())
 id_map = df_minhash.select(index_col, "node_id").distinct()
 ```
+
 ### LSH Band Generation
 
-**Previously** we calculated the minhashes for our `content_text` where we hashed each word token into an 8 byte integer, taking only 32 samples (at a uniform random sample).
+**Previously** we calculated the minhashes for our `content_text` where we hashed each word token into an 8 byte integer, taking only 64 samples (at a uniform random sample).
 
-**Next** we took those 32 hashes and chunked them into 4 lists of 8 values.
+**Next** we took those 64 hashes and chunked them into 8 lists of 8 values.
 
 ```python
 # Band Generation
@@ -357,6 +360,7 @@ df_bands_exploded.select("node_id", "band_idx", "bands").show(3)
 ```
 
 ### Grouping bands
+
 We then group the bands against their 'signature', which is a combination of their band index and the band itself. If two segments are duplicates, we expect their signatures to match.
 
 ```python
@@ -383,11 +387,13 @@ In order to reduce our candidates into their unique set, we leverage a few trick
 We’ll follow the paper’s star‑contraction recipe: alternate a Large‑star and Small‑star pass that repeatedly points each node to the smallest ID in its neighborhood. After a few rounds the edge set stabilizes; the “parent” each node points to is its component representative.
 
 Concretely, we’ll collapse band groups into a simple graph:
+
 - Treat each document as a node.
 - For every band with multiple nodes, connect each node to the group’s minimum ID (drop self-loops and duplicates).
 - This produces an undirected edge list that captures “co-occurred somewhere” linkage.
 
 From there we use star-contraction (Kiveris et al., 2014) to snap clusters together:
+
 - Large-star: for each node, point to the smallest ID in its neighborhood (including itself). Emit edges (v, m(u)) only where v > u.
 - Small-star: canonicalize edges so u ≥ v, recompute the same “point to the minimum,” and emit (v, m(u)) for all neighbors.
 
@@ -442,8 +448,11 @@ def pairs_equal(a: DataFrame, b: DataFrame) -> bool:
     right_minus = b.join(a, on=["u","rep"], how="anti").count_rows()
     return (left_minus == 0) and (right_minus == 0)
 ```
+
 ### The Alternating Algorithm - Star Contraction with Daft
+
 We will iteratively compress the graph using two alternating phases until convergence:
+
 - Large-star: Every node points to the minimum ID in its neighborhood (including itself). This quickly pulls nodes toward low-ID “hubs.”
 - Small-star: Re-orient edges to ensure u < v (canonicalize) and repeat contraction, which merges local hubs together.
 - Repeat large-star then small-star until nothing changes. The “parent” each node ends up pointing to is its component representative.
@@ -497,7 +506,9 @@ def large_star(edges: DataFrame) -> DataFrame:
     return out
 
 ```
+
 ### Small-star
+
 - Re-orient all edges so u < v (canonical).
 - Group neighbors by u, compute min_neighbor, connect (u, parent) like above.
 - This step merges local minima across previously separate stars.
@@ -546,7 +557,8 @@ def small_star(edges: DataFrame) -> DataFrame:
     return out
 ```
 
-### Convergence check - Cannonical Set Equality (strict)
+### Convergence check - Canonical Set Equality (strict)
+
 - Compare a stable summary of edges before/after
 - If stable, stop; otherwise repeat.
 
@@ -575,8 +587,8 @@ while True:
     b = b_next
 
 b_final = b
-clear_output() # cleans up the cell output for this operation
 ```
+
 ### Constructing Component Assignments
 
 After the alternating star operations converge, we have a **stable edge list** that implicitly defines connected components.  
@@ -593,7 +605,6 @@ We do this in three small, deterministic steps:
    - `rep` is the globally smallest node in its component (the canonical representative).
 
 This table is what we use to filter duplicates: keep only the row whose `index` equals its `rep`, discarding the rest.
-
 
 ```python
 # Build the set of all unique node IDs that appear in the edge list
@@ -630,6 +641,7 @@ assignments = (
 
 assignments.show()
 ```
+
 ## Validation with igraph
 
 [igraph](https://python.igraph.org) is a high-performance graph analysis library that provides robust implementations of fundamental graph algorithms. We use it here as our ground truth for connected component detection because:
@@ -667,17 +679,11 @@ edges_idx = [(id_to_idx[int(u)], id_to_idx[int(v)]) for u, v in zip(pdf_edges["u
 g = ig.Graph(n=len(node_ids), edges=edges_idx, directed=False)
 comps = g.connected_components(mode="weak")
 
-clear_output()
-```
-
-
-```python
 # We can inspect the components to see how many there are and what they look like
 print(comps)
 ```
 
-#### Visualizing what a connected component looks like (Top 50)
-
+### Visualizing what a connected component looks like (Top 50)
 
 ```python
 import matplotlib.pyplot as plt
@@ -739,21 +745,26 @@ else:
     print(f"  examples only in ours: {_preview(only_ours)}")
     print(f"  examples only in igraph: {_preview(only_ig)}")
 ```
+
 ### Getting our results to match: Global minimum label propagation
+
 Why this is needed:
+
 - After alternating Large-/Small-Star and applying path compression, components can still
     stabilize with multiple local minima (distinct labels) within the same true component.
 - This deterministic min-label diffusion ensures every node in a connected component adopts
     the single global minimum node-id as its representative, restoring exact parity to igraph.
 
 **Algorithm:**
-1) Symmetrize edges to build an undirected adjacency (both directions present).
-2) Initialize labels(u) from assignments.rep.
-3) Iterate up to lp_max_iters times:
-    a) For each node, compute nbr_min(u) = min(label(v)) over neighbors v of u.
-    b) Update label(u) = min(label(u), nbr_min(u)) with null-safe handling.
-    c) Deduplicate and compare to prior labels; stop when the (u, label) pair set stabilizes.
-4) Return labels as assignments with schema ["u", "rep"].
+
+1. Symmetrize edges to build an undirected adjacency (both directions present).
+
+2. Initialize labels(u) from assignments.rep.
+3. Iterate up to lp_max_iters times:
+    - For each node, compute nbr_min(u) = min(label(v)) over neighbors v of u.
+    - Update label(u) = min(label(u), nbr_min(u)) with null-safe handling.
+    - Deduplicate and compare to prior labels; stop when the (u, label) pair set stabilizes.
+4. Return labels as assignments with schema ["u", "rep"].
 
 ```python
 # Build an undirected view of the graph so labels can flow in both directions
@@ -804,10 +815,8 @@ while lp_iters < lp_max_iters:
     labels = labels_next
 
 assignments_globally_reduced = assignments
-clear_output()
-
-
 ```
+
 Checking one more time
 
 ```python
@@ -904,11 +913,13 @@ In this notebook, we built an end‑to‑end, scalable deduplication pipeline fo
 - Produced both a deduplicated dataset and a duplicates table for inspection
 
 Why this is helpful/important
+
 - Reduces memorization and regurgitation in LLMs, improving generalization and safety
 - Eliminates redundant tokens to lower training cost and sharpen downstream evaluations
 - Transparent, parameterized method that scales with Daft and S3; easy to tune and reproduce
 
 Where to take it next
+
 - Your use case will most likely specializes in a specific domain or area of expertise so filter content for whats most relevent to you.
 - Experiment with Tuning K and the LSH similarity threshold to balance recall vs precision at your scale
 - Persist intermediate artifacts (minhashes, bands, edges) to accelerate iterations
@@ -917,5 +928,6 @@ Where to take it next
 - Integrate additional quality signals (toxicity, heuristics) pre‑/post‑dedup
 
 Outputs to expect
+
 - A deduplicated view (`deduplicated_df`) ready for downstream training
 - A `duplicates_df` sample to spot‑check clusters and validate quality
