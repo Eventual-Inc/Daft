@@ -60,7 +60,7 @@ required-imports = ["from __future__ import annotations"]
 # Allow wild imports in conftest
 "tests/conftest.py" = ["F405", "E402", "F403"]
 "tools/**/*" = ["I002"]
-"tutorials/**/*" = ["I002"]
+"tutorials/**/*" = ["I001", "I002"]
 
 [lint.pydocstyle]
 convention = "google"
