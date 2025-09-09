@@ -1232,6 +1232,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                     address,
                 )
         else:
+            if address is not None and address.startswith("ray://"):
+                logger.warning(
+                    "Specifying a Ray address with the 'ray://' prefix uses the Ray Client, which may impact performance. If this is running in a Ray job, you may not need to specify the address at all."
+                )
+
             ray.init(address=address)
 
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
