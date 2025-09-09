@@ -105,8 +105,9 @@ def test_codec_zlib():
 
 
 def test_codec_base64():
-    with pytest.raises(Exception, match="unsupported codec"):
-        _test_codec("base64", None)
+    import base64
+
+    _test_codec("base64", buff=base64.b64encode(TEXT))
 
 
 def test_codec_zstd():

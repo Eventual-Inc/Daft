@@ -23,7 +23,7 @@ use crate::{
     ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, ROWS_RECEIVED_KEY, RuntimeStats},
+    runtime_stats::{CPU_US_KEY, RuntimeStats},
     state_bridge::BroadcastStateBridgeRef,
 };
 
@@ -103,7 +103,7 @@ impl ProbeTableState {
 #[derive(Default)]
 struct HashJoinBuildRuntimeStats {
     cpu_us: AtomicU64,
-    rows_received: AtomicU64,
+    rows_in: AtomicU64,
 }
 
 impl RuntimeStats for HashJoinBuildRuntimeStats {
@@ -114,15 +114,15 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            ROWS_RECEIVED_KEY; Stat::Count(self.rows_received.load(ordering)),
+            "rows inserted"; Stat::Count(self.rows_in.load(ordering)),
         ]
     }
 
-    fn add_rows_received(&self, rows: u64) {
-        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.fetch_add(rows, Ordering::Relaxed);
     }
 
-    fn add_rows_emitted(&self, _: u64) {
+    fn add_rows_out(&self, _: u64) {
         unreachable!("HashJoinBuildSink shouldn't emit rows")
     }
 
@@ -161,7 +161,7 @@ impl BlockingSink for HashJoinBuildSink {
     type State = ProbeTableState;
 
     fn name(&self) -> NodeName {
-        "HashJoinBuild".into()
+        "Hash Join Build".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -170,7 +170,7 @@ impl BlockingSink for HashJoinBuildSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut display = vec![];
-        display.push("HashJoinBuild:".to_string());
+        display.push("Hash Join Build:".to_string());
         display.push(format!("Track Indices: {}", self.track_indices));
         display.push(format!("Key Schema: {}", self.key_schema.short_string()));
         if let Some(null_equals_nulls) = &self.nulls_equal_aware {
