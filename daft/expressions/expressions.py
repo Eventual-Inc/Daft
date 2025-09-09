@@ -4538,6 +4538,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,
+        regex: bool = False,
     ) -> Expression:
         """Counts the number of times a pattern, or multiple patterns, appear in a string.
 
@@ -4549,29 +4550,49 @@ class ExpressionStringNamespace(ExpressionNamespace):
         If case_sensitive is false, then case will be ignored. This only applies to ASCII
         characters; unicode uppercase/lowercase will still be considered distinct.
 
+        If regex is true, then patterns are treated as regular expressions. In this case,
+        whole_words and case_sensitive parameters are ignored as regex patterns handle these
+        directly.
+
         Args:
             patterns: A pattern or a list of patterns.
             whole_words: Whether to only match whole word(s). Defaults to false.
             case_sensitive: Whether the matching should be case sensitive. Defaults to true.
+            regex: Whether to treat patterns as regular expressions. Defaults to false.
 
         Note:
             If a pattern is a substring of another pattern, the longest pattern is matched first.
             For example, in the string "hello world", with patterns "hello", "world", and "hello world",
             one match is counted for "hello world".
         """
-        if isinstance(patterns, str):
-            patterns = [patterns]
-        if not isinstance(patterns, Expression):
-            series = item_to_series("items", patterns)
-            patterns = Expression._from_pyexpr(_list_lit(series._series))
-
         whole_words_expr = Expression._to_expression(whole_words)._expr
         case_sensitive_expr = Expression._to_expression(case_sensitive)._expr
-        f = native.get_function_from_registry("count_matches")
 
-        return Expression._from_pyexpr(
-            f(self._expr, patterns._expr, whole_words=whole_words_expr, case_sensitive=case_sensitive_expr)
-        )
+        if regex:
+            # For regex, we expect a single string pattern
+            if isinstance(patterns, str):
+                patterns_expr = Expression._to_expression(patterns)._expr
+            elif isinstance(patterns, Expression):
+                patterns_expr = patterns._expr
+            else:
+                raise ValueError("For regex=True, patterns must be a single string, not a list")
+
+            f = native.get_function_from_registry("count_matches_regex")
+            return Expression._from_pyexpr(
+                f(self._expr, patterns_expr, whole_words=whole_words_expr, case_sensitive=case_sensitive_expr)
+            )
+        else:
+            # For non-regex, we can handle both single strings and lists
+            if isinstance(patterns, str):
+                patterns = [patterns]
+            if not isinstance(patterns, Expression):
+                series = item_to_series("items", patterns)
+                patterns = Expression._from_pyexpr(_list_lit(series._series))
+
+            f = native.get_function_from_registry("count_matches")
+            return Expression._from_pyexpr(
+                f(self._expr, patterns._expr, whole_words=whole_words_expr, case_sensitive=case_sensitive_expr)
+            )
 
 
 class ExpressionListNamespace(ExpressionNamespace):

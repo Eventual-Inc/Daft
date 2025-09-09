@@ -67,6 +67,7 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Capitalize);
         parent.add_fn(Contains);
         parent.add_fn(CountMatches);
+        parent.add_fn(CountMatchesRegex);
         parent.add_fn(EndsWith);
         parent.add_fn(Find);
         parent.add_fn(ILike);
