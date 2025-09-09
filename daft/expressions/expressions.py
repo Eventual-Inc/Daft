@@ -5239,45 +5239,45 @@ class ExpressionImageNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("image_attribute")
         return Expression._from_pyexpr(f(self._expr, lit(name)._expr))
 
-    def width(self) -> "Expression":
-      """Gets the width of an image in pixels.
+    def width(self) -> Expression:
+        """Gets the width of an image in pixels.
 
-      Example:
-          >>> # Create a dataframe with an image column
-          >>> df = ...  # doctest: +SKIP
-          >>> df = df.with_column("width", df["images"].image.width())  # doctest: +SKIP
-      """
-      return self.attribute("width")
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("width", df["images"].image.width())  # doctest: +SKIP
+        """
+        return self.attribute("width")
 
-    def height(self) -> "Expression":
-      """Gets the height of an image in pixels.
+    def height(self) -> Expression:
+        """Gets the height of an image in pixels.
 
-      Example:
-          >>> # Create a dataframe with an image column
-          >>> df = ...  # doctest: +SKIP
-          >>> df = df.with_column("height", df["images"].image.height())  # doctest: +SKIP
-      """
-      return self.attribute("height")
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("height", df["images"].image.height())  # doctest: +SKIP
+        """
+        return self.attribute("height")
 
-    def channel(self) -> "Expression":
-      """Gets the number of channels in an image.
+    def channel(self) -> Expression:
+        """Gets the number of channels in an image.
 
-      Example:
-          >>> # Create a dataframe with an image column
-          >>> df = ...  # doctest: +SKIP
-          >>> df = df.with_column("channel", df["images"].image.channel())  # doctest: +SKIP
-      """
-      return self.attribute("channel")
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("channel", df["images"].image.channel())  # doctest: +SKIP
+        """
+        return self.attribute("channel")
 
-    def mode(self) -> "Expression":
-      """Gets the mode of an image as a string.
+    def mode(self) -> Expression:
+        """Gets the mode of an image as a string.
 
-      Example:
-          >>> # Create a dataframe with an image column
-          >>> df = ...  # doctest: +SKIP
-          >>> df = df.with_column("mode", df["images"].image.mode())  # doctest: +SKIP
-      """
-      return self.attribute("mode")
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("mode", df["images"].image.mode())  # doctest: +SKIP
+        """
+        return self.attribute("mode")
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
