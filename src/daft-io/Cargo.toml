@@ -22,7 +22,6 @@ globset = "0.4"
 google-cloud-storage = {version = "0.24.0", default-features = false, features = ["rustls-tls", "auth"]}
 google-cloud-token = {version = "0.1.2"}
 home = "0.5.9"
-hyper-util = "0.1"
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}

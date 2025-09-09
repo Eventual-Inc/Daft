@@ -1114,7 +1114,7 @@ impl S3LikeSource {
                     }
                 }
                 Err(SdkError::DispatchFailure(err))
-                    if format!("{err:?}").contains("tls handshake eof") =>
+                    if format!("{err:?}").contains("UnexpectedEof") =>
                 {
                     Err(RetryError::Transient(
                         UnableToCreateMultipartUploadSnafu { bucket, key }
