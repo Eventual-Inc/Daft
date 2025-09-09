@@ -33,7 +33,7 @@ impl std::fmt::Display for Stat {
 ///
 /// The general length of a snapshot is 3, because the 3 most common values are
 /// 1. CPU Time in microseconds
-/// 2. Rows Received
+/// 2. Rows In
 /// 3. Rows Emitted
 ///
 /// This is intended to be lightweight for execution to generate while still
