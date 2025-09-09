@@ -88,6 +88,21 @@ jobs:
         - python-version: '3.12'
           pyarrow-version: 8.0.0
     steps:
+    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: false
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: false
+
+    # - run: |
+    #     sudo apt-get update
+    #     sudo apt-get install ffmpeg libsm6 libxext6 -y
+
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
