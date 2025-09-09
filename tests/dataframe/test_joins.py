@@ -1175,10 +1175,6 @@ def test_join_suffix_and_prefix(suffix, prefix, expected, make_df, with_morsel_s
 
 @pytest.mark.parametrize("left_partitions", [1, 2, 4])
 @pytest.mark.parametrize("right_partitions", [1, 2, 4])
-@pytest.mark.skipif(
-    not get_context().daft_execution_config.use_legacy_ray_runner,
-    reason="Cross joins are not supported on Flotilla",
-)
 def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size):
     df1 = make_df(
         {
