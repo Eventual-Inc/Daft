@@ -290,6 +290,7 @@ pub(crate) struct UdfOperator {
     udf_properties: UDFProperties,
     concurrency: usize,
     memory_request: u64,
+    input_schema: SchemaRef,
 }
 
 impl UdfOperator {
@@ -297,6 +298,7 @@ impl UdfOperator {
         project: BoundExpr,
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
+        input_schema: &SchemaRef,
     ) -> DaftResult<Self> {
         let project_unbound = project.inner().clone();
 
@@ -328,6 +330,7 @@ impl UdfOperator {
             udf_properties,
             concurrency,
             memory_request,
+            input_schema: input_schema.clone(),
         })
     }
 
@@ -426,15 +429,30 @@ impl IntermediateOperator for UdfOperator {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
         let mut rng = rand::thread_rng();
 
+        // Check if any inputs or the output are Python-dtype columns
+        // Those should by default run on the same thread
+        let is_arrow_dtype = self
+            .input_schema
+            .fields()
+            .iter()
+            .all(|f| f.dtype.is_arrow())
+            && self
+                .params
+                .udf_expr
+                .inner()
+                .to_field(self.input_schema.as_ref())?
+                .dtype
+                .is_arrow();
+
         let mut udf_handle = UdfHandle::no_handle(
             self.params.clone(),
             worker_count,
-            matches!(self.udf_properties.use_process, Some(false)),
+            self.udf_properties.use_process.is_none() && is_arrow_dtype,
             rng.gen_range(NUM_TEST_ITERATIONS_RANGE),
         );
 
         if self.udf_properties.is_actor_pool_udf()
-            || self.udf_properties.use_process.unwrap_or(false)
+            || self.udf_properties.use_process.unwrap_or(is_arrow_dtype)
         {
             udf_handle.create_handle()?;
         }
