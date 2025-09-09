@@ -4,7 +4,7 @@
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 
-In this notebook we will be performing the MinHash Deduplication algorithm over extracted text from html documents in the common crawl dataset.
+In this notebook we will be performing the MinHash Deduplication algorithm over extracted text from HTML documents in the Common Crawl dataset.
 
 If you google "minhash deduplication" you'll find a variety of sources that can walk you through the algorithm. [Finding Near Duplicates with Jaccard Similarity and MinHash by Nelson Elhage](https://blog.nelhage.com/post/fuzzy-dedup/) is a great place to start, but if you are looking for the canonical reference for the MinHash deduplication algorithm, it originates from the seminal paper by Andrei Z. Broder, published in 1997, titled:
 
@@ -29,7 +29,7 @@ Deduplication is a helpful top-of-funnel strategy for improving dataset quality 
 - [Loading Common Crawl](#loading-html-documents-from-common-crawl)
 - [Preprocessing](#preprocessing)
 - [Text Normalization](#text-normalization)
-- [Minhash](#minhash)
+- [MinHash](#minhash)
 - [LSH Banding](#lsh-banding)
 - [Connected Components](#connected-components)
 - [Validation with igraph](#validation-with-igraph)
@@ -62,11 +62,11 @@ LSH_THRESHOLD = 0.7 # Jaccard Similarity Threshold for LSH
 
 ## Loading HTML Documents from Common Crawl
 
-We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [daft supports the format natively](https://docs.getdaft.io/en/stable/api/io/#daft.read_warc).
+We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively](https://docs.getdaft.io/en/stable/api/io/#daft.read_warc).
 
 ### (Optional) AWS Authentication
 
-Crawl data is free to access by anyone from anywhere. The data is hosted by Amazon Web Services’ Open Data Sets Sponsorships program on the bucket s3://commoncrawl/, located in the US-East-1 (Northern Virginia) AWS Region. The most performant means of accessing Common crawl is through s3, so if you plan to process a lot of data you'll want to authenticate with a `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+Crawl data is free to access by anyone from anywhere. The data is hosted by Amazon Web Services’ Open Data Sets Sponsorships program on the bucket s3://commoncrawl/, located in the US-East-1 (Northern Virginia) AWS Region. The most performant means of accessing Common Crawl is through S3, so if you plan to process a lot of data you'll want to authenticate with a `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
 However, Common Crawl data can also be accessed without authentication, anonymously via its HTTP endpoint.
 
@@ -92,7 +92,7 @@ if os.environ.get("AWS_ACCESS_KEY_ID"):
     IO_CONFIG = IOConfig(s3=s3_config)
     daft.set_planning_config(default_io_config=IO_CONFIG)
 
-    # Multifile access over s3
+    # Multifile access over S3
     uri = f"s3://commoncrawl/crawl-data/CC-MAIN-2025-33/segments/*/warc/*.warc.gz"
 else:
     # For un-authenticated access over http
@@ -194,7 +194,7 @@ df_ready = (
 
 So far we have extracted the text out of each html document into blocks. Now we move to normalize the text blocks to prepare for the MinHash operation.
 
-*Note: It is recommended to run your preprocessing pipeline separately from your minhash deduplication workload.*
+*Note: It is recommended to run your preprocessing pipeline separately from your MinHash deduplication workload.*
 
 See docs: [normalize](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
 
@@ -213,12 +213,12 @@ df_norm.select(index_col, content_col, "content_normalized").show(3)
 
 ### MinHash
 
-Normally when you perform a minhash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually.
+Normally when you perform a MinHash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually.
 
-Luckily, daft has a built in [minhash expression](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.Expression.minhash).
+Luckily, Daft has a built-in [MinHash expression](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.Expression.minhash).
 
 ```python
-# Calculate the minhash vectors
+# Calculate the MinHash vectors
 df_minhash = (
     df_norm
     .with_column("min_hashes", col("content_normalized").minhash(
@@ -239,7 +239,7 @@ LSH Banding involves splitting each document's MinHash signature into bands and 
 Next, we will:
 
 1. Use the optimal_param function to determine the best band (b) and row (r) parameters for our LSH bucketing
-2. Split each document's minhash vector into `B` bands of `R` rows each
+2. Split each document's MinHash vector into `B` bands of `R` rows each
 3. Create buckets by hashing each band's signature, grouping similar documents together
 
 
@@ -332,7 +332,7 @@ id_map = df_minhash.select(index_col, "node_id").distinct()
 
 ### LSH Band Generation
 
-**Previously** we calculated the minhashes for our `content_text` where we hashed each word token into an 8 byte integer, taking only 64 samples (at a uniform random sample).
+**Previously** we calculated the MinHashes for our `content_text` where we hashed each word token into an 8-byte integer, taking only 64 samples (at a uniform random sample).
 
 **Next** we took those 64 hashes and chunked them into 8 lists of 8 values.
 
@@ -922,7 +922,7 @@ Where to take it next
 
 - Your use case will most likely specialize in a specific domain or area of expertise so filter content for what's most relevant to you.
 - Experiment with Tuning K and the LSH similarity threshold to balance recall vs precision at your scale
-- Persist intermediate artifacts (minhashes, bands, edges) to accelerate iterations
+- Persist intermediate artifacts (MinHashes, bands, edges) to accelerate iterations
 - Add domain/language filters and stronger boilerplate removal before hashing
 - Operationalize as a scheduled job over new Common Crawl snapshots
 - Integrate additional quality signals (toxicity, heuristics) pre‑/post‑dedup
