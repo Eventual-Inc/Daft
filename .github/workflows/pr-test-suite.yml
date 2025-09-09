@@ -99,10 +99,6 @@ jobs:
         docker-images: false
         swap-storage: true
 
-    # - run: |
-    #     sudo apt-get update
-    #     sudo apt-get install ffmpeg libsm6 libxext6 -y
-
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
