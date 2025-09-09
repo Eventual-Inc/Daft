@@ -1050,64 +1050,88 @@ impl S3LikeSource {
 
         let client = self.get_s3_client(region).await?;
 
-        let response = client
-            .create_multipart_upload()
-            .bucket(bucket)
-            .key(key)
-            .set_request_payer(request_payer.clone())
-            .send()
-            .await;
+        let upload = async || {
+            let response = client
+                .create_multipart_upload()
+                .bucket(bucket)
+                .key(key)
+                .set_request_payer(request_payer.clone())
+                .send()
+                .await;
 
-        match response {
-            Ok(response) => {
-                let upload_id = response.upload_id().ok_or_else(|| {
-                    Error::MissingUploadIdForMultipartUpload {
-                        bucket: bucket.to_owned(),
-                        key: key.to_owned(),
-                    }
-                })?;
+            match response {
+                Ok(response) => {
+                    let upload_id = response
+                        .upload_id()
+                        .ok_or_else(|| Error::MissingUploadIdForMultipartUpload {
+                            bucket: bucket.to_owned(),
+                            key: key.to_owned(),
+                        })
+                        .map_err(|e| RetryError::Permanent(e.into()))?;
 
-                log::debug!("S3 create multipart upload-id: {upload_id}");
+                    log::debug!("S3 create multipart upload-id: {upload_id}");
 
-                Ok(MultipartUploadInfo {
-                    upload_id: upload_id.to_owned().into(),
-                    region: region.clone(),
-                })
-            }
-            Err(SdkError::ServiceError(err)) => {
-                let bad_response = err.raw();
-                match bad_response.status().as_u16() {
-                    // moved permanently
-                    301 => {
-                        let headers = bad_response.headers();
-                        let new_region =
-                            headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
-                                path: format!("{bucket}/{key}"),
-                                header: REGION_HEADER.into(),
-                            })?;
-
-                        let region_name = String::from_utf8(new_region.as_bytes().to_vec())
-                            .with_context(|_| UnableToParseUtf8Snafu::<String> {
-                                path: format!("{bucket}/{key}"),
-                            })?;
-
-                        let new_region = Region::new(region_name);
-                        log::debug!(
-                            "S3 Region of {bucket}/{key} different than client {:?} vs {:?} Attempting multipart upload in that region with new client",
-                            new_region,
-                            region
-                        );
-                        self.create_multipart_upload(bucket, key, &new_region).await
-                    }
-                    _ => Err(UnableToCreateMultipartUploadSnafu { bucket, key }
-                        .into_error(SdkError::ServiceError(err))
-                        .into()),
+                    Ok(MultipartUploadInfo {
+                        upload_id: upload_id.to_owned().into(),
+                        region: region.clone(),
+                    })
                 }
+                Err(SdkError::ServiceError(err)) => {
+                    let bad_response = err.raw();
+                    match bad_response.status().as_u16() {
+                        // moved permanently
+                        301 => {
+                            let headers = bad_response.headers();
+                            let new_region = headers
+                                .get(REGION_HEADER)
+                                .ok_or(Error::MissingHeader {
+                                    path: format!("{bucket}/{key}"),
+                                    header: REGION_HEADER.into(),
+                                })
+                                .map_err(|e| RetryError::Permanent(e.into()))?;
+
+                            let region_name = String::from_utf8(new_region.as_bytes().to_vec())
+                                .with_context(|_| UnableToParseUtf8Snafu::<String> {
+                                    path: format!("{bucket}/{key}"),
+                                })
+                                .map_err(|e| RetryError::Permanent(e.into()))?;
+
+                            let new_region = Region::new(region_name);
+                            log::debug!(
+                                "S3 Region of {bucket}/{key} different than client {:?} vs {:?} Attempting multipart upload in that region with new client",
+                                new_region,
+                                region
+                            );
+                            self.create_multipart_upload(bucket, key, &new_region)
+                                .await
+                                .map_err(RetryError::Permanent)
+                        }
+                        _ => Err(RetryError::Permanent(
+                            UnableToCreateMultipartUploadSnafu { bucket, key }
+                                .into_error(SdkError::ServiceError(err))
+                                .into(),
+                        )),
+                    }
+                }
+                Err(SdkError::DispatchFailure(err))
+                    if format!("{err:?}").contains("tls handshake eof") =>
+                {
+                    Err(RetryError::Transient(
+                        UnableToCreateMultipartUploadSnafu { bucket, key }
+                            .into_error(SdkError::DispatchFailure(err))
+                            .into(),
+                    ))
+                }
+                Err(err) => Err(RetryError::Permanent(
+                    UnableToCreateMultipartUploadSnafu { bucket, key }
+                        .into_error(err)
+                        .into(),
+                )),
             }
-            Err(err) => Err(UnableToCreateMultipartUploadSnafu { bucket, key }
-                .into_error(err)
-                .into()),
-        }
+        };
+
+        let backoff = ExponentialBackoff::default();
+        backoff.retry(upload).await
     }
 
     /// Completes a multipart upload by providing the upload ID and a list of completed parts.

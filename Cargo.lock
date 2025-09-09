@@ -2865,6 +2865,7 @@ dependencies = [
  "google-cloud-storage",
  "google-cloud-token",
  "home",
+ "hyper-util",
  "itertools 0.14.0",
  "log",
  "md5",
