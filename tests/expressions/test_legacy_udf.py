@@ -684,8 +684,7 @@ def test_run_udf_on_separate_process(batch_size):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray"
-    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Ray runner will always run UDFs on separate processes",
 )
 def test_udf_fails_with_no_actors_schedulable():
@@ -703,8 +702,7 @@ def test_udf_fails_with_no_actors_schedulable():
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray"
-    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Ray runner will always run UDFs on separate processes",
 )
 def test_udf_succeeds_with_some_actors_schedulable():
