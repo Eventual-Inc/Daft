@@ -132,7 +132,7 @@ def remove_http_headers(x: str) -> str:
 # Filter the dataframe to only include text/html payloads
 df_html = df_warc.where(col("WARC-Identified-Payload-Type")== "text/html")
 
-# Seperate the http headers from the payloads
+# Separate the http headers from the payloads
 df_html = (
     df_html
     .with_column("content_raw", remove_http_headers(col("warc_content").try_decode("utf-8")))
@@ -194,7 +194,7 @@ df_ready = (
 
 So far we have extracted the text out of each html document into blocks. Now we move to normalize the text blocks to prepare for the MinHash operation.
 
-*Note: It is recommended to run your preprocessing pipeline seperately from your minhash deduplication workload.*
+*Note: It is recommended to run your preprocessing pipeline separately from your minhash deduplication workload.*
 
 See docs: [normalize](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
 
@@ -321,7 +321,7 @@ assert B * R == K
 ```
 
 Before we move to Band Generation, we need to hash our `index_col` to `int` to make downstream processing easier.
-We will keep track of the map and introduce a new column with a monotonically increasing id.  
+We will keep track of the map and introduce a new column with a monotonically increasing id.
 
 ```python
 from daft.functions import monotonically_increasing_id
@@ -591,17 +591,17 @@ b_final = b
 
 ### Constructing Component Assignments
 
-After the alternating star operations converge, we have a **stable edge list** that implicitly defines connected components.  
-The final step is to turn this edge list into an explicit **assignment table**:  
+After the alternating star operations converge, we have a **stable edge list** that implicitly defines connected components.
+The final step is to turn this edge list into an explicit **assignment table**:
 `[node_id → component_representative]`.
 
 We do this in three small, deterministic steps:
 
-1. **Collect every node** that appears in the graph (sources *and* destinations).  
-2. **For each node**, find the **smallest node ID** it is directly connected to (its tentative root).  
-   - Nodes with no outgoing edges simply become their own root.  
-3. **Materialize the result** as a DataFrame with columns `["u", "rep"]`, where  
-   - `u` is the original node ID,  
+1. **Collect every node** that appears in the graph (sources *and* destinations).
+2. **For each node**, find the **smallest node ID** it is directly connected to (its tentative root).
+   - Nodes with no outgoing edges simply become their own root.
+3. **Materialize the result** as a DataFrame with columns `["u", "rep"]`, where
+   - `u` is the original node ID,
    - `rep` is the globally smallest node in its component (the canonical representative).
 
 This table is what we use to filter duplicates: keep only the row whose `index` equals its `rep`, discarding the rest.
@@ -920,7 +920,7 @@ Why this is helpful/important
 
 Where to take it next
 
-- Your use case will most likely specializes in a specific domain or area of expertise so filter content for whats most relevent to you.
+- Your use case will most likely specializes in a specific domain or area of expertise so filter content for what's most relevant to you.
 - Experiment with Tuning K and the LSH similarity threshold to balance recall vs precision at your scale
 - Persist intermediate artifacts (minhashes, bands, edges) to accelerate iterations
 - Add domain/language filters and stronger boilerplate removal before hashing
