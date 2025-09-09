@@ -204,6 +204,7 @@ def set_execution_config(
     native_parquet_writer: bool | None = None,
     use_legacy_ray_runner: bool | None = None,
     min_cpu_per_task: float | None = None,
+    actor_udf_ready_timeout: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -253,6 +254,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
+        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 60 seconds.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -289,6 +291,7 @@ def set_execution_config(
             native_parquet_writer=native_parquet_writer,
             use_legacy_ray_runner=use_legacy_ray_runner,
             min_cpu_per_task=min_cpu_per_task,
+            actor_udf_ready_timeout=actor_udf_ready_timeout,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
