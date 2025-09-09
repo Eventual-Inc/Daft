@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 use std::{num::NonZeroUsize, sync::Arc};
 
 use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
@@ -7,11 +6,11 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::SchemaRef, series::Series};
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
-use snafu::{futures::try_future::TryFutureExt, Snafu};
+use futures::{StreamExt, TryStreamExt, stream::BoxStream};
+use snafu::{Snafu, futures::try_future::TryFutureExt};
 use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
@@ -608,7 +607,7 @@ mod tests {
     use daft_core::prelude::{Field, Schema, TimeUnit};
     use daft_io::{IOConfig, IOStatsContext};
 
-    use crate::{read_warc_bulk, WarcConvertOptions};
+    use crate::{WarcConvertOptions, read_warc_bulk};
 
     #[test]
     fn test_warc_read_iostats() -> DaftResult<()> {

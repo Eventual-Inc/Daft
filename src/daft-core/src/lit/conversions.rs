@@ -4,7 +4,7 @@ use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use pyo3::{PyClass, Python};
 
-use super::{deserializer::LiteralDeserializer, FromLiteral, Literal};
+use super::{FromLiteral, Literal, deserializer::LiteralDeserializer};
 #[cfg(feature = "python")]
 use crate::python::{PyDataType, PyTimeUnit};
 use crate::{
@@ -113,7 +113,7 @@ macro_rules! impl_int_fromliteral {
                     _ => {
                         return Err(DaftError::ValueError(format!(
                             "Expected integer number, received: {lit}"
-                        )))
+                        )));
                     }
                 };
 
@@ -147,7 +147,7 @@ macro_rules! impl_float_fromliteral {
                     _ => {
                         return Err(DaftError::ValueError(format!(
                             "Expected floating point number, received: {lit}"
-                        )))
+                        )));
                     }
                 };
 

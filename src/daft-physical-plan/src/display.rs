@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 
 use super::PhysicalPlan;
 

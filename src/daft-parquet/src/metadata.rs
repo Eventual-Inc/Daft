@@ -257,13 +257,13 @@ pub(crate) async fn read_parquet_metadata(
     }
 
     // Check the minimum value of file size if provided
-    if let Some(size) = file_size {
-        if size < 12 {
-            return Err(Error::FileTooSmall {
-                path: uri.into(),
-                file_size: size,
-            });
-        }
+    if let Some(size) = file_size
+        && size < 12
+    {
+        return Err(Error::FileTooSmall {
+            path: uri.into(),
+            file_size: size,
+        });
     }
 
     /// The number of bytes read at the end of the parquet file on first read
@@ -285,14 +285,14 @@ pub(crate) async fn read_parquet_metadata(
 
     let metadata_size = metadata_len(buffer, buffer.len());
     let footer_len = FOOTER_SIZE + metadata_size as usize;
-    if let Some(size) = file_size {
-        if size < footer_len {
-            return Err(Error::InvalidParquetFooterSize {
-                path: uri.into(),
-                footer_size: footer_len,
-                file_size: size,
-            });
-        }
+    if let Some(size) = file_size
+        && size < footer_len
+    {
+        return Err(Error::InvalidParquetFooterSize {
+            path: uri.into(),
+            footer_size: footer_len,
+            file_size: size,
+        });
     }
 
     let remaining = if footer_len <= buffer.len() {

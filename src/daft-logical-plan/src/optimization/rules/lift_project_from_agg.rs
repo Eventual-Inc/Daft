@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{optimization::requires_computation, resolved_col, Expr};
+use daft_dsl::{Expr, optimization::requires_computation, resolved_col};
 use indexmap::IndexSet;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Aggregate, Project},
     LogicalPlan,
+    ops::{Aggregate, Project},
 };
 
 /// Rewrite rule for lifting expressions that can be done in a project out of an aggregation.
@@ -115,12 +115,12 @@ mod tests {
 
     use super::LiftProjectFromAgg;
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
     };
 
     fn assert_optimized_plan_eq(

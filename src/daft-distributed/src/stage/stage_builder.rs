@@ -4,9 +4,10 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_logical_plan::{
-    partitioning::ClusteringSpecRef, JoinStrategy, LogicalPlan, LogicalPlanRef,
+    JoinStrategy, LogicalPlan, LogicalPlanRef, partitioning::ClusteringSpecRef,
 };
 use daft_schema::schema::SchemaRef;
+use tracing::warn;
 
 use super::{DataChannel, OutputChannel, Stage, StageID, StagePlan, StageType};
 
@@ -29,9 +30,8 @@ impl StagePlanBuilder {
         curr
     }
 
-    fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
-        let mut can_translate = true;
-        let _ = plan.apply(|node| match node.as_ref() {
+    fn can_translate_logical_plan(plan: &LogicalPlanRef) -> DaftResult<()> {
+        plan.apply(|node| match node.as_ref() {
             LogicalPlan::Source(_)
             | LogicalPlan::Project(_)
             | LogicalPlan::Filter(_)
@@ -53,23 +53,27 @@ impl StagePlanBuilder {
             LogicalPlan::Join(join) => {
                 if join
                     .join_strategy
-                    .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
+                    .is_some_and(|x| matches!(x, JoinStrategy::SortMerge))
                 {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
+                    warn!(
+                        "Sort merge joins are currently not supported on the new ray runner, falling back to hash join. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for sort merge joins."
+                    );
+                    Ok(TreeNodeRecursion::Continue)
                 } else {
                     let (remaining_on, left_on, right_on, _) = join.on.split_eq_preds();
                     if !remaining_on.is_empty() || left_on.is_empty() || right_on.is_empty() {
-                        can_translate = false;
-                        Ok(TreeNodeRecursion::Stop)
+                        Err(DaftError::ValueError(
+                            "Cross joins are currently not supported on the new ray runner. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for cross joins.".to_string(),
+                        ))
                     } else {
                         Ok(TreeNodeRecursion::Continue)
                     }
                 }
             }
             LogicalPlan::Pivot(_) => {
-                can_translate = false;
-                Ok(TreeNodeRecursion::Stop)
+                Err(DaftError::ValueError(
+                    "Pivot operations are currently not supported on the new ray runner. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for pivot operations.".to_string(),
+                ))
             }
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
@@ -79,17 +83,12 @@ impl StagePlanBuilder {
                 "Logical plan operator {} should be optimized away before planning stages",
                 node.name()
             ),
-        });
-        can_translate
+        })?;
+        Ok(())
     }
 
     fn build_stages_from_plan(&mut self, plan: LogicalPlanRef) -> DaftResult<StageID> {
-        if !Self::can_translate_logical_plan(&plan) {
-            return Err(DaftError::ValueError(format!(
-                "Cannot translate logical plan: {} into stages",
-                plan
-            )));
-        }
+        Self::can_translate_logical_plan(&plan)?;
 
         let schema = plan.schema();
         // Create a MapPipeline stage

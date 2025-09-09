@@ -7,7 +7,7 @@ from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.protocols import TextEmbedderDescriptor
+    from daft.ai.protocols import ImageEmbedderDescriptor, TextClassifierDescriptor, TextEmbedderDescriptor
 
 
 class ProviderImportError(ImportError):
@@ -16,9 +16,18 @@ class ProviderImportError(ImportError):
         super().__init__(f"Missing required dependencies: {deps}. " f"Please install {deps} to use this provider.")
 
 
+def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.lm_studio.provider import LMStudioProvider
+
+        return LMStudioProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["openai"]) from e
+
+
 def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions]) -> Provider:
     try:
-        from daft.ai.openai import OpenAIProvider
+        from daft.ai.openai.provider import OpenAIProvider
 
         return OpenAIProvider(name, **options)
     except ImportError as e:
@@ -27,16 +36,27 @@ def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions
 
 def load_sentence_transformers(name: str | None = None, **options: Any) -> Provider:
     try:
-        from daft.ai.sentence_transformers import SentenceTransformersProvider
+        from daft.ai.sentence_transformers.provider import SentenceTransformersProvider
 
         return SentenceTransformersProvider(name, **options)
     except ImportError as e:
         raise ProviderImportError(["sentence_transformers", "torch"]) from e
 
 
+def load_transformers(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.transformers.provider import TransformersProvider
+
+        return TransformersProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["torch", "torchvision", "transformers", "Pillow"]) from e
+
+
 PROVIDERS: dict[str, Callable[..., Provider]] = {
+    "lm_studio": load_lm_studio,
     "openai": load_openai,
     "sentence_transformers": load_sentence_transformers,
+    "transformers": load_transformers,
 }
 
 
@@ -44,6 +64,10 @@ def load_provider(provider: str, name: str | None = None, **options: Any) -> Pro
     if provider not in PROVIDERS:
         raise ValueError(f"Provider '{provider}' is not yet supported.")
     return PROVIDERS[provider](name, **options)
+
+
+def not_implemented_err(provider: Provider, method: str) -> NotImplementedError:
+    return NotImplementedError(f"{method} is not currently implemented for the '{provider.name}' provider")
 
 
 class Provider(ABC):
@@ -61,7 +85,14 @@ class Provider(ABC):
         """Returns the provider's name."""
         ...
 
-    @abstractmethod
     def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
         """Returns a TextEmbedderDescriptor for this provider."""
-        ...
+        raise not_implemented_err(self, method="embed_text")
+
+    def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
+        """Returns an ImageEmbedderDescriptor for this provider."""
+        raise not_implemented_err(self, method="embed_image")
+
+    def get_text_classifier(self, model: str | None = None, **options: Any) -> TextClassifierDescriptor:
+        """Returns a TextClassifierDescriptor for this provider."""
+        raise not_implemented_err(self, method="classify_text")

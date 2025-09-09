@@ -209,3 +209,5 @@ plugins:
 - nav-hide-children:
     hide_children:
     - ["Python API", "Functions"]
+hooks:
+- docs/hooks.py

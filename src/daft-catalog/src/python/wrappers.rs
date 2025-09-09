@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use pyo3::{intern, prelude::*, types::PyList};
 
 use super::PyIdentifier;
-use crate::{error::CatalogResult, Catalog, Identifier, Table, TableRef};
+use crate::{Catalog, Identifier, Table, TableRef, error::CatalogResult};
 
 /// Newtype to implement the Catalog trait for a Python catalog
 #[derive(Debug)]

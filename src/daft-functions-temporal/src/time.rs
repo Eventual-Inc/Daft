@@ -1,6 +1,6 @@
 use common_error::DaftError;
 use daft_core::prelude::TimeUnit;
-use daft_dsl::functions::{prelude::*, UnaryArg};
+use daft_dsl::functions::{UnaryArg, prelude::*};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Time;

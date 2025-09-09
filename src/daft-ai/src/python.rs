@@ -1,4 +1,4 @@
-use pyo3::{intern, prelude::*, types::PyModule, Bound, PyObject, PyResult, Python};
+use pyo3::{Bound, PyObject, PyResult, Python, intern, prelude::*, types::PyModule};
 
 use crate::provider::Provider;
 

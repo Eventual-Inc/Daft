@@ -9,13 +9,14 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    expr::{bound_expr::BoundExpr, BoundColumn},
-    null_lit, resolved_col, Column, Expr, ExprRef,
+    Column, Expr, ExprRef,
+    expr::{BoundColumn, bound_expr::BoundExpr},
+    null_lit, resolved_col,
 };
 use daft_recordbatch::RecordBatch;
 use snafu::ResultExt;
 
-use crate::{column_stats::ColumnRangeStatistics, DaftCoreComputeSnafu};
+use crate::{DaftCoreComputeSnafu, column_stats::ColumnRangeStatistics};
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, Hash)]
 pub struct TableStatistics {
@@ -33,7 +34,11 @@ impl TableStatistics {
         // - row 0: Minimum value for the column.
         // - row 1: Maximum value for the column.
         if table.len() != 2 {
-            return Err(DaftError::ValueError(format!("Expected stats table to have 2 rows, with min and max values for each column, but got {} rows: {}", table.len(), table)));
+            return Err(DaftError::ValueError(format!(
+                "Expected stats table to have 2 rows, with min and max values for each column, but got {} rows: {}",
+                table.len(),
+                table
+            )));
         }
         let columns = table
             .columns()
@@ -237,15 +242,14 @@ mod test {
     use snafu::ResultExt;
 
     use super::TableStatistics;
-    use crate::{column_stats::TruthValue, DaftCoreComputeSnafu};
+    use crate::{DaftCoreComputeSnafu, column_stats::TruthValue};
 
     #[test]
     fn test_equal() -> crate::Result<()> {
-        let table =
-            RecordBatch::from_nonempty_columns(vec![
-                Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()
-            ])
-            .unwrap();
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from(("a", vec![1, 2, 3, 4])).into_series(),
+        ])
+        .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         // False case
@@ -261,11 +265,10 @@ mod test {
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
         // True case
-        let table =
-            RecordBatch::from_nonempty_columns(vec![
-                Int64Array::from(("a", vec![0, 0, 0])).into_series()
-            ])
-            .unwrap();
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from(("a", vec![0, 0, 0])).into_series(),
+        ])
+        .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         let expr = BoundExpr::try_new(resolved_col("a").eq(lit(0)), &table.schema)

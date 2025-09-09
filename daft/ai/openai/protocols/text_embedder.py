@@ -67,7 +67,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             )
 
     def get_provider(self) -> str:
-        return "openai"
+        return self.provider_name
 
     def get_model(self) -> str:
         return self.model_name
@@ -77,6 +77,48 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def get_dimensions(self) -> EmbeddingDimensions:
         return _models[self.model_name].dimensions
+
+    def instantiate(self) -> TextEmbedder:
+        return OpenAITextEmbedder(
+            client=OpenAI(**self.provider_options),
+            model=self.model_name,
+        )
+
+
+@dataclass
+class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
+    """LM Studio text embedder descriptor that dynamically discovers model dimensions.
+
+    Unlike OpenAI, LM Studio can load different models with varying embedding dimensions.
+    This descriptor queries the local server to get the actual model dimensions.
+    """
+
+    provider_name: str
+    provider_options: OpenAIProviderOptions
+    model_name: str
+    model_options: Options
+
+    def get_provider(self) -> str:
+        return "lm_studio"
+
+    def get_model(self) -> str:
+        return self.model_name
+
+    def get_options(self) -> Options:
+        return self.model_options
+
+    def get_dimensions(self) -> EmbeddingDimensions:
+        try:
+            client = OpenAI(**self.provider_options)
+            response = client.embeddings.create(
+                input="dimension probe",
+                model=self.model_name,
+                encoding_format="float",
+            )
+            size = len(response.data[0].embedding)
+            return EmbeddingDimensions(size=size, dtype=DataType.float32())
+        except Exception as ex:
+            raise ValueError("Failed to determine embedding dimensions from LM Studio.") from ex
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(

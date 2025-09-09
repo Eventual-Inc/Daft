@@ -164,9 +164,47 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 pushdowns=pushdowns,
                 stats=None,
             )
+        # Check if there is a limit pushdown and no filters
+        elif pushdowns.limit is not None and self._pushed_filters is None:
+            yield from self._create_scan_tasks_with_limit_and_no_filters(pushdowns, required_columns)
         else:
-            # Regular scan without count pushdown
             yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+
+    def _create_scan_tasks_with_limit_and_no_filters(
+        self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
+    ) -> Iterator[ScanTask]:
+        """Create scan tasks optimized for limit pushdown with no filters."""
+        assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
+        assert pushdowns.limit is not None, "Expected a limit when creating scan tasks with limit and no filters"
+
+        fragments = self._ds.get_fragments()
+        remaining_limit = pushdowns.limit
+
+        for fragment in fragments:
+            if remaining_limit <= 0:
+                # No more rows needed, stop creating scan tasks
+                break
+
+            # Calculate effective rows using fragment.count_rows()
+            # This is not expensive because count_rows simply checks physical_rows - num_deletions when there are no filters
+            # https://github.com/lancedb/lance/blob/v0.34.0/rust/lance/src/dataset/fragment.rs#L1049-L1055
+            effective_rows = fragment.count_rows()
+
+            if effective_rows > 0:
+                # Determine how many rows this fragment should contribute
+                rows_to_scan = min(remaining_limit, effective_rows)
+                remaining_limit -= rows_to_scan
+
+                yield ScanTask.python_factory_func_scan_task(
+                    module=_lancedb_table_factory_function.__module__,
+                    func_name=_lancedb_table_factory_function.__name__,
+                    func_args=(self._ds, [fragment.fragment_id], required_columns, None, rows_to_scan),
+                    schema=self.schema()._schema,
+                    num_rows=rows_to_scan,
+                    size_bytes=None,
+                    pushdowns=pushdowns,
+                    stats=None,
+                )
 
     def _create_regular_scan_tasks(
         self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]

@@ -2,7 +2,7 @@ use common_error::DaftResult;
 
 use crate::{
     datatypes::UInt64Array,
-    series::{ops::cast_series_to_supertype, Series},
+    series::{Series, ops::cast_series_to_supertype},
     with_match_comparable_daft_types,
 };
 

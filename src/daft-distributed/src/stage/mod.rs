@@ -2,8 +2,8 @@ use std::{
     collections::HashMap,
     future::Future,
     sync::{
-        atomic::{AtomicU32, Ordering},
         Arc,
+        atomic::{AtomicU32, Ordering},
     },
 };
 
@@ -13,7 +13,7 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::{
-    partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
+    JoinType, LogicalPlanRef, partitioning::ClusteringSpecRef, stats::ApproxStats,
 };
 use daft_schema::schema::SchemaRef;
 use futures::Stream;
@@ -22,9 +22,9 @@ use stage_builder::StagePlanBuilder;
 
 use crate::{
     pipeline_node::{
-        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        viz_distributed_pipeline_ascii, viz_distributed_pipeline_mermaid, MaterializedOutput,
-        SubmittableTaskStream,
+        MaterializedOutput, SubmittableTaskStream, logical_plan_to_pipeline_node,
+        materialize::materialize_all_pipeline_outputs, viz_distributed_pipeline_ascii,
+        viz_distributed_pipeline_mermaid,
     },
     plan::PlanID,
     scheduling::{

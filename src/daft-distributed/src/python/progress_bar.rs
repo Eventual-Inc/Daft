@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
+use pyo3::{PyObject, PyResult, Python, types::PyAnyMethods};
 
 use crate::{
     scheduling::task::TaskContext,

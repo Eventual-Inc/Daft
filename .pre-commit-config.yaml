@@ -71,9 +71,9 @@ repos:
 - repo: local
   hooks:
   - id: fmt
-    name: Rust code Formatting
+    name: Rust Code Formatting
     description: Format files with cargo fmt.
-    entry: cargo fmt
+    entry: cargo fmt --manifest-path Cargo.toml
     language: system
     types: [rust]
     args: [--]

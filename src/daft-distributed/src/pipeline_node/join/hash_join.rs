@@ -1,11 +1,11 @@
 use std::{cmp::max, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{
-    partitioning::HashClusteringConfig, stats::StatsState, ClusteringSpec, JoinType,
+    ClusteringSpec, JoinType, partitioning::HashClusteringConfig, stats::StatsState,
 };
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;

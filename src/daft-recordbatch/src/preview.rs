@@ -189,7 +189,7 @@ impl Preview {
             .enumerate()
             .map(|(idx, field)| {
                 // Use schema for default header.
-                let mut text = field.name.to_string();
+                let mut text = field.name.clone();
                 let mut info = field.dtype.to_string();
                 // Use column overrides if any.
                 if let Some(overrides) = self.options.column(idx) {

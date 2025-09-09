@@ -2696,6 +2696,7 @@ name = "daft-functions-binary"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "base64 0.22.1",
  "common-error",
  "common-macros",
  "daft-core",
@@ -3191,6 +3192,7 @@ dependencies = [
  "daft-functions-list",
  "daft-image",
  "futures",
+ "hashbrown 0.16.0",
  "html-escape",
  "indexmap 2.9.0",
  "num-traits",
@@ -3411,6 +3413,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "hashbrown 0.16.0",
  "parking_lot 0.12.4",
  "parquet",
  "pyo3",
@@ -3911,6 +3914,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
 name = "foreign_vec"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4311,7 +4320,18 @@ checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash",
+ "foldhash 0.1.5",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
 ]
 
 [[package]]
@@ -4914,7 +4934,7 @@ version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "848f085cdaa2c0508c87e021392ec5fe3fd7da90d6d548f3c1790e1d499f3080"
 dependencies = [
- "foldhash",
+ "foldhash 0.1.5",
  "hifijson",
  "indexmap 2.9.0",
  "jaq-core",

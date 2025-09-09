@@ -7,8 +7,8 @@ use std::{
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_runtime::{get_io_runtime, RuntimeTask};
-use daft_io::{get_io_client, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer};
+use common_runtime::{RuntimeTask, get_io_runtime};
+use daft_io::{IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, get_io_client};
 use parking_lot::Mutex;
 
 /// A trait for storage backends. Currently only supports files and S3 as backends.

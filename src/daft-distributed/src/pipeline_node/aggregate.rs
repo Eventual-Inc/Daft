@@ -1,19 +1,20 @@
 use std::{cmp::min, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_dsl::{
+    AggExpr,
     expr::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    is_partition_compatible, AggExpr,
+    is_partition_compatible,
 };
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{
+    ClusteringSpec,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     stats::StatsState,
-    ClusteringSpec,
 };
 use daft_schema::{
     dtype::DataType,
@@ -23,8 +24,8 @@ use daft_schema::{
 use super::DistributedPipelineNode;
 use crate::{
     pipeline_node::{
-        project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator,
     },
     stage::{StageConfig, StageExecutionContext},
 };

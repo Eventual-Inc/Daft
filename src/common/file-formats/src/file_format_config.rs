@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyResult, Python},
+    pyo3::{PyObject, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
 };
 
 use crate::FileFormat;

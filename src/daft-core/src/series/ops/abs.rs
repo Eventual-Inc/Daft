@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 
 use crate::{
     datatypes::DataType,
-    series::{array_impl::IntoSeries, Series},
+    series::{Series, array_impl::IntoSeries},
 };
 
 impl Series {

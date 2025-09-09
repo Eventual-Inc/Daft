@@ -2,8 +2,8 @@ use std::{ops::Index, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
 use serde::{Deserialize, Serialize};
-pub use smallvec::smallvec;
 use smallvec::SmallVec;
+pub use smallvec::smallvec;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stat {
@@ -33,7 +33,7 @@ impl std::fmt::Display for Stat {
 ///
 /// The general length of a snapshot is 3, because the 3 most common values are
 /// 1. CPU Time in microseconds
-/// 2. Rows Received
+/// 2. Rows In
 /// 3. Rows Emitted
 ///
 /// This is intended to be lightweight for execution to generate while still

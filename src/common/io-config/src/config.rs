@@ -3,8 +3,8 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    huggingface::HuggingFaceConfig, unity::UnityConfig, AzureConfig, GCSConfig, HTTPConfig,
-    S3Config,
+    AzureConfig, GCSConfig, HTTPConfig, S3Config, huggingface::HuggingFaceConfig,
+    unity::UnityConfig,
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IOConfig {

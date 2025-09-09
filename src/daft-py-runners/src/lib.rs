@@ -6,7 +6,7 @@ use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 #[cfg(feature = "python")]
-use daft_micropartition::{python::PyMicroPartition, MicroPartitionRef};
+use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 #[cfg(feature = "python")]
 use pyo3::{
     intern,

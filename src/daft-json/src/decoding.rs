@@ -10,7 +10,7 @@ use arrow2::{
     error::{Error, Result},
     offset::Offsets,
     temporal_conversions,
-    types::{f16, NativeType, Offset},
+    types::{NativeType, Offset, f16},
 };
 use chrono::{Datelike, Timelike};
 use daft_decoding::deserialize::{
@@ -27,7 +27,6 @@ const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     records: &[A],
     schema: &Schema,
-    schema_is_projection: bool,
 ) -> Result<Vec<Box<dyn Array>>> {
     // Allocate mutable arrays.
     let mut results = schema
@@ -38,23 +37,19 @@ pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     for record in records {
         match record.borrow() {
             BorrowedValue::Object(record) => {
-                for (key, value) in record {
-                    let arr = results.get_mut(key.as_ref());
-                    if let Some(arr) = arr {
+                for (key, arr) in &mut results {
+                    if let Some(value) = record.get(&**key) {
                         deserialize_into(arr, &[value]);
-                    } else if !schema_is_projection {
-                        // Provided schema is either the full schema or a projection.
-                        // If this key isn't in the schema-derived array map AND there was no projection,
-                        // we return an error. Otherwise, we drop this key-value pair.
-                        return Err(Error::ExternalFormat(format!("unexpected key: '{key}'")));
+                    } else {
+                        arr.push_null();
                     }
                 }
             }
             _ => {
                 return Err(Error::ExternalFormat(format!(
-                "Each line in a newline-delimited JSON file must be a JSON object, but got: {:?}",
-                record.borrow()
-            )))
+                    "Each line in a newline-delimited JSON file must be a JSON object, but got: {:?}",
+                    record.borrow()
+                )));
             }
         }
     }

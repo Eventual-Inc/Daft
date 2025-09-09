@@ -1,6 +1,6 @@
 use std::{future, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
@@ -11,12 +11,12 @@ use daft_logical_plan::{
 };
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use futures::{future::try_join_all, TryStreamExt};
+use futures::{TryStreamExt, future::try_join_all};
 #[cfg(feature = "python")]
-use pyo3::{prelude::*, Python};
+use pyo3::{Python, prelude::*};
 
 use super::{
-    make_new_task_from_materialized_outputs, DistributedPipelineNode, SubmittableTaskStream,
+    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
 };
 use crate::{
     pipeline_node::{
@@ -28,7 +28,7 @@ use crate::{
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_vec,
     },
 };
@@ -211,6 +211,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
             return Ok(());
@@ -242,6 +243,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -281,6 +283,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -312,6 +315,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
         }

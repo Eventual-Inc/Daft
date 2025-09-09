@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_logical_plan::partitioning::UnknownClusteringConfig;
 use daft_schema::schema::SchemaRef;
@@ -8,15 +8,15 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct GatherNode {
@@ -83,6 +83,7 @@ impl GatherNode {
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
             &(self_clone as Arc<dyn DistributedPipelineNode>),
+            None,
         )?;
 
         let _ = result_tx.send(task).await;

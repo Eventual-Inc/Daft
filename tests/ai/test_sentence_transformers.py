@@ -8,9 +8,10 @@ pytest.importorskip("torch")
 import torch
 
 from daft.ai.protocols import TextEmbedderDescriptor
-from daft.ai.sentence_transformers import SentenceTransformersProvider
+from daft.ai.sentence_transformers.provider import SentenceTransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
+from tests.benchmarks.conftest import IS_CI
 
 
 def test_sentence_transformers_text_embedder_default():
@@ -23,7 +24,7 @@ def test_sentence_transformers_text_embedder_default():
 
 
 @pytest.mark.parametrize(
-    "model_name, dimensions, run_model",
+    "model_name, dimensions, run_model_in_ci",
     [
         ("sentence-transformers/all-MiniLM-L6-v2", 384, True),
         ("sentence-transformers/all-mpnet-base-v2", 768, True),
@@ -33,7 +34,7 @@ def test_sentence_transformers_text_embedder_default():
         ("BAAI/bge-base-en-v1.5", 768, True),
     ],
 )
-def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_model):
+def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_model_in_ci):
     mock_options = {"arg1": "val1", "arg2": "val2"}
 
     provider = SentenceTransformersProvider()
@@ -43,7 +44,7 @@ def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_m
     assert descriptor.get_model() == model_name
     assert descriptor.get_options() == mock_options
 
-    if run_model:
+    if not IS_CI or run_model_in_ci:
         embedder = descriptor.instantiate()
 
         true_dimensions = embedder.model.get_sentence_embedding_dimension()

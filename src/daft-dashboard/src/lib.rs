@@ -5,15 +5,15 @@ mod response;
 use std::{collections::HashMap, io::Cursor, net::Ipv4Addr, sync::Arc};
 
 use daft_recordbatch::RecordBatch;
-use http_body_util::{combinators::BoxBody, BodyExt, Full};
+use http_body_util::{BodyExt, Full, combinators::BoxBody};
 use hyper::{
+    Method, Request, Response, StatusCode,
     body::{Bytes, Incoming},
     server::conn::http1,
     service::service_fn,
-    Method, Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 use parking_lot::Mutex;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -169,7 +169,8 @@ fn generate_interactive_html(
     // Start with the basic table HTML from repr_html
     let table_html = record_batch.repr_html();
     // Build the complete interactive HTML with side pane layout
-    let mut html = vec![r#"
+    let mut html = vec![
+        r#"
         <style>
         .dashboard-container {
             display: flex;
@@ -226,7 +227,8 @@ fn generate_interactive_html(
         <div class="dashboard-container">
             <div class="table-container">
         "#
-    .to_string()];
+        .to_string(),
+    ];
 
     // Add the table HTML with ID
     html.push(format!(

@@ -1,3 +1,4 @@
+mod append;
 mod bool_and;
 mod bool_or;
 mod chunk;
@@ -17,23 +18,24 @@ mod sort;
 mod sum;
 mod value_counts;
 
-pub use bool_and::{list_bool_and as bool_and, ListBoolAnd};
-pub use bool_or::{list_bool_or as bool_or, ListBoolOr};
-pub use chunk::{list_chunk as chunk, ListChunk};
+pub use append::{ListAppend, list_append as append};
+pub use bool_and::{ListBoolAnd, list_bool_and as bool_and};
+pub use bool_or::{ListBoolOr, list_bool_or as bool_or};
+pub use chunk::{ListChunk, list_chunk as chunk};
 pub use count::ListCount;
-pub use count_distinct::{list_count_distinct as count_distinct, ListCountDistinct};
-pub use distinct::{list_distinct as distinct, ListDistinct};
-pub use explode::{explode, Explode};
-pub use get::{list_get as get, ListGet};
-pub use join::{list_join as join, ListJoin};
-pub use list_fill::{list_fill, ListFill};
-pub use max::{list_max as max, ListMax};
-pub use mean::{list_mean as mean, ListMean};
-pub use min::{list_min as min, ListMin};
-pub use slice::{list_slice as slice, ListSlice};
-pub use sort::{list_sort as sort, ListSort};
-pub use sum::{list_sum as sum, ListSum};
-pub use value_counts::{list_value_counts as value_counts, ListValueCounts};
+pub use count_distinct::{ListCountDistinct, list_count_distinct as count_distinct};
+pub use distinct::{ListDistinct, list_distinct as distinct};
+pub use explode::{Explode, explode};
+pub use get::{ListGet, list_get as get};
+pub use join::{ListJoin, list_join as join};
+pub use list_fill::{ListFill, list_fill};
+pub use max::{ListMax, list_max as max};
+pub use mean::{ListMean, list_mean as mean};
+pub use min::{ListMin, list_min as min};
+pub use slice::{ListSlice, list_slice as slice};
+pub use sort::{ListSort, list_sort as sort};
+pub use sum::{ListSum, list_sum as sum};
+pub use value_counts::{ListValueCounts, list_value_counts as value_counts};
 
 pub(crate) mod kernels;
 pub(crate) mod series;
@@ -46,6 +48,7 @@ pub struct ListFunctions;
 
 impl FunctionModule for ListFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(ListAppend);
         parent.add_fn(ListBoolAnd);
         parent.add_fn(ListBoolOr);
         parent.add_fn(ListChunk);

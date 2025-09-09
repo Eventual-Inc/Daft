@@ -8,7 +8,7 @@ use crate::series::utils::python_fn::run_python_binary_operator_fn;
 use crate::{
     array::prelude::*,
     datatypes::{InferDataType, Int32Type, Utf8Array},
-    series::{utils::cast::cast_downcast_op, IntoSeries, Series},
+    series::{IntoSeries, Series, utils::cast::cast_downcast_op},
     with_match_integer_daft_types, with_match_numeric_daft_types,
 };
 

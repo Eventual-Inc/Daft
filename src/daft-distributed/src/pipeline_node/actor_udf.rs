@@ -7,7 +7,7 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use pyo3::{types::PyAnyMethods, PyObject, Python};
+use pyo3::{PyObject, Python, types::PyAnyMethods};
 
 use super::{
     DisplayLevel, DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig,
@@ -18,7 +18,7 @@ use crate::{
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
     stage::{StageConfig, StageExecutionContext},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         joinset::JoinSet,
     },
 };

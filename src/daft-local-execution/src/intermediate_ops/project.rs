@@ -3,23 +3,23 @@ use std::{cmp::max, sync::Arc};
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
+    Expr,
     common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
-    functions::{scalar::ScalarFn, BuiltinScalarFn},
-    Expr,
+    functions::{BuiltinScalarFn, scalar::ScalarFn},
 };
 use daft_functions_uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
+    ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    ExecutionTaskSpawner,
 };
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(

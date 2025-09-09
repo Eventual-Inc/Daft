@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 pub mod ascii;
 pub mod mermaid;
 pub mod table_display;

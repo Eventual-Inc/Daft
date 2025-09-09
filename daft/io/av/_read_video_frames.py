@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -131,6 +134,7 @@ class _VideoFramesSourceTask(DataSourceTask):
         )
 
     def _list_frames(self, path: str, file: Any) -> Generator[_VideoFrame]:
+        container = None
         try:
             container = av.open(file)
 
@@ -147,8 +151,6 @@ class _VideoFramesSourceTask(DataSourceTask):
                     frame = next(container.decode(stream))
                 except StopIteration:
                     break
-                except Exception:
-                    continue  # skip decoding errors
 
                 if self.is_key_frame is not None and self.is_key_frame != frame.key_frame:
                     continue  # skip based on is_key_frame filter
@@ -171,27 +173,69 @@ class _VideoFramesSourceTask(DataSourceTask):
                 )
                 frame_index += 1
         finally:
-            container.close()
+            if container:
+                container.close()
 
     def _open(self) -> Any:
         if _is_youtube_url(self.path):
-            import requests
-            import yt_dlp
-
-            with yt_dlp.YoutubeDL({"format": "mp4", "quiet": True}) as ydl:
-                info = ydl.extract_info(self.path, download=False)
-                if "url" in info:
-                    direct_url = info["url"]
-                elif "entries" in info and len(info["entries"]) > 0 and "url" in info["entries"][0]:
-                    direct_url = info["entries"][0]["url"]
-                else:
-                    raise ValueError("Could not extract URL from youtube video.")
-                response = requests.get(direct_url, stream=True)
-                response.raise_for_status()
-                return response.raw
+            return self._open_youtube_file()
         else:
             fp, fs, _ = _infer_filesystem(self.path, io_config=self.io_config)
             return fs.open_input_file(fp)
+
+    @contextmanager
+    def _open_youtube_file(self) -> Any:
+        import yt_dlp
+
+        def selector(ctx):  # type: ignore
+            best_fmt = None
+            best_fit = float("inf")  # lower is better
+
+            for fmt in ctx["formats"]:
+                if fmt.get("ext") != "mp4":
+                    continue
+
+                h, w = fmt.get("height"), fmt.get("width")
+                if h is None or w is None:
+                    continue
+
+                fit = abs(h - self.image_height) + abs(w - self.image_width)
+                if fit == 0:
+                    yield fmt
+                    return
+                if fit < best_fit:
+                    best_fmt = fmt
+                    best_fit = fit
+
+            yield best_fmt
+
+        # Note:
+        #   Streaming youtube downloads requires deeper work and was error-prone.
+        #   The parsed youtube urls use m3u8 which requires decoding which ydl
+        #   will handle for us. We cannot reliable pass a file-like HTTP response
+        #   to PyAV; hence why this will download to a tempfile then open the file.
+
+        temp_file = next(tempfile._get_candidate_names())  # type: ignore
+
+        params = {
+            "format": selector,
+            "quiet": True,
+            "outtmpl": temp_file,
+            "no_warnings": True,
+            "extract_flat": False,
+            "no_check_certificate": True,
+            "ignoreerrors": False,
+            "consoletitle": False,
+            "noprogress": True,
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(params) as ydl:
+                ydl.download([self.path])
+            yield open(temp_file, mode="rb")
+        finally:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
 
     def get_micro_partitions(self) -> Iterator[MicroPartition]:
         with self._open() as file:

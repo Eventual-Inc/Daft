@@ -79,19 +79,27 @@ impl AsImageObj for FixedShapeImageArray {
 
         match self.data_type() {
             DataType::FixedShapeImage(mode, height, width) => {
-                let arrow_array = self.physical.flat_child.downcast::<UInt8Array>().unwrap().as_arrow();
+                let arrow_array = self
+                    .physical
+                    .flat_child
+                    .downcast::<UInt8Array>()
+                    .unwrap()
+                    .as_arrow();
                 let num_channels = mode.num_channels();
                 let size = height * width * u32::from(num_channels);
                 let start = idx * size as usize;
                 let end = (idx + 1) * size as usize;
-                let slice_data = Cow::Borrowed(&arrow_array.values().as_slice()[start..end] as &'a [u8]);
+                let slice_data =
+                    Cow::Borrowed(&arrow_array.values().as_slice()[start..end] as &'a [u8]);
                 let result = CowImage::from_raw(mode, *width, *height, slice_data);
 
                 assert_eq!(result.height(), *height);
                 assert_eq!(result.width(), *width);
                 Some(result)
             }
-            dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {dt}"),
+            dt => panic!(
+                "FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {dt}"
+            ),
         }
     }
 }

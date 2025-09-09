@@ -44,13 +44,13 @@ pub enum GetRange {
 
 impl GetRange {
     pub fn validate(&self) -> Result<(), InvalidGetRange> {
-        if let Self::Bounded(r) = self {
-            if r.end <= r.start {
-                return Err(InvalidGetRange::Inconsistent {
-                    start: r.start,
-                    end: r.end,
-                });
-            }
+        if let Self::Bounded(r) = self
+            && r.end <= r.start
+        {
+            return Err(InvalidGetRange::Inconsistent {
+                start: r.start,
+                end: r.end,
+            });
         }
         Ok(())
     }

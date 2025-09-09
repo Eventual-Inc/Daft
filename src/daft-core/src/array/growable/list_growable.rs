@@ -1,9 +1,9 @@
 use arrow2::types::Index;
 use common_error::DaftResult;
 
-use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
+use super::{Growable, bitmap_growable::ArrowBitmapGrowable};
 use crate::{
-    array::{growable::make_growable, ListArray},
+    array::{ListArray, growable::make_growable},
     datatypes::{DataType, Field},
     series::{IntoSeries, Series},
 };

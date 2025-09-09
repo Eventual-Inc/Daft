@@ -2,14 +2,14 @@ use std::cell::RefCell;
 
 use serde::ser::SerializeMap;
 
-use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
+use super::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::as_arrow::AsArrow};
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
-        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType,
-        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, DataType, ExtensionArray,
+        FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
+        logical::LogicalArray,
     },
     series::{IntoSeries, Series},
 };

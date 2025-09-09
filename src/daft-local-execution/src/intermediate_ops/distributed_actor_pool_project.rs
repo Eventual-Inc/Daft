@@ -1,27 +1,27 @@
 use std::{
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     vec,
 };
 
 use common_error::DaftResult;
+use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
-use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use rand::Rng;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
+    ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    ExecutionTaskSpawner,
 };
 
 #[derive(Clone, Debug)]
@@ -159,7 +159,9 @@ impl DistributedActorPoolProjectOperator {
         batch_size: Option<usize>,
         memory_request: u64,
     ) -> DaftResult<Self> {
-        unimplemented!("DistributedActorPoolProjectOperator::new_with_task_locals is not implemented without Python");
+        unimplemented!(
+            "DistributedActorPoolProjectOperator::new_with_task_locals is not implemented without Python"
+        );
     }
 }
 

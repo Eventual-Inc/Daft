@@ -10,9 +10,10 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     channel::{
-        create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
-        Sender,
+        OrderingAwareReceiver, Receiver, Sender, create_channel,
+        create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
@@ -21,7 +22,6 @@ use crate::{
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
 
 pub enum IntermediateOperatorResult {

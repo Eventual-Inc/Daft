@@ -4,7 +4,7 @@ use arrow2::bitmap::MutableBitmap;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::DaftIsNan,
-    datatypes::{try_sum_supertype, DaftPrimitiveType},
+    datatypes::{DaftPrimitiveType, try_sum_supertype},
     prelude::*,
 };
 use num_traits::{FromPrimitive, Zero};

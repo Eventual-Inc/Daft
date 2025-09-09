@@ -1,8 +1,8 @@
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
