@@ -2617,7 +2617,6 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "common-treenode",
- "daft-core",
  "daft-dsl",
  "daft-io",
  "daft-local-plan",
