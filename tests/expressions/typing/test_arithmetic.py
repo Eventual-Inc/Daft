@@ -30,7 +30,11 @@ def plus_type_validation(lhs: DataType, rhs: DataType) -> bool:
         ):
             return False
 
-    return has_supertype(lhs, rhs)
+    return (
+        has_supertype(lhs, rhs)
+        or (lhs.is_binary() and rhs.is_fixed_size_binary())
+        or (lhs.is_fixed_size_binary() and rhs.is_binary())
+    )
 
 
 def test_plus(binary_data_fixture):

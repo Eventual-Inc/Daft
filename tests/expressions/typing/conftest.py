@@ -302,8 +302,6 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
         time_and_numeric = x == (DataType.time("us") or DataType.time("ns")) and is_numeric(y)
         timestamp_and_big_numeric = x.is_temporal() and is_numeric_bitwidth_gte_32(y)
 
-        binary_and_fixed_size_binary = x.is_binary() and y.is_fixed_size_binary()
-
         if (
             either_null
             or either_string_and_other_not_binary
@@ -312,7 +310,6 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
             or date_and_numeric
             or time_and_numeric
             or timestamp_and_big_numeric
-            or binary_and_fixed_size_binary
         ):
             return True
 
