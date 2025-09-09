@@ -92,12 +92,12 @@ jobs:
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
-        android: true
+        android: false
         dotnet: false
         haskell: true
         large-packages: false
         docker-images: false
-        swap-storage: false
+        swap-storage: true
 
     # - run: |
     #     sudo apt-get update
