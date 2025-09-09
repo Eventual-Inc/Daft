@@ -7,7 +7,6 @@ import os
 import threading
 import time
 import uuid
-import warnings
 from collections.abc import Generator, Iterable, Iterator
 from datetime import datetime
 from queue import Full, Queue
@@ -268,7 +267,7 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef) -> ray.ObjectRef:
     elif isinstance(df, ray.ObjectRef):
         return df
     else:
-        raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
+        raise ValueError(f"Expected a Ray object ref or a Pandas DataFrame, got {type(df)}")
 
 
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
@@ -887,8 +886,7 @@ class Scheduler(ActorPoolManager):
 
         start = datetime.now()
         profile_filename = (
-            f"profile_RayRunner.run()_"
-            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+            f"profile_RayRunner.run()_{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
 
         with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
@@ -1234,16 +1232,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                     address,
                 )
         else:
-            if address is not None:
-                if not address.endswith("10001"):
-                    warnings.warn(
-                        f"The address to a Ray client server is typically at port :10001, but instead we found: {address}"
-                    )
-                if not address.startswith("ray://"):
-                    warnings.warn(
-                        f"Expected Ray address to start with 'ray://' protocol but found: {address}. Automatically prefixing your address with the protocol to make a Ray connection: ray://{address}"
-                    )
-                    address = "ray://" + address
+            if address is not None and address.startswith("ray://"):
+                logger.warning(
+                    "Specifying a Ray address with the 'ray://' prefix uses the Ray Client, which may impact performance. If this is running in a Ray job, you may not need to specify the address at all."
+                )
+
             ray.init(address=address)
 
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
