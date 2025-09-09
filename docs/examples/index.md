@@ -220,7 +220,7 @@
 }
 
 .example-overlay-dark {
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 15%, rgba(0, 0, 0, 0.6) 45%, rgba(0, 0, 0, 0.2) 75%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 12%, rgba(0, 0, 0, 0.6) 35%, rgba(0, 0, 0, 0) 65%);
 }
 
 @media (max-width: 768px) {
