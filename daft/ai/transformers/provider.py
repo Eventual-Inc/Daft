@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from daft.ai.provider import Provider
 
 if TYPE_CHECKING:
-    from daft.ai.protocols import ImageEmbedderDescriptor, TextClassifierDescriptor
+    from daft.ai.protocols import ImageEmbedderDescriptor, TextClassifierDescriptor, VisualUnderstandingDescriptor
     from daft.ai.typing import Options
 
 
@@ -39,3 +39,8 @@ class TransformersProvider(Provider):
             model_name=(model or "facebook/bart-large-mnli"),
             model_options=model_options,  # type: ignore
         )
+
+    def get_visual_understanding(self, model: str | None = None, **options: Any) -> VisualUnderstandingDescriptor:
+        from daft.ai.transformers.protocols.visual_understanding import TransformersVisualUnderstandingDescriptor
+
+        return TransformersVisualUnderstandingDescriptor(model or "microsoft/git-base", options)

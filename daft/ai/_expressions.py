@@ -11,6 +11,8 @@ if TYPE_CHECKING:
         TextClassifierDescriptor,
         TextEmbedder,
         TextEmbedderDescriptor,
+        VisualUnderstanding,
+        VisualUnderstandingDescriptor,
     )
     from daft.ai.typing import Embedding, Label
 
@@ -54,3 +56,17 @@ class _TextClassificationExpression:
     def __call__(self, text_series: Series) -> list[Label]:
         text = text_series.to_pylist()
         return self.text_classifier.classify_text(text, labels=self.labels) if text else []
+
+
+class _VisualUnderstandingExpression:
+    """Function expression implementation for a VisualUnderstanding protocol."""
+
+    visual_understanding: VisualUnderstanding
+
+    def __init__(self, visual_understanding: VisualUnderstandingDescriptor):
+        self.visual_understanding = visual_understanding.instantiate()
+
+    def __call__(self, image_series: Series, text_series: Series) -> list[str]:
+        image = image_series.to_pylist()
+        text = text_series.to_pylist()
+        return self.visual_understanding.understand_visual(image, text) if image and text else []

@@ -54,3 +54,16 @@ class TextClassifier(Protocol):
 
 class TextClassifierDescriptor(Descriptor[TextClassifier]):
     """Descriptor for a TextClassifier implementation."""
+
+
+@runtime_checkable
+class VisualUnderstanding(Protocol):
+    """Protocol for visual understanding implementations."""
+
+    def understand_visual(self, images: list[Image], text: list[str]) -> list[str]:
+        """Understands a batch of images and returns a list of labels."""
+        ...
+
+
+class VisualUnderstandingDescriptor(Descriptor[VisualUnderstanding]):
+    """Descriptor for a VisualUnderstanding implementation."""
