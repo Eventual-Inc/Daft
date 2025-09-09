@@ -54,14 +54,15 @@ impl UDFActors {
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
-        let (gpu_request, cpu_request, memory_request) =
+        let (gpu_request, cpu_request, memory_request, resources) =
             match udf_properties.resource_request.clone() {
                 Some(resource_request) => (
                     resource_request.num_gpus().unwrap_or(0.0),
                     resource_request.num_cpus().unwrap_or(0.0),
                     resource_request.memory_bytes().unwrap_or(0),
+                    resource_request.resources(),
                 ),
-                None => (0.0, 0.0, 0),
+                None => (0.0, 0.0, 0, None),
             };
 
         // Use async pattern similar to DistributedActorPoolProjectOperator
@@ -77,6 +78,7 @@ impl UDFActors {
                         gpu_request,
                         cpu_request,
                         memory_request,
+                        resources,
                     ),
                 )?;
                 pyo3_async_runtimes::tokio::into_future(coroutine)
