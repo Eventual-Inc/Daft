@@ -90,7 +90,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     }
 
     fn name(&self) -> NodeName {
-        "MonotonicallyIncreasingId".into()
+        "Monotonic ID".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -98,7 +98,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["MonotonicallyIncreasingId".to_string()]
+        vec!["Monotonic ID".to_string()]
     }
 
     fn finalize(
