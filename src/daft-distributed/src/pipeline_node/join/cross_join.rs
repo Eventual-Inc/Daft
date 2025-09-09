@@ -113,9 +113,7 @@ impl CrossJoinNode {
 
                 let task = SubmittableTask::new(new_task);
 
-                if result_tx.send(task).await.is_err() {
-                    break;
-                }
+                let _ = result_tx.send(task).await;
             }
         }
         Ok(())
