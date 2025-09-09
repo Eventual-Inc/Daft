@@ -1,19 +1,17 @@
 use common_error::DaftResult;
 use common_metrics::{Stat, StatSnapshotSend};
 use common_tracing::flush_oltp_metrics_provider;
-use opentelemetry::{global, metrics::Counter, KeyValue};
+use opentelemetry::{KeyValue, global, metrics::Counter};
 
 use crate::{
     ops::NodeInfo,
-    runtime_stats::{
-        subscribers::RuntimeStatsSubscriber, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY,
-    },
+    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, subscribers::RuntimeStatsSubscriber},
 };
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
-    rows_received: Counter<u64>,
-    rows_emitted: Counter<u64>,
+    rows_in: Counter<u64>,
+    rows_out: Counter<u64>,
     cpu_us: Counter<u64>,
 }
 
@@ -21,10 +19,8 @@ impl OpenTelemetrySubscriber {
     pub fn new() -> Self {
         let meter = global::meter("runtime_stats");
         Self {
-            rows_received: meter
-                .u64_counter("daft.runtime_stats.rows_received")
-                .build(),
-            rows_emitted: meter.u64_counter("daft.runtime_stats.rows_emitted").build(),
+            rows_in: meter.u64_counter("daft.runtime_stats.rows_in").build(),
+            rows_out: meter.u64_counter("daft.runtime_stats.rows_out").build(),
             cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
         }
     }
@@ -56,8 +52,8 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
 
             for (k, v) in event.iter() {
                 match (k, v) {
-                    (ROWS_RECEIVED_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
-                    (ROWS_EMITTED_KEY, Stat::Count(v)) => self.rows_emitted.add(*v, &attributes),
+                    (ROWS_IN_KEY, Stat::Count(v)) => self.rows_in.add(*v, &attributes),
+                    (ROWS_OUT_KEY, Stat::Count(v)) => self.rows_out.add(*v, &attributes),
                     (CPU_US_KEY, Stat::Count(v)) => self.cpu_us.add(*v, &attributes),
                     _ => {}
                 }

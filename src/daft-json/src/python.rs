@@ -2,9 +2,9 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_core::python::PySchema;
-    use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
+    use daft_io::{IOStatsContext, get_io_client, python::IOConfig};
     use daft_recordbatch::python::PyRecordBatch;
-    use pyo3::{pyfunction, PyResult, Python};
+    use pyo3::{PyResult, Python, pyfunction};
 
     use crate::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 

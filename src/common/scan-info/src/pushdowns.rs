@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_display::DisplayAs;
-use daft_dsl::{estimated_selectivity, ExprRef};
+use daft_dsl::{ExprRef, estimated_selectivity};
 use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
 

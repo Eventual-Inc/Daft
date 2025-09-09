@@ -5,8 +5,8 @@ use std::{
 };
 
 use common_display::{
-    table_display::{make_comfy_table, make_schema_vertical_table},
     DisplayAs,
+    table_display::{make_comfy_table, make_schema_vertical_table},
 };
 use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};

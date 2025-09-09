@@ -39,11 +39,65 @@ def test_lancedb_read_filter(lance_dataset_path):
     assert df.to_pydict() == {"vector": data["vector"][:1]}
 
 
-def test_lancedb_read_limit(lance_dataset_path):
-    df = daft.read_lance(lance_dataset_path)
-    df = df.limit(1)
-    df = df.select("vector")
-    assert df.to_pydict() == {"vector": data["vector"][:1]}
+@pytest.fixture(scope="function")
+def large_lance_dataset_path(tmp_path_factory):
+    """Create a large Lance dataset with multiple fragments for testing limit operations."""
+    tmp_dir = tmp_path_factory.mktemp("large_lance")
+
+    # Create 10 fragments of 1000 rows each (10,000 total rows)
+    for frag_idx in range(10):
+        # Generate data for this fragment
+        vectors = [[float(i * 0.1 + frag_idx * 1000), float(i * 0.2 + frag_idx * 1000)] for i in range(1000)]
+        big_ints = [i + frag_idx * 1000 for i in range(1000)]
+
+        fragment_data = {"vector": vectors, "big_int": big_ints}
+
+        # Write fragment (first write creates dataset, subsequent writes append)
+        mode = "append" if frag_idx > 0 else None
+        lance.write_dataset(pa.Table.from_pydict(fragment_data), tmp_dir, mode=mode)
+
+    yield str(tmp_dir)
+
+
+@pytest.mark.parametrize(
+    "limit_size,expected_scan_tasks",
+    [
+        # Small limits
+        (1000, 1),
+        (1001, 2),
+        # Big limits
+        (9000, 9),
+        (9001, 10),
+        (10000, 10),
+    ],
+)
+def test_lancedb_read_limit_large_dataset(large_lance_dataset_path, limit_size, expected_scan_tasks):
+    """Test limit operation on a large Lance dataset with multiple fragments."""
+    import io
+
+    df = daft.read_lance(large_lance_dataset_path)
+
+    # Test with different limit sizes
+    df = df.limit(limit_size)
+    df = df.select("vector", "big_int")
+
+    # Capture the explain output
+    string_io = io.StringIO()
+    df.explain(True, file=string_io)
+    explain_output = string_io.getvalue()
+
+    # Assert that we have the expected number of scan tasks
+    assert f"Num Scan Tasks = {expected_scan_tasks}" in explain_output
+
+    result = df.to_pydict()
+
+    # Verify we got the expected number of rows
+    assert len(result["vector"]) == limit_size
+    assert len(result["big_int"]) == limit_size
+
+    # Verify the data is ordered correctly (should get first N rows)
+    expected_big_ints = list(range(limit_size))
+    assert result["big_int"] == expected_big_ints
 
 
 def test_lancedb_with_version(lance_dataset_path):

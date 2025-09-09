@@ -1,4 +1,3 @@
-#![feature(mapped_lock_guards)]
 use std::sync::{Arc, OnceLock, RwLock};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};

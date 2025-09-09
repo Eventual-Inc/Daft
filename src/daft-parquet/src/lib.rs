@@ -1,9 +1,6 @@
-#![feature(let_chains)]
-#![feature(result_flattening)]
-
 use std::{cmp::max, num::NonZeroUsize};
 
-use arrow2::io::parquet::read::schema::{infer_schema_with_options, SchemaInferenceOptions};
+use arrow2::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use common_error::DaftError;
 use daft_core::{prelude::SchemaRef, utils::arrow::coerce_to_daft_compatible_schema};
 use snafu::Snafu;
@@ -54,7 +51,9 @@ pub enum Error {
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
 
-    #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]
+    #[snafu(display(
+        "Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"
+    ))]
     FileReadTimeout { path: String, duration_ms: i64 },
     #[snafu(display("Internal IO Error when opening: {path}:\nDetails:\n{source}"))]
     InternalIOError {

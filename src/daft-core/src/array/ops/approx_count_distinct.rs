@@ -4,7 +4,7 @@ use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::{as_arrow::AsArrow, DaftApproxCountDistinctAggable},
+    array::ops::{DaftApproxCountDistinctAggable, as_arrow::AsArrow},
     datatypes::UInt64Array,
     utils::identity_hash_set::IdentityBuildHasher,
 };

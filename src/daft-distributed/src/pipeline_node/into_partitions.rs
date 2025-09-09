@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
@@ -10,9 +10,8 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
-        make_new_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, append_plan_to_existing_task,
+        make_in_memory_task_from_materialized_outputs, make_new_task_from_materialized_outputs,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -20,7 +19,7 @@ use crate::{
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         joinset::OrderedJoinSet,
     },
 };
@@ -251,7 +250,7 @@ impl IntoPartitionsNode {
                 self.split_tasks(input_tasks, &scheduler_handle, &task_id_counter, result_tx)
                     .await?;
             }
-        };
+        }
         Ok(())
     }
 }

@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 
-use crate::{expr::ResolvedColumn, Column, Expr, ExprRef};
+use crate::{Column, Expr, ExprRef, expr::ResolvedColumn};
 
 pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
     e.apply(&mut |expr: &ExprRef| {
-        if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(ref name))) = &**expr {
+        if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) = &**expr {
             cols.push(name.to_string());
         }
         Ok(TreeNodeRecursion::Continue)
@@ -48,7 +48,7 @@ pub fn replace_columns_with_expressions(
 ) -> ExprRef {
     let transformed = expr
         .transform(&|e: ExprRef| {
-            if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(ref name))) = e.as_ref()
+            if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) = e.as_ref()
                 && let Some(tgt) = replace_map.get(name.as_ref())
             {
                 Ok(Transformed::yes(tgt.clone()))

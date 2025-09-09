@@ -4,8 +4,8 @@ use std::{
 };
 
 use daft_dsl::{
-    functions::{BuiltinScalarFn, ScalarUDF},
     ExprRef,
+    functions::{BuiltinScalarFn, ScalarUDF},
 };
 use spark_connect::Expression;
 

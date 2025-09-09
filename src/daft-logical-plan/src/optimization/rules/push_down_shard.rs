@@ -5,9 +5,9 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
+    LogicalPlan,
     ops::{Shard, Source},
     source_info::SourceInfo,
-    LogicalPlan,
 };
 
 /// Optimization rules for pushing Limits further into the logical plan.

@@ -1,19 +1,19 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
-use daft_dsl::{expr::bound_expr::BoundExpr, is_partition_compatible, ExprRef};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
 use daft_logical_plan::{
+    ClusteringSpec, JoinStrategy, JoinType,
     ops::Join,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     stats::ApproxStats,
-    ClusteringSpec, JoinStrategy, JoinType,
 };
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
+    DistributedPipelineNode, NodeID,
     join::{BroadcastJoinNode, HashJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
-    DistributedPipelineNode, NodeID,
 };
 
 impl LogicalPlanToPipelineNodeTranslator {

@@ -4,7 +4,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from daft.expressions import Expression
 
-from daft.functions.ai import embed_text
+from daft.functions.ai import (
+    classify_text,
+    embed_text,
+    embed_image,
+)
 from daft.functions.columnar import (
     columns_sum,
     columns_mean,
@@ -22,12 +26,14 @@ from daft.functions.window import (
 
 
 __all__ = [
+    "classify_text",
     "columns_avg",
     "columns_max",
     "columns_mean",
     "columns_min",
     "columns_sum",
     "dense_rank",
+    "embed_image",
     "embed_text",
     "file",
     "format",

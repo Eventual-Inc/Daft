@@ -63,10 +63,10 @@ impl<T: Task> DefaultScheduler<T> {
         worker_id: &WorkerId,
         soft: bool,
     ) -> Option<WorkerId> {
-        if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.can_schedule_task(task) {
-                return Some(worker.worker_id.clone());
-            }
+        if let Some(worker) = self.worker_snapshots.get(worker_id)
+            && worker.can_schedule_task(task)
+        {
+            return Some(worker.worker_id.clone());
         }
         // Fallback to spread scheduling if soft is true
         if soft {

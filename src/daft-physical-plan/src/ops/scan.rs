@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
+use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_file_formats::FileFormatConfig;
 use common_scan_info::ScanTaskLikeRef;
 use daft_logical_plan::partitioning::ClusteringSpec;

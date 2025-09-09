@@ -213,7 +213,10 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
         }
         let last_offset = *offsets.last().unwrap();
         if last_offset != data.len() as i64 {
-            return Err(DaftError::ValueError(format!("Expected Last offset in offsets to be the same as the length of the data array: {last_offset} vs {}", data.len())));
+            return Err(DaftError::ValueError(format!(
+                "Expected Last offset in offsets to be the same as the length of the data array: {last_offset} vs {}",
+                data.len()
+            )));
         }
 
         assert_eq!(last_offset, data.len() as i64);

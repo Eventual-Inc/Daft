@@ -7,11 +7,11 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
         logical::{
             DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
-        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     series::Series,
 };

@@ -176,19 +176,19 @@ impl<T: Task> std::fmt::Debug for CompletedTask<T> {
 
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
     use crate::{
         scheduling::{
             scheduler::{
-                test_utils::setup_workers, SchedulerHandle, SubmittableTask, SubmittedTask,
+                SchedulerHandle, SubmittableTask, SubmittedTask, test_utils::setup_workers,
             },
-            task::{tests::MockTaskFailure, SchedulingStrategy},
-            tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
+            task::{SchedulingStrategy, tests::MockTaskFailure},
+            tests::{MockTask, MockTaskBuilder, create_mock_partition_ref},
             worker::{
-                tests::{MockWorker, MockWorkerManager},
                 WorkerId,
+                tests::{MockWorker, MockWorkerManager},
             },
         },
         utils::channel::create_oneshot_channel,

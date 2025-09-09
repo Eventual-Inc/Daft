@@ -116,7 +116,7 @@ impl Series {
             DataType::Decimal128(..) => Ok(self.decimal128()?.iceberg_truncate(w)?.into_series()),
             DataType::Utf8 => Ok(self.utf8()?.iceberg_truncate(w)?.into_series()),
             DataType::Binary => Ok(self.binary()?.iceberg_truncate(w)?.into_series()),
-            _ =>  Err(DaftError::ComputeError(format!(
+            _ => Err(DaftError::ComputeError(format!(
                 "Can only run partitioning_iceberg_truncate() operation on integers, decimal, string, and binary, got {}",
                 self.data_type()
             ))),

@@ -36,16 +36,15 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    array::{Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, Utf8Array},
-    datatypes::PhysicalType,
-    error::*,
-};
-use crate::{compute::sort::SortOptions, datatypes::DataType};
-
 use self::{
     dictionary::{compute_dictionary_mapping, encode_dictionary},
     interner::OrderPreservingInterner,
+};
+use crate::{
+    array::{Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, Utf8Array},
+    compute::sort::SortOptions,
+    datatypes::{DataType, PhysicalType},
+    error::*,
 };
 
 mod dictionary;
@@ -378,7 +377,7 @@ impl<'a> Eq for Row<'a> {}
 impl<'a> PartialOrd for Row<'a> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.data.cmp(other.data))
+        Some(self.cmp(other))
     }
 }
 

@@ -161,7 +161,10 @@ impl std::fmt::Debug for TaskDetails {
         write!(
             f,
             "TaskDetails(name = {}, resource_request = (num_cpus = {}, num_gpus = {}, memory_bytes = {}))",
-            self.name, self.num_cpus(), self.num_gpus(), self.memory_bytes()
+            self.name,
+            self.num_cpus(),
+            self.num_gpus(),
+            self.memory_bytes()
         )
     }
 }

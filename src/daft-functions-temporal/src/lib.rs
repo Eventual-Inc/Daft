@@ -4,14 +4,14 @@ mod total;
 mod truncate;
 mod unix_timestamp;
 
-use common_error::{ensure, DaftResult};
+use common_error::{DaftResult, ensure};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
     ExprRef,
+    functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
 use serde::{Deserialize, Serialize};
 use time::Time;

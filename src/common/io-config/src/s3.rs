@@ -6,10 +6,10 @@ use std::{
 };
 
 use aws_credential_types::{
-    provider::{error::CredentialsError, ProvideCredentials},
     Credentials,
+    provider::{ProvideCredentials, error::CredentialsError},
 };
-use chrono::{offset::Utc, DateTime};
+use chrono::{DateTime, offset::Utc};
 use common_error::DaftResult;
 use educe::Educe;
 use serde::{Deserialize, Serialize};

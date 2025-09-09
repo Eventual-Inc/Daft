@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bitmap::{and, Bitmap, MutableBitmap};
+use bitmap::{Bitmap, MutableBitmap, and};
 use common_error::DaftResult;
 use daft_core::{
     prelude::*,
@@ -10,17 +10,17 @@ use daft_core::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{get_columns_by_name, GrowableRecordBatch, ProbeState, RecordBatch};
-use futures::{stream, StreamExt};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState, RecordBatch, get_columns_by_name};
+use futures::{StreamExt, stream};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use tracing::{info_span, instrument, Span};
+use tracing::{Span, info_span, instrument};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{
-    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
+    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
 };
 
 pub(crate) struct IndexBitmapBuilder {
@@ -626,7 +626,14 @@ impl StreamingSink for OuterHashJoinProbeSink {
     }
 
     fn name(&self) -> NodeName {
-        "OuterHashJoinProbe".into()
+        match self.params.join_type {
+            JoinType::Left => "Left Hash Join Probe".into(),
+            JoinType::Right => "Right Hash Join Probe".into(),
+            JoinType::Outer => "Outer Hash Join Probe".into(),
+            _ => unreachable!(
+                "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
+            ),
+        }
     }
 
     fn op_type(&self) -> NodeType {

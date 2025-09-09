@@ -1,12 +1,12 @@
-use common_error::{ensure, DaftResult};
+use common_error::{DaftResult, ensure};
 use daft_core::{
     datatypes::{DataType, Field},
     prelude::{BinaryArray, FixedSizeBinaryArray, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +32,7 @@ impl ScalarUDF for BinaryEncode {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let Args { input, codec: _ } = inputs.try_into()?;
+        let Args { input, codec } = inputs.try_into()?;
         let input = input.to_field(schema)?;
 
         ensure!(
@@ -44,7 +44,7 @@ impl ScalarUDF for BinaryEncode {
             input.dtype
         );
 
-        Ok(Field::new(input.name, DataType::Binary))
+        Ok(Field::new(input.name, codec.returns()))
     }
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {

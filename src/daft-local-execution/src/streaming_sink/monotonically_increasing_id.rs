@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -90,7 +90,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     }
 
     fn name(&self) -> NodeName {
-        "MonotonicallyIncreasingId".into()
+        "Monotonic ID".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -98,7 +98,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["MonotonicallyIncreasingId".to_string()]
+        vec!["Monotonic ID".to_string()]
     }
 
     fn finalize(

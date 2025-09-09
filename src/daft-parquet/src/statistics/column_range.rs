@@ -12,8 +12,8 @@ use parquet2::{
 use snafu::{OptionExt, ResultExt};
 
 use super::{
-    utils::{convert_i128, convert_i96_to_i64_timestamp},
     DaftStatsSnafu, MissingParquetColumnStatisticsSnafu, UnableToParseUtf8FromBinarySnafu, Wrap,
+    utils::{convert_i96_to_i64_timestamp, convert_i128},
 };
 
 impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
@@ -77,7 +77,7 @@ impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
                         lower.as_slice(),
                         upper.as_slice(),
                     )?
-                    .into())
+                    .into());
                 }
                 _ => {} // fall back
             }
@@ -105,7 +105,7 @@ impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
                         lower.as_slice(),
                         upper.as_slice(),
                     )?
-                    .into())
+                    .into());
                 }
                 _ => {} // fall back
             }
@@ -272,7 +272,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                         lower.to_i32().unwrap(),
                         upper.to_i32().unwrap(),
                     )?
-                    .into())
+                    .into());
                 }
                 (
                     PhysicalType::Int64,
@@ -287,7 +287,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                         lower.to_i64().unwrap(),
                         upper.to_i64().unwrap(),
                     )?
-                    .into())
+                    .into());
                 }
                 _ => {} // fall back
             }
@@ -298,7 +298,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                         lower.to_i32().unwrap(),
                         upper.to_i32().unwrap(),
                     )?
-                    .into())
+                    .into());
                 }
                 (PhysicalType::Int64, PrimitiveConvertedType::TimestampMicros) => {
                     let unit = TimeUnit::Microseconds;

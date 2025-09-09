@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::{lit, Expr, ExprRef};
+use daft_dsl::{Expr, ExprRef, lit};
 use daft_schema::dtype::DataType;
 
 use crate::LogicalPlanBuilder;
@@ -17,7 +17,7 @@ pub fn summarize(input: &LogicalPlanBuilder) -> DaftResult<LogicalPlanBuilder> {
     let mut unqs: Vec<ExprRef> = vec![]; // approx_distinct    :: int64
     for field in input.schema().as_ref() {
         let col = daft_dsl::resolved_col(field.name.as_str());
-        cols.push(lit(field.name.to_string()));
+        cols.push(lit(field.name.clone()));
         typs.push(lit(field.dtype.to_string()));
         mins.push(col.clone().min().cast(&DataType::Utf8));
         maxs.push(col.clone().max().cast(&DataType::Utf8));

@@ -1,12 +1,12 @@
 use std::{borrow::Cow, sync::Arc};
 
 use arrow2::{offset::OffsetsBuffer, types::months_days_ns};
-use serde::{de::Visitor, Deserializer};
+use serde::{Deserializer, de::Visitor};
 
 use crate::{
     array::{
-        ops::{as_arrow::AsArrow, full::FullNull},
         ListArray, StructArray,
+        ops::{as_arrow::AsArrow, full::FullNull},
     },
     datatypes::{
         logical::{
@@ -64,7 +64,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             break;
                         }
                         unknown => {
-                            return Err(serde::de::Error::unknown_field(unknown, EXPECTED_KEYS))
+                            return Err(serde::de::Error::unknown_field(unknown, EXPECTED_KEYS));
                         }
                     }
                 }

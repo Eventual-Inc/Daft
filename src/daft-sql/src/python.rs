@@ -5,7 +5,7 @@ use daft_core::python::PyDataType;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::python::PySession;
-use pyo3::{prelude::*, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{exec::execute_statement, functions::SQL_FUNCTIONS, schema::try_parse_dtype};
 
@@ -81,7 +81,7 @@ pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
             let (docstring, args) = SQL_FUNCTIONS.docsmap.get(&name).unwrap();
             SQLFunctionStub {
                 name,
-                docstring: docstring.to_string(),
+                docstring: docstring.clone(),
                 arg_names: args.to_vec(),
             }
         })

@@ -8,7 +8,7 @@ use crate::series::utils::python_fn::run_python_binary_bool_operator;
 use crate::{
     array::ops::DaftCompare,
     datatypes::{BooleanArray, InferDataType},
-    series::{utils::cast::cast_downcast_op, Series},
+    series::{Series, utils::cast::cast_downcast_op},
     with_match_comparable_daft_types,
 };
 

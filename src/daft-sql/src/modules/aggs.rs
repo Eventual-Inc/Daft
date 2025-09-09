@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
-use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef};
+use daft_dsl::{AggExpr, Expr, ExprRef, lit, unresolved_col};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;

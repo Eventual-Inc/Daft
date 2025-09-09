@@ -27,6 +27,7 @@ class _PartialUdf:
     """Helper class to provide typing overloads for using `daft.func` as a decorator."""
 
     return_dtype: DataTypeLike | None
+    unnest: bool
 
     @overload
     def __call__(self, fn: Callable[P, Iterator[T]]) -> GeneratorUdf[P, T]: ...  # type: ignore[overload-overlap]
@@ -35,9 +36,9 @@ class _PartialUdf:
 
     def __call__(self, fn: Callable[P, Any]) -> GeneratorUdf[P, Any] | RowWiseUdf[P, Any]:
         if isgeneratorfunction(fn):
-            return GeneratorUdf(fn, return_dtype=self.return_dtype)
+            return GeneratorUdf(fn, return_dtype=self.return_dtype, unnest=self.unnest)
         else:
-            return RowWiseUdf(fn, return_dtype=self.return_dtype)
+            return RowWiseUdf(fn, return_dtype=self.return_dtype, unnest=self.unnest)
 
 
 class _DaftFuncDecorator:
@@ -54,6 +55,7 @@ class _DaftFuncDecorator:
 
     Args:
         return_dtype: The data type that this function should return or yield. If not specified, it is derived from the function's return type hint.
+        unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct` when this is set to true. Defaults to false.
 
     Examples:
         Basic Example
@@ -184,21 +186,46 @@ class _DaftFuncDecorator:
         ╰───────┴─────────╯
         <BLANKLINE>
         (Showing first 7 of 7 rows)
+
+        Unnesting multiple return fields
+
+        >>> import daft
+        >>> from daft import DataType
+        >>> @daft.func(return_dtype=DataType.struct({"int": DataType.int64(), "str": DataType.string()}), unnest=True)
+        ... def my_multi_return(val: int):
+        ...     return {"int": val * 2, "str": str(val) * 2}
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df.select(my_multi_return(df["x"])).collect()
+        ╭───────┬──────╮
+        │ int   ┆ str  │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 2     ┆ 11   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 4     ┆ 22   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 6     ┆ 33   │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
     """
 
     @overload
-    def __new__(cls, *, return_dtype: DataTypeLike | None = None) -> _PartialUdf: ...  # type: ignore[misc]
+    def __new__(cls, *, return_dtype: DataTypeLike | None = None, unnest: bool = False) -> _PartialUdf: ...  # type: ignore[misc]
     @overload
     def __new__(  # type: ignore[misc]
-        cls, fn: Callable[P, Iterator[T]], *, return_dtype: DataTypeLike | None = None
+        cls, fn: Callable[P, Iterator[T]], *, return_dtype: DataTypeLike | None = None, unnest: bool = False
     ) -> GeneratorUdf[P, T]: ...
     @overload
-    def __new__(cls, fn: Callable[P, T], *, return_dtype: DataTypeLike | None = None) -> RowWiseUdf[P, T]: ...  # type: ignore[misc]
+    def __new__(  # type: ignore[misc]
+        cls, fn: Callable[P, T], *, return_dtype: DataTypeLike | None = None, unnest: bool = False
+    ) -> RowWiseUdf[P, T]: ...
 
     def __new__(  # type: ignore[misc]
-        cls, fn: Callable[P, Any] | None = None, *, return_dtype: DataTypeLike | None = None
+        cls, fn: Callable[P, Any] | None = None, *, return_dtype: DataTypeLike | None = None, unnest: bool = False
     ) -> _PartialUdf | GeneratorUdf[P, Any] | RowWiseUdf[P, Any]:
-        partial_udf = _PartialUdf(return_dtype=return_dtype)
+        partial_udf = _PartialUdf(return_dtype=return_dtype, unnest=unnest)
         return partial_udf if fn is None else partial_udf(fn)
 
 

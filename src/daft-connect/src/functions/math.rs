@@ -5,7 +5,7 @@ use daft_functions::numeric::{
     ceil::Ceil,
     exp::{Exp, Expm1},
     floor::Floor,
-    log::{log, Ln, Log10, Log1p, Log2},
+    log::{Ln, Log1p, Log2, Log10, log},
     round::Round,
     sign::{Negative, Sign},
     sqrt::Sqrt,
