@@ -20,6 +20,7 @@ from daft.daft import (
     CountMode,
     ImageFormat,
     ImageMode,
+    ImageProperty,
     ResourceRequest,
     initialize_udfs,
     resolved_col,
@@ -5223,6 +5224,60 @@ class ExpressionImageNamespace(ExpressionNamespace):
         image_mode = lit(mode)._expr
         f = native.get_function_from_registry("to_mode")
         return Expression._from_pyexpr(f(self._expr, mode=image_mode))
+
+    def attribute(self, name: Literal["width", "height", "channel", "mode"] | ImageProperty) -> Expression:
+        """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
+
+        Args:
+            name (str): The name of the property to retrieve.
+
+        Returns:
+            Expression: An Expression representing the requested property.
+        """
+        if isinstance(name, str):
+            name = ImageProperty.from_property_string(name)
+        f = native.get_function_from_registry("image_attribute")
+        return Expression._from_pyexpr(f(self._expr, lit(name)._expr))
+
+    def width(self) -> Expression:
+        """Gets the width of an image in pixels.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("width", df["images"].image.width())  # doctest: +SKIP
+        """
+        return self.attribute("width")
+
+    def height(self) -> Expression:
+        """Gets the height of an image in pixels.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("height", df["images"].image.height())  # doctest: +SKIP
+        """
+        return self.attribute("height")
+
+    def channel(self) -> Expression:
+        """Gets the number of channels in an image.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("channel", df["images"].image.channel())  # doctest: +SKIP
+        """
+        return self.attribute("channel")
+
+    def mode(self) -> Expression:
+        """Gets the mode of an image as a string.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("mode", df["images"].image.mode())  # doctest: +SKIP
+        """
+        return self.attribute("mode")
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
