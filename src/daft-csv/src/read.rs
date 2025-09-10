@@ -731,7 +731,7 @@ mod tests {
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
-    use daft_io::{init_s3_config, IOClient, IOConfig};
+    use daft_io::{IOClient, IOConfig, init_s3_config};
     use daft_recordbatch::RecordBatch;
     use rstest::rstest;
 

@@ -343,7 +343,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_io::{init_s3_config, IOClient, IOConfig};
+    use daft_io::{IOClient, IOConfig, init_s3_config};
 
     use super::read_parquet_metadata;
     use crate::Error;

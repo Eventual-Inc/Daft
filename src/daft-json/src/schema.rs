@@ -229,7 +229,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_io::{init_s3_config, IOClient, IOConfig};
+    use daft_io::{IOClient, IOConfig, init_s3_config};
     use rstest::rstest;
 
     use super::read_json_schema;

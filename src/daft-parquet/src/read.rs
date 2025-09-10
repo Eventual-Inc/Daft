@@ -1143,7 +1143,7 @@ mod tests {
 
     use arrow2::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use common_error::DaftResult;
-    use daft_io::{init_s3_config, IOClient, IOConfig};
+    use daft_io::{IOClient, IOConfig, init_s3_config};
     use futures::StreamExt;
     use parquet2::{
         metadata::FileMetaData,
