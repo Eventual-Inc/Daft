@@ -215,7 +215,7 @@ df_norm.select(index_col, content_col, "content_normalized").show(3)
 
 Normally when you perform a MinHash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually.
 
-Luckily, Daft has a built-in [MinHash expression](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.Expression.minhash).
+Luckily, Daft has a built-in [MinHash expression](../api/expressions/#daft.expressions.Expression.minhash).
 
 ```python
 # Calculate the MinHash vectors
