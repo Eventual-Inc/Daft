@@ -231,10 +231,16 @@ impl IOClient {
                 // Hugging Face requires special logic around cache busting. That logic is encapsulated in the HFSource.
                 match url.domain() {
                     Some("huggingface.co") => {
-                        HFSource::get_client(&self.config.hf.clone().unwrap_or_default(), &self.config.http.clone().unwrap_or_default()).await?
-                            as Arc<dyn ObjectSource>
+                        HFSource::get_client(
+                            &self.config.hf.clone().unwrap_or_default(),
+                            &self.config.http.clone().unwrap_or_default(),
+                        )
+                        .await? as Arc<dyn ObjectSource>
                     }
-                    _ => HttpSource::get_client(&self.config.http.clone().unwrap_or_default()).await? as Arc<dyn ObjectSource>,
+                    _ => {
+                        HttpSource::get_client(&self.config.http.clone().unwrap_or_default())
+                            .await? as Arc<dyn ObjectSource>
+                    }
                 }
             }
             SourceType::S3 => {
