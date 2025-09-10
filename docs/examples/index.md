@@ -5,7 +5,7 @@
     <a href="./document-processing" class="example-image-link">
       <div class="example-image">
         <img src="../img/document-processing-cover.jpg" alt="Document Processing">
-        <div class="example-overlay">
+        <div class="example-overlay example-overlay-dark">
           <h3>Document Processing</h3>
           <p>Load PDFs from S3, extract text, run layout analysis, and compute embeddings</p>
         </div>
@@ -62,7 +62,7 @@
         <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
           <span>🎨</span>
         </div>
-        <div class="example-overlay">
+        <div class="example-overlay example-overlay-dark">
           <h3>Generate Images with Stable Diffusion</h3>
           <p>Using text prompts with deep learning models</p>
         </div>
@@ -217,6 +217,10 @@
   font-size: 0.8rem;
   opacity: 0.9;
   line-height: 1.4;
+}
+
+.example-overlay-dark {
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 12%, rgba(0, 0, 0, 0.6) 35%, rgba(0, 0, 0, 0) 65%);
 }
 
 @media (max-width: 768px) {
