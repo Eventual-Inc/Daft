@@ -46,20 +46,6 @@ def mock_provider(mock_text_classifier):
     yield provider
 
 
-def test_instantiate():
-    """Test to instantiate a TransformersTextClassifier, this instantiates a pipeline."""
-    descriptor = TransformersTextClassifierDescriptor(
-        provider_name="transformers",
-        model_name="facebook/bart-large-mnli",
-        model_options={},
-    )
-
-    classifier = descriptor.instantiate()
-    assert isinstance(classifier, TransformersTextClassifier)
-    assert classifier._model == "facebook/bart-large-mnli"
-    assert classifier._pipeline, "Current implementation should have a pipeline."
-
-
 def test_mock_text_classifier(mock_pipeline, mock_text_classifier):
     """Sanity check that our mocks are properly plumbed."""
     assert mock_text_classifier._model == "mock"
@@ -97,6 +83,22 @@ def test_classify_test_with_mock(mock_provider):
     assert results == ["mock!"]
 
 
+@pytest.mark.integration()
+def test_instantiate():
+    """Test to instantiate a TransformersTextClassifier, this instantiates a pipeline."""
+    descriptor = TransformersTextClassifierDescriptor(
+        provider_name="transformers",
+        model_name="facebook/bart-large-mnli",
+        model_options={},
+    )
+
+    classifier = descriptor.instantiate()
+    assert isinstance(classifier, TransformersTextClassifier)
+    assert classifier._model == "facebook/bart-large-mnli"
+    assert classifier._pipeline, "Current implementation should have a pipeline."
+
+
+@pytest.mark.integration()
 def test_classify_test_with_default(mock_provider):
     """Test text classification using the expression."""
     import daft
