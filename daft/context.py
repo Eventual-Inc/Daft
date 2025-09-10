@@ -94,14 +94,14 @@ def set_runner_ray(
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=ray
     """
-    py_ctx = _set_runner_ray(
+    _set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
         max_task_backlog=max_task_backlog,
         force_client_mode=force_client_mode,
     )
 
-    return DaftContext._from_native(py_ctx)
+    return DaftContext._from_native(_get_context())
 
 
 def set_runner_native(num_threads: int | None = None) -> DaftContext:
@@ -115,9 +115,9 @@ def set_runner_native(num_threads: int | None = None) -> DaftContext:
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
     """
-    py_ctx = _set_runner_native(num_threads=num_threads)
+    _set_runner_native(num_threads=num_threads)
 
-    return DaftContext._from_native(py_ctx)
+    return DaftContext._from_native(_get_context())
 
 
 @contextlib.contextmanager

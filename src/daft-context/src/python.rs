@@ -1,6 +1,6 @@
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
 use common_error::DaftError;
-use daft_py_runners::{NativeRunner, RayRunner};
+use daft_runners::{NativeRunner, RayRunner};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{DaftContext, Runner, RunnerConfig, detect_ray_state};
@@ -55,10 +55,7 @@ impl PyDaftContext {
                 if let (true, _) = detect_ray_state() {
                     RayRunner::NAME
                 } else {
-                    match super::get_runner_config_from_env()? {
-                        RunnerConfig::Ray { .. } => RayRunner::NAME,
-                        RunnerConfig::Native { .. } => NativeRunner::NAME,
-                    }
+                    todo!()
                 }
             }
         }
@@ -102,47 +99,8 @@ impl From<DaftContext> for PyDaftContext {
 }
 
 #[pyfunction]
-pub fn get_runner_config_from_env() -> PyResult<PyRunnerConfig> {
-    Ok(PyRunnerConfig {
-        _inner: super::get_runner_config_from_env()?,
-    })
-}
-
-#[pyfunction]
 pub fn get_context() -> PyDaftContext {
     PyDaftContext {
         inner: super::get_context(),
     }
-}
-
-#[pyfunction(signature = (
-    address = None,
-    noop_if_initialized = false,
-    max_task_backlog = None,
-    force_client_mode = false
-))]
-pub fn set_runner_ray(
-    address: Option<String>,
-    noop_if_initialized: Option<bool>,
-    max_task_backlog: Option<usize>,
-    force_client_mode: Option<bool>,
-) -> PyResult<PyDaftContext> {
-    let noop_if_initialized = noop_if_initialized.unwrap_or(false);
-    let context = super::set_runner_ray(address, max_task_backlog, force_client_mode);
-    match context {
-        Ok(ctx) => Ok(ctx.into()),
-        Err(e)
-            if noop_if_initialized
-                && matches!(&e, DaftError::InternalError(msg) if msg.contains("Cannot set runner more than once")) =>
-        {
-            Ok(super::get_context().into())
-        }
-        Err(e) => Err(e.into()),
-    }
-}
-
-#[pyfunction(signature = (num_threads = None))]
-pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> {
-    let ctx = super::set_runner_native(num_threads)?;
-    Ok(ctx.into())
 }

@@ -2376,8 +2376,8 @@ dependencies = [
  "daft-parquet",
  "daft-physical-plan",
  "daft-proto",
- "daft-py-runners",
  "daft-recordbatch",
+ "daft-runners",
  "daft-scan",
  "daft-scheduler",
  "daft-session",
@@ -2495,7 +2495,7 @@ dependencies = [
  "daft-core",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-py-runners",
+ "daft-runners",
  "log",
  "pyo3",
 ]
@@ -3166,16 +3166,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-py-runners"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "daft-logical-plan",
- "daft-micropartition",
- "pyo3",
-]
-
-[[package]]
 name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -3200,6 +3190,17 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "daft-runners"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-logical-plan",
+ "daft-micropartition",
+ "log",
+ "pyo3",
 ]
 
 [[package]]

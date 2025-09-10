@@ -245,4 +245,6 @@ __all__ = [
     "struct",
     "udf",
     "write_table",
+    "set_runner_native",
+    "set_runner_ray",
 ]
