@@ -71,7 +71,7 @@ jobs:
   unit-test:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -80,15 +80,29 @@ jobs:
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         flotilla: [1, 0]
+        os: [ubuntu-latest, macos-latest]
+        on-main:
+        - ${{ github.ref == 'refs/heads/main' }}
         exclude:
         - daft-runner: native
           flotilla: 0
         - daft-runner: ray
           pyarrow-version: 8.0.0
+        - python-version: '3.9'
+          os: macos-latest
+        - pyarrow-version: 8.0.0
+          os: macos-latest
         - python-version: '3.12'
           pyarrow-version: 8.0.0
+        - os: macos-latest
+          flotilla: 0
+        # don't run mac unit tests in PRs
+        - os: macos-latest
+          on-main: false
+
     steps:
     - name: Free Disk Space (Ubuntu) # only run on ubuntu
+      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false

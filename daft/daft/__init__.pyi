@@ -77,6 +77,17 @@ class ImageMode(Enum):
         """
         ...
 
+class ImageProperty(Enum):
+    """Supported image properties for Daft's image type."""
+
+    Height = 1
+    Width = 2
+    Channel = 3
+    Mode = 4
+
+    @staticmethod
+    def from_property_string(attr: str) -> ImageProperty: ...
+
 class PyWindowBoundary:
     """Represents a window frame boundary in window functions."""
 
@@ -1960,6 +1971,7 @@ class PyDaftExecutionConfig:
         native_parquet_writer: bool | None = None,
         use_legacy_ray_runner: bool | None = None,
         min_cpu_per_task: float | None = None,
+        actor_udf_ready_timeout: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -2011,6 +2023,8 @@ class PyDaftExecutionConfig:
     def use_legacy_ray_runner(self) -> bool: ...
     @property
     def min_cpu_per_task(self) -> float: ...
+    @property
+    def actor_udf_ready_timeout(self) -> int: ...
     @property
     def scantask_max_parallel(self) -> int: ...
 

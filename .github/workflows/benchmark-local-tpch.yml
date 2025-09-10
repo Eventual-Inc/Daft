@@ -58,12 +58,16 @@ jobs:
       uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
-        version: "0.6.17"
-    - name: Install Daft and dev dependencies
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
       run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
         rm -rf daft
         uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
-        uv pip install gspread
+        uv pip install gspread ray[default] boto3
     - name: Write service account secret file
       run: |
         mkdir -p ~/.config/gspread
@@ -71,4 +75,6 @@ jobs:
         ${{ secrets.GOOGLE_SHEETS_SERVICE_ACCOUNT }}
         EOF
     - name: Run benchmark and upload results to Google Sheets
-      run: PYTHONPATH=. DAFT_RUNNER=native python .github/ci-scripts/local_tpch.py
+      run: |
+        source .venv/bin/activate
+        PYTHONPATH=. DAFT_RUNNER=native python .github/ci-scripts/local_tpch.py

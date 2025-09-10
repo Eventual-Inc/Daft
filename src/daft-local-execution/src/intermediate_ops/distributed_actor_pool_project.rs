@@ -10,7 +10,6 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
-use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use rand::Rng;
@@ -32,20 +31,38 @@ pub(crate) struct ActorHandle {
 }
 
 impl ActorHandle {
-    fn is_on_current_node(&self) -> DaftResult<bool> {
-        #[cfg(feature = "python")]
-        {
-            Python::with_gil(|py| {
-                let py_actor_handle = self.inner.bind(py);
-                let is_on_current_node =
-                    py_actor_handle.call_method0(pyo3::intern!(py, "is_on_current_node"))?;
-                Ok(is_on_current_node.extract::<bool>()?)
-            })
-        }
-        #[cfg(not(feature = "python"))]
-        {
-            panic!("Cannot check if an actor is on the current node without compiling for Python");
-        }
+    #[cfg(feature = "python")]
+    fn get_actors_on_current_node(actor_handles: Vec<Self>) -> DaftResult<(Vec<Self>, Vec<Self>)> {
+        let actor_handles = actor_handles
+            .into_iter()
+            .map(|e| e.inner)
+            .collect::<Vec<_>>();
+
+        let (local_actors, remote_actors) = Python::with_gil(|py| {
+            let actor_handles = actor_handles
+                .into_iter()
+                .map(|e| e.as_ref().clone_ref(py))
+                .collect::<Vec<_>>();
+            let ray_actor_pool_udf_module =
+                py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+            let (local_actors, remote_actors) = ray_actor_pool_udf_module
+                .call_method1(
+                    pyo3::intern!(py, "get_ready_actors_by_location"),
+                    (actor_handles,),
+                )?
+                .extract::<(Vec<PyObject>, Vec<PyObject>)>()?;
+            DaftResult::Ok((local_actors, remote_actors))
+        })?;
+
+        let local_actors = local_actors
+            .into_iter()
+            .map(|e| Self { inner: Arc::new(e) })
+            .collect::<Vec<_>>();
+        let remote_actors = remote_actors
+            .into_iter()
+            .map(|e| Self { inner: Arc::new(e) })
+            .collect::<Vec<_>>();
+        Ok((local_actors, remote_actors))
     }
 
     #[cfg(feature = "python")]
@@ -103,22 +120,6 @@ impl DistributedActorPoolProjectOperator {
         memory_request: u64,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
-
-        // Filter for actors on the current node
-        let mut local_actor_handles = Vec::new();
-        for handle in &actor_handles {
-            if handle.is_on_current_node()? {
-                local_actor_handles.push(handle.clone());
-            }
-        }
-
-        // If no actors are on the current node, use all actors as fallback
-        let actor_handles = if local_actor_handles.is_empty() {
-            actor_handles
-        } else {
-            local_actor_handles
-        };
-
         Self::new_with_task_locals(actor_handles, batch_size, memory_request)
     }
 
@@ -129,11 +130,21 @@ impl DistributedActorPoolProjectOperator {
         memory_request: u64,
     ) -> DaftResult<Self> {
         let task_locals = Python::with_gil(pyo3_async_runtimes::tokio::get_current_locals)?;
+
+        let (local_actor_handles, remote_actor_handles) =
+            ActorHandle::get_actors_on_current_node(actor_handles)?;
+
+        let actor_handles = match local_actor_handles.len() {
+            0 => remote_actor_handles,
+            _ => local_actor_handles,
+        };
+
         let init_counter = if actor_handles.is_empty() {
             0
         } else {
             rand::thread_rng().gen_range(0..actor_handles.len())
         };
+
         Ok(Self {
             actor_handles,
             batch_size,
@@ -201,26 +212,28 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("DistributedActorPoolProject:".to_string());
-        #[cfg(feature = "python")]
-        res.push(format!(
-            "ActorHandles = [{}]",
-            self.actor_handles
-                .iter()
-                .map(|e| e.inner.to_string())
-                .join(", ")
-        ));
         res.push(format!("BatchSize = {}", self.batch_size.unwrap_or(0)));
         res.push(format!("MemoryRequest = {}", self.memory_request));
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        let next_actor_handle_idx =
-            self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
-        let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
-        Ok(DistributedActorPoolProjectState {
-            actor_handle: next_actor_handle.clone(),
-        })
+    async fn make_state(&self) -> DaftResult<Self::State> {
+        // Check if we need to initialize the filtered actor handles
+        #[cfg(feature = "python")]
+        {
+            let next_actor_handle_idx =
+                self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
+            let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
+            Ok(DistributedActorPoolProjectState {
+                actor_handle: next_actor_handle.clone(),
+            })
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            unimplemented!(
+                "DistributedActorPoolProjectOperator::make_state is not implemented without Python"
+            );
+        }
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {

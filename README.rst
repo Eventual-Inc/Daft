@@ -7,6 +7,7 @@
 Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 ============================================================
 
+|TrendShift|
 
 `Daft <https://www.daft.ai>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
 
@@ -168,3 +169,9 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
    :target: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
    :alt: slack community
+
+.. |TrendShift| image:: https://trendshift.io/api/badge/repositories/8239
+   :target: https://trendshift.io/repositories/8239
+   :alt: Eventual-Inc/Daft | Trendshift
+   :width: 250px
+   :height: 55px
