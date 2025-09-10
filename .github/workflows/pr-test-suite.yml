@@ -106,11 +106,12 @@ jobs:
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
-
-    - if: ${{ (runner.os == 'Linux') }}
-      run: |
-        sudo apt-get update
-        sudo apt-get install ffmpeg libsm6 libxext6 -y
+        android: false
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
 
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
