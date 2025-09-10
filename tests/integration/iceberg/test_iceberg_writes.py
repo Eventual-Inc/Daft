@@ -5,6 +5,8 @@ import pytest
 pyiceberg = pytest.importorskip("pyiceberg")
 
 import contextlib
+import os
+import tempfile
 
 import pyarrow as pa
 
@@ -67,3 +69,30 @@ def test_daft_written_catalog(local_iceberg_catalog):
         daft_pandas = df.to_pandas()
         iceberg_pandas = local_pyiceberg_catalog.load_table(catalog_table_name).scan().to_arrow().to_pandas()
         assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@contextlib.contextmanager
+def table_written_by_pyiceberg_custom_location(local_pyiceberg_catalog):
+    schema = pa.schema([("data", pa.string())])
+
+    data = {"data": ["foo", "bar", "baz"]}
+    arrow_table = pa.Table.from_pydict(data, schema=schema)
+    table_name = "pyiceberg.table_custom_location"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        custom_data_path = os.path.join(temp_dir, "custom_data")
+        os.makedirs(custom_data_path, exist_ok=True)
+
+        try:
+            table = local_pyiceberg_catalog.create_table(
+                table_name, schema=schema, properties={"write.data.path": custom_data_path}
+            )
+
+            table.append(arrow_table)
+            assert os.path.exists(
+                f"{custom_data_path}/data"
+            ), f"Custom data path {custom_data_path}/data does not exist"
+            yield table_name
+        except Exception as e:
+            raise e
+        finally:
+            local_pyiceberg_catalog.drop_table(table_name)
