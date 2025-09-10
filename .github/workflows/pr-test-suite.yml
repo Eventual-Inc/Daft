@@ -890,6 +890,89 @@ jobs:
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
+  integration-test-ray:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+    env:
+      package-name: daft
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: 3.9
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
+
+    - name: Run Ray Integration Tests (Ray Runner)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        test_names=$(pytest --collect-only -q tests/integration/ray | grep "::test_")
+        for test in $test_names; do
+          echo "Running $test..."
+          pytest -m integration $test --durations=0
+        done
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 0
+    - name: Run Ray Integration Tests (Flotilla)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        test_names=$(pytest --collect-only -q tests/integration/ray | grep "::test_")
+        for test in $test_names; do
+          echo "Running $test..."
+          pytest -m integration $test --durations=0
+        done
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 1
+
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.event_name == 'push') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Ray Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -900,6 +983,7 @@ jobs:
     - integration-test-sql
     - integration-test-catalogs
     - integration-test-ai-credentialed
+    - integration-test-ray
     if: always()
     steps:
     - name: All tests ok

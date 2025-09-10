@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
 use common_error::DaftError;
 use daft_py_runners::{NativeRunner, RayRunner};
@@ -95,14 +93,6 @@ impl PyDaftContext {
     pub fn get_runner(&self, py: Python) -> Option<PyObject> {
         let runner = py.allow_threads(|| self.inner.runner());
         runner.map(|r| r.to_pyobj(py))
-    }
-
-    #[setter(_runner)]
-    pub fn set_runner(&self, py: Python, runner: PyObject) -> PyResult<()> {
-        let runner = Runner::from_pyobj(runner)?;
-        let runner = Arc::new(runner);
-        py.allow_threads(|| self.inner.set_runner(runner))?;
-        Ok(())
     }
 }
 impl From<DaftContext> for PyDaftContext {
