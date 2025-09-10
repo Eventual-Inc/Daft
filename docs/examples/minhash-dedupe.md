@@ -62,7 +62,7 @@ LSH_THRESHOLD = 0.7 # Jaccard Similarity Threshold for LSH
 
 ## Loading HTML Documents from Common Crawl
 
-We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively](https://docs.getdaft.io/en/stable/api/io/#daft.read_warc).
+We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively](../api/io/#daft.read_warc).
 
 ### (Optional) AWS Authentication
 
