@@ -196,7 +196,7 @@ So far we have extracted the text out of each html document into blocks. Now we 
 
 *Note: It is recommended to run your preprocessing pipeline separately from your MinHash deduplication workload.*
 
-See docs: [normalize](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
+See docs: [normalize](../api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
 
 ```python
 # Normalize text
