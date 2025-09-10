@@ -73,6 +73,7 @@ In this example, we load images from an AWS S3 bucket's URLs and resize each ima
 |Quickstart Image|
 
 
+
 Benchmarks
 ----------
 |Benchmark Image|
