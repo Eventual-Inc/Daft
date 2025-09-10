@@ -310,7 +310,7 @@ impl Table for MemoryTable {
         }
 
         let pset = MicroPartitionSet::empty();
-        let runner = get_context().get_or_create_runner()?;
+        let runner = get_or_create_runner()?;
         pyo3::Python::with_gil(|py| {
             for (i, res) in runner.run_iter_tables(py, plan, None)?.enumerate() {
                 let mp = res?;

@@ -3,7 +3,7 @@ use common_error::DaftError;
 use daft_runners::{NativeRunner, RayRunner};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::{DaftContext, Runner, RunnerConfig, detect_ray_state};
+use crate::{DaftContext};
 
 #[pyclass]
 pub struct PyRunnerConfig {

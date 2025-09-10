@@ -9,6 +9,7 @@ daft-catalog = {path = "../daft-catalog", optional = true, features = [
   "python"
 ]}
 daft-context = {workspace = true, optional = true, features = ["python"]}
+daft-runners = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-functions = {workspace = true, optional = true, features = ["python"]}

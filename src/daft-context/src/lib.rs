@@ -3,9 +3,6 @@ use std::sync::{Arc, OnceLock, RwLock};
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
-use daft_runners::{NativeRunner, RayRunner};
-use daft_runners::{Runner, RunnerConfig};
-#[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
@@ -193,57 +190,6 @@ pub fn get_context() -> DaftContext {
 #[cfg(not(feature = "python"))]
 pub fn get_context() -> DaftContext {
     unimplemented!()
-}
-
-/// Helper function to parse a boolean environment variable.
-fn parse_bool_env_var(var_name: &str) -> Option<bool> {
-    std::env::var(var_name)
-        .ok()
-        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"))
-}
-
-/// Helper function to parse a numeric environment variable.
-fn parse_usize_env_var(var_name: &str) -> Option<usize> {
-    std::env::var(var_name).ok().and_then(|s| s.parse().ok())
-}
-
-/// Helper function to get the ray runner config from the environment.
-#[cfg(feature = "python")]
-fn get_ray_runner_config_from_env() -> RunnerConfig {
-    const DAFT_RAY_ADDRESS: &str = "DAFT_RAY_ADDRESS";
-    const RAY_ADDRESS: &str = "RAY_ADDRESS";
-    const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
-    const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
-
-    let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
-        log::warn!(
-            "Detected usage of the ${} environment variable. This will be deprecated, please use ${} instead.",
-            DAFT_RAY_ADDRESS,
-            RAY_ADDRESS
-        );
-        Some(address)
-    } else {
-        std::env::var(RAY_ADDRESS).ok()
-    };
-    let max_task_backlog = parse_usize_env_var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG);
-    let force_client_mode = parse_bool_env_var(DAFT_RAY_FORCE_CLIENT_MODE);
-    RunnerConfig::Ray {
-        address,
-        max_task_backlog,
-        force_client_mode,
-    }
-}
-
-/// Helper function to automatically detect whether to use the ray runner.
-#[cfg(feature = "python")]
-fn detect_ray_state() -> (bool, bool) {
-    Python::with_gil(|py| {
-        py.import(pyo3::intern!(py, "daft.utils"))
-            .and_then(|m| m.getattr(pyo3::intern!(py, "detect_ray_state")))
-            .and_then(|m| m.call0())
-            .and_then(|m| m.extract())
-            .unwrap_or((false, false))
-    })
 }
 
 #[cfg(feature = "python")]
