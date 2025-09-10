@@ -145,38 +145,29 @@ df_html = (
 ```python
 from selectolax.parser import HTMLParser
 
-# Define a UDF to extract text from HTML content, specifically (article, main, p, h1, h2, h3, li)
+# Define a UDF to extract text from HTML content
 @daft.func()
-def extract_blocks(html: str) -> list[str]:
+def extract_blocks(html: str) -> dt.list(dt.struct({"txt": dt.string(), "tag": dt.string()})):
+    """Parse HTML using Selectolax, remove scripts/styles/noscripts, extract text blocks from key tags."""
     tree = HTMLParser(html)
     for n in tree.css("script,style,noscript"):
         n.decompose()
 
-    blocks = []
-    for node in tree.css("""title, article, main, p, h1, h2, h3, h4, h5, h6, li, div, section, img[alt], figcaption, caption, blockquote, table th, table td, pre, code, summary, meta[name="description"], meta[property="og:title"], meta[property="og:description"]"""):
-        txt = node.text(separator=" ", strip=True)
-        if txt:
-            blocks.append(txt)
+    all_nodes = tree.css("""title, article, main, p, h1, h2, h3, h4, h5, h6, li, div, section, img[alt], figcaption, caption, blockquote, table th, table td, pre, code, summary, meta[name="description"], meta[property="og:title"], meta[property="og:description"]""")
+    blocks = [
+        {"txt": node.text(separator=" ", strip=True), "tag": node.tag}
+        for node in all_nodes if node.text(separator=" ", strip=True)
+    ]
     return blocks
-
-@daft.func()
-def get_block_idx(blocks: list[str]) -> list[int]:
-    return list(range(len(blocks)))
 
 df_text = (
     df_html
     .with_column("blocks", extract_blocks(col("content_raw")))
-    .with_column("block_idx", get_block_idx(col("blocks")))
-    .explode("blocks", "block_idx")
-    .where(col("blocks") != "")
-    .where(col("blocks").not_null())
-    .with_column(index_col, col("WARC-Record-ID")+ "-" + col("block_idx"))
-    .with_column(content_col, col("blocks"))
-    .select(
-        "WARC-Record-ID",
-        index_col,
-        content_col,
-    )
+    .explode("blocks")
+    .where(col("blocks")["txt"] != "")
+    .where(col("blocks")["txt"].not_null())
+    .with_column(index_col, col("WARC-Record-ID")+ "-" + col("blocks")["tag"] + "-" + col("blocks")["txt"].hash()) # Record ID + Tag + Text Hash
+    .with_column(content_col, col("blocks")["txt"])
 )
 df_text = df_text.collect()
 df_text.show(3)
