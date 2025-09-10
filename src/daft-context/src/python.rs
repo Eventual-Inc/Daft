@@ -156,9 +156,3 @@ pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> 
     let ctx = super::set_runner_native(num_threads)?;
     Ok(ctx.into())
 }
-
-#[pyfunction]
-pub fn reset_runner() -> PyResult<()> {
-    super::reset_runner();
-    Ok(())
-}
