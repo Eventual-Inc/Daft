@@ -26,6 +26,21 @@
   </div>
 
   <div class="example-card">
+    <a href="./minhash-dedupe" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/minhash-dedupe-cover.png" alt="MinHash Deduplication" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #36d1dc 0%, #5b86e5 100%);">
+          <span>📃</span>
+        </div>
+        <div class="example-overlay">
+          <h3>MinHash Deduplication on Common Crawl</h3>
+          <p>Deduplicate web text at scale with MinHash, LSH, and Connected Components.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="example-card">
     <a href="./text-embeddings" class="example-image-link">
       <div class="example-image">
         <img src="../img/text-embeddings-cover.jpg" alt="Text Embeddings" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
