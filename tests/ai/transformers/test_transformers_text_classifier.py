@@ -68,7 +68,7 @@ def test_text_classifier(mock_text_classifier):
     assert results == ["statement", "question"]
 
 
-def test_classify_test_with_mock(mock_provider):
+def test_classify_text_with_mock(mock_provider):
     """Test text classification using the expression."""
     # Test that the provider returns the expected descriptor
     descriptor = mock_provider.get_text_classifier()
@@ -99,7 +99,7 @@ def test_instantiate():
 
 
 @pytest.mark.integration()
-def test_classify_test_with_default(mock_provider):
+def test_classify_text_with_default(mock_provider):
     """Test text classification using the expression."""
     import daft
     from daft.functions import classify_text
