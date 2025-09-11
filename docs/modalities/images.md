@@ -1,7 +1,7 @@
 # Working with Images
 
 
-Daft is built to work comfortably with images. This guide shows you how to accomplish common text processing tasks with Daft:
+Daft is built to work comfortably with images. This guide shows you how to accomplish common image processing tasks with Daft:
 
 - [Downloading and decoding images](#quickstart)
 - [Generate image embeddings](#generate-image-embeddings)
