@@ -127,12 +127,10 @@ Related Projects
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Modin <https://github.com/modin-project/modin>`_ | Yes             | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| `Pyspark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
+| `PySpark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-
-Check out our `engine comparison page <https://docs.daft.ai/en/stable/resources/engine_comparison/>`_ for more details!
 
 License
 -------
