@@ -63,6 +63,17 @@ class UdfHandle:
         # Copy the current process environment
         env = dict(os.environ)
 
+        # Copy the logging configuration of the current process
+        root = logging.getLogger()
+        env["LOG_LEVEL"] = str(root.level)
+        for h in root.handlers:
+            if hasattr(h, "formatter") and h.formatter is not None:
+                if h.formatter._fmt:
+                    env["LOG_FORMAT"] = h.formatter._fmt
+                if h.formatter.datefmt:
+                    env["LOG_DATE_FORMAT"] = h.formatter.datefmt
+                break
+
         # Python auto-buffers stdout by default, so disable
         env["PYTHONUNBUFFERED"] = "1"
 
