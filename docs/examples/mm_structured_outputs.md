@@ -7,7 +7,7 @@
 This notebook walks through a practical example of evaluating model performance on structured generation and multimodal reasoning. We will explore how to scale multimodal image understanding evaluation using a combination of powerful technologies:
 
 1. Daft for data processing
-2. Gemma-3n-E2B model for multimodal capabilities
+2. Gemma-3n-e4b-it model for multimodal capabilities
 3. vLLM/OpenRouter for efficient inference serving.
 
 ### Table of Contents
