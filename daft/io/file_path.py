@@ -10,6 +10,7 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
+from daft.runners import get_or_create_runner
 from daft.runners.partitioning import LocalPartitionSet
 
 
@@ -51,12 +52,12 @@ def from_glob_path(path: Union[str, list[str]], io_config: Optional[IOConfig] = 
 
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
-    runner_io = context.get_or_create_runner().runner_io()
+    runner_io = get_or_create_runner().runner_io()
     file_infos = runner_io.glob_paths_details(path, io_config=io_config)
     file_infos_table = MicroPartition._from_pyrecordbatch(_PyRecordBatch.from_file_infos(file_infos))
     partition = LocalPartitionSet()
     partition.set_partition_from_table(0, file_infos_table)
-    cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition)
+    cache_entry = get_or_create_runner().put_partition_set_into_cache(partition)
     size_bytes = partition.size_bytes()
     num_rows = len(partition)
 

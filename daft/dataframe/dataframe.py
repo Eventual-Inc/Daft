@@ -30,6 +30,7 @@ from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
+from daft.runners import get_or_create_runner
 from daft.runners.partitioning import (
     LocalPartitionSet,
     MaterializedResult,
@@ -83,8 +84,7 @@ def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     for i, part in enumerate(parts):
         result_pset.set_partition_from_table(i, part)
 
-    context = get_context()
-    cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
+    cache_entry = get_or_create_runner().put_partition_set_into_cache(result_pset)
     size_bytes = result_pset.size_bytes()
     num_rows = len(result_pset)
 
@@ -301,7 +301,7 @@ class DataFrame:
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
-            if get_context().get_or_create_runner().name != "native":
+            if get_or_create_runner().name != "native":
                 daft_execution_config = get_context().daft_execution_config
                 if daft_execution_config.use_legacy_ray_runner:
                     physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
@@ -501,8 +501,7 @@ class DataFrame:
                 )
         else:
             # Execute the dataframe in a streaming fashion.
-            context = get_context()
-            partitions_iter = context.get_or_create_runner().run_iter_tables(
+            partitions_iter = get_or_create_runner().run_iter_tables(
                 self._builder, results_buffer_size=results_buffer_size
             )
 
@@ -571,8 +570,7 @@ class DataFrame:
                 yield from (result.micropartition().to_arrow().to_batches())
         else:
             # Execute the dataframe in a streaming fashion.
-            context = get_context()
-            partitions_iter = context.get_or_create_runner().run_iter_tables(
+            partitions_iter = get_or_create_runner().run_iter_tables(
                 self._builder, results_buffer_size=results_buffer_size
             )
 
@@ -647,8 +645,7 @@ class DataFrame:
 
         else:
             # Execute the dataframe in a streaming fashion.
-            context = get_context()
-            results_iter: Iterator[MaterializedResult[Any]] = context.get_or_create_runner().run_iter(
+            results_iter: Iterator[MaterializedResult[Any]] = get_or_create_runner().run_iter(
                 self._builder, results_buffer_size=results_buffer_size
             )
             for result in results_iter:
@@ -749,8 +746,7 @@ class DataFrame:
         for i, part in enumerate(parts):
             result_pset.set_partition_from_table(i, part)
 
-        context = get_context()
-        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
+        cache_entry = get_or_create_runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
         num_rows = len(result_pset)
 
@@ -2595,7 +2591,7 @@ class DataFrame:
             3
 
         """
-        if get_context().get_or_create_runner().name == "native":
+        if get_or_create_runner().name == "native":
             warnings.warn(
                 "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
             )
@@ -2630,7 +2626,7 @@ class DataFrame:
             >>> df_with_5_partitions.num_partitions()
             5
         """
-        if get_context().get_or_create_runner().name == "native":
+        if get_or_create_runner().name == "native":
             warnings.warn(
                 "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
             )
@@ -3918,9 +3914,8 @@ class DataFrame:
 
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
-        context = get_context()
         if self._result is None:
-            self._result_cache = context.get_or_create_runner().run(self._builder)
+            self._result_cache = get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -3985,7 +3980,7 @@ class DataFrame:
             # Iteratively retrieve partitions until enough data has been materialized
             tables = []
             seen = 0
-            for table in get_context().get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
+            for table in get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
                 tables.append(table)
                 seen += len(table)
                 if seen >= n:
@@ -4401,17 +4396,16 @@ class DataFrame:
         """Creates a DataFrame from a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset)."""
         from ray.exceptions import RayTaskError
 
-        context = get_context()
-        if context.get_or_create_runner().name != "ray":
+        if get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.get_or_create_runner().runner_io()
+        ray_runner_io = get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
-        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
+        cache_entry = get_or_create_runner().put_partition_set_into_cache(partition_set)
         try:
             size_bytes = partition_set.size_bytes()
         except RayTaskError as e:
@@ -4437,6 +4431,7 @@ class DataFrame:
         df._result_cache = cache_entry
 
         # build preview
+        context = get_context()
         num_preview_rows = context.daft_execution_config.num_preview_rows
         dataframe_num_rows = len(df)
         if dataframe_num_rows > num_preview_rows:
@@ -4510,17 +4505,16 @@ class DataFrame:
         """Creates a Daft DataFrame from a Dask DataFrame."""
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
-        context = get_context()
-        if context.get_or_create_runner().name != "ray":
+        if get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.get_or_create_runner().runner_io()
+        ray_runner_io = get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
-        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
+        cache_entry = get_or_create_runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
@@ -4536,6 +4530,7 @@ class DataFrame:
         df._result_cache = cache_entry
 
         # build preview
+        context = get_context()
         num_preview_rows = context.daft_execution_config.num_preview_rows
         dataframe_num_rows = len(df)
         if dataframe_num_rows > num_preview_rows:
