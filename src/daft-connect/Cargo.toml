@@ -58,7 +58,8 @@ python = [
   "dep:daft-catalog",
   "dep:daft-functions",
   "dep:daft-functions-utf8",
-  "dep:daft-functions-temporal"
+  "dep:daft-functions-temporal",
+  "dep:daft-runners"
 ]
 
 [lints]

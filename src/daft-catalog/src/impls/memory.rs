@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use common_error::DaftResult;
-use daft_context::get_context;
 use daft_core::prelude::*;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan, LogicalPlanBuilder, SourceInfo, ops::Source};
 use daft_micropartition::{
@@ -310,7 +309,7 @@ impl Table for MemoryTable {
         }
 
         let pset = MicroPartitionSet::empty();
-        let runner = get_or_create_runner()?;
+        let runner = daft_runners::get_or_create_runner()?;
         pyo3::Python::with_gil(|py| {
             for (i, res) in runner.run_iter_tables(py, plan, None)?.enumerate() {
                 let mp = res?;

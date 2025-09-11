@@ -2498,7 +2498,6 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-runners",
- "log",
  "pyo3",
 ]
 

@@ -1,16 +1,41 @@
 use std::sync::Arc;
 
-use pyo3::exceptions::PyValueError;
-use pyo3::{pyfunction, PyObject, PyResult, Python};
+use common_error::DaftError;
+use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python, pyfunction};
 
-use crate::runners;
-use crate::runners::{RayRunner, NativeRunner, Runner};
+use crate::runners::{self, DAFT_RUNNER, NativeRunner, RayRunner, Runner, RunnerConfig};
 
+#[pyfunction]
+pub fn get_runner(py: Python) -> PyResult<Option<PyObject>> {
+    let runner = py.allow_threads(|| DAFT_RUNNER.get().cloned());
+    Ok(runner.map(|r| r.to_pyobj(py)))
+}
 
-#[cfg(feature = "python")]
 #[pyfunction]
 pub fn get_or_create_runner(py: Python) -> PyResult<PyObject> {
-    Ok(runners::get_or_create_runner()?.to_pyobj(py))
+    let runner = py.allow_threads(runners::get_or_create_runner)?;
+    Ok(runner.to_pyobj(py))
+}
+
+#[pyfunction]
+pub fn get_or_infer_runner_type(py: Python) -> PyResult<PyObject> {
+    match runners::DAFT_RUNNER.get() {
+        Some(runner) => match runner.as_ref() {
+            Runner::Ray(_) => RayRunner::NAME,
+            Runner::Native(_) => NativeRunner::NAME,
+        },
+        None => {
+            if let (true, _) = runners::detect_ray_state() {
+                RayRunner::NAME
+            } else {
+                match runners::get_runner_config_from_env()? {
+                    RunnerConfig::Ray { .. } => RayRunner::NAME,
+                    RunnerConfig::Native { .. } => NativeRunner::NAME,
+                }
+            }
+        }
+    }
+    .into_py_any(py)
 }
 
 #[pyfunction(signature = (
@@ -35,19 +60,21 @@ pub fn set_runner_ray(
             runner_type
         );
     }
-    
+
     let runner = Arc::new(Runner::Ray(RayRunner::try_new(
-        address.clone(),
+        address,
         max_task_backlog,
         force_client_mode,
     )?));
 
     match runners::DAFT_RUNNER.set(runner.clone()) {
         Ok(()) => Ok(runner.to_pyobj(py)),
-        Err(_) if noop_if_initialized => Ok(runners::DAFT_RUNNER.get().unwrap().clone().to_pyobj(py)),
-        Err(_) => Err(PyValueError::new_err(
-            "Cannot set runner more than once".to_string(),
-        ).into()),
+        Err(_) if noop_if_initialized => {
+            Ok(runners::DAFT_RUNNER.get().unwrap().clone().to_pyobj(py))
+        }
+        Err(_) => {
+            Err(DaftError::InternalError("Cannot set runner more than once".to_string()).into())
+        }
     }
 }
 
@@ -60,12 +87,12 @@ pub fn set_runner_native(py: Python, num_threads: Option<usize>) -> PyResult<PyO
             runner_type
         );
     }
-    
+
     let runner = Arc::new(Runner::Native(NativeRunner::try_new(num_threads)?));
     match runners::DAFT_RUNNER.set(runner.clone()) {
         Ok(()) => Ok(runner.to_pyobj(py)),
-        Err(_) => Err(PyValueError::new_err(
-            "Cannot set runner more than once".to_string(),
-        ).into()),
+        Err(_) => {
+            Err(DaftError::InternalError("Cannot set runner more than once".to_string()).into())
+        }
     }
 }

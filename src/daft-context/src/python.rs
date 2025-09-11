@@ -1,14 +1,7 @@
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
-use common_error::DaftError;
-use daft_runners::{NativeRunner, RayRunner};
-use pyo3::{IntoPyObjectExt, prelude::*};
+use pyo3::prelude::*;
 
-use crate::{DaftContext};
-
-#[pyclass]
-pub struct PyRunnerConfig {
-    _inner: RunnerConfig,
-}
+use crate::DaftContext;
 
 #[pyclass]
 pub struct PyDaftContext {
@@ -28,38 +21,6 @@ impl PyDaftContext {
         Self {
             inner: crate::get_context(),
         }
-    }
-
-    pub fn get_or_create_runner(&self, py: Python) -> PyResult<PyObject> {
-        let runner = py.allow_threads(|| self.inner.get_or_create_runner())?;
-
-        match runner.as_ref() {
-            Runner::Ray(ray) => {
-                let pyobj = ray.pyobj.as_ref();
-                Ok(pyobj.clone_ref(py))
-            }
-            Runner::Native(native) => {
-                let pyobj = native.pyobj.as_ref();
-                Ok(pyobj.clone_ref(py))
-            }
-        }
-    }
-
-    pub fn get_or_infer_runner_type(&self, py: Python) -> PyResult<PyObject> {
-        match self.inner.runner() {
-            Some(runner) => match runner.as_ref() {
-                Runner::Ray(_) => RayRunner::NAME,
-                Runner::Native(_) => NativeRunner::NAME,
-            },
-            None => {
-                if let (true, _) = detect_ray_state() {
-                    RayRunner::NAME
-                } else {
-                    todo!()
-                }
-            }
-        }
-        .into_py_any(py)
     }
 
     #[getter(_daft_execution_config)]
@@ -84,12 +45,6 @@ impl PyDaftContext {
     #[setter(_daft_planning_config)]
     pub fn set_daft_planning_config(&self, py: Python, config: PyDaftPlanningConfig) {
         py.allow_threads(|| self.inner.set_planning_config(config.config));
-    }
-
-    #[getter(_runner)]
-    pub fn get_runner(&self, py: Python) -> Option<PyObject> {
-        let runner = py.allow_threads(|| self.inner.runner());
-        runner.map(|r| r.to_pyobj(py))
     }
 }
 impl From<DaftContext> for PyDaftContext {

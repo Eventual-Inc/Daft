@@ -6,11 +6,11 @@ use common_error::{DaftError, DaftResult};
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{
+    exceptions::PyValueError,
     intern,
     prelude::*,
     types::{PyDict, PyIterator},
 };
-use pyo3::exceptions::PyValueError;
 
 #[derive(Debug)]
 pub struct RayRunner {
@@ -145,7 +145,9 @@ impl Runner {
 #[derive(Debug)]
 #[pyclass]
 pub enum RunnerConfig {
-    Native { num_threads: Option<usize> },
+    Native {
+        num_threads: Option<usize>,
+    },
     Ray {
         address: Option<String>,
         max_task_backlog: Option<usize>,
@@ -173,7 +175,7 @@ impl RunnerConfig {
 // ---------------------- Detection utilities ---------------------- //
 
 /// Helper function to automatically detect whether to use the ray runner.
-fn detect_ray_state() -> (bool, bool) {
+pub fn detect_ray_state() -> (bool, bool) {
     Python::with_gil(|py| {
         py.import(pyo3::intern!(py, "daft.utils"))
             .and_then(|m| m.getattr(pyo3::intern!(py, "detect_ray_state")))
@@ -240,7 +242,8 @@ pub(crate) fn get_runner_config_from_env() -> PyResult<RunnerConfig> {
             "The PyRunner was removed from Daft from v0.5.0 onwards. \
             Please set the env to `DAFT_RUNNER=native`."
                 .to_string(),
-        ).into()),
+        )
+        .into()),
         "" => Ok(if detect_ray_state() == (true, false) {
             // on ray but not in ray worker
             get_ray_runner_config_from_env()
@@ -254,7 +257,7 @@ pub(crate) fn get_runner_config_from_env() -> PyResult<RunnerConfig> {
     }
 }
 
-// -------------------------- Python API -------------------------- //
+// -------------------------- Singleton -------------------------- //
 
 /// The global runner used to execute queries.
 /// It is never possible to set more than once.
@@ -264,15 +267,12 @@ pub(crate) static DAFT_RUNNER: OnceLock<Arc<Runner>> = OnceLock::new();
 ///
 /// WARNING: This will set the runner if it has not yet been set.
 pub fn get_or_create_runner() -> DaftResult<Arc<Runner>> {
-    if let Some(runner) = DAFT_RUNNER.get() {
-        return Ok(runner.clone());
-    }
+    DAFT_RUNNER
+        .get_or_try_init(|| {
+            let runner_cfg = get_runner_config_from_env()?;
+            let runner = runner_cfg.create_runner()?;
 
-    let runner_cfg = get_runner_config_from_env()?;
-    let runner = runner_cfg.create_runner()?;
-
-    let runner = Arc::new(runner);
-    DAFT_RUNNER.set(runner.clone()).expect("Runner is already set");
-
-    Ok(runner)
+            Ok(Arc::new(runner))
+        })
+        .cloned()
 }

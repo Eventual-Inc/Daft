@@ -3,13 +3,13 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
 from daft.daft import get_context as _get_context
-from daft.daft import set_runner_native as _set_runner_native
-from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -28,10 +28,6 @@ class DaftContext:
 
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
-    @property
-    def _runner(self) -> Runner[PartitionT]:
-        return self._ctx._runner
-
     @staticmethod
     def _from_native(ctx: PyDaftContext) -> DaftContext:
         return DaftContext(ctx=ctx)
@@ -43,7 +39,9 @@ class DaftContext:
             self._ctx = PyDaftContext()
 
     def get_or_infer_runner_type(self) -> str:
-        """Get or infer the runner type.
+        """DEPRECATED: Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.
+
+        Get or infer the runner type.
 
         This API will get or infer the currently used runner type according to the following strategies:
         1. If the `runner` has been set, return its type directly;
@@ -52,13 +50,12 @@ class DaftContext:
 
         :return: runner type string ("native" or "ray")
         """
-        if self._ctx._runner is not None:
-            return self._ctx._runner.name
-
-        return self._ctx.get_or_infer_runner_type()
+        warnings.warn("Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.")
+        return runners.get_or_infer_runner_type()
 
     def get_or_create_runner(self) -> Runner[PartitionT]:
-        return self._ctx.get_or_create_runner()
+        warnings.warn("Use daft.get_or_create_runner instead. This method will be removed in v0.7.0.")
+        return runners.get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -80,7 +77,9 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-    """Configure Daft to execute dataframes using the Ray distributed computing framework.
+    """DEPRECATED: Use daft.set_runner_ray instead. This method will be removed in v0.7.0.
+
+    Configure Daft to execute dataframes using the Ray distributed computing framework.
 
     Args:
         address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
@@ -94,7 +93,9 @@ def set_runner_ray(
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=ray
     """
-    _set_runner_ray(
+    warnings.warn("Use daft.set_runner_ray instead. This method will be removed in v0.7.0.")
+
+    _ = runners.set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
         max_task_backlog=max_task_backlog,
@@ -105,7 +106,9 @@ def set_runner_ray(
 
 
 def set_runner_native(num_threads: int | None = None) -> DaftContext:
-    """Configure Daft to execute dataframes using native multi-threaded processing.
+    """DEPRECATED: Use daft.set_runner_native instead. This method will be removed in v0.7.0.
+
+    Configure Daft to execute dataframes using native multi-threaded processing.
 
     This is the default execution mode for Daft.
 
@@ -115,8 +118,9 @@ def set_runner_native(num_threads: int | None = None) -> DaftContext:
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
     """
-    _set_runner_native(num_threads=num_threads)
+    warnings.warn("Use daft.set_runner_native instead. This method will be removed in v0.7.0.")
 
+    _ = runners.set_runner_native(num_threads=num_threads)
     return DaftContext._from_native(_get_context())
 
 
