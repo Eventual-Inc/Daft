@@ -39,7 +39,7 @@ jobs:
     runs-on: ${{ inputs.os == 'ubuntu' && 'buildjet-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
@@ -156,15 +156,15 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         merge-multiple: true
         path: dist
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
     - name: Setup Virtual Env
