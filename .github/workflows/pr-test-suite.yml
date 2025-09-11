@@ -842,10 +842,10 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -886,7 +886,6 @@ jobs:
         python tools/aggregate_test_durations.py ai_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.event_name == 'push') }}
@@ -919,10 +918,10 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -963,7 +962,6 @@ jobs:
         python tools/aggregate_test_durations.py ai_credentialed_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
         OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
