@@ -161,7 +161,7 @@ from daft import col
 
 df = df_raw.explode(col("images")).with_columns({
     "image":    df_raw["images"].struct.get("bytes").image.decode(),
-    "image_base64": col("image").encode("base64"),
+    "image_base64": df_raw["images"].struct.get("bytes").encode("base64")
 })
 df.show(3)
 ```
