@@ -49,7 +49,8 @@ impl StagePlanBuilder {
             | LogicalPlan::Limit(_)
             | LogicalPlan::Sort(_)
             | LogicalPlan::Repartition(_)
-            | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::TopN(_)
+            | LogicalPlan::Pivot(_)=> Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Join(join) => {
                 if join
                     .join_strategy
@@ -69,11 +70,6 @@ impl StagePlanBuilder {
                         Ok(TreeNodeRecursion::Continue)
                     }
                 }
-            }
-            LogicalPlan::Pivot(_) => {
-                Err(DaftError::ValueError(
-                    "Pivot operations are currently not supported on the new ray runner. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for pivot operations.".to_string(),
-                ))
             }
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)

@@ -460,7 +460,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn pivot(
+    pub fn pivot(
         input: LocalPhysicalPlanRef,
         group_by: Vec<BoundExpr>,
         pivot_column: BoundExpr,
