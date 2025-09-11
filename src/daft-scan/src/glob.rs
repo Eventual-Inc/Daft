@@ -277,6 +277,12 @@ impl GlobScanOperator {
                             "Warc schemas do not need to be inferred".to_string(),
                         ));
                     }
+                    FileFormatConfig::Lance(_) => {
+                        // TODO by zhenchao
+                        return Err(DaftError::not_implemented(
+                            "Read Lance schema and meta".to_string(),
+                        ));
+                    }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {
                         return Err(DaftError::ValueError(

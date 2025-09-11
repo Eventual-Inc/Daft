@@ -17,6 +17,7 @@ mod hash_join;
 mod iceberg_write;
 mod in_memory;
 mod json;
+mod lance;
 #[cfg(feature = "python")]
 mod lance_write;
 mod limit;
@@ -52,6 +53,7 @@ pub use hash_join::HashJoin;
 pub use iceberg_write::IcebergWrite;
 pub use in_memory::InMemoryScan;
 pub use json::TabularWriteJson;
+pub use lance::TabularWriteLance;
 #[cfg(feature = "python")]
 pub use lance_write::LanceWrite;
 pub use limit::Limit;

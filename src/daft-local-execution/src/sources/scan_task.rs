@@ -592,6 +592,10 @@ async fn stream_scan_task(
             };
             daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options, None).await?
         }
+        FileFormatConfig::Lance(_) => {
+            // TODO add impl by zhenchao
+            return Err(DaftError::not_implemented("Native Lance Reads"));
+        }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
             use pyo3::Python;

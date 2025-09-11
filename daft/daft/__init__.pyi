@@ -236,6 +236,7 @@ class FileFormat(Enum):
     Parquet = 1
     Csv = 2
     Json = 3
+    Lance = 4
 
     def ext(self) -> str: ...
 
@@ -316,10 +317,22 @@ class DatabaseSourceConfig:
 
     def __init__(self, sql: str, conn_factory: SQLConnection): ...
 
+class LanceSourceConfig:
+    """Configuration of a Lance data source."""
+
+    def __init__(self) -> None: ...
+
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
+    config: (
+        ParquetSourceConfig
+        | CsvSourceConfig
+        | JsonSourceConfig
+        | DatabaseSourceConfig
+        | WarcSourceConfig
+        | LanceSourceConfig
+    )
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -344,6 +357,11 @@ class FileFormatConfig:
     @staticmethod
     def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
         """Create a database file format config."""
+        ...
+
+    @staticmethod
+    def from_lance_config(config: LanceSourceConfig) -> FileFormatConfig:
+        """Create a Lance file format config."""
         ...
 
     def file_format(self) -> FileFormat:

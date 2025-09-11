@@ -30,7 +30,7 @@ use futures::{Future, Stream};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 
-use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
+use crate::{DaftCSVSnafu, DaftCoreComputeSnafu, Error};
 
 #[derive(Debug)]
 pub enum TableState {
@@ -292,6 +292,16 @@ fn materialize_scan_task(
                 8,
             )
             .context(DaftCoreComputeSnafu)?
+        }
+
+        // ****************
+        // Native Lance Reads
+        // ****************
+        FileFormatConfig::Lance(_) => {
+            // TODO add impl by zhenchao
+            return Err(Error::DaftCoreCompute {
+                source: DaftError::not_implemented("Native Lance Reads"),
+            });
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
