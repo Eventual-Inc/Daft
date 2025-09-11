@@ -1265,9 +1265,6 @@ def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size
     ],
 )
 def test_join_empty(join_type, repartition_nparts, left, right, expected, make_df, with_morsel_size):
-    if not get_context().daft_execution_config.use_legacy_ray_runner and join_type == "cross":
-        pytest.skip("Cross joins are not supported on Flotilla")
-
     left_df = make_df(
         left,
         repartition=repartition_nparts,
