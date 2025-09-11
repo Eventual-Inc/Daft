@@ -1,5 +1,4 @@
 #![feature(if_let_guard)]
-#![feature(let_chains)]
 
 mod azure_blob;
 mod counting_reader;

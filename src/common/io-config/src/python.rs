@@ -217,6 +217,7 @@ impl IOConfig {
         hf=None,
         disable_suffix_range=None
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
