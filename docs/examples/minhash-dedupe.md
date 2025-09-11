@@ -4,7 +4,7 @@
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 
-In this notebook we will be performing the MinHash Deduplication algorithm over extracted text from html documents in the common crawl dataset. The Common Crawl corpus contains petabytes of data, with its oldest entries dating back to 2008. Each dataset includes raw web page data, metadata extracts, and text extracts. Deduplication is a helpful top-of-funnel strategy for improve dataset quality and is commonly used to improve generalization in LLM training, RAG, and Search.
+In this notebook we will be performing the MinHash Deduplication algorithm over extracted text from html documents in the common crawl dataset. The Common Crawl corpus contains petabytes of data, with its oldest entries dating back to 2008. Each dataset includes raw web page data, metadata extracts, and text extracts. Deduplication is a helpful top-of-funnel strategy for improving dataset quality and is commonly used to improve generalization in LLM training, RAG, and Search.
 
 When implemented as a pipeline, this workload can process 100,000 web pages in under 4 minutes on a MacBook Air (M2) with 8 GB of RAM. That includes preprocessing pages into html blocks, minhash, lsh banding, connected components, and final dedupe!
 
