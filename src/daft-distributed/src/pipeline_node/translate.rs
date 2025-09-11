@@ -458,10 +458,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let value_column = BoundExpr::try_new(pivot.value_column.clone(), &input_schema)?;
                 let aggregation = BoundAggExpr::try_new(pivot.aggregation.clone(), &input_schema)?;
 
-                // For Pivot, we need to gather all data to a single node because:
-                // 1. We need to see all unique pivot values to create the output columns
-                // 2. The pivot transformation needs to see the complete aggregated data
-
                 // First stage: Local aggregation with group_by + pivot_column
                 let group_by_with_pivot = {
                     let mut gb = group_by.clone();
@@ -473,15 +469,35 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.stage_config,
-                    group_by_with_pivot,
+                    group_by_with_pivot.clone(),
                     vec![aggregation.clone()],
                     pivot.input.schema(),
                     self.curr_node.pop().unwrap(),
                 )
                 .arced();
 
-                // Second stage: Gather all data to a single node
-                let gather = self.gen_gather_node(logical_node_id, local_agg);
+                // Second stage: Hash repartition shuffle by group_by columns only
+                let shuffle = self.gen_shuffle_node(
+                    logical_node_id,
+                    RepartitionSpec::Hash(HashRepartitionConfig::new(
+                        None,
+                        group_by.clone().into_iter().map(|e| e.into()).collect(),
+                    )),
+                    pivot.input.schema(),
+                    local_agg,
+                )?;
+
+                // Third stage: Second aggregation (final aggregation)
+                let final_agg = AggregateNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    group_by_with_pivot,
+                    vec![aggregation.clone()],
+                    pivot.input.schema(),
+                    shuffle,
+                )
+                .arced();
 
                 // Final stage: Pivot transformation
                 PivotNode::new(
@@ -494,7 +510,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     aggregation,
                     pivot.names.clone(),
                     pivot.output_schema.clone(),
-                    gather,
+                    final_agg,
                 )
                 .arced()
             }
