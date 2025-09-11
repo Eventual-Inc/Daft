@@ -19,7 +19,8 @@ python = [
   "daft-core/python",
   "daft-dsl/python",
   "daft-logical-plan/python",
-  "daft-micropartition/python"
+  "daft-micropartition/python",
+  "daft-runners/python"
 ]
 
 [package]

@@ -40,7 +40,7 @@ def set_runner_native(num_threads: int | None = None) -> Runner[PartitionT]:
     This is the default execution mode for Daft.
 
     Returns:
-        DaftContext: Updated Daft execution context configured for native execution.
+        Runner[PartitionT]: A runner object with the native runner's configuration.
 
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
@@ -63,7 +63,7 @@ def set_runner_ray(
         force_client_mode: If True, forces Ray to run in client mode.
 
     Returns:
-        DaftContext: Updated Daft execution context configured for Ray.
+        Runner[PartitionT]: A runner object with the Ray runner's configurations.
 
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=ray

@@ -170,8 +170,6 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             [sys.executable, "-c", concurrent_get_or_create_runner_script],
             capture_output=True,
         )
-        print(result.stdout.decode().strip())
-        print(result.stderr.decode().strip())
         assert result.stdout.decode().strip() == "ok"
 
 
@@ -216,8 +214,6 @@ print(pd["bar"][0])
             env={"DAFT_RUNNER": daft_runner_envvar},
         )
 
-        print(result.stdout.decode().strip())
-        print(result.stderr.decode().strip())
         assert result.stdout.decode().strip() == f"{daft_runner_envvar}\n{daft_runner_envvar}_7"
 
 
