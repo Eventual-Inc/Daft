@@ -182,7 +182,8 @@ impl IOConfig {
         gcs=None,
         http=None,
         unity=None,
-        hf=None
+        hf=None,
+        disable_suffix_range=None
     ))]
     pub fn new(
         s3: Option<S3Config>,
@@ -191,6 +192,7 @@ impl IOConfig {
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
         hf: Option<HuggingFaceConfig>,
+        disable_suffix_range: Option<bool>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -200,6 +202,7 @@ impl IOConfig {
                 http: http.unwrap_or_default().config,
                 unity: unity.unwrap_or_default().config,
                 hf: hf.unwrap_or_default().config,
+                disable_suffix_range: disable_suffix_range.unwrap_or_default(),
             },
         }
     }
@@ -211,7 +214,8 @@ impl IOConfig {
         gcs=None,
         http=None,
         unity=None,
-        hf=None
+        hf=None,
+        disable_suffix_range=None
     ))]
     pub fn replace(
         &self,
@@ -221,6 +225,7 @@ impl IOConfig {
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
         hf: Option<HuggingFaceConfig>,
+        disable_suffix_range: Option<bool>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -242,6 +247,8 @@ impl IOConfig {
                 hf: hf
                     .map(|hf| hf.config)
                     .unwrap_or_else(|| self.config.hf.clone()),
+                disable_suffix_range: disable_suffix_range
+                    .unwrap_or(self.config.disable_suffix_range),
             },
         }
     }

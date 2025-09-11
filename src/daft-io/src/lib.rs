@@ -1,4 +1,6 @@
 #![feature(if_let_guard)]
+#![feature(let_chains)]
+
 mod azure_blob;
 mod counting_reader;
 mod google_cloud;
@@ -45,6 +47,7 @@ use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource};
 pub use crate::range::GetRange;
+use crate::{Error::InvalidRangeRequest, range::InvalidGetRange};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -206,6 +209,11 @@ impl IOClient {
             config,
         })
     }
+
+    pub fn support_suffix_range(&self) -> bool {
+        !self.config.disable_suffix_range
+    }
+
     pub async fn get_source_and_path(
         &self,
         input: &str,
@@ -307,6 +315,14 @@ impl IOClient {
     ) -> Result<GetResult> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
+
+        if let Some(GetRange::Suffix(_)) = range
+            && !self.support_suffix_range()
+        {
+            return Err(InvalidRangeRequest {
+                source: InvalidGetRange::UnsupportedSuffixRange,
+            });
+        }
 
         let get_result = source
             .get(path.as_ref(), range.clone(), io_stats.clone())

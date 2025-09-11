@@ -14,6 +14,8 @@ pub struct IOConfig {
     pub http: HTTPConfig,
     pub unity: UnityConfig,
     pub hf: HuggingFaceConfig,
+    /// disable suffix range requests, please use range with offset
+    pub disable_suffix_range: bool,
 }
 
 impl IOConfig {
@@ -43,6 +45,10 @@ impl IOConfig {
         res.push(format!(
             "Hugging Face config = {{ {} }}",
             self.hf.multiline_display().join(", ")
+        ));
+        res.push(format!(
+            "Disable suffix range = {}",
+            self.disable_suffix_range
         ));
         res
     }
