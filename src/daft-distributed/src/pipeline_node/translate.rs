@@ -14,13 +14,13 @@ use daft_logical_plan::{
     partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
 use daft_physical_plan::extract_agg_expr;
+use daft_schema::schema::Schema;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, aggregate::AggregateNode, concat::ConcatNode,
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
-        into_partitions::IntoPartitionsNode, limit::LimitNode,
+        DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
+        explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
+        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
         sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
@@ -304,6 +304,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     group_by,
                     aggregations,
                     aggregate.output_schema.clone(),
+                    None,
                 )?
             }
             LogicalPlan::Distinct(distinct) => {
@@ -458,52 +459,32 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let value_column = BoundExpr::try_new(pivot.value_column.clone(), &input_schema)?;
                 let aggregation = BoundAggExpr::try_new(pivot.aggregation.clone(), &input_schema)?;
 
-                // For Pivot, we need a custom two-stage aggregation approach:
-                // 1. First stage: Aggregate by group_by + pivot_column
-                // 2. Shuffle by group_by only (not pivot_column)
-                // 3. Second stage: Aggregate by group_by + pivot_column again
+                let input_node = self.curr_node.pop().unwrap();
+
                 let group_by_with_pivot = {
                     let mut gb = group_by.clone();
                     gb.push(pivot_column.clone());
                     gb
                 };
-
-                let input_node = self.curr_node.pop().unwrap();
+                // Generate the output schema for the aggregation
+                let output_fields = group_by_with_pivot
+                    .iter()
+                    .map(|expr| expr.inner().to_field(&pivot.input.schema()))
+                    .chain(std::iter::once(
+                        aggregation.inner().to_field(&pivot.input.schema()),
+                    ))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let output_schema = Arc::new(Schema::new(output_fields));
 
                 // First stage: Local aggregation with group_by + pivot_column
-                let local_agg = AggregateNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.stage_config,
-                    group_by_with_pivot.clone(),
-                    vec![aggregation.clone()],
-                    pivot.input.schema(),
+                let agg = self.gen_agg_nodes(
                     input_node,
-                )
-                .arced();
-
-                // Second stage: Hash repartition shuffle by group_by columns only
-                let shuffle = self.gen_shuffle_node(
                     logical_node_id,
-                    RepartitionSpec::Hash(HashRepartitionConfig::new(
-                        None,
-                        group_by.clone().into_iter().map(|e| e.into()).collect(),
-                    )),
-                    pivot.input.schema(),
-                    local_agg,
-                )?;
-
-                // Third stage: Second aggregation (final aggregation)
-                let final_agg = AggregateNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.stage_config,
                     group_by_with_pivot,
                     vec![aggregation.clone()],
-                    pivot.input.schema(),
-                    shuffle,
-                )
-                .arced();
+                    output_schema,
+                    Some(group_by.clone()),
+                )?;
 
                 // Final stage: Pivot transformation
                 PivotNode::new(
@@ -516,7 +497,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     aggregation,
                     pivot.names.clone(),
                     pivot.output_schema.clone(),
-                    final_agg,
+                    agg,
                 )
                 .arced()
             }
