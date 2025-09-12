@@ -1143,7 +1143,7 @@ mod tests {
 
     use arrow2::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use common_error::DaftResult;
-    use daft_io::{IOClient, IOConfig, init_s3_config};
+    use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::{
         metadata::FileMetaData,
@@ -1166,7 +1166,8 @@ mod tests {
     fn test_parquet_read_from_s3() -> DaftResult<()> {
         let file = PARQUET_FILE;
 
-        init_s3_config!(io_config);
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -1192,7 +1193,8 @@ mod tests {
     fn test_parquet_streaming_read_from_s3() -> DaftResult<()> {
         let file = PARQUET_FILE;
 
-        init_s3_config!(io_config);
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let runtime_handle = get_io_runtime(true);
