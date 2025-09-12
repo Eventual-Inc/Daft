@@ -4,7 +4,7 @@
   <div class="example-card">
     <a href="./mm_structured_outputs" class="example-image-link">
       <div class="example-image">
-        <img src="../img/mm-structured-outputs-cover.png" alt="Multimodal Structured Outputs Cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <img src="../img/mm-structured-outputs-cover.png" alt="Multimodal Structured Outputs Cover " onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
         <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #36d1dc 0%, #5b86e5 100%);">
           <span>📃</span>
         </div>
