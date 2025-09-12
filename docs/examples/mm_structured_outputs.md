@@ -1,6 +1,6 @@
 # Multimodal Structured Outputs with Daft, Gemma-3n, and vLLM
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/structured_outputs/Structured_Outputs_with_Gemma3_vLLM.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/structured_outputs/mm_structured_outputs.ipynb)
 
 ## Introduction
 

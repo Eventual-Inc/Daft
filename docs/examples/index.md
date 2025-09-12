@@ -9,8 +9,8 @@
           <span>📃</span>
         </div>
         <div class="example-overlay">
-          <h3>Multimodal Structured Outputs with Gemma 3n and vLLM</h3>
-          <p>Evaluate image understanding with guided choice on HuggingFace's TheCauldron Dataset</p>
+          <h3>Multimodal Structured Outputs</h3>
+          <p>Evaluate Gemma 3n's image understanding with guided choice on vLLM</p>
         </div>
       </div>
     </a>
