@@ -458,13 +458,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let value_column = BoundExpr::try_new(pivot.value_column.clone(), &input_schema)?;
                 let aggregation = BoundAggExpr::try_new(pivot.aggregation.clone(), &input_schema)?;
 
-                // First stage: Local aggregation with group_by + pivot_column
+                // For Pivot, we need a custom two-stage aggregation approach:
+                // 1. First stage: Aggregate by group_by + pivot_column
+                // 2. Shuffle by group_by only (not pivot_column)
+                // 3. Second stage: Aggregate by group_by + pivot_column again
                 let group_by_with_pivot = {
                     let mut gb = group_by.clone();
                     gb.push(pivot_column.clone());
                     gb
                 };
 
+                let input_node = self.curr_node.pop().unwrap();
+
+                // First stage: Local aggregation with group_by + pivot_column
                 let local_agg = AggregateNode::new(
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
@@ -472,7 +478,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     group_by_with_pivot.clone(),
                     vec![aggregation.clone()],
                     pivot.input.schema(),
-                    self.curr_node.pop().unwrap(),
+                    input_node,
                 )
                 .arced();
 
