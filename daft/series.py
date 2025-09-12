@@ -1083,3 +1083,22 @@ class SeriesImageNamespace(SeriesNamespace):
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
         return self._eval_expressions("to_mode", mode=mode)
+
+    def average_hash(self) -> Series:
+        """Computes the average hash of images in this series.
+
+        The average hash algorithm:
+        1. Converts each image to grayscale
+        2. Resizes to 8x8 pixels (64 total pixels)
+        3. Computes the average pixel value
+        4. Creates a binary hash where each bit represents whether a pixel is above (1) or below (0) the average
+        5. Returns a 64-character binary string for each image
+
+        Returns:
+            Series: A Series of Utf8 strings containing the hash values.
+
+        Example:
+            >>> # Compute average hash for a series of images
+            >>> hash_series = image_series.image.average_hash()
+        """
+        return self._eval_expressions("image_average_hash")

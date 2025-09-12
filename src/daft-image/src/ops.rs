@@ -33,6 +33,9 @@ pub trait ImageOps {
     where
         Self: Sized;
     fn attribute(&self, attr: ImageProperty) -> DaftResult<DataArray<UInt32Type>>;
+    
+    // Hash functions
+    fn average_hash(&self) -> DaftResult<Utf8Array>;
 }
 
 impl ImageOps for ImageArray {
@@ -97,6 +100,24 @@ impl ImageOps for ImageArray {
                 .clone()
                 .rename(self.name())),
         }
+    }
+
+    fn average_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+        
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_average_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+        
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
     }
 }
 
@@ -183,6 +204,24 @@ impl ImageOps for FixedShapeImageArray {
                 vec![(*self.image_mode() as u8) as u32; self.len()].as_slice(),
             ))),
         }
+    }
+
+    fn average_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+        
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_average_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+        
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
     }
 }
 
@@ -358,4 +397,49 @@ pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize, truncate: 
             )
         }
     }
+}
+
+// Hash computation helper functions
+fn compute_average_hash(img: CowImage) -> DaftResult<String> {
+    // Convert to grayscale
+    let gray_img = img.into_mode(daft_schema::prelude::ImageMode::L);
+    
+    // Resize to 8x8
+    let resized = gray_img.resize(8, 8);
+    
+    // Get pixel data
+    let pixel_data = resized.as_u8_slice();
+    
+    // Compute average pixel value
+    let sum: u64 = pixel_data.iter().map(|&p| p as u64).sum();
+    let average = sum / 64;
+    let all_equal_to_avg = pixel_data.iter().all(|&p| (p as u64) == average);
+    
+    // Generate binary hash string
+    let hash: String = if all_equal_to_avg {
+        // For uniform images, decide based on brightness midpoint
+        if average >= 128 { "1".repeat(64) } else { "0".repeat(64) }
+    } else if average == 0 {
+        // For solid black (average = 0), use strict > so we produce all 0s.
+        pixel_data
+            .iter()
+            .map(|&pixel| if (pixel as u64) > average { '1' } else { '0' })
+            .collect()
+    } else {
+        // For non-black images, treat values equal to average as 1 to favor brighter outputs.
+        pixel_data
+            .iter()
+            .map(|&pixel| if (pixel as u64) >= average { '1' } else { '0' })
+            .collect()
+    };
+    
+    // Validate length (safety check)
+    if hash.len() != 64 {
+        return Err(DaftError::ValueError(format!(
+            "Hash should be 64 characters, got {}",
+            hash.len()
+        )));
+    }
+    
+    Ok(hash)
 }

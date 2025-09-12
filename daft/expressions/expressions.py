@@ -5279,6 +5279,27 @@ class ExpressionImageNamespace(ExpressionNamespace):
         """
         return self.attribute("mode")
 
+    def average_hash(self) -> Expression:
+        """Computes the average hash of an image for deduplication and similarity detection.
+
+        The average hash algorithm:
+        1. Converts the image to grayscale
+        2. Resizes to 8x8 pixels (64 total pixels)
+        3. Computes the average pixel value
+        4. Creates a binary hash where each bit represents whether a pixel is above (1) or below (0) the average
+        5. Returns a 64-character binary string
+
+        Returns:
+            Expression: A Utf8 expression representing the hash string.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("hash", df["images"].image.average_hash())  # doctest: +SKIP
+        """
+        f = native.get_function_from_registry("image_average_hash")
+        return Expression._from_pyexpr(f(self._expr))
+
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.partition` attribute."""

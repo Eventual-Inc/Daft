@@ -228,3 +228,21 @@ pub fn attribute(s: &Series, attr: ImageProperty) -> DaftResult<Series> {
         ))),
     }
 }
+
+/// Computes average hash of images in a Series
+pub fn average_hash(s: &Series) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => {
+            let array = s.downcast::<ImageArray>()?;
+            Ok(array.average_hash()?.into_series())
+        }
+        DataType::FixedShapeImage(..) => {
+            let array = s.downcast::<FixedShapeImageArray>()?;
+            Ok(array.average_hash()?.into_series())
+        }
+        dt => Err(DaftError::ValueError(format!(
+            "Average hash can only be computed for Image types, got {}",
+            dt
+        ))),
+    }
+}

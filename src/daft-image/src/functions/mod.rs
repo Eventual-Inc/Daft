@@ -4,6 +4,7 @@ pub mod attribute;
 pub mod crop;
 pub mod decode;
 pub mod encode;
+pub mod hash;
 pub mod resize;
 pub mod to_mode;
 
@@ -17,5 +18,6 @@ impl FunctionModule for ImageFunctions {
         parent.add_fn(resize::ImageResize);
         parent.add_fn(to_mode::ImageToMode);
         parent.add_fn(attribute::ImageAttribute);
+        parent.add_fn(hash::ImageAverageHash);
     }
 }
