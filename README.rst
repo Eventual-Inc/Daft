@@ -7,12 +7,13 @@
 Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 ============================================================
 
+|TrendShift|
 
 `Daft <https://www.daft.ai>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
 
 * **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration, or SQL for analytical queries
 * **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
-* **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
+* **Data Catalog integrations:** Integration with data catalogs (AWS Glue, Unity Catalog) and table formats like Apache Iceberg
 * **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
 * **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
 * **Built for the cloud:** `Record-setting <https://www.daft.ai/blog/announcing-daft-02>`_ I/O performance for integrations with S3 cloud storage
@@ -126,12 +127,10 @@ Related Projects
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Modin <https://github.com/modin-project/modin>`_ | Yes             | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| `Pyspark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
+| `PySpark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-
-Check out our `engine comparison page <https://docs.daft.ai/en/stable/resources/engine_comparison/>`_ for more details!
 
 License
 -------
@@ -168,3 +167,9 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
    :target: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
    :alt: slack community
+
+.. |TrendShift| image:: https://trendshift.io/api/badge/repositories/8239
+   :target: https://trendshift.io/repositories/8239
+   :alt: Eventual-Inc/Daft | Trendshift
+   :width: 250px
+   :height: 55px
