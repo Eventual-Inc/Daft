@@ -32,10 +32,6 @@ class DaftContext:
     def _runner(self) -> Runner[PartitionT]:
         return self._ctx._runner
 
-    @_runner.setter
-    def _runner(self, runner: Runner[PartitionT]) -> None:
-        self._ctx._runner = runner
-
     @staticmethod
     def _from_native(ctx: PyDaftContext) -> DaftContext:
         return DaftContext(ctx=ctx)

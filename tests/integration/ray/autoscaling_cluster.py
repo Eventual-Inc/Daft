@@ -123,10 +123,6 @@ def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, a
     Note: Starting and stopping the cluster can be time consuming. Use sparingly, and reuse the cluster if possible.
     """
     try:
-        from daft.daft import reset_runner
-
-        reset_runner()
-
         if ray.is_initialized():
             ray.shutdown()
 
@@ -149,5 +145,3 @@ def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, a
         # Clean shutdown sequence
         ray.shutdown()
         cluster.shutdown()
-
-        reset_runner()
