@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from daft.catalog import Catalog, Table
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
+    from daft.subscribers import QuerySubscriber
 
 R = TypeVar("R")
 
@@ -1895,14 +1896,15 @@ class NativeExecutor:
         self,
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
+        daft_execution_config: PyDaftContext,
         results_buffer_size: int | None,
+        context: dict[str, str] | None = None,
     ) -> Iterator[PyMicroPartition]: ...
     def run_async(
         self,
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
+        daft_execution_config: PyDaftContext,
         results_buffer_size: int | None = None,
         context: dict[str, str] | None = None,
     ) -> AsyncIterator[PyMicroPartition]: ...
@@ -2027,6 +2029,14 @@ class PyDaftPlanningConfig:
     @property
     def enable_strict_filter_pushdown(self) -> bool: ...
 
+class StatType(Enum):
+    INT = "int"
+    FLOAT = "float"
+    STRING = "string"
+    BOOL = "bool"
+    DATETIME = "datetime"
+    DURATION = "duration"
+
 class PyDaftContext:
     def __init__(self) -> None: ...
 
@@ -2037,6 +2047,15 @@ class PyDaftContext:
     def daft_execution_config(self) -> PyDaftExecutionConfig: ...
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig: ...
+
+    # Subscriber methods
+    def attach_subscriber(self, subscriber: QuerySubscriber) -> None: ...
+    def notify_query_start(self, query_id: str) -> None: ...
+    def notify_query_end(self, query_id: str) -> None: ...
+    def notify_plan_start(self, query_id: str) -> None: ...
+    def notify_plan_end(self, query_id: str) -> None: ...
+    def notify_exec_start(self, query_id: str) -> None: ...
+    def notify_exec_end(self, query_id: str) -> None: ...
 
 def set_runner_ray(
     address: str | None = None,
@@ -2145,6 +2164,12 @@ class PySession:
     def set_namespace(self, ident: PyIdentifier | None) -> None: ...
     def set_provider(self, ident: str | None) -> None: ...
     def set_model(self, ident: str | None) -> None: ...
+    # Subscriber methods
+    def attach_subscriber(self, subscriber: QuerySubscriber) -> None: ...
+    def notify_query_start(self) -> None: ...
+    def notify_query_end(self) -> None: ...
+    def notify_plan_start(self) -> None: ...
+    def notify_plan_end(self) -> None: ...
 
 class InProgressShuffleCache:
     @staticmethod

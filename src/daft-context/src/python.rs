@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
 use pyo3::prelude::*;
 
-use crate::DaftContext;
+use crate::{DaftContext, subscribers};
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyDaftContext {
     inner: DaftContext,
 }
@@ -46,10 +48,62 @@ impl PyDaftContext {
     pub fn set_daft_planning_config(&self, py: Python, config: PyDaftPlanningConfig) {
         py.allow_threads(|| self.inner.set_planning_config(config.config));
     }
+
+    pub fn attach_subscriber(&self, py: Python, subscriber: PyObject) {
+        py.allow_threads(|| {
+            self.inner
+                .attach_subscriber(Arc::new(subscribers::python::PyQuerySubscriberWrapper(
+                    subscriber,
+                )));
+        });
+    }
+
+    pub fn notify_query_start(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_query_start(query_id))?;
+        Ok(())
+    }
+
+    pub fn notify_query_end(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_query_end(query_id))?;
+        Ok(())
+    }
+
+    pub fn notify_plan_start(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_plan_start(query_id))?;
+        Ok(())
+    }
+
+    pub fn notify_plan_end(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_plan_end(query_id))?;
+        Ok(())
+    }
+
+    pub fn notify_exec_start(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_exec_start(query_id))?;
+        Ok(())
+    }
+
+    pub fn notify_exec_end(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_exec_end(query_id))?;
+        Ok(())
+    }
 }
+
 impl From<DaftContext> for PyDaftContext {
     fn from(ctx: DaftContext) -> Self {
         Self { inner: ctx }
+    }
+}
+
+impl From<PyDaftContext> for DaftContext {
+    fn from(ctx: PyDaftContext) -> Self {
+        ctx.inner
+    }
+}
+
+impl<'a> From<&'a PyDaftContext> for &'a DaftContext {
+    fn from(ctx: &'a PyDaftContext) -> Self {
+        &ctx.inner
     }
 }
 

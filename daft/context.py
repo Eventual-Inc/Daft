@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
+    from daft.subscribers import QuerySubscriber
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,27 @@ class DaftContext:
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         return self._ctx._daft_planning_config
+
+    def attach_subscriber(self, subscriber: QuerySubscriber) -> None:
+        self._ctx.attach_subscriber(subscriber)
+
+    def notify_query_start(self, query_id: str) -> None:
+        self._ctx.notify_query_start(query_id)
+
+    def notify_query_end(self, query_id: str) -> None:
+        self._ctx.notify_query_end(query_id)
+
+    def notify_plan_start(self, query_id: str) -> None:
+        self._ctx.notify_plan_start(query_id)
+
+    def notify_plan_end(self, query_id: str) -> None:
+        self._ctx.notify_plan_end(query_id)
+
+    def notify_exec_start(self, query_id: str) -> None:
+        self._ctx.notify_exec_start(query_id)
+
+    def notify_exec_end(self, query_id: str) -> None:
+        self._ctx.notify_exec_end(query_id)
 
 
 def get_context() -> DaftContext:

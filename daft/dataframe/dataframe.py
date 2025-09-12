@@ -162,21 +162,13 @@ class DataFrame:
             return self._result_cache.value
 
     def _broadcast_query_plan(self) -> None:
-        from daft import dashboard
+        from daft.subscribers import dashboard
 
         if not dashboard._should_run():
             return
         unoptimized_plan = self._builder._builder.repr_json(True)
-        plan_time_start = _utc_now()
-        optimized_plan = self._builder.optimize()._builder.repr_json(True)
-        plan_time_end = _utc_now()
 
-        dashboard.broadcast_query_information(
-            unoptimized_plan=unoptimized_plan,
-            optimized_plan=optimized_plan,
-            plan_time_start=plan_time_start,
-            plan_time_end=plan_time_end,
-        )
+        dashboard.broadcast_query_information(unoptimized_plan=unoptimized_plan)
 
     def pipe(
         self,

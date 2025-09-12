@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from daft.daft import (
     LocalPhysicalPlan,
+    PyDaftExecutionConfig,
 )
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
@@ -14,7 +15,7 @@ from daft.recordbatch import MicroPartition
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from daft.daft import PyDaftExecutionConfig
+    from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.partitioning import (
         LocalMaterializedResult,
@@ -31,8 +32,9 @@ class NativeExecutor:
         self,
         local_physical_plan: LocalPhysicalPlan,
         psets: dict[str, list[MaterializedResult[PartitionT]]],
-        daft_execution_config: PyDaftExecutionConfig,
+        ctx: DaftContext,
         results_buffer_size: int | None,
+        context: dict[str, str] | None,
     ) -> Iterator[LocalMaterializedResult]:
         from daft.runners.partitioning import LocalMaterializedResult
 
@@ -44,7 +46,7 @@ class NativeExecutor:
             for part in self._executor.run(
                 local_physical_plan,
                 psets_mp,
-                daft_execution_config,
+                ctx._ctx,
                 results_buffer_size,
             )
         )

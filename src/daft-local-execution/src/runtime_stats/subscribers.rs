@@ -1,8 +1,7 @@
 pub(crate) mod dashboard;
-#[cfg(debug_assertions)]
-pub(crate) mod debug;
 pub(crate) mod opentelemetry;
 pub(crate) mod progress_bar;
+pub(crate) mod query;
 
 use common_error::DaftResult;
 use common_metrics::StatSnapshotSend;

@@ -1329,17 +1329,23 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> Iterator[RayMaterializedResult]:
         track_runner_on_scarf(runner=self.name)
 
-        # Grab and freeze the current DaftExecutionConfig
-        daft_execution_config = get_context().daft_execution_config
+        # Grab and freeze the current context
+        ctx = get_context()
+        query_id = str(uuid.uuid4())
+        daft_execution_config = ctx.daft_execution_config
 
         # Optimize the logical plan.
+        ctx.notify_query_start(query_id)
+        ctx.notify_plan_start(query_id)
         builder = builder.optimize()
+        ctx.notify_plan_end(query_id)
 
         if daft_execution_config.use_legacy_ray_runner:
             if daft_execution_config.enable_aqe:
                 adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
                 while not adaptive_planner.is_done():
                     stage_id, plan_scheduler = adaptive_planner.next()
+                    ctx.notify_exec_start(query_id)
                     start_time = time.time()
                     # don't store partition sets in variable to avoid reference
                     result_uuid = self._start_plan(
@@ -1382,6 +1388,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                     adaptive_planner.explain_analyze(str(explain_analyze_dir))
             else:
                 plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+                ctx.notify_exec_start(query_id)
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
                 )
@@ -1392,9 +1399,14 @@ class RayRunner(Runner[ray.ObjectRef]):
             )
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
+
+            ctx.notify_exec_start(query_id)
             yield from self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets()
             )
+
+        ctx.notify_exec_end(query_id)
+        ctx.notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
