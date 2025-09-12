@@ -46,6 +46,7 @@ mod join;
 mod limit;
 pub(crate) mod materialize;
 mod monotonically_increasing_id;
+mod pivot;
 mod project;
 mod sample;
 mod scan_source;

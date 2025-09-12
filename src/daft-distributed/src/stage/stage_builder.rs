@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef, partitioning::ClusteringSpecRef};
 use daft_schema::schema::SchemaRef;
@@ -47,12 +47,8 @@ impl StagePlanBuilder {
             | LogicalPlan::Sort(_)
             | LogicalPlan::Repartition(_)
             | LogicalPlan::Join(_)
-            | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),
-            LogicalPlan::Pivot(_) => {
-                Err(DaftError::ValueError(
-                    "Pivot operations are currently not supported on the new ray runner. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for pivot operations.".to_string(),
-                ))
-            }
+            | LogicalPlan::TopN(_)
+            | LogicalPlan::Pivot(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::SubqueryAlias(_)

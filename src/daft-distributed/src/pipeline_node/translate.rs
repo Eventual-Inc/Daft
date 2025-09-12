@@ -17,12 +17,13 @@ use daft_physical_plan::extract_agg_expr;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
-        explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
-        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
-        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
-        sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
-        top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
+        DistributedPipelineNode, NodeID, aggregate::AggregateNode, concat::ConcatNode,
+        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
+        project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
+        sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
     },
     stage::StageConfig,
 };
@@ -450,8 +451,74 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Pivot(_) => {
-                todo!("FLOTILLA_MS3: Implement Pivot")
+            LogicalPlan::Pivot(pivot) => {
+                let input_schema = pivot.input.schema();
+                let group_by = BoundExpr::bind_all(&pivot.group_by, &input_schema)?;
+                let pivot_column = BoundExpr::try_new(pivot.pivot_column.clone(), &input_schema)?;
+                let value_column = BoundExpr::try_new(pivot.value_column.clone(), &input_schema)?;
+                let aggregation = BoundAggExpr::try_new(pivot.aggregation.clone(), &input_schema)?;
+
+                // For Pivot, we need a custom two-stage aggregation approach:
+                // 1. First stage: Aggregate by group_by + pivot_column
+                // 2. Shuffle by group_by only (not pivot_column)
+                // 3. Second stage: Aggregate by group_by + pivot_column again
+                let group_by_with_pivot = {
+                    let mut gb = group_by.clone();
+                    gb.push(pivot_column.clone());
+                    gb
+                };
+
+                let input_node = self.curr_node.pop().unwrap();
+
+                // First stage: Local aggregation with group_by + pivot_column
+                let local_agg = AggregateNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    group_by_with_pivot.clone(),
+                    vec![aggregation.clone()],
+                    pivot.input.schema(),
+                    input_node,
+                )
+                .arced();
+
+                // Second stage: Hash repartition shuffle by group_by columns only
+                let shuffle = self.gen_shuffle_node(
+                    logical_node_id,
+                    RepartitionSpec::Hash(HashRepartitionConfig::new(
+                        None,
+                        group_by.clone().into_iter().map(|e| e.into()).collect(),
+                    )),
+                    pivot.input.schema(),
+                    local_agg,
+                )?;
+
+                // Third stage: Second aggregation (final aggregation)
+                let final_agg = AggregateNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    group_by_with_pivot,
+                    vec![aggregation.clone()],
+                    pivot.input.schema(),
+                    shuffle,
+                )
+                .arced();
+
+                // Final stage: Pivot transformation
+                PivotNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    group_by,
+                    pivot_column,
+                    value_column,
+                    aggregation,
+                    pivot.names.clone(),
+                    pivot.output_schema.clone(),
+                    final_agg,
+                )
+                .arced()
             }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
