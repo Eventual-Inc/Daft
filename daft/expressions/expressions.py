@@ -3,8 +3,6 @@ from __future__ import annotations
 import builtins
 import math
 from collections.abc import Collection, Iterable, Iterator
-from datetime import date, datetime, time, timedelta
-from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -28,16 +26,10 @@ from daft.daft import (
     unresolved_col,
 )
 from daft.daft import PyExpr as _PyExpr
-from daft.daft import date_lit as _date_lit
-from daft.daft import decimal_lit as _decimal_lit
-from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_lit as _list_lit
 from daft.daft import lit as _lit
-from daft.daft import time_lit as _time_lit
-from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, TimeUnit
-from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
@@ -80,41 +72,7 @@ def lit(value: object) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    if isinstance(value, datetime):
-        # pyo3 datetime (PyDateTime) is not available when running in abi3 mode, workaround
-        pa_timestamp = pa.scalar(value)
-        i64_value = pa_timestamp.cast(pa.int64()).as_py()
-        time_unit = TimeUnit.from_str(pa_timestamp.type.unit)._timeunit
-        tz = pa_timestamp.type.tz
-        lit_value = _timestamp_lit(i64_value, time_unit, tz)
-    elif isinstance(value, date):
-        # pyo3 date (PyDate) is not available when running in abi3 mode, workaround
-        epoch_time = value - date(1970, 1, 1)
-        lit_value = _date_lit(epoch_time.days)
-    elif isinstance(value, time):
-        # pyo3 time (PyTime) is not available when running in abi3 mode, workaround
-        pa_time = pa.scalar(value)
-        i64_value = pa_time.cast(pa.int64()).as_py()
-        time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
-        lit_value = _time_lit(i64_value, time_unit)
-    elif isinstance(value, timedelta):
-        # pyo3 timedelta (PyDelta) is not available when running in abi3 mode, workaround
-        pa_duration = pa.scalar(value)
-        i64_value = pa_duration.cast(pa.int64()).as_py()
-        time_unit = TimeUnit.from_str(pa_duration.type.unit)._timeunit
-        lit_value = _duration_lit(i64_value, time_unit)
-    elif isinstance(value, Decimal):
-        sign, digits, exponent = value.as_tuple()
-        assert isinstance(exponent, int)
-        lit_value = _decimal_lit(sign == 1, digits, exponent)
-    elif isinstance(value, Series):
-        lit_value = _list_lit(value._series)
-    elif isinstance(value, list):
-        value_series = Series.from_pylist(value)
-        lit_value = _list_lit(value_series._series)
-    else:
-        lit_value = _lit(value)
-    return Expression._from_pyexpr(lit_value)
+    return Expression._from_pyexpr(_lit(value))
 
 
 def element() -> Expression:
@@ -5211,7 +5169,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 raise ValueError(
                     f"Expected `bbox` to be either a tuple of 4 ints or an Expression but received: {bbox}"
                 )
-            bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
+            bbox = Expression._to_expression(list(bbox)).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
         f = native.get_function_from_registry("image_crop")
         return Expression._from_pyexpr(f(self._expr, bbox._expr))

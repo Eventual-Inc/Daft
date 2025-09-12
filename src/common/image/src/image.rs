@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub struct Image(pub DynamicImage);
 
 impl Image {
-    pub fn into_ndarray(self) -> Box<dyn NdArray> {
+    pub fn into_ndarray(self) -> NdArray {
         fn into_ndarray3<P: Pixel>(buf: ImageBuffer<P, Vec<P::Subpixel>>) -> Array3<P::Subpixel> {
             let SampleLayout {
                 channels,
@@ -27,16 +27,16 @@ impl Image {
         }
 
         match self.0 {
-            DynamicImage::ImageLuma8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageLumaA8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgb8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgba8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageLuma16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageLumaA16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgb16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgba16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgb32F(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgba32F(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLuma8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLumaA8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLuma16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLumaA16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb32F(buf) => NdArray::F32(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba32F(buf) => NdArray::F32(into_ndarray3(buf).into_dyn()),
             _ => unimplemented!("unsupported DynamicImage variant"),
         }
     }

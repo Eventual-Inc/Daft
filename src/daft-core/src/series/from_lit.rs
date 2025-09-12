@@ -4,20 +4,65 @@ use common_image::CowImage;
 
 use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
 
+fn combine_lit_types(left: &DataType, right: &DataType) -> Option<DataType> {
+    match (left, right) {
+        (dtype, DataType::Null) | (DataType::Null, dtype) => Some(dtype.clone()),
+        (left, right) if left == right => Some(left.clone()),
+        (DataType::List(left_child), DataType::List(right_child)) => {
+            combine_lit_types(left_child, right_child).map(|child| DataType::List(Box::new(child)))
+        }
+        (DataType::Struct(left_fields), DataType::Struct(right_fields)) => {
+            if left_fields.len() != right_fields.len() {
+                return None;
+            }
+
+            let fields = left_fields
+                .iter()
+                .zip(right_fields)
+                .map(|(l, r)| {
+                    if l.name != r.name {
+                        return None;
+                    }
+
+                    let field_dtype = combine_lit_types(&l.dtype, &r.dtype)?;
+                    Some(Field::new(l.name.clone(), field_dtype))
+                })
+                .collect::<Option<_>>()?;
+
+            Some(DataType::Struct(fields))
+        }
+        (
+            DataType::Map {
+                key: left_key,
+                value: left_value,
+            },
+            DataType::Map {
+                key: right_key,
+                value: right_value,
+            },
+        ) => {
+            let key = Box::new(combine_lit_types(left_key, right_key)?);
+            let value = Box::new(combine_lit_types(left_value, right_value)?);
+
+            Some(DataType::Map { key, value })
+        }
+        _ => None,
+    }
+}
+
 impl TryFrom<Vec<Literal>> for Series {
     type Error = DaftError;
 
     fn try_from(values: Vec<Literal>) -> DaftResult<Self> {
-        let dtype = values
-            .iter()
-            .try_fold(DataType::Null, |acc, v| match (acc, v.get_type()) {
-                (dtype, DataType::Null) | (DataType::Null, dtype) => Ok(dtype),
-                (acc, dtype) if acc == dtype => Ok(acc),
-                (acc, dtype) => Err(DaftError::ValueError(format!(
+        let dtype = values.iter().try_fold(DataType::Null, |acc, v| {
+            let dtype = v.get_type();
+            combine_lit_types(&acc, &dtype).ok_or_else(|| {
+                DaftError::ValueError(format!(
                     "All literals must have the same data type or null. Found: {} vs {}",
                     acc, dtype
-                ))),
-            })?;
+                ))
+            })
+        })?;
 
         let field = Field::new("literal", dtype.clone());
 
@@ -110,11 +155,15 @@ impl TryFrom<Vec<Literal>> for Series {
 
                 DurationArray::new(field, physical).into_series()
             }
-            DataType::List(_) => {
+            DataType::List(child_dtype) => {
                 let data = values
                     .iter()
-                    .map(|v| unwrap_inner!(v, List))
-                    .collect::<Vec<_>>();
+                    .map(|v| {
+                        unwrap_inner!(v, List)
+                            .map(|s| s.cast(&child_dtype))
+                            .transpose()
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
                 ListArray::try_from(("literal", data.as_slice()))?.into_series()
             }
             DataType::Struct(fields) => {
@@ -319,25 +368,31 @@ impl TryFrom<Vec<Literal>> for Series {
 
                 EmbeddingArray::new(field, physical).into_series()
             }
-            DataType::Map { .. } => {
+            DataType::Map {
+                key: key_dtype,
+                value: value_dtype,
+            } => {
                 let data = values
                     .into_iter()
                     .map(|v| {
-                        unwrap_inner!(v, Literal::Map { keys, values } => (keys, values)).map(
-                            |(k, v)| {
-                                StructArray::new(
+                        unwrap_inner!(v, Literal::Map { keys, values } => (keys, values))
+                            .map(|(k, v)| {
+                                Ok(StructArray::new(
                                     field
                                         .to_physical()
                                         .to_exploded_field()
                                         .expect("Expected physical type of map to be list"),
-                                    vec![k.rename("key"), v.rename("value")],
+                                    vec![
+                                        k.cast(&key_dtype)?.rename("key"),
+                                        v.cast(&value_dtype)?.rename("value"),
+                                    ],
                                     None,
                                 )
-                                .into_series()
-                            },
-                        )
+                                .into_series())
+                            })
+                            .transpose()
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<DaftResult<Vec<_>>>()?;
 
                 let physical = ListArray::try_from(("literal", data.as_slice()))?;
 
@@ -430,8 +485,8 @@ mod test {
     #[case::decimal_2(vec![Literal::Decimal(0, 5, 10), Literal::Decimal(1, 5, 10), Literal::Decimal(-2, 5, 10)])]
     #[case::list(vec![Literal::List(Series::empty("literal", &DataType::Int32)), Literal::List(series![1, 2, 3])])]
     #[case::struct_(vec![
-        Literal::Struct(indexmap!{Field::new("a", DataType::Boolean) => Literal::Boolean(true)}),
-        Literal::Struct(indexmap!{Field::new("a", DataType::Boolean) => Literal::Boolean(false)}),
+        Literal::Struct(indexmap!{"a".to_string() => Literal::Boolean(true)}),
+        Literal::Struct(indexmap!{"a".to_string() => Literal::Boolean(false)}),
     ])]
     #[case::tensor(vec![
         Literal::Tensor { data: series![0, 0], shape: vec![1, 2] },

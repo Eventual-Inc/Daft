@@ -4,9 +4,12 @@ import os
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Callable, Union
 
+from daft.daft import PyTimeUnit
 from daft.dependencies import pa
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from daft.expressions import Expression
 
 # Column input type definitions
@@ -151,3 +154,33 @@ def detect_ray_state() -> tuple[bool, bool]:
         pass
 
     return ray_is_initialized or ray_is_in_job, in_ray_worker
+
+
+def np_datetime64_to_timestamp(dt: np.datetime64) -> tuple[int, PyTimeUnit | None]:
+    """Convert a numpy datetime64 to value since unix epoch.
+
+    When the second return value is None, the unit is days.
+    """
+    import numpy as np
+
+    (unit, count) = np.datetime_data(dt.dtype)
+    val = dt.astype(np.int64) * count
+
+    if unit in ("Y", "M", "W", "D"):
+        val = np.datetime64(dt, "D").astype(np.int64)
+        return val, None
+    elif unit in ("h", "m"):
+        val = np.datetime64(dt, "s").astype(np.int64)
+        return val, PyTimeUnit.seconds()
+    elif unit == "s":
+        return val, PyTimeUnit.seconds()
+    elif unit == "ms":
+        return val, PyTimeUnit.milliseconds()
+    elif unit == "us":
+        return val, PyTimeUnit.microseconds()
+    elif unit == "ns":
+        return val, PyTimeUnit.nanoseconds()
+    else:
+        # unit is too small, just convert to nanoseconds
+        val = np.datetime64(dt, "ns").astype(np.int64)
+        return val, PyTimeUnit.nanoseconds()
