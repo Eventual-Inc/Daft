@@ -504,7 +504,9 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
     1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
 
-    2. [API Documentation](api/index.md): Searchable documentation and reference material to Daft’s public API.
+    2. [Examples](examples/index.md): See Daft in action with use cases across text, images, audio, and more.
+
+    3. [API Documentation](api/index.md): Searchable documentation and reference material to Daft's public API.
 
 ## Contribute to Daft
 

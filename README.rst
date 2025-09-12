@@ -85,6 +85,7 @@ More Resources
 ^^^^^^^^^^^^^^
 
 * `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
+* `Examples <https://docs.daft.ai/en/stable/examples/>`_ - see Daft in action with use cases across text, images, audio, and more
 * `User Guide <https://docs.daft.ai/en/stable/>`_ - take a deep-dive into each topic within Daft
 * `API Reference <https://docs.daft.ai/en/stable/api/>`_ - API reference for public classes/functions of Daft
 * `SQL Reference <https://docs.daft.ai/en/stable/sql/>`_ - Daft SQL reference
