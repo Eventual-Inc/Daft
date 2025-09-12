@@ -404,7 +404,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             };
 
             Ok(IOConfig {
-                s3: s3_config,
+                s3: Some(s3_config),
                 ..Default::default()
             })
         }
@@ -421,14 +421,14 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let num_tries = get_value!("num_tries", UInt32)?.unwrap_or(default.num_tries);
 
             Ok(IOConfig {
-                http: HTTPConfig {
+                http: Some(HTTPConfig {
                     user_agent,
                     bearer_token,
                     retry_initial_backoff_ms,
                     connect_timeout_ms,
                     read_timeout_ms,
                     num_tries,
-                },
+                }),
                 ..Default::default()
             })
         }
@@ -448,7 +448,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let default = AzureConfig::default();
 
             Ok(IOConfig {
-                azure: AzureConfig {
+                azure: Some(AzureConfig {
                     storage_account,
                     access_key: access_key.map(|s| s.into()),
                     sas_token,
@@ -460,7 +460,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                     anonymous: anonymous.unwrap_or(default.anonymous),
                     endpoint_url,
                     use_ssl: use_ssl.unwrap_or(default.use_ssl),
-                },
+                }),
                 ..Default::default()
             })
         }
@@ -478,7 +478,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
 
             let default = GCSConfig::default();
             Ok(IOConfig {
-                gcs: GCSConfig {
+                gcs: Some(GCSConfig {
                     project_id,
                     credentials: credentials.map(|s| s.into()),
                     token,
@@ -490,7 +490,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                     connect_timeout_ms: connect_timeout_ms.unwrap_or(default.connect_timeout_ms),
                     read_timeout_ms: read_timeout_ms.unwrap_or(default.read_timeout_ms),
                     num_tries: num_tries.unwrap_or(default.num_tries),
-                },
+                }),
                 ..Default::default()
             })
         }
