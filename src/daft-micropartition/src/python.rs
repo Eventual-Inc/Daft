@@ -1141,7 +1141,21 @@ pub fn read_pyfunc_into_table_iter(
     }).collect::<crate::Result<Vec<_>>>()?;
 
     let scan_task_limit = scan_task.pushdowns.limit;
-    let scan_task_filters = scan_task.pushdowns.filters.clone();
+    let scan_task_filters = {
+        let has_lancedb_count_result_function = scan_task.sources.iter().any(|source| {
+            if let DataSource::PythonFactoryFunction { func_name, .. } = source {
+                func_name == "_lancedb_count_result_function"
+            } else {
+                false
+            }
+        });
+
+        if has_lancedb_count_result_function {
+            None
+        } else {
+            scan_task.pushdowns.filters.clone()
+        }
+    };
     let res = table_iterators
         .into_iter()
         .flat_map(move |iter| {

@@ -3,7 +3,7 @@
 
 import logging
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
 from daft.dependencies import pa
@@ -38,24 +38,21 @@ def _lancedb_table_factory_function(
 def _lancedb_count_result_function(
     ds: "lance.LanceDataset",
     required_column: str,
-    filters: Optional["pa.compute.Expression"] = None,
+    filters: Optional[list[Any]] = None,
 ) -> Iterator[PyRecordBatch]:
-    """Enhanced LanceDB count function that supports filters for filter+count pushdown optimization."""
+    """Use LanceDB's API to count rows and return a record batch with the count result."""
     count = 0
-
     if filters is None:
         logger.debug("Using metadata for counting all rows (no filters)")
         count = ds.count_rows()
     else:
-        logger.debug("Counting rows with filters applied using Lance scanner")
-        scanner = ds.scanner(filter=filters)
-        count = sum(batch.num_rows for batch in scanner.to_batches())
+        logger.debug("Counting rows with filters applied")
+        count = ds.count_rows(filter=filters)
 
     arrow_schema = pa.schema([pa.field(required_column, pa.uint64())])
     arrow_array = pa.array([count], type=pa.uint64())
     arrow_batch = pa.RecordBatch.from_arrays([arrow_array], [required_column])
     result_batch = RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema)._recordbatch
-
     return (result_batch for _ in [1])
 
 
@@ -95,6 +92,9 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
 
     def as_pushdown_filter(self) -> Union[SupportsPushdownFilters, None]:
         return self
+
+    def can_absorb_count_with_filter(self) -> bool:
+        return self._pushed_filters
 
     def multiline_display(self) -> list[str]:
         return [

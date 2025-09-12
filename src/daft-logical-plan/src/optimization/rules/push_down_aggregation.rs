@@ -12,11 +12,13 @@ use crate::{
 
 /// Optimization rules for pushing Aggregation further into the logical plan.
 #[derive(Default, Debug)]
-pub struct PushDownAggregation {}
+pub struct PushDownAggregation {
+    strict_pushdown: bool,
+}
 
 impl PushDownAggregation {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(strict_pushdown: bool) -> Self {
+        Self { strict_pushdown }
     }
 }
 
@@ -46,10 +48,21 @@ impl OptimizerRule for PushDownAggregation {
                                     let scan_op = external_info.scan_state.get_scan_op().0.clone();
 
                                     // Enhanced check: support filter+count pushdown
+                                    let is_remaining_filters = if let Some(supports_pushdown) =
+                                        scan_op.as_pushdown_filter()
+                                        && self.strict_pushdown
+                                    {
+                                        let (pushed_filters, post_filters) = supports_pushdown
+                                            .push_filters(
+                                                external_info.pushdowns.filters.as_slice(),
+                                            );
+                                        post_filters.is_empty()
+                                    } else {
+                                        external_info.pushdowns.filters.is_none()
+                                    };
                                     let can_pushdown = scan_op.supports_count_pushdown()
                                         && is_count_mode_supported(count_mode)
-                                        && (external_info.pushdowns.filters.is_none()
-                                            || scan_op.can_absorb_filter());
+                                        && is_remaining_filters;
 
                                     if can_pushdown {
                                         // Create new pushdown info with count aggregation
