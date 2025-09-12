@@ -20,6 +20,7 @@ from daft.daft import (
     CountMode,
     ImageFormat,
     ImageMode,
+    ImageProperty,
     ResourceRequest,
     initialize_udfs,
     resolved_col,
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
+    EncodingCodec = Literal["base64", "deflate", "gzip", "gz", "utf-8", "utf8", "zlib"]
 
 
 def lit(value: object) -> Expression:
@@ -1595,7 +1596,7 @@ class Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Args:
-            codec (str): encoding codec (deflate, gzip, zlib)
+            codec (str): encoding codec (base64, deflate, gzip, zlib)
 
         Returns:
             Expression: A new expression, of type `binary`, with the encoded value.
@@ -1641,7 +1642,7 @@ class Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Args:
-            codec (str): decoding codec (deflate, gzip, zlib)
+            codec (str): decoding codec (base64, deflate, gzip, zlib)
 
         Returns:
             Expression: A new expression with the decoded values.
@@ -1651,6 +1652,20 @@ class Expression:
             only decoding with 'utf-8' returns a string.
 
         Examples:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"bytes": [b"aGVsbG8sIHdvcmxkIQ=="]})
+            >>> df.select(col("bytes").decode("base64")).show()
+            ╭──────────────────╮
+            │ bytes            │
+            │ ---              │
+            │ Binary           │
+            ╞══════════════════╡
+            │ b"hello, world!" │
+            ╰──────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
             >>> import daft
             >>> import zlib
             >>> from daft import col
@@ -2037,6 +2052,33 @@ class Expression:
         """
         f = native.get_function_from_registry("explode")
         return Expression._from_pyexpr(f(self._expr))
+
+    def list_append(self, other: Expression) -> Expression:
+        """Appends a value to each list in the column.
+
+        Args:
+            other: A value or column of values to append to each list
+
+        Returns:
+            Expression: An expression with the updated lists
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"a": [[1, 2], [3, 4, 5]], "b": [10, 11]})
+            >>> df.with_column("combined", df["a"].list_append(df["b"])).show()
+            ╭─────────────┬───────┬───────────────╮
+            │ a           ┆ b     ┆ combined      │
+            │ ---         ┆ ---   ┆ ---           │
+            │ List[Int64] ┆ Int64 ┆ List[Int64]   │
+            ╞═════════════╪═══════╪═══════════════╡
+            │ [1, 2]      ┆ 10    ┆ [1, 2, 10]    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [3, 4, 5]   ┆ 11    ┆ [3, 4, 5, 11] │
+            ╰─────────────┴───────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return self._eval_expressions("list_append", other)
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
@@ -5182,6 +5224,60 @@ class ExpressionImageNamespace(ExpressionNamespace):
         image_mode = lit(mode)._expr
         f = native.get_function_from_registry("to_mode")
         return Expression._from_pyexpr(f(self._expr, mode=image_mode))
+
+    def attribute(self, name: Literal["width", "height", "channel", "mode"] | ImageProperty) -> Expression:
+        """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
+
+        Args:
+            name (str): The name of the property to retrieve.
+
+        Returns:
+            Expression: An Expression representing the requested property.
+        """
+        if isinstance(name, str):
+            name = ImageProperty.from_property_string(name)
+        f = native.get_function_from_registry("image_attribute")
+        return Expression._from_pyexpr(f(self._expr, lit(name)._expr))
+
+    def width(self) -> Expression:
+        """Gets the width of an image in pixels.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("width", df["images"].image.width())  # doctest: +SKIP
+        """
+        return self.attribute("width")
+
+    def height(self) -> Expression:
+        """Gets the height of an image in pixels.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("height", df["images"].image.height())  # doctest: +SKIP
+        """
+        return self.attribute("height")
+
+    def channel(self) -> Expression:
+        """Gets the number of channels in an image.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("channel", df["images"].image.channel())  # doctest: +SKIP
+        """
+        return self.attribute("channel")
+
+    def mode(self) -> Expression:
+        """Gets the mode of an image as a string.
+
+        Example:
+            >>> # Create a dataframe with an image column
+            >>> df = ...  # doctest: +SKIP
+            >>> df = df.with_column("mode", df["images"].image.mode())  # doctest: +SKIP
+        """
+        return self.attribute("mode")
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):

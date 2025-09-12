@@ -1,6 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use daft_core::{array::ops::image::image_array_from_img_buffers, prelude::*};
+use daft_schema::image_property::ImageProperty;
 
 use crate::ops::ImageOps;
 fn image_decode_impl(
@@ -198,6 +199,32 @@ pub fn to_mode(s: &Series, mode: ImageMode) -> DaftResult<Series> {
             .map(|arr| arr.into_series()),
         dt => Err(DaftError::ValueError(format!(
             "Expected input to crop to be an Image type, but received: {dt}"
+        ))),
+    }
+}
+
+/// Get metadata attributes from image series
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+/// * `attr` - Attribute name to retrieve ("height", "width", "channel", "mode")
+///
+/// # Returns
+/// Series of UInt32 values containing requested attribute
+pub fn attribute(s: &Series, attr: ImageProperty) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => {
+            let array = s.downcast::<ImageArray>()?;
+            Ok(array.attribute(attr)?.into_series())
+        }
+        DataType::FixedShapeImage(..) => {
+            let array = s.downcast::<FixedShapeImageArray>()?;
+            Ok(array.attribute(attr)?.into_series())
+        }
+        dt => Err(DaftError::ValueError(format!(
+            "datatype: {} does not support Image attributes. Occurred while processing Series: {}",
+            dt,
+            s.name()
         ))),
     }
 }
