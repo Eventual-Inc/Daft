@@ -422,7 +422,7 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
         let mut rng = rand::thread_rng();
 
