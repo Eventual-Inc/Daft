@@ -93,9 +93,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     def as_pushdown_filter(self) -> Union[SupportsPushdownFilters, None]:
         return self
 
-    def can_absorb_count_with_filter(self) -> bool:
-        return self._pushed_filters
-
     def multiline_display(self) -> list[str]:
         return [
             self.display_name(),
@@ -159,7 +156,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 filters = Expression._from_pyexpr(combined_filter).to_arrow_expr()
 
             new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
-
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_count_result_function.__module__,
                 func_name=_lancedb_count_result_function.__name__,

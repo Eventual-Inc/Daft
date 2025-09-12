@@ -36,6 +36,7 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn supports_count_pushdown(&self) -> bool {
         false
     }
+
     fn supported_count_modes(&self) -> Vec<daft_core::count_mode::CountMode> {
         Vec::new()
     }
