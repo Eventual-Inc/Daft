@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use daft_dsl::expr::StddevParams;
+
 use super::{ProtoResult, ToFromProto, from_proto, from_proto_arc};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
@@ -348,7 +350,10 @@ impl ToFromProto for ir::AggExpr {
                     "count_nulls" => Self::Count(arg, ir::CountMode::Null),
                     "sum" => Self::Sum(arg),
                     "mean" => Self::Mean(arg),
-                    "stddev" => Self::Stddev(arg),
+                    "stddev" => Self::Stddev(StddevParams {
+                        child: arg,
+                        ddof: 0, // Default to population stddev for SetFunction
+                    }),
                     "min" => Self::Min(arg),
                     "max" => Self::Max(arg),
                     "bool_and" => Self::BoolAnd(arg),
@@ -360,6 +365,12 @@ impl ToFromProto for ir::AggExpr {
                     "skew" => Self::Skew(arg),
                     _ => not_implemented_err!("unrecognized aggregation function: {}", name),
                 }
+            }
+            proto::AggVariant::StddevFunction(stddev_function) => {
+                let arg = stddev_function.args[0].clone();
+                let arg = ir::Expr::from_proto(arg)?.into();
+                let ddof = stddev_function.ddof;
+                Self::Stddev(StddevParams { child: arg, ddof })
             }
             proto::AggVariant::ApproxPercentile(_) => {
                 not_implemented_err!("approx_percentile");
@@ -441,13 +452,23 @@ impl ToFromProto for ir::AggExpr {
                     is_all: true,
                 })
             }
-            Self::Stddev(expr) => {
-                // STDDEV([ALL] <expr>)
-                proto::AggVariant::SetFunction(proto::agg::SetFunction {
-                    name: "stddev".to_string(),
-                    args: vec![expr.to_proto()?],
-                    is_all: true,
-                })
+            Self::Stddev(StddevParams { child: expr, ddof }) => {
+                // Use StddevFunction when ddof is specified, otherwise use SetFunction
+                if *ddof == 0 {
+                    // Population stddev - use SetFunction for compatibility
+                    proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                        name: "stddev".to_string(),
+                        args: vec![expr.to_proto()?],
+                        is_all: true,
+                    })
+                } else {
+                    // Sample stddev or other ddof values - use StddevFunction
+                    proto::AggVariant::StddevFunction(proto::agg::StddevFunction {
+                        args: vec![expr.to_proto()?],
+                        is_all: true,
+                        ddof: *ddof,
+                    })
+                }
             }
             Self::Min(expr) => {
                 // MIN([ALL] <expr>)

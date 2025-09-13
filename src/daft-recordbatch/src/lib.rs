@@ -21,7 +21,7 @@ use daft_core::{
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
     expr::{
-        BoundColumn,
+        BoundColumn, StddevParams,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
     functions::{FunctionArgs, FunctionEvaluator, scalar::ScalarFn},
@@ -632,9 +632,9 @@ impl RecordBatch {
             AggExpr::Mean(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .mean(groups),
-            AggExpr::Stddev(expr) => self
+            AggExpr::Stddev(StddevParams { child: expr, ddof }) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .stddev(groups),
+                .stddev_with_ddof(groups, *ddof as i32),
             AggExpr::Min(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .min(groups),
