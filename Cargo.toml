@@ -227,17 +227,17 @@ members = [
 [workspace.dependencies]
 approx = "0.5.1"
 arc-swap = "1.7.1"
-async-compat = "0.2.3"
+async-compat = "0.2.5"
 async-compression = {version = "0.4.12", features = [
   "tokio",
   "all-algorithms"
 ]}
 async-stream = "0.3.6"
-async-trait = "0.1.79"
+async-trait = "0.1.89"
 base64 = "0.22.1"
 bytes = "1.8.0"
 chrono = "0.4.38"
-chrono-tz = "0.10.0"
+chrono-tz = "0.10.4"
 comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
@@ -280,13 +280,13 @@ educe = "0.6.0"
 futures = "0.3.30"
 hashbrown = "0.16"
 html-escape = "0.2.13"
-image = {version = "0.25.5", default-features = false}
+image = {version = "0.25.8", default-features = false}
 indexmap = "2.9.0"
 indicatif = "0.18"
 itertools = "0.14"
-jaq-core = "2.2.0"
-jaq-json = {version = "1.1.2", features = ["serde_json"]}
-jaq-std = "2.1.1"
+jaq-core = "2.2.1"
+jaq-json = {version = "1.1.3", features = ["serde_json"]}
+jaq-std = "2.1.2"
 mur3 = "0.1.0"
 ndarray = "0.16.1"
 num-derive = "0.4.2"
@@ -303,10 +303,10 @@ proptest = "1.5.0"
 prost = "0.13.5"
 prost-types = "0.13.5"
 rand = "^0.8"
-rayon = "1.10.0"
-regex = "1.10.4"
+rayon = "1.11.0"
+regex = "1.11.2"
 rstest = "0.18.2"
-serde_json = "1.0.133"
+serde_json = "1.0.143"
 sha1 = "0.11.0-pre.4"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
@@ -314,12 +314,12 @@ smallvec = {version = "1.15.1", features = ["serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"
-sysinfo = "0.32.0"
+sysinfo = "0.35.2"
 tango-bench = "0.6.0"
-test-log = "0.2.16"
-thiserror = "2.0.12"
+test-log = "0.2.18"
+thiserror = "2.0.16"
 tiktoken-rs = "0.7.0"
-tokio = {version = "1.37.0", features = [
+tokio = {version = "1.47.1", features = [
   "net",
   "time",
   "bytes",
@@ -330,14 +330,14 @@ tokio = {version = "1.37.0", features = [
   "rt-multi-thread"
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
-tokio-util = "0.7.11"
+tokio-util = "0.7.16"
 tonic = "0.12.3"
 tonic-build = "0.12.3"
 tracing = {version = "0.1", features = ["log"]}
 typed-builder = "0.20.0"
 typetag = "0.2.18"
 url = "2.4.0"
-uuid = {version = "1.17.0", features = ["v4"]}
+uuid = {version = "1.18.1", features = ["v4"]}
 xxhash-rust = "0.8.12"
 
 [workspace.dependencies.arrow2]
@@ -353,7 +353,7 @@ version = "2.0.1"
 
 [workspace.dependencies.log]
 features = ["std"]
-version = "0.4.19"
+version = "0.4.28"
 
 [workspace.dependencies.parquet-format-safe]
 features = ['async']

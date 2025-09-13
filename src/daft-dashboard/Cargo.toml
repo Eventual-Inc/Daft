@@ -2,7 +2,7 @@
 anyhow = "1.0"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 http-body-util = "0.1"
-hyper = {features = ["full"], version = "1.6"}
+hyper = {features = ["full"], version = "1.7"}
 hyper-util = {features = ["tokio"], version = "0.1"}
 include_dir = "0.7.4"
 parking_lot = {workspace = true}
