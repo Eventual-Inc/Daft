@@ -233,7 +233,7 @@ def test_fixed_size_binary_concat_with_literals() -> None:
     result = table.eval_expression_list([col("a").binary.concat(lit(None))])
     assert result.to_pydict() == {"a": [None, None, None]}
     # Result should be Binary when using literals
-    assert result.schema()["a"].dtype == DataType.binary()
+    assert result.schema()["a"].dtype == DataType.fixed_size_binary(3)
 
 
 def test_fixed_size_binary_concat_errors() -> None:
@@ -246,5 +246,5 @@ def test_fixed_size_binary_concat_errors() -> None:
     )
 
     # Test concat with wrong type
-    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Int64"):
+    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: FixedSizeBinary\[3\], Int64"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])

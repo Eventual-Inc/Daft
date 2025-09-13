@@ -250,7 +250,7 @@ impl Add for InferDataType<'_> {
                 (dtype @ DataType::Null, other) | (other, dtype @ DataType::Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
-                        DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
+                        DataType::Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", dtype, other)
                         )),
                         other if other.is_physical() => Ok(other.clone()),
@@ -274,6 +274,15 @@ impl Add for InferDataType<'_> {
                         )),
                     }
                 },
+                // --------
+                // Binary
+                // --------
+                (DataType::Binary, DataType::Binary) | (DataType::Binary, DataType::FixedSizeBinary(_)) | (DataType::FixedSizeBinary(_), DataType::Binary) => {
+                    Ok(DataType::Binary)
+                }
+                (DataType::FixedSizeBinary(lsize), DataType::FixedSizeBinary(rsize)) => {
+                    Ok(DataType::FixedSizeBinary(lsize + rsize))
+                }
                 // ---- Interval + temporal ----
                 (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
                 // ---- Boolean + other ----

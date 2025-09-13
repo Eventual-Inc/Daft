@@ -1,3 +1,5 @@
+"""Columnar Functions."""
+
 from __future__ import annotations
 
 from daft.expressions import Expression, list_
@@ -31,7 +33,7 @@ def columns_sum(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_sum requires at least one expression")
-    return list_(*exprs).list.sum().alias("columns_sum")
+    return list_(*exprs).list_sum().alias("columns_sum")
 
 
 def columns_mean(*exprs: Expression | str) -> Expression:
@@ -62,7 +64,7 @@ def columns_mean(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_mean requires at least one expression")
-    return list_(*exprs).list.mean().alias("columns_mean")
+    return list_(*exprs).list_mean().alias("columns_mean")
 
 
 def columns_avg(*exprs: Expression | str) -> Expression:
@@ -93,7 +95,7 @@ def columns_avg(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_avg requires at least one expression")
-    return list_(*exprs).list.mean().alias("columns_avg")
+    return list_(*exprs).list_mean().alias("columns_avg")
 
 
 def columns_min(*exprs: Expression | str) -> Expression:
@@ -124,7 +126,7 @@ def columns_min(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_min requires at least one expression")
-    return list_(*exprs).list.min().alias("columns_min")
+    return list_(*exprs).list_min().alias("columns_min")
 
 
 def columns_max(*exprs: Expression | str) -> Expression:
@@ -155,4 +157,4 @@ def columns_max(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_max requires at least one expression")
-    return list_(*exprs).list.max().alias("columns_max")
+    return list_(*exprs).list_max().alias("columns_max")
