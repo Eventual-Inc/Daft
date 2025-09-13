@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import lance
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 
 import daft
@@ -47,7 +48,7 @@ class TestLanceCountResultFunction:
         """Test that filters list is handled correctly."""
         ds = lance.dataset(test_dataset_path)
 
-        filter_expr = pa.compute.greater(pa.compute.field("age"), pa.scalar(30))
+        filter_expr = pc.greater(pc.field("age"), pc.scalar(30))
 
         with patch("daft.io.lance.lance_scan.logger") as mock_logger:
             result_generator = _lancedb_count_result_function(ds, "count", filters=filter_expr)

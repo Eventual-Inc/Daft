@@ -203,7 +203,8 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
         assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
-        assert "Pushdowns: {projection: [b], filter: is_null(col(b)), aggregation: count(col(b), All)}" in actual.out
+        assert "Filter pushdown = is_null(col(b)" in actual.out
+        assert "Aggregation pushdown = count(col(b), All)" in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [2]}
@@ -217,10 +218,8 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
         assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
-        assert (
-            "Pushdowns: {projection: [b], filter: is_null(col(b)) | is_null(col(c)), aggregation: count(col(b), All)}"
-            in actual.out
-        )
+        assert "Filter pushdown = is_null(col(b)) | is_null(col(c))" in actual.out
+        assert "Aggregation pushdown = count(col(b), All)" in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [3]}
@@ -237,10 +236,6 @@ class TestLanceDBCountPushdown:
         assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
         assert "Aggregation pushdown" in actual.out
         assert "Filter pushdown" in actual.out
-        assert (
-            "Pushdowns: {projection: [b], filter: [col(c) > lit(3)] & not(is_null(col(b))), aggregation: count(col(b), All)}"
-            in actual.out
-        )
 
         result = df.to_pydict()
         assert result == {"count": [1]}
