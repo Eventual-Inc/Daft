@@ -9,7 +9,7 @@ use serde::{
 };
 
 use super::Literal;
-use crate::{prelude::Field, series::Series};
+use crate::series::Series;
 
 #[derive(Debug)]
 pub struct LitError {
@@ -73,13 +73,13 @@ impl<'de> serde::de::SeqAccess<'de> for SeriesDeserializer<'de> {
 }
 
 struct StructDeserializer<'de> {
-    fields: &'de IndexMap<Field, Literal>,
-    iter: indexmap::map::Iter<'de, Field, Literal>,
+    fields: &'de IndexMap<String, Literal>,
+    iter: indexmap::map::Iter<'de, String, Literal>,
     value: Option<&'de Literal>,
 }
 
 impl<'de> StructDeserializer<'de> {
-    fn new(fields: &'de IndexMap<Field, Literal>) -> Self {
+    fn new(fields: &'de IndexMap<String, Literal>) -> Self {
         StructDeserializer {
             fields,
             iter: fields.iter(),
@@ -101,7 +101,7 @@ impl<'de> serde::de::MapAccess<'de> for StructDeserializer<'de> {
                 self.value = Some(value);
 
                 // Deserialize key name as a string
-                let key_deserializer = StringDeserializer(&key.name);
+                let key_deserializer = StringDeserializer(key);
                 seed.deserialize(key_deserializer).map(Some)
             }
             None => Ok(None),
@@ -401,9 +401,9 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
 
             // Handle struct representation (like {"Variant": value} or {"Variant": {"field": value}})
             Literal::Struct(fields) if fields.len() == 1 => {
-                let (field, value) = fields.iter().next().unwrap();
+                let (key, value) = fields.iter().next().unwrap();
                 visitor.visit_enum(StructEnumAccess {
-                    variant: &field.name,
+                    variant: key,
                     value,
                 })
             }

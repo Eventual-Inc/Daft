@@ -12,6 +12,7 @@ import pyarrow as pa
 import pytest
 
 from daft import DataType, Series
+from daft.exceptions import DaftCoreException
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 IS_CI = True if os.getenv("CI") else False
@@ -76,7 +77,7 @@ def test_series_pyobj_roundtrip() -> None:
 def test_series_pyobj_strict_arrow_err() -> None:
     objects = [0, CustomTestObject(1)]
 
-    with pytest.raises(pa.lib.ArrowInvalid):
+    with pytest.raises(DaftCoreException):
         Series.from_pylist(objects, pyobj="disallow")
 
 

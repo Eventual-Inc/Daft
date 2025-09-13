@@ -80,8 +80,8 @@ class Series:
         """Construct a Series from a Python list.
 
         If `dtype` is not defined, then the resulting type depends on the setting of `pyobj`:
-            - ``"allow"``: Arrow-backed types if possible, else PyObject;
-            - ``"disallow"``: Arrow-backed types only, raising error if not convertible;
+            - ``"allow"``: Daft-native types if possible, else PyObject;
+            - ``"disallow"``: Daft-native types only, raising error if not convertible;
             - ``"force"``: Always store as PyObject types. Equivalent to `dtype=daft.DataType.python()`.
 
         Args:
@@ -98,31 +98,16 @@ class Series:
         if pyobj not in {"allow", "disallow", "force"}:
             raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
 
-        # If output is Python objects, we can just use the Python list directly.
-        if (dtype and dtype == DataType.python()) or pyobj == "force":
-            pys = PySeries.from_pylist(name, data, DataType.python()._dtype)
-            return Series._from_pyseries(pys)
+        if pyobj == "force":
+            dtype = DataType.python()
 
-        # Otherwise, try to infer from parameters provided
-        try:
-            # Workaround: wrap list of np.datetime64 in an np.array
-            #   - https://github.com/apache/arrow/issues/40580
-            #   - https://github.com/Eventual-Inc/Daft/issues/3826
-            if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
-                np_arr = np.array(data)
-                arrow_array = pa.array(np_arr)
-            elif data and isinstance(data[0], tuple):
-                dtype = DataType._infer_dtype_from_pylist(data)
-                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
-            else:
-                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
-            return Series.from_arrow(arrow_array, name=name, dtype=dtype)
-        except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError, pa.lib.ArrowNotImplementedError):
-            if pyobj == "disallow":
-                raise
-            dtype = dtype or DataType._infer_dtype_from_pylist(data) or DataType.python()
-            pys = PySeries.from_pylist(name, data, dtype._dtype)
-            return Series._from_pyseries(pys)
+        pys = PySeries.from_pylist(data, name, None if dtype is None else dtype._dtype)
+        series = Series._from_pyseries(pys)
+
+        if pyobj == "disallow" and series.datatype().is_python():
+            raise TypeError("Could not convert Python list to a Daft-native type, and pyobj='disallow' was set.")
+
+        return series
 
     @classmethod
     def from_numpy(

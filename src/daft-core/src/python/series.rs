@@ -68,12 +68,26 @@ impl PySeries {
         Ok(series.into())
     }
 
-    // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, dtype: PyDataType) -> PyResult<Self> {
-        let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-
-        Self::from_pylist_impl(name, vec_pyobj, dtype.dtype)
+    #[pyo3(signature = (list, name=None, dtype=None))]
+    pub fn from_pylist(
+        list: &Bound<PyList>,
+        name: Option<&str>,
+        dtype: Option<PyDataType>,
+    ) -> PyResult<Self> {
+        let dtype = dtype.map(|t| t.dtype);
+        let lit_list = list
+            .iter()
+            .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
+            .collect::<PyResult<Vec<_>>>()?;
+        let mut series = Series::try_from(lit_list)?;
+        if let Some(dtype) = dtype {
+            series = series.cast(&dtype)?;
+        }
+        if let Some(name) = name {
+            series = series.rename(name);
+        }
+        Ok(series.into())
     }
 
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {

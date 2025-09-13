@@ -313,9 +313,9 @@ impl<T: SQLLiteral> SQLLiteral for HashMap<String, T> {
             .ok_or_else(|| PlannerError::invalid_operation("Expected a struct literal"))?;
         // add literals to new map
         let mut map = Self::new();
-        for (field, lit) in fields {
+        for (key, lit) in fields {
             let e = Expr::Literal(lit.clone()).arced();
-            let k = field.name.clone();
+            let k = key.clone();
             let v = T::from_expr(&e)?;
             map.insert(k, v);
         }

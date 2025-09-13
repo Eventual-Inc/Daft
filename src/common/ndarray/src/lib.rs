@@ -1,24 +1,36 @@
+#[cfg(feature = "python")]
+mod python;
+
 use ndarray::ArrayD;
 #[cfg(feature = "python")]
-use pyo3::{Bound, PyAny, Python};
+pub use python::NumpyArray;
 
-/// Trait to allow dynamic dispatch over ndarray arrays of any type.
-pub trait NdArray {
-    #[cfg(feature = "python")]
-    fn into_py(self: Box<Self>, py: Python) -> Bound<PyAny>;
+pub enum NdArray {
+    I8(ArrayD<i8>),
+    U8(ArrayD<u8>),
+    I16(ArrayD<i16>),
+    U16(ArrayD<u16>),
+    I32(ArrayD<i32>),
+    U32(ArrayD<u32>),
+    I64(ArrayD<i64>),
+    U64(ArrayD<u64>),
+    F32(ArrayD<f32>),
+    F64(ArrayD<f64>),
 }
 
-#[cfg(not(feature = "python"))]
-impl<A> NdArray for ArrayD<A> {}
-
-#[cfg(feature = "python")]
-impl<A> NdArray for ArrayD<A>
-where
-    A: numpy::Element,
-{
-    fn into_py(self: Box<Self>, py: Python) -> Bound<PyAny> {
-        use numpy::IntoPyArray;
-
-        self.into_pyarray(py).into_any()
+impl NdArray {
+    pub fn shape(&self) -> &[usize] {
+        match self {
+            Self::I8(arr) => arr.shape(),
+            Self::U8(arr) => arr.shape(),
+            Self::I16(arr) => arr.shape(),
+            Self::U16(arr) => arr.shape(),
+            Self::I32(arr) => arr.shape(),
+            Self::U32(arr) => arr.shape(),
+            Self::I64(arr) => arr.shape(),
+            Self::U64(arr) => arr.shape(),
+            Self::F32(arr) => arr.shape(),
+            Self::F64(arr) => arr.shape(),
+        }
     }
 }
