@@ -46,11 +46,8 @@ def _lancedb_count_result_function(
         logger.debug("Using metadata for counting all rows (no filters)")
         count = ds.count_rows()
     else:
-        # TODO: If filters are provided, we need to apply them after counting
         logger.debug("Counting rows with filters applied")
-        scanner = ds.scanner(filter=filters)
-        for batch in scanner.to_batches():
-            count += batch.num_rows
+        count = ds.count_rows(filter=filters)
 
     arrow_schema = pa.schema([pa.field(required_column, pa.uint64())])
     arrow_array = pa.array([count], type=pa.uint64())
@@ -149,9 +146,14 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     count_mode,
                 )
                 yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+                return
 
-            # TODO: If there are pushed filters, convert them to Arrow expressions
             filters = None
+            if self._pushed_filters is not None:
+                combined_filter = self._pushed_filters[0]
+                for filter_expr in self._pushed_filters[1:]:
+                    combined_filter = combined_filter.__and__(filter_expr)
+                filters = Expression._from_pyexpr(combined_filter).to_arrow_expr()
 
             new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
             yield ScanTask.python_factory_func_scan_task(

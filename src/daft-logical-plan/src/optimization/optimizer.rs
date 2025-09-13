@@ -185,7 +185,9 @@ impl OptimizerBuilder {
             ),
             // --- Push down aggregations ---
             RuleBatch::new(
-                vec![Box::new(PushDownAggregation::new())],
+                vec![Box::new(PushDownAggregation::new(
+                    self.config.strict_pushdown,
+                ))],
                 RuleExecutionStrategy::Once,
             ),
             // --- Shard pushdowns ---
