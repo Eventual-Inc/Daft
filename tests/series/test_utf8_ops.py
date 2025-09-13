@@ -1585,3 +1585,39 @@ def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     p = ["hello world", "hello", "world"]
     res = s.str.count_matches(p, whole_words=whole_words, case_sensitive=case_sensitive).to_pylist()
     assert res == [1]
+
+
+def test_series_utf8_count_matches_regex() -> None:
+    s = Series.from_arrow(pa.array(["hello world", "foo bar baz", "test123test456", None]))
+
+    # Test word pattern
+    result = s.str.count_matches(r"\w+", regex=True)
+    assert result.to_pylist() == [2, 3, 1, None]
+
+    # Test digit pattern
+    result = s.str.count_matches(r"\d+", regex=True)
+    assert result.to_pylist() == [0, 0, 2, None]
+
+    # Test single character pattern
+    result = s.str.count_matches("o", regex=True)
+    assert result.to_pylist() == [2, 2, 0, None]
+
+
+def test_series_utf8_count_matches_regex_edge_cases() -> None:
+    s = Series.from_arrow(pa.array(["", "a", "aa", "aaa", None]))
+
+    # Test empty string pattern - empty pattern matches every position
+    result = s.str.count_matches("", regex=True)
+    assert result.to_pylist() == [1, 2, 3, 4, None]
+
+    # Test word boundary pattern
+    result = s.str.count_matches(r"\ba\b", regex=True)
+    assert result.to_pylist() == [0, 1, 0, 0, None]
+
+
+def test_series_utf8_count_matches_regex_invalid_pattern() -> None:
+    s = Series.from_arrow(pa.array(["test"]))
+
+    # Test invalid regex pattern
+    with pytest.raises(Exception):
+        s.str.count_matches("[invalid", regex=True)

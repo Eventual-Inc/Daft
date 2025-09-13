@@ -53,3 +53,81 @@ def test_table_count_matches_single_pattern(whole_words, case_sensitive, pat):
         [col("a").str.count_matches(pat, whole_words=whole_words, case_sensitive=case_sensitive)]
     )
     assert res.to_pydict()["a"] == [py_count_matches(s, pat, whole_words, case_sensitive) for s in test_data]
+
+
+def py_count_matches_regex(s, pattern):
+    if s is None:
+        return None
+    reg = re.compile(pattern)
+    return len(reg.findall(s))
+
+
+regex_test_data = [
+    "hello world",
+    "foo bar baz",
+    "test123test456",
+    "abc def ghi",
+    "multiple spaces   here",
+    None,
+    "no matches here",
+    "123 456 789",
+    "special chars !@# $%^",
+    None,
+]
+
+
+@pytest.mark.parametrize("pattern", [r"\w+", r"\d+", r"[a-z]+", r"\s+"])
+def test_table_count_matches_regex(pattern):
+    df = MicroPartition.from_pydict({"a": regex_test_data})
+    res = df.eval_expression_list([col("a").str.count_matches(pattern, regex=True)])
+    assert res.to_pydict()["a"] == [py_count_matches_regex(s, pattern) for s in regex_test_data]
+
+
+def test_table_count_matches_regex_edge_cases():
+    df = MicroPartition.from_pydict({"a": ["", "a", "aa", "aaa", None]})
+
+    # Test empty string pattern - empty pattern matches every position
+    res = df.eval_expression_list([col("a").str.count_matches("", regex=True)])
+    assert res.to_pydict()["a"] == [1, 2, 3, 4, None]  # Empty pattern matches every position
+
+    # Test single character pattern
+    res = df.eval_expression_list([col("a").str.count_matches("a", regex=True)])
+    assert res.to_pydict()["a"] == [0, 1, 2, 3, None]
+
+    # Test word boundary pattern
+    res = df.eval_expression_list([col("a").str.count_matches(r"\ba\b", regex=True)])
+    assert res.to_pydict()["a"] == [0, 1, 0, 0, None]
+
+
+def test_table_count_matches_regex_invalid_pattern():
+    df = MicroPartition.from_pydict({"a": ["test"]})
+
+    # Test invalid regex pattern
+    with pytest.raises(Exception):  # Should raise an error for invalid regex
+        df.eval_expression_list([col("a").str.count_matches("[invalid", regex=True)])
+
+
+def test_table_count_matches_regex_complex_patterns():
+    df = MicroPartition.from_pydict(
+        {
+            "a": [
+                "hello@world.com",
+                "test123@example.org",
+                "user.name+tag@domain.co.uk",
+                "invalid-email",
+                "another@test.com",
+                None,
+            ]
+        }
+    )
+
+    # Test email pattern
+    email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+    res = df.eval_expression_list([col("a").str.count_matches(email_pattern, regex=True)])
+    expected = [1, 1, 1, 0, 1, None]
+    assert res.to_pydict()["a"] == expected
+
+    # Test digit pattern
+    res = df.eval_expression_list([col("a").str.count_matches(r"\d+", regex=True)])
+    expected = [0, 1, 0, 0, 0, None]
+    assert res.to_pydict()["a"] == expected
