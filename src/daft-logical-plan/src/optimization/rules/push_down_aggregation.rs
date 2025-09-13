@@ -52,7 +52,7 @@ impl OptimizerRule for PushDownAggregation {
                                         scan_op.as_pushdown_filter()
                                         && self.strict_pushdown
                                     {
-                                        let (pushed_filters, post_filters) = supports_pushdown
+                                        let (_pushed_filters, post_filters) = supports_pushdown
                                             .push_filters(
                                                 external_info.pushdowns.filters.as_slice(),
                                             );
