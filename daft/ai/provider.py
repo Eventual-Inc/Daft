@@ -7,7 +7,7 @@ from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.protocols import ImageEmbedderDescriptor, TextClassifierDescriptor, TextEmbedderDescriptor
+    from daft.ai.protocols import ImageEmbedderDescriptor, TextClassifierDescriptor, TextEmbedderDescriptor, VisualUnderstandingDescriptor
 
 
 class ProviderImportError(ImportError):
@@ -96,3 +96,7 @@ class Provider(ABC):
     def get_text_classifier(self, model: str | None = None, **options: Any) -> TextClassifierDescriptor:
         """Returns a TextClassifierDescriptor for this provider."""
         raise not_implemented_err(self, method="classify_text")
+
+    def get_visual_understanding(self, model: str | None = None, **options: Any) -> VisualUnderstandingDescriptor:
+        """Returns a VisualUnderstandingDescriptor for this provider."""
+        raise not_implemented_err(self, method="understand_visual")

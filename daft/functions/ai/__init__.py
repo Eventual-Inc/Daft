@@ -22,6 +22,7 @@ __all__ = [
     "classify_text",
     "embed_image",
     "embed_text",
+    "understand_visual",
 ]
 
 
@@ -178,3 +179,51 @@ def classify_text(
     expr = expr_callable(_TextClassificationExpression)
     expr = expr.with_init_args(text_classifier, label_list)
     return expr(text)
+
+
+def understand_visual(
+    image: Expression,
+    text: Expression,
+    *,
+    provider: str | Provider | None = None,
+    model: str | None = None,
+    **options: str,
+) -> Expression:
+    """Returns an expression that understands visual content using the specified model and provider.
+
+    This function performs visual understanding tasks such as image captioning, visual question answering,
+    or other image-to-text generation tasks depending on the model used.
+
+    Args:
+        image (Expression): The input image column expression.
+        text (Expression): The input text column expression (optional prompts/questions for the model).
+        provider (str | Provider | None): The provider to use for the visual understanding model. 
+            If None, the default provider is used.
+        model (str | None): The visual understanding model to use. Can be a model instance or a model name. 
+            If None, the default model is used (microsoft/git-base).
+        **options: Any additional options to pass for the model.
+
+    Note:
+        Make sure the required provider packages are installed (e.g. transformers, torch, PIL).
+        Supported models include image captioning models like microsoft/git-base, microsoft/git-large, etc.
+
+    Returns:
+        Expression: An expression representing the visual understanding result as text strings.
+    """
+    from daft.ai._expressions import _VisualUnderstandingExpression
+    from daft.ai.protocols import VisualUnderstanding
+
+    visual_understanding = _resolve_provider(provider, "transformers").get_visual_understanding(model, **options)
+
+    # implemented as a class-based udf for now
+    expr_callable = udf(
+        return_dtype=DataType.string(),
+        concurrency=1,
+        use_process=False,
+    )
+
+    expr = expr_callable(_VisualUnderstandingExpression)
+    expr = expr.with_init_args(visual_understanding)
+    return expr(image, text)
+
+
