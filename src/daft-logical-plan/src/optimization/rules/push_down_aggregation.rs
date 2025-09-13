@@ -161,7 +161,7 @@ mod tests {
             plan,
             expected,
             vec![RuleBatch::new(
-                vec![Box::new(PushDownAggregation::new())],
+                vec![Box::new(PushDownAggregation::new(true))],
                 RuleExecutionStrategy::Once,
             )],
         )
