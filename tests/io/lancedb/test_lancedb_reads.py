@@ -203,7 +203,7 @@ class TestLanceDBCountPushdown:
         df.explain(True)
         actual = capsys.readouterr()
         assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
-        assert "Filter pushdown = is_null(col(b)" in actual.out
+        assert "Filter pushdown = is_null(col(b))" in actual.out
         assert "Aggregation pushdown = count(col(b), All)" in actual.out
 
         result = df.to_pydict()
