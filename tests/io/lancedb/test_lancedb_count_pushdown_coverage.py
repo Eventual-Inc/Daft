@@ -86,8 +86,6 @@ class TestLanceCountResultFunction:
 
     def test_empty_filters_list_handling(self, test_dataset_path):
         """Test that empty filters list is handled correctly."""
-        from daft.io.lance.lance_scan import LanceDBScanOperator
-
         ds = lance.dataset(test_dataset_path)
         scan_op = LanceDBScanOperator(ds)
         pushed, remaining = scan_op.push_filters([])
@@ -105,4 +103,4 @@ class TestLanceCountResultFunction:
         ) | ((col("age") > 40) & (col("score") > 90))
 
         result = df.where(complex_filter).count().collect()
-        assert result.to_pydict()["count"][0] >= 0
+        assert result.to_pydict()["count"][0] == 5
