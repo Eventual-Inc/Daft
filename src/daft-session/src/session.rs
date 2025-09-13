@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::{
     ambiguous_identifier_err,
     error::CatalogResult,
+    kv::KVStoreRef,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
     unsupported_err,
@@ -35,6 +36,8 @@ struct SessionState {
     tables: Bindings<TableRef>,
     /// User defined functions
     functions: Bindings<WrappedUDFClass>,
+    /// Bindings for the attached KV stores.
+    kv_stores: Bindings<KVStoreRef>,
 }
 
 // TODO: Session should just use a Result not CatalogResult.
@@ -72,6 +75,7 @@ impl Session {
             providers: Bindings::empty(),
             tables: Bindings::empty(),
             functions: Bindings::empty(),
+            kv_stores: Bindings::empty(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -380,6 +384,68 @@ impl Session {
         Ok(())
     }
 
+    /// Attaches a KV store to this session, err if already exists.
+    pub fn attach_kv(&self, kv_store: KVStoreRef, alias: String) -> CatalogResult<()> {
+        if self.state().kv_stores.contains(&alias) {
+            obj_already_exists_err!("KV Store", &alias.into())
+        }
+        if self.state().kv_stores.is_empty() {
+            // if there are no current kv stores, then use this kv store as the default.
+            self.state_mut().options.curr_kv = Some(alias.clone());
+        }
+        self.state_mut().kv_stores.bind(alias, kv_store);
+        Ok(())
+    }
+
+    /// Detaches a KV store from this session, err if does not exist.
+    pub fn detach_kv(&self, alias: &str) -> CatalogResult<()> {
+        if !self.state().kv_stores.contains(alias) {
+            obj_not_found_err!("KV Store", &alias.into())
+        }
+        self.state_mut().kv_stores.remove(alias);
+        // cleanup session state
+        if self.state().kv_stores.is_empty() {
+            self.set_kv(None)?;
+        }
+        Ok(())
+    }
+
+    /// Returns the KV store or an object not found error.
+    pub fn get_kv(&self, name: &str) -> CatalogResult<KVStoreRef> {
+        if let Some(kv_store) = self.state().get_attached_kv(name)? {
+            Ok(kv_store.clone())
+        } else {
+            obj_not_found_err!("KV Store", &name.into())
+        }
+    }
+
+    /// Returns true iff the session has access to a matching KV store.
+    pub fn has_kv(&self, name: &str) -> bool {
+        self.state().kv_stores.contains(name)
+    }
+
+    /// Sets the current_kv session property.
+    pub fn set_kv(&self, ident: Option<&str>) -> CatalogResult<()> {
+        if let Some(ident) = ident {
+            if !self.has_kv(ident) {
+                obj_not_found_err!("KV Store", &ident.into())
+            }
+            self.state_mut().options.curr_kv = Some(ident.to_string());
+        } else {
+            self.state_mut().options.curr_kv = None;
+        }
+        Ok(())
+    }
+
+    /// Returns the session's current KV store.
+    pub fn current_kv(&self) -> CatalogResult<Option<KVStoreRef>> {
+        if let Some(kv_store) = &self.state().options.curr_kv {
+            self.get_kv(kv_store).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Returns an identifier normalization function based upon the session options.
     pub fn normalizer(&self) -> impl Fn(&str) -> String {
         match self.state().options.identifier_mode {
@@ -415,6 +481,18 @@ impl SessionState {
             tables if tables.is_empty() => Ok(None),
             tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
             tables => ambiguous_identifier_err!("Table", tables.iter().map(|t| t.name())),
+        }
+    }
+
+    /// Get an attached KV store by name using the session's identifier mode.
+    pub fn get_attached_kv(&self, name: &str) -> CatalogResult<Option<KVStoreRef>> {
+        match self.kv_stores.lookup(name, self.options.lookup_mode()) {
+            kv_stores if kv_stores.is_empty() => Ok(None),
+            kv_stores if kv_stores.len() == 1 => Ok(Some(kv_stores[0].clone())),
+            kv_stores => ambiguous_identifier_err!(
+                "KV Store",
+                kv_stores.iter().map(|k| k.name().to_string())
+            ),
         }
     }
 

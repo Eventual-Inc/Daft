@@ -23,6 +23,11 @@ from daft.functions.window import (
     rank,
     dense_rank,
 )
+from daft.functions.kv import (
+    kv_get,
+    kv_batch_get,
+    kv_exists,
+)
 
 
 __all__ = [
@@ -37,6 +42,9 @@ __all__ = [
     "embed_text",
     "file",
     "format",
+    "kv_batch_get",
+    "kv_exists",
+    "kv_get",
     "llm_generate",
     "monotonically_increasing_id",
     "rank",

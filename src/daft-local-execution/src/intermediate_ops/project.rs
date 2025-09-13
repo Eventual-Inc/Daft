@@ -125,6 +125,7 @@ impl IntermediateOperator for ProjectOperator {
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
+
         task_spawner
             .spawn(
                 async move {
@@ -135,6 +136,7 @@ impl IntermediateOperator for ProjectOperator {
                     } else {
                         input.eval_expression_list(&projection)?
                     };
+
                     Ok((
                         state,
                         IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
