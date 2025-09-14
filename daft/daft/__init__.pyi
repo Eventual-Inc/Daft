@@ -856,6 +856,7 @@ class ScanTask:
         size_bytes: int | None,
         pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
+        source_type: str | None = None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
         ...
