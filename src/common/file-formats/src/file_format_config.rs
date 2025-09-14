@@ -22,7 +22,11 @@ pub enum FileFormatConfig {
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
     #[cfg(feature = "python")]
-    PythonFunction,
+    PythonFunction {
+        source_type: Option<String>,
+        module_name: Option<String>,
+        function_name: Option<String>,
+    },
 }
 
 impl FileFormatConfig {
@@ -32,16 +36,30 @@ impl FileFormatConfig {
     }
 
     #[must_use]
-    pub fn var_name(&self) -> &'static str {
+    pub fn var_name(&self) -> String {
         match self {
-            Self::Parquet(_) => "Parquet",
-            Self::Csv(_) => "Csv",
-            Self::Json(_) => "Json",
-            Self::Warc(_) => "Warc",
+            Self::Parquet(_) => "Parquet".to_string(),
+            Self::Csv(_) => "Csv".to_string(),
+            Self::Json(_) => "Json".to_string(),
+            Self::Warc(_) => "Warc".to_string(),
             #[cfg(feature = "python")]
-            Self::Database(_) => "Database",
+            Self::Database(_) => "Database".to_string(),
             #[cfg(feature = "python")]
-            Self::PythonFunction => "PythonFunction",
+            Self::PythonFunction {
+                source_type,
+                module_name,
+                function_name,
+            } => {
+                // Infer data source type intelligently
+                if let Some(source_type) = source_type {
+                    format!("{}(Python)", source_type)
+                } else if let Some(module_name) = module_name {
+                    // Infer type from module name
+                    Self::infer_source_type_from_module(module_name, function_name.as_deref())
+                } else {
+                    "PythonFunction".to_string() // Backward compatibility
+                }
+            }
         }
     }
 
@@ -55,7 +73,38 @@ impl FileFormatConfig {
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
             #[cfg(feature = "python")]
-            Self::PythonFunction => vec![],
+            Self::PythonFunction { .. } => vec![],
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn infer_source_type_from_module(module: &str, func_name: Option<&str>) -> String {
+        if module.contains("lance") || func_name.is_some_and(|f| f.contains("lance")) {
+            return "Lance(Python)".to_string();
+        }
+        if module.contains("duckdb") || func_name.is_some_and(|f| f.contains("duckdb")) {
+            return "DuckDB(Python)".to_string();
+        }
+        if module.contains("delta") || func_name.is_some_and(|f| f.contains("delta")) {
+            return "Delta(Python)".to_string();
+        }
+        if module.contains("iceberg") || func_name.is_some_and(|f| f.contains("iceberg")) {
+            return "Iceberg(Python)".to_string();
+        }
+        if module.contains("polars") || func_name.is_some_and(|f| f.contains("polars")) {
+            return "Polars(Python)".to_string();
+        }
+        if module.contains("pandas") || func_name.is_some_and(|f| f.contains("pandas")) {
+            return "Pandas(Python)".to_string();
+        }
+        if module.contains("mcap") || func_name.is_some_and(|f| f.contains("mcap")) {
+            return "MCAP(Python)".to_string();
+        }
+
+        if let Some(func_name) = func_name {
+            format!("Python[{}]", func_name)
+        } else {
+            "PythonFunction".to_string()
         }
     }
 }

@@ -34,7 +34,7 @@ class _DataSourceShim(ScanOperator):
         return self._source.name
 
     def display_name(self) -> str:
-        return f"DataSource({self.name()})"
+        return f"{self.name()}(Python)"
 
     def partitioning_keys(self) -> list[PyPartitionField]:
         return [pf._partition_field for pf in self._source.get_partition_fields()]
