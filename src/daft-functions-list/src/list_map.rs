@@ -46,6 +46,6 @@ impl ScalarUDF for ListMap {
         let input = input.to_field(schema)?;
         let expr = expr.to_field(schema)?;
 
-        Ok(expr.to_list_field().rename(input.name))
+        Ok(expr.to_list_field())
     }
 }
