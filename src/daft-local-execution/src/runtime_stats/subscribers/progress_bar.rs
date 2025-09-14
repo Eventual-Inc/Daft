@@ -203,7 +203,7 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     }
 }
 
-pub const MAX_PIPELINE_NAME_LEN: usize = 22;
+pub const MAX_PIPELINE_NAME_LEN: usize = 30;
 
 pub fn make_progress_bar_manager(
     node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)],
