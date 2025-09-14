@@ -1102,3 +1102,25 @@ class SeriesImageNamespace(SeriesNamespace):
             >>> hash_series = image_series.image.average_hash()
         """
         return self._eval_expressions("image_average_hash")
+
+    def perceptual_hash(self) -> Series:
+        """Computes the perceptual hash (pHash) of images in this series.
+
+        The perceptual hash algorithm:
+        1. Converts each image to grayscale
+        2. Resizes to 32x32 pixels
+        3. Applies 2D Discrete Cosine Transform (DCT)
+        4. Extracts the 8x8 top-left corner (low frequency components)
+        5. Compares each coefficient to the average of low frequency components
+        6. Returns a 64-character binary string for each image
+
+        Perceptual hash is more robust to minor image modifications compared to average hash.
+
+        Returns:
+            Series: A Series of Utf8 strings containing the hash values.
+
+        Example:
+            >>> # Compute perceptual hash for a series of images
+            >>> hash_series = image_series.image.perceptual_hash()
+        """
+        return self._eval_expressions("image_perceptual_hash")

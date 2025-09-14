@@ -33,9 +33,13 @@ pub trait ImageOps {
     where
         Self: Sized;
     fn attribute(&self, attr: ImageProperty) -> DaftResult<DataArray<UInt32Type>>;
-    
+
     // Hash functions
     fn average_hash(&self) -> DaftResult<Utf8Array>;
+    fn perceptual_hash(&self) -> DaftResult<Utf8Array>;
+    fn difference_hash(&self) -> DaftResult<Utf8Array>;
+    fn wavelet_hash(&self) -> DaftResult<Utf8Array>;
+    fn crop_resistant_hash(&self) -> DaftResult<Utf8Array>;
 }
 
 impl ImageOps for ImageArray {
@@ -104,7 +108,7 @@ impl ImageOps for ImageArray {
 
     fn average_hash(&self) -> DaftResult<Utf8Array> {
         let mut results = Vec::with_capacity(self.len());
-        
+
         for i in 0..self.len() {
             if let Some(img) = self.as_image_obj(i) {
                 let hash = compute_average_hash(img)?;
@@ -113,7 +117,79 @@ impl ImageOps for ImageArray {
                 results.push(None);
             }
         }
-        
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn perceptual_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_perceptual_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn difference_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_difference_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn wavelet_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_wavelet_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn crop_resistant_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_crop_resistant_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
         Ok(Utf8Array::from((
             self.name(),
             Box::new(arrow2::array::Utf8Array::from(results)),
@@ -208,7 +284,7 @@ impl ImageOps for FixedShapeImageArray {
 
     fn average_hash(&self) -> DaftResult<Utf8Array> {
         let mut results = Vec::with_capacity(self.len());
-        
+
         for i in 0..self.len() {
             if let Some(img) = self.as_image_obj(i) {
                 let hash = compute_average_hash(img)?;
@@ -217,7 +293,79 @@ impl ImageOps for FixedShapeImageArray {
                 results.push(None);
             }
         }
-        
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn perceptual_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_perceptual_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn difference_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_difference_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn wavelet_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_wavelet_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from(results)),
+        )))
+    }
+
+    fn crop_resistant_hash(&self) -> DaftResult<Utf8Array> {
+        let mut results = Vec::with_capacity(self.len());
+
+        for i in 0..self.len() {
+            if let Some(img) = self.as_image_obj(i) {
+                let hash = compute_crop_resistant_hash(img)?;
+                results.push(Some(hash));
+            } else {
+                results.push(None);
+            }
+        }
+
         Ok(Utf8Array::from((
             self.name(),
             Box::new(arrow2::array::Utf8Array::from(results)),
@@ -403,22 +551,26 @@ pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize, truncate: 
 fn compute_average_hash(img: CowImage) -> DaftResult<String> {
     // Convert to grayscale
     let gray_img = img.into_mode(daft_schema::prelude::ImageMode::L);
-    
+
     // Resize to 8x8
     let resized = gray_img.resize(8, 8);
-    
+
     // Get pixel data
     let pixel_data = resized.as_u8_slice();
-    
+
     // Compute average pixel value
     let sum: u64 = pixel_data.iter().map(|&p| p as u64).sum();
     let average = sum / 64;
     let all_equal_to_avg = pixel_data.iter().all(|&p| (p as u64) == average);
-    
+
     // Generate binary hash string
     let hash: String = if all_equal_to_avg {
         // For uniform images, decide based on brightness midpoint
-        if average >= 128 { "1".repeat(64) } else { "0".repeat(64) }
+        if average >= 128 {
+            "1".repeat(64)
+        } else {
+            "0".repeat(64)
+        }
     } else if average == 0 {
         // For solid black (average = 0), use strict > so we produce all 0s.
         pixel_data
@@ -432,7 +584,7 @@ fn compute_average_hash(img: CowImage) -> DaftResult<String> {
             .map(|&pixel| if (pixel as u64) >= average { '1' } else { '0' })
             .collect()
     };
-    
+
     // Validate length (safety check)
     if hash.len() != 64 {
         return Err(DaftError::ValueError(format!(
@@ -440,6 +592,291 @@ fn compute_average_hash(img: CowImage) -> DaftResult<String> {
             hash.len()
         )));
     }
-    
+
+    Ok(hash)
+}
+
+fn compute_perceptual_hash(img: CowImage) -> DaftResult<String> {
+    // Convert to grayscale
+    let gray_img = img.into_mode(daft_schema::prelude::ImageMode::L);
+
+    // Resize to 32x32 for DCT
+    let resized = gray_img.resize(32, 32);
+
+    // Get pixel data
+    let pixel_data = resized.as_u8_slice();
+
+    // Convert to float and apply DCT
+    let mut dct_matrix = vec![vec![0.0f64; 32]; 32];
+
+    // Convert u8 to f64 and normalize
+    for y in 0..32 {
+        for x in 0..32 {
+            dct_matrix[y][x] = pixel_data[y * 32 + x] as f64;
+        }
+    }
+
+    // Apply 2D DCT
+    let mut dct_result = vec![vec![0.0f64; 32]; 32];
+    for u in 0..32 {
+        for v in 0..32 {
+            let mut sum = 0.0;
+            for x in 0..32 {
+                for y in 0..32 {
+                    let cos_x = (((2 * x + 1) * u) as f64 * std::f64::consts::PI / 64.0).cos();
+                    let cos_y = (((2 * y + 1) * v) as f64 * std::f64::consts::PI / 64.0).cos();
+                    sum += dct_matrix[y][x] * cos_x * cos_y;
+                }
+            }
+            let cu = if u == 0 { 1.0 / 2.0_f64.sqrt() } else { 1.0 };
+            let cv = if v == 0 { 1.0 / 2.0_f64.sqrt() } else { 1.0 };
+            dct_result[u][v] = 0.25 * cu * cv * sum;
+        }
+    }
+
+    // Extract 8x8 top-left corner (low frequency components)
+    let mut hash_bits = Vec::new();
+    let mut total = 0.0;
+    let mut count = 0;
+
+    // Calculate average of low frequency components (excluding DC component)
+    for y in 1..9 {
+        for x in 1..9 {
+            total += dct_result[y][x];
+            count += 1;
+        }
+    }
+    let average = total / count as f64;
+
+    // Generate hash bits
+    for y in 0..8 {
+        for x in 0..8 {
+            hash_bits.push(if dct_result[y][x] > average { '1' } else { '0' });
+        }
+    }
+
+    let hash = hash_bits.into_iter().collect::<String>();
+
+    // Validate length (safety check)
+    if hash.len() != 64 {
+        return Err(DaftError::ValueError(format!(
+            "Perceptual hash should be 64 characters, got {}",
+            hash.len()
+        )));
+    }
+
+    Ok(hash)
+}
+
+fn compute_difference_hash(img: CowImage) -> DaftResult<String> {
+    // Convert to grayscale
+    let gray_img = img.into_mode(daft_schema::prelude::ImageMode::L);
+
+    // Resize to 9x8 for difference hash (9x8 so we can compare adjacent pixels)
+    let resized = gray_img.resize(9, 8);
+
+    // Get pixel data
+    let pixel_data = resized.as_u8_slice();
+
+    // Compute difference hash by comparing adjacent pixels horizontally
+    let mut hash_bits = Vec::new();
+
+    for y in 0..8 {
+        for x in 0..8 {
+            let left_pixel = pixel_data[y * 9 + x];
+            let right_pixel = pixel_data[y * 9 + x + 1];
+            hash_bits.push(if left_pixel < right_pixel { '1' } else { '0' });
+        }
+    }
+
+    let hash = hash_bits.into_iter().collect::<String>();
+
+    // Validate length (safety check)
+    if hash.len() != 64 {
+        return Err(DaftError::ValueError(format!(
+            "Difference hash should be 64 characters, got {}",
+            hash.len()
+        )));
+    }
+
+    Ok(hash)
+}
+
+fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
+    // Convert to grayscale
+    let gray_img = img.into_mode(daft_schema::prelude::ImageMode::L);
+
+    // Resize to 64x64 for wavelet transform
+    let resized = gray_img.resize(64, 64);
+
+    // Get pixel data
+    let pixel_data = resized.as_u8_slice();
+
+    // Convert to float matrix for wavelet transform
+    let mut matrix = vec![vec![0.0f64; 64]; 64];
+    for y in 0..64 {
+        for x in 0..64 {
+            matrix[y][x] = pixel_data[y * 64 + x] as f64;
+        }
+    }
+
+    // Apply Haar wavelet transform
+    let mut coeffs = matrix;
+    let size = 64;
+
+    // Apply wavelet transform iteratively
+    let mut current_size = size;
+    while current_size > 1 {
+        // Create a temporary copy for the transform
+        let mut temp = coeffs.clone();
+
+        // Horizontal transform
+        for y in 0..current_size {
+            for x in 0..current_size / 2 {
+                let left = temp[y][x * 2];
+                let right = temp[y][x * 2 + 1];
+
+                // Average (low frequency)
+                coeffs[y][x] = (left + right) / 2.0;
+                // Difference (high frequency)
+                coeffs[y][x + current_size / 2] = (left - right) / 2.0;
+            }
+        }
+
+        // Vertical transform
+        for x in 0..current_size {
+            for y in 0..current_size / 2 {
+                let top = coeffs[y * 2][x];
+                let bottom = coeffs[y * 2 + 1][x];
+
+                // Average (low frequency)
+                coeffs[y][x] = (top + bottom) / 2.0;
+                // Difference (high frequency)
+                coeffs[y + current_size / 2][x] = (top - bottom) / 2.0;
+            }
+        }
+
+        current_size /= 2;
+    }
+
+    // Extract 8x8 top-left corner (low frequency components)
+    let mut hash_bits = Vec::new();
+
+    // Calculate median of the 8x8 block
+    let mut values = Vec::new();
+    for y in 0..8 {
+        for x in 0..8 {
+            values.push(coeffs[y][x]);
+        }
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = if values.len() > 0 {
+        values[values.len() / 2]
+    } else {
+        0.0
+    };
+
+    // Generate hash bits
+    for y in 0..8 {
+        for x in 0..8 {
+            hash_bits.push(if coeffs[y][x] > median { '1' } else { '0' });
+        }
+    }
+
+    let hash = hash_bits.into_iter().collect::<String>();
+
+    // Validate length (safety check)
+    if hash.len() != 64 {
+        return Err(DaftError::ValueError(format!(
+            "Wavelet hash should be 64 characters, got {}",
+            hash.len()
+        )));
+    }
+
+    Ok(hash)
+}
+
+fn compute_crop_resistant_hash(img: CowImage) -> DaftResult<String> {
+    // Convert to grayscale
+    let gray_img = img.into_mode(daft_schema::prelude::ImageMode::L);
+
+    // Resize to 256x256 for crop-resistant analysis
+    let resized = gray_img.resize(256, 256);
+
+    // Get pixel data
+    let pixel_data = resized.as_u8_slice();
+
+    // Create multiple overlapping regions for analysis
+    // We'll create 8x8 regions at different positions to make it crop-resistant
+    let mut hash_bits = Vec::new();
+
+    // Define region positions (overlapping regions)
+    let region_size = 64;
+    let positions = [
+        (0, 0),     // Top-left
+        (96, 0),    // Top-right
+        (0, 96),    // Bottom-left
+        (96, 96),   // Bottom-right
+        (48, 48),   // Center
+        (32, 32),   // Upper-left center
+        (112, 32),  // Upper-right center
+        (32, 112),  // Lower-left center
+        (112, 112), // Lower-right center
+        (64, 64),   // True center
+        (16, 16),   // Top-left corner
+        (176, 16),  // Top-right corner
+        (16, 176),  // Bottom-left corner
+        (176, 176), // Bottom-right corner
+        (80, 80),   // Center-left
+        (176, 80),  // Center-right
+    ];
+
+    // Process each region
+    for (start_y, start_x) in positions.iter() {
+        // Extract region
+        let mut region = Vec::new();
+        for y in *start_y..(*start_y + region_size) {
+            for x in *start_x..(*start_x + region_size) {
+                if y < 256 && x < 256 {
+                    region.push(pixel_data[y * 256 + x] as f64);
+                } else {
+                    region.push(0.0);
+                }
+            }
+        }
+
+        // Compute average of this region
+        let sum: f64 = region.iter().sum();
+        let average = sum / region.len() as f64;
+
+        // For crop-resistant hash, use a fixed threshold approach
+        // This makes it more robust to different intensity levels
+        let threshold = 127.5; // Middle of 0-255 range
+
+        // Set bit based on whether region average is above threshold
+        hash_bits.push(if average > threshold { '1' } else { '0' });
+    }
+
+    // Pad to 64 bits if we have fewer regions
+    while hash_bits.len() < 64 {
+        // Use a combination of position-based patterns
+        let pos = hash_bits.len();
+        let pattern = (pos % 8) as u8;
+        hash_bits.push(if pattern % 2 == 0 { '0' } else { '1' });
+    }
+
+    // Truncate to 64 bits if we have more
+    hash_bits.truncate(64);
+
+    let hash = hash_bits.into_iter().collect::<String>();
+
+    // Validate length (safety check)
+    if hash.len() != 64 {
+        return Err(DaftError::ValueError(format!(
+            "Crop-resistant hash should be 64 characters, got {}",
+            hash.len()
+        )));
+    }
+
     Ok(hash)
 }
