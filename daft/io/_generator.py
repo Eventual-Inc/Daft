@@ -119,4 +119,5 @@ class GeneratorScanOperator(ScanOperator):
                 size_bytes=None,
                 pushdowns=pushdowns,
                 stats=None,
+                source_type=self.name(),
             )

@@ -22,7 +22,11 @@ pub enum FileFormatConfig {
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
     #[cfg(feature = "python")]
-    PythonFunction,
+    PythonFunction {
+        source_type: Option<String>,
+        module_name: Option<String>,
+        function_name: Option<String>,
+    },
 }
 
 impl FileFormatConfig {
@@ -32,16 +36,29 @@ impl FileFormatConfig {
     }
 
     #[must_use]
-    pub fn var_name(&self) -> &'static str {
+    pub fn var_name(&self) -> String {
         match self {
-            Self::Parquet(_) => "Parquet",
-            Self::Csv(_) => "Csv",
-            Self::Json(_) => "Json",
-            Self::Warc(_) => "Warc",
+            Self::Parquet(_) => "Parquet".to_string(),
+            Self::Csv(_) => "Csv".to_string(),
+            Self::Json(_) => "Json".to_string(),
+            Self::Warc(_) => "Warc".to_string(),
             #[cfg(feature = "python")]
-            Self::Database(_) => "Database",
+            Self::Database(_) => "Database".to_string(),
             #[cfg(feature = "python")]
-            Self::PythonFunction => "PythonFunction",
+            Self::PythonFunction {
+                source_type,
+                module_name,
+                function_name: _,
+            } => {
+                if let Some(source_type) = source_type {
+                    format!("{}(Python)", source_type)
+                } else if let Some(module_name) = module_name {
+                    // Infer type from module name
+                    format!("{}(Python)", module_name)
+                } else {
+                    "PythonFunction".to_string()
+                }
+            }
         }
     }
 
@@ -55,7 +72,7 @@ impl FileFormatConfig {
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
             #[cfg(feature = "python")]
-            Self::PythonFunction => vec![],
+            Self::PythonFunction { .. } => vec![],
         }
     }
 }
