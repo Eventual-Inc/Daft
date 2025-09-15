@@ -129,7 +129,10 @@ def test_series_utf8_compare_invalid_inputs(funcname, bad_series) -> None:
 def test_series_utf8_split_broadcast_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -155,7 +158,10 @@ def test_series_utf8_split_broadcast_pattern(data, patterns, expected, regex) ->
 def test_series_utf8_split_multi_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -179,7 +185,10 @@ def test_series_utf8_split_multi_pattern(data, patterns, expected, regex) -> Non
 def test_series_utf8_split_broadcast_arr(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -202,7 +211,10 @@ def test_series_utf8_split_broadcast_arr(data, patterns, expected, regex) -> Non
 def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -218,7 +230,10 @@ def test_series_utf8_split_empty_arrs(data, patterns, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
     with pytest.raises(ValueError):
-        s.str.split(patterns, regex=regex)
+        if regex:
+            s.str.regexp_split(patterns)
+        else:
+            s.str.split(patterns)
 
 
 def test_series_utf8_split_empty_input() -> None:
@@ -240,7 +255,10 @@ def test_series_utf8_split_empty_input() -> None:
 def test_series_utf8_split_invalid_inputs(patterns, regex) -> None:
     s = Series.from_arrow(pa.array(["a,b,c", "d, e", "f"]))
     with pytest.raises(ValueError):
-        s.str.split(patterns, regex=regex)
+        if regex:
+            s.str.regexp_split(patterns)
+        else:
+            s.str.split(patterns)
 
 
 def test_series_utf8_length() -> None:

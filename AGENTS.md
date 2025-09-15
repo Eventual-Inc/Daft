@@ -24,3 +24,8 @@
     - `make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe"` runs the given test method.
   -  Default `integration`, `benchmark`, and `hypothesis` tests are disabled. Best to run on CI.
 - `make doctests` runs doctests in `daft/` directory. Tests docstrings in Daft APIs.
+
+## PR Conventions
+
+- Titles: Conventional Commits (e.g., `feat: ...`); enforced by `.github/workflows/pr-labeller.yml`.
+- Descriptions: follow `.github/pull_request_template.md`.

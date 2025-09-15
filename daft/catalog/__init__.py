@@ -4,7 +4,7 @@ A Catalog can be understood as a system/service for users to discover, access an
 Most commonly, users' data is represented as a "table". Some more modern Catalogs such as Unity Catalog
 also expose other types of data including files, ML models, registered functions and more.
 
-Examples of Catalogs include AWS Glue, Hive Metastore, Apache Iceberg REST and Unity Catalog.
+Examples of Catalogs include AWS Glue, Hive Metastore, Unity Catalog and S3 Tables.
 
 **Catalog**
 

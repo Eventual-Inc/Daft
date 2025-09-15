@@ -1,3 +1,4 @@
+mod append;
 mod bool_and;
 mod bool_or;
 mod chunk;
@@ -17,6 +18,7 @@ mod sort;
 mod sum;
 mod value_counts;
 
+pub use append::{ListAppend, list_append as append};
 pub use bool_and::{ListBoolAnd, list_bool_and as bool_and};
 pub use bool_or::{ListBoolOr, list_bool_or as bool_or};
 pub use chunk::{ListChunk, list_chunk as chunk};
@@ -46,6 +48,7 @@ pub struct ListFunctions;
 
 impl FunctionModule for ListFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(ListAppend);
         parent.add_fn(ListBoolAnd);
         parent.add_fn(ListBoolOr);
         parent.add_fn(ListChunk);
