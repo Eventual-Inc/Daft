@@ -1,9 +1,9 @@
 [dependencies]
 anyhow = "1.0"
+axum = "0.7"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
-http-body-util = "0.1"
-hyper = {features = ["full"], version = "1.6"}
-hyper-util = {features = ["tokio"], version = "0.1"}
+tower = "*"
+tower-http = {version = "*", features = ["fs", "trace", "cors"]}
 include_dir = "0.7.4"
 parking_lot = {workspace = true}
 pyo3 = {workspace = true, optional = true}

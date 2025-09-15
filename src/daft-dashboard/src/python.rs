@@ -1,5 +1,3 @@
-use std::io::ErrorKind;
-
 use pyo3::{PyErr, PyResult, exceptions, pyclass, pyfunction, pymethods};
 use tokio::{
     runtime::{Builder, Runtime},
@@ -12,32 +10,6 @@ use crate::{DashboardState, GLOBAL_DASHBOARD_STATE};
 pub struct ConnectionHandle {
     shutdown_signal: Option<oneshot::Sender<()>>,
     port: u16,
-}
-
-fn make_listener() -> std::io::Result<(std::net::TcpListener, u16)> {
-    let mut port = super::DEFAULT_SERVER_PORT;
-    let max_port = port + 100; // Try up to 100 ports after the default
-
-    while port <= max_port {
-        match std::net::TcpListener::bind((super::DEFAULT_SERVER_ADDR, port)) {
-            Ok(listener) => {
-                return Ok((listener, port));
-            }
-            Err(e) if e.kind() == ErrorKind::AddrInUse => {
-                port += 1;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-
-    Err(std::io::Error::new(
-        ErrorKind::AddrInUse,
-        format!(
-            "No available ports in range {}..={}",
-            super::DEFAULT_SERVER_PORT,
-            max_port
-        ),
-    ))
 }
 
 #[pymethods]
@@ -113,6 +85,10 @@ pub fn generate_interactive_html(df_id: String) -> PyResult<String> {
     Ok(html)
 }
 
+fn tokio_runtime() -> Runtime {
+    Builder::new_current_thread().enable_all().build().unwrap()
+}
+
 #[pyfunction]
 pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     // Check if server is already running
@@ -130,7 +106,7 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
         }
     }
 
-    let (listener, port) = make_listener()?;
+    let port = super::DEFAULT_SERVER_PORT; // TODO: Make configurable
     let (send, recv) = oneshot::channel::<()>();
 
     let handle = ConnectionHandle {
@@ -141,38 +117,11 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     let new_dashboard_state = DashboardState::new(super::DEFAULT_SERVER_ADDR.to_string(), port);
     *dashboard_state = Some(new_dashboard_state);
 
-    std::thread::spawn(move || tokio_runtime().block_on(async { run(listener, recv).await }));
+    std::thread::spawn(move || {
+        tokio_runtime().block_on(async {
+            super::launch_server(port, async move { recv.await.unwrap() }).await
+        })
+    });
 
     Ok(handle)
-}
-
-async fn run(
-    listener: std::net::TcpListener,
-    mut recv: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
-    listener.set_nonblocking(true).map_err(anyhow::Error::new)?;
-
-    let listener = tokio::net::TcpListener::from_std(listener).map_err(anyhow::Error::new)?;
-
-    loop {
-        tokio::select! {
-            stream = listener.accept() => match stream {
-                Ok((stream, _)) => {
-                    super::handle_stream(stream);
-                },
-                Err(error) => {
-                    log::warn!("Unable to accept incoming connection: {error}");
-                },
-            },
-            _ = &mut recv => {
-                break;
-            },
-        }
-    }
-
-    Ok(())
-}
-
-fn tokio_runtime() -> Runtime {
-    Builder::new_current_thread().enable_all().build().unwrap()
 }
