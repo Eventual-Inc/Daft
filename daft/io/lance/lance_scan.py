@@ -14,6 +14,7 @@ from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
 from ..pushdowns import SupportsPushdownFilters
+import lance
 
 if TYPE_CHECKING:
     import lance
@@ -23,12 +24,15 @@ logger = logging.getLogger(__name__)
 
 # TODO support fts and fast_search
 def _lancedb_table_factory_function(
-    ds: "lance.LanceDataset",
+    ds_uri: str,
+    open_kwargs: Optional[dict] = None,
     fragment_ids: Optional[list[int]] = None,
     required_columns: Optional[list[str]] = None,
     filter: Optional["pa.compute.Expression"] = None,
     limit: Optional[int] = None,
 ) -> Iterator[PyRecordBatch]:
+    # Attempt to import lance and reconstruct with best-effort kwargs
+    ds = lance.dataset(ds_uri, **(open_kwargs or {}))
     fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
     if not fragments:
         raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
@@ -37,11 +41,14 @@ def _lancedb_table_factory_function(
 
 
 def _lancedb_count_result_function(
-    ds: "lance.LanceDataset",
+    ds_uri: str,
+    open_kwargs: Optional[dict],
     required_column: str,
     filter: Optional["pa.compute.Expression"] = None,
 ) -> Iterator[PyRecordBatch]:
     """Use LanceDB's API to count rows and return a record batch with the count result."""
+    # Attempt to reconstruct with best-effort kwargs
+    ds = lance.dataset(ds_uri, **(open_kwargs or {}))
     logger.debug("Using metadata for counting all rows")
     count = ds.count_rows(filter=filter)
 
@@ -152,10 +159,11 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             filters = self._combine_filters_to_arrow()
 
             new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
+            open_kwargs = getattr(self._ds, "_daft_open_kwargs", None)
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_count_result_function.__module__,
                 func_name=_lancedb_count_result_function.__name__,
-                func_args=(self._ds, fields[0], filters),
+                func_args=(self._ds.uri, open_kwargs, fields[0], filters),
                 schema=new_schema._schema,
                 num_rows=1,
                 size_bytes=None,
@@ -210,6 +218,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
+        open_kwargs = getattr(self._ds, "_daft_open_kwargs", None)
         fragments = self._ds.get_fragments()
         pushed_expr = self._combine_filters_to_arrow()
 
@@ -267,7 +276,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
                     func_args=(
-                        self._ds,
+                        self._ds.uri,
+                        open_kwargs,
                         fragment_ids,
                         required_columns,
                         pushed_expr,
