@@ -21,17 +21,17 @@ from daft.recordbatch import MicroPartition
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
         (
-            col("col").str.split(r",+", True),
+            col("col").str.regexp_split(r",+"),
             ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
         (
-            col("col").str.split(lit(r",+"), True),
+            col("col").str.regexp_split(lit(r",+")),
             ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
         (
-            col("col").str.split(col("emptystrings") + lit(r",+"), True),
+            col("col").str.regexp_split(col("emptystrings") + lit(r",+")),
             ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
