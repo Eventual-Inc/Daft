@@ -8,8 +8,9 @@ Built-in Daft Functions
 
 <table>
   {%- for fn in cat.functions %}
+  {%- set page_name = 'index_' if fn.name == 'index' else fn.name %}
   <tr>
-    <td><a href="{{ fn.name }}/">{{ fn.name }}</a>({{ fn.signature }})</td>
+    <td><a href="{{ page_name }}/">{{ fn.name }}</a>({{ fn.signature }})</td>
     <td>{{ fn.description }}</td>
   </tr>
   {%- endfor %}
