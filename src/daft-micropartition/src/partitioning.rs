@@ -62,12 +62,19 @@ impl MicroPartitionSet {
         let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(record_batches), None);
         Ok(Self::new(vec![(id, Arc::new(mp))]))
     }
+
+    pub fn items(&self) -> Vec<(PartitionId, MicroPartitionRef)> {
+        self.partitions
+            .iter()
+            .map(|item| (*item.key(), item.value().clone()))
+            .collect()
+    }
 }
 
 impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
-    fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
+    fn get_merged_partitions(&self) -> DaftResult<MicroPartitionRef> {
         let parts = self.partitions.iter().map(|v| v.value().clone());
-        MicroPartition::concat(parts).map(|mp| Arc::new(mp) as _)
+        MicroPartition::concat(parts).map(Arc::new)
     }
 
     fn get_preview_partitions(&self, mut num_rows: usize) -> DaftResult<Vec<MicroPartitionRef>> {

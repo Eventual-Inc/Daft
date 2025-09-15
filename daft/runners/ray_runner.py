@@ -1335,10 +1335,10 @@ class RayRunner(Runner[ray.ObjectRef]):
         daft_execution_config = ctx.daft_execution_config
 
         # Optimize the logical plan.
-        ctx.notify_query_start(query_id)
+        ctx.notify_query_start(query_id, repr(builder))
         ctx.notify_plan_start(query_id)
         builder = builder.optimize()
-        ctx.notify_plan_end(query_id)
+        ctx.notify_plan_end(query_id, repr(builder))
 
         if daft_execution_config.use_legacy_ray_runner:
             if daft_execution_config.enable_aqe:
@@ -1406,7 +1406,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             )
 
         ctx.notify_exec_end(query_id)
-        ctx.notify_query_end(query_id)
+        # TODO: Support flotilla results
+        ctx.notify_query_end(query_id, None)  # type: ignore[arg-type]
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

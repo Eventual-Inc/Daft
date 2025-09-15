@@ -6,15 +6,16 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::StatSnapshotView;
+use daft_micropartition::MicroPartitionRef;
 
 // TODO: Make this global for all plans and executions
 pub type NodeID = usize;
 
 pub trait QuerySubscriber: Send + Sync + std::fmt::Debug + 'static {
-    fn on_query_start(&self, query_id: String) -> DaftResult<()>;
-    fn on_query_end(&self, query_id: String) -> DaftResult<()>;
+    fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()>;
+    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()>;
     fn on_plan_start(&self, query_id: String) -> DaftResult<()>;
-    fn on_plan_end(&self, query_id: String) -> DaftResult<()>;
+    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()>;
     fn on_exec_start(&self, query_id: String) -> DaftResult<()>;
     fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()>;
     fn on_exec_emit_stats(

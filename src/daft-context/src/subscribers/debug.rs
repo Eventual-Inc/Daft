@@ -1,5 +1,6 @@
 use common_error::DaftResult;
 use common_metrics::StatSnapshotView;
+use daft_micropartition::MicroPartitionRef;
 
 #[derive(Debug)]
 pub struct DebugSubscriber;
@@ -7,13 +8,20 @@ pub struct DebugSubscriber;
 use crate::subscribers::{NodeID, QuerySubscriber};
 
 impl QuerySubscriber for DebugSubscriber {
-    fn on_query_start(&self, query_id: String) -> DaftResult<()> {
-        eprintln!("Started query `{}`", query_id);
+    fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
+        eprintln!(
+            "Started query `{}` with unoptimized plan:\n{}",
+            query_id, unoptimized_plan
+        );
         Ok(())
     }
 
-    fn on_query_end(&self, query_id: String) -> DaftResult<()> {
-        eprintln!("Ended query `{}`", query_id);
+    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
+        eprintln!(
+            "Ended query `{}` with result of {} rows",
+            query_id,
+            results.iter().map(|part| part.len()).sum::<usize>()
+        );
         Ok(())
     }
 
@@ -22,8 +30,11 @@ impl QuerySubscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_plan_end(&self, query_id: String) -> DaftResult<()> {
-        eprintln!("Finished planning query `{}`", query_id);
+    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+        eprintln!(
+            "Finished planning query `{}` with optimized plan:\n{}",
+            query_id, optimized_plan
+        );
         Ok(())
     }
 

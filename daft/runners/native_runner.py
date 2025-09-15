@@ -85,10 +85,10 @@ class NativeRunner(Runner[MicroPartition]):
         query_id = str(uuid.uuid4())
 
         # Optimize the logical plan.
-        ctx.notify_query_start(query_id)
+        ctx.notify_query_start(query_id, repr(builder))
         ctx.notify_plan_start(query_id)
         builder = builder.optimize()
-        ctx.notify_plan_end(query_id)
+        ctx.notify_plan_end(query_id, repr(builder))
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
         # builder = _to_from_proto(builder)
@@ -103,9 +103,13 @@ class NativeRunner(Runner[MicroPartition]):
             results_buffer_size,
             {"query_id": query_id},
         )
-        yield from results_gen
+
+        notify_results = []
+        for result in results_gen:
+            notify_results.append(result.partition())
+            yield result
         ctx.notify_exec_end(query_id)
-        ctx.notify_query_end(query_id)
+        ctx.notify_query_end(query_id, notify_results)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

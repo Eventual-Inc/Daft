@@ -48,6 +48,7 @@ class NativeExecutor:
                 psets_mp,
                 ctx._ctx,
                 results_buffer_size,
+                context,
             )
         )
 

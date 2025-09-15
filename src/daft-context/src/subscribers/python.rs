@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use common_error::DaftResult;
 use common_metrics::StatSnapshotView;
+use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, PyObject, Python, intern};
 
 use crate::subscribers::{NodeID, QuerySubscriber};
@@ -11,18 +12,30 @@ use crate::subscribers::{NodeID, QuerySubscriber};
 pub struct PyQuerySubscriberWrapper(pub(crate) PyObject);
 
 impl QuerySubscriber for PyQuerySubscriberWrapper {
-    fn on_query_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         Python::with_gil(|py| {
-            self.0
-                .call_method1(py, intern!(py, "on_query_start"), (query_id,))?;
+            self.0.call_method1(
+                py,
+                intern!(py, "on_query_start"),
+                (query_id, unoptimized_plan),
+            )?;
             Ok(())
         })
     }
 
-    fn on_query_end(&self, query_id: String) -> DaftResult<()> {
+    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
         Python::with_gil(|py| {
-            self.0
-                .call_method1(py, intern!(py, "on_query_end"), (query_id,))?;
+            self.0.call_method1(
+                py,
+                intern!(py, "on_query_end"),
+                (
+                    query_id,
+                    results
+                        .into_iter()
+                        .map(PyMicroPartition::from)
+                        .collect::<Vec<_>>(),
+                ),
+            )?;
             Ok(())
         })
     }
@@ -35,10 +48,10 @@ impl QuerySubscriber for PyQuerySubscriberWrapper {
         })
     }
 
-    fn on_plan_end(&self, query_id: String) -> DaftResult<()> {
+    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0
-                .call_method1(py, intern!(py, "on_plan_end"), (query_id,))?;
+                .call_method1(py, intern!(py, "on_plan_end"), (query_id, optimized_plan))?;
             Ok(())
         })
     }

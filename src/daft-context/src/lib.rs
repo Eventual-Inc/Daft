@@ -7,6 +7,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
+use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -98,19 +99,23 @@ impl DaftContext {
         self.with_state_mut(|state| state.subscribers.push(subscriber));
     }
 
-    pub fn notify_query_start(&self, query_id: String) -> DaftResult<()> {
+    pub fn notify_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in &state.subscribers {
-                subscriber.on_query_start(query_id.clone())?;
+                subscriber.on_query_start(query_id.clone(), unoptimized_plan.clone())?;
             }
             Ok::<(), DaftError>(())
         })
     }
 
-    pub fn notify_query_end(&self, query_id: String) -> DaftResult<()> {
-        self.with_state(|state| {
+    pub fn notify_query_end(
+        &self,
+        query_id: String,
+        results: Vec<MicroPartitionRef>,
+    ) -> DaftResult<()> {
+        self.with_state(move |state| {
             for subscriber in &state.subscribers {
-                subscriber.on_query_end(query_id.clone())?;
+                subscriber.on_query_end(query_id.clone(), results.clone())?;
             }
             Ok::<(), DaftError>(())
         })
@@ -125,10 +130,10 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_plan_end(&self, query_id: String) -> DaftResult<()> {
+    pub fn notify_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in &state.subscribers {
-                subscriber.on_plan_end(query_id.clone())?;
+                subscriber.on_plan_end(query_id.clone(), optimized_plan.clone())?;
             }
             Ok::<(), DaftError>(())
         })

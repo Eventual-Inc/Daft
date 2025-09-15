@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 
 use crate::{DaftContext, subscribers};
@@ -58,13 +59,28 @@ impl PyDaftContext {
         });
     }
 
-    pub fn notify_query_start(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_query_start(query_id))?;
+    pub fn notify_query_start(
+        &self,
+        py: Python,
+        query_id: String,
+        unoptimized_plan: String,
+    ) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_query_start(query_id, unoptimized_plan))?;
         Ok(())
     }
 
-    pub fn notify_query_end(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_query_end(query_id))?;
+    pub fn notify_query_end(
+        &self,
+        py: Python,
+        query_id: String,
+        results: Vec<PyMicroPartition>,
+    ) -> PyResult<()> {
+        py.allow_threads(|| {
+            self.inner.notify_query_end(
+                query_id,
+                results.into_iter().map(|part| part.into()).collect(),
+            )
+        })?;
         Ok(())
     }
 
@@ -73,8 +89,13 @@ impl PyDaftContext {
         Ok(())
     }
 
-    pub fn notify_plan_end(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_plan_end(query_id))?;
+    pub fn notify_plan_end(
+        &self,
+        py: Python,
+        query_id: String,
+        optimized_plan: String,
+    ) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_plan_end(query_id, optimized_plan))?;
         Ok(())
     }
 
