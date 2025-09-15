@@ -963,14 +963,21 @@ class SeriesStringNamespace(SeriesNamespace):
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,
-        regex: bool = False,
     ) -> Series:
-        f_name = "count_matches_regex" if regex else "count_matches"
         return self._eval_expressions(
-            f_name,
+            "count_matches",
             patterns=patterns,
             whole_words=whole_words,
             case_sensitive=case_sensitive,
+        )
+
+    def regexp_count_matches(
+        self,
+        pattern: str,
+    ) -> Series:
+        return self._eval_expressions(
+            "count_matches_regex",
+            patterns=pattern,
         )
 
 

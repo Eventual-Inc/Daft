@@ -963,6 +963,57 @@ def regexp(expr: Expression, pattern: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("regexp_match", expr, pattern)
 
 
+def regexp_count_matches(
+    expr: Expression,
+    pattern: str | Expression,
+) -> Expression:
+    r"""Counts the number of times a regex pattern appears in a string.
+
+    Args:
+        expr: The expression to check.
+        pattern: The regex pattern to search for as a string or as a column to pick values from.
+
+    Returns:
+        Expression: An UInt64 expression with the count of regex matches for each string.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import regexp_count_matches
+        >>> df = daft.from_pydict({"x": ["hello world", "foo bar baz", "test123test456"]})
+        >>> df.with_column("word_count", regexp_count_matches(df["x"], r"\w+")).collect()
+        ╭────────────────┬────────────╮
+        │ x              ┆ word_count │
+        │ ---            ┆ ---        │
+        │ Utf8           ┆ UInt64     │
+        ╞════════════════╪════════════╡
+        │ hello world    ┆ 2          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo bar baz    ┆ 3          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ test123test456 ┆ 1          │
+        ╰────────────────┴────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        >>> df.with_column("digit_count", regexp_count_matches(df["x"], r"\d+")).collect()
+        ╭────────────────┬─────────────╮
+        │ x              ┆ digit_count │
+        │ ---            ┆ ---         │
+        │ Utf8           ┆ UInt64      │
+        ╞════════════════╪═════════════╡
+        │ hello world    ┆ 0           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo bar baz    ┆ 0           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ test123test456 ┆ 2           │
+        ╰────────────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("count_matches_regex", expr, pattern)
+
+
 def regexp_extract(expr: Expression, pattern: str | Expression, index: int = 0) -> Expression:
     r"""Extracts the specified match group from the first regex match in each string in a string column.
 

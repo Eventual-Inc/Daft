@@ -2222,6 +2222,19 @@ class Expression:
 
         return count_matches(self, patterns, whole_words=whole_words, case_sensitive=case_sensitive)
 
+    def regexp_count_matches(
+        self,
+        pattern: builtins.str | Expression,
+    ) -> Expression:
+        """Counts the number of times a regex pattern appears in a string.
+
+        Tip: See Also
+            [`daft.functions.regexp_count_matches`](https://docs.daft.ai/en/stable/api/functions/regexp_count_matches/)
+        """
+        from daft.functions import regexp_count_matches
+
+        return regexp_count_matches(self, pattern)
+
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
 
@@ -3315,6 +3328,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
             whole_words=whole_words,
             case_sensitive=case_sensitive,
         )
+
+    def regexp_count_matches(
+        self,
+        pattern: str | Expression,
+    ) -> Expression:
+        """(DEPRECATED) Please use `daft.functions.regexp_count_matches` instead."""
+        warnings.warn(
+            "`Expression.str.regexp_count_matches` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_count_matches` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().regexp_count_matches(pattern)
 
 
 class ExpressionListNamespace(ExpressionNamespace):
