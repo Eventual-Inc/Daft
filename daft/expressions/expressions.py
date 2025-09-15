@@ -1959,15 +1959,25 @@ class Expression:
 
         return contains(self, substr)
 
-    def split(self, pattern: builtins.str | Expression, regex: bool = False) -> Expression:
-        """Splits each string on the given literal or regex pattern, into a list of strings.
+    def split(self, split_on: builtins.str | Expression) -> Expression:
+        """Splits each string on the given string, into a list of strings.
 
         Tip: See Also
             [`daft.functions.split`](https://docs.daft.ai/en/stable/api/functions/split/)
         """
         from daft.functions import split
 
-        return split(self, pattern, regex)
+        return split(self, split_on)
+
+    def regexp_split(self, pattern: builtins.str | Expression) -> Expression:
+        """Splits each string on the given regex pattern, into a list of strings.
+
+        Tip: See Also
+            [`daft.functions.regexp_split`](https://docs.daft.ai/en/stable/api/functions/regexp_split/)
+        """
+        from daft.functions import regexp_split
+
+        return regexp_split(self, pattern)
 
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase.
@@ -3016,12 +3026,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return self._to_expression().startswith(prefix)
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.split` instead."""
+        """(DEPRECATED) Please use `daft.functions.split` or `daft.functions.regexp_split` instead."""
         warnings.warn(
-            "`Expression.str.split` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.split` instead.",
+            "`Expression.str.split` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.split` or `daft.functions.regexp_split` instead.",
             category=DeprecationWarning,
         )
-        return self._to_expression().split(pattern, regex=regex)
+        if regex:
+            return self._to_expression().regexp_split(pattern)
+        else:
+            return self._to_expression().split(pattern)
 
     def concat(self, other: str | Expression) -> Expression:
         """(DEPRECATED) Please use `daft.functions.concat` instead."""

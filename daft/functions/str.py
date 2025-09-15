@@ -192,13 +192,12 @@ def contains(expr: Expression, substr: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("utf8_contains", expr, substr)
 
 
-def split(expr: Expression, pattern: str | Expression, regex: bool = False) -> Expression:
-    r"""Splits each string on the given literal or regex pattern, into a list of strings.
+def split(expr: Expression, split_on: str | Expression) -> Expression:
+    r"""Splits each string on the given string, into a list of strings.
 
     Args:
         expr: The expression to split.
-        pattern: The pattern on which each string should be split, or a column to pick such patterns from.
-        regex: Whether the pattern is a regular expression. Defaults to False.
+        split_on: The string on which each string should be split, or a column to pick such patterns from.
 
     Returns:
         Expression: A List[Utf8] expression containing the string splits for each string in the column.
@@ -221,29 +220,8 @@ def split(expr: Expression, pattern: str | Expression, regex: bool = False) -> E
         ╰────────────────────────┴────────────────────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-
-        Split on a regex pattern
-
-        >>> df = daft.from_pydict({"data": ["daft.distributed...query", "a.....b.c", "1.2...3.."]})
-        >>> df.with_column("split", split(df["data"], r"\.+", regex=True)).collect()
-        ╭──────────────────────────┬────────────────────────────╮
-        │ data                     ┆ split                      │
-        │ ---                      ┆ ---                        │
-        │ Utf8                     ┆ List[Utf8]                 │
-        ╞══════════════════════════╪════════════════════════════╡
-        │ daft.distributed...query ┆ [daft, distributed, query] │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a.....b.c                ┆ [a, b, c]                  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 1.2...3..                ┆ [1, 2, 3, ]                │
-        ╰──────────────────────────┴────────────────────────────╯
-        <BLANKLINE>
-        (Showing first 3 of 3 rows)
-
-
     """
-    f_name = "regexp_split" if regex else "split"
-    return Expression._call_builtin_scalar_fn(f_name, expr, pattern)
+    return Expression._call_builtin_scalar_fn("split", expr, split_on)
 
 
 def lower(expr: Expression) -> Expression:
@@ -1102,6 +1080,36 @@ def regexp_extract_all(expr: Expression, pattern: str | Expression, index: int =
         [`regexp_extract`](https://docs.daft.ai/en/stable/api/functions/regexp_extract/)
     """
     return Expression._call_builtin_scalar_fn("regexp_extract_all", expr, pattern, index)
+
+
+def regexp_split(expr: Expression, pattern: str | Expression) -> Expression:
+    r"""Splits each string on the given regex pattern, into a list of strings.
+
+    Args:
+        expr: The expression to split.
+        pattern: The pattern on which each string should be split, or a column to pick such patterns from.
+
+    Returns:
+        Expression: A List[Utf8] expression containing the string splits for each string in the column.
+
+    Examples:
+        >>> df = daft.from_pydict({"data": ["daft.distributed...query", "a.....b.c", "1.2...3.."]})
+        >>> df.with_column("split", regexp_split(df["data"], r"\.+")).collect()
+        ╭──────────────────────────┬────────────────────────────╮
+        │ data                     ┆ split                      │
+        │ ---                      ┆ ---                        │
+        │ Utf8                     ┆ List[Utf8]                 │
+        ╞══════════════════════════╪════════════════════════════╡
+        │ daft.distributed...query ┆ [daft, distributed, query] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a.....b.c                ┆ [a, b, c]                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.2...3..                ┆ [1, 2, 3, ]                │
+        ╰──────────────────────────┴────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("regexp_split", expr, pattern)
 
 
 def replace(
