@@ -3559,11 +3559,11 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(f(self._expr, prefix_expr))
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
-        r"""Splits each string on the given literal or regex pattern, into a list of strings.
+        r"""Splits each string on the given literal pattern, into a list of strings.
 
         Args:
-            pattern: The pattern on which each string should be split, or a column to pick such patterns from.
-            regex: Whether the pattern is a regular expression. Defaults to False.
+            pattern: The literal pattern on which each string should be split, or a column to pick such patterns from.
+            regex: DEPRECATED. Use regexp_split() instead for regex patterns.
 
         Returns:
             Expression: A List[Utf8] expression containing the string splits for each string in the column.
@@ -3586,11 +3586,35 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
+        """
+        if regex:
+            import warnings
+
+            warnings.warn(
+                "The 'regex' parameter in str.split() is deprecated and will be removed in v0.7.0. Use str.regexp_split() instead for regex patterns.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self.regexp_split(pattern)
+        pattern_expr = Expression._to_expression(pattern)
+        f = native.get_function_from_registry("split")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
+
+    def regexp_split(self, pattern: str | Expression) -> Expression:
+        r"""Splits each string on the given regex pattern, into a list of strings.
+
+        Args:
+            pattern: The regex pattern on which each string should be split, or a column to pick such patterns from.
+
+        Returns:
+            Expression: A List[Utf8] expression containing the string splits for each string in the column.
+
+        Examples:
             Split on a regex pattern
 
             >>> import daft
             >>> df = daft.from_pydict({"data": ["daft.distributed...query", "a.....b.c", "1.2...3.."]})
-            >>> df.with_column("split", df["data"].str.split(r"\.+", regex=True)).collect()
+            >>> df.with_column("split", df["data"].str.regexp_split(r"\.+")).collect()
             ╭──────────────────────────┬────────────────────────────╮
             │ data                     ┆ split                      │
             │ ---                      ┆ ---                        │
@@ -3605,11 +3629,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
-
         """
         pattern_expr = Expression._to_expression(pattern)
-        f_name = "regexp_split" if regex else "split"
-        f = native.get_function_from_registry(f_name)
+        f = native.get_function_from_registry("regexp_split")
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def concat(self, other: str | Expression) -> Expression:
