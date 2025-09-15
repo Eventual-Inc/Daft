@@ -62,7 +62,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
             table = None
 
         self._version = 0
-        if table:
+        if table is not None:
             table_schema = table.schema
             self._version = table.latest_version
             if self._pyarrow_schema != table_schema and not (self._mode == "overwrite"):
@@ -92,7 +92,12 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         lance = self._import_lance()
 
         for micropartition in micropartitions:
-            arrow_table = pa.Table.from_batches(micropartition.to_arrow().to_batches(), self._pyarrow_schema)
+            original_table = micropartition.to_arrow()
+            if self._pyarrow_schema != original_table.schema:
+                arrow_table = original_table.cast(self._pyarrow_schema)
+            else:
+                arrow_table = pa.Table.from_batches(original_table.to_batches(), self._pyarrow_schema)
+
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows
 

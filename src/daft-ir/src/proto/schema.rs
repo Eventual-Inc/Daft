@@ -198,6 +198,7 @@ impl ToFromProto for ir::DataType {
                 })
             }
             Self::Utf8 => proto::DataTypeVariant::Utf8(UNIT),
+            Self::LargeUtf8 => proto::DataTypeVariant::Utf8(UNIT),
             Self::FixedSizeList(data_type, size) => proto::DataTypeVariant::FixedSizeList(
                 proto::data_type::FixedSizeList {
                     element_type: Some(data_type.to_proto()?.into()),

@@ -45,6 +45,7 @@ macro_rules! with_match_daft_types {
             DataType::UInt8 => __with_ty__! { UInt8Type },
             DataType::Unknown => unimplemented!("array for unknown datatype not implemented"),
             DataType::Utf8 => __with_ty__! { Utf8Type },
+            DataType::LargeUtf8 => __with_ty__! { Utf8Type },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
             DataType::File => __with_ty__! { FileType },
@@ -84,6 +85,7 @@ macro_rules! with_match_physical_daft_types {
             DataType::Binary => __with_ty__! { BinaryType },
             DataType::FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
             DataType::Utf8 => __with_ty__! { Utf8Type },
+            DataType::LargeUtf8 => __with_ty__! { Utf8Type },
             DataType::FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
             DataType::List(_) => __with_ty__! { ListType },
             DataType::Struct(_) => __with_ty__! { StructType },
@@ -127,6 +129,7 @@ macro_rules! with_match_arrow_daft_types {
             DataType::List(_) => __with_ty__! { ListType },
             DataType::Extension(_, _, _) => __with_ty__! { ExtensionType },
             DataType::Utf8 => __with_ty__! { Utf8Type },
+            DataType::LargeUtf8 => __with_ty__! { Utf8Type },
 
             _ => panic!("{:?} not implemented", $key_type)
         }
@@ -159,6 +162,7 @@ macro_rules! with_match_comparable_daft_types {
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Utf8 => __with_ty__! { Utf8Type },
+            DataType::LargeUtf8 => __with_ty__! { Utf8Type },
             DataType::Binary => __with_ty__! { BinaryType },
             DataType::FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
 
@@ -225,6 +229,7 @@ macro_rules! with_match_hashable_daft_types {
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Utf8 => __with_ty__! { Utf8Type },
+            DataType::LargeUtf8 => __with_ty__! { Utf8Type },
             DataType::Binary => __with_ty__! { BinaryType },
             DataType::FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
             DataType::List(_) => __with_ty__! { ListType },

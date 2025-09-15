@@ -63,6 +63,7 @@ impl TryFrom<Vec<Literal>> for Series {
             DataType::Null => NullArray::full_null("literal", &dtype, values.len()).into_series(),
             DataType::Boolean => from_iter_with_str!(BooleanArray, Boolean),
             DataType::Utf8 => from_iter_with_str!(Utf8Array, Utf8),
+            DataType::LargeUtf8 => from_iter_with_str!(Utf8Array, LargeUtf8),
             DataType::Binary => from_iter_with_str!(BinaryArray, Binary),
             DataType::Int8 => from_iter_with_field!(Int8Array, Int8),
             DataType::UInt8 => from_iter_with_field!(UInt8Array, UInt8),

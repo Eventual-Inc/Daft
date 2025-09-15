@@ -172,6 +172,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn large_string() -> PyResult<Self> {
+        Ok(DataType::LargeUtf8.into())
+    }
+
+    #[staticmethod]
     pub fn decimal128(precision: usize, scale: usize) -> PyResult<Self> {
         Ok(DataType::Decimal128(precision, scale).into())
     }

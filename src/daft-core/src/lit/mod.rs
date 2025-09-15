@@ -37,6 +37,8 @@ pub enum Literal {
     Boolean(bool),
     /// A UTF8 encoded string type.
     Utf8(String),
+    /// A UTF8 encoded string type with large size.
+    LargeUtf8(String),
     /// A raw binary array
     Binary(Vec<u8>),
     /// A 8-bit signed integer number.
@@ -126,6 +128,7 @@ impl Hash for Literal {
             Self::Null => 1.hash(state),
             Self::Boolean(bool) => bool.hash(state),
             Self::Utf8(s) => s.hash(state),
+            Self::LargeUtf8(s) => s.hash(state),
             Self::Binary(arr) => arr.hash(state),
             Self::Int8(n) => n.hash(state),
             Self::UInt8(n) => n.hash(state),
@@ -208,6 +211,7 @@ impl Display for Literal {
             Self::Null => write!(f, "Null"),
             Self::Boolean(val) => write!(f, "{val}"),
             Self::Utf8(val) => write!(f, "\"{val}\""),
+            Self::LargeUtf8(val) => write!(f, "\"{val}\""),
             Self::Binary(val) => write!(f, "Binary[{}]", val.len()),
             Self::Int8(val) => write!(f, "{val}"),
             Self::UInt8(val) => write!(f, "{val}"),
@@ -301,6 +305,7 @@ impl Literal {
             Self::Null => DataType::Null,
             Self::Boolean(_) => DataType::Boolean,
             Self::Utf8(_) => DataType::Utf8,
+            Self::LargeUtf8(_) => DataType::LargeUtf8,
             Self::Binary(_) => DataType::Binary,
             Self::Int8(_) => DataType::Int8,
             Self::UInt8(_) => DataType::UInt8,
@@ -414,6 +419,7 @@ impl Literal {
             Self::Float32(val) => write!(buffer, "{}", val),
             Self::Float64(val) => write!(buffer, "{}", val),
             Self::Utf8(val) => write!(buffer, "'{}'", val),
+            Self::LargeUtf8(val) => write!(buffer, "'{}'", val),
             Self::Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
             Self::Timestamp(val, tu, tz) => write!(
                 buffer,
@@ -451,6 +457,14 @@ impl Literal {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Utf8(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// If the literal is `LargeUtf8`, return it. Otherwise, return None.
+    pub fn as_large_str(&self) -> Option<&str> {
+        match self {
+            Self::LargeUtf8(s) => Some(s),
             _ => None,
         }
     }

@@ -35,6 +35,7 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::Null => Ok(PyNone::get(py).to_owned().into_any()),
             Self::Boolean(val) => val.into_bound_py_any(py),
             Self::Utf8(val) => val.into_bound_py_any(py),
+            Self::LargeUtf8(val) => val.into_bound_py_any(py),
             Self::Binary(val) => val.into_bound_py_any(py),
             Self::Int8(val) => val.into_bound_py_any(py),
             Self::UInt8(val) => val.into_bound_py_any(py),

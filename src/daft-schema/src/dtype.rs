@@ -99,6 +99,9 @@ pub enum DataType {
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,
 
+    /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
+    LargeUtf8,
+
     /// A list of some logical data type with a fixed number of elements.
     #[display("FixedSizeList[{_0}; {_1}]")]
     FixedSizeList(Box<DataType>, usize),
@@ -231,7 +234,8 @@ impl DataType {
 
             Self::Binary => Ok(ArrowType::LargeBinary),
             Self::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
-            Self::Utf8 => Ok(ArrowType::LargeUtf8),
+            Self::Utf8 => Ok(ArrowType::Utf8),
+            Self::LargeUtf8 => Ok(ArrowType::LargeUtf8),
             Self::FixedSizeList(child_dtype, size) => Ok(ArrowType::FixedSizeList(
                 Box::new(arrow2::datatypes::Field::new(
                     "item",
@@ -358,7 +362,7 @@ impl DataType {
             File => Struct(vec![
                 Field::new("discriminant", UInt8),
                 Field::new("data", Binary),
-                Field::new("url", Utf8),
+                Field::new("url", LargeUtf8),
                 #[cfg(feature = "python")]
                 Field::new("io_config", Python),
             ]),
@@ -516,7 +520,7 @@ impl DataType {
 
     #[inline]
     pub fn is_string(&self) -> bool {
-        matches!(self, Self::Utf8)
+        matches!(self, Self::Utf8 | Self::LargeUtf8)
     }
 
     #[inline]
@@ -711,6 +715,7 @@ impl DataType {
             Self::Float32 => Some(4.),
             Self::Float64 => Some(8.),
             Self::Utf8 => Some(VARIABLE_TYPE_SIZE),
+            Self::LargeUtf8 => Some(VARIABLE_TYPE_SIZE),
             Self::Binary => Some(VARIABLE_TYPE_SIZE),
             Self::FixedSizeBinary(size) => Some(size as f64),
             Self::FixedSizeList(dtype, len) => {
@@ -942,7 +947,8 @@ impl From<&ArrowType> for DataType {
             ArrowType::Interval(_) => Self::Interval,
             ArrowType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size),
             ArrowType::Binary | ArrowType::LargeBinary => Self::Binary,
-            ArrowType::Utf8 | ArrowType::LargeUtf8 => Self::Utf8,
+            ArrowType::Utf8 => Self::Utf8,
+            ArrowType::LargeUtf8 => Self::LargeUtf8,
             ArrowType::Decimal(precision, scale) => Self::Decimal128(*precision, *scale),
             ArrowType::List(field) | ArrowType::LargeList(field) => {
                 Self::List(Box::new(field.as_ref().data_type().into()))

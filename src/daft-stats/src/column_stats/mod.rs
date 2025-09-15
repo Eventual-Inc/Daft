@@ -87,6 +87,7 @@ impl ColumnRangeStatistics {
 
             // String types
             DataType::Utf8 | DataType::Binary | DataType::FixedSizeBinary(..) |
+            DataType::LargeUtf8 |
 
             // Temporal types
             DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) | DataType::Interval => true,

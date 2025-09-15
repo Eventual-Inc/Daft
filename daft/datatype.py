@@ -270,6 +270,11 @@ class DataType:
         return cls._from_pydatatype(PyDataType.string())
 
     @classmethod
+    def large_string(cls) -> DataType:
+        """Create a String DataType: A string of UTF8 characters."""
+        return cls._from_pydatatype(PyDataType.large_string())
+
+    @classmethod
     def bool(cls) -> DataType:
         """Create the Boolean DataType: Either ``True`` or ``False``."""
         return cls._from_pydatatype(PyDataType.bool())
@@ -505,8 +510,10 @@ class DataType:
             return cls.float32()
         elif pa.types.is_float64(arrow_type):
             return cls.float64()
-        elif pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
+        elif pa.types.is_string(arrow_type):
             return cls.string()
+        elif pa.types.is_large_string(arrow_type):
+            return cls.large_string()
         elif pa.types.is_binary(arrow_type) or pa.types.is_large_binary(arrow_type):
             return cls.binary()
         elif pa.types.is_fixed_size_binary(arrow_type):

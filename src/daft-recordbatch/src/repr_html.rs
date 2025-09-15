@@ -91,6 +91,10 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.utf8().unwrap();
             arr.html_value(idx, truncate)
         }
+        DataType::LargeUtf8 => {
+            let arr = s.utf8().unwrap();
+            arr.html_value(idx, truncate)
+        }
         DataType::FixedSizeList(_, _) => {
             let arr = s.fixed_size_list().unwrap();
             arr.html_value(idx, truncate)

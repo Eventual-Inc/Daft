@@ -682,6 +682,7 @@ impl ToFromProto for ir::Literal {
             Self::Null => proto::LiteralVariant::Null(UNIT),
             Self::Boolean(bool) => proto::LiteralVariant::Boolean(*bool),
             Self::Utf8(s) => proto::LiteralVariant::Utf8(s.clone()),
+            Self::LargeUtf8(s) => proto::LiteralVariant::Utf8(s.clone()),
             Self::Binary(items) => proto::LiteralVariant::Binary(items.clone()),
             Self::Int8(i) => proto::LiteralVariant::Int8(*i as i32),
             Self::UInt8(i) => proto::LiteralVariant::Uint8(*i as u32),

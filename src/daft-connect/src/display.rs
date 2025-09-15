@@ -104,6 +104,7 @@ fn type_to_string(dtype: &DataType) -> String {
         DataType::Binary => "binary",
         DataType::FixedSizeBinary(_) => "arrow.fixed_size_binary",
         DataType::Utf8 => "string",
+        DataType::LargeUtf8 => "large_string",
         DataType::FixedSizeList(_, _) => "arrow.fixed_size_list",
         DataType::List(_) => "array",
         DataType::Struct(_) => "struct",
