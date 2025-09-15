@@ -10,10 +10,13 @@ from daft.internal.gpu import cuda_visible_devices
 from tests.conftest import get_tests_daft_runner_name
 from tests.integration.ray.autoscaling_cluster import autoscaling_cluster_context
 
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray",
-    reason="Autoscaling tests require Ray runner to be in use",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        get_tests_daft_runner_name() != "ray",
+        reason="Autoscaling tests require Ray runner to be in use",
+    ),
+]
 
 
 def test_basic_autoscaling_cluster():

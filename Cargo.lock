@@ -2834,6 +2834,7 @@ dependencies = [
  "common-image",
  "daft-core",
  "daft-dsl",
+ "daft-schema",
  "log",
  "serde",
  "typetag",

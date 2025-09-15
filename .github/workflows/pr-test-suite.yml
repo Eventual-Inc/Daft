@@ -1,4 +1,6 @@
 name: PR test suite
+permissions:
+  contents: read
 
 on:
   push:
@@ -71,7 +73,7 @@ jobs:
   unit-test:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -80,22 +82,38 @@ jobs:
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         flotilla: [1, 0]
+        os: [ubuntu-latest, macos-latest]
+        on-main:
+        - ${{ github.ref == 'refs/heads/main' }}
         exclude:
         - daft-runner: native
           flotilla: 0
         - daft-runner: ray
           pyarrow-version: 8.0.0
+        - python-version: '3.9'
+          os: macos-latest
+        - pyarrow-version: 8.0.0
+          os: macos-latest
         - python-version: '3.12'
           pyarrow-version: 8.0.0
+        - os: macos-latest
+          flotilla: 0
+        # don't run mac unit tests in PRs
+        - os: macos-latest
+          on-main: false
+
     steps:
     - name: Free Disk Space (Ubuntu) # only run on ubuntu
+      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
-
-    - run: |
-        sudo apt-get update
-        sudo apt-get install ffmpeg libsm6 libxext6 -y
+        android: false
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
 
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -813,7 +831,8 @@ jobs:
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-  integration-test-ai-credentialed:
+
+  integration-test-ai:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [skipcheck, integration-test-build]
@@ -825,10 +844,10 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -865,11 +884,86 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_pytest_output.txt"
+        pytest -m integration tests/ai --durations=0 | ./tools/capture-durations.sh "ai_pytest_output.txt"
         python tools/aggregate_test_durations.py ai_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.event_name == 'push') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] AI Provider Integration Test <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+
+  integration-test-ai-credentialed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+    env:
+      package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9']
+        daft-runner: [ray, native]
+        flotilla: [1, 0]
+        exclude:
+        - daft-runner: native
+          flotilla: 1
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
+    - name: Run AI provider integration tests
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_credentialed_pytest_output.txt"
+        python tools/aggregate_test_durations.py ai_credentialed_pytest_output.txt
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
         OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
@@ -882,7 +976,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] AI Provider Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                  "text": ":rotating_light: [CI] AI Provider Integration Test Credentialed <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
                 }
               }
             ]
@@ -894,7 +988,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [skipcheck, integration-test-build]
-    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
     steps:
@@ -934,7 +1028,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        test_names=$(pytest --collect-only -q tests/integration/ray | grep "::test_")
+        test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
         for test in $test_names; do
           echo "Running $test..."
           pytest -m integration $test --durations=0
@@ -946,7 +1040,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        test_names=$(pytest --collect-only -q tests/integration/ray | grep "::test_")
+        test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
         for test in $test_names; do
           echo "Running $test..."
           pytest -m integration $test --durations=0
@@ -982,6 +1076,7 @@ jobs:
     - integration-test-io-credentialed
     - integration-test-sql
     - integration-test-catalogs
+    - integration-test-ai
     - integration-test-ai-credentialed
     - integration-test-ray
     if: always()
