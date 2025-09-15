@@ -330,6 +330,31 @@ class TestIcebergScanOperatorUnit:
         except Exception:
             pass
 
+    @patch("daft.io.iceberg.iceberg_scan.RecordBatch.from_arrow_record_batches")
+    def test_iceberg_count_result_function_recordbatch_failure(self, mock_from_arrow):
+        """Test _iceberg_count_result_function when RecordBatch conversion fails."""
+        mock_from_arrow.side_effect = RuntimeError("RecordBatch conversion failed")
+        
+        total_count = 100
+        field_name = "count"
+        
+        # Should raise the original conversion exception
+        with pytest.raises(RuntimeError, match="RecordBatch conversion failed"):
+            list(_iceberg_count_result_function(total_count, field_name))
+
+
+    @patch("daft.io.iceberg.iceberg_scan.pa.field")
+    def test_iceberg_count_result_function_field_creation_failure(self, mock_field):
+        """Test _iceberg_count_result_function when pa.field creation fails."""
+        mock_field.side_effect = pa.ArrowTypeError("Invalid field definition")
+        
+        total_count = 100
+        field_name = "count"
+        
+        with pytest.raises(pa.ArrowTypeError, match="Invalid field definition"):
+            list(_iceberg_count_result_function(total_count, field_name))
+
+
     @patch("daft.io.iceberg.iceberg_scan.schema_to_pyarrow")
     @patch("daft.io.iceberg.iceberg_scan.visit")
     @patch("daft.io.iceberg.iceberg_scan.Schema.from_pyarrow_schema")
@@ -383,3 +408,70 @@ class TestIcebergScanOperatorUnit:
             call_args = mock_scan_task.call_args
             expected_total = sum(large_counts)
             assert call_args[1]["func_args"] == (expected_total, "count")
+
+
+
+    @patch("daft.io.iceberg.iceberg_scan.schema_to_pyarrow")
+    @patch("daft.io.iceberg.iceberg_scan.visit")
+    @patch("daft.io.iceberg.iceberg_scan.Schema.from_pyarrow_schema")
+    def test_create_count_scan_task_exception_fallback(self, mock_from_pyarrow, mock_visit, mock_schema_to_pyarrow):
+        """Test _create_count_scan_task exception handling and fallback."""
+        # Setup mocks
+        mock_schema_to_pyarrow.return_value = pa.schema([pa.field("id", pa.int64())])
+        mock_visit.return_value = {}
+        mock_from_pyarrow.return_value = Schema.from_pyarrow_schema(pa.schema([pa.field("id", pa.int64())]))
+
+        # Create table that will fail on scan
+        mock_table = Mock()
+        mock_table.name.return_value = ["test", "table"]
+        mock_table.schema.return_value = Mock()
+        mock_spec = Mock()
+        mock_spec.fields = []
+        mock_table.spec.return_value = mock_spec
+        
+        # Mock scan that fails
+        mock_scan = Mock()
+        mock_scan.plan_files.side_effect = Exception("Iceberg scan failed")
+        mock_table.scan.return_value = mock_scan
+        mock_scan.projection.return_value = Mock()
+        
+        mock_storage_config = Mock()
+        operator = IcebergScanOperator(mock_table, None, mock_storage_config)
+
+        # Mock the fallback method
+        with patch.object(operator, '_create_regular_scan_tasks') as mock_fallback:
+            mock_fallback.return_value = iter([Mock()])
+            
+            mock_pushdowns = Mock(spec=PyPushdowns)
+            
+            # Test the method - should catch exception and fallback
+            results = list(operator._create_count_scan_task(mock_pushdowns, "count"))
+            
+            # Should have fallen back to regular scan
+            mock_fallback.assert_called_once_with(mock_pushdowns)
+            assert len(results) == 1
+
+    @patch("daft.io.iceberg.iceberg_scan.schema_to_pyarrow")
+    @patch("daft.io.iceberg.iceberg_scan.visit")
+    @patch("daft.io.iceberg.iceberg_scan.Schema.from_pyarrow_schema")
+    def test_has_delete_files_exception_handling(self, mock_from_pyarrow, mock_visit, mock_schema_to_pyarrow):
+        """Test _has_delete_files exception handling."""
+        # Setup mocks
+        mock_schema_to_pyarrow.return_value = pa.schema([pa.field("id", pa.int64())])
+        mock_visit.return_value = {}
+        mock_from_pyarrow.return_value = Schema.from_pyarrow_schema(pa.schema([pa.field("id", pa.int64())]))
+
+        # Create table that will fail on scan
+        mock_table = Mock()
+        mock_table.name.return_value = ["test", "table"]
+        mock_table.schema.return_value = Mock()
+        mock_spec = Mock()
+        mock_spec.fields = []
+        mock_table.spec.return_value = mock_spec
+ 
+        mock_storage_config = Mock()
+        operator = IcebergScanOperator(mock_table, None, mock_storage_config)
+
+        result = operator._has_delete_files()
+
+        assert result is True
