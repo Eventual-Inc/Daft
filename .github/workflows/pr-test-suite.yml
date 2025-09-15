@@ -934,7 +934,7 @@ jobs:
 
     - name: Run Ray Integration Tests (Ray Runner)
       run: |
-        set -o pipefail
+        set -xo pipefail
         source .venv/bin/activate
         test_names=$(pytest --collect-only -q tests/integration/ray | grep "::test_")
         for test in $test_names; do
