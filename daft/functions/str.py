@@ -1093,6 +1093,9 @@ def regexp_split(expr: Expression, pattern: str | Expression) -> Expression:
         Expression: A List[Utf8] expression containing the string splits for each string in the column.
 
     Examples:
+        >>> import daft
+        >>> from daft.functions import regexp_split
+        >>>
         >>> df = daft.from_pydict({"data": ["daft.distributed...query", "a.....b.c", "1.2...3.."]})
         >>> df.with_column("split", regexp_split(df["data"], r"\.+")).collect()
         ╭──────────────────────────┬────────────────────────────╮
