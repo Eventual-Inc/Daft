@@ -9,13 +9,14 @@ This notebook walks through a practical example of evaluating model performance 
 1. Daft for data processing
 2. Gemma-3n-e4b-it model for multimodal capabilities
 3. vLLM/OpenRouter for efficient inference serving.
+4. HuggingFace Datasets
 
 ### Table of Contents
 
 1. Setup and Install Dependencies
 2. Launch a vLLM OpenAI API compatible server
 3. Testing the OpenAI client Gemma-3n client with an API key and new base url.
-4. Preprocess the ai2d dataset from huggingface's Cauldron collection
+4. Preprocess the AI2D dataset from huggingface's Cauldron collection
 5. Multimodal Inference with Structured Outputs using 3 approaches
 6. Analysis of the inference results
 7. Putting everything together: Evaluating Gemma-3n-e4b-it across the AI2D subset
@@ -132,7 +133,7 @@ print(completion.choices[0].message.content)
 
 ## Step 1: Dataset Preprocessing
 
-### Prepping the HuggingFaceM4/the_cauldron Dataset (ai2d subset)
+### Prepping the HuggingFaceM4/the_cauldron Dataset (AI2D subset)
 
 We can read directly from Hugging Face datasets by leveraging the `hf://` prefix in the URL string.
 
@@ -395,7 +396,7 @@ class StructuredOutputsProdUDF:
                 ],
                 model=model_id,
                 extra_body=extra_body,
-                **(sampling_params or {})
+                **sampling_params
             )
             return result.choices[0].message.content
 
@@ -595,10 +596,10 @@ class TheCauldronImageUnderstandingEvaluationPipeline:
 
     def preprocess(self, df: daft.DataFrame) -> daft.DataFrame:
         # Convert png image byte string to base64
-        df = df.explode(col("images")).with_column("image_base64", df["images"].struct.get("bytes").apply(
-            lambda x: base64.b64encode(x).decode('utf-8'),
-            return_dtype=daft.DataType.string()
-        ))
+        df = df.explode(col("images")).with_column(
+            "image_base64",
+            df["images"].struct.get("bytes").encode("base64")
+        )
 
         # Explode Lists of User Prompts and Assistant Answer Pairs
         df = df.explode(col("texts")).with_columns({
