@@ -23,9 +23,10 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-// Keeps track of the remaining skip and take
-// Skip is the number of rows to skip if there is an offset
-// Take is the number of rows to take for the limit
+/// Keeps track of the remaining skip and take.
+///
+/// Skip is the number of rows to skip if there is an offset.
+/// Take is the number of rows to take for the limit.
 struct LimitState {
     remaining_skip: usize,
     remaining_take: usize,
