@@ -1733,17 +1733,6 @@ impl Write for S3PartBuffer {
     }
 }
 
-#[macro_export]
-macro_rules! init_s3_config {
-    ($io_config:ident) => {
-        let mut $io_config = IOConfig::default();
-        if $io_config.s3.is_none() {
-            $io_config.s3 = Some(Default::default());
-        }
-        $io_config.s3.as_mut().unwrap().anonymous = true;
-    };
-}
-
 #[cfg(test)]
 mod tests {
 
