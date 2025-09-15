@@ -136,6 +136,7 @@ impl DistributedPipelineNode for PivotNode {
                 self_clone.value_column.clone(),
                 self_clone.aggregation.clone(),
                 self_clone.names.clone(),
+                false,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
             )
