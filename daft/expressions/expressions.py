@@ -3036,6 +3036,14 @@ class ExpressionStringNamespace(ExpressionNamespace):
         else:
             return self._to_expression().split(pattern)
 
+    def regexp_split(self, pattern: str | Expression) -> Expression:
+        """(DEPRECATED) Please use `daft.functions.regexp_split` or `daft.functions.regexp_split` instead."""
+        warnings.warn(
+            "`Expression.str.regexp_split` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_split` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().regexp_split(pattern)
+
     def concat(self, other: str | Expression) -> Expression:
         """(DEPRECATED) Please use `daft.functions.concat` instead."""
         warnings.warn(
