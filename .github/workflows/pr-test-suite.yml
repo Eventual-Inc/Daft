@@ -1,4 +1,6 @@
 name: PR test suite
+permissions:
+  contents: read
 
 on:
   push:
