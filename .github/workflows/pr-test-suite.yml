@@ -936,7 +936,7 @@ jobs:
       run: |
         set -xo pipefail
         source .venv/bin/activate
-        test_names=$(pytest --collect-only -q tests/integration/ray | grep "::test_")
+        test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
         for test in $test_names; do
           echo "Running $test..."
           pytest -m integration $test --durations=0
