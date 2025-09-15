@@ -248,7 +248,7 @@ jobs:
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist
+        maturin build --compatibility linux --out dist
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
@@ -946,7 +946,7 @@ jobs:
         DAFT_FLOTILLA: 0
     - name: Run Ray Integration Tests (Flotilla)
       run: |
-        set -o pipefail
+        set -xo pipefail
         source .venv/bin/activate
         test_names=$(pytest --collect-only -q tests/integration/ray | grep "::test_")
         for test in $test_names; do
