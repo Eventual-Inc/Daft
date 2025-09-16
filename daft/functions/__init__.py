@@ -170,7 +170,7 @@ from .str import (
     regexp_split,
     replace,
     regexp_replace,
-    index,
+    find,
 )
 from .url import download, upload, parse_url
 from .window import (
@@ -250,13 +250,13 @@ __all__ = [
     "expm1",
     "file",
     "fill_null",
+    "find",
     "floor",
     "format",
     "hash",
     "hour",
     "image_hash",
     "ilike",
-    "index",
     "is_in",
     "is_null",
     "jq",
