@@ -37,10 +37,7 @@ deltalake = ["deltalake", "packaging"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
 huggingface = ["huggingface-hub"]
-# TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
-# triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
-# See https://github.com/Eventual-Inc/Daft/issues/4868.
-iceberg = ["pyiceberg >= 0.7.0, < 0.9.1", "packaging"]
+iceberg = ["pyiceberg >= 0.7.0", "packaging"]
 lance = ["pylance"]
 numpy = ["numpy"]
 openai = ["openai"]
@@ -103,7 +100,7 @@ dev = [
   # Lance
   "pylance>=0.20.0",
   # Iceberg
-  "pyiceberg==0.7.0",
+  "pyiceberg==0.10.0",
   "pydantic==2.10.6",
   "tenacity==8.2.3",
   # Delta Lake
