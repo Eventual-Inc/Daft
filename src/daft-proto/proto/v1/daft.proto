@@ -38,6 +38,7 @@ message DataType {
     Unit binary = 19;
     FixedSizeBinary fixed_size_binary = 20;
     Unit utf8 = 21;
+    Unit large_utf8 = 36;
     FixedSizeList fixed_size_list = 22;
     List list = 23;
     Struct struct = 24;

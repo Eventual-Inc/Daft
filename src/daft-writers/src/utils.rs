@@ -121,20 +121,20 @@ mod tests {
     fn test_record_batch_to_partition_string() -> DaftResult<()> {
         let year_series = Series::from_arrow(
             Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["2023"])),
+            Box::new(arrow2::array::Utf8Array::<i32>::from_slice(&["2023"])),
         )?;
         let month_series = Series::from_arrow(
             Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["1"])),
+            Box::new(arrow2::array::Utf8Array::<i32>::from_slice(&["1"])),
         )?;
         // Include a column with a null value.
         let day_series = Series::from_arrow(
             Arc::new(Field::new("day", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from([None::<&str>])),
+            Box::new(arrow2::array::Utf8Array::<i32>::from([None::<&str>])),
         )?;
         // Include a column with a name that needs to be URL-encoded.
         let date_series = Series::from_arrow(
-            Arc::new(Field::new("today's date", DataType::Utf8)),
+            Arc::new(Field::new("today's date", DataType::LargeUtf8)),
             Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["2025/04/29"])),
         )?;
         let batch = RecordBatch::from_nonempty_columns(vec![
@@ -168,13 +168,13 @@ mod tests {
     fn test_record_batch_to_partition_string_multi_row_error() -> DaftResult<()> {
         let year_series = Series::from_arrow(
             Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&[
+            Box::new(arrow2::array::Utf8Array::<i32>::from_slice(&[
                 "2023", "2024",
             ])),
         )?;
         let month_series = Series::from_arrow(
             Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["1", "2"])),
+            Box::new(arrow2::array::Utf8Array::<i32>::from_slice(&["1", "2"])),
         )?;
         let batch = RecordBatch::from_nonempty_columns(vec![year_series, month_series])?;
 

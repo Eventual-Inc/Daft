@@ -266,7 +266,7 @@ impl Series {
                     None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
                 }
             }
-            DataType::Utf8 => {
+            DataType::Utf8 | DataType::LargeUtf8 => {
                 let downcasted = self.downcast::<Utf8Array>()?;
                 match groups {
                     Some(groups) => {

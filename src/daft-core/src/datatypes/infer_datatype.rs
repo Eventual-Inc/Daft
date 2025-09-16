@@ -118,7 +118,7 @@ impl InferDataType<'_> {
         let other = &other.0;
         let evaluator = || match (left, other) {
             (s, o) if s == o => Ok((DataType::Boolean, None, s.to_physical())),
-            (DataType::Utf8, o) | (o, DataType::Utf8) if o.is_numeric() => {
+            (DataType::Utf8 | DataType::LargeUtf8, o) | (o, DataType::Utf8 | DataType::LargeUtf8) if o.is_numeric() => {
                 Err(DaftError::TypeError(format!(
                     "Cannot perform comparison on DataType::Utf8 and numeric type.\ntypes: {}, {}",
                     left, other
@@ -175,7 +175,7 @@ impl InferDataType<'_> {
                 Ok((DataType::Boolean, Some(d_type.clone()), d_type))
             }
 
-            (DataType::Utf8, DataType::Date) | (DataType::Date, DataType::Utf8) => {
+            (DataType::Utf8 | DataType::LargeUtf8, DataType::Date) | (DataType::Date, DataType::Utf8 | DataType::LargeUtf8) => {
                 // Date is logical, so we cast to intermediate type (date), then compare on the physical type (i32)
                 Ok((DataType::Boolean, Some(DataType::Date), DataType::Int32))
             }
@@ -262,7 +262,7 @@ impl Add for InferDataType<'_> {
                 // --------
                 // Utf8 + other
                 // --------
-                (dtype @ DataType::Utf8, other) | (other, dtype @ DataType::Utf8) => {
+                (dtype @ (DataType::Utf8 | DataType::LargeUtf8), other) | (other, dtype @ (DataType::Utf8 | DataType::LargeUtf8)) => {
                     match other {
                         // DataType::Date condition is for backwards compatibility. TODO: remove
                         DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
@@ -550,7 +550,7 @@ pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType
         }
         #[cfg(feature = "python")]
         (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
-        (DataType::Utf8, o) | (o, DataType::Utf8)
+        (DataType::Utf8 | DataType::LargeUtf8, o) | (o, DataType::Utf8 | DataType::LargeUtf8)
             if o.is_physical()
                 && !matches!(o, DataType::Binary | DataType::FixedSizeBinary(..)) =>
         {

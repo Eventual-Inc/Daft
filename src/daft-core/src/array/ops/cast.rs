@@ -153,7 +153,7 @@ impl DateArray {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
             DataType::Date => Ok(self.clone().into_series()),
-            DataType::Utf8 => {
+            DataType::Utf8 | DataType::LargeUtf8 => {
                 let date_array = self
                     .as_arrow()
                     .clone()
@@ -255,7 +255,7 @@ impl TimestampArray {
             }
             DataType::Date => Ok(self.date()?.into_series()),
             DataType::Time(tu) => Ok(self.time(tu)?.into_series()),
-            DataType::Utf8 => {
+            DataType::Utf8 | DataType::LargeUtf8 => {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
@@ -327,7 +327,7 @@ impl TimeArray {
                 };
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
             }
-            DataType::Utf8 => {
+            DataType::Utf8 | DataType::LargeUtf8 => {
                 let time_array = self.as_arrow();
                 let time_str: arrow2::array::Utf8Array<i64> = time_array
                     .iter()
@@ -1166,7 +1166,7 @@ impl PythonArray {
             DataType::FixedSizeBinary(size) => {
                 pycast_then_arrowcast!(self, DataType::FixedSizeBinary(*size), "fixed_size_bytes")
             }
-            DataType::Utf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
+            DataType::Utf8 | DataType::LargeUtf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
             dt @ (DataType::UInt8
             | DataType::UInt16
             | DataType::UInt32

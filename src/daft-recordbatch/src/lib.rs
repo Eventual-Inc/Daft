@@ -176,7 +176,6 @@ impl RecordBatch {
                 )));
             }
         }
-
         Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 

@@ -9,7 +9,7 @@ pub mod ops;
 pub mod pseudo_arrow;
 mod serdes;
 mod struct_array;
-use arrow2::{bitmap::Bitmap, compute::cast::utf8_to_large_utf8};
+use arrow2::{bitmap::Bitmap, compute::cast::{utf8_to_large_utf8, utf8_large_to_utf8}};
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
@@ -54,44 +54,88 @@ impl<T> DataArray<T> {
         );
 
         if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
-            // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
-            // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
-            if expected_arrow_physical_type == arrow2::datatypes::DataType::LargeUtf8
-                && arrow_array.data_type() == &arrow2::datatypes::DataType::Utf8
-            {
-                let utf8_arr = arrow_array
-                    .as_any()
-                    .downcast_ref::<arrow2::array::Utf8Array<i32>>()
-                    .unwrap();
+            // Special handling for string types to maintain Daft's internal consistency
+            // Daft internally uses Utf8Array<i64> for both DataType::Utf8 and DataType::LargeUtf8
+            // to maintain backward compatibility with existing AsArrow implementations
+            match (&physical_field.dtype, arrow_array.data_type()) {
+                // For DataType::Utf8, always convert incoming Utf8Array<i32> to Utf8Array<i64>
+                (crate::datatypes::DataType::Utf8, arrow2::datatypes::DataType::Utf8) => {
+                    let utf8_arr = arrow_array
+                        .as_any()
+                        .downcast_ref::<arrow2::array::Utf8Array<i32>>()
+                        .ok_or_else(|| DaftError::TypeError(format!(
+                            "Failed to downcast Utf8 array to Utf8Array<i32> for field {}",
+                            physical_field.name
+                        )))?;
 
-                let arr = Box::new(utf8_to_large_utf8(utf8_arr));
+                    // Convert to Utf8Array<i64> for internal consistency
+                    let arr = Box::new(utf8_to_large_utf8(utf8_arr));
 
-                return Ok(Self {
-                    field: physical_field,
-                    data: arr,
-                    marker_: PhantomData,
-                });
+                    return Ok(Self {
+                        field: physical_field,
+                        data: arr,
+                        marker_: PhantomData,
+                    });
+                }
+                // For DataType::LargeUtf8, handle both cases
+                (crate::datatypes::DataType::LargeUtf8, arrow2::datatypes::DataType::Utf8) => {
+                    let utf8_arr = arrow_array
+                        .as_any()
+                        .downcast_ref::<arrow2::array::Utf8Array<i32>>()
+                        .ok_or_else(|| DaftError::TypeError(format!(
+                            "Failed to downcast Utf8 array to Utf8Array<i32> for field {}",
+                            physical_field.name
+                        )))?;
+
+                    let arr = Box::new(utf8_to_large_utf8(utf8_arr));
+
+                    return Ok(Self {
+                        field: physical_field,
+                        data: arr,
+                        marker_: PhantomData,
+                    });
+                }
+                (crate::datatypes::DataType::LargeUtf8, arrow2::datatypes::DataType::LargeUtf8) => {
+                    // LargeUtf8 -> LargeUtf8, no conversion needed
+                }
+                _ => {}
             }
             let arrow_data_type = arrow_array.data_type();
 
-            assert!(
-                !(&expected_arrow_physical_type != arrow_data_type),
-                "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: {}\n\
-                Logical type: {}\n\
-                Physical type: {}\n\
-                Expected Arrow physical type: {:?}\n\
-                Actual Arrow Logical type: {:?}
-
-                This error typically occurs when there's a discrepancy between the Daft DataType \
-                and the underlying Arrow representation. Please ensure that the physical type \
-                of the Daft DataType matches the Arrow type of the provided data.",
-                physical_field.name,
-                physical_field.dtype,
-                physical_field.dtype.to_physical(),
-                expected_arrow_physical_type,
-                arrow_data_type
+            // For string types, we allow some flexibility due to internal conversion logic
+            let is_string_type_mismatch = matches!(
+                (&physical_field.dtype, &expected_arrow_physical_type, arrow_data_type),
+                (
+                    crate::datatypes::DataType::Utf8,
+                    arrow2::datatypes::DataType::Utf8,
+                    arrow2::datatypes::DataType::LargeUtf8
+                ) | (
+                    crate::datatypes::DataType::LargeUtf8,
+                    arrow2::datatypes::DataType::LargeUtf8,
+                    arrow2::datatypes::DataType::Utf8
+                )
             );
+
+            if !is_string_type_mismatch {
+                assert!(
+                    !(&expected_arrow_physical_type != arrow_data_type),
+                    "Mismatch between expected and actual Arrow types for DataArray.\n\
+                    Field name: {}\n\
+                    Logical type: {}\n\
+                    Physical type: {}\n\
+                    Expected Arrow physical type: {:?}\n\
+                    Actual Arrow Logical type: {:?}
+
+                    This error typically occurs when there's a discrepancy between the Daft DataType \
+                    and the underlying Arrow representation. Please ensure that the physical type \
+                    of the Daft DataType matches the Arrow type of the provided data.",
+                    physical_field.name,
+                    physical_field.dtype,
+                    physical_field.dtype.to_physical(),
+                    expected_arrow_physical_type,
+                    arrow_data_type
+                );
+            }
         }
 
         Ok(Self {

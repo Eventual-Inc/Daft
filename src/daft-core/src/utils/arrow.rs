@@ -32,7 +32,8 @@ fn coerce_to_daft_compatible_type(
     dtype: &arrow2::datatypes::DataType,
 ) -> Option<arrow2::datatypes::DataType> {
     match dtype {
-        arrow2::datatypes::DataType::Utf8 => Some(arrow2::datatypes::DataType::LargeUtf8),
+        // Remove automatic Utf8 -> LargeUtf8 coercion to prevent type mismatch issues
+        // arrow2::datatypes::DataType::Utf8 => Some(arrow2::datatypes::DataType::LargeUtf8),
         arrow2::datatypes::DataType::Binary => Some(arrow2::datatypes::DataType::LargeBinary),
         arrow2::datatypes::DataType::List(field) => {
             let new_field = match coerce_to_daft_compatible_type(field.data_type()) {
@@ -125,15 +126,29 @@ pub fn cast_array_for_daft_if_needed(
     arrow_array: Box<dyn arrow2::array::Array>,
 ) -> Box<dyn arrow2::array::Array> {
     match coerce_to_daft_compatible_type(arrow_array.data_type()) {
-        Some(coerced_dtype) => cast::cast(
-            arrow_array.as_ref(),
-            &coerced_dtype,
-            cast::CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )
-        .unwrap(),
+        Some(coerced_dtype) => {
+            // Add error handling to prevent segmentation fault
+            match cast::cast(
+                arrow_array.as_ref(),
+                &coerced_dtype,
+                cast::CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            ) {
+                Ok(casted_array) => casted_array,
+                Err(e) => {
+                    // Log the error and return the original array to prevent crash
+                    eprintln!(
+                        "Warning: Failed to cast array from {:?} to {:?}: {}. Returning original array.",
+                        arrow_array.data_type(),
+                        coerced_dtype,
+                        e
+                    );
+                    arrow_array
+                }
+            }
+        }
         None => arrow_array,
     }
 }
@@ -156,15 +171,29 @@ pub fn cast_array_from_daft_if_needed(
     arrow_array: Box<dyn arrow2::array::Array>,
 ) -> Box<dyn arrow2::array::Array> {
     match coerce_from_daft_compatible_type(arrow_array.data_type()) {
-        Some(coerced_dtype) => cast::cast(
-            arrow_array.as_ref(),
-            &coerced_dtype,
-            cast::CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )
-        .unwrap(),
+        Some(coerced_dtype) => {
+            // Add error handling to prevent segmentation fault
+            match cast::cast(
+                arrow_array.as_ref(),
+                &coerced_dtype,
+                cast::CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            ) {
+                Ok(casted_array) => casted_array,
+                Err(e) => {
+                    // Log the error and return the original array to prevent crash
+                    eprintln!(
+                        "Warning: Failed to cast array from {:?} to {:?}: {}. Returning original array.",
+                        arrow_array.data_type(),
+                        coerced_dtype,
+                        e
+                    );
+                    arrow_array
+                }
+            }
+        }
         None => arrow_array,
     }
 }

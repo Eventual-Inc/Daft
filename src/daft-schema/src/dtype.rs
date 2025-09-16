@@ -96,7 +96,7 @@ pub enum DataType {
     #[display("FixedSizeBinary[{_0}]")]
     FixedSizeBinary(usize),
 
-    /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
+    /// A variable-length UTF-8 encoded string whose offsets are represented as [`i32`].
     Utf8,
 
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].

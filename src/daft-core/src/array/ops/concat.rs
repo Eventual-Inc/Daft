@@ -8,8 +8,14 @@ use crate::array::pseudo_arrow::PseudoArrowArray;
 use crate::{array::DataArray, datatypes::DaftPhysicalType};
 
 macro_rules! impl_variable_length_concat {
-    ($fn_name:ident, $arrow_type:ty, $create_fn: ident) => {
+    ($fn_name:ident, $arrow_type:ty, $offset_type:ty, $create_fn: ident) => {
         fn $fn_name(arrays: &[&dyn arrow2::array::Array]) -> DaftResult<Box<$arrow_type>> {
+            if arrays.is_empty() {
+                return Err(DaftError::ValueError(
+                    "Cannot concat empty array slice".to_string(),
+                ));
+            }
+            
             let mut num_rows: usize = 0;
             let mut num_bytes: usize = 0;
             let mut need_validity = false;
@@ -20,7 +26,7 @@ macro_rules! impl_variable_length_concat {
                 num_bytes += arr.values().len();
                 need_validity |= arr.validity().map(|v| v.unset_bits() > 0).unwrap_or(false);
             }
-            let mut offsets = arrow2::offset::Offsets::<i64>::with_capacity(num_rows);
+            let mut offsets = arrow2::offset::Offsets::<$offset_type>::with_capacity(num_rows);
 
             let mut validity = if need_validity {
                 Some(arrow2::bitmap::MutableBitmap::with_capacity(num_rows))
@@ -56,12 +62,47 @@ macro_rules! impl_variable_length_concat {
         }
     };
 }
+// UTF8 concat functions for different offset types
 impl_variable_length_concat!(
-    utf8_concat,
-    arrow2::array::Utf8Array<i64>,
+    utf8_concat_i32,
+    arrow2::array::Utf8Array<i32>,
+    i32,
     try_new_unchecked
 );
-impl_variable_length_concat!(binary_concat, arrow2::array::BinaryArray<i64>, try_new);
+impl_variable_length_concat!(
+    utf8_concat_i64,
+    arrow2::array::Utf8Array<i64>,
+    i64,
+    try_new_unchecked
+);
+impl_variable_length_concat!(binary_concat, arrow2::array::BinaryArray<i64>, i64, try_new);
+
+// Smart UTF8 concat function that handles both Utf8 and LargeUtf8
+fn utf8_concat(arrays: &[&dyn arrow2::array::Array]) -> DaftResult<Box<dyn arrow2::array::Array>> {
+    if arrays.is_empty() {
+        return Err(DaftError::ValueError(
+            "Cannot concat empty array slice".to_string(),
+        ));
+    }
+    
+    // Check the first array to determine the offset type
+    let first_array = arrays.first().unwrap();
+    match first_array.data_type() {
+        arrow2::datatypes::DataType::Utf8 => {
+            // All arrays should be Utf8Array<i32>
+            let result = utf8_concat_i32(arrays)?;
+            Ok(result as Box<dyn arrow2::array::Array>)
+        }
+        arrow2::datatypes::DataType::LargeUtf8 => {
+            // All arrays should be Utf8Array<i64>
+            let result = utf8_concat_i64(arrays)?;
+            Ok(result as Box<dyn arrow2::array::Array>)
+        }
+        _ => Err(DaftError::ValueError(
+            format!("Expected Utf8 or LargeUtf8 data type, got {:?}", first_array.data_type())
+        ))
+    }
+}
 
 impl<T> DataArray<T>
 where
@@ -98,7 +139,7 @@ where
                 ));
                 Self::new(field.clone(), cat_array)
             }
-            crate::datatypes::DataType::Utf8 => {
+            crate::datatypes::DataType::Utf8 | crate::datatypes::DataType::LargeUtf8 => {
                 let cat_array = utf8_concat(arrow_arrays.as_slice())?;
                 Self::new(field.clone(), cat_array)
             }

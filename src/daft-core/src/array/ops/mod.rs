@@ -64,6 +64,9 @@ pub mod trigonometry;
 mod truncate;
 mod utf8;
 
+#[cfg(test)]
+mod test_large_string;
+
 use std::hash::BuildHasher;
 
 use common_error::DaftResult;

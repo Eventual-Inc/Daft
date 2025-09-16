@@ -50,8 +50,8 @@ impl Add for &Series {
             // ----------------
             // Utf8
             // ----------------
-            DataType::Utf8 => {
-                Ok(cast_downcast_op!(lhs, rhs, &DataType::Utf8, Utf8Array, add)?.into_series())
+            DataType::Utf8 | DataType::LargeUtf8 => {
+                Ok(cast_downcast_op!(lhs, rhs, &output_type, Utf8Array, add)?.into_series())
             }
             // ----------------
             // Binary

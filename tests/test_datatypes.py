@@ -18,7 +18,7 @@ daft_int_types = [
 ]
 
 daft_numeric_types = daft_int_types + [DataType.float32(), DataType.float64()]
-daft_string_types = [DataType.string()]
+daft_string_types = [DataType.string(), DataType.large_string()]
 daft_nonnull_types = (
     daft_numeric_types
     + daft_string_types

@@ -86,6 +86,7 @@ impl ToFromProto for ir::DataType {
                 Self::FixedSizeBinary(fixed_size_binary.size as usize)
             }
             proto::DataTypeVariant::Utf8(_) => Self::Utf8,
+            proto::DataTypeVariant::LargeUtf8(_) => Self::LargeUtf8,
             proto::DataTypeVariant::FixedSizeList(fixed_size_list) => {
                 let element_type = from_proto_box(fixed_size_list.element_type)?;
                 let size: usize = fixed_size_list.size as usize;
@@ -198,7 +199,7 @@ impl ToFromProto for ir::DataType {
                 })
             }
             Self::Utf8 => proto::DataTypeVariant::Utf8(UNIT),
-            Self::LargeUtf8 => proto::DataTypeVariant::Utf8(UNIT),
+            Self::LargeUtf8 => proto::DataTypeVariant::LargeUtf8(UNIT),
             Self::FixedSizeList(data_type, size) => proto::DataTypeVariant::FixedSizeList(
                 proto::data_type::FixedSizeList {
                     element_type: Some(data_type.to_proto()?.into()),

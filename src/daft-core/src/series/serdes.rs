@@ -134,12 +134,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         map.next_value::<Vec<Option<f64>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::Utf8 => Ok(Utf8Array::from_iter(
-                        field.name.as_str(),
-                        map.next_value::<Vec<Option<Cow<str>>>>()?.into_iter(),
-                    )
-                    .into_series()),
-                    DataType::LargeUtf8 => Ok(Utf8Array::from_iter(
+                    DataType::Utf8 | DataType::LargeUtf8 => Ok(Utf8Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<Cow<str>>>>()?.into_iter(),
                     )

@@ -176,7 +176,7 @@ impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
         let arrow_array = Box::new(arrow2::array::Utf8Array::<i64>::from_slice(slice));
-        Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::LargeUtf8).into(), arrow_array).unwrap()
     }
 }
 

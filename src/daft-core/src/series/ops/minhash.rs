@@ -15,7 +15,7 @@ impl Series {
         hasher: &impl std::hash::BuildHasher,
     ) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::Utf8 => Ok(self
+            DataType::Utf8 | DataType::LargeUtf8 => Ok(self
                 .utf8()?
                 .minhash(num_hashes, ngram_size, seed, hasher)?
                 .into_series()),
