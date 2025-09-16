@@ -71,7 +71,7 @@ def test_daft_written_catalog(local_iceberg_catalog):
         assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
-@contextlib.contextmanager
+@pytest.mark.integration()
 def test_daft_custom_location(local_pyiceberg_catalog):
     schema = pa.schema([("data", pa.string())])
 
