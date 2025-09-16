@@ -41,9 +41,8 @@ impl ScalarUDF for ListMap {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let ListMapArgs { input, expr } = inputs.try_into()?;
+        let ListMapArgs { expr, .. } = inputs.try_into()?;
 
-        let _input = input.to_field(schema)?;
         let expr = expr.to_field(schema)?;
 
         Ok(expr.to_list_field())
