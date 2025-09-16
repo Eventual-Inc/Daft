@@ -73,9 +73,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
         self._version = 0
         if table is not None:
-            print(f"table: {table}")
             self._table_schema = table.schema
-            print(f"table_schema: {self._table_schema}")
             self._version = table.latest_version
             if not pyarrow_schema_castable(self._pyarrow_schema, self._table_schema) and not (
                 self._mode == "overwrite"
