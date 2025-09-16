@@ -164,23 +164,23 @@ def np_datetime64_to_timestamp(dt: np.datetime64) -> tuple[int, PyTimeUnit | Non
     import numpy as np
 
     (unit, count) = np.datetime_data(dt.dtype)
-    val = dt.astype(np.int64) * count
+    val: np.int64 = dt.astype(np.int64) * count  # type: ignore
 
     if unit in ("Y", "M", "W", "D"):
         val = np.datetime64(dt, "D").astype(np.int64)
-        return val, None
+        return val.item(), None
     elif unit in ("h", "m"):
         val = np.datetime64(dt, "s").astype(np.int64)
-        return val, PyTimeUnit.seconds()
+        return val.item(), PyTimeUnit.seconds()
     elif unit == "s":
-        return val, PyTimeUnit.seconds()
+        return val.item(), PyTimeUnit.seconds()
     elif unit == "ms":
-        return val, PyTimeUnit.milliseconds()
+        return val.item(), PyTimeUnit.milliseconds()
     elif unit == "us":
-        return val, PyTimeUnit.microseconds()
+        return val.item(), PyTimeUnit.microseconds()
     elif unit == "ns":
-        return val, PyTimeUnit.nanoseconds()
+        return val.item(), PyTimeUnit.nanoseconds()
     else:
         # unit is too small, just convert to nanoseconds
         val = np.datetime64(dt, "ns").astype(np.int64)
-        return val, PyTimeUnit.nanoseconds()
+        return val.item(), PyTimeUnit.nanoseconds()
