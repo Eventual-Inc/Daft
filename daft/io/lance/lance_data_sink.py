@@ -106,9 +106,12 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
         for micropartition in micropartitions:
             arrow_table = pa.Table.from_batches(
-                micropartition.to_arrow().cast(self._table_schema).to_batches(),
-                self._table_schema,
+                micropartition.to_arrow().to_batches(),
+                self._pyarrow_schema,
             )
+            if self._table_schema is not None:
+                arrow_table = arrow_table.cast(self._table_schema)
+
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows
 
