@@ -99,7 +99,7 @@ pub enum DataType {
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i32`].
     Utf8,
 
-    /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
+    /// A variable-length UTF-8 encoded large string whose offsets are represented as [`i64`].
     LargeUtf8,
 
     /// A list of some logical data type with a fixed number of elements.

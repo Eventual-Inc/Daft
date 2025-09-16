@@ -17,11 +17,13 @@ pub fn record_batch_from_arrow(
     if batches.is_empty() {
         return Ok(RecordBatch::empty(Some(schema)));
     }
+
     let names = schema.field_names().collect::<Vec<_>>();
     let num_batches = batches.len();
     // First extract all the arrays at once while holding the GIL
     let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn arrow2::array::Array>>, usize)> =
         Vec::with_capacity(num_batches);
+
     for rb in batches {
         let pycolumns = rb.getattr(pyo3::intern!(py, "columns"))?;
         let columns = pycolumns
@@ -55,7 +57,7 @@ pub fn record_batch_from_arrow(
                 columns,
                 num_rows,
             )?);
-        }
+        }   
         Ok(RecordBatch::concat(tables.as_slice())?)
     })
 }

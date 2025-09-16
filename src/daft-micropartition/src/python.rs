@@ -178,17 +178,12 @@ impl PyMicroPartition {
         schema: &PySchema,
     ) -> PyResult<Self> {
         // TODO: Cleanup and refactor code for sharing with Table
-        println!(
-            "--------=from_arrow_record_batches, record_batches： {:?}, {:?}",
-            record_batches, schema
-        );
         let tables = record_batches
             .into_iter()
             .map(|rb| {
                 daft_recordbatch::ffi::record_batch_from_arrow(py, &[rb], schema.schema.clone())
             })
             .collect::<PyResult<Vec<_>>>()?;
-        println!("--------=from_arrow_record_batches, tables,： {:?}", tables);
         Ok(MicroPartition::new_loaded(schema.schema.clone(), Arc::new(tables), None).into())
     }
 

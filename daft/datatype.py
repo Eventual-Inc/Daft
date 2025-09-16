@@ -271,7 +271,7 @@ class DataType:
 
     @classmethod
     def large_string(cls) -> DataType:
-        """Create a String DataType: A string of UTF8 characters."""
+        """Create a Large String DataType: A large string of UTF8 characters for Arrow compatibility."""
         return cls._from_pydatatype(PyDataType.large_string())
 
     @classmethod
