@@ -116,3 +116,39 @@ def test_lancedb_write_blob(lance_dataset_path):
     for expected in blobs_data:
         with blobs.pop(0) as f:
             assert f.read() == expected
+
+
+def test_lancedb_write_string(lance_dataset_path):
+    import lance
+
+    # Make lance dataset with a string column
+    fields = [pa.field("name", pa.string(), nullable=True), pa.field("age", pa.int64(), nullable=True)]
+    schema = pa.schema(fields)
+    empty_table = pa.Table.from_pylist([], schema=schema)
+    lance.write_dataset(empty_table, lance_dataset_path)
+
+    # Write daft dataframe to lance dataset
+    data = {"name": ["A" * 100], "age": [1]}
+    df = daft.from_pydict(data)
+    df.write_lance(lance_dataset_path, mode="append")
+
+    # Read lance dataset back to daft dataframe and check if the data is written correctly
+    df_loaded = daft.read_lance(lance_dataset_path)
+    assert df_loaded.to_pydict() == data
+
+
+def test_lancedb_write_incompatible_schema(lance_dataset_path):
+    import lance
+
+    # Make lance dataset with a string column
+    fields = [pa.field("name", pa.string(), nullable=True), pa.field("age", pa.int64(), nullable=True)]
+    schema = pa.schema(fields)
+    empty_table = pa.Table.from_pylist([], schema=schema)
+    lance.write_dataset(empty_table, lance_dataset_path)
+
+    # Write daft dataframe with incompatible schema to lance dataset
+    data = {"name": ["A" * 100], "age": [[1, 2, 3]]}  # age is an int column, but data is a list column
+    df = daft.from_pydict(data)
+
+    with pytest.raises(ValueError, match="Schema of data does not match table schema"):
+        df.write_lance(lance_dataset_path, mode="append")

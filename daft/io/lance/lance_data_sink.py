@@ -25,9 +25,10 @@ def pyarrow_schema_castable(src: pa.Schema, dst: pa.Schema) -> bool:
     if len(src) != len(dst):
         return False
     for src_field, dst_field in zip(src, dst):
+        empty_array = pa.array([], type=src_field.type)
         try:
-            pa.array([], type=src_field.type).cast(dst_field.type)
-        except (pa.ArrowInvalid, pa.ArrowTypeError):
+            empty_array.cast(dst_field.type)
+        except Exception:
             return False
     return True
 
