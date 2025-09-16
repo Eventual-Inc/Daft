@@ -225,22 +225,22 @@ def test_binary_concat_edge_cases() -> None:
 def test_binary_concat_errors() -> None:
     # Test concat with incompatible type (string)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": ["foo", "bar"]})
-    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Utf8"):
+    with pytest.raises(Exception, match="Cannot add types: Utf8, Binary"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])
 
     # Test concat with incompatible type (integer)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [1, 2]})
-    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Int64"):
+    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Int64"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])
 
     # Test concat with incompatible type (float)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [1.0, 2.0]})
-    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Float64"):
+    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Float64"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])
 
     # Test concat with incompatible type (boolean)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [True, False]})
-    with pytest.raises(Exception, match="Expects inputs to concat to be binary, but received a#Binary and b#Boolean"):
+    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Boolean"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])
 
     # Test concat with wrong number of arguments
