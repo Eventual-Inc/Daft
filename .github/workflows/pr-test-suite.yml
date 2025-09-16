@@ -836,7 +836,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [skipcheck, integration-test-build]
-    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
     strategy:
