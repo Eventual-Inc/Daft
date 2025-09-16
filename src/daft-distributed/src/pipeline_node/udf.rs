@@ -12,7 +12,7 @@ use crate::{
     pipeline_node::{
         NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
-    stage::{StageConfig, StageExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct UDFNode {
@@ -31,7 +31,7 @@ impl UDFNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         project: BoundExpr,
         passthrough_columns: Vec<BoundExpr>,
         udf_properties: UDFProperties,
@@ -39,7 +39,7 @@ impl UDFNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -48,7 +48,7 @@ impl UDFNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             translate_clustering_spec(
                 child.config().clustering_spec.clone(),
                 &passthrough_columns
@@ -127,9 +127,9 @@ impl DistributedPipelineNode for UDFNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         let project = self.project.clone();
         let passthrough_columns = self.passthrough_columns.clone();

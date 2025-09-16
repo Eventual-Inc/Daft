@@ -14,11 +14,11 @@ use super::{
 };
 use crate::{
     pipeline_node::NodeID,
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{Sender, create_channel},
 };
 
@@ -34,14 +34,14 @@ impl ScanSourceNode {
 
     pub fn new(
         node_id: NodeID,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
         logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![],
@@ -50,7 +50,7 @@ impl ScanSourceNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(ClusteringSpec::unknown_with_num_partitions(
                 scan_tasks.len(),
             )),
@@ -145,11 +145,11 @@ impl DistributedPipelineNode for ScanSourceNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
-        stage_context.spawn(execution_loop);
+        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
     }

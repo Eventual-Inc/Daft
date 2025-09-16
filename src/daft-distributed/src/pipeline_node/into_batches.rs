@@ -14,11 +14,11 @@ use crate::{
     pipeline_node::{
         MaterializedOutput, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{Sender, create_channel},
 };
 
@@ -43,13 +43,13 @@ impl IntoBatchesNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         batch_size: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -58,7 +58,7 @@ impl IntoBatchesNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -185,9 +185,9 @@ impl DistributedPipelineNode for IntoBatchesNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
         let self_clone = self.clone();
         let local_into_batches_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::into_batches(
@@ -201,11 +201,11 @@ impl DistributedPipelineNode for IntoBatchesNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_future = self.execute_into_batches(
             local_into_batches_node,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
+            plan_context.scheduler_handle(),
         );
-        stage_context.spawn(execution_future);
+        plan_context.spawn(execution_future);
 
         SubmittableTaskStream::from(result_rx)
     }

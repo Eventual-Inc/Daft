@@ -22,11 +22,11 @@ use crate::{
     pipeline_node::{
         MaterializedOutput, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
         channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_vec,
@@ -50,7 +50,7 @@ impl SortNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
@@ -58,7 +58,7 @@ impl SortNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -68,7 +68,7 @@ impl SortNode {
 
         let config = PipelineNodeConfig::new(
             output_schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -381,15 +381,15 @@ impl DistributedPipelineNode for SortNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
-        stage_context.spawn(self.execution_loop(
+        plan_context.spawn(self.execution_loop(
             input_node,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
+            plan_context.scheduler_handle(),
         ));
         SubmittableTaskStream::from(result_rx)
     }

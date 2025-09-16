@@ -12,11 +12,11 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         SubmittableTaskStream,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{Sender, create_channel},
 };
 
@@ -33,14 +33,14 @@ impl CrossJoinNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         num_partitions: usize,
         left_node: Arc<dyn DistributedPipelineNode>,
         right_node: Arc<dyn DistributedPipelineNode>,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![left_node.node_id(), right_node.node_id()],
@@ -50,7 +50,7 @@ impl CrossJoinNode {
 
         let config = PipelineNodeConfig::new(
             output_schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(UnknownClusteringConfig::new(num_partitions).into()),
         );
 
@@ -189,19 +189,19 @@ impl DistributedPipelineNode for CrossJoinNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let left_input = self.left_node.clone().produce_tasks(stage_context);
-        let right_input = self.right_node.clone().produce_tasks(stage_context);
+        let left_input = self.left_node.clone().produce_tasks(plan_context);
+        let right_input = self.right_node.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(
             left_input,
             right_input,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
         );
-        stage_context.spawn(execution_loop);
+        plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
     }
