@@ -1609,15 +1609,15 @@ def test_series_utf8_regexp_count_matches() -> None:
     s = Series.from_arrow(pa.array(["hello world", "foo bar baz", "test123test456", None]))
 
     # Test word pattern
-    result = s.str.regexp_count_matches(r"\w+")
+    result = s.regexp_count_matches(r"\w+")
     assert result.to_pylist() == [2, 3, 1, None]
 
     # Test digit pattern
-    result = s.str.regexp_count_matches(r"\d+")
+    result = s.regexp_count_matches(r"\d+")
     assert result.to_pylist() == [0, 0, 2, None]
 
     # Test single character pattern
-    result = s.str.regexp_count_matches("o")
+    result = s.regexp_count_matches("o")
     assert result.to_pylist() == [2, 2, 0, None]
 
 
@@ -1625,11 +1625,11 @@ def test_series_utf8_regexp_count_matches_edge_cases() -> None:
     s = Series.from_arrow(pa.array(["", "a", "aa", "aaa", None]))
 
     # Test empty string pattern - empty pattern matches every position
-    result = s.str.regexp_count_matches("")
+    result = s.regexp_count_matches("")
     assert result.to_pylist() == [1, 2, 3, 4, None]
 
     # Test word boundary pattern
-    result = s.str.regexp_count_matches(r"\ba\b")
+    result = s.regexp_count_matches(r"\ba\b")
     assert result.to_pylist() == [0, 1, 0, 0, None]
 
 
@@ -1638,4 +1638,4 @@ def test_series_utf8_regexp_count_matches_invalid_pattern() -> None:
 
     # Test invalid regex pattern
     with pytest.raises(Exception):
-        s.str.regexp_count_matches("[invalid")
+        s.regexp_count_matches("[invalid")

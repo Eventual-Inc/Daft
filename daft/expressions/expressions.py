@@ -3329,17 +3329,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
             case_sensitive=case_sensitive,
         )
 
-    def regexp_count_matches(
-        self,
-        pattern: str | Expression,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.regexp_count_matches` instead."""
-        warnings.warn(
-            "`Expression.str.regexp_count_matches` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_count_matches` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().regexp_count_matches(pattern)
-
 
 class ExpressionListNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.list` attribute."""

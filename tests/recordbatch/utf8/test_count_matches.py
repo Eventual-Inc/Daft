@@ -79,7 +79,7 @@ regex_test_data = [
 @pytest.mark.parametrize("pattern", [r"\w+", r"\d+", r"[a-z]+", r"\s+"])
 def test_table_regexp_count_matches(pattern):
     df = MicroPartition.from_pydict({"a": regex_test_data})
-    res = df.eval_expression_list([col("a").str.regexp_count_matches(pattern)])
+    res = df.eval_expression_list([col("a").regexp_count_matches(pattern)])
     assert res.to_pydict()["a"] == [py_count_matches_regex(s, pattern) for s in regex_test_data]
 
 
@@ -87,15 +87,15 @@ def test_table_regexp_count_matches_edge_cases():
     df = MicroPartition.from_pydict({"a": ["", "a", "aa", "aaa", None]})
 
     # Test empty string pattern - empty pattern matches every position
-    res = df.eval_expression_list([col("a").str.regexp_count_matches("")])
+    res = df.eval_expression_list([col("a").regexp_count_matches("")])
     assert res.to_pydict()["a"] == [1, 2, 3, 4, None]  # Empty pattern matches every position
 
     # Test single character pattern
-    res = df.eval_expression_list([col("a").str.regexp_count_matches("a")])
+    res = df.eval_expression_list([col("a").regexp_count_matches("a")])
     assert res.to_pydict()["a"] == [0, 1, 2, 3, None]
 
     # Test word boundary pattern
-    res = df.eval_expression_list([col("a").str.regexp_count_matches(r"\ba\b")])
+    res = df.eval_expression_list([col("a").regexp_count_matches(r"\ba\b")])
     assert res.to_pydict()["a"] == [0, 1, 0, 0, None]
 
 
@@ -104,7 +104,7 @@ def test_table_regexp_count_matches_invalid_pattern():
 
     # Test invalid regex pattern
     with pytest.raises(Exception):  # Should raise an error for invalid regex
-        df.eval_expression_list([col("a").str.regexp_count_matches("[invalid")])
+        df.eval_expression_list([col("a").regexp_count_matches("[invalid")])
 
 
 def test_table_regexp_count_matches_complex_patterns():
@@ -123,11 +123,11 @@ def test_table_regexp_count_matches_complex_patterns():
 
     # Test email pattern
     email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
-    res = df.eval_expression_list([col("a").str.regexp_count_matches(email_pattern)])
+    res = df.eval_expression_list([col("a").regexp_count_matches(email_pattern)])
     expected = [1, 1, 1, 0, 1, None]
     assert res.to_pydict()["a"] == expected
 
     # Test digit pattern
-    res = df.eval_expression_list([col("a").str.regexp_count_matches(r"\d+")])
+    res = df.eval_expression_list([col("a").regexp_count_matches(r"\d+")])
     expected = [0, 1, 0, 0, 0, None]
     assert res.to_pydict()["a"] == expected
