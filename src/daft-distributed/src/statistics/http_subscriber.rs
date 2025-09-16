@@ -443,7 +443,6 @@ impl HttpSubscriber {
                     existing_node.description.clone_from(&task_state.name);
                     existing_node.metadata = HashMap::from([
                         ("plan_id".to_string(), context.plan_id.to_string()),
-                        ("stage_id".to_string(), context.stage_id.to_string()),
                         ("node_id".to_string(), node_id.to_string()),
                     ]);
 

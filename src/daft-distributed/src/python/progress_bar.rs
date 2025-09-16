@@ -11,11 +11,7 @@ struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
     fn from(task_context: &TaskContext) -> Self {
-        Self(
-            ((task_context.stage_id as i64) << 48)
-                | ((task_context.plan_id as i64) << 32)
-                | (task_context.node_id as i64),
-        )
+        Self(((task_context.plan_id as i64) << 32) | (task_context.node_id as i64))
     }
 }
 
