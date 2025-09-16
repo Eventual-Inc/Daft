@@ -25,7 +25,6 @@ impl ScalarUDF for RegexpCountMatches {
     }
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, patterns } = inputs.try_into()?;
-        ensure!(patterns.len() == 1, ValueError: "Cannot set `patterns` in `count_matches_regex` to an Expression. Only string is currently supported.");
 
         let input = input
             .utf8()
@@ -67,21 +66,41 @@ pub fn regexp_count_matches(
 }
 
 fn regex_count_matches_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64Array> {
-    let pattern_str = patterns
-        .get(0)
-        .ok_or_else(|| DaftError::ValueError("Pattern cannot be null".to_string()))?;
+    if patterns.len() == 1 {
+        // Single pattern case
+        let pattern_str = patterns
+            .get(0)
+            .ok_or_else(|| DaftError::ValueError("Pattern cannot be null".to_string()))?;
 
-    let regex = regex::Regex::new(pattern_str)
-        .map_err(|e| DaftError::ValueError(format!("Invalid regex pattern: {}", e)))?;
+        let regex = regex::Regex::new(pattern_str)
+            .map_err(|e| DaftError::ValueError(format!("Invalid regex pattern: {}", e)))?;
 
-    let iter = arr
-        .as_arrow()
-        .iter()
-        // Note, this is optimized by the compiler to not materialize values
-        .map(|opt| opt.map(|s| regex.find_iter(s).count() as u64));
+        let iter = arr
+            .as_arrow()
+            .iter()
+            // Note, this is optimized by the compiler to not materialize values
+            .map(|opt| opt.map(|s| regex.find_iter(s).count() as u64));
 
-    Ok(UInt64Array::from_iter(
-        Arc::new(Field::new(arr.name(), DataType::UInt64)),
-        iter,
-    ))
+        Ok(UInt64Array::from_iter(
+            Arc::new(Field::new(arr.name(), DataType::UInt64)),
+            iter,
+        ))
+    } else {
+        let res = arr
+            .as_arrow()
+            .iter()
+            .zip(patterns.as_arrow().iter())
+            .map(|(val, pat)| {
+                let Some(val) = val else { return Ok(None) };
+                let Some(pat) = pat else { return Ok(None) };
+
+                let regex = regex::Regex::new(pat)
+                    .map_err(|e| DaftError::ValueError(format!("Invalid regex pattern: {}", e)))?;
+
+                Ok(Some(regex.find_iter(val).count() as u64))
+            })
+            .collect::<DaftResult<arrow2::array::UInt64Array>>()?;
+
+        Ok(UInt64Array::from((arr.name(), Box::new(res))))
+    }
 }
