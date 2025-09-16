@@ -140,7 +140,7 @@ def test_lancedb_write_string(lance_dataset_path):
 def test_lancedb_write_incompatible_schema(lance_dataset_path):
     import lance
 
-    # Make lance dataset with a string column
+    # Make lance dataset with an int and a string column
     fields = [pa.field("name", pa.string(), nullable=True), pa.field("age", pa.int64(), nullable=True)]
     schema = pa.schema(fields)
     empty_table = pa.Table.from_pylist([], schema=schema)
