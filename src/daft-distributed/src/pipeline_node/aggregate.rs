@@ -102,6 +102,7 @@ impl AggregateNode {
                     self.group_by.iter().map(|e| e.to_string()).join(", ")
                 ),
                 format!("Aggregations = {}", agg_str),
+                format!("Output Schema = {}", self.config.schema.short_string()),
             ]
         }
     }
@@ -184,6 +185,8 @@ struct GroupByAggSplit {
     pub first_stage_schema: SchemaRef,
     pub first_stage_group_by: Vec<BoundExpr>,
 
+    pub partition_by: Vec<BoundExpr>,
+
     pub second_stage_aggs: Vec<BoundAggExpr>,
     pub second_stage_schema: SchemaRef,
     pub second_stage_group_by: Vec<BoundExpr>,
@@ -194,6 +197,7 @@ struct GroupByAggSplit {
 fn split_groupby_aggs(
     group_by: &[BoundExpr],
     aggs: &[BoundAggExpr],
+    partition_by: &[BoundExpr],
     input_schema: &Schema,
 ) -> DaftResult<GroupByAggSplit> {
     // Split the aggs into two stages and final projection
@@ -209,8 +213,21 @@ fn split_groupby_aggs(
     let first_stage_schema = Arc::new(first_stage_schema);
     let second_stage_schema = Arc::new(second_stage_schema);
 
-    // Generate the expression for the second stage group_by
-    // Note this is
+    // If there is a pre-agg, the group_by / partition_by columns are moved to the front
+    // Thus, we need to remap the BoundExprs to the new index
+    let partition_by = if !first_stage_aggs.is_empty() {
+        partition_by
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let field = e.as_ref().to_field(input_schema)?;
+                Ok(BoundExpr::new_unchecked(bound_col(i, field)))
+            })
+            .collect::<DaftResult<Vec<_>>>()?
+    } else {
+        partition_by.to_vec()
+    };
+
     let second_stage_group_by = if !first_stage_aggs.is_empty() {
         group_by
             .iter()
@@ -228,6 +245,8 @@ fn split_groupby_aggs(
         first_stage_aggs,
         first_stage_schema,
         first_stage_group_by: group_by.to_vec(),
+
+        partition_by,
 
         second_stage_aggs,
         second_stage_schema,
@@ -284,7 +303,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
-        partition_by: Vec<BoundExpr>,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let initial_agg = AggregateNode::new(
@@ -305,14 +323,18 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .config
                 .shuffle_aggregation_default_partitions,
         );
-        let shuffle = if partition_by.is_empty() {
+        let shuffle = if split_details.partition_by.is_empty() {
             self.gen_gather_node(logical_node_id, initial_agg)
         } else {
             self.gen_shuffle_node(
                 logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
-                    partition_by.into_iter().map(|e| e.into()).collect(),
+                    split_details
+                        .partition_by
+                        .into_iter()
+                        .map(|e| e.into())
+                        .collect(),
                 )),
                 split_details.second_stage_schema.clone(),
                 initial_agg,
@@ -390,8 +412,12 @@ impl LogicalPlanToPipelineNodeTranslator {
             .arced());
         }
 
-        let split_details =
-            split_groupby_aggs(&group_by, &aggregations, &input_node.config().schema)?;
+        let split_details = split_groupby_aggs(
+            &group_by,
+            &aggregations,
+            &partition_by,
+            &input_node.config().schema,
+        )?;
 
         if split_details.first_stage_aggs.is_empty()
         // Special case for ApproxCountDistinct
@@ -417,13 +443,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 partition_by,
             )
         } else {
-            self.gen_with_pre_agg(
-                input_node,
-                logical_node_id,
-                split_details,
-                output_schema,
-                partition_by,
-            )
+            self.gen_with_pre_agg(input_node, logical_node_id, split_details, output_schema)
         }
     }
 }
