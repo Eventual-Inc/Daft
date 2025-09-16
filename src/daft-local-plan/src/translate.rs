@@ -248,6 +248,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 value_column,
                 aggregation,
                 pivot.names.clone(),
+                true,
                 pivot.output_schema.clone(),
                 pivot.stats_state.clone(),
             ))
