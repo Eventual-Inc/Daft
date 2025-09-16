@@ -71,7 +71,8 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         except ValueError:
             table = None
 
-        self._version = 0
+        self._version: int = 0
+        self._table_schema: pa.Schema | None = None
         if table is not None:
             self._table_schema = table.schema
             self._version = table.latest_version
