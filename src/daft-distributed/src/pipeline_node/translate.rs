@@ -301,10 +301,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 self.gen_agg_nodes(
                     input_node,
                     logical_node_id,
-                    group_by,
+                    group_by.clone(),
                     aggregations,
                     aggregate.output_schema.clone(),
-                    None,
+                    group_by,
                 )?
             }
             LogicalPlan::Distinct(distinct) => {
@@ -483,7 +483,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     group_by_with_pivot,
                     vec![aggregation.clone()],
                     output_schema,
-                    Some(group_by.clone()),
+                    group_by.clone(),
                 )?;
 
                 // Final stage: Pivot transformation

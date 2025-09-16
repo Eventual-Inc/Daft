@@ -210,6 +210,7 @@ fn split_groupby_aggs(
     let second_stage_schema = Arc::new(second_stage_schema);
 
     // Generate the expression for the second stage group_by
+    // Note this is
     let second_stage_group_by = if !first_stage_aggs.is_empty() {
         group_by
             .iter()
@@ -247,20 +248,16 @@ impl LogicalPlanToPipelineNodeTranslator {
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
-        custom_shuffle_group_by: Option<Vec<BoundExpr>>,
+        partition_by: Vec<BoundExpr>,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-        let shuffle = if group_by.is_empty() {
+        let shuffle = if partition_by.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
         } else {
             self.gen_shuffle_node(
                 logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     None,
-                    custom_shuffle_group_by
-                        .unwrap_or_else(|| group_by.clone())
-                        .into_iter()
-                        .map(|e| e.into())
-                        .collect(),
+                    partition_by.into_iter().map(|e| e.into()).collect(),
                 )),
                 input_node.config().schema.clone(),
                 input_node,
@@ -287,7 +284,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
-        custom_shuffle_group_by: Option<Vec<BoundExpr>>,
+        partition_by: Vec<BoundExpr>,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let initial_agg = AggregateNode::new(
@@ -308,18 +305,14 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .config
                 .shuffle_aggregation_default_partitions,
         );
-        let shuffle = if split_details.second_stage_group_by.is_empty() {
+        let shuffle = if partition_by.is_empty() {
             self.gen_gather_node(logical_node_id, initial_agg)
         } else {
             self.gen_shuffle_node(
                 logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
-                    custom_shuffle_group_by
-                        .unwrap_or_else(|| split_details.second_stage_group_by.clone())
-                        .into_iter()
-                        .map(|e| e.into())
-                        .collect(),
+                    partition_by.into_iter().map(|e| e.into()).collect(),
                 )),
                 split_details.second_stage_schema.clone(),
                 initial_agg,
@@ -351,6 +344,15 @@ impl LogicalPlanToPipelineNodeTranslator {
     }
 
     /// Generate PipelineNodes for aggregates
+    ///
+    /// ### Arguments
+    ///
+    /// * `input_node` The input node to the aggregation.
+    /// * `logical_node_id` The logical node id generating this physical plan node(s).
+    /// * `group_by` The columns to group by.
+    /// * `aggregations` The aggregations to perform.
+    /// * `output_schema` The output schema after the aggregation.
+    /// * `partition_by` The columns to partition by. Most of the time, this will be the same as the group_by columns.
     pub fn gen_agg_nodes(
         &mut self,
         input_node: Arc<dyn DistributedPipelineNode>,
@@ -358,7 +360,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
-        custom_shuffle_group_by: Option<Vec<BoundExpr>>,
+        partition_by: Vec<BoundExpr>,
     ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
         let input_clustering_spec = &input_node.config().clustering_spec;
         // If there is only one partition, or the input is already partitioned by the group_by columns,
@@ -412,7 +414,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 group_by,
                 aggregations,
                 output_schema,
-                custom_shuffle_group_by,
+                partition_by,
             )
         } else {
             self.gen_with_pre_agg(
@@ -420,7 +422,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 logical_node_id,
                 split_details,
                 output_schema,
-                custom_shuffle_group_by,
+                partition_by,
             )
         }
     }

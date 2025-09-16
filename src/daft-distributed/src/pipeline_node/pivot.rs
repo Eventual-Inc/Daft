@@ -70,16 +70,18 @@ impl PivotNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec![];
-        res.push(format!("Pivot: {}", self.aggregation));
-        res.push(format!(
-            "Group by = {}",
-            self.group_by.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!("Pivot column: {}", self.pivot_column));
-        res.push(format!("Value column: {}", self.value_column));
-        res.push(format!("Pivoted columns: {}", self.names.iter().join(", ")));
-        res
+        vec![
+            "Pivot:".to_string(),
+            format!(
+                "Group By = {}",
+                self.group_by.iter().map(|e| e.to_string()).join(", ")
+            ),
+            format!("Pivot Column = {}", self.pivot_column),
+            format!("Value Column = {}", self.value_column),
+            format!("Aggregation = {}", self.aggregation),
+            format!("Pivoted Columns = {}", self.names.iter().join(", ")),
+            format!("Output Schema = {}", self.config.schema.short_string()),
+        ]
     }
 }
 
