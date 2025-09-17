@@ -148,6 +148,7 @@ from daft.file import File
 
 import daft.context as context
 import daft.io as io
+import daft.functions as functions
 
 __all__ = [
     "Catalog",
@@ -203,6 +204,7 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "func",
+    "functions",
     "get_catalog",
     "get_provider",
     "get_table",
