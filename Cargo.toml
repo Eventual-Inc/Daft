@@ -244,7 +244,7 @@ common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
 common-file = {path = "src/common/file"}
 common-file-formats = {path = "src/common/file-formats"}
-common-image = {path = "src/common/image"}
+common-image = {path = "src/common/image", default-features = false}
 common-metrics = {path = "src/common/metrics"}
 common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}

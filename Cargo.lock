@@ -1845,6 +1845,7 @@ dependencies = [
  "daft-schema",
  "image",
  "ndarray",
+ "pyo3",
  "serde",
 ]
 
@@ -2431,7 +2432,6 @@ dependencies = [
  "common-error",
  "daft-context",
  "daft-core",
- "daft-dsl",
  "daft-logical-plan",
  "daft-micropartition",
  "indexmap 2.9.0",

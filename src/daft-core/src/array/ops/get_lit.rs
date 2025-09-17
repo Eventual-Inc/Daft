@@ -39,7 +39,7 @@ impl StructArray {
             Literal::Struct(
                 self.children
                     .iter()
-                    .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
+                    // .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
                     .map(|child| (child.name().to_string(), child.get_lit(idx)))
                     .collect(),
             )

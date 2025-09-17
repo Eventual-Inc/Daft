@@ -4,8 +4,12 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone}
 use common_arrow_ffi as ffi;
 use common_error::DaftError;
 use common_ndarray::NumpyArray;
-use daft_schema::{dtype::DataType, prelude::TimeUnit, python::PyTimeUnit};
-use indexmap::IndexMap;
+use daft_schema::{
+    dtype::DataType,
+    prelude::{ImageMode, TimeUnit},
+    python::PyTimeUnit,
+};
+use indexmap::{IndexMap, indexmap};
 use pyo3::{
     IntoPyObjectExt, PyTypeCheck,
     exceptions::PyValueError,
@@ -301,7 +305,7 @@ impl Literal {
                 _ => {
                     let all_string_keys = dict.iter().all(|(k, _)| k.is_instance_of::<PyString>());
 
-                    if all_string_keys && !dict.is_empty() {
+                    if all_string_keys {
                         pydict_to_struct_lit(dict, dtype)?
                     } else {
                         pydict_to_map_lit(dict, dtype)?
@@ -313,11 +317,15 @@ impl Literal {
         } else if isinstance!(ob, "decimal", "Decimal") {
             pydecimal_to_decimal_lit(ob)?
         } else if isinstance!(ob, "numpy", "ndarray") {
-            numpy_array_to_tensor_lit(ob)?
+            numpy_array_to_tensor_or_py_lit(ob)?
         } else if isinstance!(ob, "pandas", "Series") {
             pandas_series_to_list_lit(ob)?
         } else if isinstance!(ob, "numpy", "datetime64") {
             numpy_datetime64_to_date_or_timestamp_lit(ob)?
+        } else if isinstance!(ob, "PIL.Image", "Image") {
+            pil_image_to_image_or_py_lit(ob)?
+        } else if isinstance!(ob, "daft.series", "Series") {
+            daft_series_to_list_lit(ob)?
         } else if isinstance!(ob, "daft.file", "File") {
             return Err(DaftError::NotImplemented(
                 "`daft.file.File` to Daft File data type not yet implemented.".to_string(),
@@ -469,9 +477,13 @@ fn pydict_to_struct_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyRes
         let field_value = Literal::from_pyobj(&v, field_dtype)?;
 
         Ok((field_name, field_value))
-    }).collect::<PyResult<_>>()?;
+    }).collect::<PyResult<IndexMap<_, _>>>()?;
 
-    Ok(Literal::Struct(field_mapping))
+    if field_mapping.is_empty() {
+        Ok(Literal::Struct(indexmap! {String::new() => Literal::Null}))
+    } else {
+        Ok(Literal::Struct(field_mapping))
+    }
 }
 
 fn pydict_to_map_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
@@ -493,7 +505,7 @@ fn pydict_to_map_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult
 fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {
     let tuple = ob.downcast::<PyTuple>()?;
 
-    let field_mapping = if let Some(DataType::Struct(fields)) = dtype
+    let field_mapping: IndexMap<_, _> = if let Some(DataType::Struct(fields)) = dtype
         && tuple.len() == fields.len()
     {
         tuple
@@ -518,7 +530,11 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
             .collect::<PyResult<_>>()
     }?;
 
-    Ok(Literal::Struct(field_mapping))
+    if field_mapping.is_empty() {
+        Ok(Literal::Struct(indexmap! {String::new() => Literal::Null}))
+    } else {
+        Ok(Literal::Struct(field_mapping))
+    }
 }
 
 fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
@@ -556,8 +572,13 @@ fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     Ok(Literal::Decimal(val, precision, scale))
 }
 
-fn numpy_array_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
-    let arr = ob.extract::<NumpyArray>()?.to_ndarray();
+fn numpy_array_to_tensor_or_py_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let Ok(arr) = ob.extract::<NumpyArray>() else {
+        // fall back to Python if we do not support the data type
+        return Ok(Literal::Python(Arc::new(ob.clone().unbind()).into()));
+    };
+
+    let arr = arr.to_ndarray();
     let shape = arr.shape().iter().map(|dim| *dim as _).collect();
 
     let data = Series::from_ndarray_flattened(arr);
@@ -600,4 +621,22 @@ fn numpy_datetime64_to_date_or_timestamp_lit(ob: &Bound<PyAny>) -> PyResult<Lite
         })?;
         Ok(Literal::Date(val))
     }
+}
+
+fn pil_image_to_image_or_py_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let mode = ob.getattr(intern!(ob.py(), "mode"))?.extract::<String>()?;
+    if ImageMode::from_pil_mode_str(&mode).is_err() {
+        // if it's an unsupported image mode, fall back to Python
+        return Ok(Literal::Python(Arc::new(ob.clone().unbind()).into()));
+    }
+
+    Ok(Literal::Image(ob.extract()?))
+}
+
+fn daft_series_to_list_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    Ok(Literal::List(
+        ob.getattr(intern!(ob.py(), "_series"))?
+            .extract::<PySeries>()?
+            .series,
+    ))
 }

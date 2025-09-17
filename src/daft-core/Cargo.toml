@@ -68,6 +68,7 @@ python = [
   "common-display/python",
   "common-error/python",
   "common-file/python",
+  "common-image/python",
   "common-io-config/python",
   "common-ndarray/python",
   "common-py-serde/python",
