@@ -1193,7 +1193,7 @@ def regexp_replace(
     return Expression._call_builtin_scalar_fn("regexp_replace", expr, pattern, replacement)
 
 
-def index(expr: Expression, substr: str | Expression) -> Expression:
+def find(expr: Expression, substr: str | Expression) -> Expression:
     """Returns the index of the first occurrence of the substring in each string.
 
     Returns:
@@ -1204,10 +1204,8 @@ def index(expr: Expression, substr: str | Expression) -> Expression:
 
     Examples:
         >>> import daft
-        >>> from daft.functions import index
-        >>>
         >>> df = daft.from_pydict({"x": ["daft", "query daft", "df_daft"]})
-        >>> df = df.select(index(df["x"], "daft"))
+        >>> df = df.select(df["x"].find("daft"))
         >>> df.show()
         ╭───────╮
         │ x     │

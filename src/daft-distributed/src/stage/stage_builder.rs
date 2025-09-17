@@ -1,9 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
-use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_logical_plan::{LogicalPlan, LogicalPlanRef, partitioning::ClusteringSpecRef};
+use common_error::DaftResult;
+use daft_logical_plan::{LogicalPlanRef, partitioning::ClusteringSpecRef};
 use daft_schema::schema::SchemaRef;
 
 use super::{DataChannel, OutputChannel, Stage, StageID, StagePlan, StageType};
@@ -27,47 +26,7 @@ impl StagePlanBuilder {
         curr
     }
 
-    fn can_translate_logical_plan(plan: &LogicalPlanRef) -> DaftResult<()> {
-        plan.apply(|node| match node.as_ref() {
-            LogicalPlan::Source(_)
-            | LogicalPlan::Project(_)
-            | LogicalPlan::Filter(_)
-            | LogicalPlan::IntoBatches(_)
-            | LogicalPlan::Sink(_)
-            | LogicalPlan::Sample(_)
-            | LogicalPlan::Explode(_)
-            | LogicalPlan::UDFProject(_)
-            | LogicalPlan::Unpivot(_)
-            | LogicalPlan::MonotonicallyIncreasingId(_)
-            | LogicalPlan::Distinct(_)
-            | LogicalPlan::Aggregate(_)
-            | LogicalPlan::Window(_)
-            | LogicalPlan::Concat(_)
-            | LogicalPlan::Limit(_)
-            | LogicalPlan::Sort(_)
-            | LogicalPlan::Repartition(_)
-            | LogicalPlan::Join(_)
-            | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),
-            LogicalPlan::Pivot(_) => {
-                Err(DaftError::ValueError(
-                    "Pivot operations are currently not supported on the new ray runner. Please set `daft.set_execution_config(use_legacy_ray_runner=True)` to use the legacy ray runner for pivot operations.".to_string(),
-                ))
-            }
-            LogicalPlan::Intersect(_)
-            | LogicalPlan::Union(_)
-            | LogicalPlan::SubqueryAlias(_)
-            | LogicalPlan::Shard(_)
-            | LogicalPlan::Offset(_) => panic!(
-                "Logical plan operator {} should be optimized away before planning stages",
-                node.name()
-            ),
-        })?;
-        Ok(())
-    }
-
     fn build_stages_from_plan(&mut self, plan: LogicalPlanRef) -> DaftResult<StageID> {
-        Self::can_translate_logical_plan(&plan)?;
-
         let schema = plan.schema();
         // Create a MapPipeline stage
         let stage_id = self.next_stage_id();
