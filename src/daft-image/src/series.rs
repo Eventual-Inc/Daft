@@ -256,27 +256,17 @@ where
     }
 }
 
-/// Computes average hash of images in a Series
-pub fn average_hash(s: &Series) -> DaftResult<Series> {
-    compute_image_hash(s, "Average hash", |array| array.average_hash(), |array| array.average_hash())
-}
-
-/// Computes perceptual hash of images in a Series
-pub fn perceptual_hash(s: &Series) -> DaftResult<Series> {
-    compute_image_hash(s, "Perceptual hash", |array| array.perceptual_hash(), |array| array.perceptual_hash())
-}
-
-/// Computes difference hash of images in a Series
-pub fn difference_hash(s: &Series) -> DaftResult<Series> {
-    compute_image_hash(s, "Difference hash", |array| array.difference_hash(), |array| array.difference_hash())
-}
-
-/// Computes wavelet hash of images in a Series
-pub fn wavelet_hash(s: &Series) -> DaftResult<Series> {
-    compute_image_hash(s, "Wavelet hash", |array| array.wavelet_hash(), |array| array.wavelet_hash())
-}
-
-/// Computes crop-resistant hash of images in a Series
-pub fn crop_resistant_hash(s: &Series) -> DaftResult<Series> {
-    compute_image_hash(s, "Crop-resistant hash", |array| array.crop_resistant_hash(), |array| array.crop_resistant_hash())
+/// Computes hash of images in a Series using the specified algorithm
+pub fn image_hash(s: &Series, algorithm: &str) -> DaftResult<Series> {
+    match algorithm {
+        "average" => compute_image_hash(s, "Average hash", |array| array.average_hash(), |array| array.average_hash()),
+        "perceptual" => compute_image_hash(s, "Perceptual hash", |array| array.perceptual_hash(), |array| array.perceptual_hash()),
+        "difference" => compute_image_hash(s, "Difference hash", |array| array.difference_hash(), |array| array.difference_hash()),
+        "wavelet" => compute_image_hash(s, "Wavelet hash", |array| array.wavelet_hash(), |array| array.wavelet_hash()),
+        "crop_resistant" => compute_image_hash(s, "Crop-resistant hash", |array| array.crop_resistant_hash(), |array| array.crop_resistant_hash()),
+        _ => Err(DaftError::ValueError(format!(
+            "Invalid hash algorithm: {}. Supported algorithms are: average, perceptual, difference, wavelet, crop_resistant",
+            algorithm
+        ))),
+    }
 }

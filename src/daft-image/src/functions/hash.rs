@@ -64,13 +64,16 @@ impl ScalarUDF for ImageHash {
         
         let algorithm: ImageHashAlgorithm = algorithm_str.parse()?;
         
-        match algorithm {
-            ImageHashAlgorithm::Average => crate::series::average_hash(input),
-            ImageHashAlgorithm::Perceptual => crate::series::perceptual_hash(input),
-            ImageHashAlgorithm::Difference => crate::series::difference_hash(input),
-            ImageHashAlgorithm::Wavelet => crate::series::wavelet_hash(input),
-            ImageHashAlgorithm::CropResistant => crate::series::crop_resistant_hash(input),
-        }
+        // Convert enum to string and call the unified image_hash function
+        let algorithm_str = match algorithm {
+            ImageHashAlgorithm::Average => "average",
+            ImageHashAlgorithm::Perceptual => "perceptual", 
+            ImageHashAlgorithm::Difference => "difference",
+            ImageHashAlgorithm::Wavelet => "wavelet",
+            ImageHashAlgorithm::CropResistant => "crop_resistant",
+        };
+        
+        crate::series::image_hash(input, algorithm_str)
     }
 
     fn name(&self) -> &'static str {
