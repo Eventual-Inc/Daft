@@ -7,6 +7,7 @@ pyiceberg = pytest.importorskip("pyiceberg")
 import contextlib
 
 import pyarrow as pa
+from pyiceberg.avro.file import AvroFile
 
 import daft
 from tests.conftest import assert_df_equals
@@ -71,8 +72,6 @@ def test_daft_written_catalog(local_iceberg_catalog):
 
 def get_data_files(table):
     """Get the locations of data files for a given table."""
-    from pyiceberg.avro.file import AvroFile
-
     table.refresh()
 
     current_snapshot = table.current_snapshot()
