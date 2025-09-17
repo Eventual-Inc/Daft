@@ -41,13 +41,8 @@ def _lancedb_count_result_function(
     filters: Optional[list[Any]] = None,
 ) -> Iterator[PyRecordBatch]:
     """Use LanceDB's API to count rows and return a record batch with the count result."""
-    count = 0
-    if filters is None:
-        logger.debug("Using metadata for counting all rows (no filters)")
-        count = ds.count_rows()
-    else:
-        logger.debug("Counting rows with filters applied")
-        count = ds.count_rows(filter=filters)
+    logger.debug("Using metadata for counting all rows")
+    count = ds.count_rows(filter=filters)
 
     arrow_schema = pa.schema([pa.field(required_column, pa.uint64())])
     arrow_array = pa.array([count], type=pa.uint64())
@@ -152,7 +147,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             if self._pushed_filters is not None:
                 combined_filter = self._pushed_filters[0]
                 for filter_expr in self._pushed_filters[1:]:
-                    combined_filter = combined_filter.__and__(filter_expr)
+                    combined_filter = combined_filter & filter_expr
                 filters = Expression._from_pyexpr(combined_filter).to_arrow_expr()
 
             new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))

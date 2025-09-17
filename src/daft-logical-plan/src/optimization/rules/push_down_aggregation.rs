@@ -294,4 +294,145 @@ mod tests {
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
+
+    #[test]
+    fn agg_count_all_with_pushable_filter_strict() -> DaftResult<()> {
+        // Filter is pushable by DummyScanOperator, strict pushdown should allow count pushdown
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+
+        let pushable_filter = resolved_col("a").lt(lit(2));
+        let plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_filters(Some(pushable_filter.clone())),
+        )
+        .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+        .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default()
+                .with_filters(Some(pushable_filter))
+                .with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                    resolved_col("a"),
+                    CountMode::All,
+                ))))),
+        )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_with_unpushable_filter_strict() -> DaftResult<()> {
+        // Unpushable filter (IsIn) should prevent count pushdown in strict mode
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+
+        let unpushable_filter = resolved_col("a").is_in(vec![lit(2)]);
+        let plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_filters(Some(unpushable_filter)),
+        )
+        .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+        .build();
+
+        // Expect no change
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_with_filters_non_strict_mode() -> DaftResult<()> {
+        // In non-strict mode, presence of any filter should prevent count pushdown
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+        let plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_filters(Some(resolved_col("a").lt(lit(10)))),
+        )
+        .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+        .build();
+
+        let expected = plan.clone();
+
+        // Custom assert with strict=false
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownAggregation::new(false))],
+                RuleExecutionStrategy::Once,
+            )],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_with_groupby_should_not_pushdown() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator_for_aggregation(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Int64),
+            ],
+            true,
+        );
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(
+                vec![unresolved_col("a").count(CountMode::All)],
+                vec![unresolved_col("b")],
+            )?
+            .build();
+
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_multiple_aggs_should_not_pushdown() -> DaftResult<()> {
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::Int64)], true);
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(
+                vec![
+                    unresolved_col("a").count(CountMode::All),
+                    unresolved_col("a").sum(),
+                ],
+                vec![],
+            )?
+            .build();
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_sum_only_should_not_pushdown() -> DaftResult<()> {
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::Int64)], true);
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(vec![unresolved_col("a").sum()], vec![])?
+            .build();
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_but_scan_not_support_pushdown() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator_for_aggregation(
+            vec![Field::new("a", DataType::Int64)],
+            false, // does not support count pushdown
+        );
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+            .build();
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
 }
