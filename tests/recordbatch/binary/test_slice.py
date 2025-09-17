@@ -458,7 +458,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": ["1", "2"]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Utf8 and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Utf8 and Int64",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -466,7 +466,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1.5, 2.5]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Float64 and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Float64 and Int64",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -474,7 +474,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [True, False]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Boolean and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Boolean and Int64",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -482,7 +482,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [b"1", b"2"]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Binary and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Binary and Int64",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -490,7 +490,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [None, None]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Null and Int32",
+        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Null and Int64",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 

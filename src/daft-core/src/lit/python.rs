@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
 use common_arrow_ffi as ffi;
@@ -7,8 +7,11 @@ use common_ndarray::NumpyArray;
 use daft_schema::{dtype::DataType, prelude::TimeUnit, python::PyTimeUnit};
 use indexmap::IndexMap;
 use pyo3::{
-    IntoPyObjectExt, PyTypeCheck, intern,
+    IntoPyObjectExt, PyTypeCheck,
+    exceptions::PyValueError,
+    intern,
     prelude::*,
+    pybacked::PyBackedStr,
     types::{
         PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyNone,
         PyString, PyTime, PyTuple,
@@ -268,7 +271,11 @@ impl Literal {
         } else if PyBytes::type_check(ob) {
             Self::Binary(ob.extract()?)
         } else if PyInt::type_check(ob) {
-            Self::Int64(ob.extract()?)
+            if ob.le(i64::MAX)? {
+                Self::Int64(ob.extract()?)
+            } else {
+                Self::UInt64(ob.extract()?)
+            }
         } else if PyFloat::type_check(ob) {
             Self::Float64(ob.extract()?)
         } else if PyDateTime::type_check(ob) {
@@ -340,6 +347,51 @@ impl Literal {
 }
 
 fn pydatetime_to_timestamp_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    /// Used for implementing extraction from the pytz library
+    #[derive(Clone)]
+    struct PyTz(chrono_tz::Tz);
+
+    impl FromPyObject<'_> for PyTz {
+        fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+            chrono_tz::Tz::from_str(
+                &ob.getattr(intern!(ob.py(), "zone"))?
+                    .extract::<PyBackedStr>()?,
+            )
+            .map(Self)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+        }
+    }
+
+    impl TimeZone for PyTz {
+        type Offset = <chrono_tz::Tz as TimeZone>::Offset;
+
+        fn from_offset(offset: &Self::Offset) -> Self {
+            Self(chrono_tz::Tz::from_offset(offset))
+        }
+
+        fn offset_from_local_date(
+            &self,
+            local: &NaiveDate,
+        ) -> chrono::MappedLocalTime<Self::Offset> {
+            self.0.offset_from_local_date(local)
+        }
+
+        fn offset_from_local_datetime(
+            &self,
+            local: &NaiveDateTime,
+        ) -> chrono::MappedLocalTime<Self::Offset> {
+            self.0.offset_from_local_datetime(local)
+        }
+
+        fn offset_from_utc_date(&self, utc: &NaiveDate) -> Self::Offset {
+            self.0.offset_from_utc_date(utc)
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> Self::Offset {
+            self.0.offset_from_utc_datetime(utc)
+        }
+    }
+
     if let Ok(dt) = ob.extract::<NaiveDateTime>() {
         let ts = dt.and_utc().timestamp_micros();
         Ok(Literal::Timestamp(ts, TimeUnit::Microseconds, None))
@@ -349,6 +401,13 @@ fn pydatetime_to_timestamp_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
             ts,
             TimeUnit::Microseconds,
             Some(dt.timezone().to_string()),
+        ))
+    } else if let Ok(dt) = ob.extract::<DateTime<PyTz>>() {
+        let ts = dt.timestamp_micros();
+        Ok(Literal::Timestamp(
+            ts,
+            TimeUnit::Microseconds,
+            Some(dt.timezone().0.to_string()),
         ))
     } else if let Ok(dt) = ob.extract::<DateTime<chrono::FixedOffset>>() {
         let ts = dt.timestamp_micros();
