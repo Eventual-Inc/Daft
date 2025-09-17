@@ -727,6 +727,7 @@ fn physical_plan_to_pipeline(
             pivot_column,
             value_column,
             aggregation,
+            pre_agg,
             names,
             stats_state,
             ..
@@ -738,6 +739,7 @@ fn physical_plan_to_pipeline(
                 value_column.clone(),
                 aggregation.clone(),
                 names.clone(),
+                *pre_agg,
             );
             BlockingSinkNode::new(Arc::new(pivot_sink), child_node, stats_state.clone(), ctx)
                 .boxed()

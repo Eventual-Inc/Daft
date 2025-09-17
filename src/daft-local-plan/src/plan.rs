@@ -460,13 +460,14 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn pivot(
+    pub fn pivot(
         input: LocalPhysicalPlanRef,
         group_by: Vec<BoundExpr>,
         pivot_column: BoundExpr,
         value_column: BoundExpr,
         aggregation: BoundAggExpr,
         names: Vec<String>,
+        pre_agg: bool,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
@@ -477,6 +478,7 @@ impl LocalPhysicalPlan {
             value_column,
             aggregation,
             names,
+            pre_agg,
             schema,
             stats_state,
         })
@@ -934,6 +936,7 @@ impl LocalPhysicalPlan {
                     pivot_column,
                     value_column,
                     aggregation,
+                    pre_agg,
                     names,
                     schema,
                     ..
@@ -944,6 +947,7 @@ impl LocalPhysicalPlan {
                     value_column.clone(),
                     aggregation.clone(),
                     names.clone(),
+                    *pre_agg,
                     schema.clone(),
                     StatsState::NotMaterialized,
                 ),
@@ -1473,6 +1477,7 @@ pub struct Pivot {
     pub value_column: BoundExpr,
     pub aggregation: BoundAggExpr,
     pub names: Vec<String>,
+    pub pre_agg: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

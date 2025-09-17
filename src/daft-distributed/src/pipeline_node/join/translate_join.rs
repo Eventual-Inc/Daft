@@ -12,7 +12,7 @@ use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
     DistributedPipelineNode, NodeID,
-    join::{BroadcastJoinNode, HashJoinNode},
+    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
@@ -215,6 +215,31 @@ impl LogicalPlanToPipelineNodeTranslator {
         .arced())
     }
 
+    pub(crate) fn gen_cross_join_node(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        left_node: Arc<dyn DistributedPipelineNode>,
+        right_node: Arc<dyn DistributedPipelineNode>,
+        output_schema: SchemaRef,
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        let num_partitions = {
+            let left_num_partitions = left_node.config().clustering_spec.num_partitions();
+            let right_num_partitions = right_node.config().clustering_spec.num_partitions();
+            left_num_partitions * right_num_partitions
+        };
+
+        Ok(CrossJoinNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.stage_config,
+            num_partitions,
+            left_node,
+            right_node,
+            output_schema,
+        )
+        .arced())
+    }
+
     pub(crate) fn translate_join(
         &mut self,
         logical_node_id: Option<NodeID>,
@@ -277,10 +302,12 @@ impl LogicalPlanToPipelineNodeTranslator {
                 &right_stats,
                 join.output_schema.clone(),
             ),
-            JoinStrategy::Cross => {
-                // TODO: Implement cross join
-                todo!("FLOTILLA_MS?: Implement cross join")
-            }
+            JoinStrategy::Cross => self.gen_cross_join_node(
+                logical_node_id,
+                left_node,
+                right_node,
+                join.output_schema.clone(),
+            ),
         }
     }
 }

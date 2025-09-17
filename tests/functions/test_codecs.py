@@ -33,28 +33,54 @@ def _assert_eq(actual, expect):
 
 
 def _test_codec(codec: str, buff: bytes):
-    _test_encode(codec, input=TEXT, output=buff)
-    _test_decode(codec, input=buff, output=TEXT)
-    _test_roundtrip(codec, input=TEXT)
+    _test_compress(codec, input=TEXT, output=buff)
+    _test_decompress(codec, input=buff, output=TEXT)
+    _test_codec_roundtrip(codec, input=TEXT)
 
 
-def _test_encode(codec: str, input: bytes, output: bytes):
+def _test_compress(codec: str, input: bytes, output: bytes):
     df = daft.from_pydict({"v": [input]})
-    actual = df.select(col("v").encode(codec))
+    actual = df.select(col("v").compress(codec))
     expect = daft.from_pydict({"v": [output]})
     _assert_eq(actual, expect)
 
 
-def _test_decode(codec: str, input: bytes, output: bytes):
+def _test_decompress(codec: str, input: bytes, output: bytes):
     df = daft.from_pydict({"v": [input]})
-    actual = df.select(col("v").decode(codec))
+    actual = df.select(col("v").decompress(codec))
     expect = daft.from_pydict({"v": [output]})
     _assert_eq(actual, expect)
 
 
-def _test_roundtrip(codec: str, input: bytes):
+def _test_codec_roundtrip(codec: str, input: bytes):
     df1 = daft.from_pydict({"v": [input]})
-    df2 = df1.select(col("v").encode(codec).decode(codec))
+    df2 = df1.select(col("v").compress(codec).decompress(codec))
+    _assert_eq(df1, df2)
+
+
+def _test_charset(charset: str, buff: bytes):
+    _test_encode(charset, input=TEXT, output=buff)
+    _test_decode(charset, input=buff, output=TEXT)
+    _test_charset_roundtrip(charset, input=TEXT)
+
+
+def _test_encode(charset: str, input: bytes, output: bytes):
+    df = daft.from_pydict({"v": [input]})
+    actual = df.select(col("v").encode(charset))
+    expect = daft.from_pydict({"v": [output]})
+    _assert_eq(actual, expect)
+
+
+def _test_decode(charset: str, input: bytes, output: bytes):
+    df = daft.from_pydict({"v": [input]})
+    actual = df.select(col("v").decode(charset))
+    expect = daft.from_pydict({"v": [output]})
+    _assert_eq(actual, expect)
+
+
+def _test_charset_roundtrip(charset: str, input: bytes):
+    df1 = daft.from_pydict({"v": [input]})
+    df2 = df1.select(col("v").encode(charset).decode(charset))
     _assert_eq(df1, df2)
 
 
@@ -64,8 +90,8 @@ def test_null_handling():
     #
     df1 = daft.from_pydict({"v": [None, zlib.compress(TEXT)]})
     df2 = daft.from_pydict({"v": [zlib.compress(TEXT), None]})
-    result1 = df1.select(col("v").decode("zlib")).to_pydict()
-    result2 = df2.select(col("v").decode("zlib")).to_pydict()
+    result1 = df1.select(col("v").decompress("zlib")).to_pydict()
+    result2 = df2.select(col("v").decompress("zlib")).to_pydict()
     #
     # assert validity is included
     assert result1["v"][0] is None
@@ -75,7 +101,7 @@ def test_null_handling():
 def test_with_strings():
     import zlib
 
-    _test_encode("zlib", input=str(TEXT), output=zlib.compress(TEXT))
+    _test_compress("zlib", input=str(TEXT), output=zlib.compress(TEXT))
 
 
 ###
@@ -104,10 +130,10 @@ def test_codec_zlib():
     _test_codec("zlib", buff=zlib.compress(TEXT))
 
 
-def test_codec_base64():
+def test_charset_base64():
     import base64
 
-    _test_codec("base64", buff=base64.b64encode(TEXT))
+    _test_charset("base64", buff=base64.b64encode(TEXT))
 
 
 def test_codec_zstd():
@@ -309,8 +335,8 @@ def test_try_decode():
         }
     )
     actual = df.select(
-        col("bytes").try_decode("zlib").alias("try_zlib"),
-        col("bytes").try_decode("gzip").alias("try_gzip"),
+        col("bytes").try_decompress("zlib").alias("try_zlib"),
+        col("bytes").try_decompress("gzip").alias("try_gzip"),
     )
     expect = {
         "try_zlib": [None, TEXT, None, None],

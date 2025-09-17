@@ -142,7 +142,10 @@ where
         {
             // Update worker snapshots at the start of each loop iteration
             let worker_snapshots = worker_manager.worker_snapshots()?;
-            tracing::info!(target: SCHEDULER_LOG_TARGET, num_workers = worker_snapshots.len(), "Received worker snapshots");
+            tracing::info!(target: SCHEDULER_LOG_TARGET,
+                num_workers = worker_snapshots.len(),
+                pending_tasks = scheduler.num_pending_tasks(),
+                "Received worker snapshots");
             tracing::debug!(target: SCHEDULER_LOG_TARGET, worker_snapshots = %format!("{:#?}", worker_snapshots));
 
             scheduler.update_worker_state(&worker_snapshots);
