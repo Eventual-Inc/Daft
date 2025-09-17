@@ -2944,6 +2944,18 @@ class DataFrame:
             ...         ],
             ...     }
             ... )
+            >>> df.collect()
+            ╭─────────────┬────────────┬───────────────╮
+            │ x           ┆ y          ┆ z             │
+            │ ---         ┆ ---        ┆ ---           │
+            │ List[Int64] ┆ List[Utf8] ┆ List[Float64] │
+            ╞═════════════╪════════════╪═══════════════╡
+            │ [1]         ┆ [a]        ┆ [1]           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [2, 3]      ┆ [b, c]     ┆ [2, 2]        │
+            ╰─────────────┴────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
             >>> df.explode(df["x"], df["y"]).collect()
             ╭───────┬──────┬───────────────╮
             │ x     ┆ y    ┆ z             │
@@ -2958,6 +2970,46 @@ class DataFrame:
             ╰───────┴──────┴───────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
+
+            Example with Null values and empty lists:
+
+            >>> df2 = daft.from_pydict(
+            ...     {"id": [1, 2, 3, 4], "values": [[1, 2], [], None, [3]], "labels": [["a", "b"], [], None, ["c"]]}
+            ... )
+            >>> df2.collect()
+            ╭───────┬─────────────┬────────────╮
+            │ id    ┆ values      ┆ labels     │
+            │ ---   ┆ ---         ┆ ---        │
+            │ Int64 ┆ List[Int64] ┆ List[Utf8] │
+            ╞═══════╪═════════════╪════════════╡
+            │ 1     ┆ [1, 2]      ┆ [a, b]     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ []          ┆ []         │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None        ┆ None       │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ [3]         ┆ [c]        │
+            ╰───────┴─────────────┴────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+            >>> df2.explode(df2["values"], df2["labels"]).collect()
+            ╭───────┬────────┬────────╮
+            │ id    ┆ values ┆ labels │
+            │ ---   ┆ ---    ┆ ---    │
+            │ Int64 ┆ Int64  ┆ Utf8   │
+            ╞═══════╪════════╪════════╡
+            │ 1     ┆ 1      ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1     ┆ 2      ┆ b      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ None   ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None   ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 3      ┆ c      │
+            ╰───────┴────────┴────────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
 
         """
         parsed_exprs = self.__column_input_to_expression(columns)
@@ -4681,32 +4733,56 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
+    def list_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped list per column.
         """
-        return self.df._apply_agg_fn(Expression.agg_list, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.list_agg, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs grouped set on this GroupedDataFrame (ignoring nulls).
+    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
+        """(DEPRECATED) Please use `DataFrame.list_agg` instead."""
+        warnings.warn(
+            "`DataFrame.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg` instead.",
+            category=DeprecationWarning,
+        )
+        return self.list_agg(*cols)
+
+    def list_agg_distinct(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped list distinct on this GroupedDataFrame (ignoring nulls).
 
         Args:
             *cols (Union[str, Expression]): columns to form into a set
 
         Returns:
-            DataFrame: DataFrame with grouped set per column.
+            DataFrame: DataFrame with grouped list distinct per column.
         """
-        return self.df._apply_agg_fn(Expression.agg_set, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs grouped concat on this GroupedDataFrame.
+    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
+        """(DEPRECATED) Please use `DataFrame.list_agg_distinct` instead."""
+        warnings.warn(
+            "`DataFrame.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg_distinct` instead.",
+            category=DeprecationWarning,
+        )
+        return self.list_agg_distinct(*cols)
+
+    def string_agg(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped string concat on this GroupedDataFrame.
 
         Returns:
-            DataFrame: DataFrame with grouped concatenated list per column.
+            DataFrame: DataFrame with grouped string concatenated per column.
         """
-        return self.df._apply_agg_fn(Expression.agg_concat, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
+
+    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
+        """(DEPRECATED) Please use `DataFrame.string_agg` instead."""
+        warnings.warn(
+            "`DataFrame.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.string_agg` instead.",
+            category=DeprecationWarning,
+        )
+        return self.string_agg(*cols)
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
