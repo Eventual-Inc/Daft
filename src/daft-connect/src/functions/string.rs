@@ -1,3 +1,4 @@
+use daft_functions::length::Length;
 use daft_functions_utf8::*;
 
 use super::FunctionModule;
