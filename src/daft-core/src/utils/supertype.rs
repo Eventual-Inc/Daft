@@ -1,4 +1,8 @@
+use std::borrow::Borrow;
+
 use common_error::{DaftError, DaftResult};
+use daft_schema::field::Field;
+use indexmap::IndexMap;
 
 use crate::datatypes::{DataType, TimeUnit};
 
@@ -23,13 +27,14 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
 }
 
 /// Computes the supertype of a collection.
-pub fn try_get_collection_supertype<'a, I>(types: I) -> DaftResult<DataType>
+pub fn try_get_collection_supertype<I>(types: I) -> DaftResult<DataType>
 where
-    I: IntoIterator<Item = &'a DataType>,
+    I: IntoIterator,
+    I::Item: Borrow<DataType>,
 {
     let mut dtype = DataType::Null;
     for type_ in types {
-        dtype = try_get_supertype(&dtype, type_)?;
+        dtype = try_get_supertype(&dtype, type_.borrow())?;
     }
     Ok(dtype)
 }
@@ -186,6 +191,18 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::List(inner_left_dtype), DataType::List(inner_right_dtype)) => {
                 let inner_st = get_supertype(inner_left_dtype.as_ref(), inner_right_dtype.as_ref())?;
                 Some(DataType::List(Box::new(inner_st)))
+            }
+            (DataType::Struct(left_fields), DataType::Struct(right_fields)) => {
+                let mut supertype_fields = left_fields.iter().map(|f| (&f.name, f.dtype.clone())).collect::<IndexMap<_, _>>();
+                for f in right_fields {
+                    let left_dtype = supertype_fields.get(&f.name).cloned().unwrap_or(DataType::Null);
+                    supertype_fields.insert(&f.name, get_supertype(&left_dtype, &f.dtype)?);
+                }
+                let supertype_fields = supertype_fields.into_iter().map(|(k, v)| Field::new(k, v)).collect();
+                Some(DataType::Struct(supertype_fields))
+            }
+            (DataType::Decimal128(left_prec, left_scale), DataType::Decimal128(right_prec, right_scale)) => {
+                Some(DataType::Decimal128(std::cmp::max(*left_prec, *right_prec), std::cmp::max(*left_scale, *right_scale)))
             }
             // TODO(Colin): Add support for getting supertype for two maps once StructArray supports such a cast.
             // (Map(inner_left_dtype), Map(inner_right_dtype)) => {

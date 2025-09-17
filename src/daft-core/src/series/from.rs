@@ -38,6 +38,11 @@ impl Series {
             NdArray::U64(arr) => UInt64Array::from((name, arr.flatten().to_vec())).into_series(),
             NdArray::F32(arr) => Float32Array::from((name, arr.flatten().to_vec())).into_series(),
             NdArray::F64(arr) => Float64Array::from((name, arr.flatten().to_vec())).into_series(),
+            #[cfg(feature = "python")]
+            NdArray::Py(arr) => {
+                let pyobj_vec = arr.iter().map(|e| e.0.clone()).collect::<Vec<_>>();
+                PythonArray::from((name, pyobj_vec)).into_series()
+            }
         }
     }
 }

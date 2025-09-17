@@ -4,7 +4,8 @@ use common_image::CowImage;
 
 use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
 
-fn combine_lit_types(left: &DataType, right: &DataType) -> Option<DataType> {
+/// Combine literal types that may be null or have null children (in the case of nested types)
+pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<DataType> {
     match (left, right) {
         (dtype, DataType::Null) | (DataType::Null, dtype) => Some(dtype.clone()),
         (left, right) if left == right => Some(left.clone()),
@@ -50,10 +51,12 @@ fn combine_lit_types(left: &DataType, right: &DataType) -> Option<DataType> {
     }
 }
 
-impl TryFrom<Vec<Literal>> for Series {
-    type Error = DaftError;
-
-    fn try_from(values: Vec<Literal>) -> DaftResult<Self> {
+impl Series {
+    /// Converts a vec of literals into a Series.
+    ///
+    /// Literals must all be the same type or null, this function does not do any casting or coercion.
+    /// If that is desired, you should handle it for each literal before converting it into a series.
+    pub fn from_literals(values: Vec<Literal>) -> DaftResult<Self> {
         let dtype = values.iter().try_fold(DataType::Null, |acc, v| {
             let dtype = v.get_type();
             combine_lit_types(&acc, &dtype).ok_or_else(|| {
@@ -179,7 +182,7 @@ impl TryFrom<Vec<Literal>> for Series {
                             })
                             .collect::<Vec<_>>();
 
-                        Ok(Self::try_from(child_values)?.rename(&f.name))
+                        Ok(Self::from_literals(child_values)?.rename(&f.name))
                     })
                     .collect::<DaftResult<_>>()?;
 
@@ -420,7 +423,7 @@ impl TryFrom<Vec<Literal>> for Series {
 
 impl From<Literal> for Series {
     fn from(value: Literal) -> Self {
-        Self::try_from(vec![value])
+        Self::from_literals(vec![value])
             .expect("Series::try_from should not fail on single literal value")
     }
 }
@@ -483,10 +486,15 @@ mod test {
     #[case::float64(vec![Literal::Float64(0.0), Literal::Float64(0.5), Literal::Float64(-1.5)])]
     #[case::decimal_1(vec![Literal::Decimal(0, 0, 1), Literal::Decimal(1, 0, 1), Literal::Decimal(-2, 0, 1)])]
     #[case::decimal_2(vec![Literal::Decimal(0, 5, 10), Literal::Decimal(1, 5, 10), Literal::Decimal(-2, 5, 10)])]
-    #[case::list(vec![Literal::List(Series::empty("literal", &DataType::Int32)), Literal::List(series![1, 2, 3])])]
+    #[case::list(vec![
+        Literal::List(Series::empty("literal", &DataType::Int32)),
+        Literal::List(series![1, 2, 3]),
+        Literal::List(Series::empty("literal", &DataType::Null))
+    ])]
     #[case::struct_(vec![
         Literal::Struct(indexmap!{"a".to_string() => Literal::Boolean(true)}),
         Literal::Struct(indexmap!{"a".to_string() => Literal::Boolean(false)}),
+        Literal::Struct(indexmap!{"a".to_string() => Literal::Null}),
     ])]
     #[case::tensor(vec![
         Literal::Tensor { data: series![0, 0], shape: vec![1, 2] },
@@ -528,6 +536,7 @@ mod test {
         Literal::Map { keys: series!["a", "b", "c"], values: series![1, 2, 3] },
         Literal::Map { keys: series!["d", "e"], values: series![4, 5] },
         Literal::Map { keys: Series::empty("literal", &DataType::Utf8), values: Series::empty("literal", &DataType::Int32) },
+        Literal::Map { keys: Series::empty("literal", &DataType::Null), values: Series::empty("literal", &DataType::Null) },
     ])]
     #[case::image_gray(vec![
         Literal::Image(Image(GrayImage::new(1, 1).into())),
@@ -541,7 +550,7 @@ mod test {
     ])]
     fn test_literal_series_roundtrip_basics(#[case] literals: Vec<Literal>) {
         let expected = [vec![Literal::Null], literals, vec![Literal::Null]].concat();
-        let series = Series::try_from(expected.clone()).unwrap();
+        let series = Series::from_literals(expected.clone()).unwrap();
         let actual = series.to_literals().collect::<Vec<_>>();
 
         assert_eq!(expected, actual)
@@ -550,7 +559,7 @@ mod test {
     #[test]
     fn test_literals_to_series_mismatched() {
         let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
-        let actual = Series::try_from(values);
+        let actual = Series::from_literals(values);
         assert!(actual.is_err());
     }
 }

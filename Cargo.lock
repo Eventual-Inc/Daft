@@ -1888,6 +1888,7 @@ dependencies = [
 name = "common-ndarray"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-py-serde",
  "ndarray",
  "numpy",
  "pyo3",

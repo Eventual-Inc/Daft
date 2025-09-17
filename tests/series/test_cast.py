@@ -359,6 +359,7 @@ def test_series_cast_python_to_list(dtype) -> None:
         ["1", "2", "3"],
         [1, "2", 3.0],
         pd.Series([1.1, 2]),
+        (1, 2),
         None,
     ]
     s = Series.from_pylist(data, dtype=DataType.python())
@@ -370,7 +371,7 @@ def test_series_cast_python_to_list(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.length().to_pylist() == [3, 3, 3, 3, 2, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 2, 2, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -387,6 +388,7 @@ def test_series_cast_python_to_fixed_size_list(dtype) -> None:
         ["1", "2", "3"],
         [1, "2", 3.0],
         pd.Series([1.1, 2, 3]),
+        (1, 2, 3),
         None,
     ]
     s = Series.from_pylist(data, dtype=DataType.python())
@@ -398,7 +400,7 @@ def test_series_cast_python_to_fixed_size_list(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -415,6 +417,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
         ["1", "2", "3"],
         [1, "2", 3.0],
         pd.Series([1.1, 2, 3]),
+        (1, 2, 3),
         None,
     ]
     s = Series.from_pylist(data, dtype=DataType.python())
@@ -426,7 +429,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -438,7 +441,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
 
 @pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
 def test_series_cast_list_to_embedding(dtype) -> None:
-    data = [[1.0, 2.0, 3.0], [3.0, 2.0, 1.0], [4.1, 5.2, 6.3], None]
+    data = [[1, 2, 3], [3, 2, 1], [4.1, 5.2, 6.3], None]
     s = Series.from_pylist(data, pyobj="disallow")
 
     target_dtype = DataType.embedding(DataType.from_arrow_type(dtype), 3)

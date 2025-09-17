@@ -266,9 +266,6 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
         .to_pydict()
     )
 
-    print("expected_df:", expected_df)
-    print("actual_sql:", actual_sql)
-    print("expected_intervals:", expected_intervals)
     assert expected_df == actual_sql == expected_intervals
 
 

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use numpy::{PyArrayDyn, PyArrayMethods, ToPyArray};
 use pyo3::prelude::*;
 
@@ -16,6 +18,7 @@ pub enum NumpyArray<'py> {
     U64(Bound<'py, PyArrayDyn<u64>>),
     F32(Bound<'py, PyArrayDyn<f32>>),
     F64(Bound<'py, PyArrayDyn<f64>>),
+    Py(Bound<'py, PyArrayDyn<PyObject>>),
 }
 
 impl<'py> NumpyArray<'py> {
@@ -31,6 +34,10 @@ impl<'py> NumpyArray<'py> {
             Self::U64(arr) => NdArray::U64(arr.to_owned_array()),
             Self::F32(arr) => NdArray::F32(arr.to_owned_array()),
             Self::F64(arr) => NdArray::F64(arr.to_owned_array()),
+            Self::Py(arr) => NdArray::Py(
+                arr.to_owned_array()
+                    .map(|e| Arc::new(e.clone_ref(arr.py())).into()),
+            ),
         }
     }
 
@@ -46,6 +53,10 @@ impl<'py> NumpyArray<'py> {
             NdArray::U64(arr) => Self::U64(arr.to_pyarray(py)),
             NdArray::F32(arr) => Self::F32(arr.to_pyarray(py)),
             NdArray::F64(arr) => Self::F64(arr.to_pyarray(py)),
+            NdArray::Py(arr) => Self::Py(
+                arr.map(|e: &common_py_serde::PyObjectWrapper| e.0.clone_ref(py))
+                    .to_pyarray(py),
+            ),
         }
     }
 }

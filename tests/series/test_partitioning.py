@@ -120,7 +120,7 @@ def test_partitioning_hours(input, dtype, expected):
             [1, 2, 3, 2, 1, None],
             [date(1920, 3, 1), date(1920, 3, 1), date(2020, 3, 1)],
             [datetime(1920, 3, 1), datetime(1920, 3, 1), datetime(2020, 3, 1)],
-            [Decimal("1420.0000"), Decimal("1420.0000"), Decimal("14.2000"), Decimal(".1420"), Decimal(".1420")],
+            [Decimal("1420"), Decimal("1420"), Decimal("14.20"), Decimal(".1420"), Decimal(".1420")],
         ],
         [1, 4, 9],
     ),

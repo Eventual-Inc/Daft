@@ -34,6 +34,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
+    lit::Literal,
     series::{IntoSeries, Series},
     utils::display::display_time64,
     with_match_numeric_daft_types,
@@ -589,8 +590,6 @@ impl PythonArray {
         }
 
         let literals = Python::with_gil(|py| {
-            use crate::lit::Literal;
-
             self.as_arrow()
                 .values()
                 .iter()
@@ -598,7 +597,9 @@ impl PythonArray {
                 .collect::<PyResult<Vec<Literal>>>()
         })?;
 
-        Ok(Series::try_from(literals)?.cast(dtype)?.rename(self.name()))
+        Ok(Series::from_literals(literals)?
+            .cast(dtype)?
+            .rename(self.name()))
     }
 }
 
@@ -1656,6 +1657,58 @@ impl StructArray {
                     ImageArray::new(Field::new(self.name(), dtype.clone()), casted_struct_array)
                         .into_series(),
                 )
+            }
+            (DataType::Struct(..), DataType::List(child_dtype)) => {
+                let casted_children = self
+                    .children
+                    .iter()
+                    .map(|c| c.cast(child_dtype))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let lists = (0..self.len())
+                    .map(|i| {
+                        if self.is_valid(i) {
+                            let slices_at_index = casted_children
+                                .iter()
+                                .map(|c| c.slice(i, i + 1))
+                                .collect::<DaftResult<Vec<_>>>()?;
+
+                            Some(Series::concat(&slices_at_index.iter().collect::<Vec<_>>()))
+                                .transpose()
+                        } else {
+                            Ok(None)
+                        }
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                Ok(ListArray::try_from((self.name(), lists.as_slice()))?.into_series())
+            }
+            (DataType::Struct(..), DataType::FixedSizeList(child_dtype, length))
+                if *length == self.children.len() =>
+            {
+                let casted_children = self
+                    .children
+                    .iter()
+                    .map(|c| c.cast(child_dtype))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let flat_slices = (0..self.len())
+                    .flat_map(|i| casted_children.iter().map(move |c| c.slice(i, i + 1)))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let flat_child = Series::concat(&flat_slices.iter().collect::<Vec<_>>())?;
+
+                Ok(FixedSizeListArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    flat_child,
+                    self.validity().cloned(),
+                )
+                .into_series())
+            }
+            (DataType::Struct(..), DataType::Embedding(_, length))
+                if *length == self.children.len() =>
+            {
+                self.cast(&dtype.to_physical())?.cast(dtype)
             }
             _ => unimplemented!(
                 "Daft casting from {} to {} not implemented",

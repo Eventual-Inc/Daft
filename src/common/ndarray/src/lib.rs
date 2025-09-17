@@ -1,6 +1,8 @@
 #[cfg(feature = "python")]
 mod python;
 
+#[cfg(feature = "python")]
+use common_py_serde::PyObjectWrapper;
 use ndarray::ArrayD;
 #[cfg(feature = "python")]
 pub use python::NumpyArray;
@@ -16,6 +18,8 @@ pub enum NdArray {
     U64(ArrayD<u64>),
     F32(ArrayD<f32>),
     F64(ArrayD<f64>),
+    #[cfg(feature = "python")]
+    Py(ArrayD<PyObjectWrapper>),
 }
 
 impl NdArray {
@@ -31,6 +35,8 @@ impl NdArray {
             Self::U64(arr) => arr.shape(),
             Self::F32(arr) => arr.shape(),
             Self::F64(arr) => arr.shape(),
+            #[cfg(feature = "python")]
+            Self::Py(arr) => arr.shape(),
         }
     }
 }

@@ -136,8 +136,7 @@ class Series:
                 return cls.from_arrow(arrow_array, name=name, dtype=dtype)
         # TODO(Clark): Represent the tensor series with an Arrow extension type in order
         # to keep the series data contiguous.
-        list_ndarray = [np.asarray(item) for item in data]
-        return cls.from_pylist(list_ndarray, name=name, dtype=dtype)
+        return cls.from_pylist(list(data), name=name, dtype=dtype)
 
     @classmethod
     def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series", dtype: DataType | None = None) -> Series:

@@ -1512,7 +1512,7 @@ impl SQLPlanner<'_> {
                     })
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
 
-                let s = Series::try_from(values)?;
+                let s = Series::from_literals(values)?;
                 let s = FixedSizeListArray::new(
                     Field::new("tuple", s.data_type().clone())
                         .to_fixed_size_list_field(exprs.len())?,

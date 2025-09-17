@@ -316,7 +316,7 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
         pytest.param(np.array([None, MyObj(), MyObj()], dtype=np.object_), DataType.python(), id="np_object"),
         pytest.param(
             [None, {"foo": 1}, {"bar": 1}],
-            DataType.struct({"bar": DataType.int64(), "foo": DataType.int64()}),
+            DataType.struct({"foo": DataType.int64(), "bar": DataType.int64()}),
             id="arrow_struct",
         ),
         pytest.param(

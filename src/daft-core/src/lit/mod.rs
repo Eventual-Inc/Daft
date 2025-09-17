@@ -577,6 +577,10 @@ impl Literal {
         Self::Struct(IndexMap::from_iter(iter))
     }
 
+    /// Cast the literal to a data type.
+    ///
+    /// This method is lossy, AKA it is not guaranteed that `lit.cast(dtype).get_type() == dtype`.
+    /// This is because null literals always have the null data type.
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Self> {
         Series::from(self.clone())
             .cast(dtype)
