@@ -18,6 +18,7 @@ from daft.functions.columnar import (
 )
 from daft.functions.llm import llm_generate
 from daft.functions.misc import monotonically_increasing_id, format, file
+from daft.functions.image import image_hash
 from daft.functions.window import (
     row_number,
     rank,
@@ -37,6 +38,7 @@ __all__ = [
     "embed_text",
     "file",
     "format",
+    "image_hash",
     "llm_generate",
     "monotonically_increasing_id",
     "rank",

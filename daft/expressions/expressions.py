@@ -5279,39 +5279,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         """
         return self.attribute("mode")
 
-    def hash(
-        self, algorithm: Literal["average", "perceptual", "difference", "wavelet", "crop_resistant"] = "average"
-    ) -> Expression:
-        """Computes the hash of an image using the specified algorithm.
-
-        Args:
-            algorithm: The hash algorithm to use. Must be one of:
-                - "average": Average hash (default) - good for deduplication
-                - "perceptual": Perceptual hash - robust to minor modifications
-                - "difference": Difference hash - efficient and good for structural changes
-                - "wavelet": Wavelet hash - robust to rotation and scaling
-                - "crop_resistant": Crop-resistant hash - robust to cropping operations
-
-        Returns:
-            Expression: A Utf8 expression representing the 64-character binary hash string.
-
-        Examples:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> # Average hash (default)
-            >>> df = df.with_column("hash", df["images"].image.hash())  # doctest: +SKIP
-            >>> # Perceptual hash
-            >>> df = df.with_column("phash", df["images"].image.hash("perceptual"))  # doctest: +SKIP
-            >>> # Difference hash
-            >>> df = df.with_column("dhash", df["images"].image.hash("difference"))  # doctest: +SKIP
-            >>> # Wavelet hash
-            >>> df = df.with_column("whash", df["images"].image.hash("wavelet"))  # doctest: +SKIP
-            >>> # Crop-resistant hash
-            >>> df = df.with_column("chash", df["images"].image.hash("crop_resistant"))  # doctest: +SKIP
-        """
-        algorithm_expr = _lit(algorithm)
-        f = native.get_function_from_registry("image_hash")
-        return Expression._from_pyexpr(f(self._expr, algorithm=algorithm_expr))
+    # Removed: image.hash namespace method in favor of daft.functions.image_hash
 
 
 
