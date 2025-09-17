@@ -9,6 +9,7 @@ import pyarrow as pa
 import pytest
 from PIL import Image, ImageSequence
 
+import daft
 from daft.datatype import DataType, get_super_ext_type
 from daft.series import Series
 
@@ -851,12 +852,17 @@ def test_image_average_hash_basic():
     s = Series.from_pylist(data, dtype=DataType.python())
     t = s.cast(DataType.image("RGB"))
 
-    # Test average hash
-    hash_series = t.image.average_hash()
-    assert hash_series.datatype() == DataType.string()
+    # Test average hash using functional API
+    from daft.functions import image_hash
+    from daft import col
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    assert hash_series.dtype == "object"  # String type in pandas
 
     # Verify hash format
-    hash_values = hash_series.to_pylist()
+    hash_values = hash_series.tolist()
 
     # Check that we got the right number of results
     assert len(hash_values) == 3
@@ -886,9 +892,14 @@ def test_image_average_hash_similar_images():
     s = Series.from_pylist(data, dtype=DataType.python())
     t = s.cast(DataType.image("RGB"))
 
-    # Test average hash
-    hash_series = t.image.average_hash()
-    hash_values = hash_series.to_pylist()
+    # Test average hash using functional API
+    from daft.functions import image_hash
+    from daft import col
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    hash_values = hash_series.tolist()
 
     hash1, hash2 = hash_values
 
@@ -911,9 +922,14 @@ def test_image_average_hash_null_handling():
     s = Series.from_pylist(data, dtype=DataType.python())
     t = s.cast(DataType.image("RGB"))
 
-    # Test average hash
-    hash_series = t.image.average_hash()
-    hash_values = hash_series.to_pylist()
+    # Test average hash using functional API
+    from daft.functions import image_hash
+    from daft import col
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    hash_values = hash_series.tolist()
 
     # Null images should produce null hashes
     assert hash_values[0] is None
@@ -931,9 +947,14 @@ def test_image_average_hash_consistency():
     s = Series.from_pylist(data, dtype=DataType.python())
     t = s.cast(DataType.image("RGB"))
 
-    # Test average hash
-    hash_series = t.image.average_hash()
-    hash_values = hash_series.to_pylist()
+    # Test average hash using functional API
+    from daft.functions import image_hash
+    from daft import col
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    hash_values = hash_series.tolist()
 
     # Both hashes should be identical
     assert hash_values[0] == hash_values[1]

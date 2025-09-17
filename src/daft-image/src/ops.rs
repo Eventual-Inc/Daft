@@ -864,7 +864,7 @@ fn compute_crop_resistant_hash(img: CowImage) -> DaftResult<String> {
         // Use a combination of position-based patterns
         let pos = hash_bits.len();
         let pattern = (pos % 8) as u8;
-        hash_bits.push(if pattern.is_multiple_of(2) { '0' } else { '1' });
+        hash_bits.push(if pattern % 2 == 0 { '0' } else { '1' });
     }
 
     // Truncate to 64 bits if we have more

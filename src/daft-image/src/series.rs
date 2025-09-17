@@ -229,92 +229,54 @@ pub fn attribute(s: &Series, attr: ImageProperty) -> DaftResult<Series> {
     }
 }
 
-/// Computes average hash of images in a Series
-pub fn average_hash(s: &Series) -> DaftResult<Series> {
+/// Helper function to compute image hash using the specified algorithm
+fn compute_image_hash<F, G>(
+    s: &Series,
+    hash_name: &str,
+    image_hash_fn: F,
+    fixed_shape_hash_fn: G,
+) -> DaftResult<Series>
+where
+    F: FnOnce(&ImageArray) -> DaftResult<DataArray<Utf8Type>>,
+    G: FnOnce(&FixedShapeImageArray) -> DaftResult<DataArray<Utf8Type>>,
+{
     match s.data_type() {
         DataType::Image(_) => {
             let array = s.downcast::<ImageArray>()?;
-            Ok(array.average_hash()?.into_series())
+            Ok(image_hash_fn(array)?.into_series())
         }
         DataType::FixedShapeImage(..) => {
             let array = s.downcast::<FixedShapeImageArray>()?;
-            Ok(array.average_hash()?.into_series())
+            Ok(fixed_shape_hash_fn(array)?.into_series())
         }
         dt => Err(DaftError::ValueError(format!(
-            "Average hash can only be computed for Image types, got {}",
-            dt
+            "{} can only be computed for Image types, got {}",
+            hash_name, dt
         ))),
     }
+}
+
+/// Computes average hash of images in a Series
+pub fn average_hash(s: &Series) -> DaftResult<Series> {
+    compute_image_hash(s, "Average hash", |array| array.average_hash(), |array| array.average_hash())
 }
 
 /// Computes perceptual hash of images in a Series
 pub fn perceptual_hash(s: &Series) -> DaftResult<Series> {
-    match s.data_type() {
-        DataType::Image(_) => {
-            let array = s.downcast::<ImageArray>()?;
-            Ok(array.perceptual_hash()?.into_series())
-        }
-        DataType::FixedShapeImage(..) => {
-            let array = s.downcast::<FixedShapeImageArray>()?;
-            Ok(array.perceptual_hash()?.into_series())
-        }
-        dt => Err(DaftError::ValueError(format!(
-            "Perceptual hash can only be computed for Image types, got {}",
-            dt
-        ))),
-    }
+    compute_image_hash(s, "Perceptual hash", |array| array.perceptual_hash(), |array| array.perceptual_hash())
 }
 
 /// Computes difference hash of images in a Series
 pub fn difference_hash(s: &Series) -> DaftResult<Series> {
-    match s.data_type() {
-        DataType::Image(_) => {
-            let array = s.downcast::<ImageArray>()?;
-            Ok(array.difference_hash()?.into_series())
-        }
-        DataType::FixedShapeImage(..) => {
-            let array = s.downcast::<FixedShapeImageArray>()?;
-            Ok(array.difference_hash()?.into_series())
-        }
-        dt => Err(DaftError::ValueError(format!(
-            "Difference hash can only be computed for Image types, got {}",
-            dt
-        ))),
-    }
+    compute_image_hash(s, "Difference hash", |array| array.difference_hash(), |array| array.difference_hash())
 }
 
 /// Computes wavelet hash of images in a Series
 pub fn wavelet_hash(s: &Series) -> DaftResult<Series> {
-    match s.data_type() {
-        DataType::Image(_) => {
-            let array = s.downcast::<ImageArray>()?;
-            Ok(array.wavelet_hash()?.into_series())
-        }
-        DataType::FixedShapeImage(..) => {
-            let array = s.downcast::<FixedShapeImageArray>()?;
-            Ok(array.wavelet_hash()?.into_series())
-        }
-        dt => Err(DaftError::ValueError(format!(
-            "Wavelet hash can only be computed for Image types, got {}",
-            dt
-        ))),
-    }
+    compute_image_hash(s, "Wavelet hash", |array| array.wavelet_hash(), |array| array.wavelet_hash())
 }
 
 /// Computes crop-resistant hash of images in a Series
 pub fn crop_resistant_hash(s: &Series) -> DaftResult<Series> {
-    match s.data_type() {
-        DataType::Image(_) => {
-            let array = s.downcast::<ImageArray>()?;
-            Ok(array.crop_resistant_hash()?.into_series())
-        }
-        DataType::FixedShapeImage(..) => {
-            let array = s.downcast::<FixedShapeImageArray>()?;
-            Ok(array.crop_resistant_hash()?.into_series())
-        }
-        dt => Err(DaftError::ValueError(format!(
-            "Crop-resistant hash can only be computed for Image types, got {}",
-            dt
-        ))),
-    }
+    compute_image_hash(s, "Crop-resistant hash", |array| array.crop_resistant_hash(), |array| array.crop_resistant_hash())
 }

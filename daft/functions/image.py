@@ -107,4 +107,4 @@ def image_hash(
     Returns:
         Expression: A Utf8 expression representing the hash of the image.
     """
-    return expr._eval_expressions("image_hash", algorithm=lit(algorithm))
+    return Expression._call_builtin_scalar_fn("image_hash", expr, algorithm=lit(algorithm))
