@@ -7,6 +7,7 @@ import daft
 from daft import col
 from daft.datatype import DataType
 from daft.functions import image_hash
+from daft.series import Series
 
 
 @pytest.fixture
@@ -15,6 +16,9 @@ def sample_images():
     # Create a simple 10x10 RGB image with different patterns
     img1 = np.ones((10, 10, 3), dtype=np.uint8) * 100  # Uniform gray
     img2 = np.ones((10, 10, 3), dtype=np.uint8) * 200  # Uniform lighter gray
+    
+    # Use fixed seed for deterministic random image
+    np.random.seed(42)
     img3 = np.random.randint(0, 255, (10, 10, 3), dtype=np.uint8)  # Random image
     
     # Create a simple pattern image
@@ -43,16 +47,15 @@ def test_image_hash_functional_api(sample_images):
             assert len(hash_val) > 0
 
 
-def test_image_hash_series_api(sample_images):
-    """Test the series API for image hashing."""
+def test_image_hash_algorithms_comprehensive(sample_images):
+    """Test all image hash algorithms comprehensively."""
     df = daft.from_pydict({"image_data": sample_images})
     df = df.with_column("image", col("image_data").cast(DataType.image("RGB")))
     
-    # Test all algorithms using series API
+    # Test all algorithms using functional API
     algorithms = ["average", "perceptual", "difference", "wavelet", "crop_resistant"]
     
     for algorithm in algorithms:
-        # Use the functional API instead of series API for now
         result = df.with_column("hash", image_hash(col("image"), algorithm))
         hashes = result.to_pandas()["hash"].tolist()
         
