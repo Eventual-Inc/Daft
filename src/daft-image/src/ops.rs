@@ -15,6 +15,32 @@ use daft_schema::image_property::ImageProperty;
 
 use crate::{CountingWriter, iters::ImageBufferIter};
 
+/// Generic helper function for computing image hashes
+fn compute_hash_for_array<Arr, F>(
+    array: &Arr,
+    hash_compute_fn: F,
+) -> DaftResult<Utf8Array>
+where
+    Arr: AsImageObj,
+    F: Fn(CowImage) -> DaftResult<String>,
+{
+    let mut results = Vec::with_capacity(array.len());
+
+    for i in 0..array.len() {
+        if let Some(img) = array.as_image_obj(i) {
+            let hash = hash_compute_fn(img)?;
+            results.push(Some(hash));
+        } else {
+            results.push(None);
+        }
+    }
+
+    Ok(Utf8Array::from((
+        array.name(),
+        Box::new(arrow2::array::Utf8Array::from(results)),
+    )))
+}
+
 pub trait ImageOps {
     fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray>;
     fn resize(&self, w: u32, h: u32) -> DaftResult<Self>
@@ -107,93 +133,23 @@ impl ImageOps for ImageArray {
     }
 
     fn average_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_average_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_average_hash)
     }
 
     fn perceptual_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_perceptual_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_perceptual_hash)
     }
 
     fn difference_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_difference_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_difference_hash)
     }
 
     fn wavelet_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_wavelet_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_wavelet_hash)
     }
 
     fn crop_resistant_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_crop_resistant_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_crop_resistant_hash)
     }
 }
 
@@ -283,93 +239,23 @@ impl ImageOps for FixedShapeImageArray {
     }
 
     fn average_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_average_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_average_hash)
     }
 
     fn perceptual_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_perceptual_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_perceptual_hash)
     }
 
     fn difference_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_difference_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_difference_hash)
     }
 
     fn wavelet_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_wavelet_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_wavelet_hash)
     }
 
     fn crop_resistant_hash(&self) -> DaftResult<Utf8Array> {
-        let mut results = Vec::with_capacity(self.len());
-
-        for i in 0..self.len() {
-            if let Some(img) = self.as_image_obj(i) {
-                let hash = compute_crop_resistant_hash(img)?;
-                results.push(Some(hash));
-            } else {
-                results.push(None);
-            }
-        }
-
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(arrow2::array::Utf8Array::from(results)),
-        )))
+        compute_hash_for_array(self, compute_crop_resistant_hash)
     }
 }
 
