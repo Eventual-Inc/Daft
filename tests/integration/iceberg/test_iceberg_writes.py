@@ -5,8 +5,6 @@ import pytest
 pyiceberg = pytest.importorskip("pyiceberg")
 
 import contextlib
-import os
-import tempfile
 
 import pyarrow as pa
 
@@ -71,6 +69,31 @@ def test_daft_written_catalog(local_iceberg_catalog):
         assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
+def get_data_files(table):
+    """Get the locations of data files for a given table."""
+    from pyiceberg.avro.file import AvroFile
+
+    table.refresh()
+
+    current_snapshot = table.current_snapshot()
+    if not current_snapshot:
+        raise ValueError("Table has no current snapshot")
+
+    data_files = []
+
+    manifest_list_file = table.io.new_input(current_snapshot.manifest_list)
+    with AvroFile(manifest_list_file) as reader:
+        for record in reader:
+            manifest_path = record.manifest_path
+            manifest_input = table.io.new_input(manifest_path)
+            with AvroFile(manifest_input) as manifest_reader:
+                for manifest_record in manifest_reader:
+                    if manifest_record.status == 1:
+                        data_files.append(manifest_record.data_file.file_path)
+
+    return data_files
+
+
 @pytest.mark.integration()
 def test_daft_custom_location(local_iceberg_catalog):
     _, local_pyiceberg_catalog = local_iceberg_catalog
@@ -79,24 +102,43 @@ def test_daft_custom_location(local_iceberg_catalog):
     data = {"data": ["foo", "bar", "baz"]}
     arrow_table = pa.Table.from_pydict(data, schema=schema)
     table_name = "pyiceberg.table_custom_location"
-    with tempfile.TemporaryDirectory() as temp_dir:
-        custom_data_path = os.path.join(temp_dir, "custom_data")
-        os.makedirs(custom_data_path, exist_ok=True)
-        try:
-            table = local_pyiceberg_catalog.create_table(
-                table_name, schema=schema, properties={"write.data.path": custom_data_path}
-            )
 
-            df = daft.from_arrow(arrow_table)
-            df.write_iceberg(table, mode="overwrite")
-            table.refresh()
+    # First, create the table in the default location
+    try:
+        table = local_pyiceberg_catalog.create_table(table_name, schema=schema, properties={})
+        df = daft.from_arrow(arrow_table)
+        df.write_iceberg(
+            table,
+            mode="overwrite",
+        )
+        table.refresh()
 
-            assert os.path.exists(f"{custom_data_path}"), f"Custom data path {custom_data_path} does not exist"
+        base_table_location = table.metadata.location
+        custom_data_location = base_table_location + "/custom-suffix"
 
-            read_table = local_pyiceberg_catalog.load_table(table_name)
-            read_arrow_table = read_table.scan().to_arrow()
-            assert_df_equals(arrow_table.to_pandas(), read_arrow_table.to_pandas(), sort_key=[])
-        except Exception as e:
-            raise e
-        finally:
-            local_pyiceberg_catalog.drop_table(table_name)
+        data_files = get_data_files(table)
+        assert len(data_files) > 0
+        for file_path in data_files:
+            assert not file_path.startswith(custom_data_location), "File found in custom location"
+
+    finally:
+        local_pyiceberg_catalog.drop_table(table_name)
+
+    # Then, re-create it in a custom location
+    try:
+        table = local_pyiceberg_catalog.create_table(
+            table_name, schema=schema, properties={"write.data.path": custom_data_location}
+        )
+        df = daft.from_arrow(arrow_table)
+        df.write_iceberg(
+            table,
+            mode="overwrite",
+        )
+        table.refresh()
+
+        data_files = get_data_files(table)
+        assert len(data_files) > 0
+        for file_path in data_files:
+            assert file_path.startswith(custom_data_location), f"File found outside custom location: {file_path}"
+    finally:
+        local_pyiceberg_catalog.drop_table(table_name)
