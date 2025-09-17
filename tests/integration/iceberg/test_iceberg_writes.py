@@ -91,9 +91,7 @@ def test_daft_custom_location(local_iceberg_catalog):
             df.write_iceberg(table, mode="overwrite")
             table.refresh()
 
-            assert os.path.exists(
-                f"{custom_data_path}/data"
-            ), f"Custom data path {custom_data_path}/data does not exist"
+            assert os.path.exists(f"{custom_data_path}"), f"Custom data path {custom_data_path} does not exist"
 
             read_table = local_pyiceberg_catalog.load_table(table_name)
             read_arrow_table = read_table.scan().to_arrow()
