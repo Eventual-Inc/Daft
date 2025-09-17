@@ -13,17 +13,24 @@ from daft.series import Series
 @pytest.fixture
 def sample_images():
     """Create sample images for testing."""
-    # Create a simple 10x10 RGB image with different patterns
-    img1 = np.ones((10, 10, 3), dtype=np.uint8) * 100  # Uniform gray
-    img2 = np.ones((10, 10, 3), dtype=np.uint8) * 200  # Uniform lighter gray
+    # Create larger 32x32 images with more distinct patterns to reduce hash collision probability
+    # Image 1: Mixed pattern with specific pixel values
+    img1 = np.ones((32, 32, 3), dtype=np.uint8) * 30
+    img1[0:16, :] = 180  # Top half light, bottom half dark
+    
+    # Image 2: Different mixed pattern with different pixel values
+    img2 = np.ones((32, 32, 3), dtype=np.uint8) * 220
+    img2[16:32, :] = 40  # Top half light, bottom half dark (opposite of img1)
     
     # Use fixed seed for deterministic random image
     np.random.seed(42)
-    img3 = np.random.randint(0, 255, (10, 10, 3), dtype=np.uint8)  # Random image
+    img3 = np.random.randint(0, 255, (32, 32, 3), dtype=np.uint8)  # Random image
     
-    # Create a simple pattern image
-    img4 = np.zeros((10, 10, 3), dtype=np.uint8)
-    img4[2:8, 2:8] = 255  # White square in center
+    # Create a distinct pattern image with clear structure
+    img4 = np.zeros((32, 32, 3), dtype=np.uint8)
+    img4[8:24, 8:24] = 255  # Large white square in center
+    img4[0:8, :] = 100      # Top stripe
+    img4[24:32, :] = 150    # Bottom stripe
     
     return [img1, img2, img3, img4]
 
@@ -91,11 +98,22 @@ def test_hash_different_images(sample_images):
     result = df.with_column("hash", image_hash(col("image"), "average"))
     hashes = result.to_pandas()["hash"].tolist()
     
-    # For average hash, different images should produce different hashes
-    # (except for very similar uniform images)
-    assert hashes[0] != hashes[2]  # Uniform vs random
-    assert hashes[0] != hashes[3]  # Uniform vs pattern
-    assert hashes[2] != hashes[3]  # Random vs pattern
+    # Check that we have 4 hashes
+    assert len(hashes) == 4
+    
+    # Verify that the most distinct images produce different hashes
+    # Random image should be different from structured patterns
+    assert hashes[2] != hashes[0], "Random image should differ from structured pattern 1"
+    assert hashes[2] != hashes[1], "Random image should differ from structured pattern 2"
+    assert hashes[2] != hashes[3], "Random image should differ from complex pattern"
+    
+    # Complex pattern should be different from simple patterns
+    assert hashes[3] != hashes[0], "Complex pattern should differ from simple pattern 1"
+    assert hashes[3] != hashes[1], "Complex pattern should differ from simple pattern 2"
+    
+    # At least some hashes should be unique (allowing for potential collisions)
+    unique_hashes = len(set(hashes))
+    assert unique_hashes >= 2, f"At least 2 unique hashes expected, got {unique_hashes} unique hashes: {hashes}"
 
 
 def test_hash_algorithms_different(sample_images):
