@@ -618,10 +618,13 @@ fn compute_perceptual_hash(img: CowImage) -> DaftResult<String> {
 
     // Apply 2D DCT
     let mut dct_result = vec![vec![0.0f64; 32]; 32];
+    #[allow(clippy::needless_range_loop)]
     for u in 0..32 {
         for v in 0..32 {
             let mut sum = 0.0;
+            #[allow(clippy::needless_range_loop)]
             for x in 0..32 {
+                #[allow(clippy::needless_range_loop)]
                 for y in 0..32 {
                     let cos_x = (((2 * x + 1) * u) as f64 * std::f64::consts::PI / 64.0).cos();
                     let cos_y = (((2 * y + 1) * v) as f64 * std::f64::consts::PI / 64.0).cos();
@@ -640,7 +643,9 @@ fn compute_perceptual_hash(img: CowImage) -> DaftResult<String> {
     let mut count = 0;
 
     // Calculate average of low frequency components (excluding DC component)
+    #[allow(clippy::needless_range_loop)]
     for y in 1..9 {
+        #[allow(clippy::needless_range_loop)]
         for x in 1..9 {
             total += dct_result[y][x];
             count += 1;
@@ -649,7 +654,9 @@ fn compute_perceptual_hash(img: CowImage) -> DaftResult<String> {
     let average = total / count as f64;
 
     // Generate hash bits
+    #[allow(clippy::needless_range_loop)]
     for y in 0..8 {
+        #[allow(clippy::needless_range_loop)]
         for x in 0..8 {
             hash_bits.push(if dct_result[y][x] > average { '1' } else { '0' });
         }
@@ -737,21 +744,21 @@ fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
                 let right = temp[y][x * 2 + 1];
 
                 // Average (low frequency)
-                coeffs[y][x] = (left + right) / 2.0;
+                coeffs[y][x] = f64::midpoint(left, right);
                 // Difference (high frequency)
                 coeffs[y][x + current_size / 2] = (left - right) / 2.0;
             }
         }
 
         // Vertical transform - use temp to avoid data dependency issues
-        temp = coeffs.clone();
+        temp.clone_from(&coeffs);
         for x in 0..current_size {
             for y in 0..current_size / 2 {
                 let top = temp[y * 2][x];
                 let bottom = temp[y * 2 + 1][x];
 
                 // Average (low frequency)
-                coeffs[y][x] = (top + bottom) / 2.0;
+                coeffs[y][x] = f64::midpoint(top, bottom);
                 // Difference (high frequency)
                 coeffs[y + current_size / 2][x] = (top - bottom) / 2.0;
             }
@@ -765,16 +772,18 @@ fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
 
     // Calculate median of the 8x8 block
     let mut values = Vec::new();
+    #[allow(clippy::needless_range_loop)]
     for y in 0..8 {
+        #[allow(clippy::needless_range_loop)]
         for x in 0..8 {
             values.push(coeffs[y][x]);
         }
     }
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = if values.len() > 0 {
+    let median = if !values.is_empty() {
         if values.len() % 2 == 0 {
             // For even length, take average of two middle values
-            (values[values.len() / 2 - 1] + values[values.len() / 2]) / 2.0
+            f64::midpoint(values[values.len() / 2 - 1], values[values.len() / 2])
         } else {
             // For odd length, take middle value
             values[values.len() / 2]
@@ -784,7 +793,9 @@ fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
     };
 
     // Generate hash bits
+    #[allow(clippy::needless_range_loop)]
     for y in 0..8 {
+        #[allow(clippy::needless_range_loop)]
         for x in 0..8 {
             hash_bits.push(if coeffs[y][x] > median { '1' } else { '0' });
         }
@@ -839,7 +850,7 @@ fn compute_crop_resistant_hash(img: CowImage) -> DaftResult<String> {
     ];
 
     // Process each region
-    for (start_y, start_x) in positions.iter() {
+    for (start_y, start_x) in &positions {
         // Extract region
         let mut region = Vec::new();
         for y in *start_y..(*start_y + region_size) {
@@ -869,7 +880,7 @@ fn compute_crop_resistant_hash(img: CowImage) -> DaftResult<String> {
         // Use a combination of position-based patterns
         let pos = hash_bits.len();
         let pattern = (pos % 8) as u8;
-        hash_bits.push(if pattern % 2 == 0 { '0' } else { '1' });
+        hash_bits.push(if pattern.is_multiple_of(2) { '0' } else { '1' });
     }
 
     // Truncate to 64 bits if we have more
