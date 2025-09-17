@@ -3732,122 +3732,16 @@ class ExpressionImageNamespace(ExpressionNamespace):
         """
         return self.attribute("mode")
 
-    def average_hash(self) -> Expression:
-        """Computes the average hash of an image for deduplication and similarity detection.
+    def hash(
+        self, algorithm: Literal["average", "perceptual", "difference", "wavelet", "crop_resistant"] = "average"
+    ) -> Expression:
+        """(DEPRECATED) Please use `daft.functions.image_hash` instead."""
+        warnings.warn(
+            "`Expression.image.hash` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_hash` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression()._eval_expressions("image_hash", algorithm=_lit(algorithm))
 
-        The average hash algorithm:
-        1. Converts the image to grayscale
-        2. Resizes to 8x8 pixels (64 total pixels)
-        3. Computes the average pixel value
-        4. Creates a binary hash where each bit represents whether a pixel is above (1) or below (0) the average
-        5. Returns a 64-character binary string
-
-        Returns:
-            Expression: A Utf8 expression representing the hash string.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("hash", df["images"].image.average_hash())  # doctest: +SKIP
-        """
-        f = native.get_function_from_registry("image_average_hash")
-        return Expression._from_pyexpr(f(self._expr))
-
-    def perceptual_hash(self) -> Expression:
-        """Computes the perceptual hash (pHash) of an image for robust similarity detection.
-
-        The perceptual hash algorithm:
-        1. Converts the image to grayscale
-        2. Resizes to 32x32 pixels
-        3. Applies 2D Discrete Cosine Transform (DCT)
-        4. Extracts the 8x8 top-left corner (low frequency components)
-        5. Compares each coefficient to the average of low frequency components
-        6. Returns a 64-character binary string
-
-        Perceptual hash is more robust to minor image modifications compared to average hash.
-
-        Returns:
-            Expression: A Utf8 expression representing the hash string.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("phash", df["images"].image.perceptual_hash())  # doctest: +SKIP
-        """
-        f = native.get_function_from_registry("image_perceptual_hash")
-        return Expression._from_pyexpr(f(self._expr))
-
-    def difference_hash(self) -> Expression:
-        """Computes the difference hash (dHash) of an image for similarity detection.
-
-        The difference hash algorithm:
-        1. Converts the image to grayscale
-        2. Resizes to 9x8 pixels (9 wide to allow adjacent pixel comparison)
-        3. Compares each pixel with its right neighbor horizontally
-        4. Sets bit to 1 if left pixel < right pixel, 0 otherwise
-        5. Returns a 64-character binary string
-
-        Difference hash is robust to minor image modifications and efficient to compute.
-
-        Returns:
-            Expression: A Utf8 expression representing the hash string.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("dhash", df["images"].image.difference_hash())  # doctest: +SKIP
-        """
-        f = native.get_function_from_registry("image_difference_hash")
-        return Expression._from_pyexpr(f(self._expr))
-
-    def wavelet_hash(self) -> Expression:
-        """Computes the wavelet hash (wHash) of an image for similarity detection.
-
-        The wavelet hash algorithm:
-        1. Converts the image to grayscale
-        2. Resizes to 64x64 pixels
-        3. Applies Haar wavelet transform to decompose the image
-        4. Extracts the 8x8 top-left corner (low frequency components)
-        5. Compares each coefficient to the median of the low frequency block
-        6. Returns a 64-character binary string
-
-        Wavelet hash is robust to rotation and scaling and provides good similarity detection.
-
-        Returns:
-            Expression: A Utf8 expression representing the hash string.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("whash", df["images"].image.wavelet_hash())  # doctest: +SKIP
-        """
-        f = native.get_function_from_registry("image_wavelet_hash")
-        return Expression._from_pyexpr(f(self._expr))
-
-    def crop_resistant_hash(self) -> Expression:
-        """Computes the crop-resistant hash (cHash) of an image for similarity detection.
-
-        The crop-resistant hash algorithm:
-        1. Converts the image to grayscale
-        2. Resizes to 256x256 pixels for detailed analysis
-        3. Creates multiple overlapping regions across the image
-        4. Computes the average intensity for each region
-        5. Compares each region average to the global average
-        6. Returns a 64-character binary string
-
-        Crop-resistant hash is robust to cropping operations and provides good similarity detection
-        even when images are cropped or have different framing.
-
-        Returns:
-            Expression: A Utf8 expression representing the hash string.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("chash", df["images"].image.crop_resistant_hash())  # doctest: +SKIP
-        """
-        f = native.get_function_from_registry("image_crop_resistant_hash")
-        return Expression._from_pyexpr(f(self._expr))
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):

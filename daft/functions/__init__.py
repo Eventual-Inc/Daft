@@ -63,7 +63,7 @@ from .datetime import (
     date_trunc,
 )
 from .embedding import cosine_distance
-from .image import resize, crop, encode_image, decode_image, convert_image
+from .image import resize, crop, encode_image, decode_image, convert_image, image_hash
 from .list import (
     value_counts,
     chunk,
@@ -243,6 +243,7 @@ __all__ = [
     "embed_text",
     "encode",
     "encode_image",
+    "image_hash",
     "endswith",
     "eq_null_safe",
     "exp",

@@ -6,7 +6,7 @@ from typing import Literal
 
 from daft.daft import ImageFormat, ImageMode
 from daft.datatype import DataType
-from daft.expressions import Expression
+from daft.expressions import Expression, lit
 
 
 def resize(expr: Expression, w: int, h: int) -> Expression:
@@ -87,3 +87,24 @@ def convert_image(expr: Expression, mode: str | ImageMode) -> Expression:
     if not isinstance(mode, ImageMode):
         raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
     return Expression._call_builtin_scalar_fn("to_mode", expr, mode=mode)
+
+
+def image_hash(
+    expr: Expression,
+    algorithm: Literal["average", "perceptual", "difference", "wavelet", "crop_resistant"] = "average",
+) -> Expression:
+    """Computes the hash of an image using the specified algorithm.
+
+    Args:
+        expr: Expression to compute hash for.
+        algorithm: The hashing algorithm to use. Options are:
+            - "average": Average hash (default)
+            - "perceptual": Perceptual hash
+            - "difference": Difference hash
+            - "wavelet": Wavelet hash
+            - "crop_resistant": Crop-resistant hash
+
+    Returns:
+        Expression: A Utf8 expression representing the hash of the image.
+    """
+    return expr._eval_expressions("image_hash", algorithm=lit(algorithm))
