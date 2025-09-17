@@ -33,32 +33,21 @@ class TestLanceCountResultFunction:
     def test_lancedb_count_no_filters_direct_call(self, test_dataset_path):
         """Test that no filters list is handled correctly."""
         ds = lance.dataset(test_dataset_path)
-
-        with patch("daft.io.lance.lance_scan.logger") as mock_logger:
-            result_generator = _lancedb_count_result_function(ds, "count", filters=None)
-            result_batch = next(result_generator)
-
-            mock_logger.debug.assert_called_with("Using metadata for counting all rows (no filters)")
-
-            record_batch = RecordBatch._from_pyrecordbatch(result_batch)
-            result_dict = record_batch.to_pydict()
-            assert result_dict["count"][0] == 6
+        result_generator = _lancedb_count_result_function(ds, "count")
+        result_batch = next(result_generator)
+        record_batch = RecordBatch._from_pyrecordbatch(result_batch)
+        result_dict = record_batch.to_pydict()
+        assert result_dict["count"][0] == 6
 
     def test_lancedb_count_with_filters_path(self, test_dataset_path):
         """Test that filters list is handled correctly."""
         ds = lance.dataset(test_dataset_path)
-
         filter_expr = pc.greater(pc.field("age"), pc.scalar(30))
-
-        with patch("daft.io.lance.lance_scan.logger") as mock_logger:
-            result_generator = _lancedb_count_result_function(ds, "count", filters=filter_expr)
-            result_batch = next(result_generator)
-
-            mock_logger.debug.assert_called_with("Counting rows with filters applied")
-
-            record_batch = RecordBatch._from_pyrecordbatch(result_batch)
-            result_dict = record_batch.to_pydict()
-            assert result_dict["count"][0] == 4
+        result_generator = _lancedb_count_result_function(ds, "count", filter=filter_expr)
+        result_batch = next(result_generator)
+        record_batch = RecordBatch._from_pyrecordbatch(result_batch)
+        result_dict = record_batch.to_pydict()
+        assert result_dict["count"][0] == 4
 
     def test_unsupported_count_mode_fallback(self, test_dataset_path):
         """Test that unsupported count mode falls back to regular scan."""

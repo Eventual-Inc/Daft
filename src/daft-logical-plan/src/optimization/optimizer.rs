@@ -37,7 +37,7 @@ impl OptimizerConfig {
 
 impl Default for OptimizerConfig {
     fn default() -> Self {
-        // Default to a max of 5 optimizer passes for a given batch.
+        // Default to a max of 20 optimizer passes for a given batch.
         Self::new(20, false)
     }
 }
