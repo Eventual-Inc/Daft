@@ -17,7 +17,7 @@ use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
-    FileFormat, GetResult, InvalidRangeRequestSnafu,
+    FileFormat, GetResult, InvalidRangeRequestSnafu, SourceType,
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     range::GetRange,
     stats::IOStatsRef,
@@ -523,6 +523,10 @@ impl AzureBlobSource {
 
 #[async_trait]
 impl ObjectSource for AzureBlobSource {
+    fn source_type(&self) -> SourceType {
+        SourceType::AzureBlob
+    }
+
     async fn get(
         &self,
         uri: &str,

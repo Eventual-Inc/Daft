@@ -10,7 +10,7 @@ use futures::{
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::{
-    FileFormat,
+    FileFormat, SourceType,
     local::{LocalFile, collect_file},
     stats::IOStatsRef,
 };
@@ -183,6 +183,8 @@ use crate::range::GetRange;
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
+    fn source_type(&self) -> SourceType;
+
     /// Return the bytes with given range.
     /// Will return [`Error::InvalidRangeRequest`] if range start is greater than range end
     /// or range start is greater than object size.

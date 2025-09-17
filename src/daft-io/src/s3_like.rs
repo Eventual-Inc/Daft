@@ -1204,6 +1204,10 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
+    fn source_type(&self) -> SourceType {
+        SourceType::S3
+    }
+
     async fn get(
         &self,
         uri: &str,

@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 from daft.daft import PyDaftFile
 
 if TYPE_CHECKING:
+    from tempfile import _TemporaryFileWrapper
+
     from daft.io import IOConfig
 
 
@@ -102,6 +104,39 @@ class File:
 
     def closed(self) -> bool:
         return self._inner.closed()
+
+    def to_tempfile(self) -> _TemporaryFileWrapper[bytes]:
+        """Create a temporary file with the contents of this file.
+
+        Returns:
+            str: Path to the temporary file.
+
+        The temporary file will be automatically deleted when the returned context manager is closed.
+
+        It's important to note that `to_tempfile` closes the original file object, so it CANNOT be used after calling this method.
+
+        Example:
+            >>> with file.to_tempfile() as temp_path:
+            >>> # Do something with the temporary file
+            >>>     pass
+        """
+        import shutil
+        import tempfile
+
+        temp_file = tempfile.NamedTemporaryFile(
+            prefix="daft_",
+        )
+        self.seek(0)
+
+        if self._inner.supports_range_requests():
+            shutil.copyfileobj(self, temp_file)
+        else:
+            temp_file.write(self.read())
+        # close it as `to_tempfile` is a consuming method
+        self.close()
+        temp_file.seek(0)
+
+        return temp_file
 
 
 class PathFile(File):

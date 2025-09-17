@@ -18,7 +18,7 @@ use super::{
     object_io::{GetResult, ObjectSource},
 };
 use crate::{
-    FileFormat,
+    FileFormat, SourceType,
     object_io::{self, FileMetadata, LSResult},
     range::GetRange,
     stats::IOStatsRef,
@@ -140,6 +140,10 @@ pub struct LocalFile {
 
 #[async_trait]
 impl ObjectSource for LocalSource {
+    fn source_type(&self) -> SourceType {
+        SourceType::File
+    }
+
     async fn get(
         &self,
         uri: &str,

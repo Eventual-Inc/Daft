@@ -20,7 +20,7 @@ use url::Position;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
-    FileFormat, InvalidRangeRequestSnafu,
+    FileFormat, InvalidRangeRequestSnafu, SourceType,
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
     stats::IOStatsRef,
@@ -223,6 +223,10 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
+    fn source_type(&self) -> SourceType {
+        SourceType::Http
+    }
+
     async fn get(
         &self,
         uri: &str,
