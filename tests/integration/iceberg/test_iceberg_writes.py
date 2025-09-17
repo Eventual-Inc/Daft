@@ -73,6 +73,7 @@ def test_daft_written_catalog(local_iceberg_catalog):
 
 @pytest.mark.integration()
 def test_daft_custom_location(local_iceberg_catalog):
+    _, local_pyiceberg_catalog = local_iceberg_catalog
     schema = pa.schema([("data", pa.string())])
 
     data = {"data": ["foo", "bar", "baz"]}
@@ -82,7 +83,7 @@ def test_daft_custom_location(local_iceberg_catalog):
         custom_data_path = os.path.join(temp_dir, "custom_data")
         os.makedirs(custom_data_path, exist_ok=True)
         try:
-            table = local_iceberg_catalog.create_table(
+            table = local_pyiceberg_catalog.create_table(
                 table_name, schema=schema, properties={"write.data.path": custom_data_path}
             )
 
@@ -94,10 +95,10 @@ def test_daft_custom_location(local_iceberg_catalog):
                 f"{custom_data_path}/data"
             ), f"Custom data path {custom_data_path}/data does not exist"
 
-            read_table = local_iceberg_catalog.load_table(table_name)
+            read_table = local_pyiceberg_catalog.load_table(table_name)
             read_arrow_table = read_table.scan().to_arrow()
             assert_df_equals(arrow_table.to_pandas(), read_arrow_table.to_pandas(), sort_key=[])
         except Exception as e:
             raise e
         finally:
-            local_iceberg_catalog.drop_table(table_name)
+            local_pyiceberg_catalog.drop_table(table_name)
