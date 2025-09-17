@@ -1472,6 +1472,8 @@ class DataFrame:
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
         schema: Optional[Schema] = None,
+        batch_size: int = 1,
+        max_batch_rows: int = 100000,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1480,11 +1482,18 @@ class DataFrame:
           uri: The URI of the Lance table to write to
           mode: The write mode. One of "create", "append", or "overwrite"
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          batch_size (int, optional): Number of micropartitions to batch together before writing. Default is 1 (no batching).
+          max_batch_rows (int, optional): Maximum number of rows to accumulate before flushing a batch. Default is 100,000.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Note:
             `write_lance` requires python 3.9 or higher
             This call is **blocking** and will execute the DataFrame when called
+
+            Batching Parameters:
+            - batch_size=1 (default): No batching, maintains backward compatibility
+            - batch_size>1: Enables batching to combine multiple micropartitions
+            - max_batch_rows: Row-based flush control for predictable batching behavior
 
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
@@ -1530,12 +1539,14 @@ class DataFrame:
             ╰───────────────┴──────────────────┴─────────────────┴─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
+            >>> # Enable batching for improved performance with large datasets
+            >>> df.write_lance("/tmp/lance/my_table.lance", batch_size=10, max_batch_rows=50000)  # doctest: +SKIP
         """
         from daft.io.lance.lance_data_sink import LanceDataSink
 
         if schema is None:
             schema = self.schema()
-        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
+        sink = LanceDataSink(uri, schema, mode, io_config, batch_size, max_batch_rows, **kwargs)
         return self.write_sink(sink)
 
     @DataframePublicAPI
