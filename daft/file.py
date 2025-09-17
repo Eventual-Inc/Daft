@@ -109,7 +109,7 @@ class File:
         """Create a temporary file with the contents of this file.
 
         Returns:
-            str: Path to the temporary file.
+            _TemporaryFileWrapper[bytes]: The temporary file object.
 
         The temporary file will be automatically deleted when the returned context manager is closed.
 
