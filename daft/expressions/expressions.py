@@ -3732,15 +3732,6 @@ class ExpressionImageNamespace(ExpressionNamespace):
         """
         return self.attribute("mode")
 
-    def hash(
-        self, algorithm: Literal["average", "perceptual", "difference", "wavelet", "crop_resistant"] = "average"
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.image_hash` instead."""
-        warnings.warn(
-            "`Expression.image.hash` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_hash` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression()._eval_expressions("image_hash", algorithm=_lit(algorithm))
 
 
 

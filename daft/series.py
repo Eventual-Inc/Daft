@@ -1113,26 +1113,3 @@ class SeriesImageNamespace(SeriesNamespace):
         return self._eval_expressions("to_mode", mode=mode)
 
 
-    def image_hash(
-        self, algorithm: Literal["average", "perceptual", "difference", "wavelet", "crop_resistant"] = "average"
-    ) -> Series:
-        """Computes the hash of images in this series using the specified algorithm.
-
-        Args:
-            algorithm: The hashing algorithm to use. Options are:
-                - "average": Average hash (default)
-                - "perceptual": Perceptual hash
-                - "difference": Difference hash
-                - "wavelet": Wavelet hash
-                - "crop_resistant": Crop-resistant hash
-
-        Returns:
-            Series: A Series of Utf8 strings containing the hash values.
-
-        Example:
-            >>> # Compute hash using different algorithms
-            >>> avg_hash = image_series.image.image_hash("average")
-            >>> perceptual_hash = image_series.image.image_hash("perceptual")
-        """
-        from daft.expressions.expressions import lit
-        return self._eval_expressions("image_hash", algorithm=lit(algorithm))
