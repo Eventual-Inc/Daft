@@ -4,7 +4,9 @@ use common_image::CowImage;
 
 use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
 
-/// Combine literal types that may be null or have null children (in the case of nested types)
+/// Combine literal types that are likely the same but do not equal due to lossy literal casting.
+///
+/// For example, null literals are always null type, and image literals always have a mode.
 pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<DataType> {
     match (left, right) {
         (dtype, DataType::Null) | (DataType::Null, dtype) => Some(dtype.clone()),
@@ -47,6 +49,7 @@ pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<Dat
 
             Some(DataType::Map { key, value })
         }
+        (DataType::Image(_), DataType::Image(_)) => Some(DataType::Image(None)),
         _ => None,
     }
 }

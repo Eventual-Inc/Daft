@@ -12,7 +12,7 @@ use common_display::table_display::StrValue;
 use common_error::{DaftError, DaftResult, ensure};
 use common_file::DaftFile;
 use common_hashable_float_wrapper::FloatWrapper;
-use common_image::Image;
+use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
 use common_py_serde::PyObjectWrapper;
 use indexmap::IndexMap;
@@ -343,7 +343,9 @@ impl Literal {
                 key: Box::new(keys.data_type().clone()),
                 value: Box::new(values.data_type().clone()),
             },
-            Self::Image(_) => DataType::Image(None),
+            Self::Image(image_buffer_wrapper) => {
+                DataType::Image(Some(CowImage::from(&image_buffer_wrapper.0).mode()))
+            }
             Self::Extension(series) => series.data_type().clone(),
         }
     }

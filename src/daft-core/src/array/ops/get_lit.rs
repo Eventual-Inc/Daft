@@ -39,6 +39,8 @@ impl StructArray {
             Literal::Struct(
                 self.children
                     .iter()
+                    // Below line is commented out because it significantly complicates Series <-> Literal conversion to do this.
+                    // Instead, we'll filter these empty fields out at the Literal to Python object boundary.
                     // .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
                     .map(|child| (child.name().to_string(), child.get_lit(idx)))
                     .collect(),

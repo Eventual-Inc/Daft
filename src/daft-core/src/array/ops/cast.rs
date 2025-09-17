@@ -766,10 +766,12 @@ impl TensorArray {
                 }
                 let size = shape.iter().product::<u64>() as usize;
 
-                let result = da.cast(&DataType::FixedSizeList(
-                    Box::new(inner_dtype.as_ref().clone()),
-                    size,
-                ))?;
+                let result = da
+                    .cast(&DataType::FixedSizeList(
+                        Box::new(inner_dtype.as_ref().clone()),
+                        size,
+                    ))?
+                    .rename(self.name());
                 let tensor_array = FixedShapeTensorArray::new(
                     Field::new(self.name(), dtype.clone()),
                     result.fixed_size_list().unwrap().clone(),
@@ -880,6 +882,21 @@ impl TensorArray {
                 .into_series())
             }
             DataType::Image(mode) => {
+                let DataType::Tensor(inner_dtype) = self.data_type() else {
+                    unreachable!("TensorArray should have Tensor datatype")
+                };
+
+                if let Some(m) = mode
+                    && **inner_dtype != m.get_dtype()
+                {
+                    return Err(DaftError::TypeError(format!(
+                        "Images with mode {} can only be created from tensors of type {}, found {}",
+                        m,
+                        m.get_dtype(),
+                        inner_dtype
+                    )));
+                }
+
                 let sa = self.shape_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
                     s.is_none_or(|s| {

@@ -173,6 +173,7 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
             Self::Struct(entries) => entries
                 .into_iter()
+                .filter(|(k, v)| !(k.is_empty() && *v == Self::Null))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
             Self::File(f) => f.into_bound_py_any(py),
