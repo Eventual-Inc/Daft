@@ -5279,7 +5279,9 @@ class ExpressionImageNamespace(ExpressionNamespace):
         """
         return self.attribute("mode")
 
-    def hash(self, algorithm: str = "average") -> Expression:
+    def hash(
+        self, algorithm: Literal["average", "perceptual", "difference", "wavelet", "crop_resistant"] = "average"
+    ) -> Expression:
         """Computes the hash of an image using the specified algorithm.
 
         Args:
