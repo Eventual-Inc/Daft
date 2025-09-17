@@ -364,4 +364,5 @@ __all__ = [
     "value_counts",
     "week_of_year",
     "year",
+    "image_hash",
 ]
