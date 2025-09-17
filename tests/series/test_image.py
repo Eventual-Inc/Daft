@@ -842,12 +842,21 @@ def test_image_to_mode_fixed_size(input_mode, output_mode):
 
 def test_image_average_hash_basic():
     """Test the average hash function with basic image operations."""
-    # Create test image data
-    data = [
-        np.zeros((4, 4, 3), dtype=np.uint8),  # Solid black
-        np.full((4, 4, 3), 255, dtype=np.uint8),  # Solid white
-        np.full((4, 4, 3), 128, dtype=np.uint8),  # Solid gray
-    ]
+    # Create test image data with varied pixel values to ensure different hashes
+    # Image 1: Mostly dark pixels (should have more 0s)
+    img1 = np.zeros((4, 4, 3), dtype=np.uint8)
+    img1[0:2, 0:2] = 50  # Some slightly brighter pixels
+    
+    # Image 2: Mostly bright pixels (should have more 1s)  
+    img2 = np.full((4, 4, 3), 200, dtype=np.uint8)
+    img2[0:2, 0:2] = 100  # Some darker pixels
+    
+    # Image 3: Mixed pixels (should have balanced 0s and 1s)
+    img3 = np.full((4, 4, 3), 128, dtype=np.uint8)
+    img3[0:2, :] = 200  # Top half bright
+    img3[2:4, :] = 50   # Bottom half dark
+    
+    data = [img1, img2, img3]
 
     s = Series.from_pylist(data, dtype=DataType.python())
     t = s.cast(DataType.image("RGB"))
@@ -873,13 +882,21 @@ def test_image_average_hash_basic():
         assert len(hash_val) == 64
         assert all(c in "01" for c in hash_val), f"Hash should only contain 0s and 1s, got: {hash_val}"
 
-    # Black and white should have very different hashes
-    black_hash = hash_values[0]
-    white_hash = hash_values[1]
-
-    # Black should be mostly 0s, white should be mostly 1s
-    assert black_hash.count("0") > black_hash.count("1"), "Black image should have more 0s than 1s"
-    assert white_hash.count("1") > white_hash.count("0"), "White image should have more 1s than 0s"
+    # Verify that different images produce different hashes
+    dark_hash = hash_values[0]
+    bright_hash = hash_values[1]
+    mixed_hash = hash_values[2]
+    
+    # All hashes should be different
+    assert dark_hash != bright_hash, "Dark and bright images should have different hashes"
+    assert dark_hash != mixed_hash, "Dark and mixed images should have different hashes"
+    assert bright_hash != mixed_hash, "Bright and mixed images should have different hashes"
+    
+    # Dark image should have more 0s than 1s (pixels below average)
+    assert dark_hash.count("0") > dark_hash.count("1"), f"Dark image should have more 0s than 1s, got: {dark_hash}"
+    
+    # Bright image should have more 1s than 0s (pixels above average)
+    assert bright_hash.count("1") > bright_hash.count("0"), f"Bright image should have more 1s than 0s, got: {bright_hash}"
 
 
 def test_image_average_hash_similar_images():
