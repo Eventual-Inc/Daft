@@ -1,175 +1,102 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{
+    prelude::*,
+    lit::{FromLiteral, Literal},
+};
 use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF},
 };
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
+/// Single struct for all image hash functions
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImageAverageHash;
+pub struct ImageHash;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImagePerceptualHash;
+/// Enum to specify which hash algorithm to use
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ImageHashAlgorithm {
+    Average,
+    Perceptual,
+    Difference,
+    Wavelet,
+    CropResistant,
+}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImageDifferenceHash;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImageWaveletHash;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ImageCropResistantHash;
-
-#[typetag::serde]
-impl ScalarUDF for ImageAverageHash {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        crate::series::average_hash(&input)
-    }
-
-    fn name(&self) -> &'static str {
-        "image_average_hash"
-    }
-
-    fn get_return_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        let input = inputs.required((0, "input"))?;
-        let field = input.to_field(schema)?;
-
-        match field.dtype {
-            DataType::Image(_) | DataType::FixedShapeImage(..) => {
-                Ok(Field::new(field.name, DataType::Utf8))
-            }
-            _ => Err(DaftError::TypeError(format!(
-                "Average hash can only be applied to ImageArrays, got {}",
-                field.dtype
-            ))),
-        }
-    }
-
-    fn docstring(&self) -> &'static str {
-        "Computes the average hash of an image for deduplication. Returns an 8x8 binary hash as a 64-character string."
+impl std::fmt::Display for ImageHashAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Average => "average",
+            Self::Perceptual => "perceptual",
+            Self::Difference => "difference",
+            Self::Wavelet => "wavelet",
+            Self::CropResistant => "crop_resistant",
+        })
     }
 }
 
-#[typetag::serde]
-impl ScalarUDF for ImagePerceptualHash {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        crate::series::perceptual_hash(&input)
-    }
-
-    fn name(&self) -> &'static str {
-        "image_perceptual_hash"
-    }
-
-    fn get_return_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        let input = inputs.required((0, "input"))?;
-        let field = input.to_field(schema)?;
-
-        match field.dtype {
-            DataType::Image(_) | DataType::FixedShapeImage(..) => {
-                Ok(Field::new(field.name, DataType::Utf8))
-            }
-            _ => Err(DaftError::TypeError(format!(
-                "Perceptual hash can only be applied to ImageArrays, got {}",
-                field.dtype
-            ))),
-        }
-    }
-
-    fn docstring(&self) -> &'static str {
-        "Computes the perceptual hash (pHash) of an image using DCT. Returns an 8x8 binary hash as a 64-character string."
+impl From<ImageHashAlgorithm> for Literal {
+    fn from(value: ImageHashAlgorithm) -> Self {
+        Self::Utf8(value.to_string())
     }
 }
 
-#[typetag::serde]
-impl ScalarUDF for ImageDifferenceHash {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        crate::series::difference_hash(&input)
-    }
-
-    fn name(&self) -> &'static str {
-        "image_difference_hash"
-    }
-
-    fn get_return_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        let input = inputs.required((0, "input"))?;
-        let field = input.to_field(schema)?;
-
-        match field.dtype {
-            DataType::Image(_) | DataType::FixedShapeImage(..) => {
-                Ok(Field::new(field.name, DataType::Utf8))
-            }
-            _ => Err(DaftError::TypeError(format!(
-                "Difference hash can only be applied to ImageArrays, got {}",
-                field.dtype
-            ))),
+impl FromLiteral for ImageHashAlgorithm {
+    fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
+        if let Literal::Utf8(s) = lit {
+            s.parse()
+        } else {
+            Err(DaftError::ValueError(format!(
+                "Expected a string literal, got {:?}",
+                lit
+            )))
         }
-    }
-
-    fn docstring(&self) -> &'static str {
-        "Computes the difference hash (dHash) of an image by comparing adjacent pixels. Returns an 8x8 binary hash as a 64-character string."
     }
 }
 
-#[typetag::serde]
-impl ScalarUDF for ImageWaveletHash {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        crate::series::wavelet_hash(&input)
-    }
+impl FromStr for ImageHashAlgorithm {
+    type Err = DaftError;
 
-    fn name(&self) -> &'static str {
-        "image_wavelet_hash"
-    }
-
-    fn get_return_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        let input = inputs.required((0, "input"))?;
-        let field = input.to_field(schema)?;
-
-        match field.dtype {
-            DataType::Image(_) | DataType::FixedShapeImage(..) => {
-                Ok(Field::new(field.name, DataType::Utf8))
-            }
-            _ => Err(DaftError::TypeError(format!(
-                "Wavelet hash can only be applied to ImageArrays, got {}",
-                field.dtype
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "average" => Ok(Self::Average),
+            "perceptual" => Ok(Self::Perceptual),
+            "difference" => Ok(Self::Difference),
+            "wavelet" => Ok(Self::Wavelet),
+            "crop_resistant" => Ok(Self::CropResistant),
+            _ => Err(DaftError::ValueError(format!(
+                "unsupported hash algorithm: {}. Supported algorithms are: average, perceptual, difference, wavelet, crop_resistant",
+                s
             ))),
         }
-    }
-
-    fn docstring(&self) -> &'static str {
-        "Computes the wavelet hash (wHash) of an image using Haar wavelet transform. Returns an 8x8 binary hash as a 64-character string."
     }
 }
 
+/// Function arguments with algorithm parameter
+#[derive(FunctionArgs)]
+pub struct ImageHashArgs<T> {
+    input: T,
+    algorithm: ImageHashAlgorithm,
+}
+
+/// Single ScalarUDF implementation that handles all hash algorithms
 #[typetag::serde]
-impl ScalarUDF for ImageCropResistantHash {
+impl ScalarUDF for ImageHash {
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        crate::series::crop_resistant_hash(&input)
+        let ImageHashArgs { input, algorithm } = inputs.try_into()?;
+        
+        match algorithm {
+            ImageHashAlgorithm::Average => crate::series::average_hash(&input),
+            ImageHashAlgorithm::Perceptual => crate::series::perceptual_hash(&input),
+            ImageHashAlgorithm::Difference => crate::series::difference_hash(&input),
+            ImageHashAlgorithm::Wavelet => crate::series::wavelet_hash(&input),
+            ImageHashAlgorithm::CropResistant => crate::series::crop_resistant_hash(&input),
+        }
     }
 
     fn name(&self) -> &'static str {
-        "image_crop_resistant_hash"
+        "image_hash"
     }
 
     fn get_return_field(
@@ -177,7 +104,7 @@ impl ScalarUDF for ImageCropResistantHash {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let input = inputs.required((0, "input"))?;
+        let ImageHashArgs { input, algorithm: _ } = inputs.try_into()?;
         let field = input.to_field(schema)?;
 
         match field.dtype {
@@ -185,13 +112,13 @@ impl ScalarUDF for ImageCropResistantHash {
                 Ok(Field::new(field.name, DataType::Utf8))
             }
             _ => Err(DaftError::TypeError(format!(
-                "Crop-resistant hash can only be applied to ImageArrays, got {}",
+                "Image hash can only be computed for Image types, got {}",
                 field.dtype
             ))),
         }
     }
 
     fn docstring(&self) -> &'static str {
-        "Computes the crop-resistant hash (cHash) of an image that is robust to cropping operations. Returns a 64-character binary string."
+        "Computes the hash of an image using the specified algorithm. Returns a 64-character binary string."
     }
 }

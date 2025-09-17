@@ -743,11 +743,12 @@ fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
             }
         }
 
-        // Vertical transform
+        // Vertical transform - use temp to avoid data dependency issues
+        temp = coeffs.clone();
         for x in 0..current_size {
             for y in 0..current_size / 2 {
-                let top = coeffs[y * 2][x];
-                let bottom = coeffs[y * 2 + 1][x];
+                let top = temp[y * 2][x];
+                let bottom = temp[y * 2 + 1][x];
 
                 // Average (low frequency)
                 coeffs[y][x] = (top + bottom) / 2.0;
@@ -771,7 +772,13 @@ fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
     }
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let median = if values.len() > 0 {
-        values[values.len() / 2]
+        if values.len() % 2 == 0 {
+            // For even length, take average of two middle values
+            (values[values.len() / 2 - 1] + values[values.len() / 2]) / 2.0
+        } else {
+            // For odd length, take middle value
+            values[values.len() / 2]
+        }
     } else {
         0.0
     };

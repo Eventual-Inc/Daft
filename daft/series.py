@@ -1084,43 +1084,30 @@ class SeriesImageNamespace(SeriesNamespace):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
         return self._eval_expressions("to_mode", mode=mode)
 
-    def average_hash(self) -> Series:
-        """Computes the average hash of images in this series.
+    def hash(self, algorithm: str = "average") -> Series:
+        """Computes the hash of images in this series using the specified algorithm.
 
-        The average hash algorithm:
-        1. Converts each image to grayscale
-        2. Resizes to 8x8 pixels (64 total pixels)
-        3. Computes the average pixel value
-        4. Creates a binary hash where each bit represents whether a pixel is above (1) or below (0) the average
-        5. Returns a 64-character binary string for each image
-
-        Returns:
-            Series: A Series of Utf8 strings containing the hash values.
-
-        Example:
-            >>> # Compute average hash for a series of images
-            >>> hash_series = image_series.image.average_hash()
-        """
-        return self._eval_expressions("image_average_hash")
-
-    def perceptual_hash(self) -> Series:
-        """Computes the perceptual hash (pHash) of images in this series.
-
-        The perceptual hash algorithm:
-        1. Converts each image to grayscale
-        2. Resizes to 32x32 pixels
-        3. Applies 2D Discrete Cosine Transform (DCT)
-        4. Extracts the 8x8 top-left corner (low frequency components)
-        5. Compares each coefficient to the average of low frequency components
-        6. Returns a 64-character binary string for each image
-
-        Perceptual hash is more robust to minor image modifications compared to average hash.
+        Args:
+            algorithm: The hash algorithm to use. Must be one of:
+                - "average": Average hash (default) - good for deduplication
+                - "perceptual": Perceptual hash - robust to minor modifications
+                - "difference": Difference hash - efficient and good for structural changes
+                - "wavelet": Wavelet hash - robust to rotation and scaling
+                - "crop_resistant": Crop-resistant hash - robust to cropping operations
 
         Returns:
-            Series: A Series of Utf8 strings containing the hash values.
+            Series: A Series of Utf8 strings containing the 64-character binary hash values.
 
-        Example:
-            >>> # Compute perceptual hash for a series of images
-            >>> hash_series = image_series.image.perceptual_hash()
+        Examples:
+            >>> # Average hash (default)
+            >>> hash_series = image_series.image.hash()
+            >>> # Perceptual hash
+            >>> hash_series = image_series.image.hash("perceptual")
+            >>> # Difference hash
+            >>> hash_series = image_series.image.hash("difference")
+            >>> # Wavelet hash
+            >>> hash_series = image_series.image.hash("wavelet")
+            >>> # Crop-resistant hash
+            >>> hash_series = image_series.image.hash("crop_resistant")
         """
-        return self._eval_expressions("image_perceptual_hash")
+        return self._eval_expressions("image_hash", algorithm=algorithm)
