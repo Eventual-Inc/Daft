@@ -59,16 +59,21 @@ impl FromStr for ImageHashAlgorithm {
     type Err = DaftError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "average" => Ok(Self::Average),
-            "perceptual" => Ok(Self::Perceptual),
-            "difference" => Ok(Self::Difference),
-            "wavelet" => Ok(Self::Wavelet),
-            "crop_resistant" => Ok(Self::CropResistant),
-            _ => Err(DaftError::ValueError(format!(
+        if s.eq_ignore_ascii_case("average") {
+            Ok(Self::Average)
+        } else if s.eq_ignore_ascii_case("perceptual") {
+            Ok(Self::Perceptual)
+        } else if s.eq_ignore_ascii_case("difference") {
+            Ok(Self::Difference)
+        } else if s.eq_ignore_ascii_case("wavelet") {
+            Ok(Self::Wavelet)
+        } else if s.eq_ignore_ascii_case("crop_resistant") {
+            Ok(Self::CropResistant)
+        } else {
+            Err(DaftError::ValueError(format!(
                 "unsupported hash algorithm: {}. Supported algorithms are: average, perceptual, difference, wavelet, crop_resistant",
                 s
-            ))),
+            )))
         }
     }
 }

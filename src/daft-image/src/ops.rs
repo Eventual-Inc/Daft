@@ -610,30 +610,29 @@ fn compute_perceptual_hash(img: CowImage) -> DaftResult<String> {
     let mut dct_matrix = vec![vec![0.0f64; 32]; 32];
 
     // Convert u8 to f64 and normalize
-    for y in 0..32 {
-        for x in 0..32 {
-            dct_matrix[y][x] = pixel_data[y * 32 + x] as f64;
+    for (row_idx, row) in dct_matrix.iter_mut().enumerate() {
+        let start = row_idx * 32;
+        let chunk = &pixel_data[start..start + 32];
+        for (dst, &px) in row.iter_mut().zip(chunk.iter()) {
+            *dst = px as f64;
         }
     }
 
     // Apply 2D DCT
     let mut dct_result = vec![vec![0.0f64; 32]; 32];
-    #[allow(clippy::needless_range_loop)]
-    for u in 0..32 {
-        for v in 0..32 {
+    for (u, row_out) in dct_result.iter_mut().enumerate() {
+        for (v, cell_out) in row_out.iter_mut().enumerate() {
             let mut sum = 0.0;
-            #[allow(clippy::needless_range_loop)]
-            for x in 0..32 {
-                #[allow(clippy::needless_range_loop)]
-                for y in 0..32 {
+            for (y, row_in) in dct_matrix.iter().enumerate() {
+                for (x, &val) in row_in.iter().enumerate() {
                     let cos_x = (((2 * x + 1) * u) as f64 * std::f64::consts::PI / 64.0).cos();
                     let cos_y = (((2 * y + 1) * v) as f64 * std::f64::consts::PI / 64.0).cos();
-                    sum += dct_matrix[y][x] * cos_x * cos_y;
+                    sum += val * cos_x * cos_y;
                 }
             }
             let cu = if u == 0 { 1.0 / 2.0_f64.sqrt() } else { 1.0 };
             let cv = if v == 0 { 1.0 / 2.0_f64.sqrt() } else { 1.0 };
-            dct_result[u][v] = 0.25 * cu * cv * sum;
+            *cell_out = 0.25 * cu * cv * sum;
         }
     }
 
@@ -643,22 +642,18 @@ fn compute_perceptual_hash(img: CowImage) -> DaftResult<String> {
     let mut count = 0;
 
     // Calculate average of low frequency components (excluding DC component)
-    #[allow(clippy::needless_range_loop)]
-    for y in 1..9 {
-        #[allow(clippy::needless_range_loop)]
-        for x in 1..9 {
-            total += dct_result[y][x];
+    for row in dct_result.iter().skip(1).take(8) {
+        for &val in row.iter().skip(1).take(8) {
+            total += val;
             count += 1;
         }
     }
     let average = total / count as f64;
 
     // Generate hash bits
-    #[allow(clippy::needless_range_loop)]
-    for y in 0..8 {
-        #[allow(clippy::needless_range_loop)]
-        for x in 0..8 {
-            hash_bits.push(if dct_result[y][x] > average { '1' } else { '0' });
+    for row in dct_result.iter().take(8) {
+        for &val in row.iter().take(8) {
+            hash_bits.push(if val > average { '1' } else { '0' });
         }
     }
 
@@ -772,12 +767,8 @@ fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
 
     // Calculate median of the 8x8 block
     let mut values = Vec::new();
-    #[allow(clippy::needless_range_loop)]
-    for y in 0..8 {
-        #[allow(clippy::needless_range_loop)]
-        for x in 0..8 {
-            values.push(coeffs[y][x]);
-        }
+    for row in coeffs.iter().take(8) {
+        values.extend(row.iter().take(8).copied());
     }
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let median = if !values.is_empty() {
@@ -793,11 +784,9 @@ fn compute_wavelet_hash(img: CowImage) -> DaftResult<String> {
     };
 
     // Generate hash bits
-    #[allow(clippy::needless_range_loop)]
-    for y in 0..8 {
-        #[allow(clippy::needless_range_loop)]
-        for x in 0..8 {
-            hash_bits.push(if coeffs[y][x] > median { '1' } else { '0' });
+    for row in coeffs.iter().take(8) {
+        for &val in row.iter().take(8) {
+            hash_bits.push(if val > median { '1' } else { '0' });
         }
     }
 
