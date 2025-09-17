@@ -10,7 +10,9 @@ import pytest
 from PIL import Image, ImageSequence
 
 import daft
+from daft import col
 from daft.datatype import DataType, get_super_ext_type
+from daft.functions import image_hash
 from daft.series import Series
 
 DaftExtension = get_super_ext_type()
@@ -862,8 +864,6 @@ def test_image_average_hash_basic():
     t = s.cast(DataType.image("RGB"))
 
     # Test average hash using functional API
-    from daft.functions import image_hash
-    from daft import col
     df = daft.from_pydict({"image": t.to_pylist()})
     df = df.with_column("image", col("image").cast(DataType.image("RGB")))
     result = df.with_column("hash", image_hash(col("image"), "average"))
@@ -910,8 +910,6 @@ def test_image_average_hash_similar_images():
     t = s.cast(DataType.image("RGB"))
 
     # Test average hash using functional API
-    from daft.functions import image_hash
-    from daft import col
     df = daft.from_pydict({"image": t.to_pylist()})
     df = df.with_column("image", col("image").cast(DataType.image("RGB")))
     result = df.with_column("hash", image_hash(col("image"), "average"))
@@ -940,8 +938,6 @@ def test_image_average_hash_null_handling():
     t = s.cast(DataType.image("RGB"))
 
     # Test average hash using functional API
-    from daft.functions import image_hash
-    from daft import col
     df = daft.from_pydict({"image": t.to_pylist()})
     df = df.with_column("image", col("image").cast(DataType.image("RGB")))
     result = df.with_column("hash", image_hash(col("image"), "average"))
@@ -965,8 +961,6 @@ def test_image_average_hash_consistency():
     t = s.cast(DataType.image("RGB"))
 
     # Test average hash using functional API
-    from daft.functions import image_hash
-    from daft import col
     df = daft.from_pydict({"image": t.to_pylist()})
     df = df.with_column("image", col("image").cast(DataType.image("RGB")))
     result = df.with_column("hash", image_hash(col("image"), "average"))
