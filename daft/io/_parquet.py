@@ -3,7 +3,7 @@
 
 from typing import Optional, Union
 
-from daft import context
+from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
@@ -63,7 +63,7 @@ def read_parquet(
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
     multithreaded_io = (
-        (context.get_context().get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
+        (runners.get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
     )
 
     if isinstance(coerce_int96_timestamp_unit, str):
