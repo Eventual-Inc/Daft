@@ -2510,6 +2510,8 @@ dependencies = [
  "daft-micropartition",
  "daft-runners",
  "pyo3",
+ "reqwest",
+ "serde_json",
 ]
 
 [[package]]

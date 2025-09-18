@@ -390,7 +390,6 @@ pub async fn launch_server(
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    const DAFT_DASHBOARD_ENV_ENABLED: &str = "DAFT_DASHBOARD_ENABLED";
     const DAFT_DASHBOARD_ENV_NAME: &str = "DAFT_DASHBOARD";
 
     let module = PyModule::new(parent.py(), "dashboard")?;
@@ -400,7 +399,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(python::get_dashboard_url))?;
     module.add_wrapped(wrap_pyfunction!(python::get_dashboard_queries_url))?;
     module.add("DAFT_DASHBOARD_ENV_NAME", DAFT_DASHBOARD_ENV_NAME)?;
-    module.add("DAFT_DASHBOARD_ENV_ENABLED", DAFT_DASHBOARD_ENV_ENABLED)?;
     parent.add_submodule(&module)?;
 
     Ok(())

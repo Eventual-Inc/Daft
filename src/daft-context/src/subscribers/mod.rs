@@ -1,3 +1,4 @@
+mod dashboard;
 mod debug;
 #[cfg(feature = "python")]
 pub mod python;
@@ -28,6 +29,11 @@ pub trait QuerySubscriber: Send + Sync + std::fmt::Debug + 'static {
 
 pub fn default_subscribers() -> Vec<Arc<dyn QuerySubscriber>> {
     let mut subscribers: Vec<Arc<dyn QuerySubscriber>> = Vec::new();
+
+    // TODO: Error handling?
+    if let Ok(Some(s)) = dashboard::DashboardSubscriber::try_new() {
+        subscribers.push(Arc::new(s));
+    }
 
     #[cfg(debug_assertions)]
     if let Ok(s) = std::env::var("DAFT_DEV_ENABLE_RUNTIME_STATS_DBG") {
