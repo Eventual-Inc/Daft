@@ -12,6 +12,7 @@ pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod slice;
 pub mod to_struct;
 
 use common_error::DaftError;
@@ -23,6 +24,8 @@ use minhash::MinHashFunction;
 pub use python::register as register_modules;
 use snafu::Snafu;
 use to_struct::ToStructFunction;
+
+use crate::slice::Slice;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -59,5 +62,6 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(MinHashFunction);
         parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
+        parent.add_fn(Slice);
     }
 }

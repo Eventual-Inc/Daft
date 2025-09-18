@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from daft.daft import ImageFormat, ImageMode
+from daft.daft import ImageFormat, ImageMode, ImageProperty
 from daft.datatype import DataType
 from daft.expressions import Expression
 
@@ -87,3 +87,72 @@ def convert_image(expr: Expression, mode: str | ImageMode) -> Expression:
     if not isinstance(mode, ImageMode):
         raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
     return Expression._call_builtin_scalar_fn("to_mode", expr, mode=mode)
+
+
+def image_attribute(
+    expr: Expression, name: Literal["width", "height", "channel", "mode"] | ImageProperty
+) -> Expression:
+    """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
+
+    Args:
+        expr: The image expression to retrieve the property from.
+        name: The name of the property to retrieve.
+
+    Returns:
+        Expression: An Expression representing the requested property.
+    """
+    if isinstance(name, str):
+        name = ImageProperty.from_property_string(name)
+    return Expression._call_builtin_scalar_fn("image_attribute", expr, name)
+
+
+def image_width(expr: Expression) -> Expression:
+    """Gets the width of an image in pixels.
+
+    Example:
+        >>> import daft
+        >>> from daft.functions import image_width
+        >>> # Create a dataframe with an image column
+        >>> df = ...  # doctest: +SKIP
+        >>> df = df.with_column("width", image_width(df["images"]))  # doctest: +SKIP
+    """
+    return image_attribute(expr, "width")
+
+
+def image_height(expr: Expression) -> Expression:
+    """Gets the height of an image in pixels.
+
+    Example:
+        >>> import daft
+        >>> from daft.functions import image_height
+        >>> # Create a dataframe with an image column
+        >>> df = ...  # doctest: +SKIP
+        >>> df = df.with_column("height", image_height(df["images"]))  # doctest: +SKIP
+    """
+    return image_attribute(expr, "height")
+
+
+def image_channel(expr: Expression) -> Expression:
+    """Gets the number of channels in an image.
+
+    Example:
+        >>> import daft
+        >>> from daft.functions import image_channel
+        >>> # Create a dataframe with an image column
+        >>> df = ...  # doctest: +SKIP
+        >>> df = df.with_column("channel", image_channel(df["images"]))  # doctest: +SKIP
+    """
+    return image_attribute(expr, "channel")
+
+
+def image_mode(expr: Expression) -> Expression:
+    """Gets the mode of an image as a string.
+
+    Example:
+        >>> import daft
+        >>> from daft.functions import image_mode
+        >>> # Create a dataframe with an image column
+        >>> df = ...  # doctest: +SKIP
+        >>> df = df.with_column("mode", image_mode(df["images"]))  # doctest: +SKIP
+    """
+    return image_attribute(expr, "mode")

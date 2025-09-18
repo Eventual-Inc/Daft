@@ -132,7 +132,7 @@ fn url_download(
                 (
                     i,
                     owned_client
-                        .single_url_download(i, url, raise_error_on_failure, owned_io_stats)
+                        .single_url_download(url, raise_error_on_failure, owned_io_stats)
                         .await,
                 )
             })
