@@ -15,7 +15,7 @@ from typing import (
 )
 
 import daft.daft as native
-from daft import context
+from daft import context, runners
 from daft.daft import (
     CountMode,
     ImageFormat,
@@ -2222,6 +2222,19 @@ class Expression:
 
         return count_matches(self, patterns, whole_words=whole_words, case_sensitive=case_sensitive)
 
+    def regexp_count(
+        self,
+        pattern: builtins.str | Expression,
+    ) -> Expression:
+        """Counts the number of times a regex pattern appears in a string.
+
+        Tip: See Also
+            [`daft.functions.regexp_count`](https://docs.daft.ai/en/stable/api/functions/regexp_count/)
+        """
+        from daft.functions import regexp_count
+
+        return regexp_count(self, pattern)
+
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
 
@@ -2557,7 +2570,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         For local execution, we run in a single process which means that it all shares the same tokio I/O runtime and connection pool.
         Thus we just have `(multithreaded=N_CPU * max_connections)` number of open connections, which is usually reasonable as well.
         """
-        using_ray_runner = context.get_context().get_or_create_runner().name == "ray"
+        using_ray_runner = runners.get_or_create_runner().name == "ray"
         return not using_ray_runner
 
     @staticmethod
