@@ -2222,6 +2222,19 @@ class Expression:
 
         return count_matches(self, patterns, whole_words=whole_words, case_sensitive=case_sensitive)
 
+    def regexp_count(
+        self,
+        pattern: builtins.str | Expression,
+    ) -> Expression:
+        """Counts the number of times a regex pattern appears in a string.
+
+        Tip: See Also
+            [`daft.functions.regexp_count`](https://docs.daft.ai/en/stable/api/functions/regexp_count/)
+        """
+        from daft.functions import regexp_count
+
+        return regexp_count(self, pattern)
+
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
 

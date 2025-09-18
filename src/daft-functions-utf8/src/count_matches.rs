@@ -9,6 +9,7 @@ use daft_dsl::{
     lit,
 };
 use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CountMatches;
 
