@@ -69,6 +69,8 @@ impl PushDownLimit {
                         match source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
+                            // Limit pushdown is not supported for glob scan sources.
+                            SourceInfo::GlobScan(_) => Ok(Transformed::no(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::Physical(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit

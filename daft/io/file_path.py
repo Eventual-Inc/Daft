@@ -6,11 +6,10 @@ from typing import Optional, Union
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.daft import IOConfig
-from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dataframe import DataFrame
+from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
-from daft.recordbatch import MicroPartition
-from daft.runners.partitioning import LocalPartitionSet
+from daft.schema import Schema
 
 
 @PublicAPI
@@ -51,21 +50,21 @@ def from_glob_path(path: Union[str, list[str]], io_config: Optional[IOConfig] = 
 
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
-    runner_io = context.get_or_create_runner().runner_io()
-    file_infos = runner_io.glob_paths_details(path, io_config=io_config)
-    file_infos_table = MicroPartition._from_pyrecordbatch(_PyRecordBatch.from_file_infos(file_infos))
-    partition = LocalPartitionSet()
-    partition.set_partition_from_table(0, file_infos_table)
-    cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition)
-    size_bytes = partition.size_bytes()
-    num_rows = len(partition)
 
-    assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
-    builder = LogicalPlanBuilder.from_in_memory_scan(
-        cache_entry,
-        schema=file_infos_table.schema(),
-        num_partitions=partition.num_partitions(),
-        size_bytes=size_bytes,
-        num_rows=num_rows,
+    # Create schema for glob scan results
+    schema = Schema._from_field_name_and_types(
+        [
+            ("path", DataType.string()),
+            ("size", DataType.int64()),
+            ("rows", DataType.int64()),
+        ]
+    )
+
+    # Use the new lazy glob scan
+    builder = LogicalPlanBuilder.from_glob_scan(
+        glob_paths=path,
+        schema=schema,
+        pushdowns=None,
+        io_config=io_config,
     )
     return DataFrame(builder)
