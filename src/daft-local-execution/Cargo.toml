@@ -62,6 +62,7 @@ python = [
   "common-scan-info/python",
   "common-metrics/python",
   "daft-core/python",
+  "daft-context/python",
   "daft-functions-list/python",
   "daft-dsl/python",
   "daft-io/python",
