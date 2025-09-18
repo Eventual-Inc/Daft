@@ -78,6 +78,23 @@ repos:
     types: [rust]
     args: [--]
 
+  - id: clippy
+    name: Rust code quality check
+    description: Lint rust sources
+    entry: cargo clippy
+    language: system
+    args: [--workspace, --all-features, --, -D, warnings]
+    types: [rust]
+    pass_filenames: false
+
+  - id: check-for-openssl
+    name: check-for-openssl
+    description: Lint rust sources
+    entry: ./tools/check_for_openssl.sh
+    language: system
+    types: [rust]
+    pass_filenames: false
+
   - id: cargo-check-default
     name: cargo check (default)
     description: Check the package for errors with default features.
@@ -95,23 +112,6 @@ repos:
     types: [rust]
     pass_filenames: false
     args: [--workspace, --all-features, --all-targets]
-
-  - id: clippy
-    name: Rust code quality check
-    description: Lint rust sources
-    entry: cargo clippy
-    language: system
-    args: [--workspace, --all-features, --, -D, warnings]
-    types: [rust]
-    pass_filenames: false
-
-  - id: check-for-openssl
-    name: check-for-openssl
-    description: Lint rust sources
-    entry: ./tools/check_for_openssl.sh
-    language: system
-    types: [rust]
-    pass_filenames: false
 
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.24.1

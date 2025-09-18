@@ -96,7 +96,7 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
 impl<P, PS> PartitionSet<P> for Arc<PS>
 where
     P: Partition + Clone,
-    PS: PartitionSet<P> + Clone,
+    PS: PartitionSet<P> + Clone + Sync,
 {
     fn get_merged_partitions(&self) -> DaftResult<P> {
         PS::get_merged_partitions(self)

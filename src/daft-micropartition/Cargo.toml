@@ -16,7 +16,7 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 daft-warc = {path = "../daft-warc", default-features = false}
-dashmap = "6.1.0"
+dashmap = "6.1"
 futures = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
