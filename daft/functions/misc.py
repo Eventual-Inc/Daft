@@ -60,36 +60,6 @@ def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
     return expr._eval_expressions("file", io_config=io_config)
 
 
-def unnest(expr: Expression) -> Expression:
-    """Flatten the fields of a struct expression into columns in a DataFrame.
-
-    Examples:
-        >>> import daft
-        >>> df = daft.from_pydict(
-        ...     {
-        ...         "struct": [
-        ...             {"x": 1, "y": 2},
-        ...             {"x": 3, "y": 4},
-        ...         ]
-        ...     }
-        ... )
-        >>> unnested_df = df.select(unnest(df["struct"]))
-        >>> unnested_df.show()
-        ╭───────┬───────╮
-        │ x     ┆ y     │
-        │ ---   ┆ ---   │
-        │ Int64 ┆ Int64 │
-        ╞═══════╪═══════╡
-        │ 1     ┆ 2     │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 3     ┆ 4     │
-        ╰───────┴───────╯
-        <BLANKLINE>
-        (Showing first 2 of 2 rows)
-    """
-    return expr["*"]
-
-
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
     """Performs a null-safe equality comparison between two expressions.
 
@@ -552,3 +522,127 @@ def coalesce(*args: Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("coalesce", *args)
+
+
+def get(expr: Expression, key: int | str | Expression, default: Any = None) -> Expression:
+    """Get an index from a list expression or a field from a struct expression.
+
+    Args:
+        expr: list or struct expression to get value from
+        key: integer index for list or string field for struct
+        default: default value if out of bounds. Only supported for list get
+
+    Returns:
+        An expression with the inner type of the input expression.
+
+    Note:
+        `expr[x]` is equivalent to `expr.get(x)`.
+
+    Note:
+        `expr.get("*")` is equivalent to `expr.unnest()`
+    """
+    if isinstance(key, (int, Expression)):
+        return Expression._call_builtin_scalar_fn("list_get", expr, key, default)
+    elif isinstance(key, str):
+        if default is not None:
+            raise ValueError("`daft.functions.get` does not support default values for getting a struct field")
+        return Expression._from_pyexpr(expr._expr.struct_get(key))
+    else:
+        raise TypeError(
+            f"Argument {key} of type {type(key)} is not supported in `daft.functions.get`. Only int and string types are supported."
+        )
+
+
+def map_get(expr: Expression, key: Expression) -> Expression:
+    """Retrieves the value for a key in a map column.
+
+    Args:
+        expr: the map expression to get from
+        key: the key to retrieve
+
+    Returns:
+        Expression: the value expression
+
+    Examples:
+        >>> import pyarrow as pa
+        >>> import daft
+        >>> pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+        >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+        >>> df = df.with_column("a", df["map_col"].map_get("a"))
+        >>> df.show()
+        ╭──────────────────┬───────╮
+        │ map_col          ┆ a     │
+        │ ---              ┆ ---   │
+        │ Map[Utf8: Int64] ┆ Int64 │
+        ╞══════════════════╪═══════╡
+        │ [{key: a,        ┆ 1     │
+        │ value: 1,        ┆       │
+        │ }]               ┆       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ []               ┆ None  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ [{key: b,        ┆ None  │
+        │ value: 2,        ┆       │
+        │ }]               ┆       │
+        ╰──────────────────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    key_expr = Expression._to_expression(key)
+    return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
+
+
+def slice(expr: Expression, start: int | Expression, end: int | Expression | None = None) -> Expression:
+    r"""Get a subset of each list or binary value.
+
+    Args:
+        expr: List or binary expression to slice.
+        start: Index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end
+        end: Index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end. If not provided, the slice will include elements up to the end of the list. If start < end, an empty slice is produced.
+
+    Returns:
+        Expression: an expression with the same type as the input.
+
+    Note:
+        `expr[start:stop]` is also equivalent to `expr.slice(start, stop)`
+
+    Examples:
+        Slicing a list expression:
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [[1, 2, 3], [4, 5, 6, 7], [8]]})
+        >>> df = df.select(df["x"].slice(1, -1))
+        >>> df.show()
+        ╭─────────────╮
+        │ x           │
+        │ ---         │
+        │ List[Int64] │
+        ╞═════════════╡
+        │ [2]         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [5, 6]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ []          │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Slicing a binary expression:
+        >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
+        >>> df = df.select(df["x"].slice(1, -2))
+        >>> df.show()
+        ╭──────────────╮
+        │ x            │
+        │ ---          │
+        │ Binary       │
+        ╞══════════════╡
+        │ b"ello Wor"  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b""          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b"mp"        │
+        ╰──────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("slice", expr, start, end=end)

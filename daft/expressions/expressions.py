@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import math
 import warnings
 from collections.abc import Iterable, Iterator
@@ -15,7 +16,6 @@ from typing import (
 )
 
 import daft.daft as native
-from daft import context, runners
 from daft.daft import (
     CountMode,
     ImageFormat,
@@ -42,8 +42,6 @@ from daft.logical.schema import Field, Schema
 from daft.series import Series
 
 if TYPE_CHECKING:
-    import builtins
-
     from daft.dependencies import pc
     from daft.io import IOConfig
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -167,83 +165,27 @@ def _resolved_col(name: str) -> Expression:
 
 
 def list_(*items: Expression | str) -> Expression:
-    """Constructs a list from the item expressions.
+    """(DEPRECATED) Please use `daft.functions.to_list` instead."""
+    from daft.functions import to_list
 
-    Args:
-        *items (Union[Expression, str]): item expressions to construct the list
-
-    Returns:
-        Expression: Expression representing the constructed list
-
-    Examples:
-        >>> import daft
-        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-        >>> df = df.select(daft.list_("x", "y").alias("fwd"), daft.list_("y", "x").alias("rev"))
-        >>> df.show()
-        ╭─────────────┬─────────────╮
-        │ fwd         ┆ rev         │
-        │ ---         ┆ ---         │
-        │ List[Int64] ┆ List[Int64] │
-        ╞═════════════╪═════════════╡
-        │ [1, 4]      ┆ [4, 1]      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [2, 5]      ┆ [5, 2]      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [3, 6]      ┆ [6, 3]      │
-        ╰─────────────┴─────────────╯
-        <BLANKLINE>
-        (Showing first 3 of 3 rows)
-
-    """
-    assert len(items) > 0, "List constructor requires at least one item"
-    return Expression._from_pyexpr(native.list_([col(i)._expr if isinstance(i, str) else i._expr for i in items]))
+    warnings.warn(
+        "`daft.expressions.list_`/`daft.list_` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_list` instead.",
+        category=DeprecationWarning,
+    )
+    items_list = [col(i) if isinstance(i, str) else i for i in items]
+    return to_list(*items_list)
 
 
 def struct(*fields: Expression | str) -> Expression:
-    """Constructs a struct from the input field expressions.
+    """(DEPRECATED) Please use `daft.functions.to_struct` instead."""
+    from daft.functions import to_struct
 
-    Args:
-        inputs: Expressions to be converted into struct fields.
-
-    Returns:
-        An expression for a struct column with the input columns as its fields.
-
-    Examples:
-        >>> import daft
-        >>> from daft import col
-        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-        >>> df.select(daft.struct(col("a") * 2, col("b"))).show()
-        ╭───────────────────────────╮
-        │ struct                    │
-        │ ---                       │
-        │ Struct[a: Int64, b: Utf8] │
-        ╞═══════════════════════════╡
-        │ {a: 2,                    │
-        │ b: a,                     │
-        │ }                         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {a: 4,                    │
-        │ b: b,                     │
-        │ }                         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {a: 6,                    │
-        │ b: c,                     │
-        │ }                         │
-        ╰───────────────────────────╯
-        <BLANKLINE>
-        (Showing first 3 of 3 rows)
-
-    """
-    pyinputs = []
-    for field in fields:
-        if isinstance(field, Expression):
-            pyinputs.append(field._expr)
-        elif isinstance(field, str):
-            pyinputs.append(col(field)._expr)
-        else:
-            raise TypeError("expected Expression or str as input for struct()")
-    f = native.get_function_from_registry("struct")
-    return Expression._from_pyexpr(f(*pyinputs))
+    warnings.warn(
+        "`daft.expressions.struct`/`daft.struct` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_struct` instead.",
+        category=DeprecationWarning,
+    )
+    fields_list = [col(f) if isinstance(f, str) else f for f in fields]
+    return to_struct(*fields_list)
 
 
 def interval(
@@ -569,10 +511,11 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr // self._expr)
 
-    def __getitem__(self, key: builtins.str | int) -> Expression:
-        """Syntactic sugar for `Expression.list.get` and `Expression.struct.get`.
+    def __getitem__(self, key: builtins.str | int | slice) -> Expression:
+        """Syntactic sugar for `daft.functions.get` for string and int, and `daft.functions.slice` for slice.
 
         Examples:
+            Getting a single value:
             >>> import daft
             >>> df = daft.from_pydict({"struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "list": [[10, 20], [30, 40]]})
             >>> df = df.select(df["struct"]["x"], df["list"][0].alias("first"))
@@ -589,18 +532,43 @@ class Expression:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
+            Getting a slice:
+            >>> df = daft.from_pydict({"x": [[1, 2, 3], [4, 5, 6, 7], [8]]})
+            >>> df = df.select(df["x"][1, -1])
+            >>> df.show()
+            ╭─────────────╮
+            │ x           │
+            │ ---         │
+            │ List[Int64] │
+            ╞═════════════╡
+            │ [2]         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [5, 6]      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ []          │
+            ╰─────────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
         Tip: See Also
-            [list.get](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.get) and [struct.get](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStructNamespace.get)
+            [`daft.functions.get`](https://docs.daft.ai/en/stable/api/functions/get/)
+            [`daft.functions.slice`](https://docs.daft.ai/en/stable/api/functions/slice/)
 
         """
-        if isinstance(key, int):
-            return self.list.get(key)
-        elif isinstance(key, str):
-            return self.struct.get(key)
+        if isinstance(key, builtins.slice):
+            from daft.functions import slice
+
+            if key.step is not None:
+                raise ValueError(
+                    "`Expression.__getitem__` does not yet support slicing with step: `expr[start:stop:step]`"
+                )
+
+            start = key.start if key.start is not None else 0
+            return slice(self, start, key.stop)
         else:
-            raise TypeError(
-                f"Argument {key} of type {type(key)} is not supported in Expression.__getitem__. Only int and string types are supported."
-            )
+            from daft.functions import get
+
+            return get(self, key)
 
     @classmethod
     def _call_builtin_scalar_fn(cls, func_name: builtins.str, *args: Any, **kwargs: Any) -> Expression:
@@ -2529,6 +2497,106 @@ class Expression:
 
         return list_append(self, other)
 
+    def get(self, index: int | builtins.str | Expression, default: Any = None) -> Expression:
+        """Get an index from a list expression or a field from a struct expression.
+
+        Tip: See Also
+            [`daft.functions.get`](https://docs.daft.ai/en/stable/api/functions/get/)
+        """
+        from daft.functions import get
+
+        return get(self, index, default)
+
+    def map_get(self, key: Expression) -> Expression:
+        """Retrieves the value for a key in a map column.
+
+        Tip: See Also
+            [`daft.functions.map_get`](https://docs.daft.ai/en/stable/api/functions/map_get/)
+        """
+        from daft.functions import map_get
+
+        return map_get(self, key)
+
+    def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
+        """Get a subset of each list or binary value.
+
+        Tip: See Also
+            [`daft.functions.slice`](https://docs.daft.ai/en/stable/api/functions/slice/)
+        """
+        from daft.functions import slice
+
+        return slice(self, start, end)
+
+    def to_unix_epoch(self, time_unit: builtins.str | TimeUnit | None = None) -> Expression:
+        """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
+
+        Tip: See Also
+            [`daft.functions.to_unix_epoch`](https://docs.daft.ai/en/stable/api/functions/to_unix_epoch/)
+        """
+        from daft.functions import to_unix_epoch
+
+        return to_unix_epoch(self, time_unit=time_unit)
+
+    def partition_days(self) -> Expression:
+        """Partitioning Transform that returns the number of days since epoch (1970-01-01).
+
+        Tip: See Also
+            [`daft.functions.partition_days`](https://docs.daft.ai/en/stable/api/functions/partition_days/)
+        """
+        from daft.functions import partition_days
+
+        return partition_days(self)
+
+    def partition_hours(self) -> Expression:
+        """Partitioning Transform that returns the number of hours since epoch (1970-01-01).
+
+        Tip: See Also
+            [`daft.functions.partition_hours`](https://docs.daft.ai/en/stable/api/functions/partition_hours/)
+        """
+        from daft.functions import partition_hours
+
+        return partition_hours(self)
+
+    def partition_months(self) -> Expression:
+        """Partitioning Transform that returns the number of months since epoch (1970-01-01).
+
+        Tip: See Also
+            [`daft.functions.partition_months`](https://docs.daft.ai/en/stable/api/functions/partition_months/)
+        """
+        from daft.functions import partition_months
+
+        return partition_months(self)
+
+    def partition_years(self) -> Expression:
+        """Partitioning Transform that returns the number of years since epoch (1970-01-01).
+
+        Tip: See Also
+            [`daft.functions.partition_years`](https://docs.daft.ai/en/stable/api/functions/partition_years/)
+        """
+        from daft.functions import partition_years
+
+        return partition_years(self)
+
+    def partition_iceberg_bucket(self, n: int) -> Expression:
+        """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86.
+
+        Tip: See Also
+            [`daft.functions.partition_iceberg_bucket`](https://docs.daft.ai/en/stable/api/functions/partition_iceberg_bucket/)
+        """
+        from daft.functions import partition_iceberg_bucket
+
+        return partition_iceberg_bucket(self, n)
+
+    def partition_iceberg_truncate(self, w: int) -> Expression:
+        """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
+
+        Tip: See Also
+            [`daft.functions.partition_iceberg_truncate`](https://docs.daft.ai/en/stable/api/functions/partition_iceberg_truncate/)
+        """
+        from daft.functions import partition_iceberg_truncate
+
+        return partition_iceberg_truncate(self, w)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -2555,35 +2623,6 @@ class ExpressionNamespace:
 
 class ExpressionUrlNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.url` attribute."""
-
-    @staticmethod
-    def _should_use_multithreading_tokio_runtime() -> bool:
-        """Whether or not our expression should use the multithreaded tokio runtime under the hood, or a singlethreaded one.
-
-        This matters because for distributed workloads, each process has its own tokio I/O runtime. if each distributed process
-        is multithreaded (by default we spin up `N_CPU` threads) then we will be running `(N_CPU * N_PROC)` number of threads, and
-        opening `(N_CPU * N_PROC * max_connections)` number of connections. This is too large for big machines with many CPU cores.
-
-        Hence for Ray we default to doing the singlethreaded runtime. This means that we will have a limit of
-        `(singlethreaded=1 * N_PROC * max_connections)` number of open connections per machine, which works out to be reasonable at ~2-4k connections.
-
-        For local execution, we run in a single process which means that it all shares the same tokio I/O runtime and connection pool.
-        Thus we just have `(multithreaded=N_CPU * max_connections)` number of open connections, which is usually reasonable as well.
-        """
-        using_ray_runner = runners.get_or_create_runner().name == "ray"
-        return not using_ray_runner
-
-    @staticmethod
-    def _override_io_config_max_connections(max_connections: int, io_config: IOConfig | None) -> IOConfig:
-        """Use a user-provided `max_connections` argument to override the value in S3Config.
-
-        This is because our Rust code under the hood actually does `min(S3Config's max_connections, url_download's max_connections)` to
-        determine how many connections to allow per-thread. Thus we need to override the io_config here to ensure that the user's max_connections
-        is correctly applied in our Rust code.
-        """
-        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        io_config = io_config.replace(s3=io_config.s3.replace(max_connections=max_connections))
-        return io_config
 
     def download(
         self,
@@ -2902,41 +2941,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         return self._to_expression().date_trunc(interval, relative_to=relative_to)
 
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
-        """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
-
-        See [daft.datatype.TimeUnit](https://docs.daft.ai/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
-
-        Examples:
-            >>> import daft
-            >>> from datetime import date
-            >>> df = daft.from_pydict(
-            ...     {
-            ...         "dates": [
-            ...             date(2001, 1, 1),
-            ...             date(2001, 1, 2),
-            ...             date(2001, 1, 3),
-            ...             None,
-            ...         ]
-            ...     }
-            ... )
-            >>> df.with_column("timestamp", daft.col("dates").dt.to_unix_epoch("ns")).show()
-            ╭────────────┬────────────────────╮
-            │ dates      ┆ timestamp          │
-            │ ---        ┆ ---                │
-            │ Date       ┆ Int64              │
-            ╞════════════╪════════════════════╡
-            │ 2001-01-01 ┆ 978307200000000000 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2001-01-02 ┆ 978393600000000000 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2001-01-03 ┆ 978480000000000000 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ None       ┆ None               │
-            ╰────────────┴────────────────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
-        """
-        return self._eval_expressions("to_unix_epoch", time_unit=time_unit)
+        """(DEPRECATED) Please use `daft.functions.to_unix_epoch` instead."""
+        warnings.warn(
+            "`Expression.dt.to_unix_epoch` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_unix_epoch` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().to_unix_epoch(time_unit=time_unit)
 
     def strftime(self, format: str | None = None) -> Expression:
         """(DEPRECATED) Please use `daft.functions.strftime` instead."""
@@ -3366,28 +3376,20 @@ class ExpressionListNamespace(ExpressionNamespace):
         return self._to_expression().length()
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
-        """Gets the element at an index in each list.
-
-        Args:
-            idx: index or indices to retrieve from each list
-            default: the default value if the specified index is out of bounds
-
-        Returns:
-            Expression: an expression with the type of the list values
-        """
-        return self._eval_expressions("list_get", idx, default)
+        """(DEPRECATED) Please use `daft.functions.get` instead."""
+        warnings.warn(
+            "`Expression.list.get` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.get` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().get(idx, default=default)
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
-        """Gets a subset of each list.
-
-        Args:
-            start: index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end of the list
-            end: optional index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end of the list. If not provided, the slice will include elements up to the end of the list
-
-        Returns:
-            Expression: an expression with a list of the type of the list values
-        """
-        return self._eval_expressions("list_slice", start, end)
+        """(DEPRECATED) Please use `daft.functions.slice` instead."""
+        warnings.warn(
+            "`Expression.list.slice` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.slice` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().slice(start, end=end)
 
     def chunk(self, size: int) -> Expression:
         """(DEPRECATED) Please use `daft.functions.chunk` instead."""
@@ -3474,57 +3476,24 @@ class ExpressionStructNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.struct` attribute."""
 
     def get(self, name: str) -> Expression:
-        """Retrieves one field from a struct column, or all fields with "*".
-
-        Args:
-            name: the name of the field to retrieve
-
-        Returns:
-            Expression: the field expression
-        """
-        return Expression._from_pyexpr(self._expr.struct_get(name))
+        """(DEPRECATED) Please use `daft.functions.get` instead."""
+        warnings.warn(
+            "`Expression.struct.get` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.get` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().get(name)
 
 
 class ExpressionMapNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.map` attribute."""
 
     def get(self, key: Expression) -> Expression:
-        """Retrieves the value for a key in a map column.
-
-        Args:
-            key: the key to retrieve
-
-        Returns:
-            Expression: the value expression
-
-        Examples:
-            >>> import pyarrow as pa
-            >>> import daft
-            >>> pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
-            >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
-            >>> df = df.with_column("a", df["map_col"].map.get("a"))
-            >>> df.show()
-            ╭──────────────────┬───────╮
-            │ map_col          ┆ a     │
-            │ ---              ┆ ---   │
-            │ Map[Utf8: Int64] ┆ Int64 │
-            ╞══════════════════╪═══════╡
-            │ [{key: a,        ┆ 1     │
-            │ value: 1,        ┆       │
-            │ }]               ┆       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ []               ┆ None  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ [{key: b,        ┆ None  │
-            │ value: 2,        ┆       │
-            │ }]               ┆       │
-            ╰──────────────────┴───────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        key_expr = Expression._to_expression(key)
-        return Expression._from_pyexpr(self._expr.map_get(key_expr._expr))
+        """(DEPRECATED) Please use `daft.functions.map_get` instead."""
+        warnings.warn(
+            "`Expression.map.get` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.map_get` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().map_get(key)
 
 
 class ExpressionsProjection(Iterable[Expression]):
@@ -3750,64 +3719,52 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.partition` attribute."""
 
     def days(self) -> Expression:
-        """Partitioning Transform that returns the number of days since epoch (1970-01-01).
-
-        Unlike other temporal partitioning expressions, this expression is date type instead of int. This is to conform to the behavior of other implementations of Iceberg partition transforms.
-
-        Returns:
-            Date Expression
-        """
-        return Expression._from_pyexpr(self._expr.partitioning_days())
+        """(DEPRECATED) Please use `daft.functions.partition_days` instead."""
+        warnings.warn(
+            "`Expression.partition.days` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_days` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().partition_days()
 
     def hours(self) -> Expression:
-        """Partitioning Transform that returns the number of hours since epoch (1970-01-01).
-
-        Returns:
-            Expression: Int32 Expression in hours
-        """
-        return Expression._from_pyexpr(self._expr.partitioning_hours())
+        """(DEPRECATED) Please use `daft.functions.partition_hours` instead."""
+        warnings.warn(
+            "`Expression.partition.hours` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_hours` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().partition_hours()
 
     def months(self) -> Expression:
-        """Partitioning Transform that returns the number of months since epoch (1970-01-01).
-
-        Returns:
-            Expression: Int32 Expression in months
-        """
-        return Expression._from_pyexpr(self._expr.partitioning_months())
+        """(DEPRECATED) Please use `daft.functions.partition_months` instead."""
+        warnings.warn(
+            "`Expression.partition.months` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_months` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().partition_months()
 
     def years(self) -> Expression:
-        """Partitioning Transform that returns the number of years since epoch (1970-01-01).
-
-        Returns:
-            Expression: Int32 Expression in years
-        """
-        return Expression._from_pyexpr(self._expr.partitioning_years())
+        """(DEPRECATED) Please use `daft.functions.partition_years` instead."""
+        warnings.warn(
+            "`Expression.partition.years` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_years` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().partition_years()
 
     def iceberg_bucket(self, n: int) -> Expression:
-        """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86.
-
-        See <https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements> for more details.
-
-        Args:
-            n (int): Number of buckets
-
-        Returns:
-            Expression: Int32 Expression with the Hash Bucket
-        """
-        return Expression._from_pyexpr(self._expr.partitioning_iceberg_bucket(n))
+        """(DEPRECATED) Please use `daft.functions.partition_iceberg_bucket` instead."""
+        warnings.warn(
+            "`Expression.partition.iceberg_bucket` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_iceberg_bucket` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().partition_iceberg_bucket(n)
 
     def iceberg_truncate(self, w: int) -> Expression:
-        """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
-
-        See <https://iceberg.apache.org/spec/#truncate-transform-details> for more details.
-
-        Args:
-            w (int): width of the truncation
-
-        Returns:
-            Expression: Expression of the Same Type of the input
-        """
-        return Expression._from_pyexpr(self._expr.partitioning_iceberg_truncate(w))
+        """(DEPRECATED) Please use `daft.functions.partition_iceberg_truncate` instead."""
+        warnings.warn(
+            "`Expression.partition.iceberg_truncate` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_iceberg_truncate` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().partition_iceberg_truncate(w)
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
@@ -3843,7 +3800,9 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         return self._to_expression().concat(other)
 
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
-        r"""Returns a slice of each binary string.
+        r"""(DEPRECATED) Please use `daft.functions.slice` instead.
+
+        Returns a slice of each binary string.
 
         Args:
             start: The starting position (0-based) of the slice.
@@ -3872,4 +3831,9 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return self._eval_expressions("binary_slice", start, length)
+        warnings.warn(
+            "`Expression.binary.slice` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.slice` instead.",
+            category=DeprecationWarning,
+        )
+        end = None if length is None else Expression._to_expression(start) + Expression._to_expression(length)
+        return self._to_expression().slice(start, end=end)

@@ -404,3 +404,39 @@ def list_append(expr: Expression, other: Expression) -> Expression:
         (Showing first 2 of 2 rows)
     """
     return Expression._call_builtin_scalar_fn("list_append", expr, other)
+
+
+def to_list(*items: Expression) -> Expression:
+    """Constructs a list from the item expressions.
+
+    Args:
+        *items (Union[Expression, str]): item expressions to construct the list
+
+    Returns:
+        Expression: Expression representing the constructed list
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import to_list
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> df = df.select(to_list(df["x"], df["y"]).alias("fwd"), to_list(df["y"], df["x"]).alias("rev"))
+        >>> df.show()
+        ╭─────────────┬─────────────╮
+        │ fwd         ┆ rev         │
+        │ ---         ┆ ---         │
+        │ List[Int64] ┆ List[Int64] │
+        ╞═════════════╪═════════════╡
+        │ [1, 4]      ┆ [4, 1]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [2, 5]      ┆ [5, 2]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [3, 6]      ┆ [6, 3]      │
+        ╰─────────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    from daft.daft import list_
+
+    return Expression._from_pyexpr(list_([Expression._to_expression(i)._expr for i in items]))
