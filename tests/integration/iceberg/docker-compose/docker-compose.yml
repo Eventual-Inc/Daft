@@ -67,9 +67,16 @@ services:
     ports:
     - 9000:9000
     command: [server, /data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
   mc:
     depends_on:
-    - minio
+      minio:
+        condition: service_healthy
     image: minio/mc
     container_name: pyiceberg-mc
     networks:
