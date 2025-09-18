@@ -5,7 +5,6 @@ import pytest
 from pyarrow import parquet as pq
 
 import daft
-from tests.utils import sort_pydict
 
 from ..conftest import minio_create_bucket
 
@@ -107,7 +106,7 @@ def test_minio_parquet_read_mismatched_schemas_no_pushdown(minio_io_config):
             [f"s3://{bucket_name}/data_0.parquet", f"s3://{bucket_name}/data_1.parquet"], io_config=minio_io_config
         )
         assert df.schema().column_names() == ["x"]
-        assert sort_pydict(df.to_pydict(), "x", ascending=True) == {"x": [1, 2, 3, 4, None, None, None, None]}
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
 
 
 @pytest.mark.integration()
@@ -134,7 +133,7 @@ def test_minio_parquet_read_mismatched_schemas_with_pushdown(minio_io_config):
         )
         df = df.select("x", "y")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x", "y"]
-        assert sort_pydict(df.to_pydict(), "x", ascending=True) == {
+        assert df.to_pydict() == {
             "x": [1, 2, 3, 4, 5, 6, 7, 8],
             "y": [1, 2, 3, 4, None, None, None, None],
         }
@@ -163,4 +162,4 @@ def test_minio_parquet_read_mismatched_schemas_with_pushdown_no_rows_read(minio_
         )
         df = df.select("x")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x"]
-        assert sort_pydict(df.to_pydict(), "x", ascending=True) == {"x": [1, 2, 3, 4, None, None, None, None]}
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}

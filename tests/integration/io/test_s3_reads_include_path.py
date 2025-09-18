@@ -4,7 +4,6 @@ import pytest
 
 import daft
 from tests.integration.io.conftest import minio_create_bucket
-from tests.utils import sort_pydict
 
 
 @pytest.mark.integration()
@@ -36,7 +35,6 @@ def test_read_multi_parquet_from_s3_with_include_file_path_column(minio_io_confi
         assert len(file_paths) == 3
         file_paths = sorted([f"s3://{path}" for path in file_paths])
         read_back = daft.read_parquet(file_paths, io_config=minio_io_config, file_path_column="path").to_pydict()
-        read_back = sort_pydict(read_back, "a", ascending=True)
         assert read_back["a"] == data["a"]
         assert read_back["b"] == data["b"]
         assert read_back["path"] == file_paths
@@ -53,7 +51,6 @@ def test_read_csv_from_s3_with_include_file_path_column(minio_io_config):
         assert len(file_paths) == 1
         file_path = f"s3://{file_paths[0]}"
         read_back = daft.read_csv(file_path, io_config=minio_io_config, file_path_column="path").to_pydict()
-        read_back = sort_pydict(read_back, "a", ascending=True)
         assert read_back["a"] == data["a"]
         assert read_back["b"] == data["b"]
         assert read_back["path"] == [file_path] * 3
@@ -72,7 +69,6 @@ def test_read_multi_csv_from_s3_with_include_file_path_column(minio_io_config):
         assert len(file_paths) == 3
         file_paths = sorted([f"s3://{path}" for path in file_paths])
         read_back = daft.read_csv(file_paths, io_config=minio_io_config, file_path_column="path").to_pydict()
-        read_back = sort_pydict(read_back, "a", ascending=True)
         assert read_back["a"] == data["a"]
         assert read_back["b"] == data["b"]
         assert read_back["path"] == file_paths
