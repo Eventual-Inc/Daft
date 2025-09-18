@@ -70,10 +70,10 @@ repos:
 
 - repo: local
   hooks:
-  - id: check-for-openssl
-    name: check-for-openssl
-    description: Lint rust sources
-    entry: ./tools/check_for_openssl.sh
+  - id: check-invalid-deps
+    name: Check Invalid Dependencies
+    description: Check for invalid Rust dependencies
+    entry: ./tools/check_invalid_deps.sh
     language: system
     types: [rust]
     pass_filenames: false
