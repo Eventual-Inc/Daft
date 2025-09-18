@@ -437,4 +437,5 @@ def to_list(*items: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
+    assert len(items) > 0, "List constructor requires at least one item"
     return Expression._from_pyexpr(list_([Expression._to_expression(i)._expr for i in items]))

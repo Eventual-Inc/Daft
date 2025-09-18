@@ -534,7 +534,7 @@ class Expression:
 
             Getting a slice:
             >>> df = daft.from_pydict({"x": [[1, 2, 3], [4, 5, 6, 7], [8]]})
-            >>> df = df.select(df["x"][1, -1])
+            >>> df = df.select(df["x"][1:-1])
             >>> df.show()
             ╭─────────────╮
             │ x           │

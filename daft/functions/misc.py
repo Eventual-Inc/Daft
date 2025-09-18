@@ -631,17 +631,17 @@ def slice(expr: Expression, start: int | Expression, end: int | Expression | Non
         >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
         >>> df = df.select(df["x"].slice(1, -2))
         >>> df.show()
-        ╭──────────────╮
-        │ x            │
-        │ ---          │
-        │ Binary       │
-        ╞══════════════╡
-        │ b"ello Wor"  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b""          │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b"mp"        │
-        ╰──────────────╯
+        ╭─────────────╮
+        │ x           │
+        │ ---         │
+        │ Binary      │
+        ╞═════════════╡
+        │ b"ello Wor" │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b""         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b"mp"       │
+        ╰─────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """

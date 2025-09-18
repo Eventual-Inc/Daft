@@ -35,13 +35,21 @@ impl ScalarUDF for Slice {
             input_lengths.push(end.len());
         }
 
-        let output_len = *input_lengths.iter().max().unwrap();
+        let output_len = *input_lengths
+            .iter()
+            .filter(|l| **l != 1)
+            .max()
+            .unwrap_or(&1);
         for l in input_lengths {
             if !(l == 1 || l == output_len) {
                 return Err(DaftError::ComputeError(format!(
                     "Input length mismatch in `slice` function: {output_len} vs {l}"
                 )));
             }
+        }
+
+        if output_len == 0 {
+            return Ok(Series::empty(input.name(), input.data_type()));
         }
 
         let start_casted = start.cast(&DataType::Int64)?;
