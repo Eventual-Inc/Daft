@@ -1919,15 +1919,16 @@ class NativeExecutor:
         self,
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftContext,
+        daft_ctx: PyDaftContext,
         results_buffer_size: int | None,
         context: dict[str, str] | None = None,
     ) -> Iterator[PyMicroPartition]: ...
+    # Primarily used for Flotilla, so subscribers are unused
     def run_async(
         self,
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftContext,
+        daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
         context: dict[str, str] | None = None,
     ) -> AsyncIterator[PyMicroPartition]: ...

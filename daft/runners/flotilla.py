@@ -11,6 +11,7 @@ from daft.daft import (
     DistributedPhysicalPlanRunner,
     LocalPhysicalPlan,
     NativeExecutor,
+    PyDaftExecutionConfig,
     PyMicroPartition,
     RayPartitionRef,
     RaySwordfishTask,
@@ -29,7 +30,6 @@ from daft.runners.profiler import profile
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 
-    from daft.daft import PyDaftContext
     from daft.runners.ray_runner import RayMaterializedResult
 
 try:
@@ -56,7 +56,7 @@ class RaySwordfishActor:
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
-        ctx: PyDaftContext,
+        exec_cfg: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
@@ -67,7 +67,7 @@ class RaySwordfishActor:
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, ctx, None, context):
+            async for partition in native_executor.run_async(plan, psets_mp, exec_cfg, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
