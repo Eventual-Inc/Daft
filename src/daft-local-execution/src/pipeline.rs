@@ -805,6 +805,7 @@ fn physical_plan_to_pipeline(
             right_on,
             null_equals_null,
             join_type,
+            build_on_left,
             schema,
             stats_state,
             ..
@@ -817,84 +818,95 @@ fn physical_plan_to_pipeline(
             // 2. Join type. Different join types have different requirements for which side can build the probe table.
             let left_stats_state = left.get_stats_state();
             let right_stats_state = right.get_stats_state();
-            let build_on_left = match join_type {
-                // Inner and outer joins can build on either side. If stats are available, choose the smaller side.
-                // Else, default to building on the left.
-                JoinType::Inner | JoinType::Outer => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        left_size <= right_size
+            let build_on_left = if let Some(build_on_left) = build_on_left {
+                *build_on_left
+            } else {
+                match join_type {
+                    // Inner and outer joins can build on either side. If stats are available, choose the smaller side.
+                    // Else, default to building on the left.
+                    JoinType::Inner | JoinType::Outer => {
+                        match (left_stats_state, right_stats_state) {
+                            (
+                                StatsState::Materialized(left_stats),
+                                StatsState::Materialized(right_stats),
+                            ) => {
+                                let left_size = left_stats.approx_stats.num_rows;
+                                let right_size = right_stats.approx_stats.num_rows;
+                                left_size <= right_size
+                            }
+                            // If stats are only available on the right side of the join, and the upper bound bytes on the
+                            // right are under the broadcast join size threshold, we build on the right instead of the left.
+                            (
+                                StatsState::NotMaterialized,
+                                StatsState::Materialized(right_stats),
+                            ) => {
+                                right_stats.approx_stats.size_bytes
+                                    > cfg.broadcast_join_size_bytes_threshold
+                            }
+                            _ => true,
+                        }
                     }
-                    // If stats are only available on the right side of the join, and the upper bound bytes on the
-                    // right are under the broadcast join size threshold, we build on the right instead of the left.
-                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
-                        right_stats.approx_stats.size_bytes
-                            > cfg.broadcast_join_size_bytes_threshold
+                    // Left joins can build on the left side, but prefer building on the right because building on left requires keeping track
+                    // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
+                    JoinType::Left => match (left_stats_state, right_stats_state) {
+                        (
+                            StatsState::Materialized(left_stats),
+                            StatsState::Materialized(right_stats),
+                        ) => {
+                            let left_size = left_stats.approx_stats.num_rows;
+                            let right_size = right_stats.approx_stats.num_rows;
+                            right_size as f64 >= left_size as f64 * 1.5
+                        }
+                        // If stats are only available on the left side of the join, and the upper bound bytes on the left
+                        // are under the broadcast join size threshold, we build on the left instead of the right.
+                        (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                            left_stats.approx_stats.size_bytes
+                                <= cfg.broadcast_join_size_bytes_threshold
+                        }
+                        _ => false,
+                    },
+                    // Right joins can build on the right side, but prefer building on the left because building on right requires keeping track
+                    // of used indices in a bitmap. If stats are available, only select the right side if its smaller than the left side by a factor of 1.5.
+                    JoinType::Right => match (left_stats_state, right_stats_state) {
+                        (
+                            StatsState::Materialized(left_stats),
+                            StatsState::Materialized(right_stats),
+                        ) => {
+                            let left_size = left_stats.approx_stats.num_rows;
+                            let right_size = right_stats.approx_stats.num_rows;
+                            (right_size as f64 * 1.5) >= left_size as f64
+                        }
+                        // If stats are only available on the right side of the join, and the upper bound bytes on the
+                        // right are under the broadcast join size threshold, we build on the right instead of the left.
+                        (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
+                            right_stats.approx_stats.size_bytes
+                                > cfg.broadcast_join_size_bytes_threshold
+                        }
+                        _ => true,
+                    },
+                    // Anti/semi joins can build on the left side, but prefer building on the right because building on left requires keeping track
+                    // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
+                    JoinType::Anti | JoinType::Semi => {
+                        match (left_stats_state, right_stats_state) {
+                            (
+                                StatsState::Materialized(left_stats),
+                                StatsState::Materialized(right_stats),
+                            ) => {
+                                let left_size = left_stats.approx_stats.num_rows;
+                                let right_size = right_stats.approx_stats.num_rows;
+                                right_size as f64 > left_size as f64 * 1.5
+                            }
+                            // If stats are only available on the left side of the join, and the upper bound bytes on the left
+                            // are under the broadcast join size threshold, we build on the left instead of the right.
+                            (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                                left_stats.approx_stats.size_bytes
+                                    <= cfg.broadcast_join_size_bytes_threshold
+                            }
+                            // Else, default to building on the right
+                            _ => false,
+                        }
                     }
-                    _ => true,
-                },
-                // Left joins can build on the left side, but prefer building on the right because building on left requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
-                JoinType::Left => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        right_size as f64 >= left_size as f64 * 1.5
-                    }
-                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
-                    // are under the broadcast join size threshold, we build on the left instead of the right.
-                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                        left_stats.approx_stats.size_bytes
-                            <= cfg.broadcast_join_size_bytes_threshold
-                    }
-                    _ => false,
-                },
-                // Right joins can build on the right side, but prefer building on the left because building on right requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the right side if its smaller than the left side by a factor of 1.5.
-                JoinType::Right => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        (right_size as f64 * 1.5) >= left_size as f64
-                    }
-                    // If stats are only available on the right side of the join, and the upper bound bytes on the
-                    // right are under the broadcast join size threshold, we build on the right instead of the left.
-                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
-                        right_stats.approx_stats.size_bytes
-                            > cfg.broadcast_join_size_bytes_threshold
-                    }
-                    _ => true,
-                },
-                // Anti/semi joins can build on the left side, but prefer building on the right because building on left requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
-                JoinType::Anti | JoinType::Semi => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        right_size as f64 > left_size as f64 * 1.5
-                    }
-                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
-                    // are under the broadcast join size threshold, we build on the left instead of the right.
-                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                        left_stats.approx_stats.size_bytes
-                            <= cfg.broadcast_join_size_bytes_threshold
-                    }
-                    // Else, default to building on the right
-                    _ => false,
-                },
+                }
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
                 true => (left_on, right_on, left, right),
