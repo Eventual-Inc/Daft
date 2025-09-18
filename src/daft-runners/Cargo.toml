@@ -3,6 +3,7 @@ common-error = {workspace = true}
 daft-logical-plan = {workspace = true}
 daft-micropartition = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+log = {workspace = true}
 
 [features]
 python = [
@@ -16,6 +17,6 @@ python = [
 workspace = true
 
 [package]
-name = "daft-py-runners"
+name = "daft-runners"
 edition.workspace = true
 version.workspace = true

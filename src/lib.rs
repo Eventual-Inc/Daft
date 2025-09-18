@@ -131,6 +131,7 @@ pub mod pylib {
         daft_catalog::register_modules(m)?;
         daft_connect::register_modules(m)?;
         daft_context::register_modules(m)?;
+        daft_runners::register_modules(m)?;
         daft_core::register_modules(m)?;
         daft_core::python::register_modules(m)?;
         daft_csv::register_modules(m)?;

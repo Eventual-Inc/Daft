@@ -17,7 +17,11 @@ use aws_config::{BehaviorVersion, meta::region::ProvideRegion, timeout::TimeoutC
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_s3::{
     self as s3,
-    config::{IdentityCache, ProvideCredentials, SharedCredentialsProvider},
+    config::{
+        IdentityCache, ProvideCredentials, SharedCredentialsProvider,
+        interceptors::InterceptorContext,
+        retry::{ClassifyRetry, RetryAction},
+    },
     error::ProvideErrorMetadata,
     operation::{
         complete_multipart_upload::CompleteMultipartUploadError,
@@ -27,7 +31,9 @@ use aws_sdk_s3::{
     },
     primitives::{ByteStream, ByteStreamError},
 };
-use aws_smithy_runtime_api::http::Response;
+use aws_smithy_runtime_api::{
+    client::retries::classifiers::RetryClassifierPriority, http::Response,
+};
 use bytes::Bytes;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
@@ -632,6 +638,34 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
 
     let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
     builder = builder.force_path_style(force_path_style);
+
+    let retry_unexpected_eof = {
+        #[derive(Debug)]
+        struct RetryUnexpectedEof;
+
+        impl ClassifyRetry for RetryUnexpectedEof {
+            fn classify_retry(&self, ctx: &InterceptorContext) -> RetryAction {
+                if let Some(Err(err)) = ctx.output_or_error()
+                    && format!("{err:?}").contains("UnexpectedEof")
+                {
+                    RetryAction::server_error()
+                } else {
+                    RetryAction::NoActionIndicated
+                }
+            }
+
+            fn name(&self) -> &'static str {
+                "RetryUnexpectedEof"
+            }
+
+            fn priority(&self) -> RetryClassifierPriority {
+                RetryClassifierPriority::transient_error_classifier()
+            }
+        }
+
+        RetryUnexpectedEof
+    };
+    builder = builder.retry_classifier(retry_unexpected_eof);
 
     let builder_copy = builder.clone();
     let mut s3_conf = builder.build();
