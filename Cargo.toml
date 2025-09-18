@@ -178,6 +178,7 @@ members = [
   "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
+  "src/common/metrics",
   "src/daft-ai",
   "src/daft-algebra",
   "src/daft-catalog",
