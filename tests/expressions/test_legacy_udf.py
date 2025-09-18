@@ -20,6 +20,7 @@ from daft.recordbatch import MicroPartition
 from daft.series import Series
 from daft.udf import udf
 from tests.conftest import get_tests_daft_runner_name
+from tests.utils import sort_pydict
 
 
 def test_udf():
@@ -84,14 +85,14 @@ def test_class_udf_init_args(batch_size, use_actor_pool):
     assert field.name == "a"
     assert field.dtype == DataType.string()
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    assert sort_pydict(result.to_pydict(), "a") == {"a": ["foofoo", "bazbaz", "barbar"]}
 
     expr = RepeatN.with_init_args(initial_n=3)(col("a"))
     field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoofoo", "barbarbar", "bazbazbaz"]}
+    assert sort_pydict(result.to_pydict(), "a") == {"a": ["foofoofoo", "bazbazbaz", "barbarbar"]}
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -118,7 +119,7 @@ def test_class_udf_init_args_no_default(batch_size, use_actor_pool):
     assert field.name == "a"
     assert field.dtype == DataType.string()
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    assert sort_pydict(result.to_pydict(), "a") == {"a": ["foofoo", "bazbaz", "barbar"]}
 
 
 @pytest.mark.parametrize("use_actor_pool", [False, True])
@@ -158,7 +159,7 @@ def test_actor_pool_udf_concurrency(concurrency):
     assert field.dtype == DataType.string()
 
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    assert sort_pydict(result.to_pydict(), "a") == {"a": ["foofoo", "bazbaz", "barbar"]}
 
 
 def test_udf_kwargs():
@@ -592,7 +593,7 @@ def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
         "squared_floats": [2.25, 6.25, 12.25, 20.25, 30.25, 42.25, 56.25, 72.25, 90.25, 110.25],
     }
 
-    assert result.to_pydict() == expected
+    assert sort_pydict(result.to_pydict(), "mult_numbers", ascending=True) == expected
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -646,7 +647,7 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
         "stringified": ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10"],
     }
 
-    assert result.to_pydict() == expected
+    assert sort_pydict(result.to_pydict(), "doubled", ascending=True) == expected
 
 
 @pytest.mark.skipif(

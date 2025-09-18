@@ -16,6 +16,12 @@ from daft.filesystem import get_filesystem, get_protocol_from_path
 from daft.recordbatch import MicroPartition, RecordBatch
 
 
+def check_pandas_equal(daft_df: pd.DataFrame, pa_df: pd.DataFrame):
+    daft_df = daft_df.sort_values(by=daft_df.columns).reset_index(drop=True)
+    pa_df = pa_df.sort_values(by=pa_df.columns).reset_index(drop=True)
+    pd.testing.assert_frame_equal(daft_df, pa_df)
+
+
 def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
     protocol = get_protocol_from_path(path)
     fs = get_filesystem(protocol, **kwargs)
@@ -326,7 +332,7 @@ def test_parquet_read_df(parquet_file, public_storage_io_config, set_split_confi
     daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config)
     pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
-    pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
+    check_pandas_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
 
 @pytest.mark.integration()
