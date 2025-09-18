@@ -3746,6 +3746,8 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return self.attribute("mode")
 
 
+
+
 class ExpressionPartitioningNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.partition` attribute."""
 

@@ -1120,3 +1120,5 @@ class SeriesImageNamespace(SeriesNamespace):
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
         return self._eval_expressions("to_mode", mode=mode)
+
+

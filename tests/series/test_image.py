@@ -9,7 +9,10 @@ import pyarrow as pa
 import pytest
 from PIL import Image, ImageSequence
 
+import daft
+from daft import col
 from daft.datatype import DataType, get_super_ext_type
+from daft.functions import image_hash
 from daft.series import Series
 
 DaftExtension = get_super_ext_type()
@@ -837,3 +840,133 @@ def test_image_to_mode_fixed_size(input_mode, output_mode):
     s = s.cast(DataType.image(input_mode, 2, 2)).image.to_mode(output_mode)
     assert s.datatype() == DataType.image(output_mode, 2, 2)
     assert s.to_pylist()[0].shape[2] == MODE_TO_NUM_CHANNELS[output_mode]
+
+
+def test_image_average_hash_basic():
+    """Test the average hash function with basic image operations."""
+    # Create test image data with varied pixel values to ensure different hashes
+    # Image 1: Mostly dark pixels (should have more 0s)
+    img1 = np.zeros((4, 4, 3), dtype=np.uint8)
+    img1[0:2, 0:2] = 50  # Some slightly brighter pixels
+    
+    # Image 2: Mostly bright pixels (should have more 1s)  
+    img2 = np.full((4, 4, 3), 200, dtype=np.uint8)
+    img2[0:2, 0:2] = 100  # Some darker pixels
+    
+    # Image 3: Mixed pixels (should have balanced 0s and 1s)
+    img3 = np.full((4, 4, 3), 128, dtype=np.uint8)
+    img3[0:2, :] = 200  # Top half bright
+    img3[2:4, :] = 50   # Bottom half dark
+    
+    data = [img1, img2, img3]
+
+    s = Series.from_pylist(data, dtype=DataType.python())
+    t = s.cast(DataType.image("RGB"))
+
+    # Test average hash using functional API
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    assert hash_series.dtype == "object"  # String type in pandas
+
+    # Verify hash format
+    hash_values = hash_series.tolist()
+
+    # Check that we got the right number of results
+    assert len(hash_values) == 3
+
+    # Check that all values are 64-character binary strings
+    for hash_val in hash_values:
+        assert hash_val is not None
+        assert len(hash_val) == 64
+        assert all(c in "01" for c in hash_val), f"Hash should only contain 0s and 1s, got: {hash_val}"
+
+    # Verify that different images produce different hashes
+    dark_hash = hash_values[0]
+    bright_hash = hash_values[1]
+    mixed_hash = hash_values[2]
+    
+    # All hashes should be different
+    assert dark_hash != bright_hash, "Dark and bright images should have different hashes"
+    assert dark_hash != mixed_hash, "Dark and mixed images should have different hashes"
+    assert bright_hash != mixed_hash, "Bright and mixed images should have different hashes"
+    
+    # Dark image should have more 0s than 1s (pixels below average)
+    assert dark_hash.count("0") > dark_hash.count("1"), f"Dark image should have more 0s than 1s, got: {dark_hash}"
+    
+    # Bright image should have more 1s than 0s (pixels above average)
+    assert bright_hash.count("1") > bright_hash.count("0"), f"Bright image should have more 1s than 0s, got: {bright_hash}"
+
+
+def test_image_average_hash_similar_images():
+    """Test that similar images produce similar hashes."""
+    # Create two very similar images (same content, slightly different)
+    img1_data = np.full((4, 4, 3), 200, dtype=np.uint8)
+    img2_data = np.full((4, 4, 3), 201, dtype=np.uint8)  # Very similar
+
+    data = [img1_data, img2_data]
+    s = Series.from_pylist(data, dtype=DataType.python())
+    t = s.cast(DataType.image("RGB"))
+
+    # Test average hash using functional API
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    hash_values = hash_series.tolist()
+
+    hash1, hash2 = hash_values
+
+    # Calculate Hamming distance (number of different bits)
+    hamming_distance = sum(c1 != c2 for c1, c2 in zip(hash1, hash2))
+
+    # Similar images should have low Hamming distance (< 10 is very similar)
+    assert hamming_distance < 10, f"Similar images should have similar hashes, distance: {hamming_distance}"
+
+
+def test_image_average_hash_null_handling():
+    """Test average hash with null values."""
+    # Test with null values
+    data = [
+        None,  # Null image
+        np.full((4, 4, 3), 100, dtype=np.uint8),  # Valid image
+        None,  # Another null image
+    ]
+
+    s = Series.from_pylist(data, dtype=DataType.python())
+    t = s.cast(DataType.image("RGB"))
+
+    # Test average hash using functional API
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    hash_values = hash_series.tolist()
+
+    # Null images should produce null hashes
+    assert hash_values[0] is None
+    assert hash_values[2] is None
+    assert hash_values[1] is not None
+    assert len(hash_values[1]) == 64
+
+
+def test_image_average_hash_consistency():
+    """Test that the same image produces the same hash."""
+    # Create the same image twice
+    img_data = np.arange(48, dtype=np.uint8).reshape((4, 4, 3))
+    data = [img_data, img_data]  # Same image twice
+
+    s = Series.from_pylist(data, dtype=DataType.python())
+    t = s.cast(DataType.image("RGB"))
+
+    # Test average hash using functional API
+    df = daft.from_pydict({"image": t.to_pylist()})
+    df = df.with_column("image", col("image").cast(DataType.image("RGB")))
+    result = df.with_column("hash", image_hash(col("image"), "average"))
+    hash_series = result.select("hash").to_pandas()["hash"]
+    hash_values = hash_series.tolist()
+
+    # Both hashes should be identical
+    assert hash_values[0] == hash_values[1]
+    assert len(hash_values[0]) == 64

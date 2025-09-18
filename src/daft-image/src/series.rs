@@ -228,3 +228,45 @@ pub fn attribute(s: &Series, attr: ImageProperty) -> DaftResult<Series> {
         ))),
     }
 }
+
+/// Helper function to compute image hash using the specified algorithm
+fn compute_image_hash<F, G>(
+    s: &Series,
+    hash_name: &str,
+    image_hash_fn: F,
+    fixed_shape_hash_fn: G,
+) -> DaftResult<Series>
+where
+    F: FnOnce(&ImageArray) -> DaftResult<DataArray<Utf8Type>>,
+    G: FnOnce(&FixedShapeImageArray) -> DaftResult<DataArray<Utf8Type>>,
+{
+    match s.data_type() {
+        DataType::Image(_) => {
+            let array = s.downcast::<ImageArray>()?;
+            Ok(image_hash_fn(array)?.into_series())
+        }
+        DataType::FixedShapeImage(..) => {
+            let array = s.downcast::<FixedShapeImageArray>()?;
+            Ok(fixed_shape_hash_fn(array)?.into_series())
+        }
+        dt => Err(DaftError::ValueError(format!(
+            "{} can only be computed for Image types, got {}",
+            hash_name, dt
+        ))),
+    }
+}
+
+/// Computes hash of images in a Series using the specified algorithm
+pub fn image_hash(s: &Series, algorithm: &str) -> DaftResult<Series> {
+    match algorithm {
+        "average" => compute_image_hash(s, "Average hash", |array| array.average_hash(), |array| array.average_hash()),
+        "perceptual" => compute_image_hash(s, "Perceptual hash", |array| array.perceptual_hash(), |array| array.perceptual_hash()),
+        "difference" => compute_image_hash(s, "Difference hash", |array| array.difference_hash(), |array| array.difference_hash()),
+        "wavelet" => compute_image_hash(s, "Wavelet hash", |array| array.wavelet_hash(), |array| array.wavelet_hash()),
+        "crop_resistant" => compute_image_hash(s, "Crop-resistant hash", |array| array.crop_resistant_hash(), |array| array.crop_resistant_hash()),
+        _ => Err(DaftError::ValueError(format!(
+            "Invalid hash algorithm: {}. Supported algorithms are: average, perceptual, difference, wavelet, crop_resistant",
+            algorithm
+        ))),
+    }
+}
