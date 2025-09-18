@@ -60,6 +60,7 @@ python = [
   "common-file-formats/python",
   "common-py-serde/python",
   "common-scan-info/python",
+  "common-metrics/python",
   "daft-core/python",
   "daft-functions-list/python",
   "daft-dsl/python",
