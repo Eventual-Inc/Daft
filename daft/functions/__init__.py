@@ -63,7 +63,18 @@ from .datetime import (
     date_trunc,
 )
 from .embedding import cosine_distance
-from .image import resize, crop, encode_image, decode_image, convert_image
+from .image import (
+    resize,
+    crop,
+    encode_image,
+    decode_image,
+    convert_image,
+    image_attribute,
+    image_width,
+    image_height,
+    image_channel,
+    image_mode,
+)
 from .list import (
     value_counts,
     chunk,
@@ -134,6 +145,10 @@ from .numeric import (
     exp,
     expm1,
     between,
+    is_nan,
+    is_inf,
+    not_nan,
+    fill_nan,
 )
 from .str import (
     deserialize,
@@ -250,6 +265,7 @@ __all__ = [
     "explode",
     "expm1",
     "file",
+    "fill_nan",
     "fill_null",
     "find",
     "floor",
@@ -257,7 +273,14 @@ __all__ = [
     "hash",
     "hour",
     "ilike",
+    "image_attribute",
+    "image_channel",
+    "image_height",
+    "image_mode",
+    "image_width",
     "is_in",
+    "is_inf",
+    "is_nan",
     "is_null",
     "jq",
     "lag",
@@ -301,6 +324,7 @@ __all__ = [
     "nanosecond",
     "negate",
     "normalize",
+    "not_nan",
     "not_null",
     "over",
     "parse_url",
