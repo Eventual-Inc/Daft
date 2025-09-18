@@ -2597,6 +2597,96 @@ class Expression:
 
         return partition_iceberg_truncate(self, w)
 
+    def is_nan(self) -> Expression:
+        """Checks if values are NaN (a special float value indicating not-a-number).
+
+        Tip: See Also
+            [`daft.functions.is_nan`](https://docs.daft.ai/en/stable/api/functions/is_nan/)
+        """
+        from daft.functions import is_nan
+
+        return is_nan(self)
+
+    def is_inf(self) -> Expression:
+        """Checks if values in the Expression are Infinity.
+
+        Tip: See Also
+            [`daft.functions.is_inf`](https://docs.daft.ai/en/stable/api/functions/is_inf/)
+        """
+        from daft.functions import is_inf
+
+        return is_inf(self)
+
+    def not_nan(self) -> Expression:
+        """Checks if values are not NaN (a special float value indicating not-a-number).
+
+        Tip: See Also
+            [`daft.functions.not_nan`](https://docs.daft.ai/en/stable/api/functions/not_nan/)
+        """
+        from daft.functions import not_nan
+
+        return not_nan(self)
+
+    def fill_nan(self, fill_value: Expression) -> Expression:
+        """Fills NaN values in the Expression with the provided fill_value.
+
+        Tip: See Also
+            [`daft.functions.fill_nan`](https://docs.daft.ai/en/stable/api/functions/fill_nan/)
+        """
+        from daft.functions import fill_nan
+
+        return fill_nan(self, fill_value)
+
+    def image_attribute(self, name: Literal["width", "height", "channel", "mode"] | ImageProperty) -> Expression:
+        """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
+
+        Tip: See Also
+            [`daft.functions.image_attribute`](https://docs.daft.ai/en/stable/api/functions/image_attribute/)
+        """
+        from daft.functions import image_attribute
+
+        return image_attribute(self, name)
+
+    def image_width(self) -> Expression:
+        """Gets the width of an image in pixels.
+
+        Tip: See Also
+            [`daft.functions.image_width`](https://docs.daft.ai/en/stable/api/functions/image_width/)
+        """
+        from daft.functions import image_width
+
+        return image_width(self)
+
+    def image_height(self) -> Expression:
+        """Gets the height of an image in pixels.
+
+        Tip: See Also
+            [`daft.functions.image_height`](https://docs.daft.ai/en/stable/api/functions/image_height/)
+        """
+        from daft.functions import image_height
+
+        return image_height(self)
+
+    def image_channel(self) -> Expression:
+        """Gets the number of channels in an image.
+
+        Tip: See Also
+            [`daft.functions.image_channel`](https://docs.daft.ai/en/stable/api/functions/image_channel/)
+        """
+        from daft.functions import image_channel
+
+        return image_channel(self)
+
+    def image_mode(self) -> Expression:
+        """Gets the mode of an image as a string.
+
+        Tip: See Also
+            [`daft.functions.image_mode`](https://docs.daft.ai/en/stable/api/functions/image_mode/)
+        """
+        from daft.functions import image_mode
+
+        return image_mode(self)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -2665,132 +2755,36 @@ class ExpressionFloatNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.float` attribute."""
 
     def is_nan(self) -> Expression:
-        """Checks if values are NaN (a special float value indicating not-a-number).
-
-        Returns:
-            Expression: Boolean Expression indicating whether values are invalid.
-
-        Note:
-            Nulls will be propagated! I.e. this operation will return a null for null values.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": [1.0, None, float("nan")]})
-            >>> df = df.select(df["data"].float.is_nan())
-            >>> df.collect()
-            ╭─────────╮
-            │ data    │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ None    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("is_nan")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.is_nan` instead."""
+        warnings.warn(
+            "`Expression.float.is_nan` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.is_nan` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().is_nan()
 
     def is_inf(self) -> Expression:
-        """Checks if values in the Expression are Infinity.
-
-        Returns:
-            Expression: Boolean Expression indicating whether values are Infinity.
-
-        Note:
-            Nulls will be propagated! I.e. this operation will return a null for null values.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": [-float("inf"), 0.0, float("inf"), None]})
-            >>> df = df.select(df["data"].float.is_inf())
-            >>> df.collect()
-            ╭─────────╮
-            │ data    │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ None    │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 4 of 4 rows)
-
-        """
-        f = native.get_function_from_registry("is_inf")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.is_inf` instead."""
+        warnings.warn(
+            "`Expression.float.is_inf` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.is_inf` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().is_inf()
 
     def not_nan(self) -> Expression:
-        """Checks if values are not NaN (a special float value indicating not-a-number).
-
-        Returns:
-            Expression: Boolean Expression indicating whether values are not invalid.
-
-        Note:
-            Nulls will be propagated! I.e. this operation will return a null for null values.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
-            >>> df = df.select(df["x"].float.not_nan())
-            >>> df.collect()
-            ╭─────────╮
-            │ x       │
-            │ ---     │
-            │ Boolean │
-            ╞═════════╡
-            │ true    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ None    │
-            ├╌╌╌╌╌╌╌╌╌┤
-            │ false   │
-            ╰─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        f = native.get_function_from_registry("not_nan")
-        return Expression._from_pyexpr(f(self._expr))
+        """(DEPRECATED) Please use `daft.functions.not_nan` instead."""
+        warnings.warn(
+            "`Expression.float.not_nan` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.not_nan` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().not_nan()
 
     def fill_nan(self, fill_value: Expression) -> Expression:
-        """Fills NaN values in the Expression with the provided fill_value.
-
-        Returns:
-            Expression: Expression with Nan values filled with the provided fill_value
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"data": [1.1, float("nan"), 3.3]})
-            >>> df = df.with_column("filled", df["data"].float.fill_nan(2.2))
-            >>> df.show()
-            ╭─────────┬─────────╮
-            │ data    ┆ filled  │
-            │ ---     ┆ ---     │
-            │ Float64 ┆ Float64 │
-            ╞═════════╪═════════╡
-            │ 1.1     ┆ 1.1     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ NaN     ┆ 2.2     │
-            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ 3.3     ┆ 3.3     │
-            ╰─────────┴─────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        fill_value = Expression._to_expression(fill_value)
-        f = native.get_function_from_registry("fill_nan")
-        return Expression._from_pyexpr(f(self._expr, fill_value._expr))
+        """(DEPRECATED) Please use `daft.functions.fill_nan` instead."""
+        warnings.warn(
+            "`Expression.float.fill_nan` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.fill_nan` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().fill_nan(fill_value)
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
@@ -3661,58 +3655,44 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return self._to_expression().convert_image(mode)
 
     def attribute(self, name: Literal["width", "height", "channel", "mode"] | ImageProperty) -> Expression:
-        """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
-
-        Args:
-            name (str): The name of the property to retrieve.
-
-        Returns:
-            Expression: An Expression representing the requested property.
-        """
-        if isinstance(name, str):
-            name = ImageProperty.from_property_string(name)
-        f = native.get_function_from_registry("image_attribute")
-        return Expression._from_pyexpr(f(self._expr, lit(name)._expr))
+        """(DEPRECATED) Please use `daft.functions.image_attribute` instead."""
+        warnings.warn(
+            "`Expression.image.attribute` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_attribute` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().image_attribute(name)
 
     def width(self) -> Expression:
-        """Gets the width of an image in pixels.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("width", df["images"].image.width())  # doctest: +SKIP
-        """
-        return self.attribute("width")
+        """(DEPRECATED) Please use `daft.functions.image_width` instead."""
+        warnings.warn(
+            "`Expression.image.width` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_width` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().image_width()
 
     def height(self) -> Expression:
-        """Gets the height of an image in pixels.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("height", df["images"].image.height())  # doctest: +SKIP
-        """
-        return self.attribute("height")
+        """(DEPRECATED) Please use `daft.functions.image_height` instead."""
+        warnings.warn(
+            "`Expression.image.height` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_height` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().image_height()
 
     def channel(self) -> Expression:
-        """Gets the number of channels in an image.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("channel", df["images"].image.channel())  # doctest: +SKIP
-        """
-        return self.attribute("channel")
+        """(DEPRECATED) Please use `daft.functions.image_channel` instead."""
+        warnings.warn(
+            "`Expression.image.channel` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_channel` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().image_channel()
 
     def mode(self) -> Expression:
-        """Gets the mode of an image as a string.
-
-        Example:
-            >>> # Create a dataframe with an image column
-            >>> df = ...  # doctest: +SKIP
-            >>> df = df.with_column("mode", df["images"].image.mode())  # doctest: +SKIP
-        """
-        return self.attribute("mode")
+        """(DEPRECATED) Please use `daft.functions.image_mode` instead."""
+        warnings.warn(
+            "`Expression.image.mode` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_mode` instead.",
+            category=DeprecationWarning,
+        )
+        return self._to_expression().image_mode()
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
