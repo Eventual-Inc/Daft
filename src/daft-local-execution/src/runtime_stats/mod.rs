@@ -13,6 +13,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common_error::DaftResult;
+use common_metrics::ops::NodeInfo;
 use common_runtime::RuntimeTask;
 use common_tracing::should_enable_opentelemetry;
 use daft_context::QuerySubscriber;
@@ -30,11 +32,11 @@ pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, Run
 
 use crate::{
     channel::{Receiver, Sender},
-    ops::NodeInfo,
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
         RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
         opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
+        query::QuerySubscriberWrapper,
     },
 };
 
@@ -88,11 +90,11 @@ impl std::fmt::Debug for RuntimeStatsManager {
 
 impl RuntimeStatsManager {
     #[allow(clippy::borrowed_box)]
-    pub fn new(
+    pub fn try_new(
         handle: &Handle,
         pipeline: &Box<dyn PipelineNode>,
         query_subscribers: Vec<Arc<dyn QuerySubscriber>>,
-    ) -> Self {
+    ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
         let _ = pipeline.apply(|node| {
@@ -115,8 +117,15 @@ impl RuntimeStatsManager {
         );
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
+        let node_infos = node_stats
+            .iter()
+            .map(|(node_info, _)| node_info.clone())
+            .collect::<Vec<_>>();
         for subscriber in query_subscribers {
-            subscribers.push(Box::new(subscriber));
+            subscribers.push(Box::new(QuerySubscriberWrapper::try_new(
+                subscriber,
+                &node_infos,
+            )?));
         }
 
         if should_enable_progress_bar() {
@@ -132,7 +141,12 @@ impl RuntimeStatsManager {
         }
 
         let throttle_interval = Duration::from_millis(200);
-        Self::new_impl(handle, subscribers, node_stats, throttle_interval)
+        Ok(Self::new_impl(
+            handle,
+            subscribers,
+            node_stats,
+            throttle_interval,
+        ))
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
@@ -341,11 +355,13 @@ mod tests {
     use std::sync::{Arc, Mutex, atomic::AtomicU64};
 
     use common_error::DaftResult;
-    use common_metrics::{Stat, StatSnapshotSend};
+    use common_metrics::{
+        Stat, StatSnapshotSend,
+        ops::{NodeCategory, NodeType},
+    };
     use tokio::time::{Duration, sleep};
 
     use super::*;
-    use crate::ops::{NodeCategory, NodeType};
 
     #[derive(Debug)]
     struct MockState {

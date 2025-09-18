@@ -309,7 +309,8 @@ impl NativeExecutor {
                 )
             });
 
-            let stats_manager = RuntimeStatsManager::new(runtime.handle(), &pipeline, subscribers);
+            let stats_manager =
+                RuntimeStatsManager::try_new(runtime.handle(), &pipeline, subscribers)?;
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();

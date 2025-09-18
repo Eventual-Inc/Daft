@@ -95,7 +95,6 @@ class NativeRunner(Runner[MicroPartition]):
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
-        ctx.notify_exec_start(query_id)
         results_gen = executor.run(
             plan,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
@@ -108,7 +107,7 @@ class NativeRunner(Runner[MicroPartition]):
         for result in results_gen:
             notify_results.append(result.partition())
             yield result
-        ctx.notify_exec_end(query_id)
+
         ctx.notify_query_end(query_id, notify_results)
 
     def run_iter_tables(

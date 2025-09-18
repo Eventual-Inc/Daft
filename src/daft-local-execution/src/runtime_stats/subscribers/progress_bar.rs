@@ -2,14 +2,16 @@ use std::{sync::Arc, time::Duration};
 
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
-use common_metrics::StatSnapshotSend;
+use common_metrics::{
+    StatSnapshotSend,
+    ops::{NodeCategory, NodeInfo},
+};
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 use log::Log;
 
 use crate::{
     PythonPrintTarget, STDOUT,
-    ops::{NodeCategory, NodeInfo},
     runtime_stats::{CPU_US_KEY, RuntimeStats, subscribers::RuntimeStatsSubscriber},
 };
 
@@ -227,10 +229,10 @@ pub fn make_progress_bar_manager(
 mod python {
     use std::collections::HashMap;
 
+    use common_metrics::ops::NodeInfo;
     use pyo3::{PyObject, Python, types::PyAnyMethods};
 
     use super::*;
-    use crate::ops::NodeInfo;
 
     pub fn in_notebook() -> bool {
         pyo3::Python::with_gil(|py| {

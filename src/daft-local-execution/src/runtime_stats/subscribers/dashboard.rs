@@ -1,12 +1,12 @@
 use std::{env, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::StatSnapshotSend;
+use common_metrics::{StatSnapshotSend, ops::NodeInfo};
 use common_runtime::get_io_runtime;
 use reqwest::{Client, header};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{ops::NodeInfo, runtime_stats::subscribers::RuntimeStatsSubscriber};
+use crate::runtime_stats::subscribers::RuntimeStatsSubscriber;
 
 /// Similar to `RuntimeStatsEventHandler`, the `DashboardSubscriber` also has it's own internal mechanism to throttle events.
 /// Since there could be many queries broadcasting to the dashboard at the same time, we want to be conscientious about how often we send updates.

@@ -1,5 +1,6 @@
+pub mod ops;
 #[cfg(feature = "python")]
-mod python;
+pub mod python;
 
 use std::{ops::Index, time::Duration};
 
@@ -124,8 +125,9 @@ impl<'de, 'a> IntoIterator for &'de StatSnapshotView<'a> {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     use pyo3::types::PyModuleMethods;
 
-    use crate::python::StatType;
+    use crate::python::{PyNodeInfo, StatType};
 
     parent.add_class::<StatType>()?;
+    parent.add_class::<PyNodeInfo>()?;
     Ok(())
 }

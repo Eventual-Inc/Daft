@@ -98,16 +98,6 @@ impl PyDaftContext {
         py.allow_threads(|| self.inner.notify_plan_end(query_id, optimized_plan))?;
         Ok(())
     }
-
-    pub fn notify_exec_start(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_exec_start(query_id))?;
-        Ok(())
-    }
-
-    pub fn notify_exec_end(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_exec_end(query_id))?;
-        Ok(())
-    }
 }
 
 impl From<DaftContext> for PyDaftContext {

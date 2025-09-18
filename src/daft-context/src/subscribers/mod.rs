@@ -5,7 +5,7 @@ pub mod python;
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::StatSnapshotView;
+use common_metrics::{StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 
 // TODO: Make this global for all plans and executions
@@ -16,7 +16,7 @@ pub trait QuerySubscriber: Send + Sync + std::fmt::Debug + 'static {
     fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()>;
     fn on_plan_start(&self, query_id: String) -> DaftResult<()>;
     fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()>;
-    fn on_exec_start(&self, query_id: String) -> DaftResult<()>;
+    fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
     fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()>;
     fn on_exec_emit_stats(
         &self,

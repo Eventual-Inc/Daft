@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use bitmap::{Bitmap, MutableBitmap, and};
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::{
     prelude::*,
     series::{IntoSeries, Series},
@@ -19,9 +20,7 @@ use tracing::{Span, info_span, instrument};
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{
-    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
 pub(crate) struct IndexBitmapBuilder {
     mutable_bitmaps: Vec<MutableBitmap>,

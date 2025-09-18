@@ -138,24 +138,6 @@ impl DaftContext {
             Ok::<(), DaftError>(())
         })
     }
-
-    pub fn notify_exec_start(&self, query_id: String) -> DaftResult<()> {
-        self.with_state(|state| {
-            for subscriber in &state.subscribers {
-                subscriber.on_exec_start(query_id.clone())?;
-            }
-            Ok::<(), DaftError>(())
-        })
-    }
-
-    pub fn notify_exec_end(&self, query_id: String) -> DaftResult<()> {
-        self.with_state(|state| {
-            for subscriber in &state.subscribers {
-                subscriber.on_exec_end(query_id.clone())?;
-            }
-            Ok::<(), DaftError>(())
-        })
-    }
 }
 
 static DAFT_CONTEXT: OnceLock<DaftContext> = OnceLock::new();

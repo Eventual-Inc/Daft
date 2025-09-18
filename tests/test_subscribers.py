@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 import daft
-from daft.daft import PyMicroPartition
+from daft.daft import PyMicroPartition, PyNodeInfo
 from daft.recordbatch import MicroPartition
 from daft.subscribers import QuerySubscriber, StatType
 from tests.conftest import get_tests_daft_runner_name
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class TestSubscriber(QuerySubscriber):
+class MockSubscriber(QuerySubscriber):
     query_unoptimized_plan: dict[str, str]
     query_optimized_plan: dict[str, str]
     query_node_stats: defaultdict[str, defaultdict[int, dict[str, Any]]]
@@ -42,7 +42,7 @@ class TestSubscriber(QuerySubscriber):
     def on_plan_end(self, query_id: str, optimized_plan: str) -> None:
         self.query_optimized_plan[query_id] = optimized_plan
 
-    def on_exec_start(self, query_id: str) -> None:
+    def on_exec_start(self, query_id: str, node_infos: list[PyNodeInfo]) -> None:
         pass
 
     def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
@@ -50,7 +50,7 @@ class TestSubscriber(QuerySubscriber):
 
     def on_exec_emit_stats(self, query_id: str, all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
         for node_id, stats in all_stats.items():
-            for stat_name, (stat_type, stat_value) in stats.items():
+            for stat_name, (_, stat_value) in stats.items():
                 self.query_node_stats[query_id][node_id][stat_name] = stat_value
 
     def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
@@ -61,7 +61,7 @@ class TestSubscriber(QuerySubscriber):
 
 
 def test_subscriber_template():
-    subscriber = TestSubscriber()
+    subscriber = MockSubscriber()
     ctx = daft.context.get_context()
     ctx.attach_subscriber(subscriber)
 

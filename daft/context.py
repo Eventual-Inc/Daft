@@ -94,12 +94,6 @@ class DaftContext:
     def notify_plan_end(self, query_id: str, optimized_plan: str) -> None:
         self._ctx.notify_plan_end(query_id, optimized_plan)
 
-    def notify_exec_start(self, query_id: str) -> None:
-        self._ctx.notify_exec_start(query_id)
-
-    def notify_exec_end(self, query_id: str) -> None:
-        self._ctx.notify_exec_end(query_id)
-
 
 def get_context() -> DaftContext:
     """Returns the global singleton daft context."""

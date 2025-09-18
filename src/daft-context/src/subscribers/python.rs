@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::StatSnapshotView;
+use common_metrics::{StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, PyObject, Python, intern};
 
@@ -56,10 +56,14 @@ impl QuerySubscriber for PyQuerySubscriberWrapper {
         })
     }
 
-    fn on_exec_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
         Python::with_gil(|py| {
+            let py_node_infos = node_infos
+                .iter()
+                .map(|node_info| PyNodeInfo::from(node_info.clone()))
+                .collect::<Vec<_>>();
             self.0
-                .call_method1(py, intern!(py, "on_exec_start"), (query_id,))?;
+                .call_method1(py, intern!(py, "on_exec_start"), (query_id, py_node_infos))?;
             Ok(())
         })
     }

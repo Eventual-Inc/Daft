@@ -2064,6 +2064,14 @@ class StatType(Enum):
     DATETIME = "datetime"
     DURATION = "duration"
 
+class PyNodeInfo:
+    # Note, these are all read-only getters
+    id: int
+    name: str
+    node_type: str
+    node_category: str
+    context: dict[str, str]
+
 class PyDaftContext:
     def __init__(self) -> None: ...
 
@@ -2081,8 +2089,6 @@ class PyDaftContext:
     def notify_query_end(self, query_id: str, results: list[PartitionT]) -> None: ...
     def notify_plan_start(self, query_id: str) -> None: ...
     def notify_plan_end(self, query_id: str, optimized_plan: str) -> None: ...
-    def notify_exec_start(self, query_id: str) -> None: ...
-    def notify_exec_end(self, query_id: str) -> None: ...
 
 def set_runner_ray(
     address: str | None = None,

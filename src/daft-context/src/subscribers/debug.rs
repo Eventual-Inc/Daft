@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
-use common_metrics::StatSnapshotView;
+use common_metrics::{StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 
 #[derive(Debug)]
@@ -38,8 +40,11 @@ impl QuerySubscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_exec_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
         eprintln!("Started executing query `{}`", query_id);
+        for node_info in node_infos {
+            eprintln!("  - Node {}: {}", node_info.id, node_info.name);
+        }
         Ok(())
     }
 
