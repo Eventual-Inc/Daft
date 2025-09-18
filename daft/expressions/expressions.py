@@ -950,7 +950,7 @@ class Expression:
         f = native.get_function_from_registry("log10")
         return Expression._from_pyexpr(f(self._expr))
 
-    def log(self, base: float = math.e) -> Expression:  # type: ignore
+    def log(self, base: int | float = math.e) -> Expression:  # type: ignore
         """The elementwise log with given base, of a numeric expression.
 
         Args:
@@ -971,6 +971,20 @@ class Expression:
         """The ln(self + 1) of a numeric expression."""
         f = native.get_function_from_registry("log1p")
         return Expression._from_pyexpr(f(self._expr))
+
+    def pow(self, exp: float, by: float) -> Expression:  # type: ignore
+        """The self^by of a numeric expression. Shorthand for `.power(by)`."""
+        assert isinstance(exp, float), f"exp must be a float, but {type(exp)} was provided."
+        exp = lit(exp)
+        f = native.get_function_from_registry("pow")
+        return Expression._from_pyexpr(f(self._expr, exp._expr))
+
+    def power(self, exp: float) -> Expression:  # type: ignore
+        """The self^by of a numeric expression."""
+        assert isinstance(exp, float), f"exp must be a float, but {type(exp)} was provided."
+        exp = lit(exp)
+        f = native.get_function_from_registry("power")
+        return Expression._from_pyexpr(f(self._expr, exp._expr))
 
     def exp(self) -> Expression:
         """The e^self of a numeric expression."""
