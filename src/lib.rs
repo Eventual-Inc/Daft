@@ -177,14 +177,12 @@ pub mod pylib {
         functions_registry.register::<daft_functions_uri::UriFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
         functions_registry.register::<daft_functions_binary::BinaryFunctions>();
-        functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_list::ListFunctions>();
         functions_registry.register::<daft_functions_utf8::Utf8Functions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_serde::SerdeFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
-        functions_registry.register::<daft_functions::HashFunctions>();
-        functions_registry.register::<daft_functions::ConversionFunctions>();
+        functions_registry.register::<daft_functions::MiscFunctions>();
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
 

@@ -139,6 +139,10 @@ macro_rules! impl_bound_wrapper {
                     .map(|expr| Self::try_new(expr.clone(), schema))
                     .collect()
             }
+
+            pub fn inner(&self) -> &$inner {
+                &self.0
+            }
         }
 
         impl AsRef<$inner> for $name {

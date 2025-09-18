@@ -74,7 +74,7 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat, ImageMode, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
@@ -150,6 +150,7 @@ from daft.file import File
 import daft.context as context
 import daft.io as io
 import daft.runners as runners
+import daft.functions as functions
 
 __all__ = [
     "Catalog",
@@ -163,6 +164,7 @@ __all__ = [
     "Identifier",
     "ImageFormat",
     "ImageMode",
+    "ImageProperty",
     "ResourceRequest",
     "Schema",
     "Series",
@@ -204,6 +206,7 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "func",
+    "functions",
     "get_catalog",
     "get_or_create_runner",
     "get_or_infer_runner_type",

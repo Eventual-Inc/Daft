@@ -51,11 +51,19 @@ class DaftContext:
 
         :return: runner type string ("native" or "ray")
         """
-        warnings.warn("Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.")
+        warnings.warn(
+            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_infer_runner_type instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return runners.get_or_infer_runner_type()
 
     def get_or_create_runner(self) -> Runner[PartitionT]:
-        warnings.warn("Use daft.get_or_create_runner instead. This method will be removed in v0.7.0.")
+        warnings.warn(
+            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_create_runner instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return runners.get_or_create_runner()
 
     @property
@@ -120,7 +128,11 @@ def set_runner_ray(
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=ray
     """
-    warnings.warn("Use daft.set_runner_ray instead. This method will be removed in v0.7.0.")
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_ray instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     _ = runners.set_runner_ray(
         address=address,
@@ -145,7 +157,11 @@ def set_runner_native(num_threads: int | None = None) -> DaftContext:
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
     """
-    warnings.warn("Use daft.set_runner_native instead. This method will be removed in v0.7.0.")
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_native instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     _ = runners.set_runner_native(num_threads=num_threads)
     return DaftContext._from_native(_get_context())
@@ -231,6 +247,7 @@ def set_execution_config(
     native_parquet_writer: bool | None = None,
     use_legacy_ray_runner: bool | None = None,
     min_cpu_per_task: float | None = None,
+    actor_udf_ready_timeout: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -280,6 +297,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
+        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 60 seconds.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -316,6 +334,7 @@ def set_execution_config(
             native_parquet_writer=native_parquet_writer,
             use_legacy_ray_runner=use_legacy_ray_runner,
             min_cpu_per_task=min_cpu_per_task,
+            actor_udf_ready_timeout=actor_udf_ready_timeout,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
