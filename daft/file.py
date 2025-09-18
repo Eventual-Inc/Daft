@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 from typing import TYPE_CHECKING, Any
 
 from daft.daft import PyDaftFile
@@ -123,9 +125,6 @@ class File:
             >>> # Do something with the temporary file
             >>>     pass
         """
-        import shutil
-        import tempfile
-
         temp_file = tempfile.NamedTemporaryFile(
             prefix="daft_",
         )
