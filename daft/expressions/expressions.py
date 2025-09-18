@@ -2528,7 +2528,7 @@ class Expression:
         return slice(self, start, end)
 
     def to_unix_epoch(self, time_unit: builtins.str | TimeUnit | None = None) -> Expression:
-        """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
+        """Converts a datetime column to a Unix timestamp with the specified time unit. (default: seconds).
 
         Tip: See Also
             [`daft.functions.to_unix_epoch`](https://docs.daft.ai/en/stable/api/functions/to_unix_epoch/)

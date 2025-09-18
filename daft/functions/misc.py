@@ -599,7 +599,7 @@ def slice(expr: Expression, start: int | Expression, end: int | Expression | Non
     Args:
         expr: List or binary expression to slice.
         start: Index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end
-        end: Index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end. If not provided, the slice will include elements up to the end of the list. If start < end, an empty slice is produced.
+        end: Index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end. If not provided, the slice will include elements up to the end of the list. If start > end, an empty slice is produced.
 
     Returns:
         Expression: an expression with the same type as the input.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from daft.daft import CountMode
+from daft.daft import CountMode, list_
 from daft.expressions import Expression
 
 
@@ -410,7 +410,7 @@ def to_list(*items: Expression) -> Expression:
     """Constructs a list from the item expressions.
 
     Args:
-        *items (Union[Expression, str]): item expressions to construct the list
+        *items: item expressions to construct the list
 
     Returns:
         Expression: Expression representing the constructed list
@@ -437,6 +437,4 @@ def to_list(*items: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    from daft.daft import list_
-
     return Expression._from_pyexpr(list_([Expression._to_expression(i)._expr for i in items]))

@@ -95,14 +95,14 @@ impl ScalarUDF for Slice {
 
         let start_type = start.get_type(schema)?;
         ensure!(
-            start_type.is_integer() | start_type.is_null(),
+            start_type.is_integer() || start_type.is_null(),
             TypeError: "`start` argument to `slice` must be an integer, received: {start_type}",
         );
 
         if let Some(end) = end {
             let end_type = end.get_type(schema)?;
             ensure!(
-                end_type.is_integer() | end_type.is_null(),
+                end_type.is_integer() || end_type.is_null(),
                 TypeError: "`end` argument to `slice` must be an integer, received: {end_type}",
             );
         }
