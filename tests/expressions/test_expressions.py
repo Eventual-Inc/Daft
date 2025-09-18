@@ -17,7 +17,7 @@ from daft.series import Series
 @pytest.mark.parametrize(
     "data, expected_dtype",
     [
-        (1, DataType.int32()),
+        (1, DataType.int64()),
         (2**32, DataType.int64()),
         (1 << 63, DataType.uint64()),
         (1.2, DataType.float64()),

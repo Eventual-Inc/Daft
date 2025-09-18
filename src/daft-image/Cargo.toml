@@ -11,7 +11,7 @@ serde = {workspace = true}
 typetag = {workspace = true}
 
 [features]
-python = ["common-error/python"]
+python = ["common-error/python", "common-image/python"]
 
 [lints]
 workspace = true

@@ -11,7 +11,7 @@ def test_literal_column(daft_df, service_requests_csv_pd_df):
     daft_df = daft_df.with_column("literal_col", lit(1))
     daft_pd_df = daft_df.to_pandas()
     service_requests_csv_pd_df["literal_col"] = 1
-    service_requests_csv_pd_df["literal_col"] = service_requests_csv_pd_df["literal_col"].astype("int32")
+    service_requests_csv_pd_df["literal_col"] = service_requests_csv_pd_df["literal_col"]
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
@@ -20,7 +20,7 @@ def test_literal_column_computation(daft_df, service_requests_csv_pd_df):
     daft_df = daft_df.with_column("literal_col", lit(1) + 1)
     daft_pd_df = daft_df.to_pandas()
     service_requests_csv_pd_df["literal_col"] = 1 + 1
-    service_requests_csv_pd_df["literal_col"] = service_requests_csv_pd_df["literal_col"].astype("int32")
+    service_requests_csv_pd_df["literal_col"] = service_requests_csv_pd_df["literal_col"]
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
@@ -32,7 +32,7 @@ def test_literal_column_aggregation(daft_df, service_requests_csv_pd_df):
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby("Borough").agg({"Unique Key": "sum"})
     service_requests_csv_pd_df = service_requests_csv_pd_df.reset_index()[["Unique Key", "Borough"]]
     service_requests_csv_pd_df["literal_col"] = 1 + 1
-    service_requests_csv_pd_df["literal_col"] = service_requests_csv_pd_df["literal_col"].astype("int32")
+    service_requests_csv_pd_df["literal_col"] = service_requests_csv_pd_df["literal_col"]
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="Borough")
 
 

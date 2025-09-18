@@ -76,7 +76,7 @@ def test_series_pyobj_roundtrip() -> None:
 def test_series_pyobj_strict_arrow_err() -> None:
     objects = [0, CustomTestObject(1)]
 
-    with pytest.raises(pa.lib.ArrowInvalid):
+    with pytest.raises(TypeError):
         Series.from_pylist(objects, pyobj="disallow")
 
 

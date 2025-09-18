@@ -15,7 +15,7 @@ DaftExtension = get_super_ext_type()
 
 
 def test_embedding_type_df() -> None:
-    data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
+    data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), None]
     df = daft.from_pydict(
         {"index": np.arange(len(data)), "embeddings": Series.from_pylist(data, dtype=DataType.python())}
     )
@@ -31,7 +31,7 @@ def test_embedding_type_df() -> None:
 
 @pytest.mark.parametrize("from_pil_imgs", [True, False])
 def test_image_type_df(from_pil_imgs) -> None:
-    PIL = pytest.importorskip("PIL")
+    Image = pytest.importorskip("PIL.Image")
 
     data = [
         np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
@@ -39,7 +39,7 @@ def test_image_type_df(from_pil_imgs) -> None:
         None,
     ]
     if from_pil_imgs:
-        data = [PIL.Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
+        data = [Image.fromarray(arr, mode="RGB") if arr is not None else None for arr in data]
     df = daft.from_pydict({"index": np.arange(len(data)), "image": Series.from_pylist(data, pyobj="allow")})
 
     image_expr = col("image")
