@@ -70,23 +70,6 @@ repos:
 
 - repo: local
   hooks:
-  - id: fmt
-    name: Rust Code Formatting
-    description: Format files with cargo fmt.
-    entry: cargo fmt --manifest-path Cargo.toml
-    language: system
-    types: [rust]
-    args: [--]
-
-  - id: clippy
-    name: Rust code quality check
-    description: Lint rust sources
-    entry: cargo clippy
-    language: system
-    args: [--workspace, --all-features, --, -D, warnings]
-    types: [rust]
-    pass_filenames: false
-
   - id: check-for-openssl
     name: check-for-openssl
     description: Lint rust sources
@@ -94,6 +77,14 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
+
+  - id: fmt
+    name: Rust Code Formatting
+    description: Format files with cargo fmt.
+    entry: cargo fmt --manifest-path Cargo.toml
+    language: system
+    types: [rust]
+    args: [--]
 
   - id: cargo-check-default
     name: cargo check (default)
@@ -112,6 +103,16 @@ repos:
     types: [rust]
     pass_filenames: false
     args: [--workspace, --all-features, --all-targets]
+
+  - id: clippy
+    name: Rust code quality check
+    description: Lint rust sources
+    entry: cargo clippy
+    language: system
+    args: [--workspace, --all-features, --, -D, warnings]
+    types: [rust]
+    pass_filenames: false
+
 
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.24.1

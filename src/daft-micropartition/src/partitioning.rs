@@ -27,7 +27,8 @@ impl Partition for MicroPartition {
 // An in memory partition set
 #[derive(Debug, Default, Clone)]
 pub struct MicroPartitionSet {
-    // DashMap is a thread-safe HashMap
+    // We need ordering of partitions for the output
+    // TODO: Look into using ConcurrentMap if performance is an issue
     pub partitions: Arc<RwLock<BTreeMap<PartitionId, MicroPartitionRef>>>,
 }
 
