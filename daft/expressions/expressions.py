@@ -2486,15 +2486,15 @@ class Expression:
 
         return regexp_replace(self, pattern, replacement)
 
-    def index(self, substr: builtins.str | Expression) -> Expression:
+    def find(self, substr: builtins.str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string.
 
         Tip: See Also
-            [`daft.functions.index`](https://docs.daft.ai/en/stable/api/functions/index/)
+            [`daft.functions.find`](https://docs.daft.ai/en/stable/api/functions/find/)
         """
-        from daft.functions import index
+        from daft.functions import find
 
-        return index(self, substr)
+        return find(self, substr)
 
     def convert_image(self, mode: builtins.str | ImageMode) -> Expression:
         """Convert an image expression to the specified mode.
@@ -3036,14 +3036,6 @@ class ExpressionStringNamespace(ExpressionNamespace):
         else:
             return self._to_expression().split(pattern)
 
-    def regexp_split(self, pattern: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.regexp_split` or `daft.functions.regexp_split` instead."""
-        warnings.warn(
-            "`Expression.str.regexp_split` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_split` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().regexp_split(pattern)
-
     def concat(self, other: str | Expression) -> Expression:
         """(DEPRECATED) Please use `daft.functions.concat` instead."""
         warnings.warn(
@@ -3165,12 +3157,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return self._to_expression().right(nchars)
 
     def find(self, substr: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.index` instead."""
+        """(DEPRECATED) Please use `daft.functions.find` instead."""
         warnings.warn(
-            "`Expression.str.find` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.index` instead.",
+            "`Expression.str.find` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.find` instead.",
             category=DeprecationWarning,
         )
-        return self._to_expression().index(substr)
+        return self._to_expression().find(substr)
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """(DEPRECATED) Please use `daft.functions.rpad` instead."""

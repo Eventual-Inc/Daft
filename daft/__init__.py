@@ -150,6 +150,7 @@ from daft.file import File
 import daft.context as context
 import daft.io as io
 import daft.runners as runners
+import daft.functions as functions
 
 __all__ = [
     "Catalog",
@@ -205,6 +206,7 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "func",
+    "functions",
     "get_catalog",
     "get_or_create_runner",
     "get_or_infer_runner_type",
