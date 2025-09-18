@@ -355,7 +355,7 @@ class LogicalPlanBuilder:
         from daft.io.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
 
         name = ".".join(table.name())
-        location = f"{table.location()}/data"
+        location = table.metadata.properties.get("write.data.path", f"{table.location()}/data")
         partition_spec = table.spec()
         schema = table.schema()
         missing_columns = get_missing_columns(self.schema().to_pyarrow_schema(), schema)
