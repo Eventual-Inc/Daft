@@ -83,4 +83,4 @@ def test_basic_autoscaling_gpu_cluster():
 
         df = daft.from_pydict({"x": [1, 2, 3, 4, 5], "y": [6, 7, 8, 9, 10]})
         result = df.select(fake_gpu_udf(col("x"))).to_pydict()
-        assert result["x"] == [["0", "1"] * 5]
+        assert result["x"] == [["0", "1"]] * 5

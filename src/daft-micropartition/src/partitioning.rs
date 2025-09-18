@@ -101,7 +101,7 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
     }
 
     fn len(&self) -> usize {
-        self.partitions.len()
+        self.partitions.iter().map(|v| v.value().len()).sum()
     }
 
     fn is_empty(&self) -> bool {
