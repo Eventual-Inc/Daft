@@ -620,13 +620,13 @@ class Series:
         assert self._series is not None and fill_value._series is not None
         return Series._from_pyseries(self._series.fill_null(fill_value._series))
 
-    def regexp_count_matches(
+    def regexp_count(
         self,
-        pattern: str,
+        patterns: str | Series,
     ) -> Series:
         return self._eval_expressions(
-            "count_matches_regex",
-            patterns=pattern,
+            "regexp_count",
+            patterns=patterns,
         )
 
     def minhash(

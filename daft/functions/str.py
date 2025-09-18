@@ -963,7 +963,7 @@ def regexp(expr: Expression, pattern: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("regexp_match", expr, pattern)
 
 
-def regexp_count_matches(
+def regexp_count(
     expr: Expression,
     pattern: str | Expression,
 ) -> Expression:
@@ -978,9 +978,9 @@ def regexp_count_matches(
 
     Examples:
         >>> import daft
-        >>> from daft.functions import regexp_count_matches
+        >>> from daft.functions import regexp_count
         >>> df = daft.from_pydict({"x": ["hello world", "foo bar baz", "test123test456"]})
-        >>> df.with_column("word_count", regexp_count_matches(df["x"], r"\w+")).collect()
+        >>> df.with_column("word_count", regexp_count(df["x"], r"\w+")).collect()
         ╭────────────────┬────────────╮
         │ x              ┆ word_count │
         │ ---            ┆ ---        │
@@ -995,7 +995,7 @@ def regexp_count_matches(
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-        >>> df.with_column("digit_count", regexp_count_matches(df["x"], r"\d+")).collect()
+        >>> df.with_column("digit_count", regexp_count(df["x"], r"\d+")).collect()
         ╭────────────────┬─────────────╮
         │ x              ┆ digit_count │
         │ ---            ┆ ---         │
@@ -1011,7 +1011,7 @@ def regexp_count_matches(
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._call_builtin_scalar_fn("count_matches_regex", expr, pattern)
+    return Expression._call_builtin_scalar_fn("regexp_count", expr, pattern)
 
 
 def regexp_extract(expr: Expression, pattern: str | Expression, index: int = 0) -> Expression:

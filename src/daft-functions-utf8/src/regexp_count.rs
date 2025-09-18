@@ -5,7 +5,6 @@ use daft_core::prelude::*;
 use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
-    lit,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,12 +15,12 @@ struct Args<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct RegexpCountMatches;
+pub struct RegexpCount;
 
 #[typetag::serde]
-impl ScalarUDF for RegexpCountMatches {
+impl ScalarUDF for RegexpCount {
     fn name(&self) -> &'static str {
-        "count_matches_regex"
+        "regexp_count"
     }
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, patterns } = inputs.try_into()?;
@@ -33,7 +32,7 @@ impl ScalarUDF for RegexpCountMatches {
             DaftError::InternalError("Expected patterns to be a string".to_string())
         })?;
 
-        Ok(regex_count_matches_impl(input, patterns)?.into_series())
+        Ok(regexp_count_impl(input, patterns)?.into_series())
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
@@ -52,20 +51,11 @@ impl ScalarUDF for RegexpCountMatches {
 }
 
 #[must_use]
-pub fn regexp_count_matches(
-    input: ExprRef,
-    patterns: ExprRef,
-    whole_words: bool,
-    case_sensitive: bool,
-) -> ExprRef {
-    ScalarFn::builtin(
-        RegexpCountMatches,
-        vec![input, patterns, lit(whole_words), lit(case_sensitive)],
-    )
-    .into()
+pub fn regexp_count(input: ExprRef, patterns: ExprRef) -> ExprRef {
+    ScalarFn::builtin(RegexpCount, vec![input, patterns]).into()
 }
 
-fn regex_count_matches_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64Array> {
+fn regexp_count_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64Array> {
     if patterns.len() == 1 {
         // Single pattern case
         let pattern_str = patterns
