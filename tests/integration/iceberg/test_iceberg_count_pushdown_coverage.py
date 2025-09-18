@@ -334,26 +334,24 @@ class TestIcebergScanOperatorUnit:
     def test_iceberg_count_result_function_recordbatch_failure(self, mock_from_arrow):
         """Test _iceberg_count_result_function when RecordBatch conversion fails."""
         mock_from_arrow.side_effect = RuntimeError("RecordBatch conversion failed")
-        
+
         total_count = 100
         field_name = "count"
-        
+
         # Should raise the original conversion exception
         with pytest.raises(RuntimeError, match="RecordBatch conversion failed"):
             list(_iceberg_count_result_function(total_count, field_name))
-
 
     @patch("daft.io.iceberg.iceberg_scan.pa.field")
     def test_iceberg_count_result_function_field_creation_failure(self, mock_field):
         """Test _iceberg_count_result_function when pa.field creation fails."""
         mock_field.side_effect = pa.ArrowTypeError("Invalid field definition")
-        
+
         total_count = 100
         field_name = "count"
-        
+
         with pytest.raises(pa.ArrowTypeError, match="Invalid field definition"):
             list(_iceberg_count_result_function(total_count, field_name))
-
 
     @patch("daft.io.iceberg.iceberg_scan.schema_to_pyarrow")
     @patch("daft.io.iceberg.iceberg_scan.visit")
@@ -409,8 +407,6 @@ class TestIcebergScanOperatorUnit:
             expected_total = sum(large_counts)
             assert call_args[1]["func_args"] == (expected_total, "count")
 
-
-
     @patch("daft.io.iceberg.iceberg_scan.schema_to_pyarrow")
     @patch("daft.io.iceberg.iceberg_scan.visit")
     @patch("daft.io.iceberg.iceberg_scan.Schema.from_pyarrow_schema")
@@ -428,25 +424,25 @@ class TestIcebergScanOperatorUnit:
         mock_spec = Mock()
         mock_spec.fields = []
         mock_table.spec.return_value = mock_spec
-        
+
         # Mock scan that fails
         mock_scan = Mock()
         mock_scan.plan_files.side_effect = Exception("Iceberg scan failed")
         mock_table.scan.return_value = mock_scan
         mock_scan.projection.return_value = Mock()
-        
+
         mock_storage_config = Mock()
         operator = IcebergScanOperator(mock_table, None, mock_storage_config)
 
         # Mock the fallback method
-        with patch.object(operator, '_create_regular_scan_tasks') as mock_fallback:
+        with patch.object(operator, "_create_regular_scan_tasks") as mock_fallback:
             mock_fallback.return_value = iter([Mock()])
-            
+
             mock_pushdowns = Mock(spec=PyPushdowns)
-            
+
             # Test the method - should catch exception and fallback
             results = list(operator._create_count_scan_task(mock_pushdowns, "count"))
-            
+
             # Should have fallen back to regular scan
             mock_fallback.assert_called_once_with(mock_pushdowns)
             assert len(results) == 1
@@ -468,7 +464,7 @@ class TestIcebergScanOperatorUnit:
         mock_spec = Mock()
         mock_spec.fields = []
         mock_table.spec.return_value = mock_spec
- 
+
         mock_storage_config = Mock()
         operator = IcebergScanOperator(mock_table, None, mock_storage_config)
 
