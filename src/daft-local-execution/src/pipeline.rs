@@ -818,10 +818,9 @@ fn physical_plan_to_pipeline(
             // 2. Join type. Different join types have different requirements for which side can build the probe table.
             let left_stats_state = left.get_stats_state();
             let right_stats_state = right.get_stats_state();
-            let build_on_left = if let Some(build_on_left) = build_on_left {
-                *build_on_left
-            } else {
-                match join_type {
+            let build_on_left = match build_on_left {
+                Some(build_on_left) => *build_on_left,
+                None => match join_type {
                     // Inner and outer joins can build on either side. If stats are available, choose the smaller side.
                     // Else, default to building on the left.
                     JoinType::Inner | JoinType::Outer => {
@@ -906,7 +905,7 @@ fn physical_plan_to_pipeline(
                             _ => false,
                         }
                     }
-                }
+                },
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
                 true => (left_on, right_on, left, right),
