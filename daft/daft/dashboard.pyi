@@ -1,6 +1,5 @@
 from daft.daft import PyRecordBatch
 
-DAFT_DASHBOARD_ENV_ENABLED: str
 DAFT_DASHBOARD_ENV_NAME: str
 
 class ConnectionHandle:
