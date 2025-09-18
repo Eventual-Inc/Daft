@@ -61,6 +61,7 @@ from .datetime import (
     to_date,
     to_datetime,
     date_trunc,
+    to_unix_epoch,
 )
 from .embedding import cosine_distance
 from .image import (
@@ -91,12 +92,12 @@ from .list import (
     list_map,
     explode,
     list_append,
+    to_list,
 )
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
     file,
-    unnest,
     eq_null_safe,
     cast,
     is_null,
@@ -108,6 +109,9 @@ from .misc import (
     length,
     concat,
     coalesce,
+    get,
+    map_get,
+    slice,
 )
 from .numeric import (
     abs,
@@ -150,6 +154,14 @@ from .numeric import (
     not_nan,
     fill_nan,
 )
+from .partition import (
+    partition_days,
+    partition_hours,
+    partition_months,
+    partition_years,
+    partition_iceberg_bucket,
+    partition_iceberg_truncate,
+)
 from .str import (
     deserialize,
     try_deserialize,
@@ -188,6 +200,7 @@ from .str import (
     regexp_replace,
     find,
 )
+from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .window import (
     row_number,
@@ -270,6 +283,7 @@ __all__ = [
     "find",
     "floor",
     "format",
+    "get",
     "hash",
     "hour",
     "ilike",
@@ -312,6 +326,7 @@ __all__ = [
     "lower",
     "lpad",
     "lstrip",
+    "map_get",
     "max",
     "mean",
     "microsecond",
@@ -328,6 +343,12 @@ __all__ = [
     "not_null",
     "over",
     "parse_url",
+    "partition_days",
+    "partition_hours",
+    "partition_iceberg_bucket",
+    "partition_iceberg_truncate",
+    "partition_months",
+    "partition_years",
     "quarter",
     "radians",
     "rank",
@@ -355,6 +376,7 @@ __all__ = [
     "sin",
     "sinh",
     "skew",
+    "slice",
     "split",
     "sqrt",
     "startswith",
@@ -368,6 +390,9 @@ __all__ = [
     "time",
     "to_date",
     "to_datetime",
+    "to_list",
+    "to_struct",
+    "to_unix_epoch",
     "tokenize_decode",
     "tokenize_encode",
     "total_days",
