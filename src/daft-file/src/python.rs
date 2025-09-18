@@ -230,6 +230,33 @@ impl PyDaftFile {
 
         Ok(supports_range)
     }
+
+    fn size(&mut self) -> PyResult<usize> {
+        let cursor = self
+            .cursor
+            .as_mut()
+            .ok_or_else(|| PyIOError::new_err("File not open"))?;
+
+        match cursor {
+            FileCursor::ObjectReader(reader) => {
+                let reader = reader.get_ref();
+                let source = reader.source.clone();
+                let uri = reader.uri.clone();
+                let io_stats = reader.io_stats.clone();
+
+                let rt = common_runtime::get_io_runtime(true);
+
+                let size = rt.block_within_async_context(async move {
+                    source
+                        .get_size(&uri, io_stats)
+                        .await
+                        .map_err(|e| PyIOError::new_err(e.to_string()))
+                })??;
+                Ok(size)
+            }
+            FileCursor::Memory(mem_cursor) => Ok(mem_cursor.get_ref().len()),
+        }
+    }
 }
 
 #[cfg(feature = "python")]
@@ -352,23 +379,32 @@ impl Read for ObjectSourceReader {
                 match source.get(&uri, range, io_stats.clone()).await {
                     Ok(result) => {
                         let bytes = result.bytes().await.map_err(map_bytes_error)?;
-                        Ok((bytes, true)) // Range request succeeded
+                        Ok((bytes.to_vec(), true)) // Range request succeeded
                     }
                     Err(e) => {
-                        // Check if error suggests range requests aren't supported
-                        if e.to_string().contains("Requested Range Not Satisfiable")
-                            || e.to_string().contains("416")
+                        // EOF
+                        if let daft_io::Error::InvalidRangeRequest {
+                            source: daft_io::range::InvalidGetRange::StartTooLarge { .. },
+                        } = e
                         {
-                            // Fall back to reading the entire file
-                            let result = source
-                                .get(&uri, None, io_stats)
-                                .await
-                                .map_err(map_get_error)?;
-
-                            let bytes = result.bytes().await.map_err(map_bytes_error)?;
-                            Ok((bytes, false)) // Range request not supported
+                            Ok((Vec::new(), true))
                         } else {
-                            Err(map_get_error(e))
+                            let error_str = e.to_string();
+                            // Check if error suggests range requests aren't supported
+                            if error_str.contains("Requested Range Not Satisfiable")
+                                || error_str.contains("416")
+                            {
+                                // Fall back to reading the entire file
+                                let result = source
+                                    .get(&uri, None, io_stats)
+                                    .await
+                                    .map_err(map_get_error)?;
+
+                                let bytes = result.bytes().await.map_err(map_bytes_error)?;
+                                Ok((bytes.to_vec(), false)) // Range request not supported
+                            } else {
+                                Err(map_get_error(e))
+                            }
                         }
                     }
                 }
@@ -376,7 +412,6 @@ impl Read for ObjectSourceReader {
             .map_err(map_async_error)??;
 
         let (bytes, supports_range) = range_result;
-        let bytes = bytes.to_vec();
         self.supports_range = Some(supports_range);
 
         if !supports_range {
@@ -393,7 +428,6 @@ impl Read for ObjectSourceReader {
                 0 // Position is beyond EOF
             };
 
-            // Update position and cache the content
             self.position += bytes_to_read;
             self.cached_content = Some(bytes);
 

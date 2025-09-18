@@ -105,6 +105,9 @@ class File:
     def closed(self) -> bool:
         return self._inner.closed()
 
+    def size(self) -> int:
+        return self._inner.size()
+
     def to_tempfile(self) -> _TemporaryFileWrapper[bytes]:
         """Create a temporary file with the contents of this file.
 
@@ -128,10 +131,12 @@ class File:
         )
         self.seek(0)
 
-        if self._inner.supports_range_requests():
-            shutil.copyfileobj(self, temp_file)
-        else:
+        size = self._inner.size()
+        # if its either a really small file, or doesn't support range requests. Just read it normally
+        if not self._inner.supports_range_requests() or size < 1024:
             temp_file.write(self.read())
+        else:
+            shutil.copyfileobj(self, temp_file, length=size)
         # close it as `to_tempfile` is a consuming method
         self.close()
         temp_file.seek(0)
