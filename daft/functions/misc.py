@@ -529,17 +529,108 @@ def get(expr: Expression, key: int | str | Expression, default: Any = None) -> E
 
     Args:
         expr: list or struct expression to get value from
-        key: integer index for list or string field for struct
+        key: integer index for list or string field for struct. List index can be negative to index from the end of the list.
         default: default value if out of bounds. Only supported for list get
 
     Returns:
         An expression with the inner type of the input expression.
 
     Note:
-        `expr[x]` is equivalent to `expr.get(x)`.
+        `expr.get(x)` can also be written as `expr[x]`
 
     Note:
         `expr.get("*")` is equivalent to `expr.unnest()`
+
+    Examples:
+        Getting elements from a list by index:
+
+        >>> import daft
+        >>> df = daft.from_pydict({"lists": [[1, 2, 3], [4, 5], [6]]})
+        >>> df = df.select(df["lists"].get(0).alias("first"), df["lists"].get(-1).alias("last"))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ first ┆ last  │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 3     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 4     ┆ 5     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 6     ┆ 6     │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Getting elements from a list with default value:
+
+        >>> df = daft.from_pydict({"lists": [[1, 2], [3], []]})
+        >>> df = df.select(df["lists"].get(2, default=-1))
+        >>> df.show()
+        ╭───────╮
+        │ lists │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ -1    │
+        ├╌╌╌╌╌╌╌┤
+        │ -1    │
+        ├╌╌╌╌╌╌╌┤
+        │ -1    │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Getting fields from a struct:
+
+        >>> df = daft.from_pydict({"structs": [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]})
+        >>> df = df.select(df["structs"].get("name"), df["structs"].get("age"))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ name  ┆ age   │
+        │ ---   ┆ ---   │
+        │ Utf8  ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ Alice ┆ 25    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ Bob   ┆ 30    │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+        Using variable indices:
+
+        >>> df = daft.from_pydict({"lists": [[1, 2, 3], [4, 5, 6]], "indices": [0, 2]})
+        >>> df = df.select(df["lists"].get(df["indices"]))
+        >>> df.show()
+        ╭───────╮
+        │ lists │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 6     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+        Unnesting all fields from a struct (equivalent to .unnest()):
+
+        >>> df = daft.from_pydict({"structs": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]})
+        >>> df = df.select(df["structs"].get("*"))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 2     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 4     │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
     """
     if isinstance(key, (int, Expression)):
         return Expression._call_builtin_scalar_fn("list_get", expr, key, default)
