@@ -2591,11 +2591,14 @@ name = "daft-dashboard"
 version = "0.3.0-dev0"
 dependencies = [
  "axum",
+ "common-metrics",
  "daft-recordbatch",
+ "dashmap",
  "include_dir",
  "parking_lot 0.12.4",
  "pyo3",
  "serde",
+ "serde_json",
  "tokio",
  "tower 0.5.2",
  "tower-http",

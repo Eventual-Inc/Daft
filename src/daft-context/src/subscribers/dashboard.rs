@@ -1,7 +1,7 @@
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::StatSnapshotView;
+use common_metrics::{StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 use reqwest::blocking::Client;
 use serde_json::json;
@@ -150,11 +150,12 @@ impl QuerySubscriber for DashboardSubscriber {
         Ok(())
     }
 
-    fn on_exec_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
         self.client
             .post(format!("{}/query/{}/exec/start", self.url, query_id))
             .json(&json!({
-                "timestamp": now()
+                "timestamp": now(),
+                "node_infos": node_infos,
             }))
             .send()
             .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
