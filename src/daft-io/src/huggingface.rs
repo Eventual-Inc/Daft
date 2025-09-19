@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
-    FileFormat, InvalidRangeRequestSnafu, SourceType,
+    FileFormat, InvalidRangeRequestSnafu,
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
@@ -365,9 +365,10 @@ impl HFSource {
 
 #[async_trait]
 impl ObjectSource for HFSource {
-    fn source_type(&self) -> SourceType {
-        SourceType::HF
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        self.http_source.supports_range(uri).await
     }
+
     async fn get(
         &self,
         uri: &str,

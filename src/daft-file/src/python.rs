@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use daft_io::{GetRange, IOStatsRef, ObjectSource, SourceType, python::IOConfig};
+use daft_io::{GetRange, IOStatsRef, ObjectSource, python::IOConfig};
 use pyo3::{
     exceptions::{PyIOError, PyValueError},
     prelude::*,
@@ -193,40 +193,20 @@ impl PyDaftFile {
             .as_mut()
             .ok_or_else(|| PyIOError::new_err("File not open"))?;
 
-        // Save current position
-        let current_pos = self.position;
-
         // Try to read a single byte from the beginning
         let supports_range = match cursor {
             FileCursor::ObjectReader(reader) => {
-                let source_type = reader.get_ref().source.source_type();
-                match source_type {
-                    SourceType::Http | SourceType::HF => {
-                        // Try to seek to beginning and read one byte
-                        match reader.seek(SeekFrom::Start(0)) {
-                            Ok(_) => {
-                                let mut buf = [0u8; 1];
-                                reader.read(&mut buf).is_ok()
-                            }
-                            Err(_) => false,
-                        }
-                    }
-                    _ => true,
-                }
+                let rt = common_runtime::get_io_runtime(true);
+                let inner_reader = reader.get_ref();
+                let uri = inner_reader.uri.clone();
+                let source = inner_reader.source.clone();
+
+                rt.block_within_async_context(async move {
+                    source.supports_range(&uri).await.map_err(DaftError::from)
+                })??
             }
             FileCursor::Memory(_) => true,
         };
-
-        // Restore original position
-        match cursor {
-            FileCursor::ObjectReader(reader) => {
-                let _ = reader.seek(SeekFrom::Start(current_pos as u64));
-            }
-            FileCursor::Memory(mem_cursor) => {
-                let _ = mem_cursor.seek(SeekFrom::Start(current_pos as u64));
-            }
-        }
-        self.position = current_pos;
 
         Ok(supports_range)
     }

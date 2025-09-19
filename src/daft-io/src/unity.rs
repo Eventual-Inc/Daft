@@ -155,8 +155,8 @@ impl UnitySource {
 
 #[async_trait]
 impl ObjectSource for UnitySource {
-    fn source_type(&self) -> SourceType {
-        SourceType::Unity
+    async fn supports_range(&self, _: &str) -> super::Result<bool> {
+        Ok(true)
     }
 
     async fn get(

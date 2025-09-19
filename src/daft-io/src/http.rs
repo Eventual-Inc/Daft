@@ -20,7 +20,7 @@ use url::Position;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
-    FileFormat, InvalidRangeRequestSnafu, SourceType,
+    FileFormat, InvalidRangeRequestSnafu,
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
     stats::IOStatsRef,
@@ -223,8 +223,27 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
-    fn source_type(&self) -> SourceType {
-        SourceType::Http
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        let head_res = self
+            .client
+            .head(uri)
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
+        let res = head_res
+            .error_for_status()
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
+        let headers = res.headers();
+
+        const ACCEPT_RANGE: &str = "accept-ranges";
+
+        let accept_range = headers
+            .get(ACCEPT_RANGE)
+            .map(|v| v.to_str().unwrap_or_default().to_lowercase())
+            .unwrap_or_default();
+
+        Ok(&accept_range == "bytes")
     }
 
     async fn get(
