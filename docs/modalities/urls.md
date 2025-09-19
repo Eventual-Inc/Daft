@@ -107,9 +107,11 @@ The `File` datatype is preferable when dealing with large files that don't fit i
         else:
             return None
 
+    df = df.with_column(
+        "file_type",
+        detect_file_type(file(df["urls"], io_config=io_config))
+    )
 
-
-    df = df.with_column("file_type", detect_file_type(file(df["urls"]))
     df.collect()
     ```
 
