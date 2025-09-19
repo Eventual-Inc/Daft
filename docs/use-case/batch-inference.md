@@ -15,6 +15,8 @@ If you’re new to Daft, see the [quickstart](../quickstart.md) first. For distr
 
 Daft provides first-class APIs for model inference. Under the hood, Daft pipelines data operations so that reading, inference, and writing overlap automatically, and is optimized for throughput.
 
+![Daft Pipeline Visualization](daft-pipeline-visualization.png)
+
 ## Example: Text generation with OpenAI
 
 === "🐍 Python"
