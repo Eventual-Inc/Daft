@@ -988,19 +988,25 @@ class Expression:
 
         return log1p(self)
 
-    def pow(self, exp: float, by: float) -> Expression:  # type: ignore
-        """The self^by of a numeric expression. Shorthand for `.power(by)`."""
-        assert isinstance(exp, float), f"exp must be a float, but {type(exp)} was provided."
-        exp = lit(exp)
-        f = native.get_function_from_registry("pow")
-        return Expression._from_pyexpr(f(self._expr, exp._expr))
+    def pow(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
 
-    def power(self, exp: float) -> Expression:  # type: ignore
-        """The self^by of a numeric expression."""
-        assert isinstance(exp, float), f"exp must be a float, but {type(exp)} was provided."
-        exp = lit(exp)
-        f = native.get_function_from_registry("power")
-        return Expression._from_pyexpr(f(self._expr, exp._expr))
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import pow
+
+        return pow(self, exp)
+
+    def power(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import power
+
+        return power(self, exp)
 
     def exp(self) -> Expression:
         """The e^self of a numeric expression.
