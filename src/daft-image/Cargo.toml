@@ -5,6 +5,7 @@ common-error = {path = "../common/error", default-features = false}
 common-image = {workspace = true}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
 log = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}

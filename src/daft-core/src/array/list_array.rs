@@ -216,6 +216,7 @@ impl ListArray {
     }
 }
 
+#[derive(Clone)]
 pub struct ListArrayIter<'a> {
     array: &'a ListArray,
     idx: usize,

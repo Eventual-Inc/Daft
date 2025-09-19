@@ -2,13 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from daft.context import get_context
-
-pytestmark = pytest.mark.skipif(
-    not get_context().daft_execution_config.use_legacy_ray_runner,
-    reason="Pivot operations are not supported on the legacy ray runner",
-)
-
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
 def test_pivot(make_df, repartition_nparts, with_morsel_size):

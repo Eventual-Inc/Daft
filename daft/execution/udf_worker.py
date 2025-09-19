@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import sys
 from multiprocessing.connection import Client
 from pickle import PicklingError
@@ -86,5 +88,11 @@ if __name__ == "__main__":
 
     socket_path = sys.argv[1]
     secret = bytes.fromhex(sys.argv[2])
+
+    logging.basicConfig(
+        level=int(os.getenv("LOG_LEVEL", logging.WARNING)),
+        format=os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
+        datefmt=os.getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S"),
+    )
 
     udf_event_loop(secret, socket_path)
