@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{TryStreamExt, stream::BoxStream};
 use regex::Regex;
+use reqwest::header::ACCEPT_RANGES;
 use reqwest_middleware::{
     ClientBuilder, ClientWithMiddleware,
     reqwest::header::{self, CONTENT_LENGTH, RANGE},
@@ -236,10 +237,8 @@ impl ObjectSource for HttpSource {
 
         let headers = res.headers();
 
-        const ACCEPT_RANGE: &str = "accept-ranges";
-
         let accept_range = headers
-            .get(ACCEPT_RANGE)
+            .get(ACCEPT_RANGES)
             .map(|v| v.to_str().unwrap_or_default().to_lowercase())
             .unwrap_or_default();
 
