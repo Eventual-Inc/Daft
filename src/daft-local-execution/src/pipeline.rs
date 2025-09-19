@@ -813,11 +813,13 @@ fn physical_plan_to_pipeline(
             let left_schema = left.schema();
             let right_schema = right.schema();
 
-            // To determine whether to use the left or right side of a join for building a probe table, we consider:
-            // 1. Cardinality of the sides. Probe tables should be built on the smaller side.
-            // 2. Join type. Different join types have different requirements for which side can build the probe table.
             let left_stats_state = left.get_stats_state();
             let right_stats_state = right.get_stats_state();
+
+            // If the build_on_left argument is specified, we use it.
+            // Else, to determine whether to use the left or right side of a join for building a probe table, we consider:
+            // 1. Cardinality of the sides. Probe tables should be built on the smaller side.
+            // 2. Join type. Different join types have different requirements for which side can build the probe table.
             let build_on_left = match build_on_left {
                 Some(build_on_left) => *build_on_left,
                 None => match join_type {
