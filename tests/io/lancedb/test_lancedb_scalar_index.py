@@ -95,8 +95,8 @@ def generate_multi_fragment_dataset(tmp_path, num_fragments=4, rows_per_fragment
 class TestDistributedIndexing:
     """Test cases for distributed indexing functionality."""
 
-    def test_build_distributed_fts_index_basic(self, multi_fragment_lance_dataset):
-        """Test basic distributed FTS index building."""
+    def test_build_distributed_index_basic(self, multi_fragment_lance_dataset):
+        """Test basic distributed index building."""
         dataset_uri = multi_fragment_lance_dataset
 
         # Build distributed index
@@ -122,7 +122,7 @@ class TestDistributedIndexing:
         assert text_index is not None, "Text index not found"
         assert text_index["type"] == "Inverted", f"Expected Inverted index, got {text_index['type']}"
 
-    def test_build_distributed_fts_index_with_name(self, multi_fragment_lance_dataset):
+    def test_build_distributed_index_with_name(self, multi_fragment_lance_dataset):
         """Test building distributed index with custom name."""
         dataset_uri = multi_fragment_lance_dataset
         custom_name = "custom_text_index"
@@ -142,7 +142,7 @@ class TestDistributedIndexing:
         index_names = [idx["name"] for idx in indices]
         assert custom_name in index_names, f"Custom index name '{custom_name}' not found in {index_names}"
 
-    def test_build_distributed_fts_index_search_functionality(self, multi_fragment_lance_dataset):
+    def test_build_distributed_index_search_functionality(self, multi_fragment_lance_dataset):
         """Test that the built index actually works for searching."""
         dataset_uri = multi_fragment_lance_dataset
 
