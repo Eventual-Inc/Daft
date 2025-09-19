@@ -15,17 +15,17 @@ def common_crawl(
     num_files: int | None = None,
     io_config: IOConfig | None = None,
 ) -> str | list[str]:
-    """A helper that resolves crawl dates and segment strings into a list of common crawl URLs.
+    """A helper that resolves the specified crawl and segment into a glob pattern or list of file paths of Common Crawl data.
 
     Args:
-        crawl: The crawl date, e.g. "CC-MAIN-2025-33".
+        crawl: The crawl identifier, e.g. "CC-MAIN-2025-33".
         segment: Specific segment to fetch within the crawl. If not provided, defaults to all segments in the crawl.
-        content: Specifies whether to return the WARC, WET, or WAT files. "raw" = warc, "text" = wet, "metadata" = wat.
+        content: Specifies whether to return the WARC, WET, or WAT files. Accepts "warc", "wet", "wat", or "raw" (warc), "text" (wet), "metadata" (wat).
         num_files: Limit the number of files returned.
         io_config: IO configuration for accessing S3.
 
     Returns:
-        List of Common Crawl data URLs corresponding to the given crawl date and segment(s).
+        A glob pattern or list of file paths corresponding to the given crawl and segment.
 
     Examples:
         >>> daft.read_warc(common_crawl("CC-MAIN-2025-33")) + SKIP
