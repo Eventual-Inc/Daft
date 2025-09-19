@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from daft.datasets import common_crawl
+import daft
 
 
 def test_basic():
@@ -15,7 +15,7 @@ def test_basic():
     ]
 
     for crawl_date, expected in test_cases:
-        result = common_crawl(crawl_date)
+        result = daft.datasets.common_crawl(crawl_date)
         assert result == expected
 
 
@@ -29,7 +29,7 @@ def test_different_content_types():
         ("wat", "s3://commoncrawl/crawl-data/CC-MAIN-2025-33/segments/**/wat/*.warc.wat.gz"),
     ]
     for content, expected in test_cases:
-        result = common_crawl("CC-MAIN-2025-33", content=content)
+        result = daft.datasets.common_crawl("CC-MAIN-2025-33", content=content)
         assert result == expected
 
 
@@ -41,7 +41,7 @@ def test_segment_specified():
     ]
 
     for segment, expected in test_cases:
-        result = common_crawl("CC-MAIN-2025-33", segment=segment)
+        result = daft.datasets.common_crawl("CC-MAIN-2025-33", segment=segment)
         assert result == expected
 
 
@@ -56,23 +56,23 @@ def test_segment_with_different_content_type():
     ]
 
     for content, expected in test_cases:
-        result = common_crawl("CC-MAIN-2025-33", segment="1234567890.1", content=content)
+        result = daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1234567890.1", content=content)
         assert result == expected
 
 
 def test_invalid_content_type():
     with pytest.raises(ValueError):
-        common_crawl("CC-MAIN-2025-33", content="invalid")
+        daft.datasets.common_crawl("CC-MAIN-2025-33", content="invalid")
 
 
 def test_num_files_zero_raises_error():
     with pytest.raises(ValueError, match="num_files must be a positive integer"):
-        common_crawl("CC-MAIN-2025-33", num_files=0)
+        daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=0)
 
 
 def test_num_files_negative_raises_error():
     with pytest.raises(ValueError, match="num_files must be a positive integer"):
-        common_crawl("CC-MAIN-2025-33", num_files=-1)
+        daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=-1)
 
 
 @patch("daft.datasets.common_crawl.from_glob_path")
@@ -86,7 +86,7 @@ def test_num_files_limit(mock_from_glob_path):
     mock_select.limit.return_value = mock_limit
     mock_limit.to_pydict.return_value = {"path": ["file1.warc.gz", "file2.warc.gz", "file3.warc.gz"]}
 
-    result = common_crawl("CC-MAIN-2025-33", num_files=3)
+    result = daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=3)
 
     mock_from_glob_path.assert_called_once_with(
         "s3://commoncrawl/crawl-data/CC-MAIN-2025-33/segments/**/warc/*.warc.gz", io_config=None
