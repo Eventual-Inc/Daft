@@ -1,0 +1,15 @@
+# Document Embedding Benchmark
+
+Generates embeddings for **10,000 PDF documents**. Extracts text, chunks content, and creates 384-dimensional embeddings using sentence-transformers/all-MiniLM-L6-v2 model across distributed nodes.
+
+**Input Dataset**: Digital Corpora PDF metadata (S3 parquet format)  
+**Output Format**: Parquet with embeddings, text chunks, and metadata  
+**Cluster**: 8 worker nodes using g6.xlarge instances  
+
+## Performance Results
+
+| Engine   | Cluster |
+|----------|---------|
+| Daft     | 1m 54s  |
+| Ray Data | 16m 10s |
+| Spark    | 8m 4s   |
