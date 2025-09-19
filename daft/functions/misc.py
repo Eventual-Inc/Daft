@@ -67,7 +67,7 @@ def file_size(expr: Expression) -> Expression:
         expr: The expression to evaluate.
 
     Returns:
-        Expression: A boolean expression indicating if the values are equal
+        Expression: An expression containing the file size in bytes
     """
     return expr._eval_expressions("file_size")
 
