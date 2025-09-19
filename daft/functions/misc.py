@@ -60,6 +60,18 @@ def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
     return expr._eval_expressions("file", io_config=io_config)
 
 
+def file_size(expr: Expression) -> Expression:
+    """Returns the size of the file in bytes.
+
+    Args:
+        expr: The expression to evaluate.
+
+    Returns:
+        Expression: A boolean expression indicating if the values are equal
+    """
+    return expr._eval_expressions("file_size")
+
+
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
     """Performs a null-safe equality comparison between two expressions.
 

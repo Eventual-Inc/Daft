@@ -1,9 +1,9 @@
 use common_io_config::python::IOConfig;
 use pyo3::{intern, prelude::*};
 
-use crate::DaftFile;
+use crate::FileReference;
 
-impl<'py> IntoPyObject<'py> for DaftFile {
+impl<'py> IntoPyObject<'py> for FileReference {
     type Target = PyAny;
 
     type Output = Bound<'py, Self::Target>;

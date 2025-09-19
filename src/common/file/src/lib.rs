@@ -7,14 +7,14 @@ use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum DaftFile {
+pub enum FileReference {
     /// A reference to a file.
     Reference(String, Box<Option<IOConfig>>),
     /// In memory data.
     Data(Vec<u8>),
 }
 
-impl DaftFile {
+impl FileReference {
     pub fn new_from_data(data: Vec<u8>) -> Self {
         Self::Data(data)
     }
@@ -23,13 +23,13 @@ impl DaftFile {
     }
 }
 
-impl std::fmt::Display for DaftFile {
+impl std::fmt::Display for FileReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "File({:?})", self)
     }
 }
 
-impl DaftFile {
+impl FileReference {
     pub fn get_type(&self) -> DaftFileType {
         match self {
             Self::Reference(_, _) => DaftFileType::Reference,

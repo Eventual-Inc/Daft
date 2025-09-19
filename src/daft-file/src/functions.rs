@@ -4,7 +4,7 @@ use daft_dsl::functions::{UnaryArg, prelude::*};
 use daft_io::IOConfig;
 use serde::{Deserialize, Serialize};
 
-use crate::python::PyDaftFile;
+use crate::file::DaftFile;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct File;
@@ -58,7 +58,7 @@ pub struct Size;
 #[typetag::serde]
 impl ScalarUDF for Size {
     fn name(&self) -> &'static str {
-        "size"
+        "file_size"
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
@@ -66,12 +66,16 @@ impl ScalarUDF for Size {
         let s = input.file()?;
         let len = s.len();
         let mut out = Vec::with_capacity(len);
+        // todo(cory): can likely optimize this a lot more.
         for i in 0..len {
-            let opt: Option<u64> = s.get(i).map(|f| {
-                let f = PyDaftFile::from(f);
-                f.si
-                1
-            });
+            let opt: Option<u64> = s
+                .get(i)
+                .map(|f| {
+                    let mut f = DaftFile::try_from(f)?;
+                    let size = f.size()?;
+                    DaftResult::Ok(size as _)
+                })
+                .transpose()?;
             out.push(opt);
         }
 

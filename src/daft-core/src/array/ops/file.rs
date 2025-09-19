@@ -1,4 +1,4 @@
-use common_file::DaftFile;
+use common_file::FileReference;
 
 use crate::{
     datatypes::FileArray,
@@ -9,7 +9,7 @@ use crate::{
 pub trait AsFileObj {
     fn name(&self) -> &str;
     fn len(&self) -> usize;
-    fn as_file(&self, idx: usize) -> Option<DaftFile>;
+    fn as_file(&self, idx: usize) -> Option<FileReference>;
 }
 
 impl AsFileObj for FileArray {
@@ -21,7 +21,7 @@ impl AsFileObj for FileArray {
         FileArray::len(self)
     }
 
-    fn as_file(&self, idx: usize) -> Option<DaftFile> {
+    fn as_file(&self, idx: usize) -> Option<FileReference> {
         match self.get_lit(idx) {
             crate::lit::Literal::Null => None,
             crate::lit::Literal::File(f) => Some(f),
