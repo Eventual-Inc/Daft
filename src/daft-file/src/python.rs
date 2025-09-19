@@ -4,14 +4,18 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftError;
-use daft_io::{GetRange, IOStatsRef, ObjectSource, python::IOConfig};
+use common_error::{DaftError, DaftResult};
+use common_file::DaftFile;
+#[cfg(feature = "python")]
+use daft_io::python::IOConfig as PyIOConfig;
+use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
+#[cfg(feature = "python")]
 use pyo3::{
     exceptions::{PyIOError, PyValueError},
     prelude::*,
 };
 
-#[pyclass]
+#[cfg_attr(feature = "python", pyclass)]
 pub struct PyDaftFile {
     path: Option<String>,
     cursor: Option<FileCursor>,
@@ -47,14 +51,21 @@ impl Seek for FileCursor {
     }
 }
 
-#[pymethods]
+impl From<DaftFile> for PyDaftFile {
+    fn from(value: DaftFile) -> Self {
+        match value {
+            DaftFile::Reference(path, ioconfig) => {
+                PyDaftFile::from_path(path, *ioconfig).expect("Failed to create PyDaftFile")
+            }
+            DaftFile::Data(items) => PyDaftFile::from_bytes(items),
+        }
+    }
+}
 impl PyDaftFile {
-    #[staticmethod]
-    #[pyo3(signature = (path, io_config = None))]
-    fn _from_path(path: String, io_config: Option<IOConfig>) -> PyResult<Self> {
+    fn from_path(path: String, io_config: Option<IOConfig>) -> DaftResult<Self> {
         let io_config = io_config.unwrap_or_default();
 
-        let io_client = daft_io::get_io_client(true, Arc::new(io_config.config))?;
+        let io_client = daft_io::get_io_client(true, Arc::new(io_config))?;
         let rt = common_runtime::get_io_runtime(true);
 
         let (source, path) = rt.block_within_async_context(async move {
@@ -78,14 +89,29 @@ impl PyDaftFile {
             position: 0,
         })
     }
-
-    #[staticmethod]
-    fn _from_bytes(bytes: Vec<u8>) -> Self {
+    fn from_bytes(bytes: Vec<u8>) -> Self {
         Self {
             path: None,
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
         }
+    }
+}
+
+#[cfg_attr(feature = "python", pymethods)]
+impl PyDaftFile {
+    #[staticmethod]
+    #[pyo3(signature = (path, io_config = None))]
+    fn _from_path(path: String, io_config: Option<PyIOConfig>) -> PyResult<Self> {
+        Ok(PyDaftFile::from_path(
+            path,
+            io_config.map(|conf| conf.config),
+        )?)
+    }
+
+    #[staticmethod]
+    fn _from_bytes(bytes: Vec<u8>) -> Self {
+        Self::from_bytes(bytes)
     }
 
     #[pyo3(signature=(size=-1))]

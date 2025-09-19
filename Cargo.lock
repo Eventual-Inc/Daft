@@ -2672,6 +2672,7 @@ name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-file",
  "common-runtime",
  "daft-core",
  "daft-dsl",
