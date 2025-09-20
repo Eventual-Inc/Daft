@@ -439,6 +439,12 @@ class Series:
         """
         return self._eval_expressions("log", base=base)
 
+    def pow(self, exp: float) -> Series:
+        return self._eval_expressions("pow", exp=exp)
+
+    def power(self, exp: float) -> Series:
+        return self._eval_expressions("power", exp=exp)
+
     def ln(self) -> Series:
         """The elementwise ln of a numeric series."""
         return self._eval_expressions("ln")
