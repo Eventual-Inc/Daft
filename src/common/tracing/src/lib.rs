@@ -12,8 +12,9 @@ use opentelemetry_sdk::{
     Resource,
     trace::{Sampler, SdkTracerProvider},
 };
+use profiler::{ProfilerLayer, ProfilerLayerBuilder};
 
-static CHROME_GUARD_HANDLE: LazyLock<Mutex<Option<tracing_chrome::FlushGuard>>> =
+static PROFILER_GUARD_HANDLE: LazyLock<Mutex<Option<profiler::CompletionGuard>>> =
     LazyLock::new(|| Mutex::new(None));
 
 static GLOBAL_TRACER_PROVIDER: LazyLock<
@@ -137,39 +138,28 @@ pub fn init_tracing(enable_chrome_trace: bool) {
         return; // Do nothing for now
     }
 
-    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
+    let mut mg = PROFILER_GUARD_HANDLE.lock().unwrap();
     assert!(
         mg.is_none(),
         "Expected chrome flush guard to be None on init"
     );
 
-    let (chrome_layer, guard) = ChromeLayerBuilder::new()
-        // The initial writer to the chrome trace is a no-op sink, so we don't write anything
-        // only on calls to start_chrome_trace() do we write traces.
-        .writer(std::io::sink())
-        .trace_style(tracing_chrome::TraceStyle::Threaded)
-        .name_fn(Box::new(|event_or_span| {
-            match event_or_span {
-                tracing_chrome::EventOrSpan::Event(ev) => ev.metadata().name().into(),
-                tracing_chrome::EventOrSpan::Span(s) => {
-                    // TODO: this is where we should extract out fields (such as node id to show the different pipelines)
-                    s.name().into()
-                }
-            }
-        }))
-        .build();
+    let (profiler_layer, guard) =
+        ProfilerLayerBuilder::new(profiler::SystemClock::new(), "Daft".to_string()).build();
 
-    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(chrome_layer))
+    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(profiler_layer))
         .unwrap();
+
+    println!("Daft tracing initialized with Chrome tracing enabled");
 
     *mg = Some(guard);
 }
 
 pub fn start_chrome_trace() -> bool {
-    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
+    let mut mg = PROFILER_GUARD_HANDLE.lock().unwrap();
     if let Some(fg) = mg.as_mut() {
         // start_new(None) will let tracing-chrome choose the file and file name.
-        fg.start_new(None);
+        fg.enable();
         true
     } else {
         false
@@ -177,12 +167,12 @@ pub fn start_chrome_trace() -> bool {
 }
 
 pub fn finish_chrome_trace() -> bool {
-    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
+    let mut mg = PROFILER_GUARD_HANDLE.lock().unwrap();
     if let Some(fg) = mg.as_mut() {
         // start_new(Some(Box::new(std::io::sink()))) will flush the current trace, and start a new one with a dummy writer.
         // The flush method doesn't actually close the file. The only way to do it is to drop the guard or call 'start_new'.
         // But we can't drop the guard because it's a static and we may have multiple traces per process, so we need to call start_new.
-        fg.start_new(Some(Box::new(std::io::sink())));
+        fg.disable();
         true
     } else {
         false
