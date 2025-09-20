@@ -75,6 +75,8 @@ pub struct DaftExecutionConfig {
     pub use_legacy_ray_runner: bool,
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
+    pub morsel_size_lower_bound: Option<usize>,
+    pub morsel_size_upper_bound: Option<usize>,
 }
 
 impl Default for DaftExecutionConfig {
@@ -112,6 +114,8 @@ impl Default for DaftExecutionConfig {
             use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
+            morsel_size_lower_bound: Some(0), // Minimum value is 0
+            morsel_size_upper_bound: Some(128 * 1024), // Same as default_morsel_size
         }
     }
 }
@@ -171,6 +175,26 @@ impl DaftExecutionConfig {
                 Err(_) => eprintln!(
                     "Invalid {} value: {}, using default {}",
                     min_cpu_var, val, cfg.min_cpu_per_task
+                ),
+            }
+        }
+        let morsel_size_lower_bound_var = "DAFT_MORSEL_SIZE_LOWER_BOUND";
+        if let Ok(val) = std::env::var(morsel_size_lower_bound_var) {
+            match val.parse::<usize>() {
+                Ok(parsed) => cfg.morsel_size_lower_bound = Some(parsed),
+                Err(_) => eprintln!(
+                    "Invalid {} value: {}, ignoring",
+                    morsel_size_lower_bound_var, val
+                ),
+            }
+        }
+        let morsel_size_upper_bound_var = "DAFT_MORSEL_SIZE_UPPER_BOUND";
+        if let Ok(val) = std::env::var(morsel_size_upper_bound_var) {
+            match val.parse::<usize>() {
+                Ok(parsed) => cfg.morsel_size_upper_bound = Some(parsed),
+                Err(_) => eprintln!(
+                    "Invalid {} value: {}, ignoring",
+                    morsel_size_upper_bound_var, val
                 ),
             }
         }

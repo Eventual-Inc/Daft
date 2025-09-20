@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
 use common_runtime::get_compute_pool_num_threads;
@@ -213,6 +214,7 @@ impl BlockingSink for WriteSink {
     fn dispatch_spawner(
         &self,
         _morsel_size_requirement: Option<MorselSizeRequirement>,
+        _config: &DaftExecutionConfig,
     ) -> Arc<dyn DispatchSpawner> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))

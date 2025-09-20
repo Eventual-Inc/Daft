@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use capitalize::Capitalize;
+use common_daft_config::DaftExecutionConfig;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
@@ -69,6 +70,7 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn dispatch_spawner(
         &self,
         morsel_size_requirement: Option<MorselSizeRequirement>,
+        _config: &DaftExecutionConfig,
     ) -> Arc<dyn DispatchSpawner> {
         match morsel_size_requirement {
             Some(morsel_size_requirement) => {
@@ -89,6 +91,7 @@ pub struct BlockingSinkNode<Op: BlockingSink> {
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
+    config: Arc<DaftExecutionConfig>,
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
@@ -97,6 +100,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        config: Arc<DaftExecutionConfig>,
     ) -> Self {
         let name = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink);
@@ -110,6 +114,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             plan_stats,
             morsel_size_requirement,
             node_info: Arc::new(node_info),
+            config,
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -242,7 +247,8 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
+        let dispatch_spawner =
+            op.dispatch_spawner(Some(self.morsel_size_requirement), &self.config);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,

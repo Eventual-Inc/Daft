@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use capitalize::Capitalize;
+use common_daft_config::DaftExecutionConfig;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
@@ -83,6 +84,7 @@ pub(crate) trait StreamingSink: Send + Sync {
         &self,
         morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
+        _config: &DaftExecutionConfig,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
             Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
@@ -99,6 +101,7 @@ pub struct StreamingSinkNode<Op: StreamingSink> {
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     morsel_size_requirement: MorselSizeRequirement,
+    config: Arc<DaftExecutionConfig>,
 }
 
 impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
@@ -107,6 +110,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        config: Arc<DaftExecutionConfig>,
     ) -> Self {
         let name = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
@@ -119,6 +123,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
             plan_stats,
             node_info: Arc::new(node_info),
             morsel_size_requirement,
+            config,
         }
     }
 
@@ -286,7 +291,8 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
+        let dispatch_spawner =
+            op.dispatch_spawner(self.morsel_size_requirement, maintain_order, &self.config);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,

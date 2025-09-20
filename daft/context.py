@@ -5,7 +5,9 @@ import logging
 import threading
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar
+
+from typing_extensions import deprecated
 
 from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -251,7 +253,9 @@ def set_execution_config(
     high_cardinality_aggregation_threshold: float | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
-    default_morsel_size: int | None = None,
+    default_morsel_size: Annotated[
+        int | None, deprecated("Use morsel_size_lower_bound and morsel_size_upper_bound instead.")
+    ] = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
     flight_shuffle_dirs: list[str] | None = None,
@@ -262,6 +266,8 @@ def set_execution_config(
     use_legacy_ray_runner: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
+    morsel_size_lower_bound: int | None = None,
+    morsel_size_upper_bound: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -301,7 +307,7 @@ def set_execution_config(
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
-        default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
+        default_morsel_size: DEPRECATED: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
@@ -349,6 +355,8 @@ def set_execution_config(
             use_legacy_ray_runner=use_legacy_ray_runner,
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
+            morsel_size_lower_bound=morsel_size_lower_bound,
+            morsel_size_upper_bound=morsel_size_upper_bound,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

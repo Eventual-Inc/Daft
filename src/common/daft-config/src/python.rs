@@ -119,6 +119,8 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
+        morsel_size_lower_bound=None,
+        morsel_size_upper_bound=None,
     ))]
     fn with_config_values(
         &self,
@@ -152,6 +154,8 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
+        morsel_size_lower_bound: Option<usize>,
+        morsel_size_upper_bound: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -221,6 +225,27 @@ impl PyDaftExecutionConfig {
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
         }
+
+        if let Some(morsel_size_lower_bound) = morsel_size_lower_bound {
+            config.morsel_size_lower_bound = Some(morsel_size_lower_bound);
+        }
+
+        if let Some(morsel_size_upper_bound) = morsel_size_upper_bound {
+            config.morsel_size_upper_bound = Some(morsel_size_upper_bound);
+        }
+
+        // Validate morsel size bounds
+        if let (Some(lower), Some(upper)) = (
+            config.morsel_size_lower_bound,
+            config.morsel_size_upper_bound,
+        ) && lower > upper
+        {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "morsel_size_lower_bound ({}) cannot be greater than morsel_size_upper_bound ({})",
+                lower, upper
+            )));
+        }
+
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
@@ -406,6 +431,16 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
         Ok(self.config.actor_udf_ready_timeout)
+    }
+
+    #[getter]
+    fn morsel_size_lower_bound(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.morsel_size_lower_bound)
+    }
+
+    #[getter]
+    fn morsel_size_upper_bound(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.morsel_size_upper_bound)
     }
 }
 
