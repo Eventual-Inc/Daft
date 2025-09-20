@@ -9,6 +9,7 @@ use common_display::{
 };
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
@@ -39,7 +40,6 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, sample::SampleOperator,
         udf::UdfOperator, unpivot::UnpivotOperator,
     },
-    ops::{NodeCategory, NodeInfo, NodeType},
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,

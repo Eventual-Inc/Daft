@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::ops::NodeType;
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     WindowFrame,
@@ -18,7 +19,7 @@ use super::{
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<BoundAggExpr>,

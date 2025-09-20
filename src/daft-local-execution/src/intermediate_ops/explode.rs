@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
@@ -10,7 +11,7 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,

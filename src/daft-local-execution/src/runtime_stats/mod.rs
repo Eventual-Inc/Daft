@@ -13,8 +13,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common_error::DaftResult;
+use common_metrics::ops::NodeInfo;
 use common_runtime::RuntimeTask;
 use common_tracing::should_enable_opentelemetry;
+use daft_context::QuerySubscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -27,15 +30,13 @@ use tokio::{
 use tracing::{Instrument, instrument::Instrumented};
 pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats};
 
-#[cfg(debug_assertions)]
-use crate::runtime_stats::subscribers::debug::DebugSubscriber;
 use crate::{
     channel::{Receiver, Sender},
-    ops::NodeInfo,
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
         RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
         opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
+        query::QuerySubscriberWrapper,
     },
 };
 
@@ -89,7 +90,11 @@ impl std::fmt::Debug for RuntimeStatsManager {
 
 impl RuntimeStatsManager {
     #[allow(clippy::borrowed_box)]
-    pub fn new(handle: &Handle, pipeline: &Box<dyn PipelineNode>) -> Self {
+    pub fn try_new(
+        handle: &Handle,
+        pipeline: &Box<dyn PipelineNode>,
+        query_subscribers: Vec<Arc<dyn QuerySubscriber>>,
+    ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
         let _ = pipeline.apply(|node| {
@@ -112,6 +117,16 @@ impl RuntimeStatsManager {
         );
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
+        let node_infos = node_stats
+            .iter()
+            .map(|(node_info, _)| node_info.clone())
+            .collect::<Vec<_>>();
+        for subscriber in query_subscribers {
+            subscribers.push(Box::new(QuerySubscriberWrapper::try_new(
+                subscriber,
+                &node_infos,
+            )?));
+        }
 
         if should_enable_progress_bar() {
             subscribers.push(make_progress_bar_manager(&node_stats));
@@ -125,19 +140,13 @@ impl RuntimeStatsManager {
             subscribers.push(Box::new(DashboardSubscriber::new()));
         }
 
-        #[cfg(debug_assertions)]
-        if let Ok(s) = std::env::var("DAFT_DEV_ENABLE_RUNTIME_STATS_DBG") {
-            let s = s.to_lowercase();
-            match s.as_ref() {
-                "1" | "true" => {
-                    subscribers.push(Box::new(DebugSubscriber));
-                }
-                _ => {}
-            }
-        }
-
         let throttle_interval = Duration::from_millis(200);
-        Self::new_impl(handle, subscribers, node_stats, throttle_interval)
+        Ok(Self::new_impl(
+            handle,
+            subscribers,
+            node_stats,
+            throttle_interval,
+        ))
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
@@ -346,11 +355,13 @@ mod tests {
     use std::sync::{Arc, Mutex, atomic::AtomicU64};
 
     use common_error::DaftResult;
-    use common_metrics::{Stat, StatSnapshotSend};
+    use common_metrics::{
+        Stat, StatSnapshotSend,
+        ops::{NodeCategory, NodeType},
+    };
     use tokio::time::{Duration, sleep};
 
     use super::*;
-    use crate::ops::{NodeCategory, NodeType};
 
     #[derive(Debug)]
     struct MockState {

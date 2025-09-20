@@ -1,11 +1,10 @@
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend};
+use common_metrics::{Stat, StatSnapshotSend, ops::NodeInfo};
 use common_tracing::flush_oltp_metrics_provider;
 use opentelemetry::{KeyValue, global, metrics::Counter};
 
-use crate::{
-    ops::NodeInfo,
-    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, subscribers::RuntimeStatsSubscriber},
+use crate::runtime_stats::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, subscribers::RuntimeStatsSubscriber,
 };
 
 #[derive(Debug)]

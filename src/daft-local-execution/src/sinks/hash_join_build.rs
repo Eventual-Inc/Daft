@@ -7,7 +7,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, snapshot};
+use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -21,7 +21,6 @@ use super::blocking_sink::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::NodeName,
     runtime_stats::{CPU_US_KEY, RuntimeStats},
     state_bridge::BroadcastStateBridgeRef,
