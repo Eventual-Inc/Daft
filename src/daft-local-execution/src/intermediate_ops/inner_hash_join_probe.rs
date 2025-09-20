@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
+use daft_core::{
+    prelude::{SchemaRef, UInt64Array},
+    series::IntoSeries,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState, get_columns_by_name};
+use daft_recordbatch::{ProbeState, get_columns_by_name};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use tracing::{Span, info_span, instrument};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
@@ -49,8 +53,6 @@ pub struct InnerHashJoinProbeOperator {
 }
 
 impl InnerHashJoinProbeOperator {
-    const DEFAULT_GROWABLE_SIZE: usize = 20;
-
     pub fn new(
         probe_on: Vec<BoundExpr>,
         left_schema: &SchemaRef,
@@ -94,49 +96,42 @@ impl InnerHashJoinProbeOperator {
         build_on_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
         let probe_table = probe_state.get_probeable();
-        let tables = probe_state.get_tables();
+        let build_side_table = probe_state.get_record_batch();
+        let build_side_prefix_sums = probe_state.get_prefix_sums();
 
-        let _growables = info_span!("InnerHashJoinOperator::build_growables").entered();
+        let mut build_side_idxs = Vec::new();
+        let mut probe_side_idxs = Vec::new();
 
-        let mut build_side_growable = GrowableRecordBatch::new(
-            &tables.iter().collect::<Vec<_>>(),
-            false,
-            Self::DEFAULT_GROWABLE_SIZE,
-        )?;
+        let input_table = input
+            .concat_or_get(IOStatsContext::new(
+                "InnerHashJoinProbeOperator::probe_inner",
+            ))?
+            .unwrap();
 
-        let input_tables = input.get_tables()?;
+        // we should emit one table at a time when this is streaming
+        let join_keys = input_table.eval_expression_list(probe_on)?;
+        let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
-        let mut probe_side_growable = GrowableRecordBatch::new(
-            &input_tables.iter().collect::<Vec<_>>(),
-            false,
-            Self::DEFAULT_GROWABLE_SIZE,
-        )?;
-
-        drop(_growables);
-        {
-            let _loop = info_span!("InnerHashJoinOperator::eval_and_probe").entered();
-            for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
-                // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(probe_on)?;
-                let idx_mapper = probe_table.probe_indices(&join_keys)?;
-
-                for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
-                    if let Some(inner_iter) = inner_iter {
-                        for (build_side_table_idx, build_row_idx) in inner_iter {
-                            build_side_growable.extend(
-                                build_side_table_idx as usize,
-                                build_row_idx as usize,
-                                1,
-                            );
-                            // we can perform run length compression for this to make this more efficient
-                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
-                        }
-                    }
+        for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
+            if let Some(inner_iter) = inner_iter {
+                for (build_side_table_idx, build_row_idx) in inner_iter {
+                    let build_side_idx = build_side_prefix_sums[build_side_table_idx as usize]
+                        + build_row_idx as usize;
+                    build_side_idxs.push(build_side_idx as u64);
+                    // we can perform run length compression for this to make this more efficient
+                    probe_side_idxs.push(probe_row_idx as u64);
                 }
             }
         }
-        let build_side_table = build_side_growable.build()?;
-        let probe_side_table = probe_side_growable.build()?;
+
+        let build_side_table = {
+            let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
+            build_side_table.take(&indices_as_series)?
+        };
+        let probe_side_table = {
+            let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
+            input_table.take(&indices_as_series)?
+        };
 
         let (left_table, right_table) = if build_on_left {
             (build_side_table, probe_side_table)
