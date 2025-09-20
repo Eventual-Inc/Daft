@@ -185,7 +185,7 @@ skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*
 features = ["python"]
 
 [tool.mypy]
-exclude = ['daft/pickle/*.py$', 'benchmarking']
+exclude = ['daft/pickle/*.py$']
 files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
 python_version = "3.9"
 warn_return_any = true
