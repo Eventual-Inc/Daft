@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -144,6 +145,16 @@ impl UnorderedDispatcher {
         Self {
             morsel_size_lower_bound: 0,
             morsel_size_upper_bound: usize::MAX,
+        }
+    }
+
+    /// Create an unbounded UnorderedDispatcher that respects global configuration bounds
+    pub(crate) fn unbounded_with_config(config: &DaftExecutionConfig) -> Self {
+        let lower_bound = config.morsel_size_lower_bound.unwrap_or(0);
+        let upper_bound = config.morsel_size_upper_bound.unwrap_or(usize::MAX);
+        Self {
+            morsel_size_lower_bound: lower_bound,
+            morsel_size_upper_bound: upper_bound,
         }
     }
 
