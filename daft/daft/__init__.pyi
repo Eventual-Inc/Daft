@@ -236,6 +236,7 @@ class FileFormat(Enum):
     Parquet = 1
     Csv = 2
     Json = 3
+    Lance = 4
 
     def ext(self) -> str: ...
 

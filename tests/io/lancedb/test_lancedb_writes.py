@@ -97,7 +97,7 @@ def test_lancedb_write_blob(lance_dataset_path):
     blobs_data = [b"foo", b"bar", b"baz"]
     df = daft.from_pydict({"blob": blobs_data})
 
-    df.write_lance(lance_dataset_path, schema=daft.schema.Schema.from_pyarrow_schema(schema))
+    df.write_lance(lance_dataset_path, schema=daft.schema.Schema.from_pyarrow_schema(schema), use_native_writer=True)
 
     import lance
 

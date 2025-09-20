@@ -520,6 +520,14 @@ pub(super) fn translate_single_logical_node(
                             ))
                             .arced())
                         }
+                        FileFormat::Lance => {
+                            Ok(PhysicalPlan::TabularWriteLance(TabularWriteLance::new(
+                                schema.clone(),
+                                file_info.clone(),
+                                input_physical,
+                            ))
+                            .arced())
+                        }
                         FileFormat::Database => Err(common_error::DaftError::ValueError(
                             "Database sink not yet implemented".to_string(),
                         )),

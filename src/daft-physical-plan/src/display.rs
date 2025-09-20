@@ -33,6 +33,7 @@ impl TreeDisplay for PhysicalPlan {
             Self::TabularWriteParquet(write) => write.display_as(level),
             Self::TabularWriteJson(write) => write.display_as(level),
             Self::TabularWriteCsv(write) => write.display_as(level),
+            Self::TabularWriteLance(write) => write.display_as(level),
             #[cfg(feature = "python")]
             Self::IcebergWrite(write) => write.display_as(level),
             #[cfg(feature = "python")]

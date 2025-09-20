@@ -41,6 +41,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    TabularWriteLance(TabularWriteLance),
     ShuffleExchange(ShuffleExchange),
     #[cfg(feature = "python")]
     IcebergWrite(IcebergWrite),
@@ -197,6 +198,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
+            Self::TabularWriteLance(TabularWriteLance { input, .. }) => input.clustering_spec(),
             #[cfg(feature = "python")]
             Self::IcebergWrite(_)
             | Self::DeltaLakeWrite(_)
@@ -402,9 +404,10 @@ impl PhysicalPlan {
             }
             // Post-write DataFrame will contain paths to files that were written.
             // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
-            Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
-                ApproxStats::empty()
-            }
+            Self::TabularWriteParquet(_)
+            | Self::TabularWriteCsv(_)
+            | Self::TabularWriteJson(_)
+            | Self::TabularWriteLance(_) => ApproxStats::empty(),
             #[cfg(feature = "python")]
             Self::IcebergWrite(_)
             | Self::DeltaLakeWrite(_)
@@ -432,6 +435,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            Self::TabularWriteLance(TabularWriteLance { input, .. }) => vec![input],
             Self::ShuffleExchange(ShuffleExchange { input, .. }) => vec![input],
             #[cfg(feature = "python")]
             Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
@@ -625,6 +629,13 @@ impl PhysicalPlan {
                     file_info.clone(),
                     input.clone(),
                 )),
+                Self::TabularWriteLance(TabularWriteLance {
+                    schema, file_info, ..
+                }) => Self::TabularWriteLance(TabularWriteLance::new(
+                    schema.clone(),
+                    file_info.clone(),
+                    input.clone(),
+                )),
                 Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
                     column_name, ..
                 }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(
@@ -779,6 +790,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(..) => "TabularWriteParquet",
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
             Self::TabularWriteJson(..) => "TabularWriteJson",
+            Self::TabularWriteLance(..) => "TabularWriteLance",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             #[cfg(feature = "python")]
             Self::IcebergWrite(..) => "IcebergWrite",
@@ -821,6 +833,7 @@ impl PhysicalPlan {
             }
             Self::TabularWriteCsv(tabular_write_csv) => tabular_write_csv.multiline_display(),
             Self::TabularWriteJson(tabular_write_json) => tabular_write_json.multiline_display(),
+            Self::TabularWriteLance(tabular_write_lance) => tabular_write_lance.multiline_display(),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
