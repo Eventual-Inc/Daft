@@ -10,7 +10,7 @@ Classifies **803,580 images** using ResNet18 model. Downloads images, applies pr
 
 ## Performance Results
 
-| Engine   | Cluster |
+| Engine   | Runtime |
 |----------|---------|
 | Daft     | 3m 14s  |
 | Ray Data | 26m 5s  |
