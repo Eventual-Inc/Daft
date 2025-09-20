@@ -1,5 +1,5 @@
 [dependencies]
-axum = "0.7"
+axum = "0.8"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 tower = "0.5"
 tower-http = {version = "0.6", features = ["fs", "trace", "cors"]}
