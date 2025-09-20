@@ -173,7 +173,7 @@ impl TryFrom<Vec<Literal>> for Series {
                             values
                                 .into_iter()
                                 .map(|v| match v {
-                                    Literal::File(common_file::DaftFile::Reference(
+                                    Literal::File(common_file::FileReference::Reference(
                                         path,
                                         ioconfig,
                                     )) => {
@@ -225,7 +225,7 @@ impl TryFrom<Vec<Literal>> for Series {
 
                     DaftFileType::Data => {
                         let values = values.into_iter().map(|v| match v {
-                            Literal::File(common_file::DaftFile::Data(items)) => items,
+                            Literal::File(common_file::FileReference::Data(items)) => items,
                             _ => panic!("should not happen"),
                         });
                         let values = BinaryArray::from_values("data", values).into_series();

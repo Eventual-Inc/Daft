@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow2::types::months_days_ns;
-use common_file::{DaftFile, DaftFileType};
+use common_file::{DaftFileType, FileReference};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -192,7 +192,7 @@ impl MapArray {
 impl FileArray {
     #[inline]
     #[cfg(feature = "python")]
-    pub fn get(&self, idx: usize) -> Option<DaftFile> {
+    pub fn get(&self, idx: usize) -> Option<FileReference> {
         let discriminant_array = self.discriminant_array();
         let discriminant = discriminant_array.get(idx)?;
 
@@ -210,7 +210,7 @@ impl FileArray {
                 let io_config: Option<common_io_config::python::IOConfig> =
                     pyo3::Python::with_gil(|py| io_config.extract(py).ok().flatten());
 
-                Some(DaftFile::new_from_reference(
+                Some(FileReference::new_from_reference(
                     data.to_string(),
                     io_config.map(|conf| conf.config),
                 ))
@@ -220,14 +220,14 @@ impl FileArray {
                 let data_array = data_array.binary().expect("data is binary");
                 let data = data_array.get(idx)?;
                 let data = data.to_vec();
-                Some(DaftFile::new_from_data(data))
+                Some(FileReference::new_from_data(data))
             }
         }
     }
 
     #[inline]
     #[cfg(not(feature = "python"))]
-    pub fn get(&self, idx: usize) -> Option<DaftFile> {
+    pub fn get(&self, idx: usize) -> Option<FileReference> {
         unreachable!("FileArray.get() requires Python feature")
     }
 }

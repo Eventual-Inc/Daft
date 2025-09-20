@@ -98,6 +98,7 @@ from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
     file,
+    file_size,
     eq_null_safe,
     cast,
     is_null,
@@ -278,6 +279,7 @@ __all__ = [
     "explode",
     "expm1",
     "file",
+    "file_size",
     "fill_nan",
     "fill_null",
     "find",

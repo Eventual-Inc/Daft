@@ -10,7 +10,7 @@ use std::{
 
 use common_display::table_display::StrValue;
 use common_error::{DaftError, DaftResult, ensure};
-use common_file::DaftFile;
+use common_file::FileReference;
 use common_hashable_float_wrapper::FloatWrapper;
 use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
@@ -92,7 +92,7 @@ pub enum Literal {
     Python(PyObjectWrapper),
     /// TODO chore: audit struct literal vs. struct expression support.
     Struct(IndexMap<Field, Literal>),
-    File(DaftFile),
+    File(FileReference),
     /// A tensor
     Tensor {
         data: Series,
