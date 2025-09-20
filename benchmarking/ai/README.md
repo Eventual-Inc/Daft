@@ -17,5 +17,5 @@ The benchmarks cover four different workload types, each designed to test differ
 |----------|-----------|------|----------|-------|
 | Audio Transcription | 113,800 audio files | 6m 25s | 13m 48s | 42m 2s |
 | Document Embedding | 10,000 PDFs | 1m 54s | 16m 10s | 8m 4s |
-| Image Classification | 803580 images | 3m 14s | 26m 5s | 34m 6s |
+| Image Classification | 803,580 images | 3m 14s | 26m 5s | 34m 6s |
 | Video Object Detection | 1,000 videos | 12m 17s | 34m 20s | 2h 18m |
