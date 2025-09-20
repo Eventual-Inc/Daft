@@ -34,7 +34,7 @@ class FragmentIndexHandler:
         self,
         lance_ds: lance.LanceDataset,
         column: str,
-        index_type: str,
+        index_type: str | IndexConfig,
         name: str,
         fragment_uuid: str,
         replace: bool,
@@ -64,11 +64,8 @@ class FragmentIndexHandler:
     def _handle_fragment_index(self, fragment_ids: list[int]) -> dict[str, Any]:
         """Handle index creation for a single fragment."""
         try:
-            # Use the distributed index building API - Phase 1: Fragment index creation
             logger.info("Building distributed index for fragments %s using create_scalar_index", fragment_ids)
 
-            # Call create_scalar_index directly - no return value expected
-            # After execution, fragment-level indices are automatically built
             self.lance_ds.create_scalar_index(
                 column=self.column,
                 index_type=self.index_type,
@@ -97,7 +94,7 @@ class FragmentIndexHandler:
             }
 
 
-def _distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> list[dict[str, list[Any]]]:
+def _distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> list[dict[str, list[int]]]:
     """Distribute fragments across workers using a balanced algorithm considering fragment sizes."""
     if not fragments:
         return [{"fragment_ids": []} for _ in range(concurrency)]
@@ -289,11 +286,7 @@ def create_scalar_index_internal(
         concurrency,
     )
 
-    # Get fragments to use
-    # Phase 1: Fragment parallel processing using Daft UDFs
-    logger.info("Phase 1: Starting fragment parallel processing")
-
-    # Create DataFrame with fragment batches
+    logger.info("Starting fragment parallel processing. And create DataFrame with fragment batches")
     fragment_data = _distribute_fragments_balanced(fragments, concurrency)
     df = from_pylist(fragment_data)
 
@@ -333,29 +326,16 @@ def create_scalar_index_internal(
     if not successful_results:
         raise RuntimeError("No successful index building results")
 
-    logger.info("Phase 1 completed successfully: %d fragment batches processed", len(successful_results))
-
-    # Phase 2: Index metadata merging
-    logger.info("Phase 2: Starting index metadata merging")
-
-    # Reload dataset to get latest state
+    logger.info("Starting index metadata merging by reloading dataset to get latest state")
     lance_ds = lance.LanceDataset(uri, storage_options=storage_options)
     try:
         lance_ds.merge_index_metadata(index_id, index_type)
     except TypeError as e:
-        # Handle older versions of Lance that don't support index type
-        logger.warning("Lance version maybe not support index type, merging index metadata without type: %s", e)
+        logger.warning("Lance version may not support index type, merging index metadata without type: %s", e)
         lance_ds.merge_index_metadata(index_id)
 
-    logger.info("Phase 2 completed: Index metadata merged")
-
-    # Phase 3: Atomic index creation and commit
-    logger.info("Phase 3: Starting atomic index creation and commit")
-
-    # Get field information from successful results
+    logger.info("Starting atomic index creation and commit")
     fields = successful_results[0]["fields"]
-
-    # Create index object
     index = lance.Index(
         uuid=index_id,
         name=name,
@@ -379,4 +359,4 @@ def create_scalar_index_internal(
         storage_options=storage_options,
     )
 
-    logger.info("Phase 3 completed: Index '%s' created successfully with ID %s", name, index_id)
+    logger.info("Index %s created successfully with ID %s", name, index_id)

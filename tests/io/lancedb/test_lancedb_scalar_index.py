@@ -269,17 +269,17 @@ class TestDistributedIndexing:
                 concurrency=2,
             )
 
-    def test_build_distributed_index_with_ray_remote_args(self, multi_fragment_lance_dataset):
-        """Test building distributed index with Ray options."""
+    def test_build_distributed_index_with_daft_remote_args(self, multi_fragment_lance_dataset):
+        """Test building distributed index with Daft options."""
         dataset_uri = multi_fragment_lance_dataset
 
-        # Build distributed index with Ray options
+        # Build distributed index with Daft options
         create_scalar_index(
             url=dataset_uri,
             column="text",
             index_type="INVERTED",
             concurrency=2,
-            ray_remote_args={"num_cpus": 1},
+            daft_remote_args={"num_cpus": 1},
         )
 
         updated_dataset = lance.dataset(dataset_uri)
