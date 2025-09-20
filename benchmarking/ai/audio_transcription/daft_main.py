@@ -57,10 +57,10 @@ class Transcriber:
         self.model.to(self.device)
 
     def __call__(self, extracted_features):
-        spectograms = np.array(extracted_features)
-        spectograms = torch.tensor(spectograms).to(self.device, dtype=self.dtype)
+        spectrograms = np.array(extracted_features)
+        spectrograms = torch.tensor(spectrograms).to(self.device, dtype=self.dtype)
         with torch.no_grad():
-            token_ids = self.model.generate(spectograms)
+            token_ids = self.model.generate(spectrograms)
 
         return token_ids.cpu().numpy()
 

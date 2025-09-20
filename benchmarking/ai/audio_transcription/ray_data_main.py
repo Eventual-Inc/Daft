@@ -60,10 +60,10 @@ class Transcriber:
         self.model.to(self.device)
 
     def __call__(self, batch):
-        spectograms = np.array(batch["input_features"])
-        spectograms = torch.tensor(spectograms).to(self.device, dtype=self.dtype)
+        spectrograms = np.array(batch["input_features"])
+        spectrograms = torch.tensor(spectrograms).to(self.device, dtype=self.dtype)
         with torch.no_grad():
-            token_ids = self.model.generate(spectograms)
+            token_ids = self.model.generate(spectrograms)
         batch["token_ids"] = token_ids.cpu().numpy()
         return batch
 

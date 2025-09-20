@@ -10,7 +10,7 @@ Generates embeddings for **10,000 PDF documents**. Extracts text, chunks content
 
 ## Performance Results
 
-| Engine   | Cluster |
+| Engine   | Runtime |
 |----------|---------|
 | Daft     | 1m 54s  |
 | Ray Data | 16m 10s |

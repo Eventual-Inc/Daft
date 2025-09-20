@@ -30,7 +30,7 @@ available_node_types:
     node_config:
       InstanceType: g6.xlarge
       IamInstanceProfile:
-        Arn: arn:aws:iam::941892620273:instance-profile/ray-autoscaler-v1
+        Arn: ray-autoscaler-v1
       ImageId: ami-0976479b866d22613
       BlockDeviceMappings:
       - DeviceName: /dev/xvda

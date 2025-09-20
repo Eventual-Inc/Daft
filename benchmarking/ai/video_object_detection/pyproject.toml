@@ -1,7 +1,7 @@
 [project]
 name = "video-object-detection"
 version = "0.1.0"
-description = "Add your description here"
+description = "Video object detection benchmarking"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

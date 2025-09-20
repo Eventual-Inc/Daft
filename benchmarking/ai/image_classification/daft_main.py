@@ -10,7 +10,7 @@ from daft import col
 
 NUM_GPU_NODES = 8
 INPUT_PATH = "s3://daft-public-datasets/imagenet/benchmark"
-OUTPUT_PATH = "s3://desmond-test/colin-test/image_classfication_results"
+OUTPUT_PATH = "s3://desmond-test/colin-test/image_classification_results"
 BATCH_SIZE = 100
 IMAGE_DIM = (3, 224, 224)
 
@@ -28,9 +28,9 @@ transform = transforms.Compose([transforms.ToTensor(), weights.transforms()])
 )
 class ResNetModel:
     def __init__(self):
-        self.weights = ResNet18_Weights.DEFAULT
+        self.weights = weights
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = resnet18(weights=self.weights).to(self.device)
+        self.model = resnet18(weights=weights).to(self.device)
         self.model.eval()
 
     def __call__(self, images):

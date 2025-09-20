@@ -10,8 +10,8 @@ Transcribes **113,800 audio files** using Whisper-tiny model. Processes audio re
 
 ## Performance Results
 
-| Engine   | Cluster |
+| Engine   | Runtime |
 |----------|---------|
 | Daft     | 6m 25s  |
 | Ray Data | 13m 48s |
-| Spark    | 42m 2s |
+| Spark    | 42m 2s  |
