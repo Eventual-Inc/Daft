@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
     concurrency=1,
 )
 class FragmentIndexHandler:
+    """UDF handler for distributed fragment index creation."""
+
     def __init__(
         self,
         lance_ds: lance.LanceDataset,
@@ -38,7 +40,7 @@ class FragmentIndexHandler:
         replace: bool,
         train: bool,
         **kwargs: Any,
-    ):
+    ) -> None:
         self.lance_ds = lance_ds
         self.column = column
         self.index_type = index_type
@@ -49,6 +51,7 @@ class FragmentIndexHandler:
         self.kwargs = kwargs
 
     def __call__(self, fragment_ids_batch: list[list[int]]) -> list[dict[str, Any]]:
+        """Process a batch of fragment IDs for index creation."""
         results: list[dict[str, Any]] = []
         for fragment_ids in fragment_ids_batch:
             try:
@@ -59,22 +62,8 @@ class FragmentIndexHandler:
         return results
 
     def _handle_fragment_index(self, fragment_ids: list[int]) -> dict[str, Any]:
+        """Handle index creation for a single fragment."""
         try:
-            # Basic input validation
-            if not fragment_ids:
-                raise ValueError("fragment_ids cannot be empty")
-
-            # Validate fragment_id ranges
-            for fragment_id in fragment_ids:
-                if fragment_id < 0 or fragment_id > 0xFFFFFFFF:
-                    raise ValueError(f"Invalid fragment_id: {fragment_id}")
-
-            # Validate fragments exist
-            available_fragments = {f.fragment_id for f in self.lance_ds.get_fragments()}
-            invalid_fragments = set(fragment_ids) - available_fragments
-            if invalid_fragments:
-                raise ValueError(f"Fragment IDs {invalid_fragments} do not exist")
-
             # Use the distributed index building API - Phase 1: Fragment index creation
             logger.info("Building distributed index for fragments %s using create_scalar_index", fragment_ids)
 
@@ -91,7 +80,6 @@ class FragmentIndexHandler:
                 **self.kwargs,
             )
 
-            # Get field ID for the indexed column
             field_id = self.lance_ds.schema.get_field_index(self.column)
             logger.info("Fragment index created successfully for fragments %s", fragment_ids)
             return {
@@ -110,20 +98,7 @@ class FragmentIndexHandler:
 
 
 def _distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> list[dict[str, list[Any]]]:
-    """Distribute fragments across workers using a balanced algorithm that considers fragment sizes.
-
-    This function implements a greedy algorithm that assigns fragments to the worker
-    with the currently smallest total workload, helping to balance the processing
-    time across workers.
-
-    Args:
-        fragments: List of Lance fragment objects
-        concurrency: Number of workers to distribute fragments across
-        logger: Logger instance for debugging information
-
-    Returns:
-        List of lists, where each inner list contains fragment IDs for one worker
-    """
+    """Distribute fragments across workers using a balanced algorithm considering fragment sizes."""
     if not fragments:
         return [{"fragment_ids": []} for _ in range(concurrency)]
 
@@ -131,8 +106,6 @@ def _distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> li
     fragment_info = []
     for fragment in fragments:
         try:
-            # Try to get fragment size information
-            # fragment.count_rows() gives us the number of rows in the fragment
             row_count = fragment.count_rows()
             fragment_info.append(
                 {
@@ -173,10 +146,12 @@ def _distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> li
 
     # Log distribution statistics for debugging
     total_size = sum(frag_info["size"] for frag_info in fragment_info)
-    logger.info("Fragment distribution statistics:")
-    logger.info("  Total fragments: %d", len(fragment_info))
-    logger.info("  Total size: %d", total_size)
-    logger.info("  Workers: %d", concurrency)
+    logger.info(
+        "Fragment distribution statistics:\n  Total fragments: %d\n  Total size: %d\n  Workers: %d",
+        len(fragment_info),
+        total_size,
+        concurrency,
+    )
 
     for i, (batch, workload) in enumerate(zip(worker_batches, worker_workloads)):
         percentage = (workload / total_size * 100) if total_size > 0 else 0
@@ -192,6 +167,32 @@ def _distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> li
     ]
 
     return non_empty_batches
+
+
+def _get_available_fragment_ids(
+    lance_ds: lance.LanceDataset,
+    fragment_ids: list[int] | None = None,
+) -> tuple[list[Any], list[int]]:
+    """Get available fragment IDs from a list of Lance fragments."""
+    fragments = lance_ds.get_fragments()
+    if not fragments:
+        raise ValueError("Dataset contains no fragments")
+
+    if fragment_ids is None:
+        return fragments, [fragment.fragment_id for fragment in fragments]
+
+    for fragment_id in fragment_ids:
+        if fragment_id < 0 or fragment_id > 0xFFFFFFFF:
+            raise ValueError(f"Invalid fragment_id: {fragment_id}")
+
+    fragment_ids_set = set(fragment_ids)
+    available_fragment_ids = {f.fragment_id for f in fragments}
+    invalid_fragments = fragment_ids_set - available_fragment_ids
+    if invalid_fragments:
+        raise ValueError(f"Fragment IDs {invalid_fragments} do not exist in dataset")
+
+    fragments = [f for f in fragments if f.fragment_id in fragment_ids]
+    return fragments, list(fragment_ids_set)
 
 
 def create_scalar_index_internal(
@@ -263,22 +264,8 @@ def create_scalar_index_internal(
             # If we can't check existing indices, continue
             pass
 
-    # Get fragments and validate fragment IDs
-    fragments = lance_ds.get_fragments()
-    if not fragments:
-        raise ValueError("Dataset contains no fragments")
-
-    # Handle fragment_ids parameter - if provided, filter fragments
-    if fragment_ids is not None:
-        available_fragment_ids = {f.fragment_id for f in fragments}
-        invalid_fragments = set(fragment_ids) - available_fragment_ids
-        if invalid_fragments:
-            raise ValueError(f"Fragment IDs {invalid_fragments} do not exist in dataset")
-        # Filter fragments to only include requested ones
-        fragments = [f for f in fragments if f.fragment_id in fragment_ids]
-        fragment_ids_to_use = fragment_ids
-    else:
-        fragment_ids_to_use = [fragment.fragment_id for fragment in fragments]
+    # Get available fragment IDs to use
+    fragments, fragment_ids_to_use = _get_available_fragment_ids(lance_ds, fragment_ids)
 
     # Adjust concurrency based on fragment count
     if concurrency is None:
@@ -295,13 +282,14 @@ def create_scalar_index_internal(
     index_id = fragment_uuid or str(uuid.uuid4())
 
     logger.info(
-        "Starting distributed FTS index creation: column=%s, type=%s, name=%s, workers=%s",
+        "Starting distributed FTS index creation: column=%s, type=%s, name=%s, concurrency=%s",
         column,
         index_type,
         name,
         concurrency,
     )
 
+    # Get fragments to use
     # Phase 1: Fragment parallel processing using Daft UDFs
     logger.info("Phase 1: Starting fragment parallel processing")
 
