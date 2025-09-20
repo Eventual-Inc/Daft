@@ -10,7 +10,8 @@ Detects objects in **1,000 videos** using YOLO11n model. Extracts frames, runs o
 
 ## Performance Results
 
-| Engine   | Cluster |
+| Engine   | Runtime |
+|----------|---------|
 |----------|---------|
 | Daft     | 12m 17s |
 | Ray Data | 34m 20s |
