@@ -41,6 +41,13 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ))
                     }
                 }
+                SourceInfo::GlobScan(info) => Ok(LocalPhysicalPlan::glob_scan(
+                    info.glob_paths.clone(),
+                    info.pushdowns.clone(),
+                    source.output_schema.clone(),
+                    source.stats_state.clone(),
+                    info.io_config.clone(),
+                )),
                 SourceInfo::PlaceHolder(ph) => Ok(LocalPhysicalPlan::placeholder_scan(
                     ph.source_schema.clone(),
                     StatsState::NotMaterialized,

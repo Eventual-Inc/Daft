@@ -41,9 +41,9 @@ impl OptimizerRule for PushDownAggregation {
                         LogicalPlan::Source(source) => {
                             match source.source_info.as_ref() {
                                 // Determine if aggregation can be pushed down based on data source type
-                                SourceInfo::InMemory(_) | SourceInfo::PlaceHolder(_) => {
-                                    Ok(Transformed::no(node.clone()))
-                                }
+                                SourceInfo::InMemory(_)
+                                | SourceInfo::PlaceHolder(_)
+                                | SourceInfo::GlobScan(_) => Ok(Transformed::no(node.clone())),
                                 SourceInfo::Physical(external_info) => {
                                     let scan_op = external_info.scan_state.get_scan_op().0.clone();
 

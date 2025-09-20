@@ -111,6 +111,11 @@ pub(super) fn translate_single_logical_node(
                     "Placeholder should not get to translation. This should have been optimized away"
                 );
             }
+            SourceInfo::GlobScan(_) => {
+                return Err(DaftError::NotImplemented(
+                    "GlobScan is not yet implemented in physical plan translation".to_string(),
+                ));
+            }
         },
         LogicalPlan::Shard(_) => {
             return Err(DaftError::InternalError(

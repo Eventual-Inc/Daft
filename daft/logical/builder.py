@@ -150,6 +150,38 @@ class LogicalPlanBuilder:
         builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
+    @classmethod
+    @_apply_daft_planning_config_to_initializer
+    def from_glob_scan(
+        cls,
+        glob_paths: list[str],
+        schema: Schema,
+        pushdowns: Pushdowns | None = None,
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder:
+        from daft.io.pushdowns import Pushdowns as PyPushdowns
+
+        # Convert Python types to Rust types
+        pushdowns_rust = None
+        if pushdowns is not None:
+            pushdowns_rust = PyPushdowns(
+                filters=pushdowns.filters._expr if pushdowns.filters is not None else None,
+                partition_filters=pushdowns.partition_filters._expr
+                if pushdowns.partition_filters is not None
+                else None,
+                columns=pushdowns.columns,
+                limit=pushdowns.limit,
+                aggregation=None,  # Not used in glob scan
+            )
+
+        builder = _LogicalPlanBuilder.from_glob_scan(
+            glob_paths,
+            schema._schema,
+            pushdowns_rust,
+            io_config,
+        )
+        return cls(builder)
+
     def select(
         self,
         to_select: list[Expression],
