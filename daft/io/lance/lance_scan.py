@@ -217,6 +217,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             num_rows = None
             pushed_expr = self._combine_filters_to_arrow()
 
+            if fragment.count_rows(pushed_expr) == 0:
+                logger.debug("Skipping fragment %s with fragment_id %s with 0 rows", fragment.fragment_id)
+                continue
+
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
                 func_name=_lancedb_table_factory_function.__name__,
