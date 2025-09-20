@@ -586,8 +586,8 @@ pub mod pylib {
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
             let data_source = DataSource::PythonFactoryFunction {
-                module,
-                func_name,
+                module: module.clone(),
+                func_name: func_name.clone(),
                 func_args: PythonTablesFactoryArgs::new(
                     func_args.into_iter().map(Arc::new).collect(),
                 ),
@@ -599,9 +599,16 @@ pub mod pylib {
                 partition_spec: None,
             };
 
+            // Create enhanced FileFormatConfig with context information
+            let file_format_config = Arc::new(FileFormatConfig::PythonFunction {
+                source_type: None, // Will be determined through inference logic
+                module_name: Some(module),
+                function_name: Some(func_name),
+            });
+
             let scan_task = ScanTask::new(
                 vec![data_source],
-                Arc::new(FileFormatConfig::PythonFunction),
+                file_format_config,
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here

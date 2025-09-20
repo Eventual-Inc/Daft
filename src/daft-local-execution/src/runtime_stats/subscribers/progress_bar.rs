@@ -142,7 +142,24 @@ impl IndicatifProgressBarManager {
         );
 
         let formatted_prefix = if node_info.name.len() > MAX_PIPELINE_NAME_LEN {
-            format!("{}...", &node_info.name[..MAX_PIPELINE_NAME_LEN - 3])
+            // Smart truncation: preserve important information
+            let name = &node_info.name;
+            if name.contains(" Scan") {
+                // For Scan operations, prioritize preserving data source type
+                let parts: Vec<&str> = name.split(" Scan").collect();
+                if let Some(source_type) = parts.first() {
+                    let max_source_len = MAX_PIPELINE_NAME_LEN.saturating_sub(8); // Reserve space for " Scan" and "..."
+                    if source_type.len() > max_source_len {
+                        format!("{}... Scan", &source_type[..max_source_len])
+                    } else {
+                        format!("{} Scan", source_type)
+                    }
+                } else {
+                    format!("{}...", &name[..MAX_PIPELINE_NAME_LEN - 3])
+                }
+            } else {
+                format!("{}...", &name[..MAX_PIPELINE_NAME_LEN - 3])
+            }
         } else {
             format!("{:>1$}", node_info.name, MAX_PIPELINE_NAME_LEN)
         };
@@ -203,7 +220,7 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     }
 }
 
-pub const MAX_PIPELINE_NAME_LEN: usize = 22;
+pub const MAX_PIPELINE_NAME_LEN: usize = 30;
 
 pub fn make_progress_bar_manager(
     node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)],
