@@ -68,9 +68,11 @@ repos:
     # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
+    exclude: benchmarking
     # Run the formatter.
   - id: ruff-format
     name: Python code Formatting
+    exclude: benchmarking
 
 - repo: local
   hooks:

@@ -1,9 +1,11 @@
+from __future__ import annotations
+
+import pymupdf
 import ray
 import ray.data
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 import torch
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-import pymupdf
 
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
@@ -34,9 +36,7 @@ def extract_text_from_pdf(row):
 
 
 def chunker(row):
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunk_iter = splitter.split_text(row["page_text"])
     for chunk_index, text in enumerate(chunk_iter):
         row["chunk"] = text
@@ -64,18 +64,12 @@ class Embedder:
         return batch
 
 
-file_paths = (
-    ray.data.read_parquet(INPUT_PATH)
-    .filter(lambda row: row["file_name"].endswith(".pdf"))
-    .take_all()
-)
+file_paths = ray.data.read_parquet(INPUT_PATH).filter(lambda row: row["file_name"].endswith(".pdf")).take_all()
 file_paths = [row["uploaded_pdf_path"] for row in file_paths]
 
 ds = ray.data.read_binary_files(file_paths, include_paths=True)
 ds = ds.flat_map(extract_text_from_pdf)
 ds = ds.flat_map(chunker)
-ds = ds.map_batches(
-    Embedder, concurrency=NUM_GPU_NODES, num_gpus=1.0, batch_size=EMBEDDING_BATCH_SIZE
-)
+ds = ds.map_batches(Embedder, concurrency=NUM_GPU_NODES, num_gpus=1.0, batch_size=EMBEDDING_BATCH_SIZE)
 ds = ds.select_columns(["path", "page_number", "chunk_id", "chunk", "embedding"])
 ds.write_parquet(OUTPUT_PATH)

@@ -2,7 +2,7 @@ cluster_name: document-embedding-cluster
 provider:
   type: aws
   region: us-west-2
-  cache_stopped_nodes: False
+  cache_stopped_nodes: false
 
 auth:
   ssh_user: ec2-user
@@ -11,17 +11,17 @@ max_workers: 8
 
 available_node_types:
   ray.head.default:
-    resources: { "CPU": 0, "GPU": 0 }
+    resources: {"CPU": 0, "GPU": 0}
     node_config:
       InstanceType: g6.xlarge
       ImageId: ami-0976479b866d22613
       BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeType: gp3
-            VolumeSize: 100
-            DeleteOnTermination: true
-            Encrypted: true
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeType: gp3
+          VolumeSize: 100
+          DeleteOnTermination: true
+          Encrypted: true
 
   ray.worker.default:
     min_workers: 8
@@ -33,29 +33,29 @@ available_node_types:
         Arn: arn:aws:iam::941892620273:instance-profile/ray-autoscaler-v1
       ImageId: ami-0976479b866d22613
       BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeType: gp3
-            VolumeSize: 100
-            DeleteOnTermination: true
-            Encrypted: true
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeType: gp3
+          VolumeSize: 100
+          DeleteOnTermination: true
+          Encrypted: true
 
 setup_commands:
-  - sudo mkdir -p /opt/ray/tmp /opt/ray/spill
-  - sudo chown -R ec2-user:ec2-user /opt/ray
-  - echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
-  - echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
-  - source /opt/pytorch/bin/activate && pip install ray[default] daft numpy sentence-transformers accelerate transformers langchain pymupdf
+- sudo mkdir -p /opt/ray/tmp /opt/ray/spill
+- sudo chown -R ec2-user:ec2-user /opt/ray
+- echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
+- echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
+- source /opt/pytorch/bin/activate && pip install ray[default] daft numpy sentence-transformers accelerate transformers langchain pymupdf
 
 head_setup_commands:
-    - source /opt/pytorch/bin/activate && pip install 'boto3>=1.4.8'
+- source /opt/pytorch/bin/activate && pip install 'boto3>=1.4.8'
 
 worker_setup_commands: []
 
 head_start_ray_commands:
-    - source /opt/pytorch/bin/activate && ray stop
-    - ulimit -n 65536; source /opt/pytorch/bin/activate && ray start --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
+- source /opt/pytorch/bin/activate && ray stop
+- ulimit -n 65536; source /opt/pytorch/bin/activate && ray start --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
 
 worker_start_ray_commands:
-    - source /opt/pytorch/bin/activate && ray stop
-    - ulimit -n 65536; source /opt/pytorch/bin/activate && ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076
+- source /opt/pytorch/bin/activate && ray stop
+- ulimit -n 65536; source /opt/pytorch/bin/activate && ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076

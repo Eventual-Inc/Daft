@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import io
 
-import daft
 import numpy as np
 import torch
 import torchaudio
 import torchaudio.transforms as T
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+
+import daft
 
 TRANSCRIPTION_MODEL = "openai/whisper-tiny"
 NUM_GPUS = 8
@@ -73,9 +74,7 @@ def decoder(token_ids):
 df = daft.read_parquet(INPUT_PATH)
 df = df.with_column(
     "resampled",
-    df["audio"]["bytes"].apply(
-        resample, return_dtype=daft.DataType.list(daft.DataType.float32())
-    ),
+    df["audio"]["bytes"].apply(resample, return_dtype=daft.DataType.list(daft.DataType.float32())),
 )
 df = df.with_column("extracted_features", whisper_preprocess(df["resampled"]))
 df = df.with_column("token_ids", Transcriber(df["extracted_features"]))

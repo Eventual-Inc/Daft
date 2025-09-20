@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import ray.data
 import torch
 from PIL import Image
 from torchvision import transforms
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import ResNet18_Weights, resnet18
 
 NUM_GPU_NODES = 8
 INPUT_PATH = "s3://daft-public-datasets/imagenet/benchmark"
@@ -31,9 +33,7 @@ class ResNetActor:
         with torch.inference_mode():
             prediction = self.model(torch_batch)
             predicted_classes = prediction.argmax(dim=1).detach().cpu()
-            predicted_labels = [
-                self.weights.meta["categories"][i] for i in predicted_classes
-            ]
+            predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             batch["label"] = predicted_labels
             return batch
 
@@ -43,9 +43,7 @@ paths = [row["image_url"] for row in paths]
 ds = (
     ray.data.read_images(paths, include_paths=True, ignore_missing_paths=True)
     .map(fn=transform_image)
-    .map_batches(
-        fn=ResNetActor, batch_size=BATCH_SIZE, num_gpus=1.0, concurrency=NUM_GPU_NODES
-    )
+    .map_batches(fn=ResNetActor, batch_size=BATCH_SIZE, num_gpus=1.0, concurrency=NUM_GPU_NODES)
     .select_columns(["path", "label"])
 )
 ds.write_parquet(OUTPUT_PATH)

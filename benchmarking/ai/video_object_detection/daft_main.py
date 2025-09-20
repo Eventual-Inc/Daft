@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import daft
 import torch
 import torchvision
-from daft.expressions import col
 from PIL import Image
 from ultralytics import YOLO
 
+import daft
+from daft.expressions import col
+
 NUM_GPU_NODES = 8
 YOLO_MODEL = "yolo11n.pt"
-INPUT_DATA_PATH = (
-    "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
-)
+INPUT_DATA_PATH = "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
 OUTPUT_PATH = "s3://desmond-test/colin-test/video-object-detection-result"
 IMAGE_HEIGHT = 640
 IMAGE_WIDTH = 640
@@ -45,22 +44,15 @@ class ExtractImageFeatures:
                 "confidence": confidence.item(),
                 "bbox": bbox.tolist(),
             }
-            for label, confidence, bbox in zip(
-                res.names, res.boxes.conf, res.boxes.xyxy
-            )
+            for label, confidence, bbox in zip(res.names, res.boxes.conf, res.boxes.xyxy)
         ]
 
     def __call__(self, images):
         if len(images) == 0:
             return []
-        batch = [
-            torchvision.transforms.functional.to_tensor(Image.fromarray(image))
-            for image in images
-        ]
+        batch = [torchvision.transforms.functional.to_tensor(Image.fromarray(image)) for image in images]
         stack = torch.stack(batch, dim=0)
-        return daft.Series.from_pylist(
-            [self.to_features(res) for res in self.model(stack)]
-        )
+        return daft.Series.from_pylist([self.to_features(res) for res in self.model(stack)])
 
 
 daft.context.set_runner_ray()

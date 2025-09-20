@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import daft
 import numpy as np
 import torch
-from daft import col
 from torchvision import transforms
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import ResNet18_Weights, resnet18
+
+import daft
+from daft import col
 
 NUM_GPU_NODES = 8
 INPUT_PATH = "s3://daft-public-datasets/imagenet/benchmark"
@@ -26,7 +27,6 @@ transform = transforms.Compose([transforms.ToTensor(), weights.transforms()])
     batch_size=BATCH_SIZE,
 )
 class ResNetModel:
-
     def __init__(self):
         self.weights = ResNet18_Weights.DEFAULT
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -40,9 +40,7 @@ class ResNetModel:
         with torch.inference_mode():
             prediction = self.model(torch_batch)
             predicted_classes = prediction.argmax(dim=1).detach().cpu()
-            predicted_labels = [
-                self.weights.meta["categories"][i] for i in predicted_classes
-            ]
+            predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             return predicted_labels
 
 
@@ -55,9 +53,7 @@ df = df.with_column(
     "norm_image",
     df["decoded_image"].apply(
         func=lambda image: transform(image),
-        return_dtype=daft.DataType.tensor(
-            dtype=daft.DataType.float32(), shape=IMAGE_DIM
-        ),
+        return_dtype=daft.DataType.tensor(dtype=daft.DataType.float32(), shape=IMAGE_DIM),
     ),
 )
 df = df.with_column("label", ResNetModel(col("norm_image")))

@@ -7,7 +7,7 @@ This repository contains performance benchmarks comparing different data process
 The benchmarks cover four different workload types, each designed to test different aspects of multimodal data processing:
 
 1. **Audio Transcription** - Transcribing audio files
-2. **Document Embedding** - Generating embeddings for PDF documents  
+2. **Document Embedding** - Generating embeddings for PDF documents
 3. **Image Classification** - Classify images
 4. **Video Object Detection** - Detect objects in videos
 

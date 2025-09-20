@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import daft
 import pymupdf
 import torch
-from daft import col
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+import daft
+from daft import col
 
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
@@ -25,9 +26,7 @@ def extract_text_from_parsed_pdf(pdf_bytes):
         if len(doc) > MAX_PDF_PAGES:
             print(f"Skipping PDF because it has {len(doc)} pages")
             return None
-        page_texts = [
-            {"text": page.get_text(), "page_number": page.number} for page in doc
-        ]
+        page_texts = [{"text": page.get_text(), "page_number": page.number} for page in doc]
         return page_texts
     except Exception as e:
         print(f"Error extracting text from PDF {e}")
@@ -35,9 +34,7 @@ def extract_text_from_parsed_pdf(pdf_bytes):
 
 
 def chunk(text):
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunk_iter = splitter.split_text(text)
     chunks = []
     for chunk_index, text in enumerate(chunk_iter):
@@ -65,7 +62,6 @@ class Embedder:
         self.model.compile()
 
     def __call__(self, text_col):
-
         if len(text_col) == 0:
             return []
         embeddings = self.model.encode(
@@ -87,18 +83,14 @@ df = df.with_column(
     ),
 )
 df = df.explode("pages")
-df = df.with_columns(
-    {"page_text": col("pages")["text"], "page_number": col("pages")["page_number"]}
-)
+df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pages")["page_number"]})
 df = df.where(daft.col("page_text").not_null())
 df = df.with_column(
     "chunks",
     df["page_text"].apply(chunk, return_dtype=list[{"text": str, "chunk_id": int}]),
 )
 df = df.explode("chunks")
-df = df.with_columns(
-    {"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]}
-)
+df = df.with_columns({"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]})
 df = df.where(daft.col("chunk").not_null())
 df = df.with_column("embedding", Embedder(df["chunk"]))
 df = df.select("uploaded_pdf_path", "page_number", "chunk_id", "chunk", "embedding")
