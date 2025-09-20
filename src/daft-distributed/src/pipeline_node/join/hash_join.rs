@@ -112,6 +112,7 @@ impl HashJoinNode {
             right_plan,
             self.left_on.clone(),
             self.right_on.clone(),
+            None,
             self.null_equals_nulls.clone(),
             self.join_type,
             self.config.schema.clone(),
