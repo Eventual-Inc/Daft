@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal
+
+from daft.io import from_glob_path, read_warc
+
+if TYPE_CHECKING:
+    from daft.dataframe import DataFrame
+    from daft.io import IOConfig
+
+
+def common_crawl(
+    crawl: str,
+    segment: str | None = None,
+    content: Literal["raw", "text", "metadata", "warc", "wet", "wat"] = "raw",
+    num_files: int | None = None,
+    io_config: IOConfig | None = None,
+) -> DataFrame:
+    """Load Common Crawl data as a DataFrame.
+
+    This function automatically resolves the specified crawl and segment into the appropriate Common Crawl files
+    and loads them as a DataFrame, handling the WARC reading process internally.
+
+    Args:
+        crawl: The crawl identifier, e.g. "CC-MAIN-2025-33".
+        segment: Specific segment to fetch within the crawl. If not provided, defaults to all segments in the crawl.
+        content: Specifies the type of content to load. Options are:
+            - "raw" or "warc": Raw WARC files containing full HTTP responses
+            - "text" or "wet": Extracted plain text content
+            - "metadata" or "wat": Metadata about crawled pages
+        num_files: Limit the number of files to process. If not provided, processes all matching files.
+        io_config: IO configuration for accessing S3.
+
+    Returns:
+        A DataFrame containing the requested Common Crawl data.
+
+    Examples:
+        >>> # Load raw WARC data from a specific crawl
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33")  # doctest: +SKIP
+
+        >>> # Load extracted text content
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text")  # doctest: +SKIP
+
+        >>> # Load data from a specific segment with file limit for sampling/testing
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1234567890.1", num_files=1)  # doctest: +SKIP
+    """
+    if num_files is not None and num_files <= 0:
+        raise ValueError("num_files must be a positive integer")
+
+    content_type_map = {"raw": "warc", "text": "wet", "metadata": "wat", "warc": "warc", "wet": "wet", "wat": "wat"}
+    if content not in content_type_map:
+        raise ValueError(f"Invalid content type for daft.datasets.common_crawl: {content}")
+    file_type = content_type_map[content]
+
+    extension_map = {"warc": "*.warc.gz", "wet": "*.warc.wet.gz", "wat": "*.warc.wat.gz"}
+    file_extension = extension_map[file_type]
+
+    segment_glob = "**"
+    if segment is not None:
+        segment_glob = segment
+
+    glob_pattern = f"s3://commoncrawl/crawl-data/{crawl}/segments/{segment_glob}/{file_type}/{file_extension}"
+
+    if num_files is not None:
+        return read_warc(
+            from_glob_path(glob_pattern, io_config=io_config).select("path").limit(num_files).to_pydict()["path"],
+            io_config=io_config,
+        )
+
+    return read_warc(glob_pattern, io_config=io_config)
