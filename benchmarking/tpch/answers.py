@@ -22,6 +22,7 @@ def q1(get_df: GetDFFunc) -> DataFrame:
             discounted_price.sum().alias("sum_disc_price"),
             taxed_discounted_price.sum().alias("sum_charge"),
             col("L_QUANTITY").mean().alias("avg_qty"),
+            col("ABC").avg(),
             col("L_EXTENDEDPRICE").mean().alias("avg_price"),
             col("L_DISCOUNT").mean().alias("avg_disc"),
             col("L_QUANTITY").count().alias("count_order"),

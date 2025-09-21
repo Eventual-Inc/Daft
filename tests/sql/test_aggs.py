@@ -19,6 +19,7 @@ def test_aggs_sql():
             [
                 col("values").sum().alias("sum"),
                 col("values").mean().alias("mean"),
+                col("values").avg().alias("avg"),
                 col("values").min().alias("min"),
                 col("values").max().alias("max"),
                 col("values").count().alias("count"),
@@ -35,6 +36,7 @@ def test_aggs_sql():
     SELECT
         sum(values) as sum,
         mean(values) as mean,
+        avg(values) as avg,
         min(values) as min,
         max(values) as max,
         count(values) as count,

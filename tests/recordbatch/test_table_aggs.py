@@ -387,6 +387,7 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("count").count(),
             col("input").cast(DataType.int32()).alias("sum").sum(),
             col("input").cast(DataType.int32()).alias("mean").mean(),
+            col("input").cast(DataType.int32()).alias("avg").avg(),
             col("input").cast(DataType.int32()).alias("min").min(),
             col("input").cast(DataType.int32()).alias("max").max(),
             col("input").cast(DataType.int32()).alias("list").agg_list(),
