@@ -34,7 +34,7 @@ impl ScalarUDF for HashFunction {
         let hash_function = hash_function
             .map(|s| s.parse::<HashFunctionKind>())
             .transpose()?
-            .unwrap_or(HashFunctionKind::XxHash);
+            .unwrap_or(HashFunctionKind::XxHash64);
 
         if let Some(seed) = seed {
             match seed.len() {

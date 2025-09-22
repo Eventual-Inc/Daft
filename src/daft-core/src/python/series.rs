@@ -284,8 +284,16 @@ impl PySeries {
                 let hasher = MurBuildHasher::new(seed);
                 self.series.minhash(num_hashes, ngram_size, seed, &hasher)
             }
-            HashFunctionKind::XxHash => {
+            HashFunctionKind::XxHash64 => {
                 let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::XxHash32 => {
+                let hasher = xxhash_rust::xxh32::Xxh32::new(seed as u32);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::XxHash3 => {
+                let hasher = xxhash_rust::xxh3::Xxh3Builder::new().with_seed(seed as u64);
                 self.series.minhash(num_hashes, ngram_size, seed, &hasher)
             }
             HashFunctionKind::Sha1 => {

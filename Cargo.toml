@@ -343,7 +343,7 @@ typed-builder = "0.20.0"
 typetag = "0.2.18"
 url = "2.4.0"
 uuid = {version = "1.18.1", features = ["v4"]}
-xxhash-rust = "0.8.12"
+xxhash-rust = {version = "0.8.15", default-features = false, features = ["xxh64", "xxh3", "xxh32"]}
 
 [workspace.dependencies.arrow2]
 features = ["serde_types"]

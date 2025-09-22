@@ -54,7 +54,9 @@ impl Hasher for Sha1Hasher {
 pub enum HashFunctionKind {
     #[default]
     MurmurHash3,
-    XxHash,
+    XxHash64,
+    XxHash32,
+    XxHash3,
     Sha1,
 }
 
@@ -64,7 +66,9 @@ impl FromStr for HashFunctionKind {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "murmurhash3" => Ok(Self::MurmurHash3),
-            "xxhash" => Ok(Self::XxHash),
+            "xxhash64" => Ok(Self::XxHash64),
+            "xxhash32" => Ok(Self::XxHash32),
+            "xxhash3" => Ok(Self::XxHash3),
             "sha1" => Ok(Self::Sha1),
             _ => Err(DaftError::ValueError(format!(
                 "Invalid hash function: {}",
