@@ -88,6 +88,7 @@ impl std::fmt::Display for WarcType {
 struct WarcHeaderState {
     content_length: Option<usize>,
     record_id: Option<Uuid>,
+    warc_target_uri: Option<String>,
     warc_date: Option<DateTime<Utc>>,
     warc_type: Option<WarcType>,
     warc_identified_payload_type: Option<String>,
@@ -109,6 +110,7 @@ struct WarcRecordBatchBuilder {
     chunk_size: usize,
     schema: SchemaRef,
     record_id_array: MutableUtf8Array<i64>,
+    warc_target_uri_array: MutableUtf8Array<i64>,
     warc_type_array: MutableUtf8Array<i64>,
     warc_date_array: MutablePrimitiveArray<i64>,
     warc_content_length_array: MutablePrimitiveArray<i64>,
@@ -117,6 +119,7 @@ struct WarcRecordBatchBuilder {
     header_array: MutableUtf8Array<i64>,
     rows_processed: usize,
     record_id_elements_so_far: usize,
+    warc_target_uri_elements_so_far: usize,
     warc_type_elements_so_far: usize,
     content_bytes_so_far: usize,
     header_elements_so_far: usize,
@@ -131,6 +134,10 @@ impl WarcRecordBatchBuilder {
             chunk_size,
             schema,
             record_id_array: MutableUtf8Array::with_capacities(
+                chunk_size,
+                Self::DEFAULT_STRING_LENGTH * chunk_size,
+            ),
+            warc_target_uri_array: MutableUtf8Array::with_capacities(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
@@ -154,15 +161,18 @@ impl WarcRecordBatchBuilder {
             ),
             rows_processed: 0,
             record_id_elements_so_far: 0,
+            warc_target_uri_elements_so_far: 0,
             warc_type_elements_so_far: 0,
             content_bytes_so_far: 0,
             header_elements_so_far: 0,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push(
         &mut self,
         record_id: Option<&str>,
+        warc_target_uri: Option<&str>,
         warc_type: Option<&str>,
         warc_date: Option<i64>,
         warc_content_length: Option<i64>,
@@ -170,6 +180,7 @@ impl WarcRecordBatchBuilder {
         header: Option<&str>,
     ) {
         self.record_id_array.push(record_id);
+        self.warc_target_uri_array.push(warc_target_uri);
         self.warc_type_array.push(warc_type);
         self.warc_date_array.push(warc_date);
         self.warc_content_length_array.push(warc_content_length);
@@ -179,6 +190,7 @@ impl WarcRecordBatchBuilder {
         // book keeping
         self.rows_processed += 1;
         self.record_id_elements_so_far += record_id.map(|s| s.len()).unwrap_or(0);
+        self.warc_target_uri_elements_so_far += warc_target_uri.map(|s| s.len()).unwrap_or(0);
         self.warc_type_elements_so_far += warc_type.map(|s| s.len()).unwrap_or(0);
         self.content_bytes_so_far += warc_content_length.map(|l| l as usize).unwrap_or(0);
         self.header_elements_so_far += header.map(|h| h.len()).unwrap_or(0);
@@ -197,6 +209,7 @@ impl WarcRecordBatchBuilder {
                 self.schema.clone(),
                 vec![
                     self.record_id_array.as_box(),
+                    self.warc_target_uri_array.as_box(),
                     self.warc_type_array.as_box(),
                     self.warc_date_array.as_box(),
                     self.warc_content_length_array.as_box(),
@@ -212,6 +225,13 @@ impl WarcRecordBatchBuilder {
             // Reset arrays.
             self.record_id_array =
                 MutableUtf8Array::with_capacities(chunk_size, avg_record_id_size * chunk_size);
+
+            let avg_warc_target_uri_size = self.warc_target_uri_elements_so_far / rows_processed;
+
+            self.warc_target_uri_array = MutableUtf8Array::with_capacities(
+                chunk_size,
+                avg_warc_target_uri_size * chunk_size,
+            );
 
             let avg_warc_type_size = self.warc_type_elements_so_far / rows_processed;
 
@@ -257,6 +277,7 @@ impl WarcRecordBatchIterator {
             header_state: WarcHeaderState {
                 content_length: None,
                 record_id: None,
+                warc_target_uri: None,
                 warc_date: None,
                 warc_type: None,
                 warc_identified_payload_type: None,
@@ -303,6 +324,7 @@ impl WarcRecordBatchIterator {
                             .record_id
                             .map(|id| id.to_string())
                             .as_deref(),
+                        self.header_state.warc_target_uri.as_deref(),
                         self.header_state
                             .warc_type
                             .take()
@@ -358,6 +380,9 @@ impl WarcRecordBatchIterator {
                                         self.header_state.record_id = Some(uuid);
                                     }
                                 }
+                            }
+                            "WARC-Target-URI" => {
+                                self.header_state.warc_target_uri = Some(value);
                             }
                             "WARC-Type" => {
                                 self.header_state.warc_type = WarcType::from_str(&value);
