@@ -143,11 +143,15 @@ impl BroadcastJoinNode {
             } else {
                 (materialized_broadcast_data_plan.clone(), input_plan)
             };
+
+            // We want to build on the broadcast side, so if swapped, build on the right side
+            let build_on_left = !self.is_swapped;
             let join_plan = LocalPhysicalPlan::hash_join(
                 left_plan,
                 right_plan,
                 self.left_on.clone(),
                 self.right_on.clone(),
+                Some(build_on_left),
                 self.null_equals_nulls.clone(),
                 self.join_type,
                 self.config.schema.clone(),
