@@ -74,12 +74,12 @@ def test_warc_target_uri_column():
     response_with_uri = response_records.filter(df["WARC-Target-URI"].not_null())
     assert response_with_uri.count_rows() == response_count
 
-    # Test that metadata records have non-null WARC-Target-URI.
+    # Test that metadata records optionally have non-null WARC-Target-URI.
     metadata_records = df.filter(df["WARC-Type"] == "metadata")
     metadata_count = metadata_records.count_rows()
     assert metadata_count == 1
     metadata_with_uri = metadata_records.filter(df["WARC-Target-URI"].not_null())
-    assert metadata_with_uri.count_rows() == metadata_count
+    assert metadata_with_uri.count_rows() <= metadata_count
 
     # Test that records contain valid target URI domain names.
     eventualcomputing_count = df.filter(

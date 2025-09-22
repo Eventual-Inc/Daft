@@ -99,6 +99,7 @@ impl WarcHeaderState {
     fn reset(&mut self) {
         self.content_length = None;
         self.record_id = None;
+        self.warc_target_uri = None;
         self.warc_date = None;
         self.warc_type = None;
         self.warc_identified_payload_type = None;
