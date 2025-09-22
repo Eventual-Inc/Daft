@@ -232,6 +232,7 @@ impl<'a> IntoIterator for &'a FixedSizeListArray {
     }
 }
 
+#[derive(Clone)]
 pub struct FixedSizeListArrayIter<'a> {
     array: &'a FixedSizeListArray,
     idx: usize,

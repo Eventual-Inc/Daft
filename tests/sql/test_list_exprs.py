@@ -181,7 +181,7 @@ def test_various_list_ops():
         list_sort(col) as sort,
         list_sort(col, desc:=true) as sort_desc,
         list_sort(col, desc:=false) as sort_asc,
-        list_slice(col, 1, 2) as slice
+        slice(col, 1, 2) as slice
     FROM test
     """,
         **bindings,

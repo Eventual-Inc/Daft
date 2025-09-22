@@ -1238,6 +1238,10 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
+    async fn supports_range(&self, _: &str) -> super::Result<bool> {
+        Ok(true)
+    }
+
     async fn get(
         &self,
         uri: &str,
