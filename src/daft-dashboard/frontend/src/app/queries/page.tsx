@@ -23,7 +23,6 @@ import {
 import { useAtom } from "jotai";
 import { queryInfoAtom, QueryInfo, QueryInfoMap } from "@/atoms/queryInfo";
 import { toHumanReadableDate, delta } from "@/lib/utils";
-import { useRouter } from "next/navigation";
 
 const NAME: string = "id";
 const START_TIME: string = "plan_time_start";
@@ -66,7 +65,7 @@ export default function QueryList() {
                 setQueryInfo(queryInfoMap);
             } catch { }
         })();
-    }, []);
+    }, [setQueryInfo]);
     const cols = columns(queryInfo);
     const table = useReactTable(React.useMemo(() => ({
         data: Object.values(queryInfo),
@@ -76,10 +75,10 @@ export default function QueryList() {
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
         enableSorting: true,
-    }), [queryInfo]));
-    const router = useRouter();
+    }), [queryInfo, cols]));
 
-    const spacing = (obj: { column: { columnDef: { accessorKey: string } } }) => `px-[20px] ${obj.column.columnDef.accessorKey === NAME ? "w-[70%]" : undefined}`;
+    const spacing = (obj: any) => `px-[20px] ${obj.column.columnDef.accessorKey === NAME ? "w-[70%]" : undefined}`;
+
 
     return (
         <div className="gap-4 space-y-4">
@@ -99,7 +98,7 @@ export default function QueryList() {
                         {table.getHeaderGroups().map((headerGroup) => (
                             <TableRow key={headerGroup.id} className="">
                                 {headerGroup.headers.map((header) =>
-                                    <TableHead key={header.id} className={`text-xs ${spacing(header as any)}`}>
+                                    <TableHead key={header.id} className={`text-xs ${spacing(header)}`}>
                                         {flexRender(
                                             header.column.columnDef.header,
                                             header.getContext()
@@ -116,8 +115,7 @@ export default function QueryList() {
                                     {row.getAllCells().map(cell => (
                                         <TableCell
                                             key={cell.id}
-                                            className={`py-[15px] ${spacing(cell as any)} cursor-pointer`}
-                                            onClick={() => router.push(`/queries/query?id=${cell.row.original.id}`)}
+                                            className={`py-[15px] ${spacing(cell)} cursor-pointer`}
                                         >
                                             <div className="truncate">
                                                 {flexRender(
