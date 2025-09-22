@@ -64,6 +64,9 @@ from .datetime import (
     to_unix_epoch,
 )
 from .embedding import cosine_distance
+
+from .file import file, file_size
+
 from .image import (
     resize,
     crop,
@@ -97,8 +100,6 @@ from .list import (
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
-    file,
-    file_size,
     eq_null_safe,
     cast,
     is_null,

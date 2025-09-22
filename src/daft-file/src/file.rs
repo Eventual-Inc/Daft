@@ -63,10 +63,10 @@ impl DaftFile {
         }
     }
 
-    pub fn size(&mut self) -> DaftResult<usize> {
+    pub fn size(&self) -> DaftResult<usize> {
         let cursor = self
             .cursor
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| DaftError::ComputeError("File not open".to_string()))?;
 
         match cursor {

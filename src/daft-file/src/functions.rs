@@ -66,12 +66,12 @@ impl ScalarUDF for Size {
         let s = input.file()?;
         let len = s.len();
         let mut out = Vec::with_capacity(len);
-        // todo(cory): can likely optimize this a lot more.
+        // todo(cory): can likely optimize this a lot more than a naive for loop.
         for i in 0..len {
             let opt: Option<u64> = s
                 .get(i)
                 .map(|f| {
-                    let mut f = DaftFile::try_from(f)?;
+                    let f = DaftFile::try_from(f)?;
                     let size = f.size()?;
                     DaftResult::Ok(size as _)
                 })
