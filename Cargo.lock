@@ -2513,7 +2513,6 @@ dependencies = [
  "daft-runners",
  "pyo3",
  "reqwest",
- "serde_json",
 ]
 
 [[package]]
@@ -2597,7 +2596,6 @@ dependencies = [
  "daft-recordbatch",
  "dashmap",
  "include_dir",
- "parking_lot 0.12.4",
  "pyo3",
  "serde",
  "serde_json",
@@ -3001,7 +2999,6 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
- "reqwest",
  "snafu",
  "tokio",
  "tokio-util",
