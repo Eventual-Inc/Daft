@@ -232,9 +232,6 @@ def create_scalar_index(
     index_type: str = "INVERTED",
     name: Optional[str] = None,
     replace: bool = True,
-    train: bool = True,
-    fragment_ids: Optional[list[int]] = None,
-    fragment_uuid: Optional[str] = None,
     storage_options: Optional[dict[str, Any]] = None,
     daft_remote_args: Optional[dict[str, Any]] = None,
     concurrency: Optional[int] = None,
@@ -260,9 +257,6 @@ def create_scalar_index(
         index_type: Type of index to build ("INVERTED" or "FTS")
         name: Name of the index (generated if None)
         replace: Whether to replace an existing index with the same name. Defaults to True.
-        train: Whether to train the index. Defaults to True.
-        fragment_ids: Optional list of fragment IDs to index. If None, all fragments are indexed.
-        fragment_uuid: Optional fragment UUID to index. If None, all fragments are indexed.
         storage_options: Storage options for the dataset
         daft_remote_args: Options for Daft remote execution (e.g., num_cpus, num_gpus, memory_bytes)
         concurrency: Number of Daft workers to use
@@ -343,9 +337,6 @@ def create_scalar_index(
         index_type=index_type,
         name=name,
         replace=replace,
-        train=train,
-        fragment_ids=fragment_ids,
-        fragment_uuid=fragment_uuid,
         storage_options=storage_options,
         daft_remote_args=daft_remote_args,
         concurrency=concurrency,

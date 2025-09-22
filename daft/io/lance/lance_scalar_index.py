@@ -9,6 +9,7 @@ from lance.dataset import IndexConfig
 
 from daft import DataType, from_pylist
 from daft.dependencies import pa
+from daft.io.lance.utils import distribute_fragments_balanced
 from daft.udf import udf
 from daft.udf.legacy import _UnsetMarker
 
@@ -38,7 +39,6 @@ class FragmentIndexHandler:
         name: str,
         fragment_uuid: str,
         replace: bool,
-        train: bool,
         **kwargs: Any,
     ) -> None:
         self.lance_ds = lance_ds
@@ -47,7 +47,6 @@ class FragmentIndexHandler:
         self.name = name
         self.fragment_uuid = fragment_uuid
         self.replace = replace
-        self.train = train
         self.kwargs = kwargs
 
     def __call__(self, fragment_ids_batch: list[list[int]]) -> list[dict[str, Any]]:
@@ -71,7 +70,6 @@ class FragmentIndexHandler:
                 index_type=self.index_type,
                 name=self.name,
                 replace=self.replace,
-                train=self.train,
                 fragment_uuid=self.fragment_uuid,
                 fragment_ids=fragment_ids,
                 **self.kwargs,
@@ -94,104 +92,6 @@ class FragmentIndexHandler:
             }
 
 
-def _distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> list[dict[str, list[int]]]:
-    """Distribute fragments across workers using a balanced algorithm considering fragment sizes."""
-    if not fragments:
-        return [{"fragment_ids": []} for _ in range(concurrency)]
-
-    # Get fragment information (ID and size)
-    fragment_info = []
-    for fragment in fragments:
-        try:
-            row_count = fragment.count_rows()
-            fragment_info.append(
-                {
-                    "id": fragment.fragment_id,
-                    "size": row_count,
-                }
-            )
-        except Exception as e:
-            # If we can't get size info, use fragment_id as a fallback
-            logger.warning(
-                "Could not get size for fragment %s: %s. " "Using fragment_id as size estimate.",
-                fragment.fragment_id,
-                e,
-            )
-            fragment_info.append(
-                {
-                    "id": fragment.fragment_id,
-                    "size": fragment.fragment_id,  # Fallback to fragment_id
-                }
-            )
-
-    # Sort fragments by size in descending order (largest first)
-    # This helps with better load balancing using the greedy algorithm
-    fragment_info.sort(key=lambda x: x["size"], reverse=True)
-
-    # Initialize worker batches and their current workloads
-    worker_batches: list[list[int]] = [[] for _ in range(concurrency)]
-    worker_workloads = [0] * concurrency
-
-    # Greedy assignment: assign each fragment to the worker with minimum workload
-    for frag_info in fragment_info:
-        # Find the worker with the minimum current workload
-        min_workload_idx = min(range(concurrency), key=lambda i: worker_workloads[i])
-
-        # Assign fragment to this worker
-        worker_batches[min_workload_idx].append(frag_info["id"])
-        worker_workloads[min_workload_idx] += frag_info["size"]
-
-    # Log distribution statistics for debugging
-    total_size = sum(frag_info["size"] for frag_info in fragment_info)
-    logger.info(
-        "Fragment distribution statistics:\n  Total fragments: %d\n  Total size: %d\n  Workers: %d",
-        len(fragment_info),
-        total_size,
-        concurrency,
-    )
-
-    for i, (batch, workload) in enumerate(zip(worker_batches, worker_workloads)):
-        percentage = (workload / total_size * 100) if total_size > 0 else 0
-        logger.info("  Worker %d: %d fragments, " "workload: %d (%d%%)", i, len(batch), workload, percentage)
-
-    # Filter out empty batches (shouldn't happen with proper input validation)
-    non_empty_batches = [
-        {
-            "fragment_ids": batch,
-        }
-        for batch in worker_batches
-        if batch
-    ]
-
-    return non_empty_batches
-
-
-def _get_available_fragment_ids(
-    lance_ds: lance.LanceDataset,
-    fragment_ids: list[int] | None = None,
-) -> tuple[list[Any], list[int]]:
-    """Get available fragment IDs from a list of Lance fragments."""
-    fragments = lance_ds.get_fragments()
-    if not fragments:
-        raise ValueError("Dataset contains no fragments")
-
-    if fragment_ids is None:
-        return fragments, [fragment.fragment_id for fragment in fragments]
-
-    for fragment_id in fragment_ids:
-        if fragment_id < 0 or fragment_id > 0xFFFFFFFF:
-            raise ValueError(f"Invalid fragment_id: {fragment_id}")
-
-    fragment_ids_set = set(fragment_ids)
-    available_fragment_ids = {f.fragment_id for f in fragments}
-    invalid_fragments = fragment_ids_set - available_fragment_ids
-    if invalid_fragments:
-        raise ValueError(f"Fragment IDs {invalid_fragments} do not exist in dataset")
-
-    fragments = [f for f in fragments if f.fragment_id in fragment_ids]
-    return fragments, list(fragment_ids_set)
-
-
 def create_scalar_index_internal(
     lance_ds: lance.LanceDataset,
     uri: str,
@@ -200,9 +100,6 @@ def create_scalar_index_internal(
     index_type: str | IndexConfig = "INVERTED",
     name: str | None = None,
     replace: bool = True,
-    train: bool = True,
-    fragment_ids: list[int] | None = None,
-    fragment_uuid: str | None = None,
     storage_options: dict[str, str] | None = None,
     daft_remote_args: dict[str, Any] | None = None,
     concurrency: int | None = None,
@@ -262,7 +159,8 @@ def create_scalar_index_internal(
             pass
 
     # Get available fragment IDs to use
-    fragments, fragment_ids_to_use = _get_available_fragment_ids(lance_ds, fragment_ids)
+    fragments = lance_ds.get_fragments()
+    fragment_ids_to_use = [fragment.fragment_id for fragment in fragments]
 
     # Adjust concurrency based on fragment count
     if concurrency is None:
@@ -276,7 +174,7 @@ def create_scalar_index_internal(
         logger.info("Adjusted concurrency to %d to match fragment count", concurrency)
 
     # Generate unique index ID
-    index_id = fragment_uuid or str(uuid.uuid4())
+    index_id = str(uuid.uuid4())
 
     logger.info(
         "Starting distributed FTS index creation: column=%s, type=%s, name=%s, concurrency=%s",
@@ -287,7 +185,7 @@ def create_scalar_index_internal(
     )
 
     logger.info("Starting fragment parallel processing. And create DataFrame with fragment batches")
-    fragment_data = _distribute_fragments_balanced(fragments, concurrency)
+    fragment_data = distribute_fragments_balanced(fragments, concurrency)
     df = from_pylist(fragment_data)
 
     daft_remote_args = daft_remote_args or {}
@@ -304,7 +202,6 @@ def create_scalar_index_internal(
             name=name,
             fragment_uuid=index_id,
             replace=replace,
-            train=train,
             **kwargs,
         )
         .override_options(num_cpus=num_cpus, num_gpus=num_gpus, memory_bytes=memory_bytes, batch_size=batch_size)
