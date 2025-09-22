@@ -6,7 +6,6 @@ tower = "0.5"
 tower-http = {version = "0.6", features = ["fs", "trace", "cors"]}
 include_dir = "0.7.4"
 dashmap = "6.1"
-parking_lot = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde_json = {workspace = true}
 serde.workspace = true

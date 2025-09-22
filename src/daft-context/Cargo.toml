@@ -13,7 +13,6 @@ daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 # Client for submitting to dashboard server
 reqwest = {workspace = true, default-features = false}
-serde_json = {workspace = true}
 
 [features]
 python = [
