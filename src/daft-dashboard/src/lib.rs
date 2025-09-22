@@ -1,4 +1,4 @@
-pub(crate) mod api;
+pub mod api;
 #[cfg(feature = "python")]
 pub mod python;
 pub(crate) mod state;

@@ -17,14 +17,14 @@ pub trait QuerySubscriber: Send + Sync + std::fmt::Debug + 'static {
     fn on_plan_start(&self, query_id: String) -> DaftResult<()>;
     fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()>;
     fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
+    async fn on_exec_end(&self, query_id: String) -> DaftResult<()>;
     async fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()>;
+    async fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()>;
     async fn on_exec_emit_stats(
         &self,
         query_id: String,
         stats: &[(NodeID, StatSnapshotView)],
     ) -> DaftResult<()>;
-    async fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()>;
-    async fn on_exec_end(&self, query_id: String) -> DaftResult<()>;
 }
 
 pub fn default_subscribers() -> Vec<Arc<dyn QuerySubscriber>> {

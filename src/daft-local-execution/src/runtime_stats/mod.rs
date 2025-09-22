@@ -34,9 +34,8 @@ use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
-        opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
-        query::QuerySubscriberWrapper,
+        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
+        progress_bar::make_progress_bar_manager, query::QuerySubscriberWrapper,
     },
 };
 
@@ -127,10 +126,6 @@ impl RuntimeStatsManager {
             subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
         }
 
-        if DashboardSubscriber::is_enabled() {
-            subscribers.push(Box::new(DashboardSubscriber::new(&node_infos)));
-        }
-
         let throttle_interval = Duration::from_millis(200);
         Ok(Self::new_impl(
             handle,
@@ -178,9 +173,8 @@ impl RuntimeStatsManager {
                                 }
                             }
                         } else if !is_initialize && active_nodes.remove(&node_id) {
-                            let runtime_stats = &node_stats_map[&node_id];
-                            let event = runtime_stats.flush();
-                            let event = [(node_id, event)];
+                            let (_, runtime_stats) = &node_stats[node_id];
+                            let event = [(node_id, runtime_stats.flush())];
                             for subscriber in &subscribers {
                                 if let Err(e) = subscriber.handle_event(&event).await {
                                     log::error!("Failed to handle event: {}", e);

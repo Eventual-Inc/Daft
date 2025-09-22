@@ -125,6 +125,9 @@ impl<'de, 'a> IntoIterator for &'de StatSnapshotView<'a> {
     }
 }
 
+// TODO: Make this global for all plans and executions
+pub type NodeID = usize;
+
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     use pyo3::types::PyModuleMethods;

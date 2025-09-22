@@ -1,12 +1,13 @@
 use std::{sync::Arc, time::SystemTime};
 
+use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, StatSnapshotView, ops::NodeInfo};
+use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::MicroPartitionRef;
-use reqwest::blocking::Client;
-use serde_json::json;
+use reqwest::Client;
 
-use crate::subscribers::{NodeID, QuerySubscriber};
+use crate::subscribers::QuerySubscriber;
 
 fn now() -> u64 {
     SystemTime::now()
@@ -19,6 +20,7 @@ fn now() -> u64 {
 pub struct DashboardSubscriber {
     url: String,
     client: Client,
+    runtime: RuntimeRef,
 }
 
 impl DashboardSubscriber {
@@ -47,32 +49,46 @@ impl DashboardSubscriber {
                 .unwrap()
         };
 
-        // Validate that we can connect to the dashboard
-        client
-            .get(format!("{}/ping", url))
-            .send()
-            .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
-            .error_for_status()
-            .map_err(|e| DaftError::External(Box::new(e)))?;
+        let runtime = get_io_runtime(false);
 
-        Ok(Some(Self { url, client }))
+        // Validate that we can connect to the dashboard
+        runtime.block_on_current_thread(async {
+            client
+                .get(format!("{}/ping", url))
+                .send()
+                .await
+                .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
+                .error_for_status()
+                .map_err(|e| DaftError::External(Box::new(e)))?;
+            Ok::<_, DaftError>(())
+        })?;
+
+        Ok(Some(Self {
+            url,
+            client,
+            runtime,
+        }))
     }
 }
 
+#[async_trait]
 impl QuerySubscriber for DashboardSubscriber {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
-        self.client
-            .post(format!("{}/query/{}/start", self.url, query_id))
-            .json(&json!({
-                "unoptimized_plan": unoptimized_plan,
-                "timestamp": now()
-            }))
-            .send()
-            .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
-            .error_for_status()
-            .map_err(|e| DaftError::External(Box::new(e)))?;
+        self.runtime.block_on_current_thread(async {
+            self.client
+                .post(format!("{}/query/{}/start", self.url, query_id))
+                .json(&daft_dashboard::api::StartQueryArgs {
+                    start_sec: now(),
+                    unoptimized_plan: unoptimized_plan.into(),
+                })
+                .send()
+                .await
+                .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
+                .error_for_status()
+                .map_err(|e| DaftError::External(Box::new(e)))?;
 
-        Ok(())
+            Ok::<_, DaftError>(())
+        })
     }
 
     fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
@@ -87,16 +103,15 @@ impl QuerySubscriber for DashboardSubscriber {
                 .sum::<usize>();
             let buffer = Vec::with_capacity(total_bytes);
             let schema = results[0].schema().to_arrow()?;
+
             let options = arrow2::io::ipc::write::WriteOptions { compression: None };
             let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
             writer.start(&schema, None)?;
 
-            for part in &results {
-                let tables = part.get_tables()?;
-                for table in tables.iter() {
-                    let chunk = table.to_chunk();
-                    writer.write(&chunk, None)?;
-                }
+            let tables = results[0].head(5)?.get_tables()?;
+            for table in tables.iter() {
+                let chunk = table.to_chunk();
+                writer.write(&chunk, None)?;
             }
 
             writer.finish()?;
@@ -105,126 +120,145 @@ impl QuerySubscriber for DashboardSubscriber {
             finished_buffer
         };
 
-        self.client
-            .post(format!("{}/query/{}/end", self.url, query_id))
-            .json(&json!({
-                "timestamp": now(),
-                "ipc_buffer": ipc_buffer,
-                "num_rows": results.iter().map(|part| part.len()).sum::<usize>(),
-                "num_bytes": ipc_buffer.len(),
-            }))
-            .send()
-            .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
-            .error_for_status()
-            .map_err(|e| DaftError::External(Box::new(e)))?;
-
-        Ok(())
+        let end_sec = now();
+        self.runtime.block_on_current_thread(async {
+            self.client
+                .post(format!("{}/query/{}/end", self.url, query_id))
+                .json(&daft_dashboard::api::FinalizeArgs {
+                    end_sec,
+                    results: ipc_buffer,
+                })
+                .send()
+                .await
+                .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
+                .error_for_status()
+                .map_err(|e| DaftError::External(Box::new(e)))?;
+            Ok::<_, DaftError>(())
+        })
     }
 
     fn on_plan_start(&self, query_id: String) -> DaftResult<()> {
-        self.client
-            .post(format!("{}/query/{}/start_plan", self.url, query_id))
-            .json(&json!({
-                "timestamp": now()
-            }))
-            .send()
-            .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
-            .error_for_status()
-            .map_err(|e| DaftError::External(Box::new(e)))?;
-
-        Ok(())
+        self.runtime.block_on_current_thread(async {
+            self.client
+                .post(format!("{}/query/{}/plan_start", self.url, query_id))
+                .json(&daft_dashboard::api::PlanStartArgs {
+                    plan_start_sec: now(),
+                })
+                .send()
+                .await
+                .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
+                .error_for_status()
+                .map_err(|e| DaftError::External(Box::new(e)))?;
+            Ok::<_, DaftError>(())
+        })
     }
 
     fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
-        self.client
-            .post(format!("{}/query/{}/end_plan", self.url, query_id))
-            .json(&json!({
-                "timestamp": now(),
-                "optimized_plan": optimized_plan,
-            }))
-            .send()
-            .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
-            .error_for_status()
-            .map_err(|e| DaftError::External(Box::new(e)))?;
-
-        Ok(())
+        let plan_end_sec = now();
+        self.runtime.block_on_current_thread(async {
+            self.client
+                .post(format!("{}/query/{}/plan_end", self.url, query_id))
+                .json(&daft_dashboard::api::PlanEndArgs {
+                    plan_end_sec,
+                    optimized_plan: optimized_plan.into(),
+                })
+                .send()
+                .await
+                .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
+                .error_for_status()
+                .map_err(|e| DaftError::External(Box::new(e)))?;
+            Ok::<_, DaftError>(())
+        })
     }
 
     fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
+        let exec_start_sec = now();
+        self.runtime.block_on_current_thread(async {
+            self.client
+                .post(format!("{}/query/{}/exec/start", self.url, query_id))
+                .json(&daft_dashboard::api::ExecStartArgs {
+                    exec_start_sec,
+                    node_infos: node_infos
+                        .iter()
+                        .map(|info| info.as_ref().clone())
+                        .collect(),
+                })
+                .send()
+                .await
+                .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
+                .error_for_status()
+                .map_err(|e| DaftError::External(Box::new(e)))?;
+            Ok::<_, DaftError>(())
+        })
+    }
+
+    async fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         self.client
-            .post(format!("{}/query/{}/exec/start", self.url, query_id))
-            .json(&json!({
-                "timestamp": now(),
-                "node_infos": node_infos,
-            }))
+            .post(format!(
+                "{}/query/{}/exec/{}/start",
+                self.url, query_id, node_id
+            ))
             .send()
+            .await
             .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
             .error_for_status()
             .map_err(|e| DaftError::External(Box::new(e)))?;
-
         Ok(())
     }
 
-    fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
-        self.client
-            .post(format!("{}/query/{}/exec/start_op", self.url, query_id))
-            .json(&json!({
-                "timestamp": now(),
-                "node_id": node_id,
-            }))
-            .send()
-            .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
-            .error_for_status()
-            .map_err(|e| DaftError::External(Box::new(e)))?;
-
-        Ok(())
-    }
-
-    fn on_exec_emit_stats(
+    async fn on_exec_emit_stats(
         &self,
         query_id: String,
         stats: &[(NodeID, StatSnapshotView)],
     ) -> DaftResult<()> {
         self.client
             .post(format!("{}/query/{}/exec/emit_stats", self.url, query_id))
-            .json(&json!({
-                "timestamp": now(),
-                "stats": stats,
-            }))
+            .json(&daft_dashboard::api::ExecEmitStatsArgs {
+                stats: stats
+                    .iter()
+                    .map(|(node_id, stats)| {
+                        (
+                            *node_id,
+                            stats
+                                .into_iter()
+                                .map(|(name, stat)| ((*name).to_string(), stat.clone()))
+                                .collect(),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            })
             .send()
+            .await
             .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
             .error_for_status()
             .map_err(|e| DaftError::External(Box::new(e)))?;
-
         Ok(())
     }
 
-    fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         self.client
-            .post(format!("{}/query/{}/exec/end_op", self.url, query_id))
-            .json(&json!({
-                "timestamp": now(),
-                "node_id": node_id,
-            }))
+            .post(format!(
+                "{}/query/{}/exec/{}/end",
+                self.url, query_id, node_id
+            ))
             .send()
+            .await
             .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
             .error_for_status()
             .map_err(|e| DaftError::External(Box::new(e)))?;
-
         Ok(())
     }
 
-    fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
+    async fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
+        let exec_end_sec = now();
         self.client
             .post(format!("{}/query/{}/exec/end", self.url, query_id))
-            .json(&json!({
-                "timestamp": now(),
-            }))
+            .json(&daft_dashboard::api::ExecEndArgs { exec_end_sec })
             .send()
+            .await
             .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
             .error_for_status()
             .map_err(|e| DaftError::External(Box::new(e)))?;
-
         Ok(())
     }
 }
