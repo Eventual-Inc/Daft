@@ -1778,7 +1778,7 @@ def test_range_window_with_timestamp(make_df):
     df = make_df(data)
 
     three_days = datetime.timedelta(days=3)
-    window_spec = Window().partition_by("category").order_by("date").range_between(-three_days, three_days)
+    window_spec = Window().partition_by("category").order_by("date", "value").range_between(-three_days, three_days)
 
     result = df.select(
         col("category"),
@@ -1788,7 +1788,9 @@ def test_range_window_with_timestamp(make_df):
         col("value").mean().over(window_spec).alias("window_avg"),
     ).collect()
 
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date"], check_dtype=False)
+    assert_df_equals(
+        result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date", "value"], check_dtype=False
+    )
 
 
 def test_timestamp_mixed_resolution(make_df):
