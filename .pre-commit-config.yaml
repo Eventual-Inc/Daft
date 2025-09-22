@@ -8,7 +8,11 @@ repos:
     args: ['--strict', '--ignore-missing-imports']
     additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
     files: daft
-    exclude: daft/pickle/.*\.py
+    exclude: |
+      (?x)^(
+          daft/pickle/.*\.py|
+          benchmarking/.*
+      )$
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.6.0
@@ -64,9 +68,11 @@ repos:
     # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
+    exclude: benchmarking
     # Run the formatter.
   - id: ruff-format
     name: Python code Formatting
+    exclude: benchmarking
 
 - repo: local
   hooks:

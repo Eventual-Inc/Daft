@@ -60,36 +60,6 @@ def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
     return expr._eval_expressions("file", io_config=io_config)
 
 
-def unnest(expr: Expression) -> Expression:
-    """Flatten the fields of a struct expression into columns in a DataFrame.
-
-    Examples:
-        >>> import daft
-        >>> df = daft.from_pydict(
-        ...     {
-        ...         "struct": [
-        ...             {"x": 1, "y": 2},
-        ...             {"x": 3, "y": 4},
-        ...         ]
-        ...     }
-        ... )
-        >>> unnested_df = df.select(unnest(df["struct"]))
-        >>> unnested_df.show()
-        ╭───────┬───────╮
-        │ x     ┆ y     │
-        │ ---   ┆ ---   │
-        │ Int64 ┆ Int64 │
-        ╞═══════╪═══════╡
-        │ 1     ┆ 2     │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 3     ┆ 4     │
-        ╰───────┴───────╯
-        <BLANKLINE>
-        (Showing first 2 of 2 rows)
-    """
-    return expr["*"]
-
-
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
     """Performs a null-safe equality comparison between two expressions.
 
@@ -552,3 +522,218 @@ def coalesce(*args: Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("coalesce", *args)
+
+
+def get(expr: Expression, key: int | str | Expression, default: Any = None) -> Expression:
+    """Get an index from a list expression or a field from a struct expression.
+
+    Args:
+        expr: list or struct expression to get value from
+        key: integer index for list or string field for struct. List index can be negative to index from the end of the list.
+        default: default value if out of bounds. Only supported for list get
+
+    Returns:
+        An expression with the inner type of the input expression.
+
+    Note:
+        `expr.get(x)` can also be written as `expr[x]`
+
+    Note:
+        `expr.get("*")` is equivalent to `expr.unnest()`
+
+    Examples:
+        Getting elements from a list by index:
+
+        >>> import daft
+        >>> df = daft.from_pydict({"lists": [[1, 2, 3], [4, 5], [6]]})
+        >>> df = df.select(df["lists"].get(0).alias("first"), df["lists"].get(-1).alias("last"))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ first ┆ last  │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 3     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 4     ┆ 5     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 6     ┆ 6     │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Getting elements from a list with default value:
+
+        >>> df = daft.from_pydict({"lists": [[1, 2], [3], []]})
+        >>> df = df.select(df["lists"].get(2, default=-1))
+        >>> df.show()
+        ╭───────╮
+        │ lists │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ -1    │
+        ├╌╌╌╌╌╌╌┤
+        │ -1    │
+        ├╌╌╌╌╌╌╌┤
+        │ -1    │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Getting fields from a struct:
+
+        >>> df = daft.from_pydict({"structs": [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]})
+        >>> df = df.select(df["structs"].get("name"), df["structs"].get("age"))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ name  ┆ age   │
+        │ ---   ┆ ---   │
+        │ Utf8  ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ Alice ┆ 25    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ Bob   ┆ 30    │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+        Using variable indices:
+
+        >>> df = daft.from_pydict({"lists": [[1, 2, 3], [4, 5, 6]], "indices": [0, 2]})
+        >>> df = df.select(df["lists"].get(df["indices"]))
+        >>> df.show()
+        ╭───────╮
+        │ lists │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 6     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+        Unnesting all fields from a struct (equivalent to .unnest()):
+
+        >>> df = daft.from_pydict({"structs": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]})
+        >>> df = df.select(df["structs"].get("*"))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 2     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 4     │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    if isinstance(key, (int, Expression)):
+        return Expression._call_builtin_scalar_fn("list_get", expr, key, default)
+    elif isinstance(key, str):
+        if default is not None:
+            raise ValueError("`daft.functions.get` does not support default values for getting a struct field")
+        return Expression._from_pyexpr(expr._expr.struct_get(key))
+    else:
+        raise TypeError(
+            f"Argument {key} of type {type(key)} is not supported in `daft.functions.get`. Only int and string types are supported."
+        )
+
+
+def map_get(expr: Expression, key: Expression) -> Expression:
+    """Retrieves the value for a key in a map column.
+
+    Args:
+        expr: the map expression to get from
+        key: the key to retrieve
+
+    Returns:
+        Expression: the value expression
+
+    Examples:
+        >>> import pyarrow as pa
+        >>> import daft
+        >>> pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+        >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+        >>> df = df.with_column("a", df["map_col"].map_get("a"))
+        >>> df.show()
+        ╭──────────────────┬───────╮
+        │ map_col          ┆ a     │
+        │ ---              ┆ ---   │
+        │ Map[Utf8: Int64] ┆ Int64 │
+        ╞══════════════════╪═══════╡
+        │ [{key: a,        ┆ 1     │
+        │ value: 1,        ┆       │
+        │ }]               ┆       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ []               ┆ None  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ [{key: b,        ┆ None  │
+        │ value: 2,        ┆       │
+        │ }]               ┆       │
+        ╰──────────────────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    key_expr = Expression._to_expression(key)
+    return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
+
+
+def slice(expr: Expression, start: int | Expression, end: int | Expression | None = None) -> Expression:
+    r"""Get a subset of each list or binary value.
+
+    Args:
+        expr: List or binary expression to slice.
+        start: Index or column of indices. The slice will include elements starting from this index. If `start` is negative, it represents an offset from the end
+        end: Index or column of indices. The slice will not include elements from this index onwards. If `end` is negative, it represents an offset from the end. If not provided, the slice will include elements up to the end of the list. If start > end, an empty slice is produced.
+
+    Returns:
+        Expression: an expression with the same type as the input.
+
+    Note:
+        `expr[start:stop]` is also equivalent to `expr.slice(start, stop)`
+
+    Examples:
+        Slicing a list expression:
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [[1, 2, 3], [4, 5, 6, 7], [8]]})
+        >>> df = df.select(df["x"].slice(1, -1))
+        >>> df.show()
+        ╭─────────────╮
+        │ x           │
+        │ ---         │
+        │ List[Int64] │
+        ╞═════════════╡
+        │ [2]         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [5, 6]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ []          │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Slicing a binary expression:
+        >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
+        >>> df = df.select(df["x"].slice(1, -2))
+        >>> df.show()
+        ╭─────────────╮
+        │ x           │
+        │ ---         │
+        │ Binary      │
+        ╞═════════════╡
+        │ b"ello Wor" │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b""         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b"mp"       │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("slice", expr, start, end=end)
