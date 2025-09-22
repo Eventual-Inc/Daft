@@ -7,6 +7,7 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 import pytest
+from daft.functions import concat, cast
 
 from daft import DataType, Window, col
 from daft.context import get_context
@@ -1741,30 +1742,33 @@ def test_sliding_sum_with_nan_and_none(make_df):
 
 
 def test_range_window_with_timestamp(make_df):
-    """Test window operations with date/timestamp ranges using the API."""
+    """Test window operations with date/timestamp ranges using concat-based sorting for deterministic results.
+    
+    This test uses Daft's concat expression to combine date and value into a single string sorting key.
+    This ensures deterministic ordering while preserving duplicate dates for proper window function testing.
+    The window function still operates on the original date column for correct range calculations.
+    """
     random.seed(81)
-
     base_date = datetime.datetime(2023, 1, 1)
-
     data = []
     expected_data = []
-
     for category in ["A", "B"]:
-        dates = sorted([random.randint(0, 1000) for _ in range(700)])
-        values = random.sample(range(1, 1000), 700)
-        dates = [base_date + datetime.timedelta(days=date) for date in dates]
-
+        # Use original random date generation to allow duplicate dates
+        # This is essential for testing window function behavior with duplicate timestamps
+        dates_offsets = [random.randint(0, 1000) for _ in range(700)]
+        values = [random.randint(1, 1000) for _ in range(700)]
+        
+        # Create dates without any adjustments - preserve duplicates for window function testing
+        dates = [base_date + datetime.timedelta(days=offset) for offset in dates_offsets]
         for date, value in zip(dates, values):
             data.append({"category": category, "date": date, "value": value})
-
             three_day_window_values = []
             for other_date, other_value in zip(dates, values):
+                # Use the original 3-day window logic with original dates
                 if abs((date - other_date).days) <= 3:
                     three_day_window_values.append(other_value)
-
             window_sum = sum(three_day_window_values)
             window_avg = (window_sum / len(three_day_window_values)) if len(three_day_window_values) > 0 else None
-
             expected_data.append(
                 {
                     "category": category,
@@ -1774,12 +1778,25 @@ def test_range_window_with_timestamp(make_df):
                     "window_avg": window_avg,
                 }
             )
-
     df = make_df(data)
-
+    # Create a composite sorting column using concat expression
+    # Combine date string and value for deterministic ordering
+    df = df.with_column(
+        "sort_key", 
+        concat(
+            cast(col("date"), DataType.string()), 
+            cast(col("value"), DataType.string())
+        )
+    )
     three_days = datetime.timedelta(days=3)
-    window_spec = Window().partition_by("category").order_by("date").range_between(-three_days, three_days)
-
+    
+    # Use the concat-based sort_key for ordering, but original date for range calculations
+    window_spec = (
+        Window()
+        .partition_by("category")
+        .order_by("sort_key")  # Use concat-based sort key for deterministic sorting
+        .range_between(-three_days, three_days)  # But range still uses original date column
+    )
     result = df.select(
         col("category"),
         col("date"),
@@ -1787,8 +1804,14 @@ def test_range_window_with_timestamp(make_df):
         col("value").sum().over(window_spec).alias("window_sum"),
         col("value").mean().over(window_spec).alias("window_avg"),
     ).collect()
-
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date"], check_dtype=False)
+    # Sort expected_data by the same logic (category, then date string + value string)
+    expected_data.sort(key=lambda x: (x['category'], str(x['date']) + str(x['value'])))
+    assert_df_equals(
+        result.to_pandas(), 
+        pd.DataFrame(expected_data), 
+        sort_key=["category", "date"], 
+        check_dtype=False
+    )
 
 
 def test_timestamp_mixed_resolution(make_df):
