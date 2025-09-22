@@ -670,3 +670,7 @@ def test_to_arrow_iterator() -> None:
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
     it = df.to_arrow_iter()
     assert isinstance(next(it), pa.RecordBatch)
+
+
+def test_pass() -> None:
+    pass
