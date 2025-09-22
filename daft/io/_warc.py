@@ -60,6 +60,7 @@ def read_warc(
 
     schema = {
         "WARC-Record-ID": DataType.string(),
+        "WARC-Target-URI": DataType.string(),
         "WARC-Type": DataType.string(),
         "WARC-Date": DataType.timestamp(TimeUnit.ns(), timezone="Etc/UTC"),
         "Content-Length": DataType.int64(),
