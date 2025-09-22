@@ -47,8 +47,8 @@ async fn get_query(
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StartQueryArgs {
-    start_sec: u64,
-    unoptimized_plan: Arc<str>,
+    pub start_sec: u64,
+    pub unoptimized_plan: Arc<str>,
 }
 
 async fn query_start(
@@ -70,7 +70,7 @@ async fn query_start(
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlanStartArgs {
-    plan_start_sec: u64,
+    pub plan_start_sec: u64,
 }
 
 async fn plan_start(
@@ -86,8 +86,8 @@ async fn plan_start(
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlanEndArgs {
-    plan_end_sec: u64,
-    optimized_plan: Arc<str>,
+    pub plan_end_sec: u64,
+    pub optimized_plan: Arc<str>,
 }
 
 async fn plan_end(
@@ -110,8 +110,8 @@ async fn plan_end(
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExecStartArgs {
-    exec_start_sec: u64,
-    node_infos: Vec<NodeInfo>,
+    pub exec_start_sec: u64,
+    pub node_infos: Vec<NodeInfo>,
 }
 
 async fn exec_start(
@@ -147,35 +147,35 @@ async fn exec_start(
     StatusCode::OK
 }
 
-async fn exec_operator_start(
+async fn exec_op_start(
     State(state): State<Arc<DashboardState>>,
-    Path((query_id, operator_id)): Path<(String, usize)>,
+    Path((query_id, op_id)): Path<(String, usize)>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.status else {
         return StatusCode::BAD_REQUEST;
     };
 
-    exec_info.operators.get_mut(&operator_id).unwrap().status = OperatorStatus::Executing;
+    exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Executing;
     StatusCode::OK
 }
 
-async fn exec_operator_end(
+async fn exec_op_end(
     State(state): State<Arc<DashboardState>>,
-    Path((query_id, operator_id)): Path<(String, usize)>,
+    Path((query_id, op_id)): Path<(String, usize)>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.status else {
         return StatusCode::BAD_REQUEST;
     };
 
-    exec_info.operators.get_mut(&operator_id).unwrap().status = OperatorStatus::Finished;
+    exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Finished;
     StatusCode::OK
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExecEmitStatsArgs {
-    stats: Vec<(usize, HashMap<String, Stat>)>,
+    pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
 async fn exec_emit_stats(
@@ -196,7 +196,7 @@ async fn exec_emit_stats(
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExecEndArgs {
-    exec_end_sec: u64,
+    pub exec_end_sec: u64,
 }
 
 async fn exec_end(
@@ -223,9 +223,9 @@ async fn exec_end(
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FinalizeArgs {
-    end_sec: u64,
+    pub end_sec: u64,
     // IPC-serialized RecordBatch
-    results: Vec<u8>,
+    pub results: Vec<u8>,
 }
 
 async fn query_end(
@@ -256,7 +256,7 @@ async fn query_end(
     StatusCode::OK
 }
 
-pub fn routes() -> Router<Arc<DashboardState>> {
+pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
         .route("/ping", get(ping))
         .route("/queries", get(get_query_summaries))
@@ -266,14 +266,8 @@ pub fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/:query_id/plan_start", post(plan_start))
         .route("/query/:query_id/plan_end", post(plan_end))
         .route("/query/:query_id/exec/start", post(exec_start))
-        .route(
-            "/query/:query_id/exec/:operator_id/start",
-            post(exec_operator_start),
-        )
-        .route(
-            "/query/:query_id/exec/:operator_id/end",
-            post(exec_operator_end),
-        )
+        .route("/query/:query_id/exec/:op_id/start", post(exec_op_start))
+        .route("/query/:query_id/exec/:op_id/end", post(exec_op_end))
         .route("/query/:query_id/exec/emit_stats", post(exec_emit_stats))
         .route("/query/:query_id/exec/end", post(exec_end))
         .route("/query/:query_id/end", post(query_end))

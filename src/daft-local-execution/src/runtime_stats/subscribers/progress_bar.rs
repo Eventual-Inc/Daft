@@ -1,9 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
 use common_metrics::{
-    StatSnapshotSend,
+    NodeID, StatSnapshotSend,
     ops::{NodeCategory, NodeInfo},
 };
 use indicatif::{ProgressDrawTarget, ProgressStyle};
@@ -171,6 +172,7 @@ impl Drop for IndicatifProgressBarManager {
     }
 }
 
+#[async_trait]
 impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     #[cfg(test)]
     #[allow(dead_code)]
@@ -178,27 +180,27 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         self
     }
 
-    fn initialize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
-        let pb = self.pbars.get(node_info.id).unwrap();
+    async fn initialize_node(&self, node_id: NodeID) -> DaftResult<()> {
+        let pb = self.pbars.get(node_id).unwrap();
         pb.enable_steady_tick(TICK_INTERVAL);
         Ok(())
     }
 
-    fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
-        let pb = self.pbars.get(node_info.id).unwrap();
+    async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
+        let pb = self.pbars.get(node_id).unwrap();
         pb.finish();
         Ok(())
     }
 
-    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
-        for (node_info, event) in events {
-            let pb = self.pbars.get(node_info.id).unwrap();
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_id, event) in events {
+            let pb = self.pbars.get(*node_id).unwrap();
             pb.set_message(event_to_message(event));
         }
         Ok(())
     }
 
-    fn finish(mut self: Box<Self>) -> DaftResult<()> {
+    async fn finish(mut self: Box<Self>) -> DaftResult<()> {
         self.pbars.clear();
         self.multi_progress.clear()?;
         Ok(())
@@ -295,6 +297,7 @@ mod python {
         }
     }
 
+    #[async_trait]
     impl RuntimeStatsSubscriber for TqdmProgressBarManager {
         #[cfg(test)]
         #[allow(dead_code)]
@@ -302,25 +305,25 @@ mod python {
             self
         }
 
-        fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+        async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
             Ok(())
         }
 
-        fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
-            let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
+        async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
+            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
             self.close_bar(*pb_id)?;
             Ok(())
         }
 
-        fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
-            for (node_info, event) in events {
-                let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+            for (node_id, event) in events {
+                let pb_id = self.node_id_to_pb_id.get(node_id).unwrap();
                 self.update_bar(*pb_id, &event_to_message(event))?;
             }
             Ok(())
         }
 
-        fn finish(self: Box<Self>) -> DaftResult<()> {
+        async fn finish(self: Box<Self>) -> DaftResult<()> {
             Ok(())
         }
     }

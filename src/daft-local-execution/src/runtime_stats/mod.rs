@@ -34,9 +34,8 @@ use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
-        opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
-        query::QuerySubscriberWrapper,
+        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
+        progress_bar::make_progress_bar_manager, query::QuerySubscriberWrapper,
     },
 };
 
@@ -133,11 +132,7 @@ impl RuntimeStatsManager {
         }
 
         if should_enable_opentelemetry() {
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
-        }
-
-        if DashboardSubscriber::is_enabled() {
-            subscribers.push(Box::new(DashboardSubscriber::new()));
+            subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
         }
 
         let throttle_interval = Duration::from_millis(200);
@@ -182,19 +177,18 @@ impl RuntimeStatsManager {
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
                             for subscriber in &subscribers {
-                                if let Err(e) = subscriber.initialize_node(&node_stats[node_id].0) {
+                                if let Err(e) = subscriber.initialize_node(node_id).await {
                                     log::error!("Failed to initialize node: {}", e);
                                 }
                             }
                         } else if !is_initialize && active_nodes.remove(&node_id) {
-                            let (node_info, runtime_stats) = &node_stats[node_id];
-                            let event = runtime_stats.flush();
-                            let event = [(node_info.as_ref(), event)];
+                            let (_, runtime_stats) = &node_stats[node_id];
+                            let event = [(node_id, runtime_stats.flush())];
                             for subscriber in &subscribers {
-                                if let Err(e) = subscriber.handle_event(&event) {
+                                if let Err(e) = subscriber.handle_event(&event).await {
                                     log::error!("Failed to handle event: {}", e);
                                 }
-                                if let Err(e) = subscriber.finalize_node(&node_stats[node_id].0) {
+                                if let Err(e) = subscriber.finalize_node(node_id).await {
                                     log::error!("Failed to finalize node: {}", e);
                                 }
                             }
@@ -207,12 +201,12 @@ impl RuntimeStatsManager {
                         }
 
                         for node_id in &active_nodes {
-                            let (node_info, runtime_stats) = &node_stats[*node_id];
+                            let (_, runtime_stats) = &node_stats[*node_id];
                             let event = runtime_stats.snapshot();
-                            snapshot_container.push((node_info.as_ref(), event));
+                            snapshot_container.push((*node_id, event));
                         }
                         for subscriber in &subscribers {
-                            if let Err(e) = subscriber.handle_event(snapshot_container.as_slice()) {
+                            if let Err(e) = subscriber.handle_event(snapshot_container.as_slice()).await {
                                 log::error!("Failed to handle event: {}", e);
                             }
                         }
@@ -222,7 +216,7 @@ impl RuntimeStatsManager {
             }
 
             for subscriber in subscribers {
-                if let Err(e) = subscriber.finish() {
+                if let Err(e) = subscriber.finish().await {
                     log::error!("Failed to flush subscriber: {}", e);
                 }
             }
@@ -354,9 +348,10 @@ impl InitializingCountingReceiver {
 mod tests {
     use std::sync::{Arc, Mutex, atomic::AtomicU64};
 
+    use async_trait::async_trait;
     use common_error::DaftResult;
     use common_metrics::{
-        Stat, StatSnapshotSend,
+        NodeID, Stat, StatSnapshotSend,
         ops::{NodeCategory, NodeType},
     };
     use tokio::time::{Duration, sleep};
@@ -395,20 +390,21 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl RuntimeStatsSubscriber for MockSubscriber {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
 
-        fn initialize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
+        async fn initialize_node(&self, _node_id: NodeID) -> DaftResult<()> {
             Ok(())
         }
 
-        fn finalize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
+        async fn finalize_node(&self, _node_id: NodeID) -> DaftResult<()> {
             Ok(())
         }
 
-        fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -418,7 +414,7 @@ mod tests {
             Ok(())
         }
 
-        fn finish(self: Box<Self>) -> DaftResult<()> {
+        async fn finish(self: Box<Self>) -> DaftResult<()> {
             Ok(())
         }
     }
@@ -525,23 +521,24 @@ mod tests {
         #[derive(Debug)]
         struct FailingSubscriber;
 
+        #[async_trait]
         impl RuntimeStatsSubscriber for FailingSubscriber {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
-            fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+            async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
-            fn finalize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+            async fn finalize_node(&self, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
 
-            fn handle_event(&self, _: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+            async fn handle_event(&self, _: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
             }
-            fn finish(self: Box<Self>) -> DaftResult<()> {
+            async fn finish(self: Box<Self>) -> DaftResult<()> {
                 Ok(())
             }
         }

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
@@ -11,6 +12,7 @@ use crate::subscribers::{NodeID, QuerySubscriber};
 #[derive(Debug)]
 pub struct PyQuerySubscriberWrapper(pub(crate) PyObject);
 
+#[async_trait]
 impl QuerySubscriber for PyQuerySubscriberWrapper {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         Python::with_gil(|py| {
@@ -68,7 +70,7 @@ impl QuerySubscriber for PyQuerySubscriberWrapper {
         })
     }
 
-    fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0.call_method1(
                 py,
@@ -79,7 +81,7 @@ impl QuerySubscriber for PyQuerySubscriberWrapper {
         })
     }
 
-    fn on_exec_emit_stats(
+    async fn on_exec_emit_stats(
         &self,
         query_id: String,
         stats: &[(NodeID, StatSnapshotView)],
@@ -104,7 +106,7 @@ impl QuerySubscriber for PyQuerySubscriberWrapper {
         })
     }
 
-    fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0
                 .call_method1(py, intern!(py, "on_exec_operator_end"), (query_id, node_id))?;
@@ -112,7 +114,7 @@ impl QuerySubscriber for PyQuerySubscriberWrapper {
         })
     }
 
-    fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
+    async fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0
                 .call_method1(py, intern!(py, "on_exec_end"), (query_id,))?;

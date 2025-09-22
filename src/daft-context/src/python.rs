@@ -75,6 +75,7 @@ impl PyDaftContext {
         query_id: String,
         results: Vec<PyMicroPartition>,
     ) -> PyResult<()> {
+        eprintln!("results: {}", results.len());
         py.allow_threads(|| {
             self.inner.notify_query_end(
                 query_id,

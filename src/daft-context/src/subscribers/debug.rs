@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 
 #[derive(Debug)]
 pub struct DebugSubscriber;
 
-use crate::subscribers::{NodeID, QuerySubscriber};
+use crate::subscribers::QuerySubscriber;
 
+#[async_trait]
 impl QuerySubscriber for DebugSubscriber {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         eprintln!(
@@ -48,7 +50,7 @@ impl QuerySubscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         eprintln!(
             "Started executing operator `{}` in query `{}`",
             node_id, query_id
@@ -56,7 +58,7 @@ impl QuerySubscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_exec_emit_stats(
+    async fn on_exec_emit_stats(
         &self,
         query_id: String,
         stats: &[(NodeID, StatSnapshotView)],
@@ -71,7 +73,7 @@ impl QuerySubscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         eprintln!(
             "Finished executing operator `{}` in query `{}`",
             node_id, query_id
@@ -79,7 +81,7 @@ impl QuerySubscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
+    async fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
         eprintln!("Finished executing query `{}`", query_id);
         Ok(())
     }
