@@ -65,7 +65,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file import file, file_size
+from .file_ import file, file_size
 
 from .image import (
     resize,
