@@ -22,7 +22,7 @@
     "next": "15.5.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "tailwind-merge": "^2.6.0",
+    "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
@@ -32,7 +32,7 @@
     "eslint": "^9.36.0",
     "eslint-config-next": "15.5.3",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.13",
+    "@tailwindcss/postcss": "^4.1.13",
     "typescript": "^5.9.2"
   },
   "engines": {

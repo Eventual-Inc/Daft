@@ -14,10 +14,10 @@ const eslintConfig = [
     {
         rules: {
             "@typescript-eslint/no-explicit-any": "off",
-            'react/display-name': 'off',
-            'indent': ['error', 4], // Sets indentation to 4 spaces
-            'semi': ['error', 'always'],
-            'quotes': ['error', 'double'],
+            "react/display-name": "off",
+            "indent": ["error", 4], // Sets indentation to 4 spaces
+            "semi": ["error", "always"],
+            "quotes": ["error", "double"],
             "@typescript-eslint/no-unused-vars": [
                 "warn",
                 {
