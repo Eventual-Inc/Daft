@@ -31,15 +31,18 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "@types/node": "^20.19.17",
+    "@eslint/eslintrc": "^3.3.1",
+    "@types/bun": "^1.2.0",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
     "eslint": "^9.36.0",
     "eslint-config-next": "15.1.6",
-    "@eslint/eslintrc": "^3.3.1"
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.2"
   },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "packageManager": "bun@1.2.12"
 }
