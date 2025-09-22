@@ -9,7 +9,7 @@ use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use futures::stream::BoxStream;
 
-use crate::{micropartition::MicroPartitionRef, MicroPartition};
+use crate::{MicroPartition, micropartition::MicroPartitionRef};
 
 impl Partition for MicroPartition {
     fn as_any(&self) -> &dyn Any {

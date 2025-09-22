@@ -3,8 +3,8 @@ use std::{collections::VecDeque, hash::BuildHasher, iter::repeat_with};
 use daft_hash::MurBuildHasher;
 use daft_minhash::{load_simd, minhash_in};
 use tango_bench::{
-    benchmark_fn, tango_benchmarks, tango_main, Benchmark, IntoBenchmarks, MeasurementSettings,
-    DEFAULT_SETTINGS,
+    Benchmark, DEFAULT_SETTINGS, IntoBenchmarks, MeasurementSettings, benchmark_fn,
+    tango_benchmarks, tango_main,
 };
 use xxhash_rust::{xxh3::Xxh3DefaultBuilder, xxh64::Xxh64Builder};
 

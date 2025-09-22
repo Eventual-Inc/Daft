@@ -1,3 +1,5 @@
+"""AI Functions."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Union
@@ -16,8 +18,11 @@ from daft.ai.provider import Provider
 if TYPE_CHECKING:
     from daft.ai.protocols import TextEmbedderDescriptor
     from daft.utils import ColumnInputType
+    from daft.ai.typing import Label
 
 __all__ = [
+    "classify_text",
+    "embed_image",
     "embed_text",
 ]
 
@@ -79,9 +84,99 @@ def embed_text(
     # load a TextEmbedderDescriptor from the resolved provider
     text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
-    # implemented as class-based UDF for now
-    expr = udf(return_dtype=text_embedder.get_dimensions().as_dtype(), concurrency=1, use_process=False)(
-        _TextEmbedderExpression
+    # implemented as a class-based udf for now
+    expr_callable = udf(
+        return_dtype=text_embedder.get_dimensions().as_dtype(),
+        concurrency=1,
+        use_process=False,
     )
+
+    expr = expr_callable(_TextEmbedderExpression)
     expr = expr.with_init_args(text_embedder)
+    return expr(text)
+
+
+def embed_image(
+    image: Expression,
+    *,
+    provider: str | Provider | None = None,
+    model: str | None = None,
+    **options: str,
+) -> Expression:
+    """Returns an expression that embeds images using the specified image model and provider.
+
+    Args:
+        image (Expression): The input image column expression.
+        provider (str | Provider | None): The provider to use for the image model. If None, the default provider is used.
+        model (str | None): The image model to use. Can be a model instance or a model name. If None, the default model is used.
+        **options: Any additional options to pass for the model.
+
+    Note:
+        Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
+
+    Returns:
+        Expression: An expression representing the embedded image vectors.
+    """
+    from daft.ai._expressions import _ImageEmbedderExpression
+    from daft.ai.protocols import ImageEmbedder
+
+    image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
+
+    # implemented as a class-based udf for now
+    expr_udf = udf(
+        return_dtype=image_embedder.get_dimensions().as_dtype(),
+        concurrency=1,
+        use_process=False,
+    )
+
+    expr = expr_udf(_ImageEmbedderExpression)
+    expr = expr.with_init_args(image_embedder)
+    return expr(image)
+
+
+##
+# CLASSIFY FUNCTIONS
+##
+
+
+def classify_text(
+    text: Expression,
+    labels: Label | list[Label],
+    *,
+    provider: str | Provider | None = None,
+    model: str | None = None,
+    **options: str,
+) -> Expression:
+    """Returns an expression that classifies text using the specified model and provider.
+
+    Args:
+        text (Expression): The input text column expression.
+        labels (str | list[str]): Label(s) for classification.
+        provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
+        model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        **options: Any additional options to pass for the model.
+
+    Note:
+        Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
+
+    Returns:
+        Expression: An expression representing the most-probable label string.
+    """
+    from daft.ai._expressions import _TextClassificationExpression
+    from daft.ai.protocols import TextClassifier
+
+    text_classifier = _resolve_provider(provider, "transformers").get_text_classifier(model, **options)
+
+    # TODO(rchowell): classification with structured outputs will be more interesting
+    label_list = [labels] if isinstance(labels, str) else labels
+
+    # implemented as a class-based udf for now
+    expr_callable = udf(
+        return_dtype=DataType.string(),
+        concurrency=1,
+        use_process=False,
+    )
+
+    expr = expr_callable(_TextClassificationExpression)
+    expr = expr.with_init_args(text_classifier, label_list)
     return expr(text)

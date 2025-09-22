@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 use common_error::DaftError;
 use snafu::Snafu;
 

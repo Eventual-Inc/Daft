@@ -7,7 +7,7 @@ use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, Sc
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
+use daft_io::{FileMetadata, IOClient, IOStatsContext, IOStatsRef, parse_url};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::RecordBatch;
 use daft_schema::{
@@ -16,13 +16,13 @@ use daft_schema::{
     schema::{Schema, SchemaRef},
 };
 use daft_stats::{PartitionSpec, TableMetadata};
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::Snafu;
 
 use crate::{
+    ChunkSpec, DataSource, ScanTask,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
-    ChunkSpec, DataSource, ScanTask,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -76,13 +76,13 @@ impl From<Error> for DaftError {
 }
 
 async fn run_glob(
-    glob_path: &str,
+    glob_path: String,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     file_format: FileFormat,
 ) -> DaftResult<impl Stream<Item = DaftResult<FileMetadata>> + Send> {
-    let (_, parsed_glob_path) = parse_url(glob_path)?;
+    let (_, parsed_glob_path) = parse_url(&glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
     let stream = io_client
@@ -155,7 +155,7 @@ impl GlobScanOperator {
             "GlobScanOperator::try_new schema inference for {first_glob_path}"
         ));
         let mut paths = run_glob(
-            first_glob_path,
+            first_glob_path.clone(),
             Some(1),
             io_client.clone(),
             Some(io_stats.clone()),
@@ -169,7 +169,7 @@ impl GlobScanOperator {
         } = match paths.next().await {
             Some(file_metadata) => file_metadata,
             None => Err(Error::GlobNoMatch {
-                glob_path: first_glob_path.to_string(),
+                glob_path: first_glob_path.clone(),
             }
             .into()),
         }?;
@@ -275,19 +275,19 @@ impl GlobScanOperator {
                     FileFormatConfig::Warc(_) => {
                         return Err(DaftError::ValueError(
                             "Warc schemas do not need to be inferred".to_string(),
-                        ))
+                        ));
                     }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {
                         return Err(DaftError::ValueError(
                             "Cannot glob a database source".to_string(),
-                        ))
+                        ));
                     }
                     #[cfg(feature = "python")]
                     FileFormatConfig::PythonFunction => {
                         return Err(DaftError::ValueError(
                             "Cannot glob a PythonFunction source".to_string(),
-                        ))
+                        ));
                     }
                 };
                 match user_provided_schema {
@@ -353,7 +353,7 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn supports_count_pushdown(&self) -> bool {
-        false
+        self.file_format_config.file_format() == FileFormat::Parquet
     }
 
     fn multiline_display(&self) -> Vec<String> {

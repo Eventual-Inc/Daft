@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    series::{array_impl::IntoSeries, Series},
+    series::{Series, array_impl::IntoSeries},
     with_match_comparable_daft_types,
 };
 

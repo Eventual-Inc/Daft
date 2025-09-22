@@ -2,15 +2,15 @@ use std::ops::{AddAssign, SubAssign};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{try_mean_aggregation_supertype, DaftPrimitiveType},
+    datatypes::{DaftPrimitiveType, try_mean_aggregation_supertype},
     prelude::*,
 };
 use num_traits::Zero;
 
 use super::WindowAggStateOps;
 use crate::{
-    ops::window_states::{CountWindowState, SumWindowState},
     RecordBatch,
+    ops::window_states::{CountWindowState, SumWindowState},
 };
 
 pub struct MeanWindowState<T>

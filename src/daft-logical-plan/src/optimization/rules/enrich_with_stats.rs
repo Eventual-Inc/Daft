@@ -12,7 +12,7 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 
 use super::OptimizerRule;
-use crate::{stats::StatsState, LogicalPlan};
+use crate::{LogicalPlan, stats::StatsState};
 
 // Add stats to all logical plan nodes in a bottom up fashion.
 // All scan nodes MUST be materialized before stats are enriched.

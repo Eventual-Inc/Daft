@@ -11,8 +11,8 @@ use pyo3::{exceptions::PyIndexError, intern, prelude::*, types::PyDict};
 pub use wrappers::{PyCatalogWrapper, PyTableWrapper};
 
 use crate::{
-    impls::memory::{MemoryCatalog, MemoryTable},
     Catalog, CatalogRef, Identifier, Table, TableRef, TableSource,
+    impls::memory::{MemoryCatalog, MemoryTable},
 };
 
 #[derive(Clone)]

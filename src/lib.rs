@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 #![allow(clippy::useless_conversion)]
 
 #[cfg(not(target_env = "msvc"))]
@@ -16,7 +15,7 @@ union U {
 
 #[cfg(target_env = "gnu")]
 #[allow(non_upper_case_globals)]
-#[export_name = "_rjem_malloc_conf"]
+#[unsafe(export_name = "_rjem_malloc_conf")]
 pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     U {
         x: &b"oversize_threshold:1,background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000\0"[0],
@@ -26,7 +25,7 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
 
 #[cfg(target_os = "macos")]
 #[allow(non_upper_case_globals)]
-#[export_name = "_rjem_malloc_conf"]
+#[unsafe(export_name = "_rjem_malloc_conf")]
 pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     U {
         x: &b"oversize_threshold:1,background_thread:false,dirty_decay_ms:0,muzzy_decay_ms:0\0"[0],
@@ -132,6 +131,7 @@ pub mod pylib {
         daft_catalog::register_modules(m)?;
         daft_connect::register_modules(m)?;
         daft_context::register_modules(m)?;
+        daft_runners::register_modules(m)?;
         daft_core::register_modules(m)?;
         daft_core::python::register_modules(m)?;
         daft_csv::register_modules(m)?;
@@ -176,14 +176,12 @@ pub mod pylib {
         functions_registry.register::<daft_functions_uri::UriFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
         functions_registry.register::<daft_functions_binary::BinaryFunctions>();
-        functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_list::ListFunctions>();
         functions_registry.register::<daft_functions_utf8::Utf8Functions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_serde::SerdeFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
-        functions_registry.register::<daft_functions::HashFunctions>();
-        functions_registry.register::<daft_functions::ConversionFunctions>();
+        functions_registry.register::<daft_functions::MiscFunctions>();
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
 

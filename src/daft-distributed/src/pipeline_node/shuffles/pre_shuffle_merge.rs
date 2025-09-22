@@ -1,22 +1,22 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        task::{SchedulingStrategy, SwordfishTask, TaskContext},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct PreShuffleMergeNode {
@@ -172,6 +172,10 @@ impl PreShuffleMergeNode {
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
                         &(self_clone as Arc<dyn DistributedPipelineNode>),
+                        Some(SchedulingStrategy::WorkerAffinity {
+                            worker_id,
+                            soft: false,
+                        }),
                     )?;
 
                     // Send the task directly to result_tx
@@ -183,13 +187,17 @@ impl PreShuffleMergeNode {
         }
 
         // Handle any remaining buckets that haven't reached the threshold
-        for (_, materialized_outputs) in worker_buckets {
+        for (worker_id, materialized_outputs) in worker_buckets {
             if !materialized_outputs.is_empty() {
                 let self_clone = self.clone();
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
                     &(self_clone as Arc<dyn DistributedPipelineNode>),
+                    Some(SchedulingStrategy::WorkerAffinity {
+                        worker_id,
+                        soft: false,
+                    }),
                 )?;
 
                 if result_tx.send(task).await.is_err() {

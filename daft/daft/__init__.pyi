@@ -77,6 +77,17 @@ class ImageMode(Enum):
         """
         ...
 
+class ImageProperty(Enum):
+    """Supported image properties for Daft's image type."""
+
+    Height = 1
+    Width = 2
+    Channel = 3
+    Mode = 4
+
+    @staticmethod
+    def from_property_string(attr: str) -> ImageProperty: ...
+
 class PyWindowBoundary:
     """Represents a window frame boundary in window functions."""
 
@@ -489,6 +500,8 @@ class S3Config:
         requester_pays (bool, optional): Whether or not the authenticated user will assume transfer costs, which is required by some providers of bulk data, defaults to False
         force_virtual_addressing (bool, optional): Force S3 client to use virtual addressing in all cases. If False, virtual addressing will only be used if `endpoint_url` is empty, defaults to False
         profile_name (str, optional): Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
+        multipart_size (int, optional): The size of multipart part (bytes), the size range should be 5MB to 5GB, defaults to 8MB.
+        multipart_max_concurrency (int, optional): The max concurrency of upload part per object, defaults to 100.
 
     Examples:
         >>> # For AWS S3
@@ -528,6 +541,8 @@ class S3Config:
     requester_pays: bool | None
     force_virtual_addressing: bool | None
     profile_name: str | None
+    multipart_size: int | None
+    multipart_max_concurrency: int | None
 
     def __init__(
         self,
@@ -551,6 +566,8 @@ class S3Config:
         requester_pays: bool | None = None,
         force_virtual_addressing: bool | None = None,
         profile_name: str | None = None,
+        multipart_size: int | None = None,
+        multipart_max_concurrency: int | None = None,
     ): ...
     def replace(
         self,
@@ -573,6 +590,8 @@ class S3Config:
         requester_pays: bool | None = None,
         force_virtual_addressing: bool | None = None,
         profile_name: str | None = None,
+        multipart_size: int | None = None,
+        multipart_max_concurrency: int | None = None,
     ) -> S3Config:
         """Replaces values if provided, returning a new S3Config."""
         ...
@@ -1960,8 +1979,9 @@ class PyDaftExecutionConfig:
         scantask_splitting_level: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
-        use_experimental_distributed_engine: bool | None = None,
+        use_legacy_ray_runner: bool | None = None,
         min_cpu_per_task: float | None = None,
+        actor_udf_ready_timeout: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -2010,9 +2030,11 @@ class PyDaftExecutionConfig:
     @property
     def enable_ray_tracing(self) -> bool: ...
     @property
-    def use_experimental_distributed_engine(self) -> bool: ...
+    def use_legacy_ray_runner(self) -> bool: ...
     @property
     def min_cpu_per_task(self) -> float: ...
+    @property
+    def actor_udf_ready_timeout(self) -> int: ...
     @property
     def scantask_max_parallel(self) -> int: ...
 
@@ -2032,11 +2054,6 @@ class PyDaftPlanningConfig:
 class PyDaftContext:
     def __init__(self) -> None: ...
 
-    _runner: Runner[Any]
-
-    def get_or_create_runner(self) -> Runner[PartitionT]: ...
-    def get_or_infer_runner_type(self) -> str: ...
-
     _daft_execution_config: PyDaftExecutionConfig
     _daft_planning_config: PyDaftPlanningConfig
 
@@ -2050,16 +2067,12 @@ def set_runner_ray(
     noop_if_initialized: bool = False,
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
-) -> PyDaftContext: ...
-def set_runner_native(num_threads: int | None = None) -> PyDaftContext: ...
+) -> Runner[PartitionT]: ...
+def set_runner_native(num_threads: int | None = None) -> Runner[PartitionT]: ...
+def get_or_create_runner() -> Runner[PartitionT]: ...
+def get_or_infer_runner_type() -> str: ...
+def get_runner() -> Runner[PartitionT] | None: ...
 def get_context() -> PyDaftContext: ...
-def reset_runner() -> None:
-    """Reset/clear the current runner.
-
-    Note: This clears all in-memory state, including the partition cache.
-    """
-    ...
-
 def build_type() -> str: ...
 def version() -> str: ...
 def refresh_logger() -> None: ...
@@ -2218,3 +2231,5 @@ class PyDaftFile:
     def __fspath__(self) -> str: ...
     def __str__(self) -> str: ...
     def closed(self) -> bool: ...
+    def supports_range_requests(self) -> bool: ...
+    def size(self) -> int: ...

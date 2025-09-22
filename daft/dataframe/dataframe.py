@@ -30,6 +30,7 @@ from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
+from daft.runners import get_or_create_runner
 from daft.runners.partitioning import (
     LocalPartitionSet,
     MaterializedResult,
@@ -83,8 +84,7 @@ def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     for i, part in enumerate(parts):
         result_pset.set_partition_from_table(i, part)
 
-    context = get_context()
-    cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
+    cache_entry = get_or_create_runner().put_partition_set_into_cache(result_pset)
     size_bytes = result_pset.size_bytes()
     num_rows = len(result_pset)
 
@@ -301,28 +301,21 @@ class DataFrame:
             builder = builder.optimize()
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
-            if get_context().get_or_create_runner().name != "native":
-                # Check if flotilla is enabled for distributed execution
+            if get_or_create_runner().name != "native":
                 daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.use_experimental_distributed_engine:
-                    try:
-                        from daft.daft import DistributedPhysicalPlan
-
-                        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                            builder._builder, daft_execution_config
-                        )
-                        if format == "ascii":
-                            print_to_file(distributed_plan.repr_ascii(simple))
-                        elif format == "mermaid":
-                            print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
-                    except Exception:
-                        physical_plan_scheduler = builder.to_physical_plan_scheduler(
-                            get_context().daft_execution_config
-                        )
-                        print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
-                else:
+                if daft_execution_config.use_legacy_ray_runner:
                     physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
                     print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+                else:
+                    from daft.daft import DistributedPhysicalPlan
+
+                    distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                        builder._builder, daft_execution_config
+                    )
+                    if format == "ascii":
+                        print_to_file(distributed_plan.repr_ascii(simple))
+                    elif format == "mermaid":
+                        print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
             else:
                 native_executor = NativeExecutor()
                 print_to_file(
@@ -508,8 +501,7 @@ class DataFrame:
                 )
         else:
             # Execute the dataframe in a streaming fashion.
-            context = get_context()
-            partitions_iter = context.get_or_create_runner().run_iter_tables(
+            partitions_iter = get_or_create_runner().run_iter_tables(
                 self._builder, results_buffer_size=results_buffer_size
             )
 
@@ -578,8 +570,7 @@ class DataFrame:
                 yield from (result.micropartition().to_arrow().to_batches())
         else:
             # Execute the dataframe in a streaming fashion.
-            context = get_context()
-            partitions_iter = context.get_or_create_runner().run_iter_tables(
+            partitions_iter = get_or_create_runner().run_iter_tables(
                 self._builder, results_buffer_size=results_buffer_size
             )
 
@@ -654,8 +645,7 @@ class DataFrame:
 
         else:
             # Execute the dataframe in a streaming fashion.
-            context = get_context()
-            results_iter: Iterator[MaterializedResult[Any]] = context.get_or_create_runner().run_iter(
+            results_iter: Iterator[MaterializedResult[Any]] = get_or_create_runner().run_iter(
                 self._builder, results_buffer_size=results_buffer_size
             )
             for result in results_iter:
@@ -756,8 +746,7 @@ class DataFrame:
         for i, part in enumerate(parts):
             result_pset.set_partition_from_table(i, part)
 
-        context = get_context()
-        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
+        cache_entry = get_or_create_runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
         num_rows = len(result_pset)
 
@@ -2602,7 +2591,7 @@ class DataFrame:
             3
 
         """
-        if get_context().get_or_create_runner().name == "native":
+        if get_or_create_runner().name == "native":
             warnings.warn(
                 "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
             )
@@ -2637,7 +2626,7 @@ class DataFrame:
             >>> df_with_5_partitions.num_partitions()
             5
         """
-        if get_context().get_or_create_runner().name == "native":
+        if get_or_create_runner().name == "native":
             warnings.warn(
                 "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
             )
@@ -2951,6 +2940,18 @@ class DataFrame:
             ...         ],
             ...     }
             ... )
+            >>> df.collect()
+            ╭─────────────┬────────────┬───────────────╮
+            │ x           ┆ y          ┆ z             │
+            │ ---         ┆ ---        ┆ ---           │
+            │ List[Int64] ┆ List[Utf8] ┆ List[Float64] │
+            ╞═════════════╪════════════╪═══════════════╡
+            │ [1]         ┆ [a]        ┆ [1]           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [2, 3]      ┆ [b, c]     ┆ [2, 2]        │
+            ╰─────────────┴────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
             >>> df.explode(df["x"], df["y"]).collect()
             ╭───────┬──────┬───────────────╮
             │ x     ┆ y    ┆ z             │
@@ -2965,6 +2966,46 @@ class DataFrame:
             ╰───────┴──────┴───────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
+
+            Example with Null values and empty lists:
+
+            >>> df2 = daft.from_pydict(
+            ...     {"id": [1, 2, 3, 4], "values": [[1, 2], [], None, [3]], "labels": [["a", "b"], [], None, ["c"]]}
+            ... )
+            >>> df2.collect()
+            ╭───────┬─────────────┬────────────╮
+            │ id    ┆ values      ┆ labels     │
+            │ ---   ┆ ---         ┆ ---        │
+            │ Int64 ┆ List[Int64] ┆ List[Utf8] │
+            ╞═══════╪═════════════╪════════════╡
+            │ 1     ┆ [1, 2]      ┆ [a, b]     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ []          ┆ []         │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None        ┆ None       │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ [3]         ┆ [c]        │
+            ╰───────┴─────────────┴────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+            >>> df2.explode(df2["values"], df2["labels"]).collect()
+            ╭───────┬────────┬────────╮
+            │ id    ┆ values ┆ labels │
+            │ ---   ┆ ---    ┆ ---    │
+            │ Int64 ┆ Int64  ┆ Utf8   │
+            ╞═══════╪════════╪════════╡
+            │ 1     ┆ 1      ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1     ┆ 2      ┆ b      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ None   ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None   ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 3      ┆ c      │
+            ╰───────┴────────┴────────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
 
         """
         parsed_exprs = self.__column_input_to_expression(columns)
@@ -3925,9 +3966,8 @@ class DataFrame:
 
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
-        context = get_context()
         if self._result is None:
-            self._result_cache = context.get_or_create_runner().run(self._builder)
+            self._result_cache = get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -3992,7 +4032,7 @@ class DataFrame:
             # Iteratively retrieve partitions until enough data has been materialized
             tables = []
             seen = 0
-            for table in get_context().get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
+            for table in get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
                 tables.append(table)
                 seen += len(table)
                 if seen >= n:
@@ -4408,17 +4448,16 @@ class DataFrame:
         """Creates a DataFrame from a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset)."""
         from ray.exceptions import RayTaskError
 
-        context = get_context()
-        if context.get_or_create_runner().name != "ray":
+        if get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.get_or_create_runner().runner_io()
+        ray_runner_io = get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
-        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
+        cache_entry = get_or_create_runner().put_partition_set_into_cache(partition_set)
         try:
             size_bytes = partition_set.size_bytes()
         except RayTaskError as e:
@@ -4444,6 +4483,7 @@ class DataFrame:
         df._result_cache = cache_entry
 
         # build preview
+        context = get_context()
         num_preview_rows = context.daft_execution_config.num_preview_rows
         dataframe_num_rows = len(df)
         if dataframe_num_rows > num_preview_rows:
@@ -4517,17 +4557,16 @@ class DataFrame:
         """Creates a Daft DataFrame from a Dask DataFrame."""
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
-        context = get_context()
-        if context.get_or_create_runner().name != "ray":
+        if get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.get_or_create_runner().runner_io()
+        ray_runner_io = get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
-        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
+        cache_entry = get_or_create_runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
@@ -4543,6 +4582,7 @@ class DataFrame:
         df._result_cache = cache_entry
 
         # build preview
+        context = get_context()
         num_preview_rows = context.daft_execution_config.num_preview_rows
         dataframe_num_rows = len(df)
         if dataframe_num_rows > num_preview_rows:
@@ -4688,32 +4728,56 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
+    def list_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped list per column.
         """
-        return self.df._apply_agg_fn(Expression.agg_list, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.list_agg, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs grouped set on this GroupedDataFrame (ignoring nulls).
+    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
+        """(DEPRECATED) Please use `DataFrame.list_agg` instead."""
+        warnings.warn(
+            "`DataFrame.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg` instead.",
+            category=DeprecationWarning,
+        )
+        return self.list_agg(*cols)
+
+    def list_agg_distinct(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped list distinct on this GroupedDataFrame (ignoring nulls).
 
         Args:
             *cols (Union[str, Expression]): columns to form into a set
 
         Returns:
-            DataFrame: DataFrame with grouped set per column.
+            DataFrame: DataFrame with grouped list distinct per column.
         """
-        return self.df._apply_agg_fn(Expression.agg_set, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
-        """Performs grouped concat on this GroupedDataFrame.
+    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
+        """(DEPRECATED) Please use `DataFrame.list_agg_distinct` instead."""
+        warnings.warn(
+            "`DataFrame.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg_distinct` instead.",
+            category=DeprecationWarning,
+        )
+        return self.list_agg_distinct(*cols)
+
+    def string_agg(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped string concat on this GroupedDataFrame.
 
         Returns:
-            DataFrame: DataFrame with grouped concatenated list per column.
+            DataFrame: DataFrame with grouped string concatenated per column.
         """
-        return self.df._apply_agg_fn(Expression.agg_concat, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
+
+    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
+        """(DEPRECATED) Please use `DataFrame.string_agg` instead."""
+        warnings.warn(
+            "`DataFrame.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.string_agg` instead.",
+            category=DeprecationWarning,
+        )
+        return self.string_agg(*cols)
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

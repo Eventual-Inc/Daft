@@ -17,12 +17,12 @@ use clip::Clip;
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::{Field, Schema};
 use daft_dsl::{
-    functions::{FunctionModule, FunctionRegistry, ScalarUDF},
     Expr,
+    functions::{FunctionModule, FunctionRegistry, ScalarUDF},
 };
 use exp::{Exp, Expm1};
 use floor::Floor;
-use log::{Ln, Log, Log10, Log1p, Log2};
+use log::{Ln, Log, Log1p, Log2, Log10};
 use round::Round;
 use sign::{Negative, Sign};
 use sqrt::Sqrt;

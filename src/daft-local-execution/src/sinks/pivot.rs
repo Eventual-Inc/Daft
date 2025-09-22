@@ -4,13 +4,13 @@ use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -19,7 +19,7 @@ pub(crate) enum PivotState {
 
 impl PivotState {
     fn push(&mut self, part: Arc<MicroPartition>) {
-        if let Self::Accumulating(ref mut parts) = self {
+        if let Self::Accumulating(parts) = self {
             parts.push(part);
         } else {
             panic!("PivotSink should be in Accumulating state");
@@ -27,7 +27,7 @@ impl PivotState {
     }
 
     fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
-        let res = if let Self::Accumulating(ref mut parts) = self {
+        let res = if let Self::Accumulating(parts) = self {
             std::mem::take(parts)
         } else {
             panic!("PivotSink should be in Accumulating state");
@@ -43,6 +43,7 @@ struct PivotParams {
     value_column: BoundExpr,
     aggregation: BoundAggExpr,
     names: Vec<String>,
+    pre_agg: bool,
 }
 
 pub struct PivotSink {
@@ -56,6 +57,7 @@ impl PivotSink {
         value_column: BoundExpr,
         aggregation: BoundAggExpr,
         names: Vec<String>,
+        pre_agg: bool,
     ) -> Self {
         Self {
             pivot_params: Arc::new(PivotParams {
@@ -64,6 +66,7 @@ impl PivotSink {
                 value_column,
                 aggregation,
                 names,
+                pre_agg,
             }),
         }
     }
@@ -95,14 +98,22 @@ impl BlockingSink for PivotSink {
                 async move {
                     let all_parts = states.into_iter().flat_map(|mut state| state.finalize());
                     let concated = MicroPartition::concat(all_parts)?;
-                    let group_by_with_pivot = pivot_params
-                        .group_by
-                        .iter()
-                        .chain(std::iter::once(&pivot_params.pivot_column))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let agged =
-                        concated.agg(&[pivot_params.aggregation.clone()], &group_by_with_pivot)?;
+
+                    let agged = if pivot_params.pre_agg {
+                        let group_by_with_pivot = pivot_params
+                            .group_by
+                            .iter()
+                            .chain(std::iter::once(&pivot_params.pivot_column))
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        concated.agg(
+                            std::slice::from_ref(&pivot_params.aggregation),
+                            &group_by_with_pivot,
+                        )?
+                    } else {
+                        concated
+                    };
+
                     let pivoted = Arc::new(agged.pivot(
                         &pivot_params.group_by,
                         pivot_params.pivot_column.clone(),

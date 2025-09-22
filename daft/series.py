@@ -624,6 +624,15 @@ class Series:
         assert self._series is not None and fill_value._series is not None
         return Series._from_pyseries(self._series.fill_null(fill_value._series))
 
+    def regexp_count(
+        self,
+        patterns: str | Series,
+    ) -> Series:
+        return self._eval_expressions(
+            "regexp_count",
+            patterns=patterns,
+        )
+
     def minhash(
         self,
         num_hashes: int,
@@ -841,8 +850,36 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("regexp_match", pattern)
 
     def split(self, pattern: Series, regex: bool = False) -> Series:
-        f_name = "regexp_split" if regex else "split"
-        return self._eval_expressions(f_name, pattern)
+        """Splits each string on the given literal pattern, into a list of strings.
+
+        Args:
+            pattern: The literal pattern on which each string should be split.
+            regex: DEPRECATED. Use regexp_split() instead for regex patterns.
+
+        Returns:
+            Series: A List[Utf8] series containing the string splits for each string.
+        """
+        if regex:
+            import warnings
+
+            warnings.warn(
+                "The 'regex' parameter in str.split() is deprecated and will be removed in v0.7.0. Use str.regexp_split() instead for regex patterns.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self.regexp_split(pattern)
+        return self._eval_expressions("split", pattern)
+
+    def regexp_split(self, pattern: Series) -> Series:
+        """Splits each string on the given regex pattern, into a list of strings.
+
+        Args:
+            pattern: The regex pattern on which each string should be split.
+
+        Returns:
+            Series: A List[Utf8] series containing the string splits for each string.
+        """
+        return self._eval_expressions("regexp_split", pattern)
 
     def concat(self, other: Series) -> Series:
         if not isinstance(other, Series):
@@ -935,7 +972,7 @@ class SeriesStringNamespace(SeriesNamespace):
 
     def count_matches(
         self,
-        patterns: list[str],
+        patterns: str | list[str],
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,

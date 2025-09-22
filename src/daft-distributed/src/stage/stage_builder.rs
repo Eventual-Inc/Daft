@@ -1,11 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
-use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_logical_plan::{
-    partitioning::ClusteringSpecRef, JoinStrategy, LogicalPlan, LogicalPlanRef,
-};
+use common_error::DaftResult;
+use daft_logical_plan::{LogicalPlanRef, partitioning::ClusteringSpecRef};
 use daft_schema::schema::SchemaRef;
 
 use super::{DataChannel, OutputChannel, Stage, StageID, StagePlan, StageType};
@@ -29,68 +26,7 @@ impl StagePlanBuilder {
         curr
     }
 
-    fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
-        let mut can_translate = true;
-        let _ = plan.apply(|node| match node.as_ref() {
-            LogicalPlan::Source(_)
-            | LogicalPlan::Project(_)
-            | LogicalPlan::Filter(_)
-            | LogicalPlan::IntoBatches(_)
-            | LogicalPlan::Sink(_)
-            | LogicalPlan::Sample(_)
-            | LogicalPlan::Explode(_)
-            | LogicalPlan::UDFProject(_)
-            | LogicalPlan::Unpivot(_)
-            | LogicalPlan::MonotonicallyIncreasingId(_)
-            | LogicalPlan::Distinct(_)
-            | LogicalPlan::Aggregate(_)
-            | LogicalPlan::Window(_)
-            | LogicalPlan::Concat(_)
-            | LogicalPlan::Limit(_)
-            | LogicalPlan::Sort(_)
-            | LogicalPlan::Repartition(_)
-            | LogicalPlan::TopN(_) => Ok(TreeNodeRecursion::Continue),
-            LogicalPlan::Join(join) => {
-                if join
-                    .join_strategy
-                    .is_some_and(|x| !matches!(x, JoinStrategy::Hash | JoinStrategy::Broadcast))
-                {
-                    can_translate = false;
-                    Ok(TreeNodeRecursion::Stop)
-                } else {
-                    let (remaining_on, left_on, right_on, _) = join.on.split_eq_preds();
-                    if !remaining_on.is_empty() || left_on.is_empty() || right_on.is_empty() {
-                        can_translate = false;
-                        Ok(TreeNodeRecursion::Stop)
-                    } else {
-                        Ok(TreeNodeRecursion::Continue)
-                    }
-                }
-            }
-            LogicalPlan::Pivot(_) => {
-                can_translate = false;
-                Ok(TreeNodeRecursion::Stop)
-            }
-            LogicalPlan::Intersect(_)
-            | LogicalPlan::Union(_)
-            | LogicalPlan::SubqueryAlias(_)
-            | LogicalPlan::Shard(_)
-            | LogicalPlan::Offset(_) => panic!(
-                "Logical plan operator {} should be optimized away before planning stages",
-                node.name()
-            ),
-        });
-        can_translate
-    }
-
     fn build_stages_from_plan(&mut self, plan: LogicalPlanRef) -> DaftResult<StageID> {
-        if !Self::can_translate_logical_plan(&plan) {
-            return Err(DaftError::ValueError(format!(
-                "Cannot translate logical plan: {} into stages",
-                plan
-            )));
-        }
-
         let schema = plan.schema();
         // Create a MapPipeline stage
         let stage_id = self.next_stage_id();

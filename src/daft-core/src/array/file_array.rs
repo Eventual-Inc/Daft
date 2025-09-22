@@ -1,5 +1,3 @@
-use std::iter::repeat;
-
 use common_file::DaftFile;
 #[cfg(feature = "python")]
 use common_file::DaftFileType;
@@ -39,7 +37,7 @@ impl FileArray {
 
         let discriminant = UInt8Array::from_values(
             "discriminant",
-            repeat(DaftFileType::Reference as u8).take(urls.len()),
+            std::iter::repeat_n(DaftFileType::Reference as u8, urls.len()),
         )
         .into_series();
 
@@ -59,7 +57,7 @@ impl FileArray {
         });
         let io_configs = PythonArray::from((
             "io_config",
-            repeat(io_conf).take(urls.len()).collect::<Vec<_>>(),
+            std::iter::repeat_n(io_conf, urls.len()).collect::<Vec<_>>(),
         ));
 
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
@@ -93,7 +91,7 @@ impl FileArray {
     pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
         let discriminant = UInt8Array::from_values(
             "discriminant",
-            repeat(DaftFileType::Data as u8).take(values.len()),
+            std::iter::repeat_n(DaftFileType::Data as u8, values.len()),
         )
         .into_series();
 

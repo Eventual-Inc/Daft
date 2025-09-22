@@ -9,7 +9,7 @@ use daft_core::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{AsyncFileWriter, WriterFactory, RETURN_PATHS_COLUMN_NAME};
+use crate::{AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, WriterFactory};
 
 pub struct IPCWriter {
     is_closed: bool,

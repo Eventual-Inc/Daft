@@ -8,7 +8,7 @@ use crate::series::utils::python_fn::run_python_binary_operator_fn;
 use crate::{
     array::prelude::*,
     datatypes::{InferDataType, Int32Type, Utf8Array},
-    series::{utils::cast::cast_downcast_op, IntoSeries, Series},
+    series::{IntoSeries, Series, utils::cast::cast_downcast_op},
     with_match_integer_daft_types, with_match_numeric_daft_types,
 };
 
@@ -52,6 +52,26 @@ impl Add for &Series {
             // ----------------
             DataType::Utf8 => {
                 Ok(cast_downcast_op!(lhs, rhs, &DataType::Utf8, Utf8Array, add)?.into_series())
+            }
+            // ----------------
+            // Binary
+            // ----------------
+            DataType::Binary => {
+                Ok(cast_downcast_op!(lhs, rhs, &DataType::Binary, BinaryArray, add)?.into_series())
+            }
+            DataType::FixedSizeBinary(_) => {
+                if lhs.data_type().is_null() || rhs.data_type().is_null() {
+                    Ok(Series::full_null(
+                        lhs.name(),
+                        &output_type,
+                        std::cmp::max(lhs.len(), rhs.len()),
+                    ))
+                } else {
+                    Ok(lhs
+                        .downcast::<FixedSizeBinaryArray>()?
+                        .add(rhs.downcast::<FixedSizeBinaryArray>()?)?
+                        .into_series())
+                }
             }
             // ----------------
             // Numeric types

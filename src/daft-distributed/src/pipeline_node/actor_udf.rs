@@ -7,20 +7,18 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use pyo3::{types::PyAnyMethods, PyObject, Python};
+use pyo3::{PyObject, Python, types::PyAnyMethods};
 
 use super::{
     DisplayLevel, DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig,
     PipelineNodeContext, SubmittableTaskStream, TreeDisplay,
 };
 use crate::{
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SwordfishTask, Task},
-    },
+    pipeline_node::append_plan_to_existing_task,
+    scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
     stage::{StageConfig, StageExecutionContext},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         joinset::JoinSet,
     },
 };
@@ -37,6 +35,7 @@ impl UDFActors {
     async fn initialize_actors(
         projection: &[BoundExpr],
         udf_properties: &UDFProperties,
+        actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
         let (task_locals, py_exprs) = Python::with_gil(|py| {
             let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
@@ -77,6 +76,7 @@ impl UDFActors {
                         gpu_request,
                         cpu_request,
                         memory_request,
+                        actor_ready_timeout,
                     ),
                 )?;
                 pyo3_async_runtimes::tokio::into_future(coroutine)
@@ -98,10 +98,12 @@ impl UDFActors {
         Ok(actors)
     }
 
-    async fn get_actors(&mut self) -> DaftResult<Vec<PyObjectWrapper>> {
+    async fn get_actors(&mut self, actor_ready_timeout: usize) -> DaftResult<Vec<PyObjectWrapper>> {
         match self {
             Self::Uninitialized(projection, udf_properties) => {
-                let actors = Self::initialize_actors(projection, udf_properties).await?;
+                let actors =
+                    Self::initialize_actors(projection, udf_properties, actor_ready_timeout)
+                        .await?;
                 *self = Self::Initialized {
                     actors: actors.clone(),
                 };
@@ -130,6 +132,7 @@ pub(crate) struct ActorUDF {
     child: Arc<dyn DistributedPipelineNode>,
     projection: Vec<BoundExpr>,
     udf_properties: UDFProperties,
+    actor_ready_timeout: usize,
 }
 
 impl ActorUDF {
@@ -164,6 +167,7 @@ impl ActorUDF {
             child,
             projection,
             udf_properties,
+            actor_ready_timeout: stage_config.config.actor_udf_ready_timeout,
         })
     }
 
@@ -181,9 +185,9 @@ impl ActorUDF {
 
         let mut running_tasks = JoinSet::new();
         while let Some(task) = input_task_stream.next().await {
-            let actors = udf_actors.get_actors().await?;
+            let actors = udf_actors.get_actors(self.actor_ready_timeout).await?;
 
-            let modified_task = self.append_actor_udf_to_task(task, actors)?;
+            let modified_task = self.append_actor_udf_to_task(task, actors);
             let (submittable_task, notify_token) = modified_task.add_notify_token();
             running_tasks.spawn(notify_token);
             if result_tx.send(submittable_task).await.is_err() {
@@ -202,10 +206,10 @@ impl ActorUDF {
     }
 
     fn append_actor_udf_to_task(
-        &self,
+        self: &Arc<Self>,
         submittable_task: SubmittableTask<SwordfishTask>,
         actors: Vec<PyObjectWrapper>,
-    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+    ) -> SubmittableTask<SwordfishTask> {
         let memory_request = self
             .udf_properties
             .resource_request
@@ -214,33 +218,22 @@ impl ActorUDF {
             .map(|m| m as u64)
             .unwrap_or(0);
 
-        let mut task_context = submittable_task.task().task_context();
-        if let Some(logical_node_id) = self.context.logical_node_id {
-            task_context.add_logical_node_id(logical_node_id);
-        }
-        let task_plan = submittable_task.task().plan();
-        let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
-            task_plan,
-            actors,
-            self.udf_properties.batch_size,
-            memory_request,
-            self.config.schema.clone(),
-            StatsState::NotMaterialized,
-        );
-
-        // Set scheduling strategy based on whether we have a valid worker ID
-        let scheduling_strategy = submittable_task.task().strategy().clone();
-        let psets = submittable_task.task().psets().clone();
-
-        let task = submittable_task.with_new_task(SwordfishTask::new(
-            task_context,
-            actor_pool_project_plan,
-            self.config.execution_config.clone(),
-            psets,
-            scheduling_strategy,
-            self.context.to_hashmap(),
-        ));
-        Ok(task)
+        let batch_size = self.udf_properties.batch_size;
+        let schema = self.config.schema.clone();
+        append_plan_to_existing_task(
+            submittable_task,
+            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+            &move |input| {
+                LocalPhysicalPlan::distributed_actor_pool_project(
+                    input,
+                    actors.clone(),
+                    batch_size,
+                    memory_request,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                )
+            },
+        )
     }
 
     fn multiline_display(&self) -> Vec<String> {

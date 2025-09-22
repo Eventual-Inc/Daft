@@ -7,7 +7,6 @@ import os
 import threading
 import time
 import uuid
-import warnings
 from collections.abc import Generator, Iterable, Iterator
 from datetime import datetime
 from queue import Full, Queue
@@ -268,7 +267,7 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef) -> ray.ObjectRef:
     elif isinstance(df, ray.ObjectRef):
         return df
     else:
-        raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
+        raise ValueError(f"Expected a Ray object ref or a Pandas DataFrame, got {type(df)}")
 
 
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
@@ -887,8 +886,7 @@ class Scheduler(ActorPoolManager):
 
         start = datetime.now()
         profile_filename = (
-            f"profile_RayRunner.run()_"
-            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+            f"profile_RayRunner.run()_{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
 
         with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
@@ -1234,16 +1232,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                     address,
                 )
         else:
-            if address is not None:
-                if not address.endswith("10001"):
-                    warnings.warn(
-                        f"The address to a Ray client server is typically at port :10001, but instead we found: {address}"
-                    )
-                if not address.startswith("ray://"):
-                    warnings.warn(
-                        f"Expected Ray address to start with 'ray://' protocol but found: {address}. Automatically prefixing your address with the protocol to make a Ray connection: ray://{address}"
-                    )
-                    address = "ray://" + address
+            if address is not None and address.startswith("ray://"):
+                logger.warning(
+                    "Specifying a Ray address with the 'ray://' prefix uses the Ray Client, which may impact performance. If this is running in a Ray job, you may not need to specify the address at all."
+                )
+
             ray.init(address=address)
 
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
@@ -1335,77 +1328,66 @@ class RayRunner(Runner[ray.ObjectRef]):
         # Optimize the logical plan.
         builder = builder.optimize()
 
-        if daft_execution_config.enable_aqe:
-            adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
-            while not adaptive_planner.is_done():
-                stage_id, plan_scheduler = adaptive_planner.next()
-                start_time = time.time()
-                # don't store partition sets in variable to avoid reference
+        if daft_execution_config.use_legacy_ray_runner:
+            if daft_execution_config.enable_aqe:
+                adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
+                while not adaptive_planner.is_done():
+                    stage_id, plan_scheduler = adaptive_planner.next()
+                    start_time = time.time()
+                    # don't store partition sets in variable to avoid reference
+                    result_uuid = self._start_plan(
+                        plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
+                    )
+                    del plan_scheduler
+                    results_iter = self._stream_plan(result_uuid)
+                    # if stage_id is None that means this is the final stage
+                    if stage_id is None:
+                        num_rows_processed = 0
+                        bytes_processed = 0
+
+                        for result in results_iter:
+                            num_rows_processed += result.metadata().num_rows
+                            size_bytes = result.metadata().size_bytes
+                            if size_bytes is not None:
+                                bytes_processed += size_bytes
+                            yield result
+                        adaptive_planner.update_stats(
+                            time.time() - start_time, bytes_processed, num_rows_processed, stage_id
+                        )
+                    else:
+                        cache_entry = self._collect_into_cache(results_iter)
+                        adaptive_planner.update_stats(
+                            time.time() - start_time, cache_entry.size_bytes(), cache_entry.num_rows(), stage_id
+                        )
+                        adaptive_planner.update(stage_id, cache_entry)
+                        del cache_entry
+
+                enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
+                ray_logs_location = ray_tracing.get_log_location()
+                should_explain_analyze = (
+                    ray_logs_location.exists()
+                    and enable_explain_analyze is not None
+                    and enable_explain_analyze in ["1", "true"]
+                )
+                if should_explain_analyze:
+                    explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
+                    explain_analyze_dir.mkdir(exist_ok=True, parents=True)
+                    adaptive_planner.explain_analyze(str(explain_analyze_dir))
+            else:
+                plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 result_uuid = self._start_plan(
                     plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
                 )
-                del plan_scheduler
-                results_iter = self._stream_plan(result_uuid)
-                # if stage_id is None that means this is the final stage
-                if stage_id is None:
-                    num_rows_processed = 0
-                    bytes_processed = 0
-
-                    for result in results_iter:
-                        num_rows_processed += result.metadata().num_rows
-                        size_bytes = result.metadata().size_bytes
-                        if size_bytes is not None:
-                            bytes_processed += size_bytes
-                        yield result
-                    adaptive_planner.update_stats(
-                        time.time() - start_time, bytes_processed, num_rows_processed, stage_id
-                    )
-                else:
-                    cache_entry = self._collect_into_cache(results_iter)
-                    adaptive_planner.update_stats(
-                        time.time() - start_time, cache_entry.size_bytes(), cache_entry.num_rows(), stage_id
-                    )
-                    adaptive_planner.update(stage_id, cache_entry)
-                    del cache_entry
-
-            enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
-            ray_logs_location = ray_tracing.get_log_location()
-            should_explain_analyze = (
-                ray_logs_location.exists()
-                and enable_explain_analyze is not None
-                and enable_explain_analyze in ["1", "true"]
-            )
-            if should_explain_analyze:
-                explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
-                explain_analyze_dir.mkdir(exist_ok=True, parents=True)
-                adaptive_planner.explain_analyze(str(explain_analyze_dir))
-        elif daft_execution_config.use_experimental_distributed_engine:
-            try:
-                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                    builder._builder, daft_execution_config
-                )
-            except Exception as e:
-                logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
-                # Fallback to regular execution
-                yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
-            else:
-                if self.flotilla_plan_runner is None:
-                    self.flotilla_plan_runner = FlotillaRunner()
-                yield from self.flotilla_plan_runner.stream_plan(
-                    distributed_plan, self._part_set_cache.get_all_partition_sets()
-                )
-
+                yield from self._stream_plan(result_uuid)
         else:
-            yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
-
-    def _execute_plan(
-        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, results_buffer_size: int | None
-    ) -> Iterator[RayMaterializedResult]:
-        # Finalize the logical plan and get a physical plan scheduler for translating the
-        # physical plan to executable tasks.
-        plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
-        result_uuid = self._start_plan(plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size)
-        yield from self._stream_plan(result_uuid)
+            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                builder._builder, daft_execution_config
+            )
+            if self.flotilla_plan_runner is None:
+                self.flotilla_plan_runner = FlotillaRunner()
+            yield from self.flotilla_plan_runner.stream_plan(
+                distributed_plan, self._part_set_cache.get_all_partition_sets()
+            )
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

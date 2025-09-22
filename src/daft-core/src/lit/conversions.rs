@@ -4,12 +4,12 @@ use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use pyo3::{PyClass, Python};
 
-use super::{deserializer::LiteralDeserializer, FromLiteral, Literal};
+use super::{FromLiteral, Literal, deserializer::LiteralDeserializer};
 #[cfg(feature = "python")]
 use crate::python::{PyDataType, PyTimeUnit};
 use crate::{
     datatypes::IntervalValue,
-    prelude::{CountMode, DataType, ImageFormat, ImageMode, TimeUnit},
+    prelude::{CountMode, DataType, ImageFormat, ImageMode, ImageProperty, TimeUnit},
     series::Series,
 };
 
@@ -113,7 +113,7 @@ macro_rules! impl_int_fromliteral {
                     _ => {
                         return Err(DaftError::ValueError(format!(
                             "Expected integer number, received: {lit}"
-                        )))
+                        )));
                     }
                 };
 
@@ -147,7 +147,7 @@ macro_rules! impl_float_fromliteral {
                     _ => {
                         return Err(DaftError::ValueError(format!(
                             "Expected floating point number, received: {lit}"
-                        )))
+                        )));
                     }
                 };
 
@@ -223,7 +223,8 @@ impl_float_fromliteral!(f32);
 impl_float_fromliteral!(f64);
 impl_pyobj_fromliteral!(IOConfig, common_io_config::python::IOConfig);
 impl_pyobj_fromliteral!(ImageMode, ImageMode);
-impl_pyobj_fromliteral!(ImageFormat, ImageFormat);
+impl_pyobj_fromliteral!(ImageProperty, ImageProperty);
 impl_pyobj_fromliteral!(CountMode, CountMode);
 impl_pyobj_fromliteral!(TimeUnit, PyTimeUnit);
 impl_pyobj_fromliteral!(DataType, PyDataType);
+impl_pyobj_fromliteral!(ImageFormat, ImageFormat);

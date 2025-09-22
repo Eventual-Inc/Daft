@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec, InMemoryInfo};
+use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
 use super::{DistributedPipelineNode, PipelineNodeContext, SubmittableTaskStream};
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct InMemorySourceNode {

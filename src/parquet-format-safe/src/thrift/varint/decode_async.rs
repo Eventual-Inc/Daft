@@ -1,6 +1,6 @@
 use futures::io::{AsyncRead, AsyncReadExt};
 
-use super::{decode::VarIntProcessor, VarInt};
+use super::{VarInt, decode::VarIntProcessor};
 
 /// Like a [`VarIntReader`], but returns a future.
 #[async_trait::async_trait]

@@ -53,3 +53,20 @@ def test_map_nested():
     expected = ["this", "is", "a", "test", "another", "test"]
 
     assert words == expected
+
+
+def test_list_map_struct_field_extraction_without_alias():
+    df = daft.from_pydict(
+        {
+            "structs": [
+                [{"a": "a1", "b": "b1"}, {"a": "a2", "b": "b2"}],
+                [{"a": "a3", "b": "b3"}],
+                [],
+            ]
+        }
+    )
+
+    res = df.select(daft.col("structs").list.map(daft.element().struct.get("a"))).to_pydict()["a"]
+
+    expected = [["a1", "a2"], ["a3"], []]
+    assert res == expected

@@ -154,17 +154,20 @@ impl InferDataType<'_> {
                 let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max;
 
                 let d_type = if !(1..=38).contains(&p_prime) {
-                    Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
-                    ))
+                    Err(DaftError::TypeError(format!(
+                        "Cannot infer supertypes for comparison on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]",
+                        self, other
+                    )))
                 } else if s_max > 38 {
-                    Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]", self, other)
-                    ))
+                    Err(DaftError::TypeError(format!(
+                        "Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]",
+                        self, other
+                    )))
                 } else if s_max > p_prime {
-                    Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed precision {p_prime}", self, other)
-                    ))
+                    Err(DaftError::TypeError(format!(
+                        "Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed precision {p_prime}",
+                        self, other
+                    )))
                 } else {
                     Ok(DataType::Decimal128(p_prime, s_max))
                 }?;
@@ -247,7 +250,7 @@ impl Add for InferDataType<'_> {
                 (dtype @ DataType::Null, other) | (other, dtype @ DataType::Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
-                        DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
+                        DataType::Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", dtype, other)
                         )),
                         other if other.is_physical() => Ok(other.clone()),
@@ -271,6 +274,15 @@ impl Add for InferDataType<'_> {
                         )),
                     }
                 },
+                // --------
+                // Binary
+                // --------
+                (DataType::Binary, DataType::Binary) | (DataType::Binary, DataType::FixedSizeBinary(_)) | (DataType::FixedSizeBinary(_), DataType::Binary) => {
+                    Ok(DataType::Binary)
+                }
+                (DataType::FixedSizeBinary(lsize), DataType::FixedSizeBinary(rsize)) => {
+                    Ok(DataType::FixedSizeBinary(lsize + rsize))
+                }
                 // ---- Interval + temporal ----
                 (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
                 // ---- Boolean + other ----

@@ -1,11 +1,10 @@
-use std::collections::{hash_map::RawEntryMut, HashMap};
-
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     datatypes::UInt64Array,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use crate::RecordBatch;
 

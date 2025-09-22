@@ -16,7 +16,7 @@ use pyo3::{
 };
 
 use crate::{
-    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{DataArray, ops::DaftLogical, pseudo_arrow::PseudoArrowArray},
     count_mode::CountMode,
     datatypes::{DataType, Field, FileArray, PythonType},
     lit::Literal,

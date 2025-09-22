@@ -3,9 +3,9 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any, Callable, Union
 
-from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
 from daft.dependencies import np, pa, pil_image
+from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
     import builtins
@@ -563,7 +563,7 @@ class DataType:
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name
 
-            if (get_context().get_or_create_runner().name == "ray") and (
+            if (get_or_create_runner().name == "ray") and (
                 type(arrow_type).__reduce__ == pa.BaseExtensionType.__reduce__
             ):
                 raise ValueError(

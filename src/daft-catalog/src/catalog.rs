@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::prelude::SchemaRef;
 
-use crate::{error::CatalogResult, Identifier, TableRef};
+use crate::{Identifier, TableRef, error::CatalogResult};
 
 /// Catalog implementation reference.
 pub type CatalogRef = Arc<dyn Catalog>;

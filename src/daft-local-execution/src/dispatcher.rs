@@ -5,11 +5,11 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 
 use crate::{
+    RuntimeHandle, SpawnedTask,
     buffer::RowBasedBuffer,
-    channel::{create_channel, Receiver, Sender},
+    channel::{Receiver, Sender, create_channel},
     pipeline::MorselSizeRequirement,
     runtime_stats::InitializingCountingReceiver,
-    RuntimeHandle, SpawnedTask,
 };
 
 /// The `DispatchSpawner` trait is implemented by types that can spawn a task that reads from
@@ -83,10 +83,10 @@ impl RoundRobinDispatcher {
             }
 
             // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.pop_all()? {
-                if send_to_next_worker(last_morsel).await.is_err() {
-                    return Ok(());
-                }
+            if let Some(last_morsel) = buffer.pop_all()?
+                && send_to_next_worker(last_morsel).await.is_err()
+            {
+                return Ok(());
             }
         }
         Ok(())
@@ -168,10 +168,10 @@ impl UnorderedDispatcher {
             }
 
             // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.pop_all()? {
-                if worker_sender.send(last_morsel).await.is_err() {
-                    return Ok(());
-                }
+            if let Some(last_morsel) = buffer.pop_all()?
+                && worker_sender.send(last_morsel).await.is_err()
+            {
+                return Ok(());
             }
         }
         Ok(())

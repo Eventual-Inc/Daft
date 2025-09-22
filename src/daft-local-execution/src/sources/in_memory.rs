@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_micropartition::{partitioning::PartitionSetRef, MicroPartitionRef};
+use daft_micropartition::{MicroPartitionRef, partitioning::PartitionSetRef};
 use tracing::instrument;
 
 use super::source::Source;

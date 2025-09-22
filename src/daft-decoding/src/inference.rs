@@ -114,11 +114,11 @@ fn is_datetime(string: &str) -> Option<(TimeUnit, String)> {
 }
 
 fn nanoseconds_to_time_unit(ns: u32) -> TimeUnit {
-    if ns % 1_000 != 0 {
+    if !ns.is_multiple_of(1_000) {
         TimeUnit::Nanosecond
-    } else if ns % 1_000_000 != 0 {
+    } else if !ns.is_multiple_of(1_000_000) {
         TimeUnit::Microsecond
-    } else if ns % 1_000_000_000 != 0 {
+    } else if !ns.is_multiple_of(1_000_000_000) {
         TimeUnit::Millisecond
     } else {
         TimeUnit::Second

@@ -8,14 +8,14 @@ use daft_core::{
     join::JoinType,
     prelude::{Schema, SchemaRef, TimeUnit},
 };
-use daft_dsl::{optimization::get_required_columns, Expr, ExprRef, Operator};
+use daft_dsl::{Expr, ExprRef, Operator, optimization::get_required_columns};
 use daft_schema::dtype::DataType;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{join::JoinPredicate, Filter, Join, Project},
-    optimization::join_key_set::JoinKeySet,
     LogicalPlan, LogicalPlanRef,
+    ops::{Filter, Join, Project, join::JoinPredicate},
+    optimization::join_key_set::JoinKeySet,
 };
 
 #[derive(Default, Debug)]
@@ -294,10 +294,10 @@ fn find_inner_join(
             )?;
 
             // Save join keys
-            if let Some((valid_l, valid_r)) = key_pair {
-                if can_hash(&valid_l.get_type(left_input.schema().as_ref())?) {
-                    join_keys.push((valid_l, valid_r));
-                }
+            if let Some((valid_l, valid_r)) = key_pair
+                && can_hash(&valid_l.get_type(left_input.schema().as_ref())?)
+            {
+                join_keys.push((valid_l, valid_r));
             }
         }
 
@@ -438,8 +438,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
-        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        ClusteringSpec, JoinOptions, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo,
     };
 
     #[fixture]

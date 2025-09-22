@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::ExprRef;
-use daft_logical_plan::partitioning::{translate_clustering_spec, ClusteringSpec};
+use daft_logical_plan::partitioning::{ClusteringSpec, translate_clustering_spec};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 

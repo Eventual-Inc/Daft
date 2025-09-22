@@ -1,24 +1,24 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, JoinType};
+use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, TryStreamExt};
 
 use crate::{
     pipeline_node::{
-        make_in_memory_scan_from_materialized_outputs, DistributedPipelineNode, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        SubmittableTaskStream, make_in_memory_scan_from_materialized_outputs,
     },
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct BroadcastJoinNode {
@@ -143,11 +143,15 @@ impl BroadcastJoinNode {
             } else {
                 (materialized_broadcast_data_plan.clone(), input_plan)
             };
+
+            // We want to build on the broadcast side, so if swapped, build on the right side
+            let build_on_left = !self.is_swapped;
             let join_plan = LocalPhysicalPlan::hash_join(
                 left_plan,
                 right_plan,
                 self.left_on.clone(),
                 self.right_on.clone(),
+                Some(build_on_left),
                 self.null_equals_nulls.clone(),
                 self.join_type,
                 self.config.schema.clone(),

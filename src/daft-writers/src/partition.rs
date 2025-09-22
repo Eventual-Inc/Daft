@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::RawEntryMut, HashMap},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -10,6 +7,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use crate::{AsyncFileWriter, WriterFactory};
 
