@@ -46,7 +46,7 @@ impl ScalarUDF for MinHashFunction {
                 let hasher = MurBuildHasher::new(seed);
                 input.minhash(num_hashes, ngram_size, seed, &hasher)
             }
-            HashFunctionKind::XxHash => {
+            HashFunctionKind::XxHash64 => {
                 let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
                 input.minhash(num_hashes, ngram_size, seed, &hasher)
             }

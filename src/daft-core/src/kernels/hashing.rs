@@ -21,7 +21,7 @@ fn hash_primitive<T: NativeType>(
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
             let hashes = if let Some(seed) = seed {
                 array
@@ -91,7 +91,7 @@ fn hash_boolean(
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
             const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
             const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
@@ -174,7 +174,7 @@ fn hash_null(
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
             let hashes = if let Some(seed) = seed {
                 seed.values_iter()
@@ -215,7 +215,7 @@ fn hash_binary<O: Offset>(
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             let hashes = if let Some(seed) = seed {
                 array
                     .values_iter()
@@ -259,7 +259,7 @@ fn hash_fixed_size_binary(
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             let hashes = if let Some(seed) = seed {
                 array
                     .values_iter()
@@ -303,7 +303,7 @@ fn hash_utf8<O: Offset>(
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             let hashes = if let Some(seed) = seed {
                 array
                     .values_iter()
@@ -353,7 +353,7 @@ fn hash_timestamp_with_timezone(
     // For timestamps with timezone, we combine the timestamp value with the timezone string
     // to ensure that the same instant in different timezones produces different hashes
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
             let hashes = if let Some(seed) = seed {
                 array
@@ -492,7 +492,7 @@ fn hash_decimal(
     };
 
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash64 => {
             const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
             let hashes = if let Some(seed) = seed {
                 array
