@@ -272,8 +272,9 @@ impl OuterHashJoinProbeSink {
         let final_tables = input_tables
             .iter()
             .map(|input_table| {
-                let mut build_side_idxs = Vec::new();
-                let mut probe_side_idxs = Vec::new();
+                // We can instantiate with capacity for left/right probes since we will always push even if there's no match.
+                let mut build_side_idxs = Vec::with_capacity(build_side_table.len());
+                let mut probe_side_idxs = Vec::with_capacity(input_table.len());
 
                 let join_keys = input_table.eval_expression_list(probe_on)?;
                 let idx_iter = probe_state.probe_indices(&join_keys)?;
@@ -344,8 +345,9 @@ impl OuterHashJoinProbeSink {
         let final_tables = input_tables
             .iter()
             .map(|input_table| {
-                let mut build_side_idxs = Vec::new();
-                let mut probe_side_idxs = Vec::new();
+                // We can instantiate with capacity for outer probes since we will always push even if there's no match.
+                let mut build_side_idxs = Vec::with_capacity(build_side_table.len());
+                let mut probe_side_idxs = Vec::with_capacity(input_table.len());
 
                 let join_keys = input_table.eval_expression_list(probe_on)?;
                 let idx_iter = probe_state.probe_indices(&join_keys)?;
