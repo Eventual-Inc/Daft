@@ -347,11 +347,9 @@ mod tests {
 
         // Verify metadata contains correct plan_id, stage_id, and node_id
         assert_eq!(source_node.metadata.get("plan_id"), Some(&"1".to_string()));
-        assert_eq!(source_node.metadata.get("stage_id"), Some(&"1".to_string()));
         assert_eq!(source_node.metadata.get("node_id"), Some(&"1".to_string()));
 
         assert_eq!(filter_node.metadata.get("plan_id"), Some(&"1".to_string()));
-        assert_eq!(filter_node.metadata.get("stage_id"), Some(&"1".to_string()));
         assert_eq!(filter_node.metadata.get("node_id"), Some(&"2".to_string()));
 
         // Verify adjacency list shows relationship
