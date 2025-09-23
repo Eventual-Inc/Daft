@@ -82,7 +82,6 @@ def test_can_open_local_file(tmp_path: Path):
     temp_file.write_text("test content")
 
     df = daft.from_pydict({"path": [str(temp_file.absolute())]})
-
     df = df.select(file(df["path"]))
 
     @daft.func
