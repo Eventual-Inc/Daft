@@ -1086,6 +1086,12 @@ class Expression:
 
         return mean(self)
 
+    def avg(self) -> Expression:
+        """Alias for `Expression.mean()`. Check [`Expression.mean`](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.Expression.mean) for more details."""
+        from daft.functions import mean
+
+        return mean(self)
+
     def stddev(self) -> Expression:
         """Calculates the standard deviation of the values in the expression.
 
