@@ -52,7 +52,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         // If the smaller table is under broadcast size threshold AND we are not broadcasting the side we are outer joining by, use broadcast join
-        if smaller_size_bytes <= self.stage_config.config.broadcast_join_size_bytes_threshold
+        if smaller_size_bytes <= self.plan_config.config.broadcast_join_size_bytes_threshold
             && smaller_side_is_broadcastable
         {
             JoinStrategy::Broadcast
@@ -100,13 +100,13 @@ impl LogicalPlanToPipelineNodeTranslator {
             (_, _, 1, x) | (_, _, x, 1) => x,
             (true, false, a, b)
                 if (a as f64)
-                    >= (b as f64) * self.stage_config.config.hash_join_partition_size_leniency =>
+                    >= (b as f64) * self.plan_config.config.hash_join_partition_size_leniency =>
             {
                 a
             }
             (false, true, a, b)
                 if (b as f64)
-                    >= (a as f64) * self.stage_config.config.hash_join_partition_size_leniency =>
+                    >= (a as f64) * self.plan_config.config.hash_join_partition_size_leniency =>
             {
                 b
             }
@@ -148,7 +148,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         Ok(HashJoinNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             left_on,
             right_on,
             Some(null_equals_nulls),
@@ -202,7 +202,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         Ok(BroadcastJoinNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             left_on,
             right_on,
             Some(null_equals_nulls),
@@ -231,7 +231,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         Ok(CrossJoinNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             num_partitions,
             left_node,
             right_node,

@@ -10,10 +10,8 @@ use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
 
 #[cfg_attr(feature = "python", pyo3::pyclass(name = "PyDaftFile"))]
 pub struct DaftFile {
-    pub(crate) path: Option<String>,
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
-    pub(crate) size: usize,
 }
 
 impl TryFrom<FileReference> for DaftFile {
@@ -21,17 +19,19 @@ impl TryFrom<FileReference> for DaftFile {
 
     fn try_from(value: FileReference) -> Result<Self, Self::Error> {
         match value {
-            FileReference::Reference(path, ioconfig) => Self::from_path(path, *ioconfig),
-            FileReference::Data(items) => Ok(Self::from_bytes(items)),
+            FileReference::Reference(path, ioconfig) => {
+                Self::from_path(path, ioconfig.map(|cfg| cfg.as_ref().clone()))
+            }
+            FileReference::Data(items) => Ok(Self::from_bytes(Arc::unwrap_or_clone(items))),
         }
     }
 }
 
 impl DaftFile {
-    pub fn from_path(path: String, io_config: Option<IOConfig>) -> DaftResult<Self> {
-        let io_config = io_config.unwrap_or_default();
+    pub fn from_path(path: String, io_config_opt: Option<IOConfig>) -> DaftResult<Self> {
+        let io_config = io_config_opt.map(Arc::new);
 
-        let io_client = daft_io::get_io_client(true, Arc::new(io_config))?;
+        let io_client = daft_io::get_io_client(true, io_config.clone().unwrap_or_default())?;
         let rt = common_runtime::get_io_runtime(true);
 
         let (source, path, file_size) = rt.block_within_async_context(async move {
@@ -51,30 +51,29 @@ impl DaftFile {
         // Default to 8MB buffer
         const DEFAULT_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 
-        let reader = ObjectSourceReader::new(source, path.clone(), None, file_size);
+        let reader = ObjectSourceReader::new(source, path, None, file_size, io_config);
 
         // we wrap it in a BufReader so we are not making so many network requests for each byte read
         let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
         Ok(Self {
-            path: Some(path),
             cursor: Some(FileCursor::ObjectReader(buffered_reader)),
             position: 0,
-            size: file_size,
         })
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Self {
-            path: None,
-            size: bytes.len(),
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
         }
     }
 
     pub fn size(&self) -> DaftResult<usize> {
-        Ok(self.size)
+        self.cursor
+            .as_ref()
+            .map(|c| c.size())
+            .ok_or(DaftError::IoError(std::io::Error::other("File not open")))
     }
 }
 
@@ -89,6 +88,7 @@ pub(crate) struct ObjectSourceReader {
     // Flag to track if range requests are supported
     supports_range: Option<bool>,
     size: usize,
+    pub(crate) io_config: Option<Arc<IOConfig>>,
 }
 
 impl ObjectSourceReader {
@@ -97,6 +97,7 @@ impl ObjectSourceReader {
         uri: String,
         io_stats: Option<IOStatsRef>,
         size: usize,
+        io_config: Option<Arc<IOConfig>>,
     ) -> Self {
         Self {
             source,
@@ -106,6 +107,7 @@ impl ObjectSourceReader {
             cached_content: None,
             supports_range: None,
             size,
+            io_config,
         }
     }
     // Helper to read the entire file content

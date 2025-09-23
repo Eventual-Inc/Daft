@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_arrow_ffi as ffi;
+use common_file::FileReference;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
@@ -17,7 +18,7 @@ use pyo3::{
 use crate::{
     array::{DataArray, ops::DaftLogical, pseudo_arrow::PseudoArrowArray},
     count_mode::CountMode,
-    datatypes::{DataType, Field, PythonType},
+    datatypes::{DataType, Field, FileArray, PythonType},
     lit::Literal,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -74,6 +75,24 @@ impl PySeries {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
 
         Self::from_pylist_impl(name, vec_pyobj, dtype.dtype)
+    }
+    #[staticmethod]
+    pub fn from_pylist_of_files(name: &str, pylist: Vec<PyObject>, py: Python) -> PyResult<Self> {
+        let files = pylist
+            .iter()
+            .map(|item| {
+                let inner = item.getattr(py, "_inner")?;
+                let item = inner.getattr(py, "_get_file")?;
+                let item = item.call0(py)?;
+
+                let daft_file: FileReference = item.extract(py)?;
+
+                PyResult::Ok(daft_file)
+            })
+            .collect::<PyResult<Vec<FileReference>>>()?;
+        let file_array = FileArray::new_from_daft_files(name, files);
+        let s = file_array.into_series();
+        Ok(s.into())
     }
 
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {

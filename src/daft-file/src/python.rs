@@ -1,16 +1,54 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    io::{Read, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use common_error::DaftError;
+use common_file::FileReference;
 use daft_io::python::IOConfig as PyIOConfig;
 use pyo3::{
-    exceptions::{PyIOError, PyValueError},
+    exceptions::{PyIOError, PyTypeError, PyValueError},
     prelude::*,
+    types::{PyBytes, PyString, PyTuple},
 };
 
 use crate::file::{DaftFile, FileCursor};
 
 #[cfg_attr(feature = "python", pymethods)]
 impl DaftFile {
+    pub fn _get_file(&self) -> PyResult<FileReference> {
+        match &self.cursor {
+            Some(FileCursor::ObjectReader(reader)) => {
+                let reader = reader.get_ref();
+
+                Ok(FileReference::Reference(
+                    reader.uri.clone(),
+                    reader.io_config.clone(),
+                ))
+            }
+            Some(FileCursor::Memory(cursor)) => {
+                Ok(FileReference::Data(Arc::new(cursor.get_ref().clone())))
+            }
+            None => Err(PyIOError::new_err("file is not open")),
+        }
+    }
+
+    #[staticmethod]
+    fn _from_tuple(tuple: Bound<'_, PyAny>) -> PyResult<Self> {
+        let tuple = tuple.downcast::<PyTuple>()?;
+        let first = tuple.get_item(0)?;
+        if first.is_instance_of::<PyString>() {
+            let url = first.extract::<String>()?;
+            let io_config = tuple.get_item(1)?.extract::<Option<PyIOConfig>>()?;
+            Self::_from_path(url, io_config)
+        } else if first.is_instance_of::<PyBytes>() {
+            let data = first.extract::<Vec<u8>>()?;
+            Ok(Self::_from_bytes(data))
+        } else {
+            Err(PyErr::new::<PyTypeError, _>("Expected a string or bytes"))
+        }
+    }
+
     #[staticmethod]
     #[pyo3(signature = (path, io_config = None))]
     fn _from_path(path: String, io_config: Option<PyIOConfig>) -> PyResult<Self> {
@@ -115,10 +153,7 @@ impl DaftFile {
 
     // String representation
     fn __str__(&self) -> PyResult<String> {
-        match &self.path {
-            Some(path) => Ok(format!("File({})", path)),
-            None => Ok("File(None)".to_string()),
-        }
+        Ok("File".to_string())
     }
 
     fn closed(&self) -> PyResult<bool> {
