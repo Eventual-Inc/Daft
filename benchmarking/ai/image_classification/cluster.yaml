@@ -13,7 +13,7 @@ available_node_types:
   ray.head.default:
     resources: {"CPU": 0, "GPU": 0}
     node_config:
-      InstanceType: g6.2xlarge
+      InstanceType: g6.xlarge
       ImageId: ami-0976479b866d22613
       BlockDeviceMappings:
       - DeviceName: /dev/xvda
@@ -28,7 +28,7 @@ available_node_types:
     max_workers: 8
     resources: {}
     node_config:
-      InstanceType: g6.2xlarge
+      InstanceType: g6.xlarge
       IamInstanceProfile:
         Arn: ray-autoscaler-v1
       ImageId: ami-0976479b866d22613
@@ -41,11 +41,11 @@ available_node_types:
           Encrypted: true
 
 setup_commands:
-- sudo mkdir -p /opt/ray/tmp /opt/ray/spill
-- sudo chown -R ec2-user:ec2-user /opt/ray
-- echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
-- echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
-- source /opt/pytorch/bin/activate && pip install ray[default] daft numpy torch torchvision pillow
+  - sudo mkdir -p /opt/ray/tmp /opt/ray/spill
+  - sudo chown -R ec2-user:ec2-user /opt/ray
+  - echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
+  - echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
+  - source /opt/pytorch/bin/activate && pip install ray[default]==2.49.2 daft==0.6.2 numpy==1.26.4 torchvision==0.22.0+cu128 pillow==11.3.0
 
 head_setup_commands:
 - source /opt/pytorch/bin/activate && pip install 'boto3>=1.4.8'

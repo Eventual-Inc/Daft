@@ -19,10 +19,10 @@ The AI benchmarks cover four different workload types, each designed to test dif
 3. **Image Classification** - Classifying 803,580 images using ResNet18 model
 4. **Video Object Detection** - Detecting objects in 1,000 videos using YOLO11n model
 
-Each benchmark runs on AWS GPU instances (g6.xlarge for audio and documents, g6.2xlarge for image and video) with 8 worker nodes.
+Each benchmark runs on AWS g6.xlarge instances with 8 worker nodes.
 
-**Benchmark Date**: September 19, 2025
-**Framework Versions**: Daft 0.6.1, Ray Data 2.49.0, AWS EMR Spark 7.10.0
+**Benchmark Date**: September 22, 2024
+**Framework Versions**: Daft 0.6.2, Ray Data 2.49.2, AWS EMR Spark 7.10.0
 
 ### Results
 
@@ -40,25 +40,25 @@ Each benchmark runs on AWS GPU instances (g6.xlarge for audio and documents, g6.
                         "marker": {"color": "rgba(255, 0, 255, 1)"},
                         "name": "Daft",
                         "x": ["Audio Transcription", "Document Embedding", "Image Classification", "Video Object Detection"],
-                        "y": [6.42, 1.9, 3.23, 12.28],
+                        "y": [6.37, 1.9, 4.38, 11.77],
                         "type": "bar",
                         "textposition": "inside"
                     },
                     {
-                        "hovertext": ["2.1x Slower", "8.5x Slower", "8.0x Slower", "2.8x Slower"],
+                        "hovertext": ["4.6x Slower", "7.6x Slower", "5.4x Slower", "2.2x Slower"],
                         "marker": {"color": "rgba(0, 102, 255, 0.75)"},
                         "name": "Ray Data",
                         "x": ["Audio Transcription", "Document Embedding", "Image Classification", "Video Object Detection"],
-                        "y": [13.8, 16.17, 26.08, 34.33],
+                        "y": [29.33, 14.53, 23.5, 25.9],
                         "type": "bar",
                         "textposition": "inside"
                     },
                     {
-                        "hovertext": ["6.5x Slower", "4.2x Slower", "10.5x Slower", "11.2x Slower"],
+                        "hovertext": ["4.0x Slower", "4.2x Slower", "10.3x Slower", "11.7x Slower"],
                         "marker": {"color": "rgba(226,90,28, 0.75)"},
                         "name": "Spark",
                         "x": ["Audio Transcription", "Document Embedding", "Image Classification", "Video Object Detection"],
-                        "y": [42.03, 8.07, 34.1, 138.0],
+                        "y": [25.77, 8.07, 45.12, 138.0],
                         "type": "bar",
                         "textposition": "inside"
                     }
@@ -77,10 +77,10 @@ Each benchmark runs on AWS GPU instances (g6.xlarge for audio and documents, g6.
 
 |          | Daft | Ray Data | EMR Spark |
 | -------- | :--: | :------: | :---: |
-| Audio Transcription | 6m 25s | 13m 48s (2.1x slower) | 42m 2s (6.5x slower) |
-| Document Embedding | 1m 54s | 16m 10s (8.5x slower) | 8m 4s (4.2x slower) |
-| Image Classification | 3m 14s | 26m 5s (8.0x slower) | 34m 6s (10.5x slower) |
-| Video Object Detection | 12m 17s | 34m 20s (2.8x slower) | 2h 18m (11.2x slower) |
+| Audio Transcription | 6m 22s | 29m 20s (4.6x slower) | 25m 46s (4.0x slower) |
+| Document Embedding | 1m 54s | 14m 32s (7.6x slower) | 8m 4s (4.2x slower) |
+| Image Classification | 4m 23s | 23m 30s (5.4x slower) | 45m 7s (10.3x slower) |
+| Video Object Detection | 11m 46s | 25m 54s (2.2x slower) | 2h 18m (11.7x slower) |
 
 ### Code
 
@@ -92,6 +92,17 @@ The complete benchmark code is available in our repository:
 - **[Video Object Detection](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/video_object_detection)** - YOLO11n for object detection in videos
 
 Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along with cluster configurations and dependencies.
+
+### Logs
+
+Complete execution logs for all AI benchmark runs are available for transparency and reproducibility:
+
+| Workload | Daft | Ray Data | Spark |
+| -------- | ---- | -------- | ----- |
+| Audio Transcription | [daft.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/audio_transcription/daft.txt) | [ray_data.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/audio_transcription/ray_data.txt) | [spark.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/audio_transcription/spark.txt) |
+| Document Embedding | [daft.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/document_embedding/daft.txt) | [ray_data.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/document_embedding/ray_data.txt) | [spark.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/document_embedding/spark.txt) |
+| Image Classification | [daft.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/image_classification/daft.txt) | [ray_data.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/image_classification/ray_data.txt) | [spark.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/image_classification/spark.txt) |
+| Video Object Detection | [daft.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/video_object_detection/daft.txt) | [ray_data.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/video_object_detection/ray_data.txt) | [spark.txt](https://daft-public-data.s3.us-west-2.amazonaws.com/benchmarking/logs/ai_benchmarking_logs/video_object_detection/spark.txt) |
 
 ---
 

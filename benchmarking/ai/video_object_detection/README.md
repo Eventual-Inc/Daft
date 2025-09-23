@@ -4,14 +4,14 @@ Detects objects in **1,000 videos** using YOLO11n model. Extracts frames, runs o
 
 **Input Dataset**: Hollywood2 video dataset (S3 binary files)
 **Output Format**: Parquet with object detections, bounding boxes, and cropped images
-**Cluster**: 8 worker nodes using g6.2xlarge instances
-**Benchmark Date**: September 19, 2024
-**Framework Versions**: Daft 0.6.1, Ray Data 2.49.0, AWS EMR Spark 7.10.0
+**Cluster**: 8 worker nodes using g6.xlarge instances
+**Benchmark Date**: September 22, 2024
+**Framework Versions**: Daft 0.6.2, Ray Data 2.49.2, AWS EMR Spark 7.10.0
 
 ## Performance Results
 
 | Engine   | Runtime |
 |----------|---------|
-| Daft     | 12m 17s |
-| Ray Data | 34m 20s |
+| Daft     | 11m 46s |
+| Ray Data | 25m 54s |
 | Spark    | 2h 18m  |
