@@ -152,3 +152,66 @@ def test_lancedb_write_incompatible_schema(lance_dataset_path):
 
     with pytest.raises(ValueError, match="Schema of data does not match table schema"):
         df.write_lance(lance_dataset_path, mode="append")
+
+
+def test_lancedb_morsel_size_config_fragment(lance_dataset_path):
+    import os
+
+    if os.environ.get("DAFT_FLOTILLA") == "false" or os.environ.get("DAFT_FLOTILLA") == "0":
+        pytest.skip("Skipping test when DAFT_FLOTILLA=false")
+
+    import lance
+
+    daft.context.set_runner_ray(noop_if_initialized=True)
+
+    num_rows = 50
+    data_rows = []
+    for i in range(num_rows):
+        data_rows.append(
+            {
+                "id": i,
+                "vector": [float(i), float(i + 1)],
+                "data": f"task_{i}_" + "x" * 100,  # Make each row substantial
+            }
+        )
+
+    dfs = []
+    for row_data in data_rows:
+        df_single = daft.from_pydict({k: [v] for k, v in row_data.items()})
+        dfs.append(df_single)
+
+    # Write each dataframe separately to create many fragments
+    for i, df in enumerate(dfs):
+        mode = "create" if i == 0 else "append"
+        df.write_lance(lance_dataset_path, mode=mode, max_rows_per_file=1)
+
+    df_loaded = daft.read_lance(lance_dataset_path)
+
+    ds_before = lance.dataset(lance_dataset_path)
+    fragments_before = len(ds_before.get_fragments())
+
+    repartitioned_path = lance_dataset_path + "_repartitioned_default"
+    df_repartitioned = df_loaded.repartition(1)
+    df_repartitioned.write_lance(repartitioned_path, mode="create")
+
+    #
+    ds_after_default = lance.dataset(repartitioned_path)
+    fragments_after_default = len(ds_after_default.get_fragments())
+
+    daft.context.set_execution_config(morsel_size_lower_bound=5, morsel_size_upper_bound=20)
+
+    df_loaded_config = daft.read_lance(lance_dataset_path)
+
+    # Repartition to 1 partition with morsel size bounds
+    repartitioned_config_path = lance_dataset_path + "_repartitioned_config"
+    df_repartitioned_config = df_loaded_config.repartition(1)
+    df_repartitioned_config.write_lance(repartitioned_config_path, mode="create")
+
+    ds_after_config = lance.dataset(repartitioned_config_path)
+    fragments_after_config = len(ds_after_config.get_fragments())
+
+    assert fragments_before >= num_rows, f"Expected at least {num_rows} fragments initially, got {fragments_before}"
+    assert fragments_after_config == 10
+    assert (
+        fragments_after_default == fragments_before
+    ), f"Expected fragment count with config to be less than or equal to without config, got {fragments_after_config} and {fragments_after_default}."

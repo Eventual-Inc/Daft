@@ -221,6 +221,8 @@ def set_execution_config(
     use_legacy_ray_runner: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
+    morsel_size_lower_bound: int | None = None,
+    morsel_size_upper_bound: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -308,6 +310,8 @@ def set_execution_config(
             use_legacy_ray_runner=use_legacy_ray_runner,
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
+            morsel_size_lower_bound=morsel_size_lower_bound,
+            morsel_size_upper_bound=morsel_size_upper_bound,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
