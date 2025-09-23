@@ -6,7 +6,6 @@ use daft_core::{
     series::IntoSeries,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, get_columns_by_name};
 use indexmap::IndexSet;
@@ -86,6 +85,7 @@ impl InnerHashJoinProbeOperator {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn probe_inner(
         input: &Arc<MicroPartition>,
         probe_state: &Arc<ProbeState>,
@@ -94,61 +94,58 @@ impl InnerHashJoinProbeOperator {
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
         build_on_left: bool,
+        output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable();
         let build_side_table = probe_state.get_record_batch();
-        let build_side_prefix_sums = probe_state.get_prefix_sums();
 
-        let mut build_side_idxs = Vec::new();
-        let mut probe_side_idxs = Vec::new();
+        let input_tables = input.get_tables()?;
+        let result_tables = input_tables
+            .iter()
+            .map(|input_table| {
+                let mut build_side_idxs = Vec::new();
+                let mut probe_side_idxs = Vec::new();
 
-        let input_table = input
-            .concat_or_get(IOStatsContext::new(
-                "InnerHashJoinProbeOperator::probe_inner",
-            ))?
-            .unwrap();
-
-        // we should emit one table at a time when this is streaming
-        let join_keys = input_table.eval_expression_list(probe_on)?;
-        let idx_mapper = probe_table.probe_indices(&join_keys)?;
-
-        for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
-            if let Some(inner_iter) = inner_iter {
-                for (build_side_table_idx, build_row_idx) in inner_iter {
-                    let build_side_idx = build_side_prefix_sums[build_side_table_idx as usize]
-                        + build_row_idx as usize;
-                    build_side_idxs.push(build_side_idx as u64);
-                    // we can perform run length compression for this to make this more efficient
-                    probe_side_idxs.push(probe_row_idx as u64);
+                let join_keys = input_table.eval_expression_list(probe_on)?;
+                let idx_iter = probe_state.probe_indices(&join_keys)?;
+                for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
+                    if let Some(inner_iter) = inner_iter {
+                        for build_row_idx in inner_iter {
+                            build_side_idxs.push(build_row_idx);
+                            probe_side_idxs.push(probe_row_idx as u64);
+                        }
+                    }
                 }
-            }
-        }
 
-        let build_side_table = {
-            let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
-            build_side_table.take(&indices_as_series)?
-        };
-        let probe_side_table = {
-            let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-            input_table.take(&indices_as_series)?
-        };
+                let build_side_table = {
+                    let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
+                    build_side_table.take(&indices_as_series)?
+                };
+                let probe_side_table = {
+                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
+                    input_table.take(&indices_as_series)?
+                };
 
-        let (left_table, right_table) = if build_on_left {
-            (build_side_table, probe_side_table)
-        } else {
-            (probe_side_table, build_side_table)
-        };
+                let (left_table, right_table) = if build_on_left {
+                    (build_side_table, probe_side_table)
+                } else {
+                    (probe_side_table, build_side_table)
+                };
 
-        let join_keys_table = get_columns_by_name(&left_table, common_join_keys)?;
-        let left_non_join_columns = get_columns_by_name(&left_table, left_non_join_columns)?;
-        let right_non_join_columns = get_columns_by_name(&right_table, right_non_join_columns)?;
-        let final_table = join_keys_table
-            .union(&left_non_join_columns)?
-            .union(&right_non_join_columns)?;
+                let join_keys_table = get_columns_by_name(&left_table, common_join_keys)?;
+                let left_non_join_columns =
+                    get_columns_by_name(&left_table, left_non_join_columns)?;
+                let right_non_join_columns =
+                    get_columns_by_name(&right_table, right_non_join_columns)?;
+                let final_table = join_keys_table
+                    .union(&left_non_join_columns)?
+                    .union(&right_non_join_columns)?;
+                Ok(final_table)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
 
         Ok(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
+            output_schema.clone(),
+            Arc::new(result_tables),
             None,
         )))
     }
@@ -174,6 +171,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         }
 
         let params = self.params.clone();
+        let output_schema = self.output_schema.clone();
         task_spawner
             .spawn(
                 async move {
@@ -186,6 +184,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
                         &params.left_non_join_columns,
                         &params.right_non_join_columns,
                         params.build_on_left,
+                        &output_schema,
                     );
                     Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
                 },

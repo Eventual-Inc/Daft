@@ -8,7 +8,7 @@ use daft_core::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{ProbeState, Probeable};
+use daft_recordbatch::ProbeState;
 use futures::{StreamExt, stream};
 use itertools::Itertools;
 use tracing::{Span, info_span, instrument};
@@ -83,7 +83,7 @@ impl AntiSemiProbeSink {
     // on the right side and are streaming the left side.
     fn probe_anti_semi(
         probe_on: &[BoundExpr],
-        probe_set: &Arc<dyn Probeable>,
+        probe_state: &Arc<ProbeState>,
         input: &Arc<MicroPartition>,
         is_semi: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
@@ -91,7 +91,7 @@ impl AntiSemiProbeSink {
         let mut input_idxs = vec![vec![]; input_tables.len()];
         for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
             let join_keys = table.eval_expression_list(probe_on)?;
-            let iter = probe_set.probe_exists(&join_keys)?;
+            let iter = probe_state.probe_exists(&join_keys)?;
 
             for (probe_row_idx, matched) in iter.enumerate() {
                 // 1. If this is a semi join, we keep the row if it matches.
@@ -128,20 +128,15 @@ impl AntiSemiProbeSink {
         bitmap_builder: &mut IndexBitmapBuilder,
         input: &Arc<MicroPartition>,
     ) -> DaftResult<()> {
-        let probe_set = probe_state.get_probeable();
-        let prefix_sums = probe_state.get_prefix_sums();
-
         let input_tables = input.get_tables()?;
         let _loop = info_span!("AntiSemiOperator::eval_and_probe").entered();
         for table in input_tables.iter() {
             let join_keys = table.eval_expression_list(probe_on)?;
-            let idx_mapper = probe_set.probe_indices(&join_keys)?;
+            let idx_iter = probe_state.probe_indices(&join_keys)?;
 
-            for inner_iter in idx_mapper.make_iter().flatten() {
-                for (build_side_table_idx, build_row_idx) in inner_iter {
-                    let build_row_idx =
-                        prefix_sums[build_side_table_idx as usize] + build_row_idx as usize;
-                    bitmap_builder.mark_used(build_row_idx);
+            for inner_iter in idx_iter.flatten() {
+                for build_row_idx in inner_iter {
+                    bitmap_builder.mark_used(build_row_idx as usize);
                 }
             }
         }
@@ -232,12 +227,8 @@ impl StreamingSink for AntiSemiProbeSink {
                         )?;
                         Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                     } else {
-                        let res = Self::probe_anti_semi(
-                            &params.probe_on,
-                            ps.get_probeable(),
-                            &input,
-                            params.is_semi,
-                        );
+                        let res =
+                            Self::probe_anti_semi(&params.probe_on, ps, &input, params.is_semi);
                         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(res?))))
                     }
                 },

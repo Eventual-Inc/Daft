@@ -8,7 +8,6 @@ use daft_core::{
     utils::supertype::try_get_supertype,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, RecordBatch, get_columns_by_name};
@@ -202,57 +201,57 @@ impl OuterHashJoinProbeSink {
         common_join_cols: &[String],
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
+        output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable();
         let build_side_table = probe_state.get_record_batch();
-        let build_side_prefix_sums = probe_state.get_prefix_sums();
 
-        let mut build_side_idxs = Vec::new();
-        let mut probe_side_idxs = Vec::new();
+        let input_tables = input.get_tables()?;
+        let final_tables = input_tables
+            .iter()
+            .map(|input_table| {
+                let mut build_side_idxs = Vec::new();
+                let mut probe_side_idxs = Vec::new();
 
-        let input_table = input
-            .concat_or_get(IOStatsContext::new(
-                "OuterHashJoinProbeOperator::probe_left_right_with_bitmap",
-            ))?
-            .unwrap();
-        let join_keys = input_table.eval_expression_list(probe_on)?;
-        let idx_mapper = probe_table.probe_indices(&join_keys)?;
+                let join_keys = input_table.eval_expression_list(probe_on)?;
+                let idx_iter = probe_state.probe_indices(&join_keys)?;
 
-        for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
-            if let Some(inner_iter) = inner_iter {
-                for (build_side_table_idx, build_row_idx) in inner_iter {
-                    let build_side_idx = build_side_prefix_sums[build_side_table_idx as usize]
-                        + build_row_idx as usize;
-                    bitmap_builder.mark_used(build_side_idx);
-                    build_side_idxs.push(build_side_idx as u64);
-                    probe_side_idxs.push(probe_row_idx as u64);
+                for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
+                    if let Some(inner_iter) = inner_iter {
+                        for build_row_idx in inner_iter {
+                            bitmap_builder.mark_used(build_row_idx as usize);
+                            build_side_idxs.push(build_row_idx);
+                            probe_side_idxs.push(probe_row_idx as u64);
+                        }
+                    }
                 }
-            }
-        }
 
-        let build_side_table = {
-            let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
-            build_side_table.take(&indices_as_series)?
-        };
-        let probe_side_table = {
-            let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-            input_table.take(&indices_as_series)?
-        };
+                let build_side_table = {
+                    let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
+                    build_side_table.take(&indices_as_series)?
+                };
+                let probe_side_table = {
+                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
+                    input_table.take(&indices_as_series)?
+                };
 
-        let final_table = if join_type == JoinType::Left {
-            let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
-            let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
-            let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
-            join_table.union(&left)?.union(&right)?
-        } else {
-            let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
-            let left = get_columns_by_name(&probe_side_table, left_non_join_columns)?;
-            let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
-            join_table.union(&left)?.union(&right)?
-        };
+                let final_table = if join_type == JoinType::Left {
+                    let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
+                    let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
+                    let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
+                    join_table.union(&left)?.union(&right)?
+                } else {
+                    let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
+                    let left = get_columns_by_name(&probe_side_table, left_non_join_columns)?;
+                    let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
+                    join_table.union(&left)?.union(&right)?
+                };
+                Ok(final_table)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
         Ok(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
+            output_schema.clone(),
+            Arc::new(final_tables),
             None,
         )))
     }
@@ -265,65 +264,64 @@ impl OuterHashJoinProbeSink {
         common_join_cols: &[String],
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
+        output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable();
         let build_side_table = probe_state.get_record_batch();
-        let build_side_prefix_sums = probe_state.get_prefix_sums();
 
-        let mut build_side_idxs = Vec::new();
-        let mut probe_side_idxs = Vec::new();
+        let input_tables = input.get_tables()?;
+        let final_tables = input_tables
+            .iter()
+            .map(|input_table| {
+                let mut build_side_idxs = Vec::new();
+                let mut probe_side_idxs = Vec::new();
 
-        let input_table = input
-            .concat_or_get(IOStatsContext::new(
-                "OuterHashJoinProbeOperator::probe_left_right",
-            ))?
-            .unwrap();
-
-        let join_keys = input_table.eval_expression_list(probe_on)?;
-        let idx_mapper = probe_table.probe_indices(&join_keys)?;
-        for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
-            if let Some(inner_iter) = inner_iter {
-                for (build_side_table_idx, build_row_idx) in inner_iter {
-                    let build_side_idx = build_side_prefix_sums[build_side_table_idx as usize]
-                        + build_row_idx as usize;
-                    build_side_idxs.push(Some(build_side_idx as u64));
-                    probe_side_idxs.push(probe_row_idx as u64);
+                let join_keys = input_table.eval_expression_list(probe_on)?;
+                let idx_iter = probe_state.probe_indices(&join_keys)?;
+                for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
+                    if let Some(inner_iter) = inner_iter {
+                        for build_row_idx in inner_iter {
+                            build_side_idxs.push(Some(build_row_idx));
+                            probe_side_idxs.push(probe_row_idx as u64);
+                        }
+                    } else {
+                        // if there's no match, we should still emit the probe side and fill the build side with nulls
+                        build_side_idxs.push(None);
+                        probe_side_idxs.push(probe_row_idx as u64);
+                    }
                 }
-            } else {
-                // if there's no match, we should still emit the probe side and fill the build side with nulls
-                build_side_idxs.push(None);
-                probe_side_idxs.push(probe_row_idx as u64);
-            }
-        }
 
-        let build_side_table = {
-            let indices_as_series = UInt64Array::from_regular_iter(
-                Field::new("indices", DataType::UInt64),
-                build_side_idxs.into_iter(),
-            )?
-            .into_series();
-            build_side_table.take(&indices_as_series)?
-        };
+                let build_side_table = {
+                    let indices_as_series = UInt64Array::from_regular_iter(
+                        Field::new("indices", DataType::UInt64),
+                        build_side_idxs.into_iter(),
+                    )?
+                    .into_series();
+                    build_side_table.take(&indices_as_series)?
+                };
 
-        let probe_side_table = {
-            let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-            input_table.take(&indices_as_series)?
-        };
+                let probe_side_table = {
+                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
+                    input_table.take(&indices_as_series)?
+                };
 
-        let final_table = if join_type == JoinType::Left {
-            let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?;
-            let left = get_columns_by_name(&probe_side_table, left_non_join_columns)?;
-            let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
-            join_table.union(&left)?.union(&right)?
-        } else {
-            let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?;
-            let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
-            let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
-            join_table.union(&left)?.union(&right)?
-        };
+                let final_table = if join_type == JoinType::Left {
+                    let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?;
+                    let left = get_columns_by_name(&probe_side_table, left_non_join_columns)?;
+                    let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
+                    join_table.union(&left)?.union(&right)?
+                } else {
+                    let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?;
+                    let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
+                    let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
+                    join_table.union(&left)?.union(&right)?
+                };
+                Ok(final_table)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
         Ok(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
+            output_schema.clone(),
+            Arc::new(final_tables),
             None,
         )))
     }
@@ -339,68 +337,66 @@ impl OuterHashJoinProbeSink {
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
         build_on_left: bool,
+        output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable();
         let build_side_table = probe_state.get_record_batch();
-        let build_side_prefix_sums = probe_state.get_prefix_sums();
+        let input_tables = input.get_tables()?;
+        let final_tables = input_tables
+            .iter()
+            .map(|input_table| {
+                let mut build_side_idxs = Vec::new();
+                let mut probe_side_idxs = Vec::new();
 
-        let mut build_side_idxs = Vec::new();
-        let mut probe_side_idxs = Vec::new();
+                let join_keys = input_table.eval_expression_list(probe_on)?;
+                let idx_iter = probe_state.probe_indices(&join_keys)?;
 
-        let input_table = input
-            .concat_or_get(IOStatsContext::new(
-                "OuterHashJoinProbeOperator::probe_outer",
-            ))?
-            .unwrap();
-
-        let join_keys = input_table.eval_expression_list(probe_on)?;
-        let idx_mapper = probe_table.probe_indices(&join_keys)?;
-
-        for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
-            if let Some(inner_iter) = inner_iter {
-                for (build_side_table_idx, build_row_idx) in inner_iter {
-                    let build_side_idx = build_side_prefix_sums[build_side_table_idx as usize]
-                        + build_row_idx as usize;
-                    bitmap_builder.mark_used(build_side_idx);
-                    build_side_idxs.push(Some(build_side_idx as u64));
-                    probe_side_idxs.push(probe_row_idx as u64);
+                for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
+                    if let Some(inner_iter) = inner_iter {
+                        for build_row_idx in inner_iter {
+                            bitmap_builder.mark_used(build_row_idx as usize);
+                            build_side_idxs.push(Some(build_row_idx));
+                            probe_side_idxs.push(probe_row_idx as u64);
+                        }
+                    } else {
+                        // if there's no match, we should still emit the probe side and fill the build side with nulls
+                        build_side_idxs.push(None);
+                        probe_side_idxs.push(probe_row_idx as u64);
+                    }
                 }
-            } else {
-                // if there's no match, we should still emit the probe side and fill the build side with nulls
-                build_side_idxs.push(None);
-                probe_side_idxs.push(probe_row_idx as u64);
-            }
-        }
 
-        let build_side_table = {
-            let indices_as_series = UInt64Array::from_regular_iter(
-                Field::new("indices", DataType::UInt64),
-                build_side_idxs.into_iter(),
-            )?
-            .into_series();
-            build_side_table.take(&indices_as_series)?
-        };
+                let build_side_table = {
+                    let indices_as_series = UInt64Array::from_regular_iter(
+                        Field::new("indices", DataType::UInt64),
+                        build_side_idxs.into_iter(),
+                    )?
+                    .into_series();
+                    build_side_table.take(&indices_as_series)?
+                };
 
-        let probe_side_table = {
-            let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-            input_table.take(&indices_as_series)?
-        };
+                let probe_side_table = {
+                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
+                    input_table.take(&indices_as_series)?
+                };
 
-        #[allow(deprecated)]
-        let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?
-            .cast_to_schema(outer_common_col_schema)?;
-        let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
-        let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
-        // If we built the probe table on the right, flip the order of union.
-        let (left, right) = if build_on_left {
-            (left, right)
-        } else {
-            (right, left)
-        };
-        let final_table = join_table.union(&left)?.union(&right)?;
+                #[allow(deprecated)]
+                let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?
+                    .cast_to_schema(outer_common_col_schema)?;
+                let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
+                let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
+                // If we built the probe table on the right, flip the order of union.
+                let (left, right) = if build_on_left {
+                    (left, right)
+                } else {
+                    (right, left)
+                };
+                let final_table = join_table.union(&left)?.union(&right)?;
+                Ok(final_table)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
         Ok(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
+            output_schema.clone(),
+            Arc::new(final_tables),
             None,
         )))
     }
@@ -554,6 +550,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
 
         let needs_bitmap = self.needs_bitmap;
         let params = self.params.clone();
+        let output_schema = self.output_schema.clone();
         spawner
             .spawn(
                 async move {
@@ -574,6 +571,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                                 &params.common_join_cols,
                                 &params.left_non_join_columns,
                                 &params.right_non_join_columns,
+                                &output_schema,
                             )
                         }
                         JoinType::Left | JoinType::Right => Self::probe_left_right(
@@ -584,6 +582,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                             &params.common_join_cols,
                             &params.left_non_join_columns,
                             &params.right_non_join_columns,
+                            &output_schema,
                         ),
                         JoinType::Outer => {
                             let bitmap_builder = state
@@ -601,6 +600,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                                 &params.left_non_join_columns,
                                 &params.right_non_join_columns,
                                 params.build_on_left,
+                                &output_schema,
                             )
                         }
                         _ => unreachable!(
