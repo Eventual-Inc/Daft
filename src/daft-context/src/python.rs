@@ -1,14 +1,7 @@
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
-use common_error::DaftError;
-use daft_py_runners::{NativeRunner, RayRunner};
-use pyo3::{IntoPyObjectExt, prelude::*};
+use pyo3::prelude::*;
 
-use crate::{DaftContext, Runner, RunnerConfig, detect_ray_state};
-
-#[pyclass]
-pub struct PyRunnerConfig {
-    _inner: RunnerConfig,
-}
+use crate::DaftContext;
 
 #[pyclass]
 pub struct PyDaftContext {
@@ -28,41 +21,6 @@ impl PyDaftContext {
         Self {
             inner: crate::get_context(),
         }
-    }
-
-    pub fn get_or_create_runner(&self, py: Python) -> PyResult<PyObject> {
-        let runner = py.allow_threads(|| self.inner.get_or_create_runner())?;
-
-        match runner.as_ref() {
-            Runner::Ray(ray) => {
-                let pyobj = ray.pyobj.as_ref();
-                Ok(pyobj.clone_ref(py))
-            }
-            Runner::Native(native) => {
-                let pyobj = native.pyobj.as_ref();
-                Ok(pyobj.clone_ref(py))
-            }
-        }
-    }
-
-    pub fn get_or_infer_runner_type(&self, py: Python) -> PyResult<PyObject> {
-        match self.inner.runner() {
-            Some(runner) => match runner.as_ref() {
-                Runner::Ray(_) => RayRunner::NAME,
-                Runner::Native(_) => NativeRunner::NAME,
-            },
-            None => {
-                if let (true, _) = detect_ray_state() {
-                    RayRunner::NAME
-                } else {
-                    match super::get_runner_config_from_env()? {
-                        RunnerConfig::Ray { .. } => RayRunner::NAME,
-                        RunnerConfig::Native { .. } => NativeRunner::NAME,
-                    }
-                }
-            }
-        }
-        .into_py_any(py)
     }
 
     #[getter(_daft_execution_config)]
@@ -88,12 +46,6 @@ impl PyDaftContext {
     pub fn set_daft_planning_config(&self, py: Python, config: PyDaftPlanningConfig) {
         py.allow_threads(|| self.inner.set_planning_config(config.config));
     }
-
-    #[getter(_runner)]
-    pub fn get_runner(&self, py: Python) -> Option<PyObject> {
-        let runner = py.allow_threads(|| self.inner.runner());
-        runner.map(|r| r.to_pyobj(py))
-    }
 }
 impl From<DaftContext> for PyDaftContext {
     fn from(ctx: DaftContext) -> Self {
@@ -102,47 +54,8 @@ impl From<DaftContext> for PyDaftContext {
 }
 
 #[pyfunction]
-pub fn get_runner_config_from_env() -> PyResult<PyRunnerConfig> {
-    Ok(PyRunnerConfig {
-        _inner: super::get_runner_config_from_env()?,
-    })
-}
-
-#[pyfunction]
 pub fn get_context() -> PyDaftContext {
     PyDaftContext {
         inner: super::get_context(),
     }
-}
-
-#[pyfunction(signature = (
-    address = None,
-    noop_if_initialized = false,
-    max_task_backlog = None,
-    force_client_mode = false
-))]
-pub fn set_runner_ray(
-    address: Option<String>,
-    noop_if_initialized: Option<bool>,
-    max_task_backlog: Option<usize>,
-    force_client_mode: Option<bool>,
-) -> PyResult<PyDaftContext> {
-    let noop_if_initialized = noop_if_initialized.unwrap_or(false);
-    let context = super::set_runner_ray(address, max_task_backlog, force_client_mode);
-    match context {
-        Ok(ctx) => Ok(ctx.into()),
-        Err(e)
-            if noop_if_initialized
-                && matches!(&e, DaftError::InternalError(msg) if msg.contains("Cannot set runner more than once")) =>
-        {
-            Ok(super::get_context().into())
-        }
-        Err(e) => Err(e.into()),
-    }
-}
-
-#[pyfunction(signature = (num_threads = None))]
-pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> {
-    let ctx = super::set_runner_native(num_threads)?;
-    Ok(ctx.into())
 }

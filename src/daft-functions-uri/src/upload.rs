@@ -237,7 +237,6 @@ pub fn url_upload(
                             i,
                             owned_client
                                 .single_url_upload(
-                                    i,
                                     path,
                                     data,
                                     raise_error_on_failure,

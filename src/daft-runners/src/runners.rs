@@ -1,26 +1,22 @@
-//! Wrapper around the python RayRunner class
-use std::sync::Arc;
+//! Wrappers around the Python Runner ABC class
+//! and utilities for runner detection
+use std::sync::{Arc, OnceLock};
 
-#[cfg(feature = "python")]
 use common_error::{DaftError, DaftResult};
-#[cfg(feature = "python")]
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
-#[cfg(feature = "python")]
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
-#[cfg(feature = "python")]
 use pyo3::{
+    exceptions::PyValueError,
     intern,
     prelude::*,
     types::{PyDict, PyIterator},
 };
 
-#[cfg(feature = "python")]
 #[derive(Debug)]
 pub struct RayRunner {
     pub pyobj: Arc<PyObject>,
 }
 
-#[cfg(feature = "python")]
 impl RayRunner {
     pub const NAME: &'static str = "ray";
 
@@ -47,13 +43,11 @@ impl RayRunner {
     }
 }
 
-#[cfg(feature = "python")]
 #[derive(Debug)]
 pub struct NativeRunner {
     pub pyobj: Arc<PyObject>,
 }
 
-#[cfg(feature = "python")]
 impl NativeRunner {
     pub const NAME: &'static str = "native";
 
@@ -76,13 +70,10 @@ impl NativeRunner {
 
 #[derive(Debug)]
 pub enum Runner {
-    #[cfg(feature = "python")]
     Ray(RayRunner),
-    #[cfg(feature = "python")]
     Native(NativeRunner),
 }
 
-#[cfg(feature = "python")]
 impl Runner {
     pub fn from_pyobj(obj: PyObject) -> PyResult<Self> {
         Python::with_gil(|py| {
@@ -152,10 +143,11 @@ impl Runner {
 }
 
 #[derive(Debug)]
+#[pyclass]
 pub enum RunnerConfig {
-    #[cfg(feature = "python")]
-    Native { num_threads: Option<usize> },
-    #[cfg(feature = "python")]
+    Native {
+        num_threads: Option<usize>,
+    },
     Ray {
         address: Option<String>,
         max_task_backlog: Option<usize>,
@@ -163,7 +155,6 @@ pub enum RunnerConfig {
     },
 }
 
-#[cfg(feature = "python")]
 impl RunnerConfig {
     pub fn create_runner(self) -> DaftResult<Runner> {
         match self {
@@ -179,4 +170,109 @@ impl RunnerConfig {
             )?)),
         }
     }
+}
+
+// ---------------------- Detection utilities ---------------------- //
+
+/// Helper function to automatically detect whether to use the ray runner.
+pub fn detect_ray_state() -> (bool, bool) {
+    Python::with_gil(|py| {
+        py.import(pyo3::intern!(py, "daft.utils"))
+            .and_then(|m| m.getattr(pyo3::intern!(py, "detect_ray_state")))
+            .and_then(|m| m.call0())
+            .and_then(|m| m.extract())
+            .unwrap_or((false, false))
+    })
+}
+
+// ----------------- Environment variable handling ----------------- //
+
+/// Helper function to parse a boolean environment variable.
+fn parse_bool_env_var(var_name: &str) -> Option<bool> {
+    std::env::var(var_name)
+        .ok()
+        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"))
+}
+
+/// Helper function to parse a numeric environment variable.
+fn parse_usize_env_var(var_name: &str) -> Option<usize> {
+    std::env::var(var_name).ok().and_then(|s| s.parse().ok())
+}
+
+/// Helper function to get the ray runner config from the environment.
+fn get_ray_runner_config_from_env() -> RunnerConfig {
+    const DAFT_RAY_ADDRESS: &str = "DAFT_RAY_ADDRESS";
+    const RAY_ADDRESS: &str = "RAY_ADDRESS";
+    const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
+    const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
+
+    let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
+        log::warn!(
+            "Detected usage of the ${} environment variable. This will be deprecated, please use ${} instead.",
+            DAFT_RAY_ADDRESS,
+            RAY_ADDRESS
+        );
+        Some(address)
+    } else {
+        std::env::var(RAY_ADDRESS).ok()
+    };
+    let max_task_backlog = parse_usize_env_var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG);
+    let force_client_mode = parse_bool_env_var(DAFT_RAY_FORCE_CLIENT_MODE);
+    RunnerConfig::Ray {
+        address,
+        max_task_backlog,
+        force_client_mode,
+    }
+}
+
+/// Helper function to get the runner type from the environment.
+pub(crate) fn get_runner_type_from_env() -> String {
+    const DAFT_RUNNER: &str = "DAFT_RUNNER";
+
+    std::env::var(DAFT_RUNNER)
+        .unwrap_or_default()
+        .to_lowercase()
+}
+
+pub(crate) fn get_runner_config_from_env() -> PyResult<RunnerConfig> {
+    match get_runner_type_from_env().as_str() {
+        NativeRunner::NAME => Ok(RunnerConfig::Native { num_threads: None }),
+        RayRunner::NAME => Ok(get_ray_runner_config_from_env()),
+        "py" => Err(PyValueError::new_err(
+            "The PyRunner was removed from Daft from v0.5.0 onwards. \
+            Please set the env to `DAFT_RUNNER=native`."
+                .to_string(),
+        )
+        .into()),
+        "" => Ok(if detect_ray_state() == (true, false) {
+            // on ray but not in ray worker
+            get_ray_runner_config_from_env()
+        } else {
+            RunnerConfig::Native { num_threads: None }
+        }),
+        other => Err(PyValueError::new_err(format!(
+            "Invalid runner type `DAFT_RUNNER={other}` specified through the env. \
+            Please use either `native` or `ray`."
+        ))),
+    }
+}
+
+// -------------------------- Singleton -------------------------- //
+
+/// The global runner used to execute queries.
+/// It is never possible to set more than once.
+pub(crate) static DAFT_RUNNER: OnceLock<Arc<Runner>> = OnceLock::new();
+
+/// Retrieves the runner.
+///
+/// WARNING: This will set the runner if it has not yet been set.
+pub fn get_or_create_runner() -> DaftResult<Arc<Runner>> {
+    DAFT_RUNNER
+        .get_or_try_init(|| {
+            let runner_cfg = get_runner_config_from_env()?;
+            let runner = runner_cfg.create_runner()?;
+
+            Ok(Arc::new(runner))
+        })
+        .cloned()
 }
