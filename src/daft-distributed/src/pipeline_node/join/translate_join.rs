@@ -279,8 +279,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let right_on = BoundExpr::bind_all(&right_on, &right_node.config().schema)?;
 
         match join_strategy {
-            // TODO(Flotilla MS3): Implement sort-merge join
-            JoinStrategy::Hash | JoinStrategy::SortMerge => self.gen_hash_join_nodes(
+            JoinStrategy::Hash => self.gen_hash_join_nodes(
                 logical_node_id,
                 left_node,
                 right_node,
@@ -290,6 +289,21 @@ impl LogicalPlanToPipelineNodeTranslator {
                 join.join_type,
                 join.output_schema.clone(),
             ),
+            JoinStrategy::SortMerge => {
+                tracing::warn!(
+                    "Sort-merge join is not implemented yet, falling back to hash join. Please use the legacy ray runner, daft.set_execution_config(use_legacy_ray_runner=True), for sort merge joins."
+                );
+                self.gen_hash_join_nodes(
+                    logical_node_id,
+                    left_node,
+                    right_node,
+                    left_on,
+                    right_on,
+                    null_equals_nulls,
+                    join.join_type,
+                    join.output_schema.clone(),
+                )
+            }
             JoinStrategy::Broadcast => self.gen_broadcast_join_node(
                 logical_node_id,
                 left_on,
