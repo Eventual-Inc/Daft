@@ -2508,6 +2508,7 @@ dependencies = [
  "common-runtime",
  "daft-core",
  "daft-dashboard",
+ "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-runners",

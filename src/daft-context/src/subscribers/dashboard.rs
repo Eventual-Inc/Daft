@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, StatSnapshotView, ops::NodeInfo};
 use common_runtime::{RuntimeRef, get_io_runtime};
-use daft_micropartition::MicroPartitionRef;
+use daft_core::prelude::DataType;
+use daft_io::IOStatsContext;
+use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use reqwest::Client;
 
 use crate::subscribers::QuerySubscriber;
@@ -92,32 +94,48 @@ impl QuerySubscriber for DashboardSubscriber {
     }
 
     fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
-        // TODO: Limit to X MB and record # of rows
+        // Limit the results to max 10 rows
+        // TODO: Limit by X MB and # of rows
 
-        let ipc_buffer = if results.is_empty() {
-            vec![]
+        let (ipc_buffer, num_rows, total_bytes) = if results.is_empty() {
+            (vec![], 0, 0)
         } else {
-            let total_bytes = results
-                .iter()
-                .map(|part| part.size_bytes().unwrap_or(0))
-                .sum::<usize>();
-            let buffer = Vec::with_capacity(total_bytes);
-            let schema = results[0].schema().to_arrow()?;
+            let results = MicroPartition::concat(results)?;
+            let num_rows = results.len();
+            let total_bytes = results.size_bytes().unwrap_or(0);
+            let schema = results.schema();
 
-            let options = arrow2::io::ipc::write::WriteOptions { compression: None };
-            let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
-            writer.start(&schema, None)?;
-
-            let tables = results[0].head(5)?.get_tables()?;
-            for table in tables.iter() {
-                let chunk = table.to_chunk();
-                writer.write(&chunk, None)?;
+            // Clean up the data to:
+            // - Limit to max 10 rows
+            let io_stats = IOStatsContext::new("DashboardSubscriber::on_query_end");
+            let results = results
+                .head(10)?
+                .concat_or_get(io_stats)?
+                .expect("Results should not be empty");
+            // - Filter out Python dtype columns
+            let non_py_cols: Vec<usize>;
+            #[cfg(feature = "python")]
+            {
+                non_py_cols = schema
+                    .fields()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, f)| f.dtype == DataType::Python)
+                    .map(|(i, _)| i)
+                    .collect::<Vec<_>>();
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                non_py_cols = schema
+                    .fields()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| i)
+                    .collect::<Vec<_>>();
             }
 
-            writer.finish()?;
-            let mut finished_buffer = writer.into_inner();
-            finished_buffer.shrink_to_fit();
-            finished_buffer
+            let result = results.get_columns(&non_py_cols);
+            (result.to_ipc_stream()?, num_rows, total_bytes)
         };
 
         let end_sec = now();
@@ -127,6 +145,8 @@ impl QuerySubscriber for DashboardSubscriber {
                 .json(&daft_dashboard::api::FinalizeArgs {
                     end_sec,
                     results: ipc_buffer,
+                    num_rows,
+                    total_bytes,
                 })
                 .send()
                 .await

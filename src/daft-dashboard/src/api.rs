@@ -226,6 +226,8 @@ pub struct FinalizeArgs {
     pub end_sec: u64,
     // IPC-serialized RecordBatch
     pub results: Vec<u8>,
+    pub num_rows: usize,
+    pub total_bytes: usize,
 }
 
 async fn query_end(
@@ -252,6 +254,8 @@ async fn query_end(
         exec_end_sec: *exec_end_sec,
         end_sec: args.end_sec,
         results,
+        num_rows: args.num_rows,
+        total_bytes: args.total_bytes,
     };
     StatusCode::OK
 }

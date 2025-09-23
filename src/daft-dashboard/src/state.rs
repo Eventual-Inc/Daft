@@ -69,6 +69,8 @@ pub(crate) enum QueryState {
         exec_end_sec: u64,
         end_sec: u64,
         results: RecordBatch,
+        num_rows: usize,
+        total_bytes: usize,
     },
 }
 
