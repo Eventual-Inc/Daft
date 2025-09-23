@@ -5,7 +5,7 @@ import logging
 import threading
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -86,7 +86,8 @@ class DaftContext:
         if not isinstance(results[0], MicroPartition):
             raise ValueError("Query Managers only support the Native Runner for now")
 
-        self._ctx.notify_query_end(query_id, [part._micropartition for part in results])
+        mp_results = cast("list[MicroPartition]", results)
+        self._ctx.notify_query_end(query_id, [part._micropartition for part in mp_results])
 
     def notify_plan_start(self, query_id: str) -> None:
         self._ctx.notify_plan_start(query_id)

@@ -13,6 +13,10 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 pub use smallvec::smallvec;
 
+/// Unique identifier for a node in the execution plan.
+// TODO: Make this global for all plans and executions
+pub type NodeID = usize;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stat {
     // Integer Representations

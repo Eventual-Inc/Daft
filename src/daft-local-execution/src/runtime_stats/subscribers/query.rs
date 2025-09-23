@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::ops::NodeInfo;
+use common_metrics::{NodeID, ops::NodeInfo};
 use daft_context::QuerySubscriber;
 
 use crate::runtime_stats::RuntimeStatsSubscriber;
@@ -23,35 +24,39 @@ impl QuerySubscriberWrapper {
     }
 }
 
+#[async_trait]
 impl RuntimeStatsSubscriber for QuerySubscriberWrapper {
-    fn finish(self: Box<Self>) -> DaftResult<()> {
-        self.inner.on_exec_end(self.query_id.clone())?;
-        Ok(())
-    }
-
-    fn initialize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
+    async fn initialize_node(&self, node_id: NodeID) -> DaftResult<()> {
         self.inner
-            .on_exec_operator_start(self.query_id.clone(), node_info.id)?;
+            .on_exec_operator_start(self.query_id.clone(), node_id)
+            .await?;
         Ok(())
     }
 
-    fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
+    async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
         self.inner
-            .on_exec_operator_end(self.query_id.clone(), node_info.id)?;
+            .on_exec_operator_end(self.query_id.clone(), node_id)
+            .await?;
         Ok(())
     }
 
-    fn handle_event(
+    async fn handle_event(
         &self,
-        events: &[(&NodeInfo, common_metrics::StatSnapshotSend)],
+        events: &[(NodeID, common_metrics::StatSnapshotSend)],
     ) -> DaftResult<()> {
         let all_node_stats = events
             .iter()
-            .map(|(node_info, snapshot)| (node_info.id, snapshot.clone().into()))
+            .map(|(node_id, snapshot)| (*node_id, snapshot.clone().into()))
             .collect::<Vec<_>>();
 
         self.inner
-            .on_exec_emit_stats(self.query_id.clone(), all_node_stats.as_slice())?;
+            .on_exec_emit_stats(self.query_id.clone(), all_node_stats.as_slice())
+            .await?;
+        Ok(())
+    }
+
+    async fn finish(self: Box<Self>) -> DaftResult<()> {
+        self.inner.on_exec_end(self.query_id.clone()).await?;
         Ok(())
     }
 

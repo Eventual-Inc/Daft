@@ -1,4 +1,5 @@
 [dependencies]
+async-trait = {workspace = true}
 arrow2 = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}

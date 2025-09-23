@@ -2501,6 +2501,7 @@ name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "async-trait",
  "common-daft-config",
  "common-error",
  "common-metrics",
