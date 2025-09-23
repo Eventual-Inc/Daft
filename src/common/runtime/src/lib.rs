@@ -52,12 +52,6 @@ pub struct RuntimeTask<T> {
     joinset: JoinSet<T>,
 }
 
-impl<T> std::fmt::Debug for RuntimeTask<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RuntimeTask({})", self.joinset.len())
-    }
-}
-
 impl<T> RuntimeTask<T> {
     pub fn new<F>(handle: &Handle, future: F) -> Self
     where
@@ -84,15 +78,12 @@ impl<T: Send + 'static> Future for RuntimeTask<T> {
     }
 }
 
-<<<<<<< HEAD
 impl<T> std::fmt::Debug for RuntimeTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "RuntimeTask({})", self.joinset.len())
     }
 }
 
-=======
->>>>>>> 09727e1b5 (good to go)
 #[derive(Debug)]
 pub struct Runtime {
     pub runtime: Arc<tokio::runtime::Runtime>,

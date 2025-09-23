@@ -173,11 +173,11 @@ impl RuntimeStatsManager {
                                 }
                             }
                         } else if !is_initialize && active_nodes.remove(&node_id) {
-                            let (_, runtime_stats) = &node_stats[node_id];
+                            let runtime_stats = &node_stats_map[&node_id];
                             let event = [(node_id, runtime_stats.flush())];
                             for subscriber in &subscribers {
                                 if let Err(e) = subscriber.handle_event(&event).await {
-                                    log::error!("Failed to handle event: {}", e);
+                                    log::error!("Failed to handle event at finalization: {}", e);
                                 }
                                 if let Err(e) = subscriber.finalize_node(node_id).await {
                                     log::error!("Failed to finalize node: {}", e);
