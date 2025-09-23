@@ -19,7 +19,7 @@ pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true, features = ["raw_value"]}
-simd-json = {version = "0.16", features = ["known-key"]}
+simd-json = {version = "0.13", features = ["known-key"]}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true, features = ["io-util"]}
