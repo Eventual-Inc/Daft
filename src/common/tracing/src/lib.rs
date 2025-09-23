@@ -1,9 +1,7 @@
-use std::sync::{Mutex, atomic::AtomicBool};
-
-use tracing_chrome::ChromeLayerBuilder;
-use tracing_subscriber::{layer::SubscriberExt, prelude::*};
-static TRACING_INIT: AtomicBool = AtomicBool::new(false);
-use std::{sync::LazyLock, time::Duration};
+use std::{
+    sync::{LazyLock, Mutex},
+    time::Duration,
+};
 
 use common_runtime::get_io_runtime;
 use opentelemetry::{KeyValue, global, trace::TracerProvider};
@@ -12,9 +10,7 @@ use opentelemetry_sdk::{
     Resource,
     trace::{Sampler, SdkTracerProvider},
 };
-
-static CHROME_GUARD_HANDLE: LazyLock<Mutex<Option<tracing_chrome::FlushGuard>>> =
-    LazyLock::new(|| Mutex::new(None));
+use tracing_subscriber::{layer::SubscriberExt, prelude::*};
 
 static GLOBAL_TRACER_PROVIDER: LazyLock<
     Mutex<Option<opentelemetry_sdk::trace::SdkTracerProvider>>,
@@ -111,6 +107,7 @@ async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
         .with_tracer(tracer)
         .with_filter(tracing::level_filters::LevelFilter::INFO);
 
+    eprintln!("Setting global default for otel layer");
     tracing::subscriber::set_global_default(tracing_subscriber::registry().with(telemetry_layer))
         .unwrap();
 
@@ -123,68 +120,5 @@ fn flush_oltp_tracer_provider() {
         && let Err(e) = tracer_provider.force_flush()
     {
         println!("Failed to flush OTLP tracer provider: {}", e);
-    }
-}
-pub fn init_tracing(enable_chrome_trace: bool) {
-    use std::sync::atomic::Ordering;
-
-    assert!(
-        !TRACING_INIT.swap(true, Ordering::Relaxed),
-        "Cannot init tracing, already initialized!"
-    );
-
-    if !enable_chrome_trace {
-        return; // Do nothing for now
-    }
-
-    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
-    assert!(
-        mg.is_none(),
-        "Expected chrome flush guard to be None on init"
-    );
-
-    let (chrome_layer, guard) = ChromeLayerBuilder::new()
-        // The initial writer to the chrome trace is a no-op sink, so we don't write anything
-        // only on calls to start_chrome_trace() do we write traces.
-        .writer(std::io::sink())
-        .trace_style(tracing_chrome::TraceStyle::Threaded)
-        .name_fn(Box::new(|event_or_span| {
-            match event_or_span {
-                tracing_chrome::EventOrSpan::Event(ev) => ev.metadata().name().into(),
-                tracing_chrome::EventOrSpan::Span(s) => {
-                    // TODO: this is where we should extract out fields (such as node id to show the different pipelines)
-                    s.name().into()
-                }
-            }
-        }))
-        .build();
-
-    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(chrome_layer))
-        .unwrap();
-
-    *mg = Some(guard);
-}
-
-pub fn start_chrome_trace() -> bool {
-    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
-    if let Some(fg) = mg.as_mut() {
-        // start_new(None) will let tracing-chrome choose the file and file name.
-        fg.start_new(None);
-        true
-    } else {
-        false
-    }
-}
-
-pub fn finish_chrome_trace() -> bool {
-    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
-    if let Some(fg) = mg.as_mut() {
-        // start_new(Some(Box::new(std::io::sink()))) will flush the current trace, and start a new one with a dummy writer.
-        // The flush method doesn't actually close the file. The only way to do it is to drop the guard or call 'start_new'.
-        // But we can't drop the guard because it's a static and we may have multiple traces per process, so we need to call start_new.
-        fg.start_new(Some(Box::new(std::io::sink())));
-        true
-    } else {
-        false
     }
 }

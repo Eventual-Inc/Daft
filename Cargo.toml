@@ -334,6 +334,7 @@ tokio-util = "0.7.11"
 tonic = "0.12.3"
 tonic-build = "0.12.3"
 tracing = {version = "0.1", features = ["log"]}
+tracing-subscriber = {version = "0.3.20", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
 typed-builder = "0.20.0"
 typetag = "0.2.18"
 url = "2.4.0"
