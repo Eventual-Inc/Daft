@@ -598,6 +598,7 @@ class DataType:
         return cls.from_arrow_type(arrow_type)
 
     def to_arrow_dtype(self) -> pa.DataType:
+        _ensure_registered_super_ext_type()
         return self._dtype.to_arrow()
 
     @classmethod
