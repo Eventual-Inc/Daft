@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_arrow_ffi as ffi;
-use common_file::DaftFile;
+use common_file::FileReference;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
@@ -85,11 +85,11 @@ impl PySeries {
                 let item = inner.getattr(py, "_get_file")?;
                 let item = item.call0(py)?;
 
-                let daft_file: DaftFile = item.extract(py)?;
+                let daft_file: FileReference = item.extract(py)?;
 
                 PyResult::Ok(daft_file)
             })
-            .collect::<PyResult<Vec<DaftFile>>>()?;
+            .collect::<PyResult<Vec<FileReference>>>()?;
         let file_array = FileArray::new_from_daft_files(name, files);
         let s = file_array.into_series();
         Ok(s.into())

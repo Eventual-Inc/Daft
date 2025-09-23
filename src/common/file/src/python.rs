@@ -7,9 +7,9 @@ use pyo3::{
     types::{PyBytes, PyString, PyTuple},
 };
 
-use crate::DaftFile;
+use crate::FileReference;
 
-impl<'py> IntoPyObject<'py> for DaftFile {
+impl<'py> IntoPyObject<'py> for FileReference {
     type Target = PyTuple;
 
     type Output = Bound<'py, Self::Target>;
@@ -28,7 +28,7 @@ impl<'py> IntoPyObject<'py> for DaftFile {
     }
 }
 
-impl<'py> FromPyObject<'py> for DaftFile {
+impl<'py> FromPyObject<'py> for FileReference {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let tuple = ob.extract::<Bound<'py, PyTuple>>()?;
         let first = tuple.get_item(0)?;
