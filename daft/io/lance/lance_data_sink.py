@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import pathlib
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Literal
@@ -19,6 +20,9 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from daft.daft import IOConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 def pyarrow_schema_castable(src: pa.Schema, dst: pa.Schema) -> bool:
@@ -50,6 +54,8 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         schema: Schema,
         mode: Literal["create", "append", "overwrite"],
         io_config: IOConfig | None = None,
+        batch_size: int = 1,
+        max_batch_rows: int = 100000,
         **kwargs: Any,
     ) -> None:
         from daft.io.object_store_options import io_config_to_storage_options
@@ -63,6 +69,18 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         self._kwargs = kwargs
 
         self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
+
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+        if max_batch_rows < 1:
+            raise ValueError(f"max_batch_rows must be >= 1, got {max_batch_rows}")
+
+        self._batch_size = batch_size
+        self._max_batch_rows = max_batch_rows
+
+        self._batch_tables: list[pa.Table] = []
+        self._batch_row_count: int = 0
+        self._batch_count: int = 0
 
         self._pyarrow_schema = schema.to_pyarrow_schema()
 
@@ -101,36 +119,171 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         return self._schema
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[lance.FragmentMetadata]]]:
-        """Writes fragments from the given micropartitions."""
+        """Writes fragments from the given micropartitions with class-level batching support."""
+        self._reset_batch_state()
+
         lance = self._import_lance()
 
-        for micropartition in micropartitions:
-            arrow_table = pa.Table.from_batches(
-                micropartition.to_arrow().to_batches(),
-                self._pyarrow_schema,
-            )
-            if self._table_schema is not None:
-                arrow_table = arrow_table.cast(self._table_schema)
+        if self._batch_size == 1:
+            for micropartition in micropartitions:
+                arrow_table = pa.Table.from_batches(
+                    micropartition.to_arrow().to_batches(),
+                    self._pyarrow_schema,
+                )
+                if self._table_schema is not None:
+                    arrow_table = arrow_table.cast(self._table_schema)
 
-            bytes_written = arrow_table.nbytes
-            rows_written = arrow_table.num_rows
+                bytes_written = arrow_table.nbytes
+                rows_written = arrow_table.num_rows
 
-            fragments = lance.fragment.write_fragments(
-                arrow_table,
-                dataset_uri=self._table_uri,
-                mode=self._mode,
-                storage_options=self._storage_options,
-                **self._kwargs,
-            )
-            yield WriteResult(
-                result=fragments,
-                bytes_written=bytes_written,
-                rows_written=rows_written,
-            )
+                fragments = lance.fragment.write_fragments(
+                    arrow_table,
+                    dataset_uri=self._table_uri,
+                    mode=self._mode,
+                    storage_options=self._storage_options,
+                    **self._kwargs,
+                )
+                yield WriteResult(
+                    result=fragments,
+                    bytes_written=bytes_written,
+                    rows_written=rows_written,
+                )
+        else:
+            try:
+                for micropartition in micropartitions:
+                    try:
+                        arrow_table = pa.Table.from_batches(
+                            micropartition.to_arrow().to_batches(),
+                            self._pyarrow_schema,
+                        )
+                        if self._table_schema is not None:
+                            arrow_table = arrow_table.cast(self._table_schema)
+
+                        self._batch_tables.append(arrow_table)
+                        self._batch_row_count += arrow_table.num_rows
+                        self._batch_count += 1
+
+                        if self._should_flush_batch(self._batch_count, self._batch_row_count):
+                            yield from self._flush_batch(lance)
+
+                    except Exception as e:
+                        logger.error("Error processing micropartition: %s", e)
+                        if self._batch_tables:
+                            try:
+                                yield from self._flush_batch(lance)
+                            except Exception as flush_error:
+                                logger.error("Batch flush failed: %s", flush_error)
+                                for table in self._batch_tables:
+                                    yield from self._write_single_table(table, lance)
+                        self._reset_batch_state()
+
+                        try:
+                            arrow_table = pa.Table.from_batches(
+                                micropartition.to_arrow().to_batches(),
+                                self._pyarrow_schema,
+                            )
+                            if self._table_schema is not None:
+                                arrow_table = arrow_table.cast(self._table_schema)
+                            yield from self._write_single_table(arrow_table, lance)
+                        except Exception as individual_error:
+                            logger.error("Failed to process micropartition individually: %s", individual_error)
+                            raise e
+            finally:
+                if self._batch_tables:
+                    try:
+                        yield from self._flush_batch(lance)
+                    except Exception as final_flush_error:
+                        logger.error("Final batch flush failed: %s", final_flush_error)
+                        for table in self._batch_tables:
+                            try:
+                                yield from self._write_single_table(table, lance)
+                            except Exception as table_error:
+                                logger.error("Failed to write individual table in final cleanup: %s", table_error)
+                        self._reset_batch_state()
+
+    def _should_flush_batch(self, batch_count: int, batch_row_count: int) -> bool:
+        """Determines if the current batch should be flushed."""
+        should_flush = batch_count >= self._batch_size or batch_row_count >= self._max_batch_rows
+
+        logger.debug(
+            "Batch status: count=%d/%d, rows=%d/%d, should_flush=%s",
+            batch_count,
+            self._batch_size,
+            batch_row_count,
+            self._max_batch_rows,
+            should_flush,
+        )
+
+        return should_flush
+
+    def _flush_batch(self, lance: ModuleType) -> Iterator[WriteResult[list[lance.FragmentMetadata]]]:
+        """Flushes the class-level batch of Arrow tables by concatenating and writing them."""
+        if not self._batch_tables:
+            return
+
+        logger.debug(
+            "Flushing class-level batch with %d tables, total rows: %d", len(self._batch_tables), self._batch_row_count
+        )
+
+        try:
+            if len(self._batch_tables) == 1:
+                yield from self._write_single_table(self._batch_tables[0], lance)
+            else:
+                try:
+                    combined_table = pa.concat_tables(self._batch_tables)
+                    yield from self._write_single_table(combined_table, lance)
+                except Exception as concat_error:
+                    logger.warning("Table concatenation failed: %s, falling back to individual writes", concat_error)
+                    for i, table in enumerate(self._batch_tables):
+                        try:
+                            yield from self._write_single_table(table, lance)
+                        except Exception as table_error:
+                            logger.error("Failed to write individual table %d: %s", i, table_error)
+                            raise
+        except Exception as e:
+            logger.error("Batch flush failed with %d tables: %s", len(self._batch_tables), e)
+            raise
+        finally:
+            self._reset_batch_state()
+
+    def _reset_batch_state(self) -> None:
+        """Resets the class-level batch state."""
+        self._batch_tables = []
+        self._batch_row_count = 0
+        self._batch_count = 0
+
+    def flush_batch(self) -> Iterator[WriteResult[list[lance.FragmentMetadata]]]:
+        """Public method to manually flush any accumulated batch data."""
+        if self._batch_tables:
+            lance = self._import_lance()
+            yield from self._flush_batch(lance)
+
+    def _write_single_table(
+        self, arrow_table: pa.Table, lance: ModuleType
+    ) -> Iterator[WriteResult[list[lance.FragmentMetadata]]]:
+        """Writes a single Arrow table to Lance."""
+        bytes_written = arrow_table.nbytes
+        rows_written = arrow_table.num_rows
+
+        fragments = lance.fragment.write_fragments(
+            arrow_table,
+            dataset_uri=self._table_uri,
+            mode=self._mode,
+            storage_options=self._storage_options,
+            **self._kwargs,
+        )
+        yield WriteResult(
+            result=fragments,
+            bytes_written=bytes_written,
+            rows_written=rows_written,
+        )
 
     def finalize(self, write_results: list[WriteResult[list[lance.FragmentMetadata]]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
         lance = self._import_lance()
+
+        remaining_results = list(self.flush_batch())
+        write_results.extend(remaining_results)
 
         fragments = list(chain.from_iterable(write_result.result for write_result in write_results))
 
