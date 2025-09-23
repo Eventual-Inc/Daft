@@ -7,6 +7,7 @@ from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
+from daft.file import File
 from daft.schema import Field
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -105,6 +106,9 @@ class Series:
 
         # Otherwise, try to infer from parameters provided
         try:
+            if data and isinstance(data[0], File):
+                pys = PySeries.from_pylist_of_files(name, data)
+                return Series._from_pyseries(pys)
             # Workaround: wrap list of np.datetime64 in an np.array
             #   - https://github.com/apache/arrow/issues/40580
             #   - https://github.com/Eventual-Inc/Daft/issues/3826

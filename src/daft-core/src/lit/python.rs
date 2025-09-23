@@ -163,7 +163,13 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .map(|(f, v)| (f.name, v))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
-            Self::File(f) => f.into_bound_py_any(py),
+            Self::File(f) => {
+                let pytuple = f.into_bound_py_any(py)?;
+                let py_file = py
+                    .import(intern!(py, "daft.file"))?
+                    .getattr(intern!(py, "File"))?;
+                py_file.call_method1(pyo3::intern!(py, "_from_tuple"), (pytuple,))
+            }
             Self::Map { keys, values } => {
                 assert_eq!(
                     keys.len(),
