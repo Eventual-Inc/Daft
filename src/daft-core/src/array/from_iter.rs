@@ -5,8 +5,12 @@ use arrow2::{
     types::months_days_ns,
 };
 use common_error::DaftResult;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 use super::DataArray;
+#[cfg(feature = "python")]
+use crate::datatypes::logical::PythonArray;
 use crate::{
     array::prelude::*,
     datatypes::{DaftPrimitiveType, prelude::*},
@@ -188,5 +192,54 @@ impl IntervalArray {
             arrow2::array::MonthsDaysNsArray::from_trusted_len_values_iter(iter.map(|x| x.into())),
         );
         Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
+    }
+}
+
+#[cfg(feature = "python")]
+impl PythonArray {
+    pub fn from_iter<P: AsRef<PyObject>>(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<P>>,
+    ) -> DaftResult<Self> {
+        use common_py_serde::pickle_dumps;
+
+        let pickled = Python::with_gil(|py| {
+            iter.map(|obj| {
+                Ok(if let Some(obj) = obj {
+                    if obj.as_ref().is_none(py) {
+                        None
+                    } else {
+                        Some(pickle_dumps(py, obj.as_ref())?)
+                    }
+                } else {
+                    None
+                })
+            })
+            .collect::<DaftResult<Vec<_>>>()
+        })?;
+
+        let physical = BinaryArray::from_iter(name, pickled.into_iter());
+        Ok(Self::new(Field::new(name, DataType::Python), physical))
+    }
+
+    pub fn from_values<P: AsRef<PyObject>>(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = P>,
+    ) -> DaftResult<Self> {
+        use common_py_serde::pickle_dumps;
+
+        let pickled = Python::with_gil(|py| {
+            iter.map(|obj| {
+                Ok(if obj.as_ref().is_none(py) {
+                    None
+                } else {
+                    Some(pickle_dumps(py, obj.as_ref())?)
+                })
+            })
+            .collect::<DaftResult<Vec<_>>>()
+        })?;
+
+        let physical = BinaryArray::from_iter(name, pickled.into_iter());
+        Ok(Self::new(Field::new(name, DataType::Python), physical))
     }
 }

@@ -6,7 +6,7 @@ use common_error::DaftResult;
 
 use super::{arrow2::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
 #[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
+use crate::datatypes::logical::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{

@@ -3,8 +3,6 @@ use std::cell::RefCell;
 use serde::ser::SerializeMap;
 
 use super::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::as_arrow::AsArrow};
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, DataType, ExtensionArray,
@@ -141,16 +139,6 @@ impl serde::Serialize for ExtensionArray {
         };
         s.serialize_entry("values", &values)?;
         s.end()
-    }
-}
-
-#[cfg(feature = "python")]
-impl serde::Serialize for PythonArray {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        panic!("Rust Serde is not implemented for Python Arrays")
     }
 }
 

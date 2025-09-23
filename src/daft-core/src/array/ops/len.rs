@@ -1,12 +1,3 @@
-use std::cmp::min;
-
-#[cfg(feature = "python")]
-use common_py_serde::pickle_dumps;
-use rand::{SeedableRng, rngs::StdRng};
-
-use super::as_arrow::AsArrow;
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{DaftArrowBackedType, FileArray},
@@ -18,67 +9,6 @@ where
 {
     pub fn size_bytes(&self) -> usize {
         arrow2::compute::aggregate::estimated_bytes_size(self.data())
-    }
-}
-
-#[cfg(feature = "python")]
-impl PythonArray {
-    /// Estimate the size of this list by sampling and pickling its objects.
-    pub fn size_bytes(&self) -> usize {
-        use rand::seq::IndexedRandom;
-
-        // Sample up to 1MB or 10000 items to determine total size.
-        const MAX_SAMPLE_QUANTITY: usize = 10000;
-        const MAX_SAMPLE_SIZE: usize = 1024 * 1024;
-
-        if self.is_empty() {
-            return 0;
-        }
-
-        let values = self.as_arrow().values();
-
-        let mut rng = StdRng::seed_from_u64(0);
-        let sample_candidates =
-            values.choose_multiple(&mut rng, min(values.len(), MAX_SAMPLE_QUANTITY));
-
-        let mut sample_size_allowed = MAX_SAMPLE_SIZE;
-        let mut sampled_sizes = Vec::with_capacity(sample_candidates.len());
-        for c in sample_candidates {
-            // Just estimate to 0 if pickle_dumps fails.
-            let size = pickle_dumps(c).map(|v| v.len()).unwrap_or(0);
-            sampled_sizes.push(size);
-            sample_size_allowed = sample_size_allowed.saturating_sub(size);
-
-            if sample_size_allowed == 0 {
-                break;
-            }
-        }
-
-        if sampled_sizes.len() == values.len() {
-            // Sampling complete.
-            // If we ended up measuring the entire list, just return the exact value.
-
-            sampled_sizes.into_iter().sum()
-        } else {
-            // Otherwise, reduce to a one-item estimate and extrapolate.
-
-            let one_item_size_estimate = if sampled_sizes.len() == 1 {
-                sampled_sizes[0]
-            } else {
-                let sampled_len = sampled_sizes.len() as f64;
-
-                let mean: f64 = sampled_sizes.iter().map(|&x| x as f64).sum::<f64>() / sampled_len;
-                let stdev: f64 = sampled_sizes
-                    .iter()
-                    .map(|&x| ((x as f64) - mean).powi(2))
-                    .sum::<f64>()
-                    / sampled_len;
-
-                (mean + stdev) as usize
-            };
-
-            one_item_size_estimate * values.len()
-        }
     }
 }
 

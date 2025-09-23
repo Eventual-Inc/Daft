@@ -1,9 +1,11 @@
-use std::sync::Arc;
-
 use arrow2::types::months_days_ns;
 use common_file::{DaftFile, DaftFileType};
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::datatypes::logical::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
@@ -115,11 +117,9 @@ impl ExtensionArray {
 }
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
-    #[inline]
-    pub fn get(&self, idx: usize) -> Arc<pyo3::PyObject> {
-        use arrow2::array::Array;
-        use pyo3::prelude::*;
+impl PythonArray {
+    pub fn get<'py>(&self, py: Python<'py>, idx: usize) -> Option<Bound<'py, PyAny>> {
+        use common_py_serde::pickle_loads;
 
         assert!(
             idx < self.len(),
@@ -127,16 +127,8 @@ impl crate::datatypes::PythonArray {
             idx,
             self.len()
         );
-        let valid = self
-            .as_arrow()
-            .validity()
-            .map(|vd| vd.get_bit(idx))
-            .unwrap_or(true);
-        if valid {
-            self.as_arrow().values().get(idx).unwrap().clone()
-        } else {
-            Arc::new(Python::with_gil(|py| py.None()))
-        }
+
+        self.physical.get(idx).map(|v| pickle_loads(py, v).unwrap())
     }
 }
 
@@ -203,12 +195,15 @@ impl FileArray {
                 let url_array = self.physical.get("url").expect("url exists");
                 let io_config_array = self.physical.get("io_config").expect("io_config exists");
                 let url_array = url_array.utf8().expect("url is utf8");
-                let io_config_array = io_config_array.python().expect("io_config is python");
+                let io_config_array = io_config_array.py().expect("io_config is python");
 
                 let data = url_array.get(idx)?;
-                let io_config = io_config_array.get(idx);
                 let io_config: Option<common_io_config::python::IOConfig> =
-                    pyo3::Python::with_gil(|py| io_config.extract(py).ok().flatten());
+                    pyo3::Python::with_gil(|py| {
+                        io_config_array
+                            .get(py, idx)
+                            .map(|obj| obj.extract().unwrap())
+                    });
 
                 Some(DaftFile::new_from_reference(
                     data.to_string(),

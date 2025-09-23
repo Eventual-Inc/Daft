@@ -3,6 +3,8 @@ use std::marker::PhantomData;
 use common_error::DaftResult;
 
 use super::{Growable, GrowableArray};
+#[cfg(feature = "python")]
+use crate::datatypes::PythonType;
 use crate::{
     array::prelude::*,
     datatypes::{FileType, prelude::*},
@@ -86,3 +88,6 @@ impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
 impl_logical_growable!(LogicalMapGrowable, MapType);
 impl_logical_growable!(LogicalFileGrowable, FileType);
+
+#[cfg(feature = "python")]
+impl_logical_growable!(LogicalPythonGrowable, PythonType);

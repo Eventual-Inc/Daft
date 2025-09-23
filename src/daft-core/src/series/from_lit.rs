@@ -143,15 +143,13 @@ impl TryFrom<Vec<Literal>> for Series {
 
             #[cfg(feature = "python")]
             DataType::Python => {
-                use std::sync::Arc;
+                use crate::datatypes::logical::PythonArray;
 
-                let pynone = Arc::new(pyo3::Python::with_gil(|py| py.None()));
+                let iter = values
+                    .into_iter()
+                    .map(|lit| unwrap_inner!(lit, Python).map(|obj| obj.0));
 
-                let data = values.into_iter().map(|lit| {
-                    unwrap_inner!(lit, Python).map_or_else(|| pynone.clone(), |pyobj| pyobj.0)
-                });
-
-                PythonArray::from(("literal", data.collect::<Vec<_>>())).into_series()
+                PythonArray::from_iter("literal", iter)?.into_series()
             }
             #[cfg(feature = "python")]
             DataType::File => {
@@ -169,34 +167,34 @@ impl TryFrom<Vec<Literal>> for Series {
 
                 match file_type {
                     DaftFileType::Reference => {
+                        use crate::datatypes::logical::PythonArray;
+
                         let (values, io_configs): (Vec<_>, Vec<_>) = pyo3::Python::with_gil(|py| {
                             values
                                 .into_iter()
-                                .map(|v| match v {
-                                    Literal::File(common_file::DaftFile::Reference(
-                                        path,
-                                        ioconfig,
-                                    )) => {
-                                        use std::sync::Arc;
+                                .map(|v| {
+                                    use pyo3::IntoPyObjectExt;
 
-                                        use pyo3::IntoPyObjectExt;
+                                    let Some(common_file::DaftFile::Reference(path, ioconfig)) =
+                                        unwrap_inner!(v, File)
+                                    else {
+                                        return (None, None);
+                                    };
 
-                                        let io_conf =
-                                            ioconfig.map(common_io_config::python::IOConfig::from);
-                                        let io_conf = io_conf
-                                            .into_py_any(py)
-                                            .expect("Failed to convert ioconfig to PyObject");
-                                        let io_conf = Arc::new(io_conf);
+                                    let io_conf =
+                                        ioconfig.map(common_io_config::python::IOConfig::from);
+                                    let io_conf = io_conf
+                                        .into_py_any(py)
+                                        .expect("Failed to convert ioconfig to PyObject");
 
-                                        (path, io_conf)
-                                    }
-                                    _ => unreachable!("should not happen"),
+                                    (Some(path), Some(io_conf))
                                 })
                                 .unzip()
                         });
 
-                        let io_configs = PythonArray::from(("io_config", io_configs));
-                        let urls = Utf8Array::from_values("url", values.into_iter());
+                        let io_configs =
+                            PythonArray::from_iter("io_config", io_configs.into_iter())?;
+                        let urls = Utf8Array::from_iter("url", values.into_iter());
                         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len())
                             .into_series();
 
@@ -224,6 +222,8 @@ impl TryFrom<Vec<Literal>> for Series {
                     }
 
                     DaftFileType::Data => {
+                        use crate::datatypes::logical::PythonArray;
+
                         let values = values.into_iter().map(|v| match v {
                             Literal::File(common_file::DaftFile::Data(items)) => items,
                             _ => panic!("should not happen"),

@@ -5,6 +5,8 @@ use logical::{
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
+#[cfg(feature = "python")]
+use crate::datatypes::logical::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{
@@ -145,7 +147,7 @@ impl Series {
     }
 
     #[cfg(feature = "python")]
-    pub fn python(&self) -> DaftResult<&PythonArray> {
+    pub fn py(&self) -> DaftResult<&PythonArray> {
         self.downcast()
     }
 

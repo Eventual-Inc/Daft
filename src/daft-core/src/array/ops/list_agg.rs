@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 
-use super::{DaftListAggable, GroupIndices, as_arrow::AsArrow};
+use super::{DaftListAggable, GroupIndices};
 use crate::{
     array::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
@@ -78,53 +76,4 @@ impl DaftListAggable for FixedSizeListArray {
 
 impl DaftListAggable for StructArray {
     impl_daft_list_agg!();
-}
-
-#[cfg(feature = "python")]
-impl DaftListAggable for crate::datatypes::PythonArray {
-    type Output = DaftResult<Self>;
-
-    fn list(&self) -> Self::Output {
-        use pyo3::{prelude::*, types::PyList};
-
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-
-        let pyobj_vec = self.as_arrow().to_pyobj_vec();
-
-        let pylist: Py<PyList> = Python::with_gil(|py| {
-            let pyobj_vec_cloned = pyobj_vec
-                .into_iter()
-                .map(|pyobj| pyobj.clone_ref(py))
-                .collect::<Vec<_>>();
-
-            PyList::new(py, pyobj_vec_cloned).map(Into::into)
-        })?;
-
-        let arrow_array = PseudoArrowArray::from_pyobj_vec(vec![Arc::new(pylist.into())]);
-        Self::new(self.field().clone().into(), Box::new(arrow_array))
-    }
-
-    fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
-        use pyo3::{prelude::*, types::PyList};
-
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-
-        let mut result_pylists: Vec<Arc<PyObject>> = Vec::with_capacity(groups.len());
-
-        Python::with_gil(|py| -> DaftResult<()> {
-            for group in groups {
-                let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
-                let group_pyobjs = self.take(&indices_as_array)?.as_arrow().to_pyobj_vec();
-                let group_pyobjs_cloned = group_pyobjs
-                    .into_iter()
-                    .map(|pyobj| pyobj.clone_ref(py))
-                    .collect::<Vec<_>>();
-                result_pylists.push(Arc::new(PyList::new(py, group_pyobjs_cloned)?.into()));
-            }
-            Ok(())
-        })?;
-
-        let arrow_array = PseudoArrowArray::from_pyobj_vec(result_pylists);
-        Self::new(self.field().clone().into(), Box::new(arrow_array))
-    }
 }

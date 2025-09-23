@@ -85,23 +85,6 @@ macro_rules! impl_daft_arrow_datatype {
     };
 }
 
-macro_rules! impl_daft_non_arrow_datatype {
-    ($ca:ident, $variant:ident) => {
-        #[derive(Clone, Debug)]
-        pub struct $ca {}
-
-        impl DaftDataType for $ca {
-            #[inline]
-            fn get_dtype() -> DataType {
-                DataType::$variant
-            }
-
-            type ArrayType = DataArray<$ca>;
-        }
-        impl DaftPhysicalType for $ca {}
-    };
-}
-
 macro_rules! impl_daft_logical_data_array_datatype {
     ($ca:ident, $variant:ident, $physical_type:ident) => {
         #[derive(Clone, Debug)]
@@ -253,7 +236,7 @@ impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
 
 #[cfg(feature = "python")]
-impl_daft_non_arrow_datatype!(PythonType, Python);
+impl_daft_logical_data_array_datatype!(PythonType, Python, BinaryType);
 
 pub trait NumericNative:
     PartialOrd
@@ -412,9 +395,6 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
-
-#[cfg(feature = "python")]
-pub type PythonArray = DataArray<PythonType>;
 
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {

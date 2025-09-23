@@ -7,6 +7,8 @@ use super::{
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
     ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };
+#[cfg(feature = "python")]
+use crate::datatypes::PythonType;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{DaftLogicalType, DateType, Field},
@@ -195,6 +197,8 @@ pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
+#[cfg(feature = "python")]
+pub type PythonArray = LogicalArray<PythonType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 

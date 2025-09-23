@@ -1,10 +1,6 @@
-use std::sync::Arc;
-
 use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 
-#[cfg(feature = "python")]
-use crate::array::pseudo_arrow::PseudoArrowArray;
 use crate::{array::DataArray, datatypes::DaftPhysicalType};
 
 macro_rules! impl_variable_length_concat {
@@ -82,22 +78,6 @@ where
 
         let arrow_arrays: Vec<_> = arrays.iter().map(|s| s.data.as_ref()).collect();
         match field.dtype {
-            #[cfg(feature = "python")]
-            crate::datatypes::DataType::Python => {
-                use pyo3::prelude::*;
-
-                let cat_array = Box::new(PseudoArrowArray::concatenate(
-                    arrow_arrays
-                        .iter()
-                        .map(|s| {
-                            s.as_any()
-                                .downcast_ref::<PseudoArrowArray<Arc<PyObject>>>()
-                                .unwrap()
-                        })
-                        .collect(),
-                ));
-                Self::new(field.clone(), cat_array)
-            }
             crate::datatypes::DataType::Utf8 => {
                 let cat_array = utf8_concat(arrow_arrays.as_slice())?;
                 Self::new(field.clone(), cat_array)

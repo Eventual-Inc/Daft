@@ -17,7 +17,6 @@ use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use {
-    crate::datatypes::PythonArray,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyReadonlyArrayDyn, PyUntypedArrayMethods},
     pyo3::prelude::*,
@@ -25,6 +24,8 @@ use {
 };
 
 use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::datatypes::logical::PythonArray;
 use crate::{
     array::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
@@ -49,15 +50,23 @@ use crate::{
 #[cfg(feature = "python")]
 impl Series {
     fn cast_to_python(&self) -> DaftResult<Self> {
-        let py_values = Python::with_gil(|py| {
-            use pyo3::IntoPyObjectExt;
+        use pyo3::IntoPyObjectExt;
 
+        use crate::lit::Literal;
+
+        let py_values = Python::with_gil(|py| {
             self.to_literals()
-                .map(|lit| lit.into_py_any(py).map(Arc::new))
+                .map(|lit| {
+                    if matches!(lit, Literal::Null) {
+                        Ok(None)
+                    } else {
+                        lit.into_py_any(py).map(Some)
+                    }
+                })
                 .collect::<PyResult<Vec<_>>>()
         })?;
 
-        Ok(PythonArray::from((self.name(), py_values)).into_series())
+        Ok(PythonArray::from_iter(self.name(), py_values.into_iter())?.into_series())
     }
 }
 
@@ -702,15 +711,13 @@ type ArrayPayload<Tgt> = (
     Option<Vec<i64>>,
 );
 
-/// Extract a PythonArray of elements list[T] into set of vectors:
+/// Extract a PyArray of elements list[T] into set of vectors:
 /// 1) A values Vec<T>
 /// 2) An optional offsets Vec<i64>
 /// 3) An optional shapes Vec<u64>
 /// 4) An optional shape_offsets Vec<i64>
 #[cfg(feature = "python")]
-fn extract_python_to_vec<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
+fn extract_py_to_vec<Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType>(
     py: Python,
     python_objects: &PythonArray,
     child_dtype: &DataType,
@@ -759,11 +766,15 @@ fn extract_python_to_vec<
     //     .import("PIL.Image")
     //     .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
 
-    for (i, object) in python_objects.as_arrow().iter().enumerate() {
-        if let Some(object) = object {
-            let object = object.bind(py);
+    let pickle_loads = py
+        .import(pyo3::intern!(py, "daft.picle"))?
+        .getattr(pyo3::intern!(py, "loads"))?;
 
-            let supports_buffer_protocol = py_memory_view.call1((object,)).is_ok();
+    for (i, object) in python_objects.physical.as_arrow().iter().enumerate() {
+        if let Some(object) = object {
+            let object = pickle_loads.call1((object,))?;
+
+            let supports_buffer_protocol = py_memory_view.call1((&object,)).is_ok();
             let supports_array_interface_protocol =
                 object.hasattr(pyo3::intern!(py, "__array_interface__"))?;
             let supports_array_protocol = object.hasattr(pyo3::intern!(py, "__array__"))?;
@@ -897,7 +908,7 @@ fn extract_python_to_vec<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_fixed_size_list<
+fn extract_py_like_to_fixed_size_list<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
     py: Python,
@@ -906,7 +917,7 @@ fn extract_python_like_to_fixed_size_list<
     list_size: usize,
 ) -> DaftResult<FixedSizeListArray> {
     let (values_vec, _, _, _) =
-        extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, Some(list_size), None)?;
+        extract_py_to_vec::<Tgt>(py, python_objects, child_dtype, None, Some(list_size), None)?;
 
     let values_array: Box<dyn arrow2::array::Array> =
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
@@ -921,7 +932,7 @@ fn extract_python_like_to_fixed_size_list<
     let list_array = arrow2::array::FixedSizeListArray::new(
         list_dtype,
         values_array,
-        python_objects.as_arrow().validity().cloned(),
+        python_objects.physical.validity().cloned(),
     );
 
     FixedSizeListArray::from_arrow(
@@ -931,7 +942,7 @@ fn extract_python_like_to_fixed_size_list<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_list<
+fn extract_py_like_to_list<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
     py: Python,
@@ -939,7 +950,7 @@ fn extract_python_like_to_list<
     child_dtype: &DataType,
 ) -> DaftResult<ListArray> {
     let (values_vec, offsets, _, _) =
-        extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, None, None)?;
+        extract_py_to_vec::<Tgt>(py, python_objects, child_dtype, None, None, None)?;
 
     let offsets = offsets.expect("Offsets should but non-None for dynamic list");
 
@@ -958,7 +969,7 @@ fn extract_python_like_to_list<
         list_dtype,
         arrow2::offset::OffsetsBuffer::try_from(offsets)?,
         values_array,
-        python_objects.as_arrow().validity().cloned(),
+        python_objects.physical.validity().cloned(),
     );
 
     ListArray::from_arrow(
@@ -968,7 +979,7 @@ fn extract_python_like_to_list<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_image_array<
+fn extract_py_like_to_image_array<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
     py: Python,
@@ -980,7 +991,7 @@ fn extract_python_like_to_image_array<
     // 3 dimensions - height x width x channel.
 
     let shape_size = 3;
-    let (values_vec, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
+    let (values_vec, offsets, shapes, shape_offsets) = extract_py_to_vec::<Tgt>(
         py,
         python_objects,
         child_dtype,
@@ -994,7 +1005,7 @@ fn extract_python_like_to_image_array<
     let shape_offsets =
         shape_offsets.expect("Shape offsets should be non-None for image struct array");
 
-    let validity = python_objects.as_arrow().validity();
+    let validity = python_objects.physical.validity();
 
     let num_rows = offsets.len() - 1;
 
@@ -1063,7 +1074,7 @@ fn extract_python_like_to_image_array<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_tensor_array<
+fn extract_py_like_to_tensor_array<
     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
 >(
     py: Python,
@@ -1071,7 +1082,7 @@ fn extract_python_like_to_tensor_array<
     dtype: &DataType,
     child_dtype: &DataType,
 ) -> DaftResult<TensorArray> {
-    let (data, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
+    let (data, offsets, shapes, shape_offsets) = extract_py_to_vec::<Tgt>(
         py,
         python_objects,
         child_dtype,
@@ -1085,7 +1096,7 @@ fn extract_python_like_to_tensor_array<
     let shape_offsets =
         shape_offsets.expect("Shape offsets should be non-None for image struct array");
 
-    let validity = python_objects.as_arrow().validity();
+    let validity = python_objects.physical.validity();
 
     let name = python_objects.name();
     if data.is_empty() {
@@ -1186,7 +1197,7 @@ impl PythonArray {
                     with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
                         type Tgt = <$T as DaftNumericType>::Native;
                         pyo3::Python::with_gil(|py| {
-                            let result = extract_python_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
+                            let result = extract_py_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
                             Ok(result.into_series())
                         })
                     })
@@ -1206,7 +1217,7 @@ impl PythonArray {
                     with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
                         type Tgt = <$T as DaftNumericType>::Native;
                         pyo3::Python::with_gil(|py| {
-                            let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
+                            let result = extract_py_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
                             Ok(result.into_series())
                         })
                     })
@@ -1237,7 +1248,7 @@ impl PythonArray {
                 with_match_numeric_daft_types!(inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, &inner_dtype, *mode)?;
+                        let result = extract_py_like_to_image_array::<Tgt>(py, self, dtype, &inner_dtype, *mode)?;
                         Ok(result.into_series())
                     })
                 })
@@ -1254,7 +1265,7 @@ impl PythonArray {
                 with_match_numeric_daft_types!(**inner_dtype, |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_tensor_array::<Tgt>(py, self, dtype, &inner_dtype)?;
+                        let result = extract_py_like_to_tensor_array::<Tgt>(py, self, dtype, &inner_dtype)?;
                         Ok(result.into_series())
                     })
                 })

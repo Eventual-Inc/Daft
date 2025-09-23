@@ -1,6 +1,8 @@
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
 
+#[cfg(feature = "python")]
+use crate::datatypes::logical::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
@@ -141,19 +143,22 @@ impl FixedSizeBinaryArray {
         }
     }
 }
+
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
+impl PythonArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         use pyo3::prelude::*;
 
-        let val = self.get(idx);
+        Python::with_gil(|py| {
+            let val = self.get(py, idx);
 
-        let call_result =
-            Python::with_gil(|py| val.call_method0(py, pyo3::intern!(py, "__str__")))?;
-
-        let extracted = Python::with_gil(|py| call_result.extract(py))?;
-
-        Ok(extracted)
+            if let Some(val) = val {
+                let call_result = val.call_method0(pyo3::intern!(py, "__str__"))?;
+                Ok(call_result.extract()?)
+            } else {
+                Ok("None".to_string())
+            }
+        })
     }
 }
 
@@ -488,19 +493,18 @@ impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
+impl PythonArray {
     pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         use pyo3::prelude::*;
 
-        let val = self.get(idx);
-
         let custom_viz_hook_result: Option<String> = Python::with_gil(|py| {
+            let pyany = self.get(py, idx);
+
             // Find visualization hooks for this object's class
-            let pyany = val.bind(py);
             let get_viz_hook = py
                 .import(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
                 .getattr(pyo3::intern!(py, "get_viz_hook"))?;
-            let hook = get_viz_hook.call1((pyany,))?;
+            let hook = get_viz_hook.call1((&pyany,))?;
 
             if hook.is_none() {
                 Ok(None)

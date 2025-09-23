@@ -3,6 +3,8 @@ use std::sync::Arc;
 use arrow2::{array::Array, compute::cast::cast};
 use common_error::{DaftError, DaftResult};
 
+#[cfg(feature = "python")]
+use crate::datatypes::PythonType;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
@@ -252,3 +254,5 @@ impl_logical_from_arrow!(FixedShapeTensorType);
 impl_logical_from_arrow!(SparseTensorType);
 impl_logical_from_arrow!(FixedShapeSparseTensorType);
 impl_logical_from_arrow!(FixedShapeImageType);
+#[cfg(feature = "python")]
+impl_logical_from_arrow!(PythonType);

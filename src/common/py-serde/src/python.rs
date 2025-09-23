@@ -6,7 +6,7 @@ use std::{
 };
 
 #[cfg(feature = "python")]
-use pyo3::{PyObject, PyResult, Python, types::PyAnyMethods};
+use pyo3::prelude::*;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error as DeError, Visitor},
@@ -14,13 +14,18 @@ use serde::{
 };
 
 #[cfg(feature = "python")]
-pub fn pickle_dumps(obj: &PyObject) -> PyResult<Vec<u8>> {
-    Python::with_gil(|py| {
-        py.import(pyo3::intern!(py, "daft.pickle"))
-            .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
-            .and_then(|f| f.call1((obj,)))
-            .and_then(|b| b.extract::<Vec<u8>>())
-    })
+pub fn pickle_loads<'py>(py: Python<'py>, bytes: &[u8]) -> PyResult<Bound<'py, PyAny>> {
+    py.import(pyo3::intern!(py, "daft.pickle"))?
+        .getattr(pyo3::intern!(py, "loads"))?
+        .call1((bytes,))
+}
+
+#[cfg(feature = "python")]
+pub fn pickle_dumps<'py>(py: Python<'py>, obj: impl IntoPyObject<'py>) -> PyResult<Vec<u8>> {
+    py.import(pyo3::intern!(py, "daft.pickle"))?
+        .getattr(pyo3::intern!(py, "dumps"))?
+        .call1((obj,))?
+        .extract::<Vec<u8>>()
 }
 
 #[cfg(feature = "python")]
@@ -28,7 +33,8 @@ pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let bytes = pickle_dumps(obj).map_err(|e| SerError::custom(e.to_string()))?;
+    let bytes = Python::with_gil(|py| pickle_dumps(py, obj))
+        .map_err(|e| SerError::custom(e.to_string()))?;
 
     s.serialize_bytes(bytes.as_slice())
 }
@@ -48,9 +54,8 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
         E: DeError,
     {
         Python::with_gil(|py| {
-            py.import(pyo3::intern!(py, "daft.pickle"))
-                .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
-                .and_then(|f| Ok(f.call1((v,))?.into()))
+            pickle_loads(py, v)
+                .map(|obj| obj.unbind())
                 .map_err(|e| DeError::custom(e.to_string()))
         })
     }

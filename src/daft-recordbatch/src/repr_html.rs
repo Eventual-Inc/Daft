@@ -137,7 +137,7 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
         }
         #[cfg(feature = "python")]
         DataType::Python => {
-            let arr = s.python().unwrap();
+            let arr = s.py().unwrap();
             arr.html_value(idx, truncate)
         }
         DataType::File => {

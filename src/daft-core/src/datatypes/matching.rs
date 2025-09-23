@@ -89,8 +89,6 @@ macro_rules! with_match_physical_daft_types {
             DataType::Struct(_) => __with_ty__! { StructType },
             DataType::Extension(_, _, _) => __with_ty__! { ExtensionType },
             DataType::Interval => __with_ty__! { IntervalType },
-            #[cfg(feature = "python")]
-            DataType::Python => __with_ty__! { PythonType },
 
             _ => panic!("{:?} not implemented for with_match_physical_daft_types", $key_type)
         }

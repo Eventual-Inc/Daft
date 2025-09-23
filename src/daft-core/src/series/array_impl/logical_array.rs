@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use super::{ArrayWrapper, IntoSeries, Series};
+#[cfg(feature = "python")]
+use crate::datatypes::logical::PythonArray;
 use crate::{
     array::{ops::GroupIndices, prelude::*},
     datatypes::{FileArray, prelude::*},
@@ -204,3 +206,5 @@ impl_series_like_for_logical_array!(SparseTensorArray);
 impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);
 impl_series_like_for_logical_array!(FileArray);
+#[cfg(feature = "python")]
+impl_series_like_for_logical_array!(PythonArray);

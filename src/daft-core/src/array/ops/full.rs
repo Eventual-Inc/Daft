@@ -1,13 +1,9 @@
 use std::{iter::repeat_n, sync::Arc};
 
 use arrow2::offset::OffsetsBuffer;
-#[cfg(feature = "python")]
-use pyo3::Python;
 
 use crate::{
-    array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray, pseudo_arrow::PseudoArrowArray,
-    },
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, logical::LogicalArray,
     },
@@ -30,17 +26,6 @@ where
             "Cannot create DataArray from dtype: {dtype} with physical type: {}",
             T::get_dtype()
         );
-        let field = Field::new(name, dtype.clone());
-        #[cfg(feature = "python")]
-        if dtype.is_python() {
-            let py_none = Arc::new(Python::with_gil(|py: Python| py.None()));
-
-            return Self::new(
-                field.into(),
-                Box::new(PseudoArrowArray::from_pyobj_vec(vec![py_none; length])),
-            )
-            .unwrap();
-        }
 
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
@@ -54,16 +39,6 @@ where
     }
 
     fn empty(name: &str, dtype: &DataType) -> Self {
-        let field = Field::new(name, dtype.clone());
-        #[cfg(feature = "python")]
-        if dtype.is_python() {
-            return Self::new(
-                field.into(),
-                Box::new(PseudoArrowArray::from_pyobj_vec(vec![])),
-            )
-            .unwrap();
-        }
-
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
             Ok(arrow_dtype) => Self::new(

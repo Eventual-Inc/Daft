@@ -1,7 +1,6 @@
 use std::{
     hash::BuildHasherDefault,
     ops::{Add, Div, Mul, Rem, Sub},
-    sync::Arc,
 };
 
 use common_arrow_ffi as ffi;
@@ -15,9 +14,9 @@ use pyo3::{
 };
 
 use crate::{
-    array::{DataArray, ops::DaftLogical, pseudo_arrow::PseudoArrowArray},
+    array::ops::DaftLogical,
     count_mode::CountMode,
-    datatypes::{DataType, Field, PythonType},
+    datatypes::{DataType, Field, logical::PythonArray},
     lit::Literal,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -34,14 +33,9 @@ impl PySeries {
         vec_pyobj: Vec<Py<PyAny>>,
         dtype: DataType,
     ) -> PyResult<Self> {
-        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
-        let field = Field::new(name, DataType::Python);
-        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = data_array.cast(&dtype)?;
-
-        Ok(series.into())
+        Ok(PythonArray::from_values(name, vec_pyobj.into_iter())?
+            .cast(&dtype)?
+            .into())
     }
 }
 
@@ -68,7 +62,7 @@ impl PySeries {
         Ok(series.into())
     }
 
-    // This ingests a Python list[object] directly into a Rust PythonArray.
+    // This ingests a Python list[object] directly into a Rust PyArray.
     #[staticmethod]
     pub fn from_pylist(name: &str, pylist: Bound<PyAny>, dtype: PyDataType) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;

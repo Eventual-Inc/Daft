@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
 use common_image::Image;
 
+#[cfg(feature = "python")]
+use crate::datatypes::logical::PythonArray;
 use crate::{array::ops::image::AsImageObj, datatypes::FileArray, lit::Literal, prelude::*};
 
 fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
@@ -54,19 +58,13 @@ impl PythonArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         use pyo3::prelude::*;
 
-        assert!(
-            idx < self.len(),
-            "Out of bounds: {} vs len: {}",
-            idx,
-            self.len()
-        );
-
-        let v = self.get(idx);
-        if Python::with_gil(|py| v.is_none(py)) {
-            Literal::Null
-        } else {
-            Literal::Python(v.into())
-        }
+        Python::with_gil(|py| {
+            if let Some(obj) = self.get(py, idx) {
+                Literal::Python(Arc::new(obj.unbind()).into())
+            } else {
+                Literal::Null
+            }
+        })
     }
 }
 

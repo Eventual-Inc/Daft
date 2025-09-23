@@ -32,7 +32,7 @@ impl FileArray {
         urls: &Utf8Array,
         io_config: Option<IOConfig>,
     ) -> Self {
-        use crate::{prelude::PythonArray, series::IntoSeries};
+        use crate::series::{IntoSeries, Series};
 
         let discriminant = UInt8Array::from_values(
             "discriminant",
@@ -42,35 +42,36 @@ impl FileArray {
 
         let sa_field = Field::new("literal", DataType::File.to_physical());
 
-        let io_conf = io_config.map(common_io_config::python::IOConfig::from);
-        let io_conf = pyo3::Python::with_gil(|py| {
-            use std::sync::Arc;
+        let io_configs = if let Some(io_config) = io_config {
+            use common_py_serde::pickle_dumps;
+            use pyo3::Python;
 
-            use pyo3::IntoPyObjectExt;
+            use crate::datatypes::logical::PythonArray;
 
-            Arc::new(
-                io_conf
-                    .into_py_any(py)
-                    .expect("Failed to convert ioconfig to PyObject"),
-            )
-        });
-        let io_configs = PythonArray::from((
-            "io_config",
-            std::iter::repeat_n(io_conf, urls.len()).collect::<Vec<_>>(),
-        ));
+            let pickled = Python::with_gil(|py| {
+                pickle_dumps(py, common_io_config::python::IOConfig::from(io_config))
+                    .expect("pickling IO config should succeed")
+            });
+
+            let physical =
+                BinaryArray::from_values("io_config", std::iter::repeat_n(&pickled, urls.len()));
+
+            PythonArray::new(Field::new("io_config", DataType::Python), physical)
+                .into_series()
+                .with_validity(urls.validity().cloned())
+                .expect("Failed to set validity")
+        } else {
+            Series::full_null("io_config", &DataType::Python, urls.len())
+        };
 
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
-        let io_configs = io_configs
-            .with_validity(urls.validity().cloned())
-            .expect("Failed to set validity");
-
         let sa = StructArray::new(
             sa_field,
             vec![
                 discriminant,
                 data,
                 urls.clone().into_series().rename("url"),
-                io_configs.into_series(),
+                io_configs,
             ],
             urls.validity().cloned(),
         );
@@ -88,6 +89,8 @@ impl FileArray {
 
     #[cfg(feature = "python")]
     pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
+        use crate::datatypes::logical::PythonArray;
+
         let discriminant = UInt8Array::from_values(
             "discriminant",
             std::iter::repeat_n(DaftFileType::Data as u8, values.len()),
@@ -97,8 +100,7 @@ impl FileArray {
         let fld = Field::new("literal", DataType::File.to_physical());
         let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
-            crate::prelude::PythonArray::full_null("io_config", &DataType::Python, values.len())
-                .into_series();
+            PythonArray::full_null("io_config", &DataType::Python, values.len()).into_series();
         let sa = StructArray::new(
             fld,
             vec![
