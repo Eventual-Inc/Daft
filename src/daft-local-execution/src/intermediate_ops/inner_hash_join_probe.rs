@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -12,9 +13,7 @@ use tracing::{Span, info_span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{
-    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
 pub(crate) enum InnerHashJoinProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),

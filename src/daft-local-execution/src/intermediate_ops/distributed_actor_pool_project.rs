@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
@@ -20,7 +21,6 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 

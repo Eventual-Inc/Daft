@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -7,7 +8,7 @@ use tracing::instrument;
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub struct ConcatSink {}
 

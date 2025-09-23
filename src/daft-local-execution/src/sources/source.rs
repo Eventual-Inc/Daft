@@ -10,7 +10,11 @@ use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, snapshot};
+use common_metrics::{
+    Stat, StatSnapshotSend,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot,
+};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_logical_plan::stats::StatsState;
@@ -20,7 +24,6 @@ use futures::{StreamExt, stream::BoxStream};
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
-    ops::{NodeCategory, NodeInfo, NodeType},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{CPU_US_KEY, CountingSender, ROWS_OUT_KEY, RuntimeStats},
 };

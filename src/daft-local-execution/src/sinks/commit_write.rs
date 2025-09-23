@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
@@ -14,7 +15,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct CommitWriteState {
     written_file_path_record_batches: Vec<RecordBatch>,

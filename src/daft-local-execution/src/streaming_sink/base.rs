@@ -3,6 +3,7 @@ use std::sync::Arc;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -15,7 +16,6 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ops::{NodeCategory, NodeInfo, NodeType},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{

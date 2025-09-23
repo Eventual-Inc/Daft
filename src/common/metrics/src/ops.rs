@@ -1,6 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-#[derive(Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+use crate::NodeID;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NodeType {
     // Sources
     // Produces MicroPartitions, never consumes
@@ -50,7 +54,13 @@ pub enum NodeType {
     OuterHashJoinProbe,
 }
 
-#[derive(Clone, Debug)]
+impl Display for NodeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NodeCategory {
     Intermediate,
     Source,
@@ -58,11 +68,17 @@ pub enum NodeCategory {
     BlockingSink,
 }
 
+impl Display for NodeCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 /// Contains information about the node such as name, id, and the plan_id
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeInfo {
     pub name: Arc<str>,
-    pub id: usize,
+    pub id: NodeID,
     #[allow(dead_code)]
     pub node_type: NodeType,
     pub node_category: NodeCategory,

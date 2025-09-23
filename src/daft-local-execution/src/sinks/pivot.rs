@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -10,7 +11,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),

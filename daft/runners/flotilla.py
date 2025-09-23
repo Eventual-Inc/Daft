@@ -56,7 +56,7 @@ class RaySwordfishActor:
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
-        config: PyDaftExecutionConfig,
+        exec_cfg: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
@@ -67,7 +67,7 @@ class RaySwordfishActor:
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, config, None, context):
+            async for partition in native_executor.run_async(plan, psets_mp, exec_cfg, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
