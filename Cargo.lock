@@ -2447,6 +2447,7 @@ dependencies = [
  "clap 4.5.40",
  "daft-dashboard",
  "pyo3",
+ "tokio",
 ]
 
 [[package]]
