@@ -2,7 +2,7 @@ annotated-types==0.5.0
 anyio==3.7.1
 click==8.1.6
 exceptiongroup==1.1.2
-fastapi==0.100.1
+fastapi>=0.100.1
 h11>=0.16.0
 httptools==0.6.0
 idna>=3.7
