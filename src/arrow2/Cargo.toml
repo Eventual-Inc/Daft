@@ -46,7 +46,7 @@ json-deserializer = {version = "0.4.4", optional = true, features = [
   "preserve_order"
 ]}
 # To efficiently cast numbers to strings
-lexical-core = {version = "0.8", optional = true}
+lexical-core = {version = "1.0.5", optional = true}
 # for IPC compression
 lz4 = {version = "1.28", optional = true}
 # For `LIKE` matching "contains" fast-path
