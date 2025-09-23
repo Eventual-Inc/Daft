@@ -23,7 +23,7 @@ impl DaftFile {
     }
 
     #[pyo3(signature=(size=-1))]
-    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
+    fn read(&mut self, size: isize) -> PyResult<Option<Vec<u8>>> {
         let cursor = self
             .cursor
             .as_mut()
@@ -38,9 +38,13 @@ impl DaftFile {
             buffer.truncate(bytes_read);
             self.position = bytes_read;
 
-            Ok(buffer)
+            Ok(Some(buffer))
         } else {
             let mut buffer = vec![0u8; size as usize];
+
+            if self.position == cursor.size() {
+                return Ok(None);
+            }
 
             let bytes_read = cursor
                 .read(&mut buffer)
@@ -49,7 +53,7 @@ impl DaftFile {
             buffer.truncate(bytes_read);
             self.position += bytes_read;
 
-            Ok(buffer)
+            Ok(Some(buffer))
         }
     }
 

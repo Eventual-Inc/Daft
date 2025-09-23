@@ -13,6 +13,7 @@ pub struct DaftFile {
     pub(crate) path: Option<String>,
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
+    pub(crate) size: usize,
 }
 
 impl TryFrom<FileReference> for DaftFile {
@@ -33,17 +34,24 @@ impl DaftFile {
         let io_client = daft_io::get_io_client(true, Arc::new(io_config))?;
         let rt = common_runtime::get_io_runtime(true);
 
-        let (source, path) = rt.block_within_async_context(async move {
-            io_client
+        let (source, path, file_size) = rt.block_within_async_context(async move {
+            let (source, path) = io_client
                 .get_source_and_path(&path)
                 .await
-                .map_err(DaftError::from)
+                .map_err(DaftError::from)?;
+            // getting the size is pretty cheap, so we do it upfront
+            // we grab the size upfront so we can use it to determine if we are at the end of the file
+            let file_size = source
+                .get_size(&path, None)
+                .await
+                .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+            DaftResult::Ok((source, path, file_size))
         })??;
 
         // Default to 8MB buffer
         const DEFAULT_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 
-        let reader = ObjectSourceReader::new(source, path.clone(), None);
+        let reader = ObjectSourceReader::new(source, path.clone(), None, file_size);
 
         // we wrap it in a BufReader so we are not making so many network requests for each byte read
         let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
@@ -52,42 +60,21 @@ impl DaftFile {
             path: Some(path),
             cursor: Some(FileCursor::ObjectReader(buffered_reader)),
             position: 0,
+            size: file_size,
         })
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Self {
             path: None,
+            size: bytes.len(),
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
         }
     }
 
     pub fn size(&self) -> DaftResult<usize> {
-        let cursor = self
-            .cursor
-            .as_ref()
-            .ok_or_else(|| DaftError::ComputeError("File not open".to_string()))?;
-
-        match cursor {
-            FileCursor::ObjectReader(reader) => {
-                let reader = reader.get_ref();
-                let source = reader.source.clone();
-                let uri = reader.uri.clone();
-                let io_stats = reader.io_stats.clone();
-
-                let rt = common_runtime::get_io_runtime(true);
-
-                let size = rt.block_within_async_context(async move {
-                    source
-                        .get_size(&uri, io_stats)
-                        .await
-                        .map_err(|e| DaftError::ComputeError(e.to_string()))
-                })??;
-                Ok(size)
-            }
-            FileCursor::Memory(mem_cursor) => Ok(mem_cursor.get_ref().len()),
-        }
+        Ok(self.size)
     }
 }
 
@@ -101,10 +88,16 @@ pub(crate) struct ObjectSourceReader {
     cached_content: Option<Vec<u8>>,
     // Flag to track if range requests are supported
     supports_range: Option<bool>,
+    size: usize,
 }
 
 impl ObjectSourceReader {
-    pub fn new(source: Arc<dyn ObjectSource>, uri: String, io_stats: Option<IOStatsRef>) -> Self {
+    pub fn new(
+        source: Arc<dyn ObjectSource>,
+        uri: String,
+        io_stats: Option<IOStatsRef>,
+        size: usize,
+    ) -> Self {
         Self {
             source,
             uri,
@@ -112,6 +105,7 @@ impl ObjectSourceReader {
             io_stats,
             cached_content: None,
             supports_range: None,
+            size,
         }
     }
     // Helper to read the entire file content
@@ -198,7 +192,6 @@ impl Read for ObjectSourceReader {
         let source = self.source.clone();
         let uri = self.uri.clone();
         let io_stats = self.io_stats.clone();
-
         let range_result = rt
             .block_within_async_context(async move {
                 match source.get(&uri, range, io_stats.clone()).await {
@@ -345,6 +338,15 @@ impl Seek for ObjectSourceReader {
 pub(crate) enum FileCursor {
     ObjectReader(BufReader<ObjectSourceReader>),
     Memory(std::io::Cursor<Vec<u8>>),
+}
+
+impl FileCursor {
+    pub fn size(&self) -> usize {
+        match self {
+            Self::ObjectReader(cursor) => cursor.get_ref().size,
+            Self::Memory(cursor) => cursor.get_ref().len(),
+        }
+    }
 }
 
 impl Read for FileCursor {
