@@ -14,15 +14,16 @@ use daft_logical_plan::{
     partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
 use daft_physical_plan::extract_agg_expr;
+use daft_schema::schema::Schema;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
         explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
         into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
-        monotonically_increasing_id::MonotonicallyIncreasingIdNode, project::ProjectNode,
-        sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
-        top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
+        monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
+        project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
+        sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
     },
     stage::StageConfig,
 };
@@ -300,9 +301,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 self.gen_agg_nodes(
                     input_node,
                     logical_node_id,
-                    group_by,
+                    group_by.clone(),
                     aggregations,
                     aggregate.output_schema.clone(),
+                    group_by,
                 )?
             }
             LogicalPlan::Distinct(distinct) => {
@@ -450,8 +452,54 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .arced()
             }
-            LogicalPlan::Pivot(_) => {
-                todo!("FLOTILLA_MS3: Implement Pivot")
+            LogicalPlan::Pivot(pivot) => {
+                let input_schema = pivot.input.schema();
+                let group_by = BoundExpr::bind_all(&pivot.group_by, &input_schema)?;
+                let pivot_column = BoundExpr::try_new(pivot.pivot_column.clone(), &input_schema)?;
+                let value_column = BoundExpr::try_new(pivot.value_column.clone(), &input_schema)?;
+                let aggregation = BoundAggExpr::try_new(pivot.aggregation.clone(), &input_schema)?;
+
+                let input_node = self.curr_node.pop().unwrap();
+
+                let group_by_with_pivot = {
+                    let mut gb = group_by.clone();
+                    gb.push(pivot_column.clone());
+                    gb
+                };
+                // Generate the output schema for the aggregation
+                let output_fields = group_by_with_pivot
+                    .iter()
+                    .map(|expr| expr.inner().to_field(&pivot.input.schema()))
+                    .chain(std::iter::once(
+                        aggregation.inner().to_field(&pivot.input.schema()),
+                    ))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let output_schema = Arc::new(Schema::new(output_fields));
+
+                // First stage: Local aggregation with group_by + pivot_column
+                let agg = self.gen_agg_nodes(
+                    input_node,
+                    logical_node_id,
+                    group_by_with_pivot,
+                    vec![aggregation.clone()],
+                    output_schema,
+                    group_by.clone(),
+                )?;
+
+                // Final stage: Pivot transformation
+                PivotNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.stage_config,
+                    group_by,
+                    pivot_column,
+                    value_column,
+                    aggregation,
+                    pivot.names.clone(),
+                    pivot.output_schema.clone(),
+                    agg,
+                )
+                .arced()
             }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)

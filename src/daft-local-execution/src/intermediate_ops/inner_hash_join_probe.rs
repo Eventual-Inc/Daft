@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{
@@ -195,7 +195,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     }
 
     fn name(&self) -> NodeName {
-        Cow::Borrowed("InnerHashJoinProbe")
+        "Inner Hash Join Probe".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -204,7 +204,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("InnerHashJoinProbe:".to_string());
+        res.push("Inner Hash Join Probe:".to_string());
         res.push(format!(
             "Probe on: [{}]",
             self.params
@@ -217,7 +217,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         Ok(InnerHashJoinProbeState::Building(
             self.probe_state_bridge.clone(),
         ))

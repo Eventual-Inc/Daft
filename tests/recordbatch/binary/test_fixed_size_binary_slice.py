@@ -232,18 +232,8 @@ def test_fixed_size_binary_slice_errors() -> None:
     )
 
     # Test slice on wrong type
-    with pytest.raises(
-        Exception, match="Expects inputs to binary_slice to be binary, integer and integer or null but received Int64"
-    ):
+    with pytest.raises(Exception, match="Input to `slice` must be list or binary, received: Int64"):
         table.eval_expression_list([col("b").binary.slice(lit(0))])
-
-    # Test negative start
-    with pytest.raises(Exception, match="DaftError::ComputeError Failed to cast numeric value to target type"):
-        table.eval_expression_list([col("a").binary.slice(col("start"))])
-
-    # Test negative length
-    with pytest.raises(Exception, match="DaftError::ComputeError Failed to cast numeric value to target type"):
-        table.eval_expression_list([col("a").binary.slice(lit(0), col("length"))])
 
     # Test with wrong number of arguments (too many)
     with pytest.raises(

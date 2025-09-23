@@ -74,7 +74,7 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat, ImageMode, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
@@ -141,6 +141,7 @@ from daft.io import (
     read_huggingface,
     read_mcap,
 )
+from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_runner_native, set_runner_ray
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
@@ -148,6 +149,8 @@ from daft.file import File
 
 import daft.context as context
 import daft.io as io
+import daft.runners as runners
+import daft.functions as functions
 
 __all__ = [
     "Catalog",
@@ -161,6 +164,7 @@ __all__ = [
     "Identifier",
     "ImageFormat",
     "ImageMode",
+    "ImageProperty",
     "ResourceRequest",
     "Schema",
     "Series",
@@ -202,7 +206,10 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "func",
+    "functions",
     "get_catalog",
+    "get_or_create_runner",
+    "get_or_infer_runner_type",
     "get_provider",
     "get_table",
     "has_catalog",
@@ -232,6 +239,7 @@ __all__ = [
     "read_warc",
     "refresh_logger",
     "register_viz_hook",
+    "runners",
     "session",
     "set_catalog",
     "set_execution_config",
@@ -239,6 +247,8 @@ __all__ = [
     "set_namespace",
     "set_planning_config",
     "set_provider",
+    "set_runner_native",
+    "set_runner_ray",
     "set_session",
     "sql",
     "sql_expr",

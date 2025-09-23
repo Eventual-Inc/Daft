@@ -615,7 +615,14 @@ impl StreamingSink for OuterHashJoinProbeSink {
     }
 
     fn name(&self) -> NodeName {
-        "OuterHashJoinProbe".into()
+        match self.params.join_type {
+            JoinType::Left => "Left Hash Join Probe".into(),
+            JoinType::Right => "Right Hash Join Probe".into(),
+            JoinType::Outer => "Outer Hash Join Probe".into(),
+            _ => unreachable!(
+                "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
+            ),
+        }
     }
 
     fn op_type(&self) -> NodeType {
