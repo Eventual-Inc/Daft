@@ -126,12 +126,7 @@ impl QuerySubscriber for DashboardSubscriber {
             }
             #[cfg(not(feature = "python"))]
             {
-                non_py_cols = schema
-                    .fields()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| i)
-                    .collect::<Vec<_>>();
+                non_py_cols = (0..schema.fields().len()).collect();
             }
 
             let result = results.get_columns(&non_py_cols);
