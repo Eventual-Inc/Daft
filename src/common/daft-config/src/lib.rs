@@ -111,7 +111,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
-            actor_udf_ready_timeout: 60,
+            actor_udf_ready_timeout: 120,
         }
     }
 }
