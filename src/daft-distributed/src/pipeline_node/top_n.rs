@@ -9,7 +9,7 @@ use daft_schema::schema::SchemaRef;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    stage::{StageConfig, StageExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct TopNNode {
@@ -31,7 +31,7 @@ impl TopNNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
@@ -41,7 +41,7 @@ impl TopNNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -50,7 +50,7 @@ impl TopNNode {
         );
         let config = PipelineNodeConfig::new(
             output_schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -135,9 +135,9 @@ impl DistributedPipelineNode for TopNNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Pipeline the top-n
         let self_clone = self.clone();
