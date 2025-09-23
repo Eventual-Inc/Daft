@@ -5,34 +5,39 @@ use std::{
 };
 
 use common_error::DaftError;
+use common_file::DaftFile;
 use daft_io::{GetRange, IOStatsRef, ObjectSource, python::IOConfig};
 use pyo3::{
-    exceptions::{PyIOError, PyValueError},
+    exceptions::{PyIOError, PyTypeError, PyValueError},
     prelude::*,
+    types::{PyBytes, PyString, PyTuple},
 };
 
 #[pyclass]
 pub struct PyDaftFile {
-    path: Option<String>,
     cursor: Option<FileCursor>,
     position: usize,
 }
 
 enum FileCursor {
-    ObjectReader(BufReader<ObjectSourceReader>),
+    ObjectReader(
+        BufReader<ObjectSourceReader>,
+        String,
+        Option<Arc<daft_io::IOConfig>>,
+    ),
     Memory(std::io::Cursor<Vec<u8>>),
 }
 
 impl Read for FileCursor {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            Self::ObjectReader(cursor) => cursor.read(buf),
+            Self::ObjectReader(cursor, ..) => cursor.read(buf),
             Self::Memory(cursor) => cursor.read(buf),
         }
     }
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
         match self {
-            Self::ObjectReader(cursor) => cursor.read_to_end(buf),
+            Self::ObjectReader(cursor, ..) => cursor.read_to_end(buf),
             Self::Memory(cursor) => cursor.read_to_end(buf),
         }
     }
@@ -41,7 +46,7 @@ impl Read for FileCursor {
 impl Seek for FileCursor {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
-            Self::ObjectReader(cursor) => cursor.seek(pos),
+            Self::ObjectReader(cursor, ..) => cursor.seek(pos),
             Self::Memory(cursor) => cursor.seek(pos),
         }
     }
@@ -49,12 +54,39 @@ impl Seek for FileCursor {
 
 #[pymethods]
 impl PyDaftFile {
+    pub fn _get_file(&self) -> DaftFile {
+        match &self.cursor {
+            Some(FileCursor::ObjectReader(_, path, io_conf)) => {
+                DaftFile::Reference(path.clone(), io_conf.clone())
+            }
+            Some(FileCursor::Memory(cursor)) => DaftFile::Data(Arc::new(cursor.get_ref().clone())),
+            None => panic!("Cursor is None"),
+        }
+    }
+
+    #[staticmethod]
+    fn _from_tuple(tuple: Bound<'_, PyAny>) -> PyResult<Self> {
+        let tuple = tuple.downcast::<PyTuple>()?;
+        let first = tuple.get_item(0)?;
+        if first.is_instance_of::<PyString>() {
+            let url = first.extract::<String>()?;
+            let io_config = tuple.get_item(1)?.extract::<Option<IOConfig>>()?;
+            Self::_from_path(url, io_config)
+        } else if first.is_instance_of::<PyBytes>() {
+            let data = first.extract::<Vec<u8>>()?;
+            Ok(Self::_from_bytes(data))
+        } else {
+            Err(PyErr::new::<PyTypeError, _>("Expected a string or bytes"))
+        }
+    }
     #[staticmethod]
     #[pyo3(signature = (path, io_config = None))]
     fn _from_path(path: String, io_config: Option<IOConfig>) -> PyResult<Self> {
-        let io_config = io_config.unwrap_or_default();
+        let io_config_opt = io_config.map(|conf| Arc::new(conf.config));
 
-        let io_client = daft_io::get_io_client(true, Arc::new(io_config.config))?;
+        let io_config = io_config_opt.clone().unwrap_or_default();
+
+        let io_client = daft_io::get_io_client(true, io_config)?;
         let rt = common_runtime::get_io_runtime(true);
 
         let (source, path) = rt.block_within_async_context(async move {
@@ -73,8 +105,11 @@ impl PyDaftFile {
         let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
         Ok(Self {
-            path: Some(path),
-            cursor: Some(FileCursor::ObjectReader(buffered_reader)),
+            cursor: Some(FileCursor::ObjectReader(
+                buffered_reader,
+                path,
+                io_config_opt,
+            )),
             position: 0,
         })
     }
@@ -82,7 +117,6 @@ impl PyDaftFile {
     #[staticmethod]
     fn _from_bytes(bytes: Vec<u8>) -> Self {
         Self {
-            path: None,
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
         }
@@ -177,10 +211,7 @@ impl PyDaftFile {
 
     // String representation
     fn __str__(&self) -> PyResult<String> {
-        match &self.path {
-            Some(path) => Ok(format!("File({})", path)),
-            None => Ok("File(None)".to_string()),
-        }
+        Ok("File".to_string())
     }
 
     fn closed(&self) -> PyResult<bool> {
@@ -195,7 +226,7 @@ impl PyDaftFile {
 
         // Try to read a single byte from the beginning
         let supports_range = match cursor {
-            FileCursor::ObjectReader(reader) => {
+            FileCursor::ObjectReader(reader, _, _) => {
                 let rt = common_runtime::get_io_runtime(true);
                 let inner_reader = reader.get_ref();
                 let uri = inner_reader.uri.clone();
@@ -218,7 +249,7 @@ impl PyDaftFile {
             .ok_or_else(|| PyIOError::new_err("File not open"))?;
 
         match cursor {
-            FileCursor::ObjectReader(reader) => {
+            FileCursor::ObjectReader(reader, _, _) => {
                 let reader = reader.get_ref();
                 let source = reader.source.clone();
                 let uri = reader.uri.clone();
