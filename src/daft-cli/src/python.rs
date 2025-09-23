@@ -27,16 +27,16 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
     println!("🚀 Launching the Daft Dashboard!");
 
     let port = args.port;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .unwrap();
+        .expect("Failed to create tokio runtime");
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
 
     runtime.spawn(async move {
         daft_dashboard::launch_server(port, async move { shutdown_rx.await.unwrap() })
             .await
-            .unwrap();
+            .expect("Failed to launch dashboard server");
     });
 
     println!(
