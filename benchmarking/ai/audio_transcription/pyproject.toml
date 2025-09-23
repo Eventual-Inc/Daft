@@ -5,8 +5,8 @@ description = "Audio transcription benchmarking"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "boto3>=1.40.27",
-    "daft==0.6.2",
-    "ipython>=9.5.0",
-    "ray[default]==2.49.2",
+  "boto3>=1.40.27",
+  "daft==0.6.2",
+  "ipython>=9.5.0",
+  "ray[default]==2.49.2"
 ]

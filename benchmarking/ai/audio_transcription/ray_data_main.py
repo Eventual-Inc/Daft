@@ -17,7 +17,7 @@ OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio
 BATCH_SIZE = 64
 
 ### This is a workaround to avoid the error:
-### Casting from 'extension<ray.data.arrow_tensor_v2<ArrowTensorTypeV2>>' to different extension type 'extension<ray.data.arrow_variable_shaped_tensor<ArrowVariableShapedTensorType>>' not permitted. 
+### Casting from 'extension<ray.data.arrow_tensor_v2<ArrowTensorTypeV2>>' to different extension type 'extension<ray.data.arrow_variable_shaped_tensor<ArrowVariableShapedTensorType>>' not permitted.
 ### One can first cast to the storage type, then to the extension type.
 def unnest(item):
     for k, v in item["audio"].items():

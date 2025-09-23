@@ -41,11 +41,11 @@ available_node_types:
           Encrypted: true
 
 setup_commands:
-  - sudo mkdir -p /opt/ray/tmp /opt/ray/spill
-  - sudo chown -R ec2-user:ec2-user /opt/ray
-  - echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
-  - echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
-  - source /opt/pytorch/bin/activate && pip install ray[default]==2.49.2 daft==0.6.2 numpy==1.26.4 av==15.1.0 ultralytics==8.3.200 pillow==11.3.0 decord==0.6.0
+- sudo mkdir -p /opt/ray/tmp /opt/ray/spill
+- sudo chown -R ec2-user:ec2-user /opt/ray
+- echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
+- echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
+- source /opt/pytorch/bin/activate && pip install ray[default]==2.49.2 daft==0.6.2 numpy==1.26.4 av==15.1.0 ultralytics==8.3.200 pillow==11.3.0 decord==0.6.0
 
 head_setup_commands:
 - source /opt/pytorch/bin/activate && pip install 'boto3>=1.4.8'

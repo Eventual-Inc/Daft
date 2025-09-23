@@ -417,7 +417,7 @@ requires-dist = [
     { name = "ipython", specifier = ">=8.18.1" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pymupdf", specifier = ">=1.26.3" },
-    { name = "ray", extras = ["defalt", "default"], specifier = ">=2.48.0" },
+    { name = "ray", extras = ["default", "default"], specifier = ">=2.48.0" },
 ]
 
 [[package]]
