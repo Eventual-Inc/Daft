@@ -16,8 +16,8 @@ mod treenode;
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 #[cfg(feature = "python")]
 use common_file_formats::{
-    CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig,
-    python::PyFileFormatConfig,
+    CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, LanceSourceConfig,
+    ParquetSourceConfig, WarcSourceConfig, python::PyFileFormatConfig,
 };
 pub use daft_core::join::{JoinStrategy, JoinType};
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
@@ -42,6 +42,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<CsvSourceConfig>()?;
     parent.add_class::<DatabaseSourceConfig>()?;
     parent.add_class::<JoinOptions>()?;
+    parent.add_class::<LanceSourceConfig>()?;
 
     Ok(())
 }

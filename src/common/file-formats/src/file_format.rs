@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 /// Defines FileFormat enum, which represents the format of a file, e.g. Parquet, CSV, JSON.
 ///
 /// NOTE: This is currently abused to also represent data being read from a Database or from a Python
@@ -20,6 +21,7 @@ pub enum FileFormat {
     Warc,
     Database,
     Python,
+    Lance,
 }
 
 #[cfg(feature = "python")]
@@ -30,9 +32,24 @@ impl FileFormat {
             Self::Parquet => "parquet",
             Self::Csv => "csv",
             Self::Json => "json",
+            Self::Lance => "lance",
             Self::Warc => "warc",
             Self::Database => "db",
             Self::Python => "py",
+        }
+    }
+}
+
+impl Display for FileFormat {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            Self::Parquet => write!(f, "parquet"),
+            Self::Csv => write!(f, "csv"),
+            Self::Json => write!(f, "json"),
+            Self::Lance => write!(f, "lance"),
+            Self::Warc => write!(f, "warc"),
+            Self::Database => write!(f, "db"),
+            Self::Python => write!(f, "py"),
         }
     }
 }
@@ -41,7 +58,7 @@ impl FromStr for FileFormat {
     type Err = DaftError;
 
     fn from_str(file_format: &str) -> DaftResult<Self> {
-        use FileFormat::{Csv, Database, Json, Parquet, Warc};
+        use FileFormat::{Csv, Database, Json, Lance, Parquet, Warc};
 
         if file_format.trim().eq_ignore_ascii_case("parquet") {
             Ok(Parquet)
@@ -49,6 +66,8 @@ impl FromStr for FileFormat {
             Ok(Csv)
         } else if file_format.trim().eq_ignore_ascii_case("json") {
             Ok(Json)
+        } else if file_format.trim().eq_ignore_ascii_case("lance") {
+            Ok(Lance)
         } else if file_format.trim().eq_ignore_ascii_case("warc") {
             Ok(Warc)
         } else if file_format.trim().eq_ignore_ascii_case("database") {

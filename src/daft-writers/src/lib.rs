@@ -18,6 +18,7 @@ pub mod test;
 mod catalog;
 #[cfg(feature = "python")]
 mod lance;
+mod lance_writer;
 #[cfg(feature = "python")]
 mod pyarrow;
 #[cfg(feature = "python")]
@@ -46,6 +47,8 @@ use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
 #[cfg(feature = "python")]
 pub use sink::make_data_sink_writer_factory;
+
+use crate::lance_writer::LanceNativeWriterFactory;
 
 pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
 
@@ -170,7 +173,13 @@ pub fn make_physical_writer_factory(
                 Ok(Arc::new(file_writer_factory))
             }
         }
-        _ => unreachable!("Physical write should only support Parquet, CSV, and JSON"),
+        FileFormat::Lance => {
+            // TODO TargetFileSizeWriterFactory? by zhenchao
+            let lance_writer_factory =
+                LanceNativeWriterFactory::new(file_info.clone(), file_schema.clone())?;
+            Ok(Arc::new(lance_writer_factory))
+        }
+        _ => unreachable!("Physical write should only support Parquet, CSV, JSON and Lance"),
     }
 }
 

@@ -738,6 +738,10 @@ impl ScanTask {
                                 1.0
                             }
                         }
+                        FileFormatConfig::Lance(_) => {
+                            // TODO by zhenchao
+                            1.0
+                        }
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
