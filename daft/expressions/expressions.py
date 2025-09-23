@@ -1317,6 +1317,7 @@ class Expression:
             inner=batch_func,
             name=name,
             return_dtype=inferred_return_dtype,
+            batch_size=1
         )(self)
 
     def is_null(self) -> Expression:

@@ -13,5 +13,6 @@ Generates embeddings for **10,000 PDF documents**. Extracts text, chunks content
 | Engine   | Runtime |
 |----------|---------|
 | Daft     | 1m 54s  |
+| daft-file| 3m 41s  |
 | Ray Data | 16m 10s |
 | Spark    | 8m 4s   |
