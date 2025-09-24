@@ -162,7 +162,7 @@ jobs:
         cargo llvm-cov clean --workspace
         maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest --cov=daft --ignore tests/integration --durations=50
+        pytest --cov=daft --ignore tests/integration --durations=50 -x -vv
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
