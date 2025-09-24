@@ -732,7 +732,7 @@ def test_global_pyobj_list_aggs() -> None:
     input = [object(), object(), object()]
     table = MicroPartition.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column_by_name("list").datatype() == DataType.python()
+    assert result.get_column_by_name("list").datatype() == DataType.list(DataType.python())
     assert result.to_pydict()["list"][0] == input
 
 

@@ -5,6 +5,8 @@ use logical::{
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{

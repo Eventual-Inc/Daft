@@ -258,6 +258,8 @@ impl Series {
             }
             #[cfg(feature = "python")]
             DataType::Python => {
+                use crate::prelude::PythonArray;
+
                 let downcasted = self.downcast::<PythonArray>()?;
                 match groups {
                     Some(groups) => {

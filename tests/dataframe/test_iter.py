@@ -128,13 +128,6 @@ def test_iter_rows_lists_to_numpy(make_df, data, expected):
         np.testing.assert_array_equal(np_data, expected_row["a"])
 
 
-def test_iter_rows_arrow_column_format_not_compatible():
-    df = daft.from_pydict({"a": [object()]})  # Object type is not supported by arrow or numpy
-
-    with pytest.raises(ValueError):
-        list(df.iter_rows(column_format="arrow"))
-
-
 @pytest.mark.parametrize("materialized", [False, True])
 def test_iter_partitions(make_df, materialized):
     # Test that df.iter_partitions() produces partitions in the correct order.

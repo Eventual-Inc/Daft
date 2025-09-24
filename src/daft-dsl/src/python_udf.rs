@@ -210,8 +210,11 @@ impl RowWisePyFn {
         let name = args[0].name();
         let start_time = std::time::Instant::now();
         let gil_contention_time = start_time.elapsed();
-        let pickled_function = pickle_dumps(inner_ref).unwrap();
-        let pickled_args = pickle_dumps(args_ref).unwrap();
+        let (pickled_function, pickled_args) = pyo3::Python::with_gil(|py| {
+            let pickled_function = pickle_dumps(py, inner_ref).unwrap();
+            let pickled_args = pickle_dumps(py, args_ref).unwrap();
+            (pickled_function, pickled_args)
+        });
 
         let num_cores = num_cpus::get();
         let pool = WorkerPool::new(num_cores, pickled_function, pickled_args);

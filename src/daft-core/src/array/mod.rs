@@ -6,7 +6,6 @@ pub mod image_array;
 pub mod iterator;
 mod list_array;
 pub mod ops;
-pub mod pseudo_arrow;
 mod serdes;
 mod struct_array;
 use arrow2::{bitmap::Bitmap, compute::cast::utf8_to_large_utf8};

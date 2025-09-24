@@ -1,11 +1,15 @@
 use clap::{Args, Parser, Subcommand, arg};
 use pyo3::prelude::*;
+use tracing_subscriber::{self, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Args)]
 struct DashboardArgs {
     #[arg(short, long, default_value_t = 80)]
     /// The port to launch the dashboard on
     port: u16,
+    #[arg(short, long, default_value_t = false)]
+    /// Log HTTP requests and responses from server
+    verbose: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -26,14 +30,23 @@ struct Cli {
 fn run_dashboard(py: Python, args: DashboardArgs) {
     println!("🚀 Launching the Daft Dashboard!");
 
-    let port = args.port;
+    let filter = if args.verbose { "DEBUG" } else { "ERROR" };
+
+    // Set the subscriber for the detached run
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new(filter))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("Failed to create tokio runtime");
-    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let port = args.port;
 
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     runtime.spawn(async move {
+        tracing::info!("Launching dashboard server");
         daft_dashboard::launch_server(port, async move { shutdown_rx.await.unwrap() })
             .await
             .expect("Failed to launch dashboard server");
