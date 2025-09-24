@@ -250,6 +250,9 @@ impl<'py> IntoPyObject<'py> for Literal {
 }
 
 impl Literal {
+    /// Convert a Python object into a Daft Literal.
+    ///
+    /// NOTE: Make sure this matches the logic in `DataType.infer_from_type` in Python
     pub fn from_pyobj(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Self> {
         fn isinstance_impl(
             ob: &Bound<PyAny>,
@@ -300,8 +303,6 @@ impl Literal {
             pydelta_to_duration_lit(ob)?
         } else if PyList::type_check(ob) {
             pylist_to_list_lit(ob, dtype)?
-        } else if PySeries::type_check(ob) {
-            Self::List(ob.extract::<PySeries>()?.into())
         } else if PyDict::type_check(ob) {
             let dict = ob.downcast::<PyDict>()?;
 

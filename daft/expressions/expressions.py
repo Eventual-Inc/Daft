@@ -1255,7 +1255,7 @@ class Expression:
         """
         from daft.udf import UDF
 
-        inferred_return_dtype = DataType._infer_type(return_dtype)
+        inferred_return_dtype = DataType._infer(return_dtype)
 
         def batch_func(self_series: Series) -> list[Any]:
             return [func(x) for x in self_series]
