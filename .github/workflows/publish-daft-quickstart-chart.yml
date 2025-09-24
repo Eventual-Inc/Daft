@@ -18,5 +18,5 @@ jobs:
     - uses: actions/checkout@v4
     - name: Publish Production Helm Chart
       run: |
-        helm package k8s/charts/quickstart --version 0.1.0
+        helm package k8s/charts/quickstart --version $(grep '^version:' k8s/charts/quickstart/Chart.yaml | sed 's/version: //')
         helm push quickstart-0.1.0.tgz oci://ghcr.io/eventual-inc/daft
