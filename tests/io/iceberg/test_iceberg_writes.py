@@ -83,15 +83,36 @@ def local_catalog(tmpdir):
     params=[
         pytest.param((UNPARTITIONED_PARTITION_SPEC, 1), id="unpartitioned"),
         pytest.param(
-            (PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x")), 5),
+            (
+                PartitionSpec(
+                    PartitionField(
+                        source_id=1, field_id=1000, transform=IdentityTransform(), name="x_identity_partitioned"
+                    )
+                ),
+                5,
+            ),
             id="identity_partitioned",
         ),
         pytest.param(
-            (PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="x")), 3),
+            (
+                PartitionSpec(
+                    PartitionField(
+                        source_id=1, field_id=1000, transform=BucketTransform(4), name="x_bucket_partitioned"
+                    )
+                ),
+                3,
+            ),
             id="bucket_partitioned",
         ),
         pytest.param(
-            (PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(2), name="x")), 3),
+            (
+                PartitionSpec(
+                    PartitionField(
+                        source_id=1, field_id=1000, transform=TruncateTransform(2), name="x_truncate_partitioned"
+                    )
+                ),
+                3,
+            ),
             id="truncate_partitioned",
         ),
     ],
@@ -302,134 +323,223 @@ def complex_table() -> tuple[pa.Table, Schema]:
     [
         pytest.param(UNPARTITIONED_PARTITION_SPEC, 1, id="unpartitioned"),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="int")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=1, field_id=1000, transform=IdentityTransform(), name="int_identity_partitioned"
+                )
+            ),
             3,
             id="int_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="int")),
+            PartitionSpec(
+                PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="int_bucket_partitioned")
+            ),
             2,
             id="int_bucket_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(2), name="int")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=1, field_id=1000, transform=TruncateTransform(2), name="int_truncate_partitioned"
+                )
+            ),
             2,
             id="int_truncate_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="float")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=2, field_id=1000, transform=IdentityTransform(), name="float_identity_partitioned"
+                )
+            ),
             3,
             id="float_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="string")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=3, field_id=1000, transform=IdentityTransform(), name="string_identity_partitioned"
+                )
+            ),
             3,
             id="string_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=BucketTransform(2), name="string")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=3, field_id=1000, transform=BucketTransform(2), name="string_bucket_partitioned"
+                )
+            ),
             2,
             id="string_bucket_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=TruncateTransform(2), name="string")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=3, field_id=1000, transform=TruncateTransform(2), name="string_truncate_partitioned"
+                )
+            ),
             2,
             id="string_truncate_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="binary")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=4, field_id=1000, transform=IdentityTransform(), name="binary_identity_partitioned"
+                )
+            ),
             3,
             id="binary_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=BucketTransform(2), name="binary")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=4, field_id=1000, transform=BucketTransform(2), name="binary_bucket_partitioned"
+                )
+            ),
             2,
             id="binary_bucket_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=4, field_id=1000, transform=TruncateTransform(2), name="binary")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=4, field_id=1000, transform=TruncateTransform(2), name="binary_truncate_partitioned"
+                )
+            ),
             2,
             id="binary_truncate_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=5, field_id=1000, transform=IdentityTransform(), name="boolean")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=5, field_id=1000, transform=IdentityTransform(), name="bool_identity_partitioned"
+                )
+            ),
             2,
             id="bool_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=IdentityTransform(), name="timestamp")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=6, field_id=1000, transform=IdentityTransform(), name="datetime_identity_partitioned"
+                )
+            ),
             3,
             id="datetime_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=BucketTransform(2), name="timestamp")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=6, field_id=1000, transform=BucketTransform(2), name="datetime_bucket_partitioned"
+                )
+            ),
             2,
             id="datetime_bucket_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=YearTransform(), name="timestamp")),
+            PartitionSpec(
+                PartitionField(source_id=6, field_id=1000, transform=YearTransform(), name="datetime_year_partitioned")
+            ),
             1,
             id="datetime_year_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=MonthTransform(), name="timestamp")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=6, field_id=1000, transform=MonthTransform(), name="datetime_month_partitioned"
+                )
+            ),
             1,
             id="datetime_month_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=DayTransform(), name="timestamp")),
+            PartitionSpec(
+                PartitionField(source_id=6, field_id=1000, transform=DayTransform(), name="datetime_day_partitioned")
+            ),
             3,
             id="datetime_day_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=6, field_id=1000, transform=HourTransform(), name="timestamp")),
+            PartitionSpec(
+                PartitionField(source_id=6, field_id=1000, transform=HourTransform(), name="datetime_hour_partitioned")
+            ),
             3,
             id="datetime_hour_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=IdentityTransform(), name="date")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=7, field_id=1000, transform=IdentityTransform(), name="date_identity_partitioned"
+                )
+            ),
             3,
             id="date_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=BucketTransform(2), name="date")),
+            PartitionSpec(
+                PartitionField(source_id=7, field_id=1000, transform=BucketTransform(2), name="date_bucket_partitioned")
+            ),
             2,
             id="date_bucket_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=YearTransform(), name="date")),
+            PartitionSpec(
+                PartitionField(source_id=7, field_id=1000, transform=YearTransform(), name="date_year_partitioned")
+            ),
             1,
             id="date_year_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=MonthTransform(), name="date")),
+            PartitionSpec(
+                PartitionField(source_id=7, field_id=1000, transform=MonthTransform(), name="date_month_partitioned")
+            ),
             1,
             id="date_month_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=7, field_id=1000, transform=DayTransform(), name="date")),
+            PartitionSpec(
+                PartitionField(source_id=7, field_id=1000, transform=DayTransform(), name="date_day_partitioned")
+            ),
             3,
             id="date_day_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=IdentityTransform(), name="decimal")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=8, field_id=1000, transform=IdentityTransform(), name="decimal_identity_partitioned"
+                )
+            ),
             3,
             id="decimal_identity_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=BucketTransform(2), name="decimal")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=8, field_id=1000, transform=BucketTransform(2), name="decimal_bucket_partitioned"
+                )
+            ),
             1,
             id="decimal_bucket_partitioned",
         ),
         pytest.param(
-            PartitionSpec(PartitionField(source_id=8, field_id=1000, transform=TruncateTransform(2), name="decimal")),
+            PartitionSpec(
+                PartitionField(
+                    source_id=8,
+                    field_id=1000,
+                    transform=TruncateTransform(2),
+                    name="decimadecimal_truncate_partitionedl",
+                )
+            ),
             3,
             id="decimal_truncate_partitioned",
         ),
         pytest.param(
             PartitionSpec(
-                PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="int"),
-                PartitionField(source_id=3, field_id=1000, transform=TruncateTransform(2), name="string"),
+                PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="int_bucket_partitioned"),
+                PartitionField(
+                    source_id=3, field_id=1000, transform=TruncateTransform(2), name="string_truncate_partitioned"
+                ),
             ),
             3,
             id="double_partitioned",
