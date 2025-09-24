@@ -2,11 +2,53 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from daft.io import from_glob_path, read_warc
+from daft.convert import from_pydict
+from daft.datatype import DataType
+from daft.expressions import col
+from daft.functions import cast, contains, decompress, download, explode, split
+from daft.io import read_warc
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
     from daft.io import IOConfig
+
+
+def _get_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) -> str:
+    return f"s3://commoncrawl/crawl-data/{crawl}/{file_type}.paths.gz"
+
+
+def _get_common_crawl_paths(
+    crawl: str,
+    segment: str | None,
+    file_type: Literal["warc", "wet", "wat"],
+    num_files: int | None,
+) -> list[str]:
+    """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
+    paths_url = _get_manifest_path(crawl, file_type)
+
+    # The manifest file is a gzipped plaintext file with one path per line.
+    # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
+    # But from a preliminary microbenchmark on a local machine, this approach turns out to be 20-30% faster than read_csv.
+    paths = from_pydict({"url": [paths_url]}).select(
+        explode(split(cast(decompress(download(col("url")), codec="gzip"), DataType.string()), "\n"))
+    )
+
+    if segment is not None:
+        paths = paths.where(contains(col("url"), segment))
+
+    if num_files is not None:
+        paths = paths.limit(num_files)
+
+    path_list = paths.select("url").to_pydict()["url"]
+
+    full_urls = []
+    for path in path_list:
+        if path:
+            # The paths in paths.gz are relative, so we need to construct full URLs.
+            # They look like: crawl-data/CC-MAIN-2025-38/segments/1757047533033.70/warc/CC-MAIN-20250909055722-20250909085722-00031.warc.gz
+            full_urls.append(f"s3://commoncrawl/{path}")
+
+    return full_urls
 
 
 def common_crawl(
@@ -47,24 +89,23 @@ def common_crawl(
     if num_files is not None and num_files <= 0:
         raise ValueError("num_files must be a positive integer")
 
-    content_type_map = {"raw": "warc", "text": "wet", "metadata": "wat", "warc": "warc", "wet": "wet", "wat": "wat"}
+    content_type_map: dict[str, Literal["warc", "wet", "wat"]] = {
+        "raw": "warc",
+        "text": "wet",
+        "metadata": "wat",
+        "warc": "warc",
+        "wet": "wet",
+        "wat": "wat",
+    }
     if content not in content_type_map:
         raise ValueError(f"Invalid content type for daft.datasets.common_crawl: {content}")
     file_type = content_type_map[content]
 
-    extension_map = {"warc": "*.warc.gz", "wet": "*.warc.wet.gz", "wat": "*.warc.wat.gz"}
-    file_extension = extension_map[file_type]
+    warc_paths = _get_common_crawl_paths(
+        crawl=crawl,
+        segment=segment,
+        file_type=file_type,
+        num_files=num_files,
+    )
 
-    segment_glob = "**"
-    if segment is not None:
-        segment_glob = segment
-
-    glob_pattern = f"s3://commoncrawl/crawl-data/{crawl}/segments/{segment_glob}/{file_type}/{file_extension}"
-
-    if num_files is not None:
-        return read_warc(
-            from_glob_path(glob_pattern, io_config=io_config).select("path").limit(num_files).to_pydict()["path"],
-            io_config=io_config,
-        )
-
-    return read_warc(glob_pattern, io_config=io_config)
+    return read_warc(warc_paths, io_config=io_config)
