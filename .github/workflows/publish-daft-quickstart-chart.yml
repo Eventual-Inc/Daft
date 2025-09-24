@@ -20,3 +20,7 @@ jobs:
       with:
         version: 'latest'
     - name: Publish Production Helm Chart
+      run: |
+        version="$(grep '^version:' k8s/charts/quickstart/Chart.yaml | sed 's/version: //')"
+        helm package k8s/charts/quickstart --version ${version}
+        helm push quickstart-${version}.tgz oci://ghcr.io/eventual-inc/daft
