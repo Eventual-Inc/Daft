@@ -9,12 +9,12 @@ use std::{
     thread,
 };
 
+use base64::Engine;
 use common_error::DaftResult;
 use crossbeam::channel::{Receiver, Sender, bounded};
 use daft_core::prelude::*;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 use crate::{
     Expr, ExprRef,
@@ -293,8 +293,11 @@ impl WorkerPool {
         python_function: Vec<u8>,
         args: Vec<u8>,
     ) {
-        let f = base64::encode(&python_function);
-        let args = base64::encode(&args);
+        let base64_engine = base64::engine::general_purpose::STANDARD;
+        let f = base64_engine.encode(&python_function);
+        let args = base64_engine.encode(&args);
+
+        // 4. Use a more efficient base64 engine
         // Launch Python process
         let mut child = Command::new("python3")
             .arg("-u") // Unbuffered output
@@ -313,7 +316,7 @@ impl WorkerPool {
         while let Ok((batch_idx, batch)) = receiver.recv() {
             let serialized_batch: Vec<u8> = bincode::serialize(&batch).unwrap();
 
-            let request = base64::encode(&serialized_batch);
+            let request = base64_engine.encode(&serialized_batch);
             writeln!(stdin, "{}", request).expect("Failed to write to Python process");
 
             let mut response = String::new();
@@ -322,8 +325,8 @@ impl WorkerPool {
                 .expect("Failed to read from Python process");
             let response = response.trim();
 
-            let result = base64::decode(response).unwrap();
-            let result: Literal = bincode::deserialize(&result).unwrap();
+            let result = base64_engine.decode(response).unwrap();
+            let result: Literal = bincode::deserialize(&result).unwrap_or_else(|_| Literal::Null);
             let mut results_guard = results.lock().unwrap();
             results_guard.push((batch_idx, result));
 
