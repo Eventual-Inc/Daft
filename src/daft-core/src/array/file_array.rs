@@ -33,7 +33,7 @@ impl FileArray {
         urls: &Utf8Array,
         io_config: Option<IOConfig>,
     ) -> Self {
-        use crate::{prelude::PythonArray, series::IntoSeries};
+        use crate::series::IntoSeries;
 
         let discriminant = UInt8Array::from_values(
             "discriminant",
@@ -43,22 +43,22 @@ impl FileArray {
 
         let sa_field = Field::new("literal", DataType::File.to_physical());
 
-        let io_conf = io_config.map(common_io_config::python::IOConfig::from);
-        let io_conf = pyo3::Python::with_gil(|py| {
+        let io_conf = io_config.map(|c| {
+            let io_conf = common_io_config::python::IOConfig::from(c);
+
             use std::sync::Arc;
 
-            use pyo3::IntoPyObjectExt;
+            use pyo3::{IntoPyObjectExt, Python};
 
-            Arc::new(
+            Arc::new(Python::with_gil(|py| {
                 io_conf
                     .into_py_any(py)
-                    .expect("Failed to convert ioconfig to PyObject"),
-            )
+                    .expect("Failed to convert ioconfig to PyObject")
+            }))
         });
-        let io_configs = PythonArray::from((
-            "io_config",
-            std::iter::repeat_n(io_conf, urls.len()).collect::<Vec<_>>(),
-        ));
+
+        let io_configs =
+            PythonArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
         let io_configs = io_configs
@@ -98,8 +98,7 @@ impl FileArray {
         let fld = Field::new("literal", DataType::File.to_physical());
         let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
-            crate::prelude::PythonArray::full_null("io_config", &DataType::Python, values.len())
-                .into_series();
+            PythonArray::full_null("io_config", &DataType::Python, values.len()).into_series();
         let sa = StructArray::new(
             fld,
             vec![
@@ -138,24 +137,23 @@ impl FileArray {
                             let io_conf = ioconfig.as_ref().map(|conf| {
                                 common_io_config::python::IOConfig::from(conf.as_ref().clone())
                             });
-                            let io_config = Arc::new(
-                                io_conf
-                                    .into_py_any(py)
-                                    .expect("Failed to convert ioconfig to PyObject"),
-                            );
+                            let io_config = io_conf.map(|io_conf| {
+                                Arc::new(
+                                    io_conf
+                                        .into_py_any(py)
+                                        .expect("Failed to convert ioconfig to PyObject"),
+                                )
+                            });
                             ((Some(file), io_config), None)
                         }
-                        FileReference::Data(items) => {
-                            let py_none = Arc::new(py.None());
-                            ((None, py_none), Some(items.as_ref().clone()))
-                        }
+                        FileReference::Data(items) => ((None, None), Some(items.as_ref().clone())),
                     })
                     .unzip()
             });
         let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
             files_and_configs.into_iter().unzip();
         let sa_field = Field::new("literal", DataType::File.to_physical());
-        let io_configs = crate::prelude::PythonArray::from(("io_config", io_confs));
+        let io_configs = PythonArray::from_iter("io_config", io_confs.into_iter());
         let urls = Utf8Array::from_iter("url", files.into_iter());
         let data = BinaryArray::from_iter("data", data.into_iter());
         let sa = StructArray::new(
