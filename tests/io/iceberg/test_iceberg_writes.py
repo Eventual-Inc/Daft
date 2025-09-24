@@ -528,7 +528,7 @@ def complex_table() -> tuple[pa.Table, Schema]:
                     source_id=8,
                     field_id=1000,
                     transform=TruncateTransform(2),
-                    name="decimadecimal_truncate_partitionedl",
+                    name="decimal_truncate_partitioned",
                 )
             ),
             3,
