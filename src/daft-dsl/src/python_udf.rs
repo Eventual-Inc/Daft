@@ -286,7 +286,7 @@ impl WorkerPool {
     }
 
     fn worker_process_loop(
-        _worker_id: usize,
+        worker_id: usize,
         receiver: Receiver<(usize, Vec<Literal>)>,
         results: Arc<Mutex<Vec<(usize, Literal)>>>,
         pending_tasks: Arc<AtomicUsize>,
@@ -300,8 +300,9 @@ impl WorkerPool {
         // 4. Use a more efficient base64 engine
         // Launch Python process
         let mut child = Command::new("python3")
-            .arg("-u") // Unbuffered output
-            .arg("/Users/corygrinstead/Development/udf_par/worker.py")
+            .arg("-u")
+            .arg("-m")
+            .arg("daft.execution.scalar_udf_worker")
             .arg(&f)
             .arg(&args)
             .stdin(Stdio::piped())
@@ -317,25 +318,75 @@ impl WorkerPool {
             let serialized_batch: Vec<u8> = bincode::serialize(&batch).unwrap();
 
             let request = base64_engine.encode(&serialized_batch);
-            writeln!(stdin, "{}", request).expect("Failed to write to Python process");
+            match writeln!(stdin, "{}", request) {
+                Ok(_) => match stdin.flush() {
+                    Ok(_) => {
+                        let mut response = String::new();
+                        stdout_reader
+                            .read_line(&mut response)
+                            .expect("Failed to read from Python process");
 
-            let mut response = String::new();
-            stdout_reader
-                .read_line(&mut response)
-                .expect("Failed to read from Python process");
-            let response = response.trim();
+                        let response = response.trim();
 
-            let result = base64_engine.decode(response).unwrap();
-            let result: Literal = bincode::deserialize(&result).unwrap_or_else(|_| Literal::Null);
-            let mut results_guard = results.lock().unwrap();
-            results_guard.push((batch_idx, result));
+                        let result = base64_engine.decode(response).unwrap_or_default();
+                        let result: Literal =
+                            bincode::deserialize(&result).unwrap_or_else(|_| Literal::Null);
+                        let mut results_guard = results.lock().unwrap();
+                        results_guard.push((batch_idx, result));
 
-            pending_tasks.fetch_sub(1, Ordering::SeqCst);
+                        pending_tasks.fetch_sub(1, Ordering::SeqCst);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Worker {}: Failed to flush stdin for batch {}: {:?}",
+                            worker_id, batch_idx, e
+                        );
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "Worker {}: Failed to flush stdin for batch {}: {:?}",
+                        worker_id, batch_idx, e
+                    );
+                }
+            };
+        }
+        eprintln!("Worker {}: All batches processed, sending EXIT", worker_id);
+
+        // Graceful shutdown:
+        // 1. Try to send EXIT command
+        let exit_result = writeln!(stdin, "EXIT");
+        eprintln!(
+            "Worker {}: EXIT command result: {:?}",
+            worker_id, exit_result
+        );
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_millis(100);
+
+        // Check if process exited
+        let mut exited = false;
+        while start.elapsed() < timeout {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    // Process already exited
+                    exited = true;
+                    break;
+                }
+                _ => {
+                    // Process still running, sleep a bit and check again
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
         }
 
-        let _ = child.kill();
-    }
+        // If process didn't exit within timeout, force kill
+        if !exited {
+            let _ = child.kill();
+        }
 
+        // Wait for process to fully terminate
+        let _ = child.wait();
+    }
     pub fn process(&self, batch_idx: usize, literals: Vec<Literal>) {
         self.pending_tasks.fetch_add(1, Ordering::SeqCst);
         self.total_tasks.fetch_add(1, Ordering::SeqCst);

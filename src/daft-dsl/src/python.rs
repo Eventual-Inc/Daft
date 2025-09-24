@@ -17,7 +17,7 @@ use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyList, PyString},
+    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
 };
 use serde::{Deserialize, Serialize};
 
