@@ -24,7 +24,7 @@ repos:
     exclude: |
       (?x)^(.*\.warc)$
   - id: check-yaml
-    exclude: kubernetes-ops
+    exclude: kubernetes-ops|k8s/charts/.*/templates/.*\.ya?ml$
     args:
     - --unsafe
   - id: pretty-format-json
@@ -52,6 +52,7 @@ repos:
     exclude: Cargo.lock
   - id: pretty-format-yaml
     args: [--autofix, --preserve-quotes]
+    exclude: k8s/charts/.*/templates/.*\.ya?ml$
 
 - repo: https://github.com/codespell-project/codespell
   rev: v2.3.0
