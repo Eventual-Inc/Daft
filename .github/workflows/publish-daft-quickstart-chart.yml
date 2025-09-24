@@ -15,8 +15,8 @@ jobs:
       contents: write
       id-token: write
     steps:
-    - uses: actions/checkout@v4
+    - name: Install Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: 'latest'
     - name: Publish Production Helm Chart
-      run: |
-        helm package k8s/charts/quickstart --version $(grep '^version:' k8s/charts/quickstart/Chart.yaml | sed 's/version: //')
-        helm push quickstart-0.1.0.tgz oci://ghcr.io/eventual-inc/daft
