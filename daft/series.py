@@ -48,6 +48,11 @@ class Series:
                 DataType from the data.
         """
         _ensure_registered_super_ext_type()
+        try:
+            DataType.from_arrow_type(array.type, python_fallback=False)
+        except TypeError:
+            # If the Arrow type is not natively supported, go through the Python list path.
+            return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         if isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):

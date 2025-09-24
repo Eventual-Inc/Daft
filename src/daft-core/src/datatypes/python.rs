@@ -92,14 +92,14 @@ impl PythonArray {
     }
 
     fn set_validity(mut self, validity: Option<Bitmap>) -> DaftResult<Self> {
-        if let Some(v) = &validity {
-            if v.len() != self.len() {
-                return Err(DaftError::ValueError(format!(
-                    "validity mask length does not match PythonArray length, {} vs {}",
-                    v.len(),
-                    self.len()
-                )));
-            }
+        if let Some(v) = &validity
+            && v.len() != self.len()
+        {
+            return Err(DaftError::ValueError(format!(
+                "validity mask length does not match PythonArray length, {} vs {}",
+                v.len(),
+                self.len()
+            )));
         }
         self.validity = validity;
         Ok(self)

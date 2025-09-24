@@ -483,7 +483,7 @@ class DataType:
         return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape, use_offset_indices))
 
     @classmethod
-    def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
+    def from_arrow_type(cls, arrow_type: pa.lib.DataType, python_fallback: builtins.bool = True) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType."""
         if pa.types.is_int8(arrow_type):
             return cls.int8()
@@ -587,9 +587,12 @@ class DataType:
                     metadata,
                 )
         else:
-            # Fall back to a Python object type.
-            # TODO(Clark): Add native support for remaining Arrow types.
-            return cls.python()
+            if python_fallback:
+                # Fall back to a Python object type.
+                # TODO(Clark): Add native support for remaining Arrow types.
+                return cls.python()
+            else:
+                raise TypeError(f"Unsupported Arrow type: {arrow_type}")
 
     @classmethod
     def from_numpy_dtype(cls, np_type: np.dtype[Any]) -> DataType:
