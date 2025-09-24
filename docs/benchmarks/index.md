@@ -12,17 +12,20 @@ Our benchmarks show how Daft uniquely delivers on the core needs of AI data proc
 
 ### Setup
 
-The AI benchmarks cover four different workload types, each designed to test different use cases across modalities, and at large scale.
+The AI benchmarks cover four different workload types, each designed to test different use cases across modalities, and at large scale. Each benchmark runs on AWS g6.xlarge instances with 8 worker nodes.
 
-1. **Audio Transcription** - Transcribing 113,800 audio files using OpenAI Whisper-tiny model
-2. **Document Embedding** - Generating embeddings for 10,000 PDF documents using sentence-transformers
-3. **Image Classification** - Classifying 803,580 images using ResNet18 model
-4. **Video Object Detection** - Detecting objects in 1,000 videos using YOLO11n model
+The complete benchmark code is available in our repository:
 
-Each benchmark runs on AWS GPU instances (g6.xlarge for audio and documents, g6.2xlarge for image and video) with 8 worker nodes.
+- **[Audio Transcription](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/audio_transcription)** - Transcribing 113,800 audio files using OpenAI Whisper-tiny model
+- **[Document Embedding](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/document_embedding)** - Generating embeddings for 10,000 PDF documents using sentence-transformers
+- **[Image Classification](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/image_classification)** - Classifying 803,580 images using ResNet18 model
+- **[Video Object Detection](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/video_object_detection)** - Detecting objects in 1,000 videos using YOLO11n model
 
-**Benchmark Date**: September 19, 2025
-**Framework Versions**: Daft 0.6.1, Ray Data 2.49.0, AWS EMR Spark 7.10.0
+Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along with cluster configurations and dependencies.
+
+**Benchmark Date**: September 22, 2024
+
+**Engine Versions**: Daft 0.6.2, Ray Data 2.49.2, AWS EMR Spark 7.10.0
 
 ### Results
 
@@ -40,32 +43,38 @@ Each benchmark runs on AWS GPU instances (g6.xlarge for audio and documents, g6.
                         "marker": {"color": "rgba(255, 0, 255, 1)"},
                         "name": "Daft",
                         "x": ["Audio Transcription", "Document Embedding", "Image Classification", "Video Object Detection"],
-                        "y": [6.42, 1.9, 3.23, 12.28],
+                        "y": [6.37, 1.9, 4.38, 11.77],
                         "type": "bar",
                         "textposition": "inside"
                     },
                     {
-                        "hovertext": ["2.1x Slower", "8.5x Slower", "8.0x Slower", "2.8x Slower"],
+                        "hovertext": ["4.6x Slower", "7.6x Slower", "5.4x Slower", "2.2x Slower"],
                         "marker": {"color": "rgba(0, 102, 255, 0.75)"},
                         "name": "Ray Data",
                         "x": ["Audio Transcription", "Document Embedding", "Image Classification", "Video Object Detection"],
-                        "y": [13.8, 16.17, 26.08, 34.33],
+                        "y": [29.33, 14.53, 23.5, 25.9],
                         "type": "bar",
                         "textposition": "inside"
                     },
                     {
-                        "hovertext": ["6.5x Slower", "4.2x Slower", "10.5x Slower", "11.2x Slower"],
+                        "hovertext": ["4.0x Slower", "4.2x Slower", "10.3x Slower", "18.4x Slower"],
                         "marker": {"color": "rgba(226,90,28, 0.75)"},
                         "name": "Spark",
                         "x": ["Audio Transcription", "Document Embedding", "Image Classification", "Video Object Detection"],
-                        "y": [42.03, 8.07, 34.1, 138.0],
+                        "y": [25.77, 8.07, 45.12, 216.0],
                         "type": "bar",
                         "textposition": "inside"
                     }
                 ],
                 {
                     "title": {"text": "AI Benchmarks - Performance Comparison (lower is better)"},
-                    "yaxis": {"title": {"text": "Time (minutes)"}},
+                    "yaxis": {
+                        "title": {"text": "Time (minutes, log scale)"},
+                        "type": "log",
+                        "tickmode": "array",
+                        "tickvals": [1, 2, 5, 10, 20, 40, 60, 220],
+                        "ticktext": ["1", "2", "5", "10", "20", "40", "60", "220"]
+                    },
                     "xaxis": {"title": {"text": "Workload"}},
                     "uniformtext": {"minsize": 8, "mode": "hide"}
                 },
@@ -77,21 +86,22 @@ Each benchmark runs on AWS GPU instances (g6.xlarge for audio and documents, g6.
 
 |          | Daft | Ray Data | EMR Spark |
 | -------- | :--: | :------: | :---: |
-| Audio Transcription | 6m 25s | 13m 48s (2.1x slower) | 42m 2s (6.5x slower) |
-| Document Embedding | 1m 54s | 16m 10s (8.5x slower) | 8m 4s (4.2x slower) |
-| Image Classification | 3m 14s | 26m 5s (8.0x slower) | 34m 6s (10.5x slower) |
-| Video Object Detection | 12m 17s | 34m 20s (2.8x slower) | 2h 18m (11.2x slower) |
+| Audio Transcription | 6m 22s | 29m 20s (4.6x slower) | 25m 46s (4.0x slower) |
+| Document Embedding | 1m 54s | 14m 32s (7.6x slower) | 8m 4s (4.2x slower) |
+| Image Classification | 4m 23s | 23m 30s (5.4x slower) | 45m 7s (10.3x slower) |
+| Video Object Detection | 11m 46s | 25m 54s (2.2x slower) | 3h 36m (18.4x slower) |
 
-### Code
 
-The complete benchmark code is available in our repository:
+### Logs
 
-- **[Audio Transcription](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/audio_transcription)** - Whisper-tiny model for speech-to-text
-- **[Document Embedding](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/document_embedding)** - Sentence transformers for PDF text embeddings
-- **[Image Classification](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/image_classification)** - ResNet18 for ImageNet classification
-- **[Video Object Detection](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/video_object_detection)** - YOLO11n for object detection in videos
+Complete execution logs for all AI benchmark runs are available for transparency and reproducibility:
 
-Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along with cluster configurations and dependencies.
+| Workload | Daft | Ray Data | Spark |
+| -------- | ---- | -------- | ----- |
+| Audio Transcription | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/spark.txt |
+| Document Embedding | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/spark.txt |
+| Image Classification | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/spark.txt |
+| Video Object Detection | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/spark.txt |
 
 ---
 
@@ -138,7 +148,61 @@ First we run TPC-H 100 Scale Factor (around 100GB) benchmark  on 4 i3.2xlarge wo
 <!-- todo(doc): Find better way to embed html file content, rather than pasting the whole file, how to use snippet? -->
 
 <div>                        <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
-        <script charset="utf-8" src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>                <div id="78330a19-a541-460b-bd9f-217b9d4cd137" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script type="text/javascript">                                    window.PLOTLYENV=window.PLOTLYENV || {};                                    if (document.getElementById("78330a19-a541-460b-bd9f-217b9d4cd137")) {                    Plotly.newPlot(                        "78330a19-a541-460b-bd9f-217b9d4cd137",                        [{"marker":{"color":"rgba(255, 0, 255, 1)"},"name":"Daft","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[1.0666666666666667,0.7666666666666667,0.9833333333333333,1.05,1.9666666666666666,0.6333333333333333,1.1666666666666667,2.25,2.183333333333333,1.0166666666666666],"type":"bar","textposition":"inside"},{"hovertext":["5.6x Slower","1.1x Slower","5.1x Slower","2.8x Slower","2.0x Slower","9.7x Slower","4.3x Slower","2.0x Slower","2.3x Slower","4.8x Slower"],"marker":{"color":"rgba(226,90,28, 0.75)"},"name":"Spark","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[5.991666666666666,0.8716666666666666,4.996666666666667,2.955,3.8583333333333334,6.135000000000001,4.985,4.428333333333333,5.051666666666667,4.863333333333333],"type":"bar","textposition":"inside"},{"hovertext":["4.2x Slower","1.4x Slower","6.9x Slower","13.0x Slower","8.2x Slower","6.1x Slower","6.8x Slower","3.6x Slower","11.8x Slower","12.1x Slower"],"marker":{"color":"rgba(255,193,30, 0.75)"},"name":"Dask","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[4.456666666666666,1.0983333333333334,6.748333333333333,13.615,16.215,3.8366666666666664,7.96,8.148333333333333,25.790000000000003,12.306666666666667],"type":"bar","textposition":"inside"},{"hovertext":["29.1x Slower","12.5x Slower","nanx Slower","48.6x Slower","nanx Slower","87.7x Slower","nanx Slower","nanx Slower","nanx Slower","52.7x Slower"],"marker":{"color":"rgba(0,173,233, 0.6)"},"name":"Modin","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[31.066666666666666,9.616666666666667,null,51.05,null,55.53333333333333,null,null,null,53.6],"type":"bar","textposition":"inside"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmapgl":[{"type":"heatmapgl","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"title":{"text":"TPCH 100 Scale Factor - 4 Nodes (lower is better)"},"yaxis":{"title":{"text":"Time (minutes)"}},"xaxis":{"title":{"text":"TPCH Question"}},"uniformtext":{"minsize":8,"mode":"hide"}},                        {"displayModeBar": false, "responsive": true}                    )                };                            </script>        </div>
+    <script charset="utf-8" src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+    <div id="78330a19-a541-460b-bd9f-217b9d4cd137" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+    <script type="text/javascript">
+        window.PLOTLYENV = window.PLOTLYENV || {};
+        if (document.getElementById("78330a19-a541-460b-bd9f-217b9d4cd137")) {
+            Plotly.newPlot(
+                "78330a19-a541-460b-bd9f-217b9d4cd137",
+                [
+                    {
+                        "marker": {"color": "rgba(255, 0, 255, 1)"},
+                        "name": "Daft",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [1.0666666666666667, 0.7666666666666667, 0.9833333333333333, 1.05, 1.9666666666666666, 0.6333333333333333, 1.1666666666666667, 2.25, 2.183333333333333, 1.0166666666666666],
+                        "type": "bar",
+                        "textposition": "inside"
+                    },
+                    {
+                        "hovertext": ["5.6x Slower", "1.1x Slower", "5.1x Slower", "2.8x Slower", "2.0x Slower", "9.7x Slower", "4.3x Slower", "2.0x Slower", "2.3x Slower", "4.8x Slower"],
+                        "marker": {"color": "rgba(226,90,28, 0.75)"},
+                        "name": "Spark",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [5.991666666666666, 0.8716666666666666, 4.996666666666667, 2.955, 3.8583333333333334, 6.135000000000001, 4.985, 4.428333333333333, 5.051666666666667, 4.863333333333333],
+                        "type": "bar",
+                        "textposition": "inside"
+                    },
+                    {
+                        "hovertext": ["4.2x Slower", "1.4x Slower", "6.9x Slower", "13.0x Slower", "8.2x Slower", "6.1x Slower", "6.8x Slower", "3.6x Slower", "11.8x Slower", "12.1x Slower"],
+                        "marker": {"color": "rgba(255,193,30, 0.75)"},
+                        "name": "Dask",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [4.456666666666666, 1.0983333333333334, 6.748333333333333, 13.615, 16.215, 3.8366666666666664, 7.96, 8.148333333333333, 25.790000000000003, 12.306666666666667],
+                        "type": "bar",
+                        "textposition": "inside"
+                    },
+                    {
+                        "hovertext": ["29.1x Slower", "12.5x Slower", "nanx Slower", "48.6x Slower", "nanx Slower", "87.7x Slower", "nanx Slower", "nanx Slower", "nanx Slower", "52.7x Slower"],
+                        "marker": {"color": "rgba(0,173,233, 0.75)"},
+                        "name": "Modin",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [31.066666666666666, 9.616666666666667, null, 51.05, null, 55.53333333333333, null, null, null, 53.6],
+                        "type": "bar",
+                        "textposition": "inside"
+                    }
+                ],
+                {
+                    "title": {"text": "TPCH 100 Scale Factor - 4 Nodes (lower is better)"},
+                    "yaxis": {"title": {"text": "Time (minutes)"}},
+                    "xaxis": {"title": {"text": "TPCH Question"}},
+                    "uniformtext": {"minsize": 8, "mode": "hide"}
+                },
+                {"displayModeBar": false, "responsive": true}
+            );
+        }
+    </script>
+</div>
 
 | Dataframe | Questions Completed | Total Time (seconds) | Relative to Daft |
 | --------- | :-----------------: | :------------------: | :--------------: |
@@ -157,7 +221,52 @@ Next we scale up the data size by 10x while keeping the cluster size the same. S
 
 <!-- Find better way to embed html file content, rather than pasting the whole file -->
 <div>                        <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
-        <script charset="utf-8" src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>                <div id="2e3c4bff-c808-4722-8664-d4c63ee41e55" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script type="text/javascript">                                    window.PLOTLYENV=window.PLOTLYENV || {};                                    if (document.getElementById("2e3c4bff-c808-4722-8664-d4c63ee41e55")) {                    Plotly.newPlot(                        "2e3c4bff-c808-4722-8664-d4c63ee41e55",                        [{"marker":{"color":"rgba(255, 0, 255, 1)"},"name":"Daft","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[4.85,9.766666666666667,12.933333333333334,11.233333333333333,17.616666666666667,2.7,15.15,18.5,22.833333333333332,13.983333333333333],"type":"bar","textposition":"inside"},{"hovertext":["12.1x Slower","0.9x Slower","3.8x Slower","2.9x Slower","2.1x Slower","22.3x Slower","3.5x Slower","2.7x Slower","2.6x Slower","3.4x Slower"],"marker":{"color":"rgba(226,90,28, 0.75)"},"name":"Spark","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[58.625,8.591666666666667,48.559999999999995,32.88666666666667,36.98166666666667,60.11333333333334,52.34,49.475,58.26166666666666,46.85333333333333],"type":"bar","textposition":"inside"},{"hovertext":["8.7x Slower","2.1x Slower","nanx Slower","nanx Slower","nanx Slower","13.7x Slower","nanx Slower","nanx Slower","nanx Slower","nanx Slower"],"marker":{"color":"rgba(255,193,30, 0.75)"},"name":"Dask","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[42.37166666666667,20.926666666666666,null,null,null,36.968333333333334,null,null,null,null],"type":"bar","textposition":"inside"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmapgl":[{"type":"heatmapgl","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"title":{"text":"TPCH 1000 Scale Factor - 4 Nodes (lower is better)"},"yaxis":{"title":{"text":"Time (minutes)"}},"xaxis":{"title":{"text":"TPCH Question"}},"uniformtext":{"minsize":8,"mode":"hide"}},                        {"displayModeBar": false, "responsive": true}                    )                };                            </script>        </div>
+    <script charset="utf-8" src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+    <div id="2e3c4bff-c808-4722-8664-d4c63ee41e55" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+    <script type="text/javascript">
+        window.PLOTLYENV = window.PLOTLYENV || {};
+        if (document.getElementById("2e3c4bff-c808-4722-8664-d4c63ee41e55")) {
+            Plotly.newPlot(
+                "2e3c4bff-c808-4722-8664-d4c63ee41e55",
+                [
+                    {
+                        "marker": {"color": "rgba(255, 0, 255, 1)"},
+                        "name": "Daft",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [4.85, 9.766666666666667, 12.933333333333334, 11.233333333333333, 17.616666666666667, 2.7, 15.15, 18.5, 22.833333333333332, 13.983333333333333],
+                        "type": "bar",
+                        "textposition": "inside"
+                    },
+                    {
+                        "hovertext": ["12.1x Slower", "0.9x Slower", "3.8x Slower", "2.9x Slower", "2.1x Slower", "22.3x Slower", "3.5x Slower", "2.7x Slower", "2.6x Slower", "3.4x Slower"],
+                        "marker": {"color": "rgba(226,90,28, 0.75)"},
+                        "name": "Spark",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [58.625, 8.591666666666667, 48.559999999999995, 32.88666666666667, 36.98166666666667, 60.11333333333334, 52.34, 49.475, 58.26166666666666, 46.85333333333333],
+                        "type": "bar",
+                        "textposition": "inside"
+                    },
+                    {
+                        "hovertext": ["8.7x Slower", "2.1x Slower", "nanx Slower", "nanx Slower", "nanx Slower", "13.7x Slower", "nanx Slower", "nanx Slower", "nanx Slower", "nanx Slower"],
+                        "marker": {"color": "rgba(255,193,30, 0.75)"},
+                        "name": "Dask",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [42.37166666666667, 20.926666666666666, null, null, null, 36.968333333333334, null, null, null, null],
+                        "type": "bar",
+                        "textposition": "inside"
+                    }
+                ],
+                {
+                    "title": {"text": "TPCH 1000 Scale Factor - 4 Nodes (lower is better)"},
+                    "yaxis": {"title": {"text": "Time (minutes)"}},
+                    "xaxis": {"title": {"text": "TPCH Question"}},
+                    "uniformtext": {"minsize": 8, "mode": "hide"}
+                },
+                {"displayModeBar": false, "responsive": true}
+            );
+        }
+    </script>
+</div>
 
 
 | Dataframe | Questions Completed | Total Time (seconds) | Relative to Daft |
@@ -178,7 +287,47 @@ Finally, we compare how Daft performs on varying size clusters on the terabyte s
 
 <!-- Find better way to embed html file content, rather than pasting the whole file -->
 <div>                        <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
-        <script charset="utf-8" src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>                <div id="8da53ffa-b330-43c6-b32b-a84051abed03" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script type="text/javascript">                                    window.PLOTLYENV=window.PLOTLYENV || {};                                    if (document.getElementById("8da53ffa-b330-43c6-b32b-a84051abed03")) {                    Plotly.newPlot(                        "8da53ffa-b330-43c6-b32b-a84051abed03",                        [{"name":"1 Node","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[18.466666666666665,34.7,49.516666666666666,37.583333333333336,67.01666666666667,12.133333333333333,56.18333333333333,68.68333333333334,92.1,57.63333333333333],"type":"bar","textposition":"inside"},{"name":"4 Node","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[4.85,9.766666666666667,12.933333333333334,11.233333333333333,17.616666666666667,2.7,15.15,18.5,22.833333333333332,13.983333333333333],"type":"bar","textposition":"inside"},{"name":"8 Node","x":["Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10"],"y":[2.6,5.933333333333334,6.583333333333333,5.083333333333333,10.2,1.5,7.95,9.733333333333333,16.666666666666668,7.183333333333334],"type":"bar","textposition":"inside"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmapgl":[{"type":"heatmapgl","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"title":{"text":"TPCH 1000 Scale Factor - Node Count vs Daft Query Time"},"yaxis":{"title":{"text":"Time (minutes)"}},"xaxis":{"title":{"text":"TPCH Question"}},"uniformtext":{"minsize":8,"mode":"hide"}},                        {"displayModeBar": false, "responsive": true}                    )                };                            </script>        </div>
+    <script charset="utf-8" src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+    <div id="8da53ffa-b330-43c6-b32b-a84051abed03" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+    <script type="text/javascript">
+        window.PLOTLYENV = window.PLOTLYENV || {};
+        if (document.getElementById("8da53ffa-b330-43c6-b32b-a84051abed03")) {
+            Plotly.newPlot(
+                "8da53ffa-b330-43c6-b32b-a84051abed03",
+                [
+                    {
+                        "name": "1 Node",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [18.466666666666665, 34.7, 49.516666666666666, 37.583333333333336, 67.01666666666667, 12.133333333333333, 56.18333333333333, 68.68333333333334, 92.1, 57.63333333333333],
+                        "type": "bar",
+                        "textposition": "inside"
+                    },
+                    {
+                        "name": "4 Node",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [4.85, 9.766666666666667, 12.933333333333334, 11.233333333333333, 17.616666666666667, 2.7, 15.15, 18.5, 22.833333333333332, 13.983333333333333],
+                        "type": "bar",
+                        "textposition": "inside"
+                    },
+                    {
+                        "name": "8 Node",
+                        "x": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"],
+                        "y": [2.6, 5.933333333333334, 6.583333333333333, 5.083333333333333, 10.2, 1.5, 7.95, 9.733333333333333, 16.666666666666668, 7.183333333333334],
+                        "type": "bar",
+                        "textposition": "inside"
+                    }
+                ],
+                {
+                    "title": {"text": "TPCH 1000 Scale Factor - Node Count vs Daft Query Time"},
+                    "yaxis": {"title": {"text": "Time (minutes)"}},
+                    "xaxis": {"title": {"text": "TPCH Question"}},
+                    "uniformtext": {"minsize": 8, "mode": "hide"}
+                },
+                {"displayModeBar": false, "responsive": true}
+            );
+        }
+    </script>
+</div>
 
 We note two interesting results here:
 
