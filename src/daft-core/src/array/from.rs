@@ -157,21 +157,6 @@ impl From<(&str, Vec<arrow2::types::months_days_ns>)> for IntervalArray {
     }
 }
 
-#[cfg(feature = "python")]
-impl From<(&str, Vec<Arc<pyo3::PyObject>>)> for crate::datatypes::PythonArray {
-    fn from(item: (&str, Vec<Arc<pyo3::PyObject>>)) -> Self {
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-
-        let (name, vec_pyobj) = item;
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::<Arc<pyo3::PyObject>>::from_pyobj_vec(
-                vec_pyobj,
-            ));
-        let field = Field::new(name, DataType::Python);
-        Self::new(field.into(), arrow_array).unwrap()
-    }
-}
-
 impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
@@ -213,7 +198,10 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
         }
         let last_offset = *offsets.last().unwrap();
         if last_offset != data.len() as i64 {
-            return Err(DaftError::ValueError(format!("Expected Last offset in offsets to be the same as the length of the data array: {last_offset} vs {}", data.len())));
+            return Err(DaftError::ValueError(format!(
+                "Expected Last offset in offsets to be the same as the length of the data array: {last_offset} vs {}",
+                data.len()
+            )));
         }
 
         assert_eq!(last_offset, data.len() as i64);
@@ -228,26 +216,6 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
             Field::new(name, DataType::Binary).into(),
             Box::new(bin_array),
         )
-    }
-}
-
-#[cfg(feature = "python")]
-impl
-    TryFrom<(
-        &str,
-        crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
-    )> for crate::datatypes::PythonArray
-{
-    type Error = DaftError;
-
-    fn try_from(
-        item: (
-            &str,
-            crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
-        ),
-    ) -> DaftResult<Self> {
-        let (name, array) = item;
-        Self::new(Field::new(name, DataType::Python).into(), Box::new(array))
     }
 }
 

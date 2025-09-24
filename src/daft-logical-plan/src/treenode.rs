@@ -7,9 +7,9 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 
 use crate::{
+    LogicalPlan, SourceInfo,
     ops::Source,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
-    LogicalPlan, SourceInfo,
 };
 
 impl DynTreeNode for LogicalPlan {

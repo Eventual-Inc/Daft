@@ -3,8 +3,8 @@ use common_error::DaftResult;
 
 use crate::{
     array::{
-        ops::{DaftBoolAggable, GroupIndices},
         DataArray,
+        ops::{DaftBoolAggable, GroupIndices},
     },
     datatypes::BooleanType,
 };

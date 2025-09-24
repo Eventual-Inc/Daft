@@ -28,9 +28,9 @@ def test_explicit_set_runner_native():
     """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Native."""
     explicit_set_runner_script_native = """
 import daft
-print(daft.context.get_context()._runner)
+print(daft.runners._get_runner())
 daft.context.set_runner_native()
-print(daft.context.get_context()._runner.name)
+print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
@@ -45,9 +45,9 @@ def test_implicit_set_runner_native():
     """Test that a freshly imported context doesn't have a runner config set and is set implicitly to Native."""
     implicit_set_runner_script = """
 import daft
-print(daft.context.get_context()._runner)
+print(daft.runners._get_runner())
 df = daft.from_pydict({"foo": [1, 2, 3]})
-print(daft.context.get_context()._runner.name)
+print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
@@ -59,9 +59,9 @@ def test_explicit_set_runner_ray():
     """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Ray."""
     explicit_set_runner_script_ray = """
 import daft
-print(daft.context.get_context()._runner)
+print(daft.runners._get_runner())
 daft.context.set_runner_ray()
-print(daft.context.get_context()._runner.name)
+print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
@@ -75,9 +75,9 @@ def test_implicit_set_runner_ray():
 import daft
 import ray
 ray.init()
-print(daft.context.get_context()._runner)
+print(daft.runners._get_runner())
 df = daft.from_pydict({"foo": [1, 2, 3]})
-print(daft.context.get_context()._runner.name)
+print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
@@ -122,7 +122,7 @@ def test_env_var(daft_runner_envvar):
     autodetect_script = """
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})
-print(daft.context.get_context()._runner.name)
+print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
@@ -135,11 +135,11 @@ print(daft.context.get_context()._runner.name)
 
 
 def test_in_ray_job():
-    """Test that Ray job ID environment variable is being picked up."""
+    """Test that Ray job ID environment variable is being detected."""
     autodetect_script = """
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})
-print(daft.context.get_context()._runner.name)
+print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
@@ -154,11 +154,11 @@ print(daft.context.get_context()._runner.name)
 def test_get_or_create_runner_from_multiple_threads():
     concurrent_get_or_create_runner_script = """
 import concurrent.futures
-from daft.context import get_context
+from daft.runners import get_or_create_runner
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
     futures = [
-        executor.submit(lambda: get_context().get_or_create_runner()) for _ in range(10)
+        executor.submit(lambda: get_or_create_runner()) for _ in range(10)
     ]
 
     results = [future.result() for future in concurrent.futures.as_completed(futures)]
@@ -177,7 +177,7 @@ def test_cannot_set_runner_ray_after_py():
     cannot_set_runner_ray_after_py_script = """
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})
-print(daft.context.get_context()._runner.name)
+print(daft.runners._get_runner().name)
 daft.context.set_runner_ray()
     """
 
@@ -195,14 +195,12 @@ def test_get_or_infer_runner_type_from_env(daft_runner_envvar):
     get_or_infer_runner_type_py_script = """
 import daft
 
-print(daft.context.get_context().get_or_infer_runner_type())
-
+print(daft.runners.get_or_infer_runner_type())
 
 @daft.udf(return_dtype=daft.DataType.string())
 def my_udf(foo):
-    runner_type = daft.context.get_context().get_or_infer_runner_type()
+    runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
-
 
 df = daft.from_pydict({"foo": [7]})
 pd = df.with_column(column_name="bar", expr=my_udf(df["foo"])).to_pydict()
@@ -225,12 +223,12 @@ import daft
 
 daft.context.set_runner_native()
 
-print(daft.context.get_context().get_or_infer_runner_type())
+print(daft.runners.get_or_infer_runner_type())
 
 
 @daft.udf(return_dtype=daft.DataType.string())
 def my_udf(foo):
-    runner_type = daft.context.get_context().get_or_infer_runner_type()
+    runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
 
 
@@ -250,12 +248,12 @@ import daft
 
 daft.context.set_runner_ray()
 
-print(daft.context.get_context().get_or_infer_runner_type())
+print(daft.runners.get_or_infer_runner_type())
 
 
 @daft.udf(return_dtype=daft.DataType.string())
 def my_udf(foo):
-    runner_type = daft.context.get_context().get_or_infer_runner_type()
+    runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
 
 
@@ -274,9 +272,9 @@ def test_get_or_infer_runner_type_with_inconsistent_settings(daft_runner_envvar)
     get_or_infer_runner_type_py_script = """
 import daft
 
-print(daft.context.get_context().get_or_infer_runner_type())
+print(daft.runners.get_or_infer_runner_type())
 daft.context.set_runner_ray()
-print(daft.context.get_context().get_or_infer_runner_type())
+print(daft.runners.get_or_infer_runner_type())
     """
 
     with with_null_env():

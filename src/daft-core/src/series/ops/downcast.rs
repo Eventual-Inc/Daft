@@ -5,13 +5,15 @@ use logical::{
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
-    series::{array_impl::ArrayWrapper, Series},
+    series::{Series, array_impl::ArrayWrapper},
 };
 
 impl Series {

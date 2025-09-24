@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
@@ -12,15 +12,15 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         SubmittableTaskStream,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
-fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
+fn make_shuffle_id(_context: &PipelineNodeContext) -> u64 {
     rand::random::<u64>()
 }
 
@@ -42,7 +42,7 @@ impl FlightShuffleNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         num_partitions: usize,
@@ -51,7 +51,7 @@ impl FlightShuffleNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -61,7 +61,7 @@ impl FlightShuffleNode {
         let shuffle_id = make_shuffle_id(&context);
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             repartition_spec
                 .to_clustering_spec(child.config().clustering_spec.num_partitions())
                 .into(),
@@ -114,7 +114,11 @@ impl FlightShuffleNode {
             .into_iter()
             .collect::<Vec<_>>();
 
-        println!("shuffle id: {}, num server addresses: {}", self.shuffle_id, server_addresses.len());
+        println!(
+            "shuffle id: {}, num server addresses: {}",
+            self.shuffle_id,
+            server_addresses.len()
+        );
 
         // For each partition group, create tasks that read from flight servers
         for partition_idx in 0..self.num_partitions {
@@ -187,7 +191,7 @@ impl DistributedPipelineNode for FlightShuffleNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        stage_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(stage_context);
         let self_arc = self.clone();

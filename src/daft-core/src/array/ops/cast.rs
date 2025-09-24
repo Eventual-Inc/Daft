@@ -9,7 +9,7 @@ use arrow2::{
     bitmap::utils::SlicesIterator,
     compute::{
         self,
-        cast::{can_cast_types, cast, CastOptions},
+        cast::{CastOptions, can_cast_types, cast},
     },
     offset::Offsets,
 };
@@ -17,7 +17,6 @@ use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use {
-    crate::datatypes::PythonArray,
     num_traits::{NumCast, ToPrimitive},
     numpy::{PyReadonlyArrayDyn, PyUntypedArrayMethods},
     pyo3::prelude::*,
@@ -25,21 +24,23 @@ use {
 };
 
 use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{
+        DataArray, FixedSizeListArray, ListArray, StructArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
-        ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        ops::{DaftCompare, from_arrow::FromArrow, full::FullNull},
     },
     datatypes::{
+        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
+        NullArray, TimeUnit, UInt64Array, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
-        NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -53,11 +54,19 @@ impl Series {
             use pyo3::IntoPyObjectExt;
 
             self.to_literals()
-                .map(|lit| lit.into_py_any(py).map(Arc::new))
+                .map(|lit| {
+                    use crate::lit::Literal;
+
+                    if matches!(lit, Literal::Null) {
+                        Ok(None)
+                    } else {
+                        Ok(Some(Arc::new(lit.into_py_any(py)?)))
+                    }
+                })
                 .collect::<PyResult<Vec<_>>>()
         })?;
 
-        Ok(PythonArray::from((self.name(), py_values)).into_series())
+        Ok(PythonArray::from_iter(self.name(), py_values.into_iter()).into_series())
     }
 }
 
@@ -649,12 +658,12 @@ fn append_values_from_numpy<
         .getattr(pyo3::intern!(py, "_dtype"))?
         .extract::<PyDataType>()?;
     let datatype = datatype.dtype;
-    if let Some(enforce_dtype) = enforce_dtype {
-        if enforce_dtype != &datatype {
-            return Err(DaftError::ValueError(format!(
-                "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
-            )));
-        }
+    if let Some(enforce_dtype) = enforce_dtype
+        && enforce_dtype != &datatype
+    {
+        return Err(DaftError::ValueError(format!(
+            "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
+        )));
     }
     if !datatype.is_numeric() {
         return Err(DaftError::ValueError(format!(
@@ -759,7 +768,7 @@ fn extract_python_to_vec<
     //     .import("PIL.Image")
     //     .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
 
-    for (i, object) in python_objects.as_arrow().iter().enumerate() {
+    for (i, object) in python_objects.iter().enumerate() {
         if let Some(object) = object {
             let object = object.bind(py);
 
@@ -842,14 +851,18 @@ fn extract_python_to_vec<
                     };
 
                     if collected.is_err() {
-                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name());
+                        log::warn!(
+                            "Could not convert python object to list at index: {i} for input series: {}",
+                            python_objects.name()
+                        );
                     }
                     let collected: Vec<Tgt> = collected?;
                     if let Some(list_size) = list_size {
                         if collected.len() != list_size {
                             return Err(DaftError::ValueError(format!(
                                 "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                collected.len(), i
+                                collected.len(),
+                                i
                             )));
                         }
                     } else {
@@ -862,7 +875,9 @@ fn extract_python_to_vec<
                 } else {
                     return Err(DaftError::ValueError(format!(
                         "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
-                        i, object.getattr(pyo3::intern!(py, "__class__"))?)));
+                        i,
+                        object.getattr(pyo3::intern!(py, "__class__"))?
+                    )));
                 }
             }
         } else if let Some(list_size) = list_size {
@@ -915,7 +930,7 @@ fn extract_python_like_to_fixed_size_list<
     let list_array = arrow2::array::FixedSizeListArray::new(
         list_dtype,
         values_array,
-        python_objects.as_arrow().validity().cloned(),
+        python_objects.validity().cloned(),
     );
 
     FixedSizeListArray::from_arrow(
@@ -952,7 +967,7 @@ fn extract_python_like_to_list<
         list_dtype,
         arrow2::offset::OffsetsBuffer::try_from(offsets)?,
         values_array,
-        python_objects.as_arrow().validity().cloned(),
+        python_objects.validity().cloned(),
     );
 
     ListArray::from_arrow(
@@ -988,7 +1003,7 @@ fn extract_python_like_to_image_array<
     let shape_offsets =
         shape_offsets.expect("Shape offsets should be non-None for image struct array");
 
-    let validity = python_objects.as_arrow().validity();
+    let validity = python_objects.validity();
 
     let num_rows = offsets.len() - 1;
 
@@ -1079,7 +1094,7 @@ fn extract_python_like_to_tensor_array<
     let shape_offsets =
         shape_offsets.expect("Shape offsets should be non-None for image struct array");
 
-    let validity = python_objects.as_arrow().validity();
+    let validity = python_objects.validity();
 
     let name = python_objects.name();
     if data.is_empty() {
@@ -1426,8 +1441,7 @@ impl TensorArray {
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast Tensor array to FixedShapeTensor array with type {:?}: Tensor array has shapes different than {:?};",
-                        dtype,
-                        shape,
+                        dtype, shape,
                     )));
                 }
                 let size = shape.iter().product::<u64>() as usize;
@@ -1774,8 +1788,7 @@ impl SparseTensorArray {
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast SparseTensor array to FixedShapeSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
-                        dtype,
-                        shape,
+                        dtype, shape,
                     )));
                 }
 
@@ -1865,8 +1878,7 @@ impl FixedShapeSparseTensorArray {
                 if size != target_size {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast FixedShapeSparseTensor array to FixedShapeTensor array with type {:?}: FixedShapeSparseTensor array has shapes different than {:?};",
-                        dtype,
-                        tensor_shape,
+                        dtype, tensor_shape,
                     )));
                 }
                 let n_values = size * non_zero_values_array.len();
@@ -2325,7 +2337,7 @@ impl StructArray {
 #[cfg(test)]
 mod tests {
     use arrow2::array::PrimitiveArray;
-    use rand::{rng, Rng};
+    use rand::{Rng, rng};
 
     use super::*;
     use crate::{
@@ -2506,7 +2518,8 @@ mod tests {
         );
 
         assert!(
-            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0)).is_err(),
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0))
+                .is_err(),
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
     }

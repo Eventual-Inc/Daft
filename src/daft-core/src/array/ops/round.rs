@@ -20,7 +20,7 @@ impl Float64Array {
             self.apply(|v| v.round())
         } else {
             let multiplier: f64 = 10.0.pow(decimal);
-            self.apply(|v| ((v * multiplier).round() / multiplier))
+            self.apply(|v| (v * multiplier).round() / multiplier)
         }
     }
 }

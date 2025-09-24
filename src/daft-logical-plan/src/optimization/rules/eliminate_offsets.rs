@@ -4,9 +4,9 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 
 use crate::{
+    LogicalPlan,
     ops::{Limit as LogicalLimit, Offset as LogicalOffset},
     optimization::rules::OptimizerRule,
-    LogicalPlan,
 };
 
 /// This rule optimizes Offset operators by:
@@ -46,7 +46,7 @@ impl EliminateOffsets {
                         .or(Transformed::yes(new_plan))
                         .data;
                     return Ok(Transformed::yes(optimized));
-                };
+                }
 
                 match input.as_ref() {
                     // Merge two adjacent Offset nodes
@@ -118,13 +118,13 @@ mod tests {
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::EliminateOffsets,
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the EliminateOffsets rule registered, optimizes

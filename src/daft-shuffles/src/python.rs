@@ -4,15 +4,15 @@ use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
 use daft_schema::python::schema::PySchema;
 use pyo3::{
-    pyclass, pyfunction, pymethods,
+    Bound, PyResult, Python, pyclass, pyfunction, pymethods,
     types::{PyModule, PyModuleMethods},
-    wrap_pyfunction, Bound, PyResult, Python,
+    wrap_pyfunction,
 };
 
 use crate::{
     client::FlightClientManager,
-    server::flight_server::{start_flight_server, FlightServerConnectionHandle},
-    shuffle_cache::{get_or_init_shuffle_cache_runtime, InProgressShuffleCache, ShuffleCache},
+    server::flight_server::{FlightServerConnectionHandle, start_flight_server},
+    shuffle_cache::{InProgressShuffleCache, ShuffleCache, get_or_init_shuffle_cache_runtime},
 };
 
 #[pyclass(module = "daft.daft", name = "InProgressShuffleCache", frozen)]

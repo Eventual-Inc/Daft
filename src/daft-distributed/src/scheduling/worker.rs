@@ -42,14 +42,14 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId);
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
-    fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
+    fn _try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
     #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
 }
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::sync::{atomic::AtomicBool, Mutex};
+    use std::sync::{Mutex, atomic::AtomicBool};
 
     use super::*;
     use crate::scheduling::tests::{MockTask, MockTaskResultHandle};
@@ -121,7 +121,7 @@ pub(super) mod tests {
                 .collect())
         }
 
-        fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()> {
+        fn _try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()> {
             // add 1 worker for each num_cpus
             let num_workers = resource_requests.len();
             let mut workers = self.workers.lock().expect("Failed to lock workers");
@@ -153,6 +153,7 @@ pub(super) mod tests {
         total_num_cpus: f64,
         total_num_gpus: f64,
         active_task_details: Arc<Mutex<HashMap<TaskContext, TaskDetails>>>,
+        #[allow(dead_code)]
         is_shutdown: Arc<AtomicBool>,
     }
 
@@ -181,6 +182,7 @@ pub(super) mod tests {
                 .insert(task.task_context(), TaskDetails::from(task));
         }
 
+        #[allow(dead_code)]
         pub fn shutdown(&self) {
             self.is_shutdown
                 .store(true, std::sync::atomic::Ordering::SeqCst);

@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
 use super::super::FunctionEvaluator;
-use crate::{functions::FunctionExpr, ExprRef};
+use crate::{ExprRef, functions::FunctionExpr};
 
 pub(super) struct GetEvaluator {}
 

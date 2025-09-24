@@ -5,10 +5,9 @@ use common_ndarray::NdArray;
 use daft_schema::prelude::TimeUnit;
 use indexmap::IndexMap;
 use pyo3::{
-    intern,
+    IntoPyObjectExt, intern,
     prelude::*,
     types::{PyDict, PyList, PyNone},
-    IntoPyObjectExt,
 };
 
 use super::Literal;
@@ -53,9 +52,11 @@ impl<'py> IntoPyObject<'py> for Literal {
                     TimeUnit::Milliseconds => DateTime::from_timestamp_millis(val),
                     TimeUnit::Seconds => DateTime::from_timestamp(val, 0),
                 }
-                .ok_or_else(||
-                    DaftError::ValueError(format!("Overflow when constructing timestamp from value with time unit {tu}: {val}"))
-                )?
+                .ok_or_else(|| {
+                    DaftError::ValueError(format!(
+                        "Overflow when constructing timestamp from value with time unit {tu}: {val}"
+                    ))
+                })?
                 .naive_utc();
 
                 match tz {
@@ -162,7 +163,13 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .map(|(f, v)| (f.name, v))
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
-            Self::File(f) => f.into_bound_py_any(py),
+            Self::File(f) => {
+                let pytuple = f.into_bound_py_any(py)?;
+                let py_file = py
+                    .import(intern!(py, "daft.file"))?
+                    .getattr(intern!(py, "File"))?;
+                py_file.call_method1(pyo3::intern!(py, "_from_tuple"), (pytuple,))
+            }
             Self::Map { keys, values } => {
                 assert_eq!(
                     keys.len(),

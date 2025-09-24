@@ -1,24 +1,24 @@
 use std::sync::Arc;
 
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 #[cfg(feature = "python")]
-use common_py_serde::{deserialize_py_object, serialize_py_object, PyObjectWrapper};
+use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
-use daft_core::prelude::*;
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
+    Column, WindowExpr, WindowFrame, WindowSpec,
     expr::{
-        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
         BoundColumn, ExprRef,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     },
     functions::python::get_resource_request,
-    Column, WindowExpr, WindowFrame, WindowSpec,
 };
 use daft_logical_plan::{
+    InMemoryInfo, OutputFileInfo,
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
-    InMemoryInfo, OutputFileInfo,
 };
 use serde::{Deserialize, Serialize};
 
@@ -464,13 +464,14 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn pivot(
+    pub fn pivot(
         input: LocalPhysicalPlanRef,
         group_by: Vec<BoundExpr>,
         pivot_column: BoundExpr,
         value_column: BoundExpr,
         aggregation: BoundAggExpr,
         names: Vec<String>,
+        pre_agg: bool,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
@@ -481,6 +482,7 @@ impl LocalPhysicalPlan {
             value_column,
             aggregation,
             names,
+            pre_agg,
             schema,
             stats_state,
         })
@@ -571,6 +573,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
+        build_on_left: Option<bool>,
         null_equals_null: Option<Vec<bool>>,
         join_type: JoinType,
         schema: SchemaRef,
@@ -581,6 +584,7 @@ impl LocalPhysicalPlan {
             right,
             left_on,
             right_on,
+            build_on_left,
             null_equals_null,
             join_type,
             schema,
@@ -902,60 +906,431 @@ impl LocalPhysicalPlan {
 
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
-            [] => panic!("LocalPhysicalPlan::with_new_children: Empty children not handled for FlightShuffleRead"),
+            [] => panic!(
+                "LocalPhysicalPlan::with_new_children: Empty children not handled for FlightShuffleRead"
+            ),
             [new_child] => match self {
-                Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
-                Self::Filter(Filter { predicate, .. }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
-                Self::IntoBatches(IntoBatches { batch_size, strict, .. }) => Self::into_batches(new_child.clone(), *batch_size, *strict, StatsState::NotMaterialized),
-                Self::Limit(Limit { limit, offset, .. }) => Self::limit(new_child.clone(), *limit, *offset, StatsState::NotMaterialized),
-                Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::UDFProject(UDFProject { project, passthrough_columns, schema, .. }) => Self::udf_project(new_child.clone(), project.clone(), passthrough_columns.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Pivot(Pivot {  group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(new_child.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Sort(Sort {  sort_by, descending, nulls_first, schema, .. }) => Self::sort(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), StatsState::NotMaterialized),
-                Self::Sample(Sample {  sampling_method, with_replacement, seed, schema, .. }) => {
-                    Self::sample(new_child.clone(), sampling_method.clone(), *with_replacement, *seed, StatsState::NotMaterialized)
-                },
-                Self::Explode(Explode {  to_explode, schema, .. }) => Self::explode(new_child.clone(), to_explode.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Unpivot(Unpivot {  ids, values, variable_name, value_name, schema, .. }) => Self::unpivot(new_child.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Concat(Concat {  other, schema, .. }) => Self::concat(new_child.clone(), other.clone(), StatsState::NotMaterialized),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {  column_name, starting_offset, schema, .. }) => Self::monotonically_increasing_id(new_child.clone(), column_name.clone(), *starting_offset, schema.clone(), StatsState::NotMaterialized),
-                Self::WindowPartitionOnly(WindowPartitionOnly {  partition_by, schema, aggregations, aliases, .. }) => Self::window_partition_only(new_child.clone(), partition_by.clone(), schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
-                Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {  partition_by, order_by, descending, nulls_first, schema, functions, aliases, .. }) => Self::window_partition_and_order_by(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
-                Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {  partition_by, order_by, descending, nulls_first, frame, min_periods, schema, aggregations, aliases, .. }) => Self::window_partition_and_dynamic_frame(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), frame.clone(), *min_periods, schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
-                Self::WindowOrderByOnly(WindowOrderByOnly {  order_by, descending, nulls_first, schema, functions, aliases, .. }) => Self::window_order_by_only(new_child.clone(), order_by.clone(), descending.clone(), nulls_first.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
-                Self::TopN(TopN { sort_by, descending, nulls_first, limit, offset, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *offset, StatsState::NotMaterialized),
-                Self::PhysicalWrite(PhysicalWrite {  data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(new_child.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
-                Self::CommitWrite(CommitWrite {  input, stats_state, file_schema, file_info, .. }) => Self::commit_write(new_child.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
+                Self::PhysicalScan(_)
+                | Self::PlaceholderScan(_)
+                | Self::EmptyScan(_)
+                | Self::InMemoryScan(_) => panic!(
+                    "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
+                ),
+                Self::Filter(Filter { predicate, .. }) => Self::filter(
+                    new_child.clone(),
+                    predicate.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::IntoBatches(IntoBatches {
+                    batch_size, strict, ..
+                }) => Self::into_batches(
+                    new_child.clone(),
+                    *batch_size,
+                    *strict,
+                    StatsState::NotMaterialized,
+                ),
+                Self::Limit(Limit { limit, offset, .. }) => Self::limit(
+                    new_child.clone(),
+                    *limit,
+                    *offset,
+                    StatsState::NotMaterialized,
+                ),
+                Self::Project(Project {
+                    projection, schema, ..
+                }) => Self::project(
+                    new_child.clone(),
+                    projection.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::UDFProject(UDFProject {
+                    project,
+                    passthrough_columns,
+                    schema,
+                    ..
+                }) => Self::udf_project(
+                    new_child.clone(),
+                    project.clone(),
+                    passthrough_columns.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::UnGroupedAggregate(UnGroupedAggregate {
+                    aggregations,
+                    schema,
+                    ..
+                }) => Self::ungrouped_aggregate(
+                    new_child.clone(),
+                    aggregations.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::HashAggregate(HashAggregate {
+                    aggregations,
+                    group_by,
+                    schema,
+                    ..
+                }) => Self::hash_aggregate(
+                    new_child.clone(),
+                    aggregations.clone(),
+                    group_by.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::Dedup(Dedup {
+                    columns, schema, ..
+                }) => Self::dedup(
+                    new_child.clone(),
+                    columns.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::Pivot(Pivot {
+                    group_by,
+                    pivot_column,
+                    value_column,
+                    aggregation,
+                    pre_agg,
+                    names,
+                    schema,
+                    ..
+                }) => Self::pivot(
+                    new_child.clone(),
+                    group_by.clone(),
+                    pivot_column.clone(),
+                    value_column.clone(),
+                    aggregation.clone(),
+                    names.clone(),
+                    *pre_agg,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::Sort(Sort {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    schema,
+                    ..
+                }) => Self::sort(
+                    new_child.clone(),
+                    sort_by.clone(),
+                    descending.clone(),
+                    nulls_first.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::Sample(Sample {
+                    sampling_method,
+                    with_replacement,
+                    seed,
+                    schema,
+                    ..
+                }) => Self::sample(
+                    new_child.clone(),
+                    sampling_method.clone(),
+                    *with_replacement,
+                    *seed,
+                    StatsState::NotMaterialized,
+                ),
+                Self::Explode(Explode {
+                    to_explode, schema, ..
+                }) => Self::explode(
+                    new_child.clone(),
+                    to_explode.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::Unpivot(Unpivot {
+                    ids,
+                    values,
+                    variable_name,
+                    value_name,
+                    schema,
+                    ..
+                }) => Self::unpivot(
+                    new_child.clone(),
+                    ids.clone(),
+                    values.clone(),
+                    variable_name.clone(),
+                    value_name.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::Concat(Concat { other, schema, .. }) => Self::concat(
+                    new_child.clone(),
+                    other.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                    column_name,
+                    starting_offset,
+                    schema,
+                    ..
+                }) => Self::monotonically_increasing_id(
+                    new_child.clone(),
+                    column_name.clone(),
+                    *starting_offset,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::WindowPartitionOnly(WindowPartitionOnly {
+                    partition_by,
+                    schema,
+                    aggregations,
+                    aliases,
+                    ..
+                }) => Self::window_partition_only(
+                    new_child.clone(),
+                    partition_by.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                    aggregations.clone(),
+                    aliases.clone(),
+                ),
+                Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
+                    partition_by,
+                    order_by,
+                    descending,
+                    nulls_first,
+                    schema,
+                    functions,
+                    aliases,
+                    ..
+                }) => Self::window_partition_and_order_by(
+                    new_child.clone(),
+                    partition_by.clone(),
+                    order_by.clone(),
+                    descending.clone(),
+                    nulls_first.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                    functions.clone(),
+                    aliases.clone(),
+                ),
+                Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                    partition_by,
+                    order_by,
+                    descending,
+                    nulls_first,
+                    frame,
+                    min_periods,
+                    schema,
+                    aggregations,
+                    aliases,
+                    ..
+                }) => Self::window_partition_and_dynamic_frame(
+                    new_child.clone(),
+                    partition_by.clone(),
+                    order_by.clone(),
+                    descending.clone(),
+                    nulls_first.clone(),
+                    frame.clone(),
+                    *min_periods,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                    aggregations.clone(),
+                    aliases.clone(),
+                ),
+                Self::WindowOrderByOnly(WindowOrderByOnly {
+                    order_by,
+                    descending,
+                    nulls_first,
+                    schema,
+                    functions,
+                    aliases,
+                    ..
+                }) => Self::window_order_by_only(
+                    new_child.clone(),
+                    order_by.clone(),
+                    descending.clone(),
+                    nulls_first.clone(),
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                    functions.clone(),
+                    aliases.clone(),
+                ),
+                Self::TopN(TopN {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    limit,
+                    offset,
+                    ..
+                }) => Self::top_n(
+                    new_child.clone(),
+                    sort_by.clone(),
+                    descending.clone(),
+                    nulls_first.clone(),
+                    *limit,
+                    *offset,
+                    StatsState::NotMaterialized,
+                ),
+                Self::PhysicalWrite(PhysicalWrite {
+                    data_schema,
+                    file_schema,
+                    file_info,
+                    stats_state,
+                    ..
+                }) => Self::physical_write(
+                    new_child.clone(),
+                    data_schema.clone(),
+                    file_schema.clone(),
+                    file_info.clone(),
+                    stats_state.clone(),
+                ),
+                Self::CommitWrite(CommitWrite {
+                    input,
+                    stats_state,
+                    file_schema,
+                    file_info,
+                    ..
+                }) => Self::commit_write(
+                    new_child.clone(),
+                    file_schema.clone(),
+                    file_info.clone(),
+                    stats_state.clone(),
+                ),
                 #[cfg(feature = "python")]
-                Self::DataSink(DataSink {  input, data_sink_info, file_schema, stats_state, .. }) => Self::data_sink(new_child.clone(), data_sink_info.clone(), file_schema.clone(), stats_state.clone()),
+                Self::DataSink(DataSink {
+                    input,
+                    data_sink_info,
+                    file_schema,
+                    stats_state,
+                    ..
+                }) => Self::data_sink(
+                    new_child.clone(),
+                    data_sink_info.clone(),
+                    file_schema.clone(),
+                    stats_state.clone(),
+                ),
                 #[cfg(feature = "python")]
-                Self::CatalogWrite(CatalogWrite {  catalog_type, data_schema, file_schema, stats_state, .. }) => Self::catalog_write(new_child.clone(), catalog_type.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
+                Self::CatalogWrite(CatalogWrite {
+                    catalog_type,
+                    data_schema,
+                    file_schema,
+                    stats_state,
+                    ..
+                }) => Self::catalog_write(
+                    new_child.clone(),
+                    catalog_type.clone(),
+                    data_schema.clone(),
+                    file_schema.clone(),
+                    stats_state.clone(),
+                ),
                 #[cfg(feature = "python")]
-                Self::LanceWrite(LanceWrite {  lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(new_child.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
+                Self::LanceWrite(LanceWrite {
+                    lance_info,
+                    data_schema,
+                    file_schema,
+                    stats_state,
+                    ..
+                }) => Self::lance_write(
+                    new_child.clone(),
+                    lance_info.clone(),
+                    data_schema.clone(),
+                    file_schema.clone(),
+                    stats_state.clone(),
+                ),
                 #[cfg(feature = "python")]
-                Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
-                Self::Repartition(Repartition {  repartition_spec, num_partitions, schema, .. }) => Self::repartition(new_child.clone(), repartition_spec.clone(), *num_partitions, schema.clone(), StatsState::NotMaterialized),
-                Self::IntoPartitions(IntoPartitions {  num_partitions, .. }) => Self::into_partitions(new_child.clone(), *num_partitions, StatsState::NotMaterialized),
-                Self::FlightShuffleWrite(FlightShuffleWrite { num_partitions, partition_by, schema, shuffle_id, shuffle_dirs, compression, .. }) => Self::flight_shuffle_write(new_child.clone(), partition_by.clone(), *num_partitions, schema.clone(), *shuffle_id, shuffle_dirs.clone(), compression.clone(), StatsState::NotMaterialized),
-                Self::FlightShuffleRead(_) => panic!("LocalPhysicalPlan::with_new_children: FlightShuffleRead should have 0 children"),
-                Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
-                Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
-                Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
+                Self::DistributedActorPoolProject(DistributedActorPoolProject {
+                    actor_objects,
+                    schema,
+                    batch_size,
+                    memory_request,
+                    ..
+                }) => Self::distributed_actor_pool_project(
+                    new_child.clone(),
+                    actor_objects.clone(),
+                    *batch_size,
+                    *memory_request,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::Repartition(Repartition {
+                    repartition_spec,
+                    num_partitions,
+                    schema,
+                    ..
+                }) => Self::repartition(
+                    new_child.clone(),
+                    repartition_spec.clone(),
+                    *num_partitions,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::IntoPartitions(IntoPartitions { num_partitions, .. }) => {
+                    Self::into_partitions(
+                        new_child.clone(),
+                        *num_partitions,
+                        StatsState::NotMaterialized,
+                    )
+                }
+                Self::FlightShuffleWrite(FlightShuffleWrite {
+                    num_partitions,
+                    partition_by,
+                    schema,
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                    ..
+                }) => Self::flight_shuffle_write(
+                    new_child.clone(),
+                    partition_by.clone(),
+                    *num_partitions,
+                    schema.clone(),
+                    *shuffle_id,
+                    shuffle_dirs.clone(),
+                    compression.clone(),
+                    StatsState::NotMaterialized,
+                ),
+                Self::FlightShuffleRead(_) => panic!(
+                    "LocalPhysicalPlan::with_new_children: FlightShuffleRead should have 0 children"
+                ),
+                Self::HashJoin(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children")
+                }
+                Self::CrossJoin(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children")
+                }
+                Self::Concat(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
+                }
             },
             [new_left, new_right] => match self {
-                Self::HashJoin(HashJoin {  left_on, right_on, null_equals_null, join_type, schema, stats_state, .. }) => {
-                    Self::hash_join(new_left.clone(), new_right.clone(), left_on.clone(), right_on.clone(), null_equals_null.clone(), *join_type, schema.clone(), stats_state.clone())
-                }
-                Self::CrossJoin(CrossJoin { schema, stats_state, .. }) => {
-                    Self::cross_join(new_left.clone(), new_right.clone(), schema.clone(), stats_state.clone())
-                }
-                Self::Concat(Concat {  ..}) => {
-                    Self::concat(new_left.clone(), new_right.clone(), StatsState::NotMaterialized)
-                }
+                Self::HashJoin(HashJoin {
+                    left_on,
+                    right_on,
+                    null_equals_null,
+                    join_type,
+                    build_on_left,
+                    schema,
+                    stats_state,
+                    ..
+                }) => Self::hash_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    *build_on_left,
+                    null_equals_null.clone(),
+                    *join_type,
+                    schema.clone(),
+                    stats_state.clone(),
+                ),
+                Self::CrossJoin(CrossJoin {
+                    schema,
+                    stats_state,
+                    ..
+                }) => Self::cross_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
+                ),
+                Self::Concat(Concat { .. }) => Self::concat(
+                    new_left.clone(),
+                    new_right.clone(),
+                    StatsState::NotMaterialized,
+                ),
                 _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
             },
             _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
@@ -1179,6 +1554,7 @@ pub struct Pivot {
     pub value_column: BoundExpr,
     pub aggregation: BoundAggExpr,
     pub names: Vec<String>,
+    pub pre_agg: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -1189,6 +1565,7 @@ pub struct HashJoin {
     pub right: LocalPhysicalPlanRef,
     pub left_on: Vec<BoundExpr>,
     pub right_on: Vec<BoundExpr>,
+    pub build_on_left: Option<bool>,
     pub null_equals_null: Option<Vec<bool>>,
     pub join_type: JoinType,
     pub schema: SchemaRef,

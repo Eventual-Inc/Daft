@@ -9,29 +9,29 @@ from daft.recordbatch import MicroPartition
 @pytest.mark.parametrize(
     ["expr", "data", "expected"],
     [
-        (col("col").str.split(","), ["a,b,c", "d,e", "f", "g,h"], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]]),
+        (col("col").split(","), ["a,b,c", "d,e", "f", "g,h"], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]]),
         (
-            col("col").str.split(lit(",")),
+            col("col").split(lit(",")),
             ["a,b,c", "d,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
         (
-            col("col").str.split(col("emptystrings") + lit(",")),
+            col("col").split(col("emptystrings") + lit(",")),
             ["a,b,c", "d,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
         (
-            col("col").str.split(r",+", True),
+            col("col").regexp_split(r",+"),
             ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
         (
-            col("col").str.split(lit(r",+"), True),
+            col("col").regexp_split(lit(r",+")),
             ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
         (
-            col("col").str.split(col("emptystrings") + lit(r",+"), True),
+            col("col").regexp_split(col("emptystrings") + lit(r",+")),
             ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),

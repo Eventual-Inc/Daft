@@ -7,8 +7,11 @@ use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
     array::{DataArray, FixedSizeListArray},
     datatypes::{DaftNumericType, DaftPrimitiveType, DataType, Field, Utf8Array},
-    kernels::utf8::add_utf8_arrays,
-    prelude::Decimal128Array,
+    kernels::{
+        binary::{add_binary_arrays, add_fixed_size_binary_arrays},
+        utf8::add_utf8_arrays,
+    },
+    prelude::{BinaryArray, Decimal128Array, FixedSizeBinaryArray},
     series::Series,
 };
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -122,6 +125,25 @@ impl Mul for &Decimal128Array {
             arrow2::compute::arithmetics::decimal::mul,
             |l, r| (l * r) / scale,
         )
+    }
+}
+
+impl Add for &BinaryArray {
+    type Output = DaftResult<BinaryArray>;
+    fn add(self, rhs: Self) -> Self::Output {
+        let result = Box::new(add_binary_arrays(self.as_arrow(), rhs.as_arrow())?);
+        Ok(BinaryArray::from((self.name(), result)))
+    }
+}
+
+impl Add for &FixedSizeBinaryArray {
+    type Output = DaftResult<FixedSizeBinaryArray>;
+    fn add(self, rhs: Self) -> Self::Output {
+        let result = Box::new(add_fixed_size_binary_arrays(
+            self.as_arrow(),
+            rhs.as_arrow(),
+        )?);
+        Ok(FixedSizeBinaryArray::from((self.name(), result)))
     }
 }
 
@@ -296,7 +318,7 @@ impl Div for &Decimal128Array {
                 self,
                 rhs,
                 arrow2::compute::arithmetics::decimal::div,
-                |l, r| ((l * scale) / r),
+                |l, r| (l * scale) / r,
             )
         } else {
             match (self.len(), rhs.len()) {
@@ -321,7 +343,7 @@ impl Div for &Decimal128Array {
                             self.data_type(),
                             self.len(),
                         )),
-                        Some(rhs) => self.apply(|lhs| ((lhs * scale) / rhs)),
+                        Some(rhs) => self.apply(|lhs| (lhs * scale) / rhs),
                     }
                 }
                 (1, _) => {
@@ -329,10 +351,8 @@ impl Div for &Decimal128Array {
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
                         Some(lhs) => {
-                            let values_iter = rhs
-                                .as_arrow()
-                                .iter()
-                                .map(|v| v.map(|v| ((lhs * scale) / *v)));
+                            let values_iter =
+                                rhs.as_arrow().iter().map(|v| v.map(|v| (lhs * scale) / *v));
                             Decimal128Array::from_iter(self.field.clone(), values_iter)
                         }
                     })

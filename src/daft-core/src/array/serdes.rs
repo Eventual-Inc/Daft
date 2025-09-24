@@ -2,14 +2,14 @@ use std::cell::RefCell;
 
 use serde::ser::SerializeMap;
 
-use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
+use super::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::as_arrow::AsArrow};
 #[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
+use crate::prelude::PythonArray;
 use crate::{
     datatypes::{
-        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType,
-        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, DataType, ExtensionArray,
+        FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
+        logical::LogicalArray,
     },
     series::{IntoSeries, Series},
 };
@@ -146,11 +146,17 @@ impl serde::Serialize for ExtensionArray {
 
 #[cfg(feature = "python")]
 impl serde::Serialize for PythonArray {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        panic!("Rust Serde is not implemented for Python Arrays")
+        let mut s = serializer.serialize_map(Some(2))?;
+        s.serialize_entry("field", self.field())?;
+        s.serialize_entry(
+            "values",
+            &IterSer::new(self.to_pickled_arrow().unwrap().iter()),
+        )?;
+        s.end()
     }
 }
 

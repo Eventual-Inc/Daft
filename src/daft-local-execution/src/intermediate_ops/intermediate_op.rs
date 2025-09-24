@@ -10,9 +10,10 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     channel::{
-        create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
-        Sender,
+        OrderingAwareReceiver, Receiver, Sender, create_channel,
+        create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     ops::{NodeCategory, NodeInfo, NodeType},
@@ -21,7 +22,6 @@ use crate::{
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
 
 pub enum IntermediateOperatorResult {
@@ -47,7 +47,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Self::State>;
+    async fn make_state(&self) -> DaftResult<Self::State>;
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::default())
     }
@@ -126,7 +126,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         let compute_runtime = get_compute_runtime();
         let task_spawner =
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
-        let mut state = op.make_state()?;
+        let mut state = op.make_state().await?;
         while let Some(morsel) = receiver.recv().await {
             loop {
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;

@@ -9,25 +9,25 @@ use daft_core::{
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{
+    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
-    Expr,
 };
-use daft_io::{python::IOConfig, IOStatsContext};
+use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
+use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use daft_scan::{
-    python::pylib::PyScanTask, storage_config::StorageConfig, DataSource, ScanTask, ScanTaskRef,
+    DataSource, ScanTask, ScanTaskRef, python::pylib::PyScanTask, storage_config::StorageConfig,
 };
 use daft_stats::{TableMetadata, TableStatistics};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
+use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
 
 use crate::{
+    DaftCoreComputeSnafu, PyIOSnafu,
     micropartition::{MicroPartition, TableState},
     partitioning::MicroPartitionSet,
-    DaftCoreComputeSnafu, PyIOSnafu,
 };
 
 #[pyclass(module = "daft.daft", frozen)]
@@ -1115,7 +1115,7 @@ pub fn read_sql_into_py_table(
 }
 
 pub fn read_pyfunc_into_table_iter(
-    scan_task: &ScanTaskRef,
+    scan_task: ScanTaskRef,
 ) -> crate::Result<impl Iterator<Item = crate::Result<RecordBatch>>> {
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
@@ -1141,7 +1141,16 @@ pub fn read_pyfunc_into_table_iter(
     }).collect::<crate::Result<Vec<_>>>()?;
 
     let scan_task_limit = scan_task.pushdowns.limit;
-    let scan_task_filters = scan_task.pushdowns.filters.clone();
+    // If aggregation pushdown is present, the Python factory function is expected to have applied
+    // the filtering semantics already (e.g., filter+count pushdown), so we should not re-apply
+    // post-scan filters here to avoid double filtering on pre-aggregated results.
+    // This removes reliance on any hard-coded Python function names and makes the behavior generic
+    // for all sources that surface aggregation pushdowns.
+    let scan_task_filters = if scan_task.pushdowns.aggregation.is_some() {
+        None
+    } else {
+        scan_task.pushdowns.filters.clone()
+    };
     let res = table_iterators
         .into_iter()
         .flat_map(move |iter| {

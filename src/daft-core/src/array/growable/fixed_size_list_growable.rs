@@ -1,8 +1,8 @@
 use common_error::DaftResult;
 
-use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
+use super::{Growable, bitmap_growable::ArrowBitmapGrowable};
 use crate::{
-    array::{growable::make_growable, FixedSizeListArray},
+    array::{FixedSizeListArray, growable::make_growable},
     datatypes::{DataType, Field},
     series::{IntoSeries, Series},
 };

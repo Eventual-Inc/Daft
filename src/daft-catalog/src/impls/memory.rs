@@ -1,18 +1,17 @@
 use std::sync::{Arc, RwLock};
 
 use common_error::DaftResult;
-use daft_context::get_context;
 use daft_core::prelude::*;
-use daft_logical_plan::{ops::Source, InMemoryInfo, LogicalPlan, LogicalPlanBuilder, SourceInfo};
+use daft_logical_plan::{InMemoryInfo, LogicalPlan, LogicalPlanBuilder, SourceInfo, ops::Source};
 use daft_micropartition::{
-    partitioning::{MicroPartitionSet, PartitionSet},
     MicroPartition,
+    partitioning::{MicroPartitionSet, PartitionSet},
 };
 use indexmap::IndexMap;
 
 use crate::{
-    error::{CatalogError, CatalogResult},
     Catalog, Identifier, Table, TableRef,
+    error::{CatalogError, CatalogResult},
 };
 
 type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTable>>>;
@@ -310,7 +309,7 @@ impl Table for MemoryTable {
         }
 
         let pset = MicroPartitionSet::empty();
-        let runner = get_context().get_or_create_runner()?;
+        let runner = daft_runners::get_or_create_runner()?;
         pyo3::Python::with_gil(|py| {
             for (i, res) in runner.run_iter_tables(py, plan, None)?.enumerate() {
                 let mp = res?;

@@ -118,6 +118,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer=None,
         use_legacy_ray_runner=None,
         min_cpu_per_task=None,
+        actor_udf_ready_timeout=None,
     ))]
     fn with_config_values(
         &self,
@@ -150,6 +151,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer: Option<bool>,
         use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
+        actor_udf_ready_timeout: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -264,6 +266,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
             config.min_cpu_per_task = min_cpu_per_task;
+        }
+
+        if let Some(actor_udf_ready_timeout) = actor_udf_ready_timeout {
+            config.actor_udf_ready_timeout = actor_udf_ready_timeout;
         }
 
         Ok(Self {
@@ -395,6 +401,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn min_cpu_per_task(&self) -> PyResult<f64> {
         Ok(self.config.min_cpu_per_task)
+    }
+
+    #[getter]
+    fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
+        Ok(self.config.actor_udf_ready_timeout)
     }
 }
 

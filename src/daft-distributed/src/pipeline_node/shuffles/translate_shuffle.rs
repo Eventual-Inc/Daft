@@ -5,12 +5,12 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
+    DistributedPipelineNode, NodeID,
     shuffles::{
         flight_shuffle::FlightShuffleNode, gather::GatherNode,
         pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
     },
     translate::LogicalPlanToPipelineNodeTranslator,
-    DistributedPipelineNode, NodeID,
 };
 
 impl LogicalPlanToPipelineNodeTranslator {
@@ -35,13 +35,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         // Check if we should use flight shuffle
-        if self.stage_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            let shuffle_dirs = self.stage_config.config.flight_shuffle_dirs.clone();
+        if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+            let shuffle_dirs = self.plan_config.config.flight_shuffle_dirs.clone();
             let compression = None;
             return Ok(FlightShuffleNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
-                &self.stage_config,
+                &self.plan_config,
                 repartition_spec,
                 schema,
                 num_partitions,
@@ -59,8 +59,8 @@ impl LogicalPlanToPipelineNodeTranslator {
             let merge_node = PreShuffleMergeNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
-                &self.stage_config,
-                self.stage_config.config.pre_shuffle_merge_threshold,
+                &self.plan_config,
+                self.plan_config.config.pre_shuffle_merge_threshold,
                 schema.clone(),
                 child,
             )
@@ -69,7 +69,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
-                &self.stage_config,
+                &self.plan_config,
                 repartition_spec,
                 num_partitions,
                 schema,
@@ -80,7 +80,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
-                &self.stage_config,
+                &self.plan_config,
                 repartition_spec,
                 num_partitions,
                 schema,
@@ -98,7 +98,7 @@ impl LogicalPlanToPipelineNodeTranslator {
     ) -> DaftResult<bool> {
         let input_num_partitions = child.config().clustering_spec.num_partitions();
 
-        match self.stage_config.config.shuffle_algorithm.as_str() {
+        match self.plan_config.config.shuffle_algorithm.as_str() {
             "pre_shuffle_merge" => Ok(true),
             "map_reduce" => Ok(false),
             "flight_shuffle" => Ok(false), // Flight shuffle will be handled separately
@@ -124,7 +124,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         GatherNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             input_node.config().schema.clone(),
             input_node,
         )

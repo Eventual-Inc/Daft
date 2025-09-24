@@ -7,13 +7,13 @@ use async_recursion::async_recursion;
 use async_trait::async_trait;
 use common_io_config::{HTTPConfig, HuggingFaceConfig};
 use futures::{
-    stream::{self, BoxStream},
     StreamExt, TryStreamExt,
+    stream::{self, BoxStream},
 };
 use reqwest::StatusCode;
 use reqwest_middleware::{
-    reqwest::header::{CONTENT_LENGTH, RANGE},
     ClientWithMiddleware,
+    reqwest::header::{CONTENT_LENGTH, RANGE},
 };
 use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt, Snafu};
@@ -21,12 +21,12 @@ use uuid::Uuid;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
+    FileFormat, InvalidRangeRequestSnafu,
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, InvalidRangeRequestSnafu,
 };
 
 #[derive(Debug, Snafu)]
@@ -283,7 +283,9 @@ impl HFSource {
         http_config: &HTTPConfig,
     ) -> super::Result<Arc<Self>> {
         if http_config.bearer_token.is_some() {
-            log::warn!("Using `HttpConfig.bearer_token` to authenticate Hugging Face requests is deprecated and will be removed in Daft v0.6. Instead, specify your Hugging Face token in `daft.io.HuggingFaceConfig`.");
+            log::warn!(
+                "Using `HttpConfig.bearer_token` to authenticate Hugging Face requests is deprecated and will be removed in Daft v0.6. Instead, specify your Hugging Face token in `daft.io.HuggingFaceConfig`."
+            );
         }
 
         let mut combined_config = http_config.clone();
@@ -291,7 +293,7 @@ impl HFSource {
             combined_config.bearer_token = None;
         } else if hf_config.token.is_some() {
             combined_config.bearer_token.clone_from(&hf_config.token);
-        };
+        }
 
         let http_source = HttpSource::get_client(&combined_config).await?;
         let http_source = Arc::try_unwrap(http_source).expect("Could not unwrap Arc<HttpSource>");
@@ -331,9 +333,10 @@ impl HFSource {
             }
         };
 
-        let response = req.send().await.context(UnableToConnectSnafu::<String> {
-            path: uri.to_string(),
-        })?;
+        let response = req
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: uri.clone() })?;
 
         match response.error_for_status() {
             Err(e) => {
@@ -344,9 +347,7 @@ impl HFSource {
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         self.request(uri, true, range, client).await
                     }
-                    _ => Err(e).context(UnableToOpenFileSnafu::<String> {
-                        path: uri.to_string(),
-                    })?,
+                    _ => Err(e).context(UnableToOpenFileSnafu::<String> { path: uri.clone() })?,
                 }
             }
             Ok(res) => {
@@ -364,6 +365,10 @@ impl HFSource {
 
 #[async_trait]
 impl ObjectSource for HFSource {
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        self.http_source.supports_range(uri).await
+    }
+
     async fn get(
         &self,
         uri: &str,
@@ -629,7 +634,7 @@ async fn try_parquet_api(
             .send()
             .await
             .with_context(|_| UnableToConnectSnafu {
-                path: api_path.to_string(),
+                path: api_path.clone(),
             })?;
 
         if response.status() == 400 {
@@ -638,8 +643,7 @@ async fn try_parquet_api(
                 .get("x-error-message")
                 .and_then(|v| v.to_str().ok())
             {
-                const PRIVATE_DATASET_ERROR: &str =
-                    "Private datasets are only supported for PRO users and Enterprise Hub organizations.";
+                const PRIVATE_DATASET_ERROR: &str = "Private datasets are only supported for PRO users and Enterprise Hub organizations.";
                 if error_message.ends_with(PRIVATE_DATASET_ERROR) {
                     return Err(Error::PrivateDataset);
                 }
@@ -650,7 +654,7 @@ async fn try_parquet_api(
         let response = response
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu {
-                path: api_path.to_string(),
+                path: api_path.clone(),
             })?;
 
         if let Some(is) = io_stats.as_ref() {

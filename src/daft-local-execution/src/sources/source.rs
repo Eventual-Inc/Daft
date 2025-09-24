@@ -1,7 +1,7 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -10,19 +10,19 @@ use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_metrics::{snapshot, Stat, StatSnapshotSend};
+use common_metrics::{Stat, StatSnapshotSend, snapshot};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{StreamExt, stream::BoxStream};
 
 use crate::{
-    channel::{create_channel, Receiver},
+    ExecutionRuntimeContext,
+    channel::{Receiver, create_channel},
     ops::{NodeCategory, NodeInfo, NodeType},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{CountingSender, RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY},
-    ExecutionRuntimeContext,
+    runtime_stats::{CPU_US_KEY, CountingSender, ROWS_OUT_KEY, RuntimeStats},
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -30,7 +30,7 @@ pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 #[derive(Default)]
 pub(crate) struct SourceStats {
     cpu_us: AtomicU64,
-    rows_emitted: AtomicU64,
+    rows_out: AtomicU64,
     io_stats: IOStatsRef,
 }
 
@@ -42,17 +42,17 @@ impl RuntimeStats for SourceStats {
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            ROWS_EMITTED_KEY; Stat::Count(self.rows_emitted.load(ordering)),
+            ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
             "bytes read"; Stat::Bytes(self.io_stats.load_bytes_read() as u64),
         ]
     }
 
-    fn add_rows_received(&self, _: u64) {
+    fn add_rows_in(&self, _: u64) {
         unreachable!("Source Nodes shouldn't receive rows")
     }
 
-    fn add_rows_emitted(&self, rows: u64) {
-        self.rows_emitted.fetch_add(rows, Ordering::Relaxed);
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.fetch_add(rows, Ordering::Relaxed);
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {

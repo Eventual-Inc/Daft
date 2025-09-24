@@ -13,11 +13,11 @@ use async_trait::async_trait;
 #[cfg(feature = "async")]
 use thrift::protocol::{AsyncReadThrift, TInputStreamProtocol, TOutputStreamProtocol};
 use thrift::{
-    protocol::{
-        field_id, verify_required_field_exists, ReadThrift, TFieldIdentifier, TInputProtocol,
-        TListIdentifier, TOutputProtocol, TStructIdentifier, TType,
-    },
     ProtocolError, ProtocolErrorKind,
+    protocol::{
+        ReadThrift, TFieldIdentifier, TInputProtocol, TListIdentifier, TOutputProtocol,
+        TStructIdentifier, TType, field_id, verify_required_field_exists,
+    },
 };
 
 use crate::thrift;

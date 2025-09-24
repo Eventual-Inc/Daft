@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::lit::Literal;
-use daft_dsl::{null_lit, Expr, ExprRef, Operator};
+use daft_dsl::{Expr, ExprRef, Operator, null_lit};
 use daft_schema::{dtype::DataType, schema::SchemaRef};
 
 use crate::simplify_expr;

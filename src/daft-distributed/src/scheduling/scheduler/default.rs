@@ -9,7 +9,7 @@ use crate::scheduling::{
 pub(super) struct DefaultScheduler<T: Task> {
     pending_tasks: BinaryHeap<PendingTask<T>>,
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
-    autoscaling_threshold: f64,
+    _autoscaling_threshold: f64,
 }
 
 impl<T: Task> Default for DefaultScheduler<T> {
@@ -33,7 +33,7 @@ impl<T: Task> DefaultScheduler<T> {
         Self {
             pending_tasks: BinaryHeap::new(),
             worker_snapshots: HashMap::new(),
-            autoscaling_threshold,
+            _autoscaling_threshold: autoscaling_threshold,
         }
     }
 
@@ -63,10 +63,10 @@ impl<T: Task> DefaultScheduler<T> {
         worker_id: &WorkerId,
         soft: bool,
     ) -> Option<WorkerId> {
-        if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.can_schedule_task(task) {
-                return Some(worker.worker_id.clone());
-            }
+        if let Some(worker) = self.worker_snapshots.get(worker_id)
+            && worker.can_schedule_task(task)
+        {
+            return Some(worker.worker_id.clone());
         }
         // Fallback to spread scheduling if soft is true
         if soft {
@@ -85,7 +85,7 @@ impl<T: Task> DefaultScheduler<T> {
         }
     }
 
-    fn needs_autoscaling(&self) -> bool {
+    fn _needs_autoscaling(&self) -> bool {
         // If there are no pending tasks, we don't need to autoscale
         if self.pending_tasks.is_empty() {
             return false;
@@ -105,7 +105,7 @@ impl<T: Task> DefaultScheduler<T> {
 
         let ratio = self.pending_tasks.len() as f64 / total_capacity as f64;
 
-        ratio > self.autoscaling_threshold
+        ratio > self._autoscaling_threshold
     }
 }
 
@@ -148,9 +148,9 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         self.pending_tasks.len()
     }
 
-    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
+    fn _get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
         // If we need to autoscale, return the resource requests of the pending tasks
-        let needs_autoscaling = self.needs_autoscaling();
+        let needs_autoscaling = self._needs_autoscaling();
         needs_autoscaling.then(|| {
             self.pending_tasks
                 .iter()
@@ -619,7 +619,7 @@ mod tests {
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
-        assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 1);
+        assert_eq!(scheduler._get_autoscaling_request().unwrap().len(), 1);
     }
 
     #[test]
@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 4);
 
         // Should request 4 workers (ratio 5 total demand / 1 capacity = 5.0 > default threshold 1.25)
-        assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 4);
+        assert_eq!(scheduler._get_autoscaling_request().unwrap().len(), 4);
     }
 
     #[test]
@@ -681,6 +681,6 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 0);
 
         // Should not request autoscaling
-        assert!(scheduler.get_autoscaling_request().is_none());
+        assert!(scheduler._get_autoscaling_request().is_none());
     }
 }

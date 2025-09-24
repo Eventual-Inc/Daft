@@ -1,17 +1,17 @@
 use std::{collections::HashMap, fs::File, pin::Pin, sync::Arc};
 
-use arrow2::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use arrow_flight::{
-    flight_service_server::{FlightService, FlightServiceServer},
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
+    flight_service_server::{FlightService, FlightServiceServer},
 };
+use arrow2::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use daft_core::prelude::Schema;
 use futures::{Stream, StreamExt, TryStreamExt};
 use tokio::sync::{Mutex, OnceCell};
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
 use crate::shuffle_cache::ShuffleCache;
@@ -126,10 +126,22 @@ impl FlightService for ShuffleFlightServer {
             .parse::<usize>()
             .map_err(|e| Status::invalid_argument(format!("Invalid partition index: {}", e)))?;
 
-        let shuffle_caches = self.get_shuffle_caches(shuffle_id).await.unwrap_or_default();
+        let shuffle_caches = self
+            .get_shuffle_caches(shuffle_id)
+            .await
+            .unwrap_or_default();
         if shuffle_caches.is_empty() {
-            let shuffle_cache_ids = self.shuffle_caches.lock().await.keys().cloned().collect::<Vec<_>>();
-            println!("Shuffle cache not found for id: {}, only have: {:?}", shuffle_id, shuffle_cache_ids);
+            let shuffle_cache_ids = self
+                .shuffle_caches
+                .lock()
+                .await
+                .keys()
+                .copied()
+                .collect::<Vec<_>>();
+            println!(
+                "Shuffle cache not found for id: {}, only have: {:?}",
+                shuffle_id, shuffle_cache_ids
+            );
         }
 
         let file_paths = shuffle_caches
@@ -153,7 +165,8 @@ impl FlightService for ShuffleFlightServer {
             .try_flatten();
 
         let schema = shuffle_caches
-            .first().map(|cache| cache.schema().to_arrow())
+            .first()
+            .map(|cache| cache.schema().to_arrow())
             .unwrap_or_else(|| Schema::empty().to_arrow())
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
 
@@ -231,6 +244,7 @@ pub async fn register_shuffle_cache(
         .await
 }
 
+#[allow(clippy::result_large_err)]
 pub fn start_flight_server(ip: &str) -> Result<FlightServerConnectionHandle, Status> {
     let io_runtime = common_runtime::get_io_runtime(true);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
@@ -266,10 +280,9 @@ pub fn start_flight_server(ip: &str) -> Result<FlightServerConnectionHandle, Sta
 
     let port = port_rx.blocking_recv().expect("Failed to receive port");
 
-    let handle = FlightServerConnectionHandle {
+    Ok(FlightServerConnectionHandle {
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),
-    };
-    Ok(handle)
+    })
 }

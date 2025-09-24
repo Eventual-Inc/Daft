@@ -710,7 +710,7 @@ pub fn hash(
         t => {
             return Err(Error::NotYetImplemented(format!(
                 "Hash not implemented for type {t:?}"
-            )))
+            )));
         }
     })
 }

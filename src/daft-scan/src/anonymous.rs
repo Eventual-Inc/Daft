@@ -5,7 +5,7 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::SchemaRef;
 
-use crate::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
+use crate::{ChunkSpec, DataSource, ScanTask, storage_config::StorageConfig};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,

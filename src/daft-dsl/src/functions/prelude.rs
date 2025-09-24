@@ -2,7 +2,7 @@
 //!
 //! This is so we don't have to manually import all each time we implement a function.
 
-pub use common_error::{ensure, DaftResult};
+pub use common_error::{DaftResult, ensure};
 pub use daft_core::{
     prelude::{DataType, Field, Schema, SchemaRef},
     series::Series,
@@ -10,6 +10,6 @@ pub use daft_core::{
 pub use serde::{Deserialize, Serialize};
 
 pub use crate::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };

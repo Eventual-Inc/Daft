@@ -4,9 +4,9 @@ use sqlparser::ast::TableFunctionArgs;
 
 use super::SQLTableFunction;
 use crate::{
+    SQLPlanner,
     error::{PlannerError, SQLPlannerResult},
     functions::{self, SQLFunctionArguments},
-    SQLPlanner,
 };
 
 /// The Daft-SQL `read_iceberg` table-value function.
@@ -69,6 +69,8 @@ impl SQLTableFunction for SqlReadIceberg {
         planner: &SQLPlanner,
         args: &TableFunctionArgs,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        crate::unsupported_sql_err!("`read_iceberg` function is not supported. Enable the `python` feature to use this function.")
+        crate::unsupported_sql_err!(
+            "`read_iceberg` function is not supported. Enable the `python` feature to use this function."
+        )
     }
 }

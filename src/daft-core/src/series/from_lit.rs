@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use common_file::DaftFileType;
 use common_image::CowImage;
@@ -143,15 +145,11 @@ impl TryFrom<Vec<Literal>> for Series {
 
             #[cfg(feature = "python")]
             DataType::Python => {
-                use std::sync::Arc;
+                let iter = values
+                    .into_iter()
+                    .map(|lit| unwrap_inner!(lit, Python).map(|pyobj| pyobj.0));
 
-                let pynone = Arc::new(pyo3::Python::with_gil(|py| py.None()));
-
-                let data = values.into_iter().map(|lit| {
-                    unwrap_inner!(lit, Python).map_or_else(|| pynone.clone(), |pyobj| pyobj.0)
-                });
-
-                PythonArray::from(("literal", data.collect::<Vec<_>>())).into_series()
+                PythonArray::from_iter("literal", iter).into_series()
             }
             #[cfg(feature = "python")]
             DataType::File => {
@@ -173,7 +171,7 @@ impl TryFrom<Vec<Literal>> for Series {
                             values
                                 .into_iter()
                                 .map(|v| match v {
-                                    Literal::File(common_file::DaftFile::Reference(
+                                    Literal::File(common_file::FileReference::Reference(
                                         path,
                                         ioconfig,
                                     )) => {
@@ -181,12 +179,15 @@ impl TryFrom<Vec<Literal>> for Series {
 
                                         use pyo3::IntoPyObjectExt;
 
-                                        let io_conf =
-                                            ioconfig.map(common_io_config::python::IOConfig::from);
-                                        let io_conf = io_conf
-                                            .into_py_any(py)
-                                            .expect("Failed to convert ioconfig to PyObject");
-                                        let io_conf = Arc::new(io_conf);
+                                        let io_conf = ioconfig.map(|conf| {
+                                            Arc::new(
+                                                common_io_config::python::IOConfig::from(
+                                                    conf.as_ref().clone(),
+                                                )
+                                                .into_py_any(py)
+                                                .expect("Failed to convert ioconfig to PyObject"),
+                                            )
+                                        });
 
                                         (path, io_conf)
                                     }
@@ -195,7 +196,8 @@ impl TryFrom<Vec<Literal>> for Series {
                                 .unzip()
                         });
 
-                        let io_configs = PythonArray::from(("io_config", io_configs));
+                        let io_configs =
+                            PythonArray::from_iter("io_config", io_configs.into_iter());
                         let urls = Utf8Array::from_values("url", values.into_iter());
                         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len())
                             .into_series();
@@ -225,7 +227,9 @@ impl TryFrom<Vec<Literal>> for Series {
 
                     DaftFileType::Data => {
                         let values = values.into_iter().map(|v| match v {
-                            Literal::File(common_file::DaftFile::Data(items)) => items,
+                            Literal::File(common_file::FileReference::Data(items)) => {
+                                Arc::unwrap_or_clone(items)
+                            }
                             _ => panic!("should not happen"),
                         });
                         let values = BinaryArray::from_values("data", values).into_series();

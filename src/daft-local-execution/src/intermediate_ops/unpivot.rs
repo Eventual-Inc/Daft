@@ -4,12 +4,12 @@ use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 struct UnpivotParams {
     ids: Vec<BoundExpr>,
@@ -92,7 +92,7 @@ impl IntermediateOperator for UnpivotOperator {
         NodeType::Unpivot
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
 }

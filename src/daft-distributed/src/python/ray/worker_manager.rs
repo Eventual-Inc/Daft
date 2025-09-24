@@ -128,7 +128,7 @@ impl WorkerManager for RayWorkerManager {
         Ok(())
     }
 
-    fn try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
+    fn _try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
         let bundles = bundles
             .into_iter()
             .map(|bundle| {

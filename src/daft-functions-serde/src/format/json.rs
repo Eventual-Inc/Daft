@@ -33,7 +33,7 @@ pub(crate) fn deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Ser
 }
 
 // Parses a single item.
-pub fn parse_item(item: Option<&str>) -> DaftResult<Value> {
+pub fn parse_item(item: Option<&str>) -> DaftResult<Value<'_>> {
     item.map_or(Ok(Value::Null), |text| {
         read::json_deserializer::parse(text.as_bytes())
             .map_err(|e| DaftError::ValueError(format!("Failed to parse JSON: {}", e)))
@@ -55,7 +55,7 @@ pub fn try_deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series
 }
 
 /// Parses a single item, inserting null on any parsing failure.
-pub fn try_parse_item(item: Option<&str>) -> Value {
+pub fn try_parse_item(item: Option<&str>) -> Value<'_> {
     item.and_then(|text| read::json_deserializer::parse(text.as_bytes()).ok())
         .unwrap_or(Value::Null)
 }

@@ -4,13 +4,13 @@ use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -19,7 +19,7 @@ pub(crate) enum SortState {
 
 impl SortState {
     fn push(&mut self, part: Arc<MicroPartition>) {
-        if let Self::Building(ref mut parts) = self {
+        if let Self::Building(parts) = self {
             parts.push(part);
         } else {
             panic!("SortSink should be in Building state");
@@ -27,7 +27,7 @@ impl SortState {
     }
 
     fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
-        let res = if let Self::Building(ref mut parts) = self {
+        let res = if let Self::Building(parts) = self {
             std::mem::take(parts)
         } else {
             panic!("SortSink should be in Building state");

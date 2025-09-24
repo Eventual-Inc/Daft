@@ -1,11 +1,6 @@
-#![feature(mapped_lock_guards)]
 use std::sync::{Arc, OnceLock, RwLock};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
-use common_error::{DaftError, DaftResult};
-#[cfg(feature = "python")]
-use daft_py_runners::{NativeRunner, RayRunner};
-use daft_py_runners::{Runner, RunnerConfig};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -18,18 +13,6 @@ pub mod partition_cache;
 struct ContextState {
     /// Shared configuration for the context
     config: Config,
-    /// The runner to use for executing queries.
-    /// most scenarios of etting it more than once will result in an error.
-    /// Since native and py both use the same partition set, they can be swapped out freely
-    /// valid runner changes are:
-    /// native -> py
-    /// py -> native
-    /// but not:
-    /// native -> ray
-    /// py -> ray
-    /// ray -> native
-    /// ray -> py
-    runner: Option<Arc<Runner>>,
 }
 
 #[derive(Debug, Default)]
@@ -47,33 +30,6 @@ impl Config {
     }
 }
 
-#[cfg(feature = "python")]
-impl ContextState {
-    /// Retrieves the runner.
-    ///
-    /// WARNING: This will set the runner if it has not yet been set.
-    fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
-        if let Some(runner) = self.runner.as_ref() {
-            return Ok(runner.clone());
-        }
-
-        let runner_cfg = get_runner_config_from_env()?;
-        let runner = runner_cfg.create_runner()?;
-
-        let runner = Arc::new(runner);
-        self.runner = Some(runner.clone());
-
-        Ok(runner)
-    }
-}
-
-#[cfg(not(feature = "python"))]
-impl ContextState {
-    fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
-        unimplemented!()
-    }
-}
-
 /// Wrapper around the ContextState to provide a thread-safe interface.
 /// IMPORTANT: Do not create this directly, use `get_context` instead.
 /// This is a singleton, and should only be created once.
@@ -85,43 +41,6 @@ pub struct DaftContext {
 
 #[cfg(feature = "python")]
 impl DaftContext {
-    /// Retrieves the runner.
-    ///
-    /// WARNING: This will set the runner if it has not yet been set.
-    pub fn get_or_create_runner(&self) -> DaftResult<Arc<Runner>> {
-        self.with_state_mut(|state| state.get_or_create_runner())
-    }
-
-    /// Get the current runner, if one has been set.
-    pub fn runner(&self) -> Option<Arc<Runner>> {
-        self.with_state(|state| state.runner.clone())
-    }
-
-    /// Set the runner.
-    /// IMPORTANT: This can only be set once. Setting it more than once will error.
-    pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
-        self.with_state_mut(|state| {
-            if state.runner.is_some() {
-                return Err(DaftError::InternalError(
-                    "Cannot set runner more than once".to_string(),
-                ));
-            }
-            state.runner.replace(runner);
-            Ok(())
-        })
-    }
-
-    /// Reset/clear the current runner.
-    /// Note: This clears all in-memory state, including the partition cache.
-    pub fn reset_runner(&self) {
-        log::warn!(
-            "Resetting the runner will clear all in-memory state, including the partition cache."
-        );
-        self.with_state_mut(|state| {
-            state.runner = None;
-        });
-    }
-
     fn with_state<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&ContextState) -> R,
@@ -171,24 +90,6 @@ impl DaftContext {
 
 #[cfg(not(feature = "python"))]
 impl DaftContext {
-    pub fn get_or_create_runner(&self) -> DaftResult<Arc<Runner>> {
-        unimplemented!()
-    }
-
-    pub fn runner(&self) -> Option<Arc<Runner>> {
-        unimplemented!()
-    }
-
-    pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
-        unimplemented!()
-    }
-
-    /// Reset/clear the current runner.
-    /// Note: This clears all in-memory state, including the partition cache.
-    pub fn reset_runner(&self) {
-        unimplemented!()
-    }
-
     /// Execute a callback with read access to the state.
     /// The guard is automatically released when the callback returns.
     pub fn with_state<F, R>(&self, f: F) -> R
@@ -217,7 +118,6 @@ pub fn get_context() -> DaftContext {
         None => {
             let state = ContextState {
                 config: Config::from_env(),
-                runner: None,
             };
             let state = RwLock::new(state);
             let state = Arc::new(state);
@@ -237,175 +137,8 @@ pub fn get_context() -> DaftContext {
 }
 
 #[cfg(feature = "python")]
-pub fn set_runner_ray(
-    address: Option<String>,
-    max_task_backlog: Option<usize>,
-    force_client_mode: Option<bool>,
-) -> DaftResult<DaftContext> {
-    let ctx = get_context();
-
-    let runner_type = get_runner_type_from_env();
-    if !runner_type.is_empty() && runner_type != RayRunner::NAME {
-        log::warn!(
-            "Ignore inconsistent $DAFT_RUNNER='{}' env when setting runner as ray",
-            runner_type
-        );
-    }
-
-    let runner = Runner::Ray(RayRunner::try_new(
-        address,
-        max_task_backlog,
-        force_client_mode,
-    )?);
-    let runner = Arc::new(runner);
-    ctx.set_runner(runner)?;
-
-    Ok(ctx)
-}
-
-#[cfg(not(feature = "python"))]
-pub fn set_runner_ray(
-    _address: Option<String>,
-    _max_task_backlog: Option<usize>,
-    _force_client_mode: Option<bool>,
-) -> DaftResult<DaftContext> {
-    unimplemented!()
-}
-
-#[cfg(feature = "python")]
-pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> {
-    let ctx = get_context();
-
-    let runner_type = get_runner_type_from_env();
-    if !runner_type.is_empty() && runner_type != NativeRunner::NAME {
-        log::warn!(
-            "Ignore inconsistent $DAFT_RUNNER='{}' env when setting runner as native",
-            runner_type
-        );
-    }
-
-    let runner = Runner::Native(NativeRunner::try_new(num_threads)?);
-    let runner = Arc::new(runner);
-
-    ctx.set_runner(runner)?;
-
-    Ok(ctx)
-}
-
-#[cfg(not(feature = "python"))]
-pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> {
-    unimplemented!()
-}
-
-/// Helper function to parse a boolean environment variable.
-fn parse_bool_env_var(var_name: &str) -> Option<bool> {
-    std::env::var(var_name)
-        .ok()
-        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"))
-}
-
-/// Helper function to parse a numeric environment variable.
-fn parse_usize_env_var(var_name: &str) -> Option<usize> {
-    std::env::var(var_name).ok().and_then(|s| s.parse().ok())
-}
-
-/// Helper function to get the ray runner config from the environment.
-#[cfg(feature = "python")]
-fn get_ray_runner_config_from_env() -> RunnerConfig {
-    const DAFT_RAY_ADDRESS: &str = "DAFT_RAY_ADDRESS";
-    const RAY_ADDRESS: &str = "RAY_ADDRESS";
-    const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
-    const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
-
-    let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
-        log::warn!(
-            "Detected usage of the ${} environment variable. This will be deprecated, please use ${} instead.",
-            DAFT_RAY_ADDRESS,
-            RAY_ADDRESS
-        );
-        Some(address)
-    } else {
-        std::env::var(RAY_ADDRESS).ok()
-    };
-    let max_task_backlog = parse_usize_env_var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG);
-    let force_client_mode = parse_bool_env_var(DAFT_RAY_FORCE_CLIENT_MODE);
-    RunnerConfig::Ray {
-        address,
-        max_task_backlog,
-        force_client_mode,
-    }
-}
-
-/// Helper function to automatically detect whether to use the ray runner.
-#[cfg(feature = "python")]
-fn detect_ray_state() -> (bool, bool) {
-    Python::with_gil(|py| {
-        py.import(pyo3::intern!(py, "daft.utils"))
-            .and_then(|m| m.getattr(pyo3::intern!(py, "detect_ray_state")))
-            .and_then(|m| m.call0())
-            .and_then(|m| m.extract())
-            .unwrap_or((false, false))
-    })
-}
-
-#[cfg(feature = "python")]
-fn get_runner_type_from_env() -> String {
-    const DAFT_RUNNER: &str = "DAFT_RUNNER";
-
-    std::env::var(DAFT_RUNNER)
-        .unwrap_or_default()
-        .to_lowercase()
-}
-
-#[cfg(feature = "python")]
-fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
-    match get_runner_type_from_env().as_str() {
-        NativeRunner::NAME => Ok(RunnerConfig::Native { num_threads: None }),
-        RayRunner::NAME => Ok(get_ray_runner_config_from_env()),
-        "py" => Err(DaftError::ValueError(
-            "The PyRunner was removed from Daft from v0.5.0 onwards. \
-            Please set the env to `DAFT_RUNNER=native` instead."
-                .to_string(),
-        )),
-        "" => Ok(if detect_ray_state() == (true, false) {
-            // on ray but not in ray worker
-            get_ray_runner_config_from_env()
-        } else {
-            RunnerConfig::Native { num_threads: None }
-        }),
-        other => Err(DaftError::ValueError(format!(
-            "Invalid runner type `DAFT_RUNNER={other}` specified through the env. \
-            Please use either `native` or `ray` instead."
-        ))),
-    }
-}
-
-#[cfg(not(feature = "python"))]
-fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
-    unimplemented!()
-}
-
-#[cfg(feature = "python")]
-pub fn reset_runner() {
-    let ctx = get_context();
-    ctx.reset_runner();
-}
-
-#[cfg(not(feature = "python"))]
-pub fn reset_runner() {
-    unimplemented!()
-}
-
-#[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction!(
-        python::get_runner_config_from_env,
-        parent
-    )?)?;
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::set_runner_ray, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::set_runner_native, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::reset_runner, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     Ok(())
 }

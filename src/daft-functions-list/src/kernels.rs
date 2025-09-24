@@ -4,9 +4,9 @@ use arrow2::offset::{Offsets, OffsetsBuffer};
 use common_error::DaftResult;
 use daft_core::{
     array::{
-        growable::{make_growable, Growable},
-        ops::arrow2::comparison::build_is_equal,
         FixedSizeListArray, ListArray, StructArray,
+        growable::{Growable, make_growable},
+        ops::arrow2::comparison::build_is_equal,
     },
     datatypes::try_mean_aggregation_supertype,
     kernels::search_sorted::build_is_valid,
@@ -18,8 +18,8 @@ use daft_core::{
     utils::identity_hash_set::IdentityBuildHasher,
 };
 use indexmap::{
-    map::{raw_entry_v1::RawEntryMut, RawEntryApiV1},
     IndexMap,
+    map::{RawEntryApiV1, raw_entry_v1::RawEntryMut},
 };
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
@@ -27,7 +27,6 @@ pub trait ListArrayExtension: Sized {
     fn explode(&self) -> DaftResult<Series>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series>;
-    fn get_slices(&self, start: &Int64Array, end: Option<&Int64Array>) -> DaftResult<Series>;
     fn get_chunks(&self, size: usize) -> DaftResult<Series>;
     fn list_sort(&self, desc: &BooleanArray, nulls_first: &BooleanArray) -> DaftResult<Self>;
     fn list_bool_and(&self) -> DaftResult<BooleanArray>;
@@ -285,23 +284,6 @@ impl ListArrayExtension for ListArray {
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
         let idx_iter = create_iter(idx, self.len());
         get_children_helper(self, idx_iter, default)
-    }
-
-    fn get_slices(&self, start: &Int64Array, end: Option<&Int64Array>) -> DaftResult<Series> {
-        let start_iter = create_iter(start, self.len());
-        let end_iter = match end {
-            Some(end) => create_iter(end, self.len()),
-            None => Box::new(self.offsets().windows(2).map(|w| (w[1] - w[0]))),
-        };
-        get_slices_helper(
-            self.offsets().iter().copied(),
-            self.field.clone(),
-            self.child_data_type(),
-            &self.flat_child,
-            self.validity(),
-            start_iter,
-            end_iter,
-        )
     }
 
     fn get_chunks(&self, size: usize) -> DaftResult<Series> {
@@ -643,25 +625,6 @@ impl ListArrayExtension for FixedSizeListArray {
         growable.build()
     }
 
-    fn get_slices(&self, start: &Int64Array, end: Option<&Int64Array>) -> DaftResult<Series> {
-        let list_size = self.fixed_element_len();
-        let start_iter = create_iter(start, self.len());
-        let end_iter = match end {
-            Some(end) => create_iter(end, self.len()),
-            None => Box::new(repeat_n(list_size as i64, self.len())),
-        };
-        let new_field = Arc::new(self.field.to_exploded_field()?.to_list_field());
-        get_slices_helper(
-            (0..=((self.len() * list_size) as i64)).step_by(list_size),
-            new_field,
-            self.child_data_type(),
-            &self.flat_child,
-            self.validity(),
-            start_iter,
-            end_iter,
-        )
-    }
-
     fn get_chunks(&self, size: usize) -> DaftResult<Series> {
         let list_size = self.fixed_element_len();
         let num_chunks = list_size / size;
@@ -776,9 +739,9 @@ fn join_arrow_list_of_utf8s(
         })
 }
 
-// Given an i64 array that may have either 1 or `self.len()` elements, create an iterator with
-// `self.len()` elements. If there was originally 1 element, we repeat this element `self.len()`
-// times, otherwise we simply take the original array.
+/// Given an i64 array that may have either 1 or `self.len()` elements, create an iterator with
+/// `self.len()` elements. If there was originally 1 element, we repeat this element `self.len()`
+/// times, otherwise we simply take the original array.
 fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i64> + 'a> {
     match arr.len() {
         1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
@@ -787,65 +750,6 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
             Box::new(arr.as_arrow().iter().map(|x| *x.unwrap()))
         }
     }
-}
-
-fn get_slices_helper(
-    mut parent_offsets: impl Iterator<Item = i64>,
-    field: Arc<Field>,
-    child_data_type: &DataType,
-    flat_child: &Series,
-    validity: Option<&arrow2::bitmap::Bitmap>,
-    start_iter: impl Iterator<Item = i64>,
-    end_iter: impl Iterator<Item = i64>,
-) -> DaftResult<Series> {
-    let mut slicing_indexes = Vec::with_capacity(flat_child.len());
-    let mut new_offsets = Vec::with_capacity(flat_child.len() + 1);
-    new_offsets.push(0);
-    let mut starting_idx = parent_offsets.next().unwrap();
-    for (i, ((start, end), ending_idx)) in start_iter.zip(end_iter).zip(parent_offsets).enumerate()
-    {
-        let is_valid = validity.is_none_or(|v| v.get(i).unwrap());
-        let slice_start = if start >= 0 {
-            starting_idx + start
-        } else {
-            (ending_idx + start).max(starting_idx)
-        };
-        let slice_end = if end >= 0 {
-            (starting_idx + end).min(ending_idx)
-        } else {
-            ending_idx + end
-        };
-        let slice_length = slice_end - slice_start;
-        if is_valid && slice_start >= starting_idx && slice_length > 0 {
-            slicing_indexes.push(slice_start);
-            new_offsets.push(new_offsets.last().unwrap() + slice_length);
-        } else {
-            slicing_indexes.push(-1);
-            new_offsets.push(*new_offsets.last().unwrap());
-        }
-        starting_idx = ending_idx;
-    }
-    let total_capacity = *new_offsets.last().unwrap();
-    let mut growable: Box<dyn Growable> = make_growable(
-        &field.name,
-        child_data_type,
-        vec![flat_child],
-        false, // We don't set validity because we can simply copy the parent's validity.
-        total_capacity as usize,
-    );
-    for (i, start) in slicing_indexes.iter().enumerate() {
-        if *start >= 0 {
-            let slice_len = new_offsets.get(i + 1).unwrap() - new_offsets.get(i).unwrap();
-            growable.extend(0, *start as usize, slice_len as usize);
-        }
-    }
-    Ok(ListArray::new(
-        field,
-        growable.build()?,
-        arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
-        validity.cloned(),
-    )
-    .into_series())
 }
 
 /// Helper function that gets chunks of a given `size` from each list in the Series. Discards excess

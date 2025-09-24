@@ -5,12 +5,12 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,
@@ -65,7 +65,7 @@ impl IntermediateOperator for ExplodeOperator {
         "Explode".into()
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
 

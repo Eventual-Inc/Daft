@@ -105,9 +105,6 @@ impl Field {
     }
 
     pub fn to_list_field(&self) -> Self {
-        if self.dtype.is_python() {
-            return self.clone();
-        }
         let list_dtype = DataType::List(Box::new(self.dtype.clone()));
         Self {
             name: self.name.clone(),
@@ -117,9 +114,6 @@ impl Field {
     }
 
     pub fn to_fixed_size_list_field(&self, size: usize) -> DaftResult<Self> {
-        if self.dtype.is_python() {
-            return Ok(self.clone());
-        }
         let list_dtype = DataType::FixedSizeList(Box::new(self.dtype.clone()), size);
         Ok(Self {
             name: self.name.clone(),
@@ -130,13 +124,11 @@ impl Field {
 
     pub fn to_exploded_field(&self) -> DaftResult<Self> {
         match &self.dtype {
-            DataType::List(child_dtype) | DataType::FixedSizeList(child_dtype, _) => {
-                Ok(Self {
-                    name: self.name.clone(),
-                    dtype: child_dtype.as_ref().clone(),
-                    metadata: self.metadata.clone(),
-                })
-            }
+            DataType::List(child_dtype) | DataType::FixedSizeList(child_dtype, _) => Ok(Self {
+                name: self.name.clone(),
+                dtype: child_dtype.as_ref().clone(),
+                metadata: self.metadata.clone(),
+            }),
             _ => Err(DaftError::ValueError(format!(
                 "Column \"{}\" with dtype {} cannot be exploded, must be a List or FixedSizeList column.",
                 self.name, self.dtype,
