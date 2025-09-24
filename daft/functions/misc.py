@@ -269,7 +269,7 @@ def is_in(expr: Expression, other: Any) -> Expression:
 def hash(
     expr: Expression,
     seed: Any | None = None,
-    hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash",
+    hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3", "murmurhash3", "sha1"] | None = "xxhash",
 ) -> Expression:
     """Hashes the values in the Expression.
 
@@ -278,7 +278,7 @@ def hash(
     Args:
         expr: The expression to hash.
         seed (optional): Seed used for generating the hash. Defaults to 0.
-        hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
+        hash_function (optional): Hash function to use. One of "xxhash", "xxhash32", "xxhash64", "xxhash3", "murmurhash3", or "sha1". Defaults to "xxhash" (alias for "xxhash3").
 
     Returns:
         Expression (UInt64 Expression): The hashed expression.
@@ -302,7 +302,7 @@ def minhash(
     num_hashes: int,
     ngram_size: int,
     seed: int = 1,
-    hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
+    hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3", "sha1"] = "murmurhash3",
 ) -> Expression:
     """Runs the MinHash algorithm on the series.
 
@@ -314,11 +314,11 @@ def minhash(
     to normalize the strings yourself.
 
     Args:
-        text (String Expression): expression to hash.
+        text (String Expression): The expression to hash.
         num_hashes (int): The number of hash permutations to compute.
         ngram_size (int): The number of tokens in each shingle/ngram.
         seed (int, default=1): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
+        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", (alias for "xxhash3"), "xxhash32", "xxhash64", "xxhash3", or "sha1". Defaults to "murmurhash3".
 
     Returns:
         Expression (FixedSizedList[UInt32, num_hashes] Expression):
