@@ -218,6 +218,25 @@ impl FromArrow for FileArray {
     }
 }
 
+#[cfg(feature = "python")]
+impl FromArrow for PythonArray {
+    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        assert_eq!(field.dtype, DataType::Python);
+
+        let target_convert = field.to_physical();
+        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+
+        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
+
+        let physical_arrow_array = physical_arrow_array
+            .as_any()
+            .downcast_ref::<arrow2::array::BinaryArray<i64>>() // list array with i64 offsets
+            .unwrap();
+
+        Self::from_iter_pickled(&field.name, physical_arrow_array.iter())
+    }
+}
+
 macro_rules! impl_logical_from_arrow {
     ($logical_type:ident) => {
         impl FromArrow for LogicalArray<$logical_type> {
