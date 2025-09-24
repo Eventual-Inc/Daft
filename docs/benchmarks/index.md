@@ -91,16 +91,6 @@ Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along
 | Image Classification | 4m 23s | 23m 30s (5.4x slower) | 45m 7s (10.3x slower) |
 | Video Object Detection | 11m 46s | 25m 54s (2.2x slower) | 3h 36m (18.4x slower) |
 
-### Code
-
-The complete benchmark code is available in our repository:
-
-- **[Audio Transcription](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/audio_transcription)** - Whisper-tiny model for speech-to-text
-- **[Document Embedding](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/document_embedding)** - Sentence transformers for PDF text embeddings
-- **[Image Classification](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/image_classification)** - ResNet18 for ImageNet classification
-- **[Video Object Detection](https://github.com/Eventual-Inc/Daft/tree/main/benchmarking/ai/video_object_detection)** - YOLO11n for object detection in videos
-
-Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along with cluster configurations and dependencies.
 
 ### Logs
 
