@@ -3,6 +3,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
 use common_arrow_ffi as ffi;
 use common_error::DaftError;
+use common_file::FileReference;
 use common_ndarray::NumpyArray;
 use daft_schema::{
     dtype::DataType,
@@ -267,14 +268,14 @@ impl Literal {
         }
 
         // keep the code here minimal to clearly show the mapping from Python type to Daft type
-        let lit = if matches!(dtype, Some(DataType::Python)) {
-            // check if we want python dtype first to avoid any conversions
-            Self::Python(Arc::new(ob.clone().unbind()).into())
-        } else if matches!(dtype, Some(DataType::Null)) {
-            // also check if we want null dtype because anything can technically be casted to null
+        let lit = if matches!(dtype, Some(DataType::Null)) {
+            // check if we want null dtype because anything can technically be casted to null
             Self::Null
         } else if ob.is_none() {
             Self::Null
+        } else if matches!(dtype, Some(DataType::Python)) {
+            // check if we want python dtype first to avoid any conversions
+            Self::Python(Arc::new(ob.clone().unbind()).into())
         } else if PyBool::type_check(ob) {
             Self::Boolean(ob.extract()?)
         } else if PyString::type_check(ob) {
@@ -334,10 +335,7 @@ impl Literal {
         } else if isinstance!(ob, "daft.series", "Series") {
             daft_series_to_list_lit(ob)?
         } else if isinstance!(ob, "daft.file", "File") {
-            return Err(DaftError::NotImplemented(
-                "`daft.file.File` to Daft File data type not yet implemented.".to_string(),
-            )
-            .into());
+            daft_file_to_file_lit(ob)?
         } else {
             Self::Python(Arc::new(ob.clone().unbind()).into())
         };
@@ -646,4 +644,13 @@ fn daft_series_to_list_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
             .extract::<PySeries>()?
             .series,
     ))
+}
+
+fn daft_file_to_file_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let py = ob.py();
+    let file: FileReference = ob
+        .getattr(intern!(py, "_inner"))?
+        .call_method0(intern!(py, "_get_file"))?
+        .extract()?;
+    Ok(Literal::File(file))
 }

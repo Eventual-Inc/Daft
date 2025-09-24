@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
-use common_file::DaftFileType;
 use common_image::CowImage;
 
 use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
@@ -208,110 +205,68 @@ impl Series {
             }
             #[cfg(feature = "python")]
             DataType::File => {
-                let file_type = match &values[0] {
-                    Literal::File(f) => f.get_type(),
-                    _ => panic!("should not happen"),
-                };
-                let discriminant_field = Field::new("discriminant", DataType::UInt8);
-                let discriminant_values = vec![file_type as u8; values.len()];
-                let discriminant = UInt8Array::from_values_iter(
-                    discriminant_field.clone(),
-                    discriminant_values.into_iter(),
+                use std::sync::Arc;
+
+                use common_file::FileReference;
+                use pyo3::IntoPyObjectExt;
+
+                let discriminant = UInt8Array::from_iter(
+                    Field::new("discriminant", DataType::UInt8),
+                    values
+                        .iter()
+                        .map(|lit| unwrap_inner!(lit, File).map(|f| f.get_type() as u8)),
                 )
                 .into_series();
+                let validity = discriminant.validity().cloned();
 
-                match file_type {
-                    DaftFileType::Reference => {
-                        let (values, io_configs): (Vec<_>, Vec<_>) = pyo3::Python::with_gil(|py| {
-                            values
-                                .into_iter()
-                                .map(|v| match v {
-                                    Literal::File(common_file::FileReference::Reference(
-                                        path,
-                                        ioconfig,
-                                    )) => {
-                                        use std::sync::Arc;
+                let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) =
+                    pyo3::Python::with_gil(|py| {
+                        values
+                            .into_iter()
+                            .map(|lit| {
+                                let Some(f) = unwrap_inner!(lit, File) else {
+                                    return ((None, None), None);
+                                };
 
-                                        use pyo3::IntoPyObjectExt;
-
-                                        let io_conf = ioconfig.map(|conf| {
-                                            Arc::new(
-                                                common_io_config::python::IOConfig::from(
-                                                    conf.as_ref().clone(),
-                                                )
-                                                .into_py_any(py)
-                                                .expect("Failed to convert ioconfig to PyObject"),
+                                match f {
+                                    FileReference::Reference(file, ioconfig) => {
+                                        let io_conf = ioconfig.as_ref().map(|conf| {
+                                            common_io_config::python::IOConfig::from(
+                                                conf.as_ref().clone(),
                                             )
                                         });
-
-                                        (path, io_conf)
+                                        let io_config =
+                                            io_conf.map(|io_conf| {
+                                                Arc::new(io_conf.into_py_any(py).expect(
+                                                    "Failed to convert ioconfig to PyObject",
+                                                ))
+                                            });
+                                        ((Some(file), io_config), None)
                                     }
-                                    _ => unreachable!("should not happen"),
-                                })
-                                .unzip()
-                        });
-
-                        let io_configs =
-                            PythonArray::from_iter("io_config", io_configs.into_iter());
-                        let urls = Utf8Array::from_values("url", values.into_iter());
-                        let data = BinaryArray::full_null("data", &DataType::Binary, urls.len())
-                            .into_series();
-
-                        let sa_field = Field::new(
-                            "literal",
-                            DataType::Struct(vec![
-                                discriminant.field().clone(),
-                                data.field().clone(),
-                                urls.field().clone(),
-                                io_configs.field().clone(),
-                            ]),
-                        );
-                        let validity = urls.validity().cloned();
-                        let sa = StructArray::new(
-                            sa_field,
-                            vec![
-                                discriminant,
-                                data,
-                                urls.into_series(),
-                                io_configs.into_series(),
-                            ],
-                            validity,
-                        );
-                        FileArray::new(Field::new("literal", DataType::File), sa)
-                    }
-
-                    DaftFileType::Data => {
-                        let values = values.into_iter().map(|v| match v {
-                            Literal::File(common_file::FileReference::Data(items)) => {
-                                Arc::unwrap_or_clone(items)
-                            }
-                            _ => panic!("should not happen"),
-                        });
-                        let values = BinaryArray::from_values("data", values).into_series();
-                        let urls = Utf8Array::full_null("urls", &DataType::Utf8, values.len())
-                            .into_series();
-                        let io_configs =
-                            PythonArray::full_null("io_config", &DataType::Python, values.len())
-                                .into_series();
-                        let sa_field = Field::new(
-                            "literal",
-                            DataType::Struct(vec![
-                                discriminant_field,
-                                Field::new("data", DataType::Binary),
-                                urls.field().clone(),
-                                io_configs.field().clone(),
-                            ]),
-                        );
-                        let validity = values.validity().cloned();
-                        let sa = StructArray::new(
-                            sa_field,
-                            vec![discriminant, values, urls, io_configs],
-                            validity,
-                        );
-                        FileArray::new(Field::new("literal", DataType::File), sa)
-                    }
-                }
-                .into_series()
+                                    FileReference::Data(items) => {
+                                        ((None, None), Some(items.as_ref().clone()))
+                                    }
+                                }
+                            })
+                            .unzip()
+                    });
+                let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
+                    files_and_configs.into_iter().unzip();
+                let sa_field = Field::new("literal", DataType::File.to_physical());
+                let io_configs = PythonArray::from_iter("io_config", io_confs.into_iter());
+                let urls = Utf8Array::from_iter("url", files.into_iter());
+                let data = BinaryArray::from_iter("data", data.into_iter());
+                let sa = StructArray::new(
+                    sa_field,
+                    vec![
+                        discriminant,
+                        data.into_series(),
+                        urls.into_series(),
+                        io_configs.into_series(),
+                    ],
+                    validity,
+                );
+                FileArray::new(Field::new("literal", DataType::File), sa).into_series()
             }
             #[cfg(not(feature = "python"))]
             DataType::File => unreachable!("File type is only supported with the python feature"),

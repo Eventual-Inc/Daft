@@ -1,6 +1,5 @@
 #[cfg(feature = "python")]
 use common_file::DaftFileType;
-use common_file::FileReference;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use daft_schema::{dtype::DataType, field::Field};
@@ -114,62 +113,6 @@ impl FileArray {
 
     #[cfg(not(feature = "python"))]
     pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
-        unimplemented!()
-    }
-    #[cfg(feature = "python")]
-    pub fn new_from_daft_files(name: &str, files: Vec<FileReference>) -> Self {
-        if files.is_empty() {
-            return Self::empty(name, &DataType::File);
-        }
-        let discriminant =
-            UInt8Array::from_values("discriminant", files.iter().map(|f| f.get_type() as u8))
-                .into_series();
-
-        let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) =
-            pyo3::Python::with_gil(|py| {
-                use std::sync::Arc;
-
-                use pyo3::IntoPyObjectExt;
-                files
-                    .into_iter()
-                    .map(|f| match f {
-                        FileReference::Reference(file, ioconfig) => {
-                            let io_conf = ioconfig.as_ref().map(|conf| {
-                                common_io_config::python::IOConfig::from(conf.as_ref().clone())
-                            });
-                            let io_config = io_conf.map(|io_conf| {
-                                Arc::new(
-                                    io_conf
-                                        .into_py_any(py)
-                                        .expect("Failed to convert ioconfig to PyObject"),
-                                )
-                            });
-                            ((Some(file), io_config), None)
-                        }
-                        FileReference::Data(items) => ((None, None), Some(items.as_ref().clone())),
-                    })
-                    .unzip()
-            });
-        let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
-            files_and_configs.into_iter().unzip();
-        let sa_field = Field::new("literal", DataType::File.to_physical());
-        let io_configs = PythonArray::from_iter("io_config", io_confs.into_iter());
-        let urls = Utf8Array::from_iter("url", files.into_iter());
-        let data = BinaryArray::from_iter("data", data.into_iter());
-        let sa = StructArray::new(
-            sa_field,
-            vec![
-                discriminant,
-                data.into_series(),
-                urls.into_series(),
-                io_configs.into_series(),
-            ],
-            None,
-        );
-        FileArray::new(Field::new(name, DataType::File), sa)
-    }
-    #[cfg(not(feature = "python"))]
-    pub fn new_from_daft_files(name: &str, files: Vec<FileReference>) -> Self {
         unimplemented!()
     }
 }
