@@ -1,0 +1,22 @@
+name: Publish Daft Quickstart Helm Chart
+
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - 'k8s/charts/quickstart/**'
+  workflow_dispatch:
+
+jobs:
+  publish-daft-quickstart-chart:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Publish Production Helm Chart
+      run: |
+        helm package k8s/charts/quickstart --version 0.1.0
+        helm push quickstart-0.1.0.tgz oci://ghcr.io/eventual-inc/daft
