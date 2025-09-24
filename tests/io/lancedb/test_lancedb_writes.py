@@ -152,3 +152,28 @@ def test_lancedb_write_incompatible_schema(lance_dataset_path):
 
     with pytest.raises(ValueError, match="Schema of data does not match table schema"):
         df.write_lance(lance_dataset_path, mode="append")
+
+
+def test_lancedb_write_with_create_append_mode(lance_dataset_path):
+    import lance
+
+    # Make lance dataset with a string column
+    fields = [
+        pa.field("id", pa.int64(), nullable=True),
+        pa.field("name", pa.string(), nullable=True),
+        pa.field("age", pa.int32(), nullable=True),
+        pa.field("location", pa.large_string(), nullable=True),
+    ]
+    schema = pa.schema(fields)
+
+    # Write daft dataframe to lance dataset
+    data = {"id": [1], "name": ["A" * 100], "age": [1], "location": ["A" * 100]}
+    df = daft.from_pydict(data)
+    df.write_lance(lance_dataset_path, schema=schema, mode="create")
+
+    # Read lance dataset back to daft dataframe and check if the data is written correctly
+    df_loaded = daft.read_lance(lance_dataset_path)
+    assert df_loaded.to_pydict() == data
+
+    ds = lance.dataset(lance_dataset_path)
+    assert ds.schema == schema
