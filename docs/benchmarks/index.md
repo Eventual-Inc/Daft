@@ -68,7 +68,13 @@ Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along
                 ],
                 {
                     "title": {"text": "AI Benchmarks - Performance Comparison (lower is better)"},
-                    "yaxis": {"title": {"text": "Time (minutes)"}},
+                    "yaxis": {
+                        "title": {"text": "Time (minutes, log scale)"},
+                        "type": "log",
+                        "tickmode": "array",
+                        "tickvals": [1, 2, 5, 10, 20, 40, 60, 220],
+                        "ticktext": ["1", "2", "5", "10", "20", "40", "60", "220"]
+                    },
                     "xaxis": {"title": {"text": "Workload"}},
                     "uniformtext": {"minsize": 8, "mode": "hide"}
                 },
