@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow2::{
     array::{Array, Utf8Array},
     bitmap::utils::SlicesIterator,
@@ -7,6 +9,8 @@ use arrow2::{
 use common_error::DaftResult;
 
 use super::{DaftConcatAggable, as_arrow::AsArrow};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{
         DataArray, ListArray,
@@ -14,6 +18,49 @@ use crate::{
     },
     prelude::Utf8Type,
 };
+
+#[cfg(feature = "python")]
+impl DaftConcatAggable for PythonArray {
+    type Output = DaftResult<Self>;
+    fn concat(&self) -> Self::Output {
+        use arrow2::buffer::Buffer;
+        use pyo3::{prelude::*, types::PyList};
+
+        let pylist: Py<PyList> = Python::with_gil(|py| -> PyResult<Py<PyList>> {
+            let pylist = PyList::empty(py);
+            for pyobj in self.iter().flatten() {
+                pylist.call_method1(pyo3::intern!(py, "extend"), (pyobj.clone_ref(py),))?;
+            }
+            Ok(pylist.into())
+        })?;
+        let buffer = Buffer::from(vec![Arc::new(pylist.into())]);
+        Ok(Self::new(self.field().clone().into(), buffer, None))
+    }
+    fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
+        let mut result_pylists: Vec<Arc<PyObject>> = Vec::with_capacity(groups.len());
+
+        Python::with_gil(|py| -> DaftResult<()> {
+            for group in groups {
+                let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
+                let group_pyobjs = self.take(&indices_as_array)?;
+                let pylist = PyList::empty(py);
+                for pyobj in group_pyobjs.iter().flatten() {
+                    pylist.call_method1(pyo3::intern!(py, "extend"), (pyobj.clone_ref(py),))?;
+                }
+                result_pylists.push(Arc::new(pylist.into()));
+            }
+            Ok(())
+        })?;
+
+        Ok(Self::new(
+            self.field().clone().into(),
+            result_pylists.into(),
+            None,
+        ))
+    }
+}
 
 impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;

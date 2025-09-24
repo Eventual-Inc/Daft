@@ -256,6 +256,18 @@ impl Series {
                     None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
                 }
             }
+            #[cfg(feature = "python")]
+            DataType::Python => {
+                use crate::prelude::PythonArray;
+
+                let downcasted = self.downcast::<PythonArray>()?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
+                    }
+                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
+                }
+            }
             DataType::Utf8 => {
                 let downcasted = self.downcast::<Utf8Array>()?;
                 match groups {
