@@ -57,11 +57,11 @@ Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along
                         "textposition": "inside"
                     },
                     {
-                        "hovertext": ["4.0x Slower", "4.2x Slower", "10.3x Slower", "11.7x Slower"],
+                        "hovertext": ["4.0x Slower", "4.2x Slower", "10.3x Slower", "18.4x Slower"],
                         "marker": {"color": "rgba(226,90,28, 0.75)"},
                         "name": "Spark",
                         "x": ["Audio Transcription", "Document Embedding", "Image Classification", "Video Object Detection"],
-                        "y": [25.77, 8.07, 45.12, 138.0],
+                        "y": [25.77, 8.07, 45.12, 216.0],
                         "type": "bar",
                         "textposition": "inside"
                     }
@@ -83,7 +83,7 @@ Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along
 | Audio Transcription | 6m 22s | 29m 20s (4.6x slower) | 25m 46s (4.0x slower) |
 | Document Embedding | 1m 54s | 14m 32s (7.6x slower) | 8m 4s (4.2x slower) |
 | Image Classification | 4m 23s | 23m 30s (5.4x slower) | 45m 7s (10.3x slower) |
-| Video Object Detection | 11m 46s | 25m 54s (2.2x slower) | 2h 18m (11.7x slower) |
+| Video Object Detection | 11m 46s | 25m 54s (2.2x slower) | 3h 36m (18.4x slower) |
 
 ### Code
 

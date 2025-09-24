@@ -73,21 +73,20 @@ class Transcriber:
 def decoder(batch):
     transcription = processor.batch_decode(batch["token_ids"], skip_special_tokens=True)
     batch["transcription"] = transcription
-    batch["transcription_length"] = len(transcription)
+    batch["transcription_length"] = [len(t) for t in transcription]
     return batch
 
 
 ds = ray.data.read_parquet(INPUT_PATH)
 ds = ds.map(unnest)
 ds = ds.map(resample)
-ds = ds.map_batches(whisper_preprocess, batch_format="pandas")
+ds = ds.map_batches(whisper_preprocess)
 ds = ds.map_batches(
     Transcriber,
-    batch_format="numpy",
     batch_size=BATCH_SIZE,
     concurrency=NUM_GPUS,
     num_gpus=1,
 )
-ds = ds.map_batches(decoder, batch_format="pandas")
+ds = ds.map_batches(decoder)
 ds = ds.drop_columns(["input_features", "token_ids", "arr"])
 ds.write_parquet(OUTPUT_PATH)

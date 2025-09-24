@@ -14,4 +14,4 @@ Detects objects in **1,000 videos** using YOLO11n model. Extracts frames, runs o
 |----------|---------|
 | Daft     | 11m 46s |
 | Ray Data | 25m 54s |
-| Spark    | 2h 18m  |
+| Spark    | 3h  36m |
