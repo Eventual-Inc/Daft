@@ -15,11 +15,11 @@ use crate::{
     pipeline_node::{
         NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, append_plan_to_existing_task,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{Sender, create_channel},
 };
 
@@ -83,14 +83,14 @@ impl LimitNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         limit: usize,
         offset: Option<usize>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -99,7 +99,7 @@ impl LimitNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -304,16 +304,16 @@ impl DistributedPipelineNode for LimitNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_stream = self.child.clone().produce_tasks(stage_context);
+        let input_stream = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
 
-        stage_context.spawn(self.limit_execution_loop(
+        plan_context.spawn(self.limit_execution_loop(
             input_stream,
             result_tx,
-            stage_context.scheduler_handle(),
-            stage_context.task_id_counter(),
+            plan_context.scheduler_handle(),
+            plan_context.task_id_counter(),
         ));
 
         SubmittableTaskStream::from(result_rx)

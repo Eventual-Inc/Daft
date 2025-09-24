@@ -212,12 +212,12 @@ def test_table_minmax_binary(case, type) -> None:
 
 
 test_table_sum_mean_cases = [
-    ([], {"sum": [None], "mean": [None]}),
-    ([None], {"sum": [None], "mean": [None]}),
-    ([None, None, None], {"sum": [None], "mean": [None]}),
-    ([0], {"sum": [0], "mean": [0]}),
-    ([1], {"sum": [1], "mean": [1]}),
-    ([None, 3, None, None, 1, 2, 0, None], {"sum": [6], "mean": [1.5]}),
+    ([], {"sum": [None], "mean": [None], "avg": [None]}),
+    ([None], {"sum": [None], "mean": [None], "avg": [None]}),
+    ([None, None, None], {"sum": [None], "mean": [None], "avg": [None]}),
+    ([0], {"sum": [0], "mean": [0], "avg": [0]}),
+    ([1], {"sum": [1], "mean": [1], "avg": [1]}),
+    ([None, 3, None, None, 1, 2, 0, None], {"sum": [6], "mean": [1.5], "avg": [1.5]}),
 ]
 
 
@@ -231,6 +231,7 @@ def test_table_sum_mean(idx_dtype, case) -> None:
         [
             col("input").alias("sum").sum(),
             col("input").alias("mean").mean(),
+            col("input").alias("avg").avg(),
         ]
     )
 
@@ -332,6 +333,7 @@ test_table_agg_global_cases = [
             "count": [0],
             "sum": [None],
             "mean": [None],
+            "avg": [None],
             "min": [None],
             "max": [None],
             "list": [[]],
@@ -344,6 +346,7 @@ test_table_agg_global_cases = [
             "count": [0],
             "sum": [None],
             "mean": [None],
+            "avg": [None],
             "min": [None],
             "max": [None],
             "list": [[None]],
@@ -356,6 +359,7 @@ test_table_agg_global_cases = [
             "count": [0],
             "sum": [None],
             "mean": [None],
+            "avg": [None],
             "min": [None],
             "max": [None],
             "list": [[None, None, None]],
@@ -368,6 +372,7 @@ test_table_agg_global_cases = [
             "count": [4],
             "sum": [6],
             "mean": [1.5],
+            "avg": [1.5],
             "min": [0],
             "max": [3],
             "list": [[None, 3, None, None, 1, 2, 0, None]],
@@ -387,6 +392,7 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("count").count(),
             col("input").cast(DataType.int32()).alias("sum").sum(),
             col("input").cast(DataType.int32()).alias("mean").mean(),
+            col("input").cast(DataType.int32()).alias("avg").avg(),
             col("input").cast(DataType.int32()).alias("min").min(),
             col("input").cast(DataType.int32()).alias("max").max(),
             col("input").cast(DataType.int32()).alias("list").agg_list(),

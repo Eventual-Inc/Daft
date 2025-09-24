@@ -8,7 +8,7 @@ import pytest
 
 import daft
 from daft import DataType as dt
-from daft.functions import file
+from daft.functions import file, file_size
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -82,7 +82,6 @@ def test_can_open_local_file(tmp_path: Path):
     temp_file.write_text("test content")
 
     df = daft.from_pydict({"path": [str(temp_file.absolute())]})
-
     df = df.select(file(df["path"]))
 
     @daft.func
@@ -286,3 +285,22 @@ def test_file_size_from_bytes():
     data = bytes([random.randint(0, 255) for _ in range(2048)])
     file = daft.File(data)
     assert file.size() == 2048
+
+
+def test_filesize_expr(tmp_path: Path):
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(data)
+
+    df = daft.from_pydict({"file": [str(temp_file.absolute())]})
+
+    res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
+    assert res == 2048
+
+
+def test_filesize_expr_binary():
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    df = daft.from_pydict({"file": [data]})
+
+    res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
+    assert res == 2048

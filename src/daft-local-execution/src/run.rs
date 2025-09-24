@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_tracing::{finish_chrome_trace, flush_opentelemetry_providers, start_chrome_trace};
+use common_tracing::flush_opentelemetry_providers;
 use daft_local_plan::{LocalPhysicalPlanRef, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -280,7 +280,6 @@ impl NativeExecutor {
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
-        start_chrome_trace();
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = translate_physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
@@ -367,7 +366,6 @@ impl NativeExecutor {
                 )?;
             }
             flush_opentelemetry_providers();
-            finish_chrome_trace();
             Ok(())
         });
 

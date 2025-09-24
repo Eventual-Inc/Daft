@@ -1086,6 +1086,12 @@ class Expression:
 
         return mean(self)
 
+    def avg(self) -> Expression:
+        """Alias for `Expression.mean()`. Check [`Expression.mean`](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.Expression.mean) for more details."""
+        from daft.functions import mean
+
+        return mean(self)
+
     def stddev(self) -> Expression:
         """Calculates the standard deviation of the values in the expression.
 
@@ -2686,6 +2692,16 @@ class Expression:
         from daft.functions import image_mode
 
         return image_mode(self)
+
+    def file_size(self) -> Expression:
+        """Gets the size of a file in bytes.
+
+        Tip: See Also
+            [`daft.functions.file_size`](https://docs.daft.ai/en/stable/api/functions/file_size/)
+        """
+        from daft.functions import file_size
+
+        return file_size(self)
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
