@@ -4,7 +4,7 @@ use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]
-use crate::array::pseudo_arrow::PseudoArrowArray;
+use crate::prelude::PythonArray;
 use crate::{array::DataArray, datatypes::DaftPhysicalType};
 
 macro_rules! impl_variable_length_concat {
@@ -82,22 +82,6 @@ where
 
         let arrow_arrays: Vec<_> = arrays.iter().map(|s| s.data.as_ref()).collect();
         match field.dtype {
-            #[cfg(feature = "python")]
-            crate::datatypes::DataType::Python => {
-                use pyo3::prelude::*;
-
-                let cat_array = Box::new(PseudoArrowArray::concatenate(
-                    arrow_arrays
-                        .iter()
-                        .map(|s| {
-                            s.as_any()
-                                .downcast_ref::<PseudoArrowArray<Arc<PyObject>>>()
-                                .unwrap()
-                        })
-                        .collect(),
-                ));
-                Self::new(field.clone(), cat_array)
-            }
             crate::datatypes::DataType::Utf8 => {
                 let cat_array = utf8_concat(arrow_arrays.as_slice())?;
                 Self::new(field.clone(), cat_array)
@@ -112,5 +96,45 @@ where
                 Self::try_from((field.clone(), cat_array))
             }
         }
+    }
+}
+
+#[cfg(feature = "python")]
+impl PythonArray {
+    pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
+        use arrow2::{bitmap::MutableBitmap, buffer::Buffer};
+        if arrays.is_empty() {
+            return Err(DaftError::ValueError(
+                "Need at least 1 array to perform concat".to_string(),
+            ));
+        }
+
+        if arrays.len() == 1 {
+            return Ok((*arrays.first().unwrap()).clone());
+        }
+
+        let field = Arc::new(arrays.first().unwrap().field().clone());
+
+        let validity = if arrays.iter().any(|a| a.validity().is_some()) {
+            let total_len = arrays.iter().map(|a| a.len()).sum();
+
+            let mut validity = MutableBitmap::with_capacity(total_len);
+
+            for a in arrays {
+                if let Some(v) = a.validity() {
+                    validity.extend_from_bitmap(v);
+                } else {
+                    validity.extend_constant(a.len(), true);
+                }
+            }
+
+            Some(validity.into())
+        } else {
+            None
+        };
+
+        let values = Buffer::from_iter(arrays.iter().flat_map(|a| a.values().iter().cloned()));
+
+        Ok(Self::new(field, values, validity))
     }
 }
