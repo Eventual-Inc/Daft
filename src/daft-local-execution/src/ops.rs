@@ -33,6 +33,7 @@ pub enum NodeType {
     Pivot,
     Repartition,
     Sort,
+    SortMergeJoin,
     TopN,
     WindowOrderByOnly,
     WindowPartitionAndDynamicFrame,

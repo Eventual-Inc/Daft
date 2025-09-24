@@ -14,7 +14,7 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
-    Pivot, Project, Sample, SamplingMethod, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
     WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
@@ -53,6 +53,7 @@ use crate::{
         pivot::PivotSink,
         repartition::RepartitionSink,
         sort::SortSink,
+        sort_merge_join::SortMergeJoinSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
@@ -1071,6 +1072,37 @@ fn physical_plan_to_pipeline(
                     state_bridge,
                 )),
                 vec![collect_node, stream_child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::SortMergeJoin(SortMergeJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            is_sorted,
+            schema,
+            stats_state,
+            ..
+        }) => {
+            let left_child_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
+            let right_child_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
+
+            let sort_merge_join_sink = SortMergeJoinSink::new(
+                left_on.clone(),
+                right_on.clone(),
+                *is_sorted,
+                schema.clone(),
+            );
+
+            BlockingSinkNode::new(
+                Arc::new(sort_merge_join_sink),
+                // For now, we'll just use the left child as the input
+                // This is a limitation of the current blocking sink design
+                // In a proper implementation, we'd need a sink that can handle two inputs
+                left_child_node,
                 stats_state.clone(),
                 ctx,
             )

@@ -9,6 +9,7 @@ pub mod into_partitions;
 pub mod pivot;
 pub mod repartition;
 pub mod sort;
+pub mod sort_merge_join;
 pub mod top_n;
 pub mod window_base;
 pub mod window_order_by_only;

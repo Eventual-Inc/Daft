@@ -282,14 +282,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
-            if join
-                .join_strategy
-                .is_some_and(|x| !matches!(x, JoinStrategy::Hash))
-            {
-                log::warn!(
-                    "Only hash join strategy is supported on the native runner, falling back to hash join. Broadcast and sort merge joins are not implemented on the native runner as it is single node only."
-                );
-            }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
 
@@ -313,17 +305,71 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 let left_on = BoundExpr::bind_all(&left_on, left.schema())?;
                 let right_on = BoundExpr::bind_all(&right_on, right.schema())?;
 
-                Ok(LocalPhysicalPlan::hash_join(
-                    left,
-                    right,
-                    left_on,
-                    right_on,
-                    None,
-                    Some(null_equals_nulls),
-                    join.join_type,
-                    join.output_schema.clone(),
-                    join.stats_state.clone(),
-                ))
+                match join.join_strategy {
+                    Some(JoinStrategy::SortMerge) => {
+                        // For sort-merge join, only Inner join is currently supported
+                        if join.join_type != JoinType::Inner {
+                            return Err(DaftError::not_implemented(
+                                "SortMergeJoin only supports Inner join type"
+                            ));
+                        }
+
+                        Ok(LocalPhysicalPlan::sort_merge_join(
+                            left,
+                            right,
+                            left_on,
+                            right_on,
+                            false, // is_sorted - assume not sorted for now
+                            join.output_schema.clone(),
+                            join.stats_state.clone(),
+                        ))
+                    }
+                    Some(JoinStrategy::Broadcast) => {
+                        log::warn!(
+                            "Broadcast join strategy is not implemented on the native runner, falling back to hash join."
+                        );
+                        Ok(LocalPhysicalPlan::hash_join(
+                            left,
+                            right,
+                            left_on,
+                            right_on,
+                            None,
+                            Some(null_equals_nulls),
+                            join.join_type,
+                            join.output_schema.clone(),
+                            join.stats_state.clone(),
+                        ))
+                    }
+                    Some(JoinStrategy::Cross) => {
+                        log::warn!(
+                            "Cross join strategy is not implemented on the native runner, falling back to hash join."
+                        );
+                        Ok(LocalPhysicalPlan::hash_join(
+                            left,
+                            right,
+                            left_on,
+                            right_on,
+                            None,
+                            Some(null_equals_nulls),
+                            join.join_type,
+                            join.output_schema.clone(),
+                            join.stats_state.clone(),
+                        ))
+                    }
+                    Some(JoinStrategy::Hash) | None => {
+                        Ok(LocalPhysicalPlan::hash_join(
+                            left,
+                            right,
+                            left_on,
+                            right_on,
+                            None,
+                            Some(null_equals_nulls),
+                            join.join_type,
+                            join.output_schema.clone(),
+                            join.stats_state.clone(),
+                        ))
+                    }
+                }
             }
         }
         LogicalPlan::Distinct(distinct) => {
