@@ -474,7 +474,7 @@ setInterval(runCycle, 4600);
 
 **:octicons-image-24: Unified multimodal data processing**
 
-Process structured and unstructured data with one framework. While traditional dataframes struggle with anything beyond tables, Daft natively handles tables, images, text, and embeddings through a single Python API. No more stitching together specialized tools for different data types.
+While traditional dataframes struggle with anything beyond tables, Daft natively handles tables, images, text, and embeddings through a single Python API. No more stitching together specialized tools for different data types.
 
 **:material-language-python: Python-native, no JVM required**
 
