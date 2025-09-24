@@ -205,7 +205,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
       <div class="row">
         <div class="description">
           <div class="stage-header">WRITE</div>
-          <p>Daft lands data into specialized data systems for downstream use-cases</p>
+          <p>Daft lands data into specialized data systems for downstream use cases</p>
           <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model Training (S3 object storage)</p>
         </div>
         <div class="pipeline-item">
