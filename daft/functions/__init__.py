@@ -12,6 +12,7 @@ from .agg import (
     approx_count_distinct,
     approx_percentiles,
     mean,
+    avg,
     stddev,
     min,
     max,
@@ -64,6 +65,9 @@ from .datetime import (
     to_unix_epoch,
 )
 from .embedding import cosine_distance
+
+from .file_ import file, file_size
+
 from .image import (
     resize,
     crop,
@@ -97,7 +101,6 @@ from .list import (
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
-    file,
     eq_null_safe,
     cast,
     is_null,
@@ -223,6 +226,7 @@ __all__ = [
     "arctan",
     "arctan2",
     "arctanh",
+    "avg",
     "between",
     "bitwise_and",
     "bitwise_or",
@@ -278,6 +282,7 @@ __all__ = [
     "explode",
     "expm1",
     "file",
+    "file_size",
     "fill_nan",
     "fill_null",
     "find",

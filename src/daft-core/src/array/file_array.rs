@@ -1,6 +1,6 @@
-use common_file::DaftFile;
 #[cfg(feature = "python")]
 use common_file::DaftFileType;
+use common_file::FileReference;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use daft_schema::{dtype::DataType, field::Field};
@@ -118,7 +118,7 @@ impl FileArray {
         unimplemented!()
     }
     #[cfg(feature = "python")]
-    pub fn new_from_daft_files(name: &str, files: Vec<DaftFile>) -> Self {
+    pub fn new_from_daft_files(name: &str, files: Vec<FileReference>) -> Self {
         if files.is_empty() {
             return Self::empty(name, &DataType::File);
         }
@@ -134,7 +134,7 @@ impl FileArray {
                 files
                     .into_iter()
                     .map(|f| match f {
-                        DaftFile::Reference(file, ioconfig) => {
+                        FileReference::Reference(file, ioconfig) => {
                             let io_conf = ioconfig.as_ref().map(|conf| {
                                 common_io_config::python::IOConfig::from(conf.as_ref().clone())
                             });
@@ -145,7 +145,7 @@ impl FileArray {
                             );
                             ((Some(file), io_config), None)
                         }
-                        DaftFile::Data(items) => {
+                        FileReference::Data(items) => {
                             let py_none = Arc::new(py.None());
                             ((None, py_none), Some(items.as_ref().clone()))
                         }
@@ -171,7 +171,7 @@ impl FileArray {
         FileArray::new(Field::new(name, DataType::File), sa)
     }
     #[cfg(not(feature = "python"))]
-    pub fn new_from_daft_files(name: &str, files: Vec<DaftFile>) -> Self {
+    pub fn new_from_daft_files(name: &str, files: Vec<FileReference>) -> Self {
         unimplemented!()
     }
 }
