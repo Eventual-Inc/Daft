@@ -47,10 +47,12 @@ class Series:
                 DataType from the data.
         """
         _ensure_registered_super_ext_type()
-        if (dtype and dtype.is_python()) or DataType.from_arrow_type(array.type).is_python():
+        try:
+            DataType.from_arrow_type(array.type, python_fallback=False)
+        except TypeError:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
-        elif isinstance(array, pa.Array):
+        if isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
@@ -704,10 +706,7 @@ class Series:
             tuple[pa.Array | pa.ChunkedArray, builtins.str, DataType],
         ]
     ):
-        if self.datatype().is_python():
-            return (Series.from_pylist, (self.to_pylist(), self.name(), self.datatype()))
-        else:
-            return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
+        return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
 
     def _debug_bincode_serialize(self) -> bytes:
         return self._series._debug_bincode_serialize()

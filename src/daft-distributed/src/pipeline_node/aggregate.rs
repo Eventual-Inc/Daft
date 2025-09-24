@@ -27,7 +27,7 @@ use crate::{
         NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
         project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator,
     },
-    stage::{StageConfig, StageExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct AggregateNode {
@@ -53,14 +53,14 @@ impl AggregateNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         group_by: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::node_name(&group_by),
             vec![child.node_id()],
@@ -69,7 +69,7 @@ impl AggregateNode {
         );
         let config = PipelineNodeConfig::new(
             output_schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             // Often child is a repartition node
             // TODO: Be more specific if group_by columns overlap with partitioning columns
             child.config().clustering_spec.clone(),
@@ -148,9 +148,9 @@ impl DistributedPipelineNode for AggregateNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Pipeline the aggregation
         let self_clone = self.clone();
@@ -286,7 +286,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         Ok(AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             group_by,
             aggregations,
             output_schema,
@@ -308,7 +308,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             split_details.first_stage_group_by,
             split_details.first_stage_aggs,
             split_details.first_stage_schema.clone(),
@@ -319,7 +319,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         // Second stage: Shuffle to distribute the dataset
         let num_partitions = min(
             num_partitions,
-            self.stage_config
+            self.plan_config
                 .config
                 .shuffle_aggregation_default_partitions,
         );
@@ -345,7 +345,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let final_aggregation = AggregateNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             split_details.second_stage_group_by,
             split_details.second_stage_aggs,
             split_details.second_stage_schema.clone(),
@@ -357,7 +357,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         Ok(ProjectNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
-            &self.stage_config,
+            &self.plan_config,
             split_details.final_exprs,
             output_schema,
             final_aggregation,
@@ -403,7 +403,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             return Ok(AggregateNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,
-                &self.stage_config,
+                &self.plan_config,
                 group_by,
                 aggregations,
                 output_schema,

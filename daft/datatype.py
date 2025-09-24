@@ -483,7 +483,7 @@ class DataType:
         return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape, use_offset_indices))
 
     @classmethod
-    def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
+    def from_arrow_type(cls, arrow_type: pa.lib.DataType, python_fallback: builtins.bool = True) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType."""
         if pa.types.is_int8(arrow_type):
             return cls.int8()
@@ -533,25 +533,25 @@ class DataType:
         elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
             assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
             field = arrow_type.value_field
-            return cls.list(cls.from_arrow_type(field.type))
+            return cls.list(cls.from_arrow_type(field.type, python_fallback))
         elif pa.types.is_fixed_size_list(arrow_type):
             assert isinstance(arrow_type, pa.FixedSizeListType)
             field = arrow_type.value_field
-            return cls.fixed_size_list(cls.from_arrow_type(field.type), arrow_type.list_size)
+            return cls.fixed_size_list(cls.from_arrow_type(field.type, python_fallback), arrow_type.list_size)
         elif pa.types.is_struct(arrow_type):
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
-            return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
+            return cls.struct({field.name: cls.from_arrow_type(field.type, python_fallback) for field in fields})
         elif pa.types.is_interval(arrow_type):
             return cls.interval()
         elif pa.types.is_map(arrow_type):
             assert isinstance(arrow_type, pa.MapType)
             return cls.map(
-                key_type=cls.from_arrow_type(arrow_type.key_type),
-                value_type=cls.from_arrow_type(arrow_type.item_type),
+                key_type=cls.from_arrow_type(arrow_type.key_type, python_fallback),
+                value_type=cls.from_arrow_type(arrow_type.item_type, python_fallback),
             )
         elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
-            scalar_dtype = cls.from_arrow_type(arrow_type.value_type)
+            scalar_dtype = cls.from_arrow_type(arrow_type.value_type, python_fallback)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
         # Only check for PyExtensionType if pyarrow version is < 21.0.0
         if hasattr(pa, "PyExtensionType") and isinstance(arrow_type, getattr(pa, "PyExtensionType")):
@@ -583,13 +583,16 @@ class DataType:
             else:
                 return cls.extension(
                     name,
-                    cls.from_arrow_type(arrow_type.storage_type),
+                    cls.from_arrow_type(arrow_type.storage_type, python_fallback),
                     metadata,
                 )
         else:
-            # Fall back to a Python object type.
-            # TODO(Clark): Add native support for remaining Arrow types.
-            return cls.python()
+            if python_fallback:
+                # Fall back to a Python object type.
+                # TODO(Clark): Add native support for remaining Arrow types.
+                return cls.python()
+            else:
+                raise TypeError(f"Unsupported Arrow type: {arrow_type}")
 
     @classmethod
     def from_numpy_dtype(cls, np_type: np.dtype[Any]) -> DataType:
@@ -598,6 +601,7 @@ class DataType:
         return cls.from_arrow_type(arrow_type)
 
     def to_arrow_dtype(self) -> pa.DataType:
+        _ensure_registered_super_ext_type()
         return self._dtype.to_arrow()
 
     @classmethod

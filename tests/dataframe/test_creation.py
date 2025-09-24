@@ -262,10 +262,6 @@ def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, flo
     # Type not natively supported, so should have Python object dtype.
     assert df.schema()["obj"].dtype == DataType.python()
 
-    # Assert that it raises an error when trying to convert back to arrow
-    with pytest.raises(ValueError):
-        df.to_arrow()
-
 
 ###
 # Pandas tests

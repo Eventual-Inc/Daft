@@ -12,7 +12,6 @@ use crate::{
     pipeline_node::NodeID,
     plan::PlanID,
     scheduling::task::{TaskContext, TaskID},
-    stage::StageID,
     statistics::{PlanState, TaskExecutionStatus, TaskState, http_subscriber::HttpSubscriber},
 };
 
@@ -100,7 +99,6 @@ fn create_test_plan_state(plan_id: PlanID, logical_plan: LogicalPlanRef) -> Plan
 /// Helper function to create test task context
 fn create_test_task_context(
     plan_id: PlanID,
-    stage_id: StageID,
     node_id: NodeID,
     task_id: TaskID,
     logical_node_ids: Vec<NodeID>,
@@ -108,7 +106,6 @@ fn create_test_task_context(
     TaskContext {
         logical_node_ids,
         plan_id,
-        stage_id,
         node_id,
         task_id,
     }
@@ -149,10 +146,10 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, logical_plan);
 
         // Create tasks for different nodes in the plan
-        let source_context = create_test_task_context(1, 1, 1, 1, vec![1]);
-        let filter_context = create_test_task_context(1, 1, 2, 2, vec![2]);
-        let project_context = create_test_task_context(1, 1, 3, 3, vec![3]);
-        let limit_context = create_test_task_context(1, 1, 4, 4, vec![4]);
+        let source_context = create_test_task_context(1, 1, 1, vec![1]);
+        let filter_context = create_test_task_context(1, 2, 2, vec![2]);
+        let project_context = create_test_task_context(1, 3, 3, vec![3]);
+        let limit_context = create_test_task_context(1, 4, 4, vec![4]);
 
         plan_data.tasks.insert(
             source_context,
@@ -204,10 +201,10 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, logical_plan);
 
         // Create a linear chain of tasks: 1 -> 2 -> 3 -> 4
-        let context1 = create_test_task_context(1, 1, 1, 1, vec![1]);
-        let context2 = create_test_task_context(1, 1, 2, 2, vec![2]);
-        let context3 = create_test_task_context(1, 1, 3, 3, vec![3]);
-        let context4 = create_test_task_context(1, 1, 4, 4, vec![4]);
+        let context1 = create_test_task_context(1, 1, 1, vec![1]);
+        let context2 = create_test_task_context(1, 2, 2, vec![2]);
+        let context3 = create_test_task_context(1, 3, 3, vec![3]);
+        let context4 = create_test_task_context(1, 4, 4, vec![4]);
 
         plan_data.tasks.insert(
             context1,
@@ -254,9 +251,9 @@ mod tests {
 
         // Create multiple tasks for the same node (node_id = 1) with different task_ids
         // These should be aggregated into a single graph node
-        let context1 = create_test_task_context(1, 1, 1, 1, vec![1]); // Task 1 for node 1
-        let context2 = create_test_task_context(1, 1, 1, 2, vec![1]); // Task 2 for node 1
-        let context3 = create_test_task_context(1, 1, 1, 3, vec![1]);
+        let context1 = create_test_task_context(1, 1, 1, vec![1]); // Task 1 for node 1
+        let context2 = create_test_task_context(1, 1, 2, vec![1]); // Task 2 for node 1
+        let context3 = create_test_task_context(1, 1, 3, vec![1]);
 
         // Create task states with different progress metrics
         let mut task1 = create_test_task_state("Source", TaskExecutionStatus::Completed);
@@ -285,7 +282,7 @@ mod tests {
         plan_data.tasks.insert(context3.clone(), task3);
 
         // Add a task for a different node to ensure we don't aggregate across different nodes
-        let context4 = create_test_task_context(1, 1, 2, 4, vec![2]); // Task 4 for node 2
+        let context4 = create_test_task_context(1, 2, 4, vec![2]); // Task 4 for node 2
         let mut task4 = create_test_task_state("Filter", TaskExecutionStatus::Running);
         task4.pending = 1;
         task4.completed = 2;
@@ -350,11 +347,9 @@ mod tests {
 
         // Verify metadata contains correct plan_id, stage_id, and node_id
         assert_eq!(source_node.metadata.get("plan_id"), Some(&"1".to_string()));
-        assert_eq!(source_node.metadata.get("stage_id"), Some(&"1".to_string()));
         assert_eq!(source_node.metadata.get("node_id"), Some(&"1".to_string()));
 
         assert_eq!(filter_node.metadata.get("plan_id"), Some(&"1".to_string()));
-        assert_eq!(filter_node.metadata.get("stage_id"), Some(&"1".to_string()));
         assert_eq!(filter_node.metadata.get("node_id"), Some(&"2".to_string()));
 
         // Verify adjacency list shows relationship
@@ -438,8 +433,8 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, logical_plan);
 
         // Create task states
-        let source_context = create_test_task_context(1, 1, 1, 1, vec![1]);
-        let filter_context = create_test_task_context(1, 1, 2, 2, vec![2]);
+        let source_context = create_test_task_context(1, 1, 1, vec![1]);
+        let filter_context = create_test_task_context(1, 2, 2, vec![2]);
 
         plan_data.tasks.insert(
             source_context,
@@ -723,19 +718,19 @@ mod tests {
         // Create multiple tasks with various states
         let contexts_and_states = vec![
             (
-                create_test_task_context(1, 1, 1, 1, vec![1]),
+                create_test_task_context(1, 1, 1, vec![1]),
                 create_test_task_state("Source", TaskExecutionStatus::Completed),
             ),
             (
-                create_test_task_context(1, 1, 2, 2, vec![2]),
+                create_test_task_context(1, 2, 2, vec![2]),
                 create_test_task_state("Filter", TaskExecutionStatus::Running),
             ),
             (
-                create_test_task_context(1, 1, 3, 3, vec![3]),
+                create_test_task_context(1, 3, 3, vec![3]),
                 create_test_task_state("Project", TaskExecutionStatus::Created),
             ),
             (
-                create_test_task_context(1, 1, 4, 4, vec![4]),
+                create_test_task_context(1, 4, 4, vec![4]),
                 create_test_task_state("Limit", TaskExecutionStatus::Failed),
             ),
         ];
@@ -834,11 +829,11 @@ mod tests {
         let mut plan_data = create_test_plan_data(1, limit_plan.arced());
 
         // Create task states for each operation in the optimized plan
-        let source_context = create_test_task_context(1, 1, 1, 1, vec![1]);
-        let filter_context = create_test_task_context(1, 1, 2, 2, vec![2]);
-        let project_context = create_test_task_context(1, 1, 3, 3, vec![3]);
-        let sort_context = create_test_task_context(1, 1, 4, 4, vec![4]);
-        let limit_context = create_test_task_context(1, 1, 5, 5, vec![5]);
+        let source_context = create_test_task_context(1, 1, 1, vec![1]);
+        let filter_context = create_test_task_context(1, 2, 2, vec![2]);
+        let project_context = create_test_task_context(1, 3, 3, vec![3]);
+        let sort_context = create_test_task_context(1, 4, 4, vec![4]);
+        let limit_context = create_test_task_context(1, 5, 5, vec![5]);
 
         // Set different execution states to simulate a real query execution
         let mut source_task = create_test_task_state("Source", TaskExecutionStatus::Completed);
@@ -1069,7 +1064,7 @@ mod tests {
         assert!(result.is_ok(), "Plan submission should succeed");
 
         // Submit a task to create some activity
-        let task_context = create_test_task_context(1, 1, 1, 1, vec![1]);
+        let task_context = create_test_task_context(1, 1, 1, vec![1]);
         let task_event = StatisticsEvent::TaskSubmitted {
             context: task_context,
             name: "TestTask".to_string(),

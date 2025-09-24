@@ -15,9 +15,11 @@ use arrow2::{
 use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
-use {crate::datatypes::PythonArray, pyo3::prelude::*};
+use pyo3::prelude::*;
 
 use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
@@ -47,11 +49,19 @@ impl Series {
             use pyo3::IntoPyObjectExt;
 
             self.to_literals()
-                .map(|lit| lit.into_py_any(py).map(Arc::new))
+                .map(|lit| {
+                    use crate::lit::Literal;
+
+                    if matches!(lit, Literal::Null) {
+                        Ok(None)
+                    } else {
+                        Ok(Some(Arc::new(lit.into_py_any(py)?)))
+                    }
+                })
                 .collect::<PyResult<Vec<_>>>()
         })?;
 
-        Ok(PythonArray::from((self.name(), py_values)).into_series())
+        Ok(PythonArray::from_iter(self.name(), py_values.into_iter()).into_series())
     }
 }
 
@@ -590,8 +600,7 @@ impl PythonArray {
         }
 
         let literals = Python::with_gil(|py| {
-            self.as_arrow()
-                .values()
+            self.values()
                 .iter()
                 .map(|ob| Literal::from_pyobj(ob.bind(py), Some(dtype)))
                 .collect::<PyResult<Vec<Literal>>>()

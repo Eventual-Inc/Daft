@@ -198,7 +198,7 @@ impl RowWisePyFn {
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
         let start_time = std::time::Instant::now();
-        let (outputs, gil_contention_time) = Python::with_gil(|py| {
+        Python::with_gil(|py| {
             let gil_contention_time = start_time.elapsed();
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.row_wise"))?
@@ -217,15 +217,14 @@ impl RowWisePyFn {
 
                     let result = func.call1((inner_ref, args_ref, &py_args))?;
                     py_args.clear();
-                    DaftResult::Ok(result.unbind())
+                    DaftResult::Ok(result)
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            DaftResult::Ok((outputs, gil_contention_time))
-        })?;
 
-        Ok((
-            PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series,
-            gil_contention_time,
-        ))
+            Ok((
+                PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series,
+                gil_contention_time,
+            ))
+        })
     }
 }

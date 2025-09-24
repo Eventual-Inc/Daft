@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_arrow_ffi as ffi;
-use common_file::DaftFile;
+use common_file::FileReference;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
@@ -16,10 +16,11 @@ use pyo3::{
 };
 
 use crate::{
-    array::{DataArray, ops::DaftLogical, pseudo_arrow::PseudoArrowArray},
+    array::ops::DaftLogical,
     count_mode::CountMode,
-    datatypes::{DataType, Field, FileArray, PythonType},
+    datatypes::{DataType, Field, FileArray},
     lit::Literal,
+    prelude::PythonArray,
     series::{self, IntoSeries, Series, from_lit::combine_lit_types},
     utils::{
         arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -35,15 +36,18 @@ pub struct PySeries {
 impl PySeries {
     pub fn from_pylist_impl(
         name: &str,
-        vec_pyobj: Vec<Py<PyAny>>,
+        vec_pyobj: Vec<Bound<PyAny>>,
         dtype: DataType,
     ) -> PyResult<Self> {
-        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
-        let field = Field::new(name, DataType::Python);
-        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = data_array.cast(&dtype)?;
+        let pyobjs_arced = vec_pyobj.into_iter().map(|obj| {
+            if obj.is_none() {
+                None
+            } else {
+                Some(Arc::new(obj.unbind()))
+            }
+        });
+        let arr = PythonArray::from_iter(name, pyobjs_arced);
+        let series = arr.cast(&dtype)?;
 
         Ok(series.into())
     }
@@ -126,11 +130,11 @@ impl PySeries {
                 let item = inner.getattr(py, "_get_file")?;
                 let item = item.call0(py)?;
 
-                let daft_file: DaftFile = item.extract(py)?;
+                let daft_file: FileReference = item.extract(py)?;
 
                 PyResult::Ok(daft_file)
             })
-            .collect::<PyResult<Vec<DaftFile>>>()?;
+            .collect::<PyResult<Vec<FileReference>>>()?;
         let file_array = FileArray::new_from_daft_files(name, files);
         let s = file_array.into_series();
         Ok(s.into())

@@ -51,27 +51,6 @@ impl StructArray {
     }
 }
 
-#[cfg(feature = "python")]
-impl PythonArray {
-    pub fn get_lit(&self, idx: usize) -> Literal {
-        use pyo3::prelude::*;
-
-        assert!(
-            idx < self.len(),
-            "Out of bounds: {} vs len: {}",
-            idx,
-            self.len()
-        );
-
-        let v = self.get(idx);
-        if Python::with_gil(|py| v.is_none(py)) {
-            Literal::Null
-        } else {
-            Literal::Python(v.into())
-        }
-    }
-}
-
 impl TensorArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(
@@ -269,6 +248,8 @@ impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);
 impl_array_get_lit!(EmbeddingArray, Embedding);
 impl_array_get_lit!(FileArray, File);
+#[cfg(feature = "python")]
+impl_array_get_lit!(PythonArray, Python);
 
 impl_array_get_lit!(Decimal128Array, DataType::Decimal128(precision, scale) => |v| Literal::Decimal(v, *precision as _, *scale as _));
 impl_array_get_lit!(TimestampArray, DataType::Timestamp(tu, tz) => |v| Literal::Timestamp(v, *tu, tz.clone()));

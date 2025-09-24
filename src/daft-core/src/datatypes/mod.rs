@@ -28,10 +28,14 @@ use serde::Serialize;
 
 pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 use crate::array::{ListArray, StructArray, ops::as_arrow::AsArrow};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 
 pub mod interval;
 pub mod logical;
 pub use interval::*;
+#[cfg(feature = "python")]
+pub mod python;
 
 /// Trait that is implemented by all Array types
 ///
@@ -81,23 +85,6 @@ macro_rules! impl_daft_arrow_datatype {
         }
 
         impl DaftArrowBackedType for $ca {}
-        impl DaftPhysicalType for $ca {}
-    };
-}
-
-macro_rules! impl_daft_non_arrow_datatype {
-    ($ca:ident, $variant:ident) => {
-        #[derive(Clone, Debug)]
-        pub struct $ca {}
-
-        impl DaftDataType for $ca {
-            #[inline]
-            fn get_dtype() -> DataType {
-                DataType::$variant
-            }
-
-            type ArrayType = DataArray<$ca>;
-        }
         impl DaftPhysicalType for $ca {}
     };
 }
@@ -253,7 +240,18 @@ impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
 
 #[cfg(feature = "python")]
-impl_daft_non_arrow_datatype!(PythonType, Python);
+#[derive(Clone, Debug)]
+pub struct PythonType {}
+
+#[cfg(feature = "python")]
+impl DaftDataType for PythonType {
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::Python
+    }
+
+    type ArrayType = PythonArray;
+}
 
 pub trait NumericNative:
     PartialOrd
@@ -412,9 +410,6 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
-
-#[cfg(feature = "python")]
-pub type PythonArray = DataArray<PythonType>;
 
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {

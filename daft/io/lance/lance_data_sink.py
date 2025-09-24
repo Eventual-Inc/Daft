@@ -47,7 +47,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     def __init__(
         self,
         uri: str | pathlib.Path,
-        schema: Schema,
+        schema: Schema | pa.Schema,
         mode: Literal["create", "append", "overwrite"],
         io_config: IOConfig | None = None,
         **kwargs: Any,
@@ -64,7 +64,12 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
         self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
 
-        self._pyarrow_schema = schema.to_pyarrow_schema()
+        if isinstance(schema, Schema):
+            self._pyarrow_schema = schema.to_pyarrow_schema()
+        elif isinstance(schema, pa.Schema):
+            self._pyarrow_schema = schema
+        else:
+            raise TypeError(f"Expected schema to be Schema or pa.Schema, got {type(schema)}")
 
         try:
             table = lance.dataset(self._table_uri, storage_options=self._storage_options)
@@ -105,12 +110,20 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         lance = self._import_lance()
 
         for micropartition in micropartitions:
-            arrow_table = pa.Table.from_batches(
-                micropartition.to_arrow().to_batches(),
-                self._pyarrow_schema,
-            )
+            # Build an Arrow table that conforms to either:
+            # - the existing dataset schema (if table already exists), or
+            # - the user-provided schema (if specified and different from incoming data), or
+            # - the incoming data schema (no-op) while attaching metadata/order from _pyarrow_schema.
+            input_table = micropartition.to_arrow()
             if self._table_schema is not None:
-                arrow_table = arrow_table.cast(self._table_schema)
+                # Dataset exists: always cast to the table schema to ensure compatibility on append
+                arrow_table = input_table.cast(self._table_schema)
+            elif not pa.Schema.equals(self._pyarrow_schema, input_table.schema):
+                # New dataset or overwrite with a user-provided schema: cast to enforce order/types/nullability
+                arrow_table = input_table.cast(self._pyarrow_schema)
+            else:
+                # Schemas are identical: rebuild table with the desired schema instance to preserve metadata
+                arrow_table = pa.Table.from_batches(input_table.to_batches(), self._pyarrow_schema)
 
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows

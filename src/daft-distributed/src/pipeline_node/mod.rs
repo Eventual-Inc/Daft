@@ -22,13 +22,12 @@ use itertools::Itertools;
 use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
-    plan::PlanID,
+    plan::{PlanExecutionContext, PlanID},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
-    stage::{StageConfig, StageExecutionContext, StageID},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -141,7 +140,6 @@ impl PipelineNodeConfig {
 #[derive(Clone)]
 pub(super) struct PipelineNodeContext {
     pub plan_id: PlanID,
-    pub stage_id: StageID,
     pub node_id: NodeID,
     pub node_name: NodeName,
     pub child_ids: Vec<NodeID>,
@@ -151,7 +149,7 @@ pub(super) struct PipelineNodeContext {
 
 impl PipelineNodeContext {
     pub fn new(
-        stage_config: &StageConfig,
+        plan_id: PlanID,
         node_id: NodeID,
         node_name: NodeName,
         child_ids: Vec<NodeID>,
@@ -159,8 +157,7 @@ impl PipelineNodeContext {
         logical_node_id: Option<NodeID>,
     ) -> Self {
         Self {
-            plan_id: stage_config.plan_id,
-            stage_id: stage_config.stage_id,
+            plan_id,
             node_id,
             node_name,
             child_ids,
@@ -172,7 +169,6 @@ impl PipelineNodeContext {
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         HashMap::from([
             ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), self.stage_id.to_string()),
             ("node_id".to_string(), self.node_id.to_string()),
             ("node_name".to_string(), self.node_name.to_string()),
             ("child_ids".to_string(), self.child_ids.iter().join(",")),
@@ -192,7 +188,7 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream;
     fn as_tree_display(&self) -> &dyn TreeDisplay;
     fn name(&self) -> NodeName {
@@ -201,10 +197,6 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     #[allow(dead_code)]
     fn plan_id(&self) -> PlanID {
         self.context().plan_id
-    }
-    #[allow(dead_code)]
-    fn stage_id(&self) -> StageID {
-        self.context().stage_id
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id

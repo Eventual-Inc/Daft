@@ -5,6 +5,8 @@ pub use crate::datatypes::logical::{
     FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, SparseTensorArray, TensorArray,
     TimeArray, TimestampArray,
 };
+#[cfg(feature = "python")]
+pub use crate::datatypes::python::PythonArray;
 pub use crate::{
     array::ops::{
         DaftCompare, DaftLogical, as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull,

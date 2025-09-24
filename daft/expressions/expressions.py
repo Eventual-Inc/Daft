@@ -2650,6 +2650,16 @@ class Expression:
 
         return image_mode(self)
 
+    def file_size(self) -> Expression:
+        """Gets the size of a file in bytes.
+
+        Tip: See Also
+            [`daft.functions.file_size`](https://docs.daft.ai/en/stable/api/functions/file_size/)
+        """
+        from daft.functions import file_size
+
+        return file_size(self)
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
