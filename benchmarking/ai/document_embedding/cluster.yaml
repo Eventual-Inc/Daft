@@ -30,7 +30,8 @@ available_node_types:
     node_config:
       InstanceType: g6.xlarge
       IamInstanceProfile:
-        Arn: ray-autoscaler-v1
+        Arn: arn:aws:iam::941892620273:instance-profile/ray-autoscaler-v1
+
       ImageId: ami-0976479b866d22613
       BlockDeviceMappings:
       - DeviceName: /dev/xvda
@@ -46,7 +47,7 @@ setup_commands:
 - echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
 - echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
 - source /opt/pytorch/bin/activate && pip install ray[default]==2.49.2 numpy==1.26.4 accelerate==1.10.1 transformers==4.56.2 sentence-transformers==5.1.1 langchain==0.3.27 pymupdf==1.26.4 pypdf>=6.1.0
-- source /opt/pytorch/bin/activate && pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/dev/26ad404cbcfc48155912a386c8b311a4d765f23c
+- source /opt/pytorch/bin/activate && pip install daft==0.6.2
 
 head_setup_commands:
 - source /opt/pytorch/bin/activate && pip install 'boto3>=1.4.8'

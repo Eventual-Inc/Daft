@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import pymupdf
 import torch
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from pypdf import PdfReader
 
 import daft
 from daft import col
@@ -22,35 +22,36 @@ EMBEDDING_BATCH_SIZE = 10
 from daft import DataType as dt
 
 daft.context.set_runner_ray()
-extract_text_type = dt.struct({"text": dt.string(), "page_number": dt.int64()})
+extract_text_type = dt.list(dt.struct({"text": dt.string(), "page_number": dt.int64()}))
+chunk_type = dt.list(dt.struct({"text": dt.string(), "chunk_id": dt.int64()}))
 
 
 @daft.func(return_dtype=extract_text_type)
-def extract_text_from_parsed_pdf(
-    file: daft.File,
-):
+def extract_text_from_parsed_pdf(bytes):
     try:
-        reader = PdfReader(file)
-        if len(reader.pages) > MAX_PDF_PAGES:
-            print(f"Skipping PDF because it has {len(reader.pages)} pages")
+        doc = pymupdf.Document(stream=bytes, filetype="pdf")
+        if len(doc) > MAX_PDF_PAGES:
+            print(f"Skipping PDF because it has {len(doc)} pages")
             return None
-        for page in reader.pages:
-            yield {"text": page.extract_text(), "page_number": page.page_number}
+        return [{"text": page.get_text(), "page_number": page.number} for page in doc]
+
     except Exception as e:
         print(f"Error extracting text from PDF {e}")
         return None
 
 
-@daft.func(return_dtype=dt.struct({"text": dt.string(), "chunk_id": dt.int64()}))
+@daft.func(return_dtype=chunk_type)
 def chunk(text):
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunk_iter = splitter.split_text(text)
 
-    for chunk_index, text in enumerate(chunk_iter):
-        yield {
+    return [
+        {
             "text": text,
             "chunk_id": chunk_index,
         }
+        for chunk_index, text in enumerate(chunk_iter)
+    ]
 
 
 @daft.udf(
@@ -81,15 +82,12 @@ df = df.where(daft.col("file_name").str.endswith(".pdf"))
 
 df = df.with_column(
     "pdf_bytes",
-    daft.functions.file(df["uploaded_pdf_path"], io_config=IOConfig(s3=S3Config.from_env())),
+    daft.functions.download(df["uploaded_pdf_path"], io_config=IOConfig(s3=S3Config.from_env())),
 )
-df = df.with_column("pages", extract_text_from_parsed_pdf(df["pdf_bytes"]))
+df = df.with_column("pages", extract_text_from_parsed_pdf(df["pdf_bytes"]).explode())
 df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pages")["page_number"]})
 df = df.where(daft.col("page_text").not_null())
-df = df.with_column(
-    "chunks",
-    chunk(df["page_text"]),
-)
+df = df.with_column("chunks", chunk(df["page_text"]).explode())
 df = df.with_columns({"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]})
 df = df.where(daft.col("chunk").not_null())
 df = df.with_column("embedding", Embedder(df["chunk"]))

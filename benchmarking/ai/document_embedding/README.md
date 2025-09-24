@@ -10,9 +10,11 @@ Generates embeddings for **10,000 PDF documents**. Extracts text, chunks content
 
 ## Performance Results
 
-| Engine   | Runtime |
-|----------|---------|
-| Daft     | 1m 54s  |
-| daft-file| 3m 41s  |
-| Ray Data | 16m 10s |
-| Spark    | 8m 4s   |
+| Engine                    | Runtime |
+| ------------------------- | ------- |
+| udf + download (original) | 1m 54s  |
+| func + download           | 1m 54s  |
+| func + file               | 4m 54s  |
+| udf + file                | 4m 14s  |
+| Ray Data                  | 16m 10s |
+| Spark                     | 8m 4s   |

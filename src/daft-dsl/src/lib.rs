@@ -52,5 +52,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::rank, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::dense_rank, parent)?)?;
 
+    parent.add_function(wrap_pyfunction!(python::deserialize_literals, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::serialize_literal, parent)?)?;
     Ok(())
 }

@@ -56,8 +56,7 @@ impl DaftFile {
         const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
         let mut reader = ObjectSourceReader::new(source, path, None, file_size, io_config);
-        if !supports_range || file_size < DEFAULT_BUFFER_SIZE {
-            dbg!(file_size);
+        if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
             let mut buf = Vec::with_capacity(file_size);
             reader.read_to_end(&mut buf)?;
             Ok(Self::from_bytes(buf))

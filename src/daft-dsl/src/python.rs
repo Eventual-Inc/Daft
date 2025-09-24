@@ -17,7 +17,7 @@ use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
+    types::{PyBool, PyBytes, PyFloat, PyInt, PyList, PyString},
 };
 use serde::{Deserialize, Serialize};
 
@@ -178,6 +178,21 @@ pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     literal_value(item).map(Expr::Literal).map(Into::into)
+}
+
+#[pyfunction]
+pub fn deserialize_literals(py: Python, items: Vec<u8>) -> PyResult<Vec<Bound<PyAny>>> {
+    let items: Vec<Literal> = bincode::deserialize(&items).unwrap();
+    items
+        .into_iter()
+        .map(|item| item.into_pyobject(py))
+        .collect::<PyResult<Vec<_>>>()
+}
+
+#[pyfunction]
+pub fn serialize_literal(obj: Bound<PyAny>) -> PyResult<Vec<u8>> {
+    let lit = literal_value(obj)?;
+    Ok(bincode::serialize(&lit).unwrap())
 }
 
 pub fn literal_value(item: Bound<PyAny>) -> PyResult<Literal> {
