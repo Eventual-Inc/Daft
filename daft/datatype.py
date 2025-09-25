@@ -221,16 +221,38 @@ class DataType:
             else:
                 inner_dtype = cls.python()
             return cls.tensor(inner_dtype)
-        elif check_type("pandas.Series"):
-            warnings.warn(
-                "Cannot derive inner type from pandas.Series type, defaulting to DataType.python() for Series inner type"
-            )
-            return cls.list(cls.python())
+        elif check_type("numpy.bool_"):
+            return cls.bool()
+        elif check_type("numpy.int8"):
+            return cls.int8()
+        elif check_type("numpy.uint8"):
+            return cls.uint8()
+        elif check_type("numpy.int16"):
+            return cls.int16()
+        elif check_type("numpy.uint16"):
+            return cls.uint16()
+        elif check_type("numpy.int32"):
+            return cls.int32()
+        elif check_type("numpy.uint32"):
+            return cls.uint32()
+        elif check_type("numpy.int64"):
+            return cls.int64()
+        elif check_type("numpy.uint64"):
+            return cls.uint64()
+        elif check_type("numpy.float32"):
+            return cls.float32()
+        elif check_type("numpy.float64"):
+            return cls.float64()
         elif check_type("numpy.datetime64"):
             warnings.warn(
                 "numpy.datetime64 may be converted to either timestamp or date based on the value, defaulting to DataType.timestamp(TimeUnit.us())"
             )
             return cls.timestamp(TimeUnit.us(), timezone=None)
+        elif check_type("pandas.Series"):
+            warnings.warn(
+                "Cannot derive inner type from pandas.Series type, defaulting to DataType.python() for Series inner type"
+            )
+            return cls.list(cls.python())
         elif check_type("PIL.Image.Image"):
             return cls.image()
         elif check_type(daft.series.Series):

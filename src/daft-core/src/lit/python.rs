@@ -263,6 +263,10 @@ impl Literal {
             ob.is_instance(&ty_obj)
         }
 
+        fn extract_numpy_scalar<'py, T: FromPyObject<'py>>(ob: &'py Bound<PyAny>) -> PyResult<T> {
+            ob.call_method0(intern!(ob.py(), "item"))?.extract()
+        }
+
         macro_rules! isinstance {
             ($ob:expr, $module:expr, $ty:expr) => {
                 isinstance_impl($ob, intern!($ob.py(), $module), intern!($ob.py(), $ty))
@@ -326,11 +330,33 @@ impl Literal {
         } else if isinstance!(ob, "decimal", "Decimal") {
             pydecimal_to_decimal_lit(ob)?
         } else if isinstance!(ob, "numpy", "ndarray") {
-            numpy_array_to_tensor_or_py_lit(ob)?
-        } else if isinstance!(ob, "pandas", "Series") {
-            pandas_series_to_list_lit(ob)?
+            numpy_array_to_tensor_lit(ob)?
+        } else if isinstance!(ob, "numpy", "bool_") {
+            Self::Boolean(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "int8") {
+            Self::Int8(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "uint8") {
+            Self::UInt8(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "int16") {
+            Self::Int16(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "uint16") {
+            Self::UInt16(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "int32") {
+            Self::Int32(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "uint32") {
+            Self::UInt32(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "int64") {
+            Self::Int64(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "uint64") {
+            Self::UInt64(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "float32") {
+            Self::Float32(extract_numpy_scalar(ob)?)
+        } else if isinstance!(ob, "numpy", "float64") {
+            Self::Float64(extract_numpy_scalar(ob)?)
         } else if isinstance!(ob, "numpy", "datetime64") {
             numpy_datetime64_to_date_or_timestamp_lit(ob)?
+        } else if isinstance!(ob, "pandas", "Series") {
+            pandas_series_to_list_lit(ob)?
         } else if isinstance!(ob, "PIL.Image", "Image") {
             pil_image_to_image_or_py_lit(ob)?
         } else if isinstance!(ob, "daft.series", "Series") {
@@ -578,10 +604,19 @@ fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     Ok(Literal::Decimal(val, precision, scale))
 }
 
-fn numpy_array_to_tensor_or_py_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
-    let Ok(arr) = ob.extract::<NumpyArray>() else {
-        // fall back to Python if we do not support the data type
-        return Ok(Literal::Python(Arc::new(ob.clone().unbind()).into()));
+fn numpy_array_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let arr = if let Ok(arr) = ob.extract::<NumpyArray>() {
+        arr
+    } else {
+        // if we do not support the element type, fall back to Python.
+        // Series::from_ndarray_flattened will then call Literal::from_pyobj to try to convert each element.
+        let py = ob.py();
+
+        // cast elements to Python object (character code "O")
+        let object_array = ob
+            .call_method1(intern!(py, "astype"), (intern!(py, "O"),))?
+            .extract()?;
+        NumpyArray::Py(object_array)
     };
 
     let arr = arr.to_ndarray();

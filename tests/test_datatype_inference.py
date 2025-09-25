@@ -42,8 +42,19 @@ from daft.file import File
         (tuple[str, int], dt.struct({"_0": dt.string(), "_1": dt.int64()})),
         (np.ndarray, dt.tensor(dt.python())),
         (npt.NDArray[int], dt.tensor(dt.int64())),
-        (pandas.Series, dt.list(dt.python())),
+        (np.bool_, dt.bool()),
+        (np.int8, dt.int8()),
+        (np.uint8, dt.uint8()),
+        (np.int16, dt.int16()),
+        (np.uint16, dt.uint16()),
+        (np.int32, dt.int32()),
+        (np.uint32, dt.uint32()),
+        (np.int64, dt.int64()),
+        (np.uint64, dt.uint64()),
+        (np.float32, dt.float32()),
+        (np.float64, dt.float64()),
         (np.datetime64, dt.timestamp(TimeUnit.us())),
+        (pandas.Series, dt.list(dt.python())),
         (PIL.Image.Image, dt.image()),
         (Series, dt.list(dt.python())),
         (File, dt.file()),
@@ -78,7 +89,17 @@ def test_infer_from_type(user_provided_type, expected_datatype):
         (("0", 1), dt.struct({"_0": dt.string(), "_1": dt.int64()})),
         (decimal.Decimal("1.5"), dt.decimal128(38, 1)),
         (np.array([1, 2, 3]), dt.tensor(dt.int64())),
-        (pandas.Series([1, 2, 3]), dt.list(dt.int64())),
+        (np.bool_(False), dt.bool()),
+        (np.int8(1), dt.int8()),
+        (np.uint8(1), dt.uint8()),
+        (np.int16(1), dt.int16()),
+        (np.uint16(1), dt.uint16()),
+        (np.int32(1), dt.int32()),
+        (np.uint32(1), dt.uint32()),
+        (np.int64(1), dt.int64()),
+        (np.uint64(1), dt.uint64()),
+        (np.float32(1.0), dt.float32()),
+        (np.float64(1.0), dt.float64()),
         (np.datetime64(1, "Y"), dt.date()),
         (np.datetime64(1, "M"), dt.date()),
         (np.datetime64(1, "W"), dt.date()),
@@ -90,6 +111,7 @@ def test_infer_from_type(user_provided_type, expected_datatype):
         (np.datetime64(1, "us"), dt.timestamp(TimeUnit.us())),
         (np.datetime64(1, "ns"), dt.timestamp(TimeUnit.ns())),
         (np.datetime64(1, "ps"), dt.timestamp(TimeUnit.ns())),
+        (pandas.Series([1, 2, 3]), dt.list(dt.int64())),
         (PIL.Image.new("L", (10, 20)), dt.image(ImageMode.L)),
         (PIL.Image.new("LA", (10, 20)), dt.image(ImageMode.LA)),
         (PIL.Image.new("RGB", (10, 20)), dt.image(ImageMode.RGB)),
@@ -181,3 +203,31 @@ def test_roundtrippable(obj):
     input = [None, obj, None]
     s = Series.from_pylist(input)
     assert input == s.to_pylist()
+
+
+@pytest.mark.parametrize(
+    "arr",
+    [
+        np.array([1, 2, 3], dtype=np.int64),
+        np.array([1.0, 2.0, 3.0], dtype=np.float64),
+        np.array([[1, 2], [3, 4]], dtype=np.int64),
+        np.array([["a", "b"], ["c", "d"]], dtype=object),
+        np.array([], dtype=np.float64),
+        np.array([True, False, True], dtype=bool),
+        np.array([1, 2, 3], dtype=np.uint8),
+        np.array([1, 2, 3], dtype=np.int8),
+        np.array([1, 2, 3], dtype=np.uint16),
+        np.array([1, 2, 3], dtype=np.int16),
+        np.array([1, 2, 3], dtype=np.uint32),
+        np.array([1, 2, 3], dtype=np.int32),
+        np.array([1, 2, 3], dtype=np.uint64),
+        np.array([1, 2, 3], dtype=np.float32),
+    ],
+)
+def test_roundtrippable_numpy(arr):
+    input = [None, arr, None]
+    s = Series.from_pylist(input)
+    pre, out_arr, post = s.to_pylist()
+    assert pre is None
+    assert post is None
+    assert (out_arr == arr).all()

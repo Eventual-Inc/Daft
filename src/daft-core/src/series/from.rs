@@ -40,24 +40,16 @@ impl Series {
             NdArray::F64(arr) => Float64Array::from((name, arr.flatten().to_vec())).into_series(),
             #[cfg(feature = "python")]
             NdArray::Py(arr) => {
-                use arrow2::bitmap::Bitmap;
-                use pyo3::Python;
+                use pyo3::{Python, types::PyList};
 
-                let validity =
-                    Python::with_gil(|py| arr.iter().map(|e| !e.0.is_none(py)).collect::<Bitmap>());
-                let validity = if validity.unset_bits() == 0 {
-                    None
-                } else {
-                    Some(validity)
-                };
+                use crate::python::PySeries;
 
-                let pyobj_vec = arr.iter().map(|e| e.0.clone()).collect::<Vec<_>>();
-                PythonArray::new(
-                    Arc::new(Field::new(name, DataType::Python)),
-                    pyobj_vec.into(),
-                    validity,
-                )
-                .into_series()
+                Python::with_gil(|py| {
+                    let pylist = PyList::new(py, arr.iter().map(|obj| obj.0.as_ref())).unwrap();
+                    PySeries::from_pylist(&pylist, Some(name), None)
+                        .unwrap()
+                        .series
+                })
             }
         }
     }
