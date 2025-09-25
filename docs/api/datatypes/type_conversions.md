@@ -87,9 +87,10 @@ To check the inferred DataType for a Python object, use [`DataType.infer_from_ob
 
 | **Python Object**                                           | **Daft Type**                     |
 |-------------------------------------------------------------|-----------------------------------|
-| `dict` object: `{ "k1": <T1>, "k2": <T2>, ... }`            | Struct[k1: T1, k2: T2, ...]       |
-| `decimal.Decimal` object with `N` digits after the dot      | Decimal128[precision=38, scale=N] |
-| `numpy.ndarray` object with element type `T`                | Tensor[T]                         |
+| `int` value greater than 2^63-1 (max i64 value)             | UInt64                            |
+| `dict` with fields: `{ "k1": <T1>, "k2": <T2>, ... }`       | Struct[k1: T1, k2: T2, ...]       |
+| `decimal.Decimal` with `N` digits after the dot             | Decimal128[precision=38, scale=N] |
+| `numpy.ndarray` with element type `T`                       | Tensor[T]                         |
 | `pandas.Series` with element type `T`                       | List[T]                           |
 | [`daft.Series`][daft.series.Series]  with element type  `T` | List[T]                           |
 | `numpy.datetime64` with `U` = [datetime unit](https://numpy.org/doc/stable/reference/arrays.datetime.html#datetime-units) | - Date if `U` = "Y", "M", "W", or "D"<br>- Timestamp[s] if `U` = "h", "m", or "s"<br>- Timestamp[ms] if `U` = "ms"<br>- Timestamp[us] if `U` = "us"<br>- Timestamp[ns] if `U` = "ns", "ps", "fs", or "as" |
