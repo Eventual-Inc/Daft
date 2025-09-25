@@ -1,6 +1,6 @@
 use std::sync::{
-    atomic::{AtomicU32, Ordering},
     Arc,
+    atomic::{AtomicU32, Ordering},
 };
 
 use common_error::DaftResult;
@@ -14,13 +14,13 @@ use daft_recordbatch::RecordBatch;
 use daft_shuffles::{
     server::flight_server::register_shuffle_cache, shuffle_cache::InProgressShuffleCache,
 };
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
