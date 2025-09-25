@@ -164,7 +164,7 @@ def np_datetime64_to_timestamp(dt: np.datetime64) -> tuple[int, PyTimeUnit | Non
     import numpy as np
 
     (unit, count) = np.datetime_data(dt.dtype)
-    val: np.int64 = dt.astype(np.int64) * count  # type: ignore
+    val: np.int64 = dt.astype(np.int64) * np.int64(count)
 
     if unit in ("Y", "M", "W", "D"):
         val = np.datetime64(dt, "D").astype(np.int64)
