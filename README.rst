@@ -142,7 +142,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Dataframe code to load a folder of images from AWS S3 and create thumbnails
    :height: 256
 
-.. |Benchmark Image| image:: https://github.com/Eventual-Inc/Daft/blob/main/docs/img/benchmark.png?raw=true
+.. |Benchmark Image| image:: https://github.com/user-attachments/assets/d66c9493-9b13-4a81-b73e-03f684446fc2
    :alt: AI Benchmarks
 
 .. |Banner| image:: https://daft.ai/images/diagram.png
