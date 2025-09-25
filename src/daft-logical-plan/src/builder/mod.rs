@@ -26,6 +26,8 @@ use resolve_expr::ExprResolver;
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
+    common_io_config::python::IOConfig as PyIOConfig,
+    common_scan_info::python::pylib::PyPushdowns,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -46,7 +48,7 @@ use crate::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::{InMemoryInfo, SourceInfo},
+    source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via
@@ -158,6 +160,24 @@ impl LogicalPlanBuilder {
             num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
             None,
+        ));
+        let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
+
+        Ok(Self::from(Arc::new(logical_plan)))
+    }
+
+    /// Creates a `LogicalPlan::Source` from glob paths.
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        schema: Arc<Schema>,
+        pushdowns: Option<common_scan_info::Pushdowns>,
+        io_config: Option<common_io_config::IOConfig>,
+    ) -> DaftResult<Self> {
+        let source_info = SourceInfo::GlobScan(GlobScanInfo::new(
+            glob_paths,
+            schema.clone(),
+            pushdowns.unwrap_or_default(),
+            io_config,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
@@ -1050,6 +1070,22 @@ impl PyLogicalPlanBuilder {
             num_partitions,
             size_bytes,
             num_rows,
+        )?
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        schema: PySchema,
+        pushdowns: Option<PyPushdowns>,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::from_glob_scan(
+            glob_paths,
+            schema.into(),
+            pushdowns.map(|p| p.0.as_ref().clone()),
+            io_config.map(|c| c.config),
         )?
         .into())
     }

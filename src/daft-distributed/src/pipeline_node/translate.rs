@@ -19,8 +19,9 @@ use daft_schema::schema::Schema;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
-        explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
-        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
+        explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
         sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
@@ -99,6 +100,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )
                         .arced()
                     }
+                    SourceInfo::GlobScan(info) => GlobScanSourceNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.stage_config,
+                        info.glob_paths.clone(),
+                        info.pushdowns.clone(),
+                        source.output_schema.clone(),
+                        logical_node_id,
+                        info.io_config.clone(),
+                    )
+                    .arced(),
                     SourceInfo::PlaceHolder(_) => unreachable!(
                         "PlaceHolder should not be present in the logical plan for pipeline node translation"
                     ),

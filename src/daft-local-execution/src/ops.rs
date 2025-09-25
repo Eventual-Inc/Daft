@@ -5,6 +5,7 @@ pub enum NodeType {
     // Sources
     // Produces MicroPartitions, never consumes
     EmptyScan,
+    GlobScan,
     InMemoryScan,
     ScanTask,
 

@@ -562,6 +562,9 @@ impl ToFromProto for ir::rel::SourceInfo {
                     "source_info placeholder should have been removed by optimizer."
                 );
             }
+            Self::GlobScan(_) => {
+                not_optimized_err!("GlobScan is not yet implemented in proto conversion.");
+            }
         };
         Ok(proto::SourceInfo {
             variant: Some(variant),
