@@ -4,18 +4,18 @@ use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use daft_core::prelude::Schema;
 use daft_dsl::{
-    expr::count_udfs,
-    functions::python::{get_udf_properties, UDFProperties},
     ExprRef,
+    expr::count_udfs,
+    functions::python::{UDFProperties, get_udf_properties},
 };
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{Error, Result},
     stats::StatsState,
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

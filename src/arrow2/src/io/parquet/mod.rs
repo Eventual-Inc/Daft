@@ -19,12 +19,8 @@ impl From<parquet2::error::Error> for Error {
                     .to_string();
                 Error::ExternalFormat(message)
             }
-            parquet2::error::Error::Transport(msg) => {
-                Error::Io(std::io::Error::new(std::io::ErrorKind::Other, msg))
-            }
-            parquet2::error::Error::IoError(msg) => {
-                Error::Io(std::io::Error::new(std::io::ErrorKind::Other, msg))
-            }
+            parquet2::error::Error::Transport(msg) => Error::Io(std::io::Error::other(msg)),
+            parquet2::error::Error::IoError(msg) => Error::Io(std::io::Error::other(msg)),
             _ => Error::ExternalFormat(error.to_string()),
         }
     }

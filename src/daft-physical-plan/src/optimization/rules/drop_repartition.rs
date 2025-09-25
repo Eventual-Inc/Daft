@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_logical_plan::partitioning::{ClusteringSpec, HashClusteringConfig};
 
-use crate::{optimization::rules::PhysicalOptimizerRule, PhysicalPlan, PhysicalPlanRef};
+use crate::{PhysicalPlan, PhysicalPlanRef, optimization::rules::PhysicalOptimizerRule};
 
 pub struct DropRepartitionPhysical {}
 
@@ -50,14 +50,14 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{resolved_col, ExprRef};
+    use daft_dsl::{ExprRef, resolved_col};
     use daft_logical_plan::partitioning::{ClusteringSpec, UnknownClusteringConfig};
 
     use super::DropRepartitionPhysical;
     use crate::{
+        PhysicalPlan, PhysicalPlanRef,
         ops::{EmptyScan, ShuffleExchangeFactory},
         optimization::rules::PhysicalOptimizerRule,
-        PhysicalPlan, PhysicalPlanRef,
     };
 
     fn create_dummy_plan(schema: SchemaRef, num_partitions: usize) -> PhysicalPlanRef {

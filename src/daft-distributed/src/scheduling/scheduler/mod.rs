@@ -16,7 +16,7 @@ mod scheduler_actor;
 
 use common_error::DaftResult;
 pub(crate) use scheduler_actor::{
-    spawn_default_scheduler_actor, SchedulerHandle, SubmittableTask, SubmittedTask,
+    SchedulerHandle, SubmittableTask, SubmittedTask, spawn_default_scheduler_actor,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -223,7 +223,11 @@ impl WorkerSnapshot {
 
 impl std::fmt::Debug for WorkerSnapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "WorkerSnapshot(worker_id = {}, total_num_cpus = {}, total_num_gpus = {}, active_task_details = {:#?})", self.worker_id, self.total_num_cpus, self.total_num_gpus, self.active_task_details)
+        write!(
+            f,
+            "WorkerSnapshot(worker_id = {}, total_num_cpus = {}, total_num_gpus = {}, active_task_details = {:#?})",
+            self.worker_id, self.total_num_cpus, self.total_num_gpus, self.active_task_details
+        )
     }
 }
 

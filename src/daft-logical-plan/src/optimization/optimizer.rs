@@ -37,7 +37,7 @@ impl OptimizerConfig {
 
 impl Default for OptimizerConfig {
     fn default() -> Self {
-        // Default to a max of 5 optimizer passes for a given batch.
+        // Default to a max of 20 optimizer passes for a given batch.
         Self::new(20, false)
     }
 }
@@ -185,7 +185,9 @@ impl OptimizerBuilder {
             ),
             // --- Push down aggregations ---
             RuleBatch::new(
-                vec![Box::new(PushDownAggregation::new())],
+                vec![Box::new(PushDownAggregation::new(
+                    self.config.strict_pushdown,
+                ))],
                 RuleExecutionStrategy::Once,
             ),
             // --- Shard pushdowns ---
@@ -268,11 +270,7 @@ impl OptimizerBuilder {
     }
 
     pub fn when(self, condition: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if condition {
-            f(self)
-        } else {
-            self
-        }
+        if condition { f(self) } else { self }
     }
 }
 
@@ -385,19 +383,20 @@ mod tests {
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
-        functions::{python::LegacyPythonUDF, FunctionExpr},
-        lit, resolved_col, unresolved_col, AggExpr, Expr,
+        AggExpr, Expr,
+        functions::{FunctionExpr, python::LegacyPythonUDF},
+        lit, resolved_col, unresolved_col,
     };
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
+        LogicalPlan,
         ops::{Filter, Project, UDFProject},
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
             dummy_scan_operator_for_aggregation,
         },
-        LogicalPlan,
     };
 
     /// Test that the optimizer terminates early when the plan is not transformed

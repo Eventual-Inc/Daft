@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
@@ -12,16 +12,16 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         SubmittableTaskStream,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
-    ((context.stage_id as u64) << 48) | ((context.plan_id as u64) << 32) | (context.node_id as u64)
+    ((context.plan_id as u64) << 32) | (context.node_id as u64)
 }
 
 pub(crate) struct FlightShuffleNode {
@@ -42,7 +42,7 @@ impl FlightShuffleNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         num_partitions: usize,
@@ -51,7 +51,7 @@ impl FlightShuffleNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -61,7 +61,7 @@ impl FlightShuffleNode {
         let shuffle_id = make_shuffle_id(&context);
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             repartition_spec
                 .to_clustering_spec(child.config().clustering_spec.num_partitions())
                 .into(),
@@ -184,9 +184,9 @@ impl DistributedPipelineNode for FlightShuffleNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
 
         let partition_by = match &self.repartition_spec {
@@ -215,8 +215,8 @@ impl DistributedPipelineNode for FlightShuffleNode {
 
         let (result_tx, result_rx) = create_channel(1);
 
-        let task_id_counter = stage_context.task_id_counter();
-        let scheduler_handle = stage_context.scheduler_handle();
+        let task_id_counter = plan_context.task_id_counter();
+        let scheduler_handle = plan_context.scheduler_handle();
 
         let flight_shuffle_execution = async move {
             self_arc
@@ -229,7 +229,7 @@ impl DistributedPipelineNode for FlightShuffleNode {
                 .await
         };
 
-        stage_context.spawn(flight_shuffle_execution);
+        plan_context.spawn(flight_shuffle_execution);
         SubmittableTaskStream::from(result_rx)
     }
 

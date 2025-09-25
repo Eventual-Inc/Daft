@@ -1,5 +1,3 @@
-#![feature(hash_raw_entry)]
-#![feature(let_chains)]
 mod batch;
 mod file;
 mod ipc;

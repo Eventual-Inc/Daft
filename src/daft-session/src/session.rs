@@ -271,10 +271,10 @@ impl Session {
     pub fn get_table(&self, name: &Identifier) -> CatalogResult<TableRef> {
         //
         // Rule 0: check temp tables.
-        if !name.has_qualifier() {
-            if let Some(view) = self.state().get_attached_table(name.name())? {
-                return Ok(view.clone());
-            }
+        if !name.has_qualifier()
+            && let Some(view) = self.state().get_attached_table(name.name())?
+        {
+            return Ok(view.clone());
         }
         //
         // Use session state, but error if there's no catalog and the table was not in temp tables.
@@ -455,8 +455,8 @@ mod tests {
     use daft_catalog::View;
     use daft_core::prelude::*;
     use daft_logical_plan::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
-        LogicalPlanRef, SourceInfo,
+        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo, ops::Source,
+        source_info::PlaceHolderInfo,
     };
 
     use super::*;
@@ -496,8 +496,9 @@ mod tests {
             .expect("failed to attach table");
 
         assert!(sess.get_table(&Identifier::simple("test_table")).is_ok());
-        assert!(sess
-            .get_table(&Identifier::simple("non_existent_table"))
-            .is_err());
+        assert!(
+            sess.get_table(&Identifier::simple("non_existent_table"))
+                .is_err()
+        );
     }
 }

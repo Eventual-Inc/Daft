@@ -7,16 +7,16 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
+use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_tracing::{finish_chrome_trace, flush_opentelemetry_providers, start_chrome_trace};
-use daft_local_plan::{translate, LocalPhysicalPlanRef};
+use common_tracing::flush_opentelemetry_providers;
+use daft_local_plan::{LocalPhysicalPlanRef, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
-    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
+    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
 };
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream::BoxStream};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
@@ -25,19 +25,19 @@ use {
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{
-        pyclass, pymethods, Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
+        Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
     },
 };
 
 use crate::{
-    channel::{create_channel, Receiver},
+    ExecutionRuntimeContext,
+    channel::{Receiver, create_channel},
     pipeline::{
-        get_pipeline_relationship_mapping, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
-        viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
+        RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
+        translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::RuntimeStatsManager,
-    ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -280,7 +280,6 @@ impl NativeExecutor {
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
-        start_chrome_trace();
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = translate_physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
@@ -367,7 +366,6 @@ impl NativeExecutor {
                 )?;
             }
             flush_opentelemetry_providers();
-            finish_chrome_trace();
             Ok(())
         });
 

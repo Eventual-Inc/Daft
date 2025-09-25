@@ -5,7 +5,7 @@ use daft_logical_plan::ops::UDFProject;
 use super::{ProtoResult, ToFromProto};
 use crate::{
     non_null, not_implemented_err, not_optimized_err,
-    proto::{from_proto, from_proto_arc, from_protos, to_proto_vec, to_protos, UNIT},
+    proto::{UNIT, from_proto, from_proto_arc, from_protos, to_proto_vec, to_protos},
 };
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.

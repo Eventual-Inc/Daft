@@ -3,13 +3,13 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ops::NodeType, pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
 
 pub(crate) enum IntoPartitionsState {
     Building(Vec<Arc<MicroPartition>>),
@@ -18,7 +18,7 @@ pub(crate) enum IntoPartitionsState {
 
 impl IntoPartitionsState {
     fn push(&mut self, part: Arc<MicroPartition>) {
-        if let Self::Building(ref mut parts) = self {
+        if let Self::Building(parts) = self {
             parts.push(part);
         } else {
             panic!("IntoPartitionsSink should be in Building state");
@@ -26,7 +26,7 @@ impl IntoPartitionsState {
     }
 
     fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
-        let res = if let Self::Building(ref mut parts) = self {
+        let res = if let Self::Building(parts) = self {
             std::mem::take(parts)
         } else {
             panic!("IntoPartitionsSink should be in Building state");

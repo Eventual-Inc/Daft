@@ -1,0 +1,10 @@
+[project]
+name = "audio-transcription"
+version = "0.1.0"
+description = "Audio transcription benchmarking"
+readme = "README.md"
+requires-python = "==3.12"
+dependencies = [
+  "daft==0.6.2",
+  "ray[default]==2.49.2"
+]

@@ -8,10 +8,10 @@ pub(crate) static MEMORY_MANAGER: OnceLock<Arc<MemoryManager>> = OnceLock::new()
 
 fn custom_memory_limit() -> Option<u64> {
     let memory_limit_var_name = "DAFT_MEMORY_LIMIT";
-    if let Ok(val) = std::env::var(memory_limit_var_name) {
-        if let Ok(val) = val.parse::<u64>() {
-            return Some(val);
-        }
+    if let Ok(val) = std::env::var(memory_limit_var_name)
+        && let Ok(val) = val.parse::<u64>()
+    {
+        return Some(val);
     }
     None
 }
@@ -76,7 +76,7 @@ impl MemoryManager {
         }
     }
 
-    pub async fn request_bytes(&self, bytes: u64) -> DaftResult<MemoryPermit> {
+    pub async fn request_bytes(&self, bytes: u64) -> DaftResult<MemoryPermit<'_>> {
         if bytes == 0 {
             return Ok(MemoryPermit {
                 bytes: 0,
@@ -99,7 +99,7 @@ impl MemoryManager {
         }
     }
 
-    fn try_request_bytes(&self, bytes: u64) -> Option<MemoryPermit> {
+    fn try_request_bytes(&self, bytes: u64) -> Option<MemoryPermit<'_>> {
         let mut state = self.state.lock().unwrap();
         if state.available_bytes >= bytes {
             state.available_bytes -= bytes;

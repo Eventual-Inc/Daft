@@ -1,12 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
+use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec};
+use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{
@@ -15,12 +15,12 @@ use super::{
 };
 use crate::{
     pipeline_node::NodeID,
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct ScanSourceNode {
@@ -36,14 +36,14 @@ impl ScanSourceNode {
 
     pub fn new(
         node_id: NodeID,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
         logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![],
@@ -51,8 +51,8 @@ impl ScanSourceNode {
             logical_node_id,
         );
 
-        let buckets = Self::create_buckets(&scan_tasks, &stage_config.config);
-        let num_buckets = if scan_tasks.is_empty() {
+        let buckets = Self::create_buckets(&scan_tasks, &plan_config.config);
+        let _num_buckets = if scan_tasks.is_empty() {
             1
         } else {
             buckets.len()
@@ -60,8 +60,10 @@ impl ScanSourceNode {
 
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
-            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_buckets)),
+            plan_config.config.clone(),
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(
+                scan_tasks.len(),
+            )),
         );
         Self {
             config,
@@ -223,11 +225,11 @@ impl DistributedPipelineNode for ScanSourceNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
-        stage_context.spawn(execution_loop);
+        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
     }

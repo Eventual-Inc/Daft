@@ -39,7 +39,9 @@ impl Iterator for RetrieveParquetMetadataIterator<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(_decision) = self.decider.next() {
-            todo!("Implement windowed metadata fetching and yielding of ParquetSplitScanTaskGenerator");
+            todo!(
+                "Implement windowed metadata fetching and yielding of ParquetSplitScanTaskGenerator"
+            );
         }
         None
     }

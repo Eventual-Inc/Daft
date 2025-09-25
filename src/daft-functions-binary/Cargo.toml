@@ -1,5 +1,6 @@
 [dependencies]
 arrow2 = {workspace = true}
+base64 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-macros = {path = "../common/macros"}
 daft-core = {path = "../daft-core", default-features = false}

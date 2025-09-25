@@ -1,17 +1,19 @@
 use std::sync::Arc;
 
 use arrow2::types::months_days_ns;
-use common_file::{DaftFile, DaftFileType};
+use common_file::{DaftFileType, FileReference};
 
 use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
         logical::{
             DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
-        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     series::Series,
 };
@@ -115,27 +117,19 @@ impl ExtensionArray {
 }
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
+impl PythonArray {
     #[inline]
-    pub fn get(&self, idx: usize) -> Arc<pyo3::PyObject> {
-        use arrow2::array::Array;
-        use pyo3::prelude::*;
-
+    pub fn get(&self, idx: usize) -> Option<Arc<pyo3::PyObject>> {
         assert!(
             idx < self.len(),
             "Out of bounds: {} vs len: {}",
             idx,
             self.len()
         );
-        let valid = self
-            .as_arrow()
-            .validity()
-            .map(|vd| vd.get_bit(idx))
-            .unwrap_or(true);
-        if valid {
-            self.as_arrow().values().get(idx).unwrap().clone()
+        if self.validity().is_none_or(|v| v.get_bit(idx)) {
+            self.values().get(idx).cloned()
         } else {
-            Arc::new(Python::with_gil(|py| py.None()))
+            None
         }
     }
 }
@@ -192,7 +186,7 @@ impl MapArray {
 impl FileArray {
     #[inline]
     #[cfg(feature = "python")]
-    pub fn get(&self, idx: usize) -> Option<DaftFile> {
+    pub fn get(&self, idx: usize) -> Option<FileReference> {
         let discriminant_array = self.discriminant_array();
         let discriminant = discriminant_array.get(idx)?;
 
@@ -208,9 +202,15 @@ impl FileArray {
                 let data = url_array.get(idx)?;
                 let io_config = io_config_array.get(idx);
                 let io_config: Option<common_io_config::python::IOConfig> =
-                    pyo3::Python::with_gil(|py| io_config.extract(py).ok().flatten());
+                    pyo3::Python::with_gil(|py| {
+                        io_config
+                            .map(|io_config| io_config.extract(py))
+                            .transpose()
+                            .ok()
+                            .flatten()
+                    });
 
-                Some(DaftFile::new_from_reference(
+                Some(FileReference::new_from_reference(
                     data.to_string(),
                     io_config.map(|conf| conf.config),
                 ))
@@ -220,14 +220,14 @@ impl FileArray {
                 let data_array = data_array.binary().expect("data is binary");
                 let data = data_array.get(idx)?;
                 let data = data.to_vec();
-                Some(DaftFile::new_from_data(data))
+                Some(FileReference::new_from_data(data))
             }
         }
     }
 
     #[inline]
     #[cfg(not(feature = "python"))]
-    pub fn get(&self, idx: usize) -> Option<DaftFile> {
+    pub fn get(&self, idx: usize) -> Option<FileReference> {
         unreachable!("FileArray.get() requires Python feature")
     }
 }

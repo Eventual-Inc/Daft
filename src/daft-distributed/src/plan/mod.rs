@@ -1,18 +1,17 @@
 use std::sync::{
-    atomic::{AtomicU16, Ordering},
     Arc,
+    atomic::{AtomicU16, Ordering},
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
-use futures::{stream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     pipeline_node::MaterializedOutput,
-    stage::StagePlan,
     utils::{
         channel::{Receiver, ReceiverStream},
         joinset::JoinSet,
@@ -21,7 +20,7 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::PlanRunner;
+pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
 
 static PLAN_ID_COUNTER: AtomicU16 = AtomicU16::new(0);
 pub(crate) type PlanID = u16;
@@ -29,8 +28,8 @@ pub(crate) type PlanID = u16;
 #[derive(Serialize, Deserialize)]
 pub(crate) struct DistributedPhysicalPlan {
     id: PlanID,
-    stage_plan: StagePlan,
     logical_plan: Arc<LogicalPlan>,
+    config: Arc<DaftExecutionConfig>,
 }
 
 impl DistributedPhysicalPlan {
@@ -39,12 +38,11 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let logical_plan = builder.build();
-        let stage_plan = StagePlan::from_logical_plan(logical_plan.clone(), config)?;
 
         Ok(Self {
             id: PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
-            stage_plan,
             logical_plan,
+            config,
         })
     }
 
@@ -56,8 +54,8 @@ impl DistributedPhysicalPlan {
         &self.logical_plan
     }
 
-    pub fn stage_plan(&self) -> &StagePlan {
-        &self.stage_plan
+    pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
+        &self.config
     }
 }
 

@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{parse_url, IOConfig, SourceType};
+use daft_io::{IOConfig, SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
     arrow::{
-        arrow_writer::{compute_leaves, get_column_writers, ArrowColumnChunk, ArrowLeafColumn},
         ArrowSchemaConverter,
+        arrow_writer::{ArrowColumnChunk, ArrowLeafColumn, compute_leaves, get_column_writers},
     },
     basic::Compression,
     file::{
@@ -21,9 +21,9 @@ use parquet::{
 };
 
 use crate::{
+    AsyncFileWriter,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
-    AsyncFileWriter,
 };
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
@@ -200,7 +200,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
                         None => {
                             return Err(DaftError::InternalError(
                                 "Mismatch between leaves and column slots".to_string(),
-                            ))
+                            ));
                         }
                     }
                 }

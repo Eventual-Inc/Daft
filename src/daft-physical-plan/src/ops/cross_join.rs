@@ -3,10 +3,10 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use daft_core::join::JoinSide;
 use daft_logical_plan::{
+    ClusteringSpec,
     partitioning::{
         ClusteringSpecRef, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
     },
-    ClusteringSpec,
 };
 use serde::{Deserialize, Serialize};
 

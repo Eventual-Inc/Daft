@@ -5,7 +5,7 @@ use common_scan_info::ScanState;
 use common_treenode::{Transformed, TreeNode};
 
 use super::OptimizerRule;
-use crate::{ops::Source, LogicalPlan, SourceInfo};
+use crate::{LogicalPlan, SourceInfo, ops::Source};
 
 #[derive(Default, Debug)]
 pub struct ShardScans {}
@@ -57,7 +57,7 @@ mod tests {
     use std::{collections::HashSet, sync::Arc};
 
     use common_scan_info::{
-        test::DummyScanOperator, Pushdowns, ScanOperator, Sharder, ShardingStrategy,
+        Pushdowns, ScanOperator, Sharder, ShardingStrategy, test::DummyScanOperator,
     };
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 

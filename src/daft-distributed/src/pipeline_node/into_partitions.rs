@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
@@ -10,17 +10,16 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
-        make_new_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, append_plan_to_existing_task,
+        make_in_memory_task_from_materialized_outputs, make_new_task_from_materialized_outputs,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         joinset::OrderedJoinSet,
     },
 };
@@ -39,13 +38,13 @@ impl IntoPartitionsNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         num_partitions: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -54,7 +53,7 @@ impl IntoPartitionsNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(UnknownClusteringConfig::new(num_partitions).into()),
         );
 
@@ -251,7 +250,7 @@ impl IntoPartitionsNode {
                 self.split_tasks(input_tasks, &scheduler_handle, &task_id_counter, result_tx)
                     .await?;
             }
-        };
+        }
         Ok(())
     }
 }
@@ -296,16 +295,16 @@ impl DistributedPipelineNode for IntoPartitionsNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_stream = self.child.clone().produce_tasks(stage_context);
+        let input_stream = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
 
-        stage_context.spawn(self.execute_into_partitions(
+        plan_context.spawn(self.execute_into_partitions(
             input_stream,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
+            plan_context.scheduler_handle(),
         ));
 
         SubmittableTaskStream::from(result_rx)

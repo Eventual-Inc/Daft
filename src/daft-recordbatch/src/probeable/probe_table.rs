@@ -1,17 +1,15 @@
-use std::{
-    collections::{hash_map::RawEntryMut, HashMap},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     prelude::SchemaRef,
     utils::{
-        dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
+        dyn_compare::{MultiDynArrayComparator, build_dyn_multi_array_compare},
         identity_hash_set::{IdentityBuildHasher, IndexHash},
     },
 };
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 use crate::RecordBatch;
@@ -38,12 +36,14 @@ impl ProbeTable {
                 Self::DEFAULT_SIZE,
                 Default::default(),
             );
-        if let Some(null_equal_aware) = null_equal_aware {
-            if null_equal_aware.len() != schema.len() {
-                return Err(DaftError::InternalError(
-                    format!("null_equal_aware should have the same length as the schema. Expected: {}, Found: {}",
-                            schema.len(), null_equal_aware.len())));
-            }
+        if let Some(null_equal_aware) = null_equal_aware
+            && null_equal_aware.len() != schema.len()
+        {
+            return Err(DaftError::InternalError(format!(
+                "null_equal_aware should have the same length as the schema. Expected: {}, Found: {}",
+                schema.len(),
+                null_equal_aware.len()
+            )));
         }
         let default_nulls_equal = vec![false; schema.len()];
         let nulls_equal = null_equal_aware.unwrap_or_else(|| default_nulls_equal.as_ref());
@@ -65,11 +65,12 @@ impl ProbeTable {
         input: &'a RecordBatch,
     ) -> DaftResult<impl Iterator<Item = Option<&'a [u64]>> + 'a> {
         assert_eq!(self.schema.len(), input.schema.len());
-        assert!(self
-            .schema
-            .into_iter()
-            .zip(input.schema.fields())
-            .all(|(l, r)| l.dtype == r.dtype));
+        assert!(
+            self.schema
+                .into_iter()
+                .zip(input.schema.fields())
+                .all(|(l, r)| l.dtype == r.dtype)
+        );
 
         let hashes = input.hash_rows()?;
 
@@ -83,24 +84,22 @@ impl ProbeTable {
 
         Ok(Box::new(iter.enumerate().map(move |(idx, h)| match h {
             Some(h) => {
-                let indices = if let Some((_, indices)) =
-                    self.hash_table.raw_entry().from_hash(h, |other| {
-                        h == other.hash && {
-                            let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
-                            let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
+                if let Some((_, indices)) = self.hash_table.raw_entry().from_hash(h, |other| {
+                    h == other.hash && {
+                        let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
+                        let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
 
-                            let other_table = self.tables.get(other_table_idx).unwrap();
+                        let other_table = self.tables.get(other_table_idx).unwrap();
 
-                            let other_refs = other_table.0.as_slice();
+                        let other_refs = other_table.0.as_slice();
 
-                            (self.compare_fn)(other_refs, &input_arrays, other_row_idx, idx).is_eq()
-                        }
-                    }) {
+                        (self.compare_fn)(other_refs, &input_arrays, other_row_idx, idx).is_eq()
+                    }
+                }) {
                     Some(indices.as_slice())
                 } else {
                     None
-                };
-                indices
+                }
             }
             None => None,
         })))
@@ -165,12 +164,17 @@ impl ProbeTable {
 }
 
 impl Probeable for ProbeTable {
-    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
+    fn probe_indices<'a>(
+        &'a self,
+        table: &'a RecordBatch,
+        prefix_sums: &'a [usize],
+    ) -> DaftResult<IndicesMapper<'a>> {
         let iter = self.probe(table)?;
         Ok(IndicesMapper::new(
             Box::new(iter),
             Self::TABLE_IDX_SHIFT,
             Self::LOWER_MASK,
+            prefix_sums,
         ))
     }
 

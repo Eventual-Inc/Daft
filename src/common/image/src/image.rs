@@ -2,7 +2,7 @@ use core::slice;
 use std::{hash::Hash, ops::Deref};
 
 use common_ndarray::NdArray;
-use image::{flat::SampleLayout, DynamicImage, ImageBuffer, Pixel};
+use image::{DynamicImage, ImageBuffer, Pixel, flat::SampleLayout};
 use ndarray::{Array3, ShapeBuilder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -138,7 +138,7 @@ impl Serialize for Image {
             _ => {
                 return Err(serde::ser::Error::custom(
                     "Unsupported DynamicImage variant",
-                ))
+                ));
             }
         };
 

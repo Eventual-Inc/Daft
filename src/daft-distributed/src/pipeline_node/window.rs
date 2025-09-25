@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{
+    WindowFrame,
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    window_to_agg_exprs, WindowFrame,
+    window_to_agg_exprs,
 };
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
@@ -14,7 +15,7 @@ use itertools::Itertools;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    stage::{StageConfig, StageExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct WindowNodeBase {
@@ -232,7 +233,7 @@ impl WindowNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -245,7 +246,7 @@ impl WindowNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -254,7 +255,7 @@ impl WindowNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(
                 HashClusteringConfig::new(
                     child.config().clustering_spec.num_partitions(),
@@ -403,9 +404,9 @@ impl DistributedPipelineNode for WindowNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child().clone().produce_tasks(stage_context);
+        let input_node = self.child().clone().produce_tasks(plan_context);
 
         // Pipeline the window op
         let self_clone = self.clone();

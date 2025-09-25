@@ -11,10 +11,10 @@ use pyo3::{intern, prelude::*};
 use snafu::ResultExt;
 
 use crate::{
+    IOClient, InvalidUrlSnafu, SourceType,
     object_io::{FileMetadata, GetResult, LSResult, ObjectSource},
     range::GetRange,
     stats::IOStatsRef,
-    IOClient, InvalidUrlSnafu, SourceType,
 };
 
 fn invalid_unity_path(path: &str) -> crate::Error {
@@ -155,6 +155,10 @@ impl UnitySource {
 
 #[async_trait]
 impl ObjectSource for UnitySource {
+    async fn supports_range(&self, _: &str) -> super::Result<bool> {
+        Ok(true)
+    }
+
     async fn get(
         &self,
         uri: &str,

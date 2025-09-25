@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self, CreationSnafu},
     stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

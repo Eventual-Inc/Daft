@@ -4,13 +4,13 @@ use common_error::DaftResult;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
-    ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner,
+    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
 };
 
 pub(crate) struct CrossJoinState {
@@ -142,7 +142,7 @@ impl IntermediateOperator for CrossJoinOperator {
         ]
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         Ok(CrossJoinState::new(self.state_bridge.clone()))
     }
 }

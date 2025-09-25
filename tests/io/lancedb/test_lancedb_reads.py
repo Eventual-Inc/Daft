@@ -39,11 +39,65 @@ def test_lancedb_read_filter(lance_dataset_path):
     assert df.to_pydict() == {"vector": data["vector"][:1]}
 
 
-def test_lancedb_read_limit(lance_dataset_path):
-    df = daft.read_lance(lance_dataset_path)
-    df = df.limit(1)
-    df = df.select("vector")
-    assert df.to_pydict() == {"vector": data["vector"][:1]}
+@pytest.fixture(scope="function")
+def large_lance_dataset_path(tmp_path_factory):
+    """Create a large Lance dataset with multiple fragments for testing limit operations."""
+    tmp_dir = tmp_path_factory.mktemp("large_lance")
+
+    # Create 10 fragments of 1000 rows each (10,000 total rows)
+    for frag_idx in range(10):
+        # Generate data for this fragment
+        vectors = [[float(i * 0.1 + frag_idx * 1000), float(i * 0.2 + frag_idx * 1000)] for i in range(1000)]
+        big_ints = [i + frag_idx * 1000 for i in range(1000)]
+
+        fragment_data = {"vector": vectors, "big_int": big_ints}
+
+        # Write fragment (first write creates dataset, subsequent writes append)
+        mode = "append" if frag_idx > 0 else None
+        lance.write_dataset(pa.Table.from_pydict(fragment_data), tmp_dir, mode=mode)
+
+    yield str(tmp_dir)
+
+
+@pytest.mark.parametrize(
+    "limit_size,expected_scan_tasks",
+    [
+        # Small limits
+        (1000, 1),
+        (1001, 2),
+        # Big limits
+        (9000, 9),
+        (9001, 10),
+        (10000, 10),
+    ],
+)
+def test_lancedb_read_limit_large_dataset(large_lance_dataset_path, limit_size, expected_scan_tasks):
+    """Test limit operation on a large Lance dataset with multiple fragments."""
+    import io
+
+    df = daft.read_lance(large_lance_dataset_path)
+
+    # Test with different limit sizes
+    df = df.limit(limit_size)
+    df = df.select("vector", "big_int")
+
+    # Capture the explain output
+    string_io = io.StringIO()
+    df.explain(True, file=string_io)
+    explain_output = string_io.getvalue()
+
+    # Assert that we have the expected number of scan tasks
+    assert f"Num Scan Tasks = {expected_scan_tasks}" in explain_output
+
+    result = df.to_pydict()
+
+    # Verify we got the expected number of rows
+    assert len(result["vector"]) == limit_size
+    assert len(result["big_int"]) == limit_size
+
+    # Verify the data is ordered correctly (should get first N rows)
+    expected_big_ints = list(range(limit_size))
+    assert result["big_int"] == expected_big_ints
 
 
 def test_lancedb_with_version(lance_dataset_path):
@@ -140,18 +194,64 @@ class TestLanceDBCountPushdown:
         result = df.to_pydict()
         assert result == {"count": [6]}
 
-    def test_count_no_pushdown_with_filter(self, dataset_path, capsys):
-        """Test count(*) does not use pushdown when filter is present."""
+    def test_count_with_filter_pushdown(self, dataset_path, capsys):
+        """Test count(*) uses filter+count pushdown when filter is present."""
+        daft.context.set_planning_config(enable_strict_filter_pushdown=True)
         df = daft.read_lance(dataset_path).filter(col("b").is_null()).count()
 
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "Pushdowns: {projection: [a], aggregation: count(col(a), All)}" not in actual.out
-        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" not in actual.out
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+        assert "Filter pushdown = is_null(col(b))" in actual.out
+        assert "Aggregation pushdown = count(col(b), All)" in actual.out
 
         result = df.to_pydict()
         assert result == {"count": [2]}
+
+    def test_count_with_or_filter_pushdown(self, dataset_path, capsys):
+        """Test count(*) uses filter+count pushdown when filter is present."""
+        daft.context.set_planning_config(enable_strict_filter_pushdown=True)
+        df = daft.read_lance(dataset_path).filter(col("b").is_null() | col("c").is_null()).count()
+
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+        assert "Filter pushdown = is_null(col(b)) | is_null(col(c))" in actual.out
+        assert "Aggregation pushdown = count(col(b), All)" in actual.out
+
+        result = df.to_pydict()
+        assert result == {"count": [3]}
+
+    def test_count_with_and_filter_pushdown(self, dataset_path, capsys):
+        """Test count(*) with complex filter conditions for filter+count pushdown."""
+        daft.context.set_planning_config(enable_strict_filter_pushdown=True)
+
+        df = daft.read_lance(dataset_path).filter((col("c") > 3) & ~col("b").is_null()).count()
+
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+        assert "Aggregation pushdown" in actual.out
+        assert "Filter pushdown" in actual.out
+
+        result = df.to_pydict()
+        assert result == {"count": [1]}
+
+    def test_count_with_filter_and_select_pushdown(self, dataset_path, capsys):
+        """Test count(*) with both filter and select operations for filter+count pushdown."""
+        daft.context.set_planning_config(enable_strict_filter_pushdown=True)
+        df = daft.read_lance(dataset_path).filter(~col("b").is_null()).select("a", "b").count()
+
+        _ = capsys.readouterr()
+        df.explain(True)
+        actual = capsys.readouterr()
+        assert "daft.io.lance.lance_scan:_lancedb_count_result_function" in actual.out
+
+        result = df.to_pydict()
+        assert result == {"count": [4]}
 
     def test_edge_case_empty_dataset(self, tmp_path_factory, capsys):
         """Test count pushdown on an empty dataset."""

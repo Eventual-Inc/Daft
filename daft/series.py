@@ -7,6 +7,7 @@ from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
+from daft.file import File
 from daft.schema import Field
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -47,10 +48,12 @@ class Series:
                 DataType from the data.
         """
         _ensure_registered_super_ext_type()
-        if (dtype and dtype.is_python()) or DataType.from_arrow_type(array.type).is_python():
+        try:
+            DataType.from_arrow_type(array.type, python_fallback=False)
+        except TypeError:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
-        elif isinstance(array, pa.Array):
+        if isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
@@ -105,6 +108,9 @@ class Series:
 
         # Otherwise, try to infer from parameters provided
         try:
+            if data and isinstance(data[0], File):
+                pys = PySeries.from_pylist_of_files(name, data)
+                return Series._from_pyseries(pys)
             # Workaround: wrap list of np.datetime64 in an np.array
             #   - https://github.com/apache/arrow/issues/40580
             #   - https://github.com/Eventual-Inc/Daft/issues/3826
@@ -620,6 +626,15 @@ class Series:
         assert self._series is not None and fill_value._series is not None
         return Series._from_pyseries(self._series.fill_null(fill_value._series))
 
+    def regexp_count(
+        self,
+        patterns: str | Series,
+    ) -> Series:
+        return self._eval_expressions(
+            "regexp_count",
+            patterns=patterns,
+        )
+
     def minhash(
         self,
         num_hashes: int,
@@ -711,10 +726,7 @@ class Series:
             tuple[pa.Array | pa.ChunkedArray, builtins.str, DataType],
         ]
     ):
-        if self.datatype().is_python():
-            return (Series.from_pylist, (self.to_pylist(), self.name(), self.datatype()))
-        else:
-            return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
+        return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
 
     def _debug_bincode_serialize(self) -> bytes:
         return self._series._debug_bincode_serialize()
@@ -837,8 +849,36 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("regexp_match", pattern)
 
     def split(self, pattern: Series, regex: bool = False) -> Series:
-        f_name = "regexp_split" if regex else "split"
-        return self._eval_expressions(f_name, pattern)
+        """Splits each string on the given literal pattern, into a list of strings.
+
+        Args:
+            pattern: The literal pattern on which each string should be split.
+            regex: DEPRECATED. Use regexp_split() instead for regex patterns.
+
+        Returns:
+            Series: A List[Utf8] series containing the string splits for each string.
+        """
+        if regex:
+            import warnings
+
+            warnings.warn(
+                "The 'regex' parameter in str.split() is deprecated and will be removed in v0.7.0. Use str.regexp_split() instead for regex patterns.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self.regexp_split(pattern)
+        return self._eval_expressions("split", pattern)
+
+    def regexp_split(self, pattern: Series) -> Series:
+        """Splits each string on the given regex pattern, into a list of strings.
+
+        Args:
+            pattern: The regex pattern on which each string should be split.
+
+        Returns:
+            Series: A List[Utf8] series containing the string splits for each string.
+        """
+        return self._eval_expressions("regexp_split", pattern)
 
     def concat(self, other: Series) -> Series:
         if not isinstance(other, Series):
@@ -931,7 +971,7 @@ class SeriesStringNamespace(SeriesNamespace):
 
     def count_matches(
         self,
-        patterns: list[str],
+        patterns: str | list[str],
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,

@@ -5,11 +5,13 @@ use arrow2::{
     types::months_days_ns,
 };
 use common_error::DaftResult;
+#[cfg(feature = "python")]
+use pyo3::PyObject;
 
 use super::DataArray;
 use crate::{
     array::prelude::*,
-    datatypes::{prelude::*, DaftPrimitiveType},
+    datatypes::{DaftPrimitiveType, prelude::*},
 };
 
 impl<T> DataArray<T>
@@ -188,5 +190,112 @@ impl IntervalArray {
             arrow2::array::MonthsDaysNsArray::from_trusted_len_values_iter(iter.map(|x| x.into())),
         );
         Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
+    }
+}
+
+#[cfg(feature = "python")]
+impl PythonArray {
+    /// Create a PythonArray from an iterator.
+    ///
+    /// Assumes that all Python objects are not None.
+    pub fn from_iter(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<Arc<PyObject>>>,
+    ) -> Self {
+        use arrow2::bitmap::MutableBitmap;
+        use pyo3::Python;
+
+        let (_, upper) = iter.size_hint();
+        let len = upper.expect("trusted_len_unzip requires an upper limit");
+
+        let mut values = Vec::with_capacity(len);
+        let mut validity = MutableBitmap::with_capacity(len);
+
+        let pynone = Arc::new(Python::with_gil(|py| py.None()));
+        for v in iter {
+            if let Some(obj) = &v {
+                debug_assert!(
+                    Python::with_gil(|py| !obj.is_none(py)),
+                    "PythonArray::from_iter requires all Python objects to be not None"
+                );
+            }
+
+            if let Some(obj) = v {
+                values.push(obj);
+                validity.push(true);
+            } else {
+                values.push(pynone.clone());
+                validity.push(false);
+            }
+        }
+
+        let validity = if validity.unset_bits() > 0 {
+            Some(validity.into())
+        } else {
+            None
+        };
+
+        Self::new(
+            Arc::new(Field::new(name, DataType::Python)),
+            values.into(),
+            validity,
+        )
+    }
+
+    /// Create a PythonArray from an iterator of pickled values.
+    ///
+    /// Assumes that all Python objects are not None.
+    pub fn from_iter_pickled<I, T>(name: &str, iter: I) -> DaftResult<Self>
+    where
+        I: arrow2::trusted_len::TrustedLen<Item = Option<T>>,
+        T: AsRef<[u8]>,
+    {
+        use arrow2::bitmap::MutableBitmap;
+        use pyo3::Python;
+
+        let (_, upper) = iter.size_hint();
+        let len = upper.expect("trusted_len_unzip requires an upper limit");
+
+        let mut values = Vec::with_capacity(len);
+        let mut validity = MutableBitmap::with_capacity(len);
+
+        Python::with_gil(|py| {
+            use pyo3::PyErr;
+
+            let pynone = Arc::new(py.None());
+            for v in iter {
+                if let Some(bytes) = v {
+                    use common_py_serde::pickle_loads;
+                    use pyo3::types::PyAnyMethods;
+
+                    let obj = pickle_loads(py, bytes)?;
+
+                    debug_assert!(
+                        !obj.is_none(),
+                        "PythonArray::from_iter requires all Python objects to be not None"
+                    );
+
+                    values.push(Arc::new(obj.unbind()));
+                    validity.push(true);
+                } else {
+                    values.push(pynone.clone());
+                    validity.push(false);
+                }
+            }
+
+            Ok::<_, PyErr>(())
+        })?;
+
+        let validity = if validity.unset_bits() > 0 {
+            Some(validity.into())
+        } else {
+            None
+        };
+
+        Ok(Self::new(
+            Arc::new(Field::new(name, DataType::Python)),
+            values.into(),
+            validity,
+        ))
     }
 }

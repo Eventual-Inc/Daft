@@ -7,28 +7,27 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
+    DisplayLevel,
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
-    DisplayLevel,
 };
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState, InMemoryInfo};
+use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream::BoxStream};
 use itertools::Itertools;
 use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
-    plan::PlanID,
+    plan::{PlanExecutionContext, PlanID},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
-    stage::{StageConfig, StageExecutionContext, StageID},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -46,6 +45,7 @@ mod join;
 mod limit;
 pub(crate) mod materialize;
 mod monotonically_increasing_id;
+mod pivot;
 mod project;
 mod sample;
 mod scan_source;
@@ -153,7 +153,6 @@ impl PipelineNodeConfig {
 #[derive(Clone)]
 pub(super) struct PipelineNodeContext {
     pub plan_id: PlanID,
-    pub stage_id: StageID,
     pub node_id: NodeID,
     pub node_name: NodeName,
     pub child_ids: Vec<NodeID>,
@@ -163,7 +162,7 @@ pub(super) struct PipelineNodeContext {
 
 impl PipelineNodeContext {
     pub fn new(
-        stage_config: &StageConfig,
+        plan_id: PlanID,
         node_id: NodeID,
         node_name: NodeName,
         child_ids: Vec<NodeID>,
@@ -171,8 +170,7 @@ impl PipelineNodeContext {
         logical_node_id: Option<NodeID>,
     ) -> Self {
         Self {
-            plan_id: stage_config.plan_id,
-            stage_id: stage_config.stage_id,
+            plan_id,
             node_id,
             node_name,
             child_ids,
@@ -184,7 +182,6 @@ impl PipelineNodeContext {
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         HashMap::from([
             ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), self.stage_id.to_string()),
             ("node_id".to_string(), self.node_id.to_string()),
             ("node_name".to_string(), self.node_name.to_string()),
             ("child_ids".to_string(), self.child_ids.iter().join(",")),
@@ -204,7 +201,7 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream;
     fn as_tree_display(&self) -> &dyn TreeDisplay;
     fn name(&self) -> NodeName {
@@ -213,10 +210,6 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     #[allow(dead_code)]
     fn plan_id(&self) -> PlanID {
         self.context().plan_id
-    }
-    #[allow(dead_code)]
-    fn stage_id(&self) -> StageID {
-        self.context().stage_id
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id
@@ -391,13 +384,12 @@ where
         task_context.add_logical_node_id(logical_node_id);
     }
 
-    let task = submittable_task.with_new_task(SwordfishTask::new(
+    submittable_task.with_new_task(SwordfishTask::new(
         task_context,
         new_plan,
         config,
         psets,
         scheduling_strategy,
         node.context().to_hashmap(),
-    ));
-    task
+    ))
 }

@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use hyperloglog::HyperLogLog;
 
 use crate::{
-    array::ops::{as_arrow::AsArrow, DaftHllMergeAggable, GroupIndices},
+    array::ops::{DaftHllMergeAggable, GroupIndices, as_arrow::AsArrow},
     datatypes::{FixedSizeBinaryArray, UInt64Array},
 };
 

@@ -6,10 +6,10 @@ use std::{
 };
 
 use aws_credential_types::{
-    provider::{error::CredentialsError, ProvideCredentials},
     Credentials,
+    provider::{ProvideCredentials, error::CredentialsError},
 };
-use chrono::{offset::Utc, DateTime};
+use chrono::{DateTime, offset::Utc};
 use common_error::DaftResult;
 use educe::Educe;
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,8 @@ pub struct S3Config {
     pub requester_pays: bool,
     pub force_virtual_addressing: bool,
     pub profile_name: Option<String>,
+    pub multipart_size: u64,
+    pub multipart_max_concurrency: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -218,6 +220,8 @@ impl Default for S3Config {
             requester_pays: false,
             force_virtual_addressing: false,
             profile_name: None,
+            multipart_size: 8 * 1024 * 1024, // 8MB
+            multipart_max_concurrency: 100,
         }
     }
 }

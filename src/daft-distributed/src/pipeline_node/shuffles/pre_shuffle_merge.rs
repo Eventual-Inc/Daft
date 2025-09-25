@@ -1,22 +1,22 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, MaterializedOutput,
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
         worker::WorkerId,
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct PreShuffleMergeNode {
@@ -32,13 +32,13 @@ impl PreShuffleMergeNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -47,7 +47,7 @@ impl PreShuffleMergeNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
 
@@ -111,21 +111,21 @@ impl DistributedPipelineNode for PreShuffleMergeNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
 
-        let task_id_counter = stage_context.task_id_counter();
-        let scheduler_handle = stage_context.scheduler_handle();
+        let task_id_counter = plan_context.task_id_counter();
+        let scheduler_handle = plan_context.scheduler_handle();
 
         let merge_execution = async move {
             self.execute_merge(input_node, task_id_counter, result_tx, scheduler_handle)
                 .await
         };
 
-        stage_context.spawn(merge_execution);
+        plan_context.spawn(merge_execution);
         SubmittableTaskStream::from(result_rx)
     }
 

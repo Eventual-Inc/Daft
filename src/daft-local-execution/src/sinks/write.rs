@@ -1,38 +1,38 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
 use common_error::DaftResult;
-use common_metrics::{snapshot, Stat, StatSnapshotSend};
+use common_metrics::{Stat, StatSnapshotSend, snapshot};
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriterFactory};
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
 use crate::{
+    ExecutionTaskSpawner,
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
     ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{RuntimeStats, CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY},
-    ExecutionTaskSpawner,
+    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
 };
 
 #[derive(Default)]
 struct WriteStats {
     cpu_us: AtomicU64,
-    rows_received: AtomicU64,
-    rows_emitted: AtomicU64, // TODO: Remove or rename to files written?
+    rows_in: AtomicU64,
+    rows_out: AtomicU64, // TODO: Remove or rename to files written?
     bytes_written: AtomicU64,
 }
 
@@ -44,18 +44,18 @@ impl RuntimeStats for WriteStats {
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            ROWS_RECEIVED_KEY; Stat::Count(self.rows_received.load(ordering)),
-            ROWS_EMITTED_KEY; Stat::Count(self.rows_emitted.load(ordering)),
+            ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),
+            ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
             "bytes written"; Stat::Bytes(self.bytes_written.load(ordering)),
         ]
     }
 
-    fn add_rows_received(&self, rows: u64) {
-        self.rows_received.fetch_add(rows, Ordering::Relaxed);
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.fetch_add(rows, Ordering::Relaxed);
     }
 
-    fn add_rows_emitted(&self, rows: u64) {
-        self.rows_emitted.fetch_add(rows, Ordering::Relaxed);
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.fetch_add(rows, Ordering::Relaxed);
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {

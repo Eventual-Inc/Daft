@@ -3,16 +3,16 @@ use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::{
+        ListArray,
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
             DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable, DaftSumAggable, GroupIndices,
         },
-        ListArray,
     },
     count_mode::CountMode,
     datatypes::*,
-    series::{array_impl::IntoSeries, Series},
+    series::{Series, array_impl::IntoSeries},
     with_match_physical_daft_types,
 };
 
@@ -258,6 +258,8 @@ impl Series {
             }
             #[cfg(feature = "python")]
             DataType::Python => {
+                use crate::prelude::PythonArray;
+
                 let downcasted = self.downcast::<PythonArray>()?;
                 match groups {
                     Some(groups) => {

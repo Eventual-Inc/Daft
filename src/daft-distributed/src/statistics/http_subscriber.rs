@@ -1,10 +1,10 @@
 use std::{collections::HashMap, env, sync::Arc};
 
 use common_error::DaftResult;
-use common_runtime::{get_io_runtime, RuntimeTask};
+use common_runtime::{RuntimeTask, get_io_runtime};
 use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{watch, Notify};
+use tokio::sync::{Notify, watch};
 
 use crate::{
     pipeline_node::NodeID,
@@ -263,55 +263,55 @@ impl HttpSubscriber {
             }
             StatisticsEvent::TaskScheduled { context } => {
                 let plan_id = context.plan_id;
-                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
-                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
-                        task_state.status = TaskExecutionStatus::Running;
-                        task_state.pending += 1;
-                    }
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id)
+                    && let Some(task_state) = plan_data.tasks.get_mut(context)
+                {
+                    task_state.status = TaskExecutionStatus::Running;
+                    task_state.pending += 1;
                 }
             }
             StatisticsEvent::TaskCompleted { context } => {
                 let plan_id = context.plan_id;
-                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
-                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
-                        task_state.status = TaskExecutionStatus::Completed;
-                        if task_state.pending > 0 {
-                            task_state.pending -= 1;
-                        }
-                        task_state.completed += 1;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id)
+                    && let Some(task_state) = plan_data.tasks.get_mut(context)
+                {
+                    task_state.status = TaskExecutionStatus::Completed;
+                    if task_state.pending > 0 {
+                        task_state.pending -= 1;
                     }
+                    task_state.completed += 1;
                 }
             }
             StatisticsEvent::TaskStarted { context } => {
                 let plan_id = context.plan_id;
-                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
-                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
-                        task_state.status = TaskExecutionStatus::Running;
-                    }
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id)
+                    && let Some(task_state) = plan_data.tasks.get_mut(context)
+                {
+                    task_state.status = TaskExecutionStatus::Running;
                 }
             }
             StatisticsEvent::TaskFailed { context, .. } => {
                 let plan_id = context.plan_id;
-                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
-                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
-                        task_state.status = TaskExecutionStatus::Failed;
-                        if task_state.pending > 0 {
-                            task_state.pending -= 1;
-                        }
-                        task_state.failed += 1;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id)
+                    && let Some(task_state) = plan_data.tasks.get_mut(context)
+                {
+                    task_state.status = TaskExecutionStatus::Failed;
+                    if task_state.pending > 0 {
+                        task_state.pending -= 1;
                     }
+                    task_state.failed += 1;
                 }
             }
             StatisticsEvent::TaskCancelled { context } => {
                 let plan_id = context.plan_id;
-                if let Some(plan_data) = self.plan_data.get_mut(&plan_id) {
-                    if let Some(task_state) = plan_data.tasks.get_mut(context) {
-                        task_state.status = TaskExecutionStatus::Canceled;
-                        if task_state.pending > 0 {
-                            task_state.pending -= 1;
-                        }
-                        task_state.canceled += 1;
+                if let Some(plan_data) = self.plan_data.get_mut(&plan_id)
+                    && let Some(task_state) = plan_data.tasks.get_mut(context)
+                {
+                    task_state.status = TaskExecutionStatus::Canceled;
+                    if task_state.pending > 0 {
+                        task_state.pending -= 1;
                     }
+                    task_state.canceled += 1;
                 }
             }
             StatisticsEvent::PlanSubmitted {
@@ -443,7 +443,6 @@ impl HttpSubscriber {
                     existing_node.description.clone_from(&task_state.name);
                     existing_node.metadata = HashMap::from([
                         ("plan_id".to_string(), context.plan_id.to_string()),
-                        ("stage_id".to_string(), context.stage_id.to_string()),
                         ("node_id".to_string(), node_id.to_string()),
                     ]);
 
@@ -506,10 +505,10 @@ impl StatisticsSubscriber for HttpSubscriber {
         self.ingest_event(event);
 
         // Only flush HTTP requests on plan completion
-        if let StatisticsEvent::PlanFinished { .. } = event {
-            if let Err(e) = self.flush() {
-                tracing::warn!(target: HTTP_LOG_TARGET, "Failed to flush pending HTTP work: {}", e);
-            }
+        if let StatisticsEvent::PlanFinished { .. } = event
+            && let Err(e) = self.flush()
+        {
+            tracing::warn!(target: HTTP_LOG_TARGET, "Failed to flush pending HTTP work: {}", e);
         }
 
         Ok(())

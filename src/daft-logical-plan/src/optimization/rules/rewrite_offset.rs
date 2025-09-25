@@ -4,9 +4,9 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 
 use crate::{
+    LogicalPlan,
     ops::{Limit as LogicalLimit, Offset as LogicalOffset},
     optimization::rules::OptimizerRule,
-    LogicalPlan,
 };
 
 /// This rule is mainly used to rewrite the `Offset` node into a `Limit` node.
@@ -85,13 +85,13 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
+        LogicalPlan,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::RewriteOffset,
             test::{assert_optimized_plan_with_rules_eq, assert_optimized_plan_with_rules_err},
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the RewriteOffset rule registered, optimizes

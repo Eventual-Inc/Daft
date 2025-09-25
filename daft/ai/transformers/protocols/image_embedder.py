@@ -9,7 +9,7 @@ from transformers import AutoConfig, AutoModel, AutoProcessor
 from daft import DataType
 from daft.ai.protocols import ImageEmbedder, ImageEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, Options
-from daft.ai.utils import get_device
+from daft.ai.utils import get_torch_device
 from daft.dependencies import pil_image
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ class TransformersImageEmbedder(ImageEmbedder):
     options: Options
 
     def __init__(self, model_name_or_path: str, **options: Any):
-        self.device = get_device()
+        self.device = get_torch_device()
         self.model = AutoModel.from_pretrained(
             model_name_or_path,
             trust_remote_code=True,

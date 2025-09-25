@@ -6,11 +6,11 @@ use std::{
     sync::Arc,
 };
 
-use base64::{engine::general_purpose, DecodeError, Engine};
+use base64::{DecodeError, Engine, engine::general_purpose};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
-use daft_io::{get_io_client, IOConfig};
-use snafu::{prelude::*, Snafu};
+use daft_io::{IOConfig, get_io_client};
+use snafu::{Snafu, prelude::*};
 use tiktoken_rs::CoreBPE;
 
 use crate::special_tokens::get_special_tokens;

@@ -33,9 +33,20 @@ impl StructArray {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::Struct(fields) => {
-                assert!(fields.len() == children.len(), "StructArray::new received {} children arrays but expected {} for specified dtype: {}", children.len(), fields.len(), &field.as_ref().dtype);
+                assert!(
+                    fields.len() == children.len(),
+                    "StructArray::new received {} children arrays but expected {} for specified dtype: {}",
+                    children.len(),
+                    fields.len(),
+                    &field.as_ref().dtype
+                );
                 for (dtype_field, series) in fields.iter().zip(children.iter()) {
-                    assert!(!(&dtype_field.dtype != series.data_type()), "StructArray::new received an array with dtype: {} but expected child field: {}", series.data_type(), dtype_field);
+                    assert!(
+                        !(&dtype_field.dtype != series.data_type()),
+                        "StructArray::new received an array with dtype: {} but expected child field: {}",
+                        series.data_type(),
+                        dtype_field
+                    );
                     assert!(
                         dtype_field.name == series.name(),
                         "StructArray::new received a series with name: {} but expected name: {}",
@@ -51,7 +62,12 @@ impl StructArray {
                 };
 
                 for s in &children {
-                    assert!(s.len() == len, "StructArray::new expects all children to have the same length, but received: {} vs {}", s.len(), len);
+                    assert!(
+                        s.len() == len,
+                        "StructArray::new expects all children to have the same length, but received: {} vs {}",
+                        s.len(),
+                        len
+                    );
                 }
                 if let Some(some_validity) = &validity
                     && some_validity.len() != len
@@ -123,6 +139,10 @@ impl StructArray {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn field(&self) -> &Field {
+        &self.field
     }
 
     pub fn name(&self) -> &str {
