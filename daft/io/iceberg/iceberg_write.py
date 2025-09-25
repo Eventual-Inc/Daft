@@ -186,12 +186,20 @@ def make_iceberg_data_file(
             parquet_column_mapping=parquet_path_to_id_mapping(schema),
         )
 
-        data_file = DataFile(
-            **{
-                **kwargs,
-                **statistics.to_serialized_dict(),
-            }
-        )
+        if parse(pyiceberg.__version__) >= parse("0.10.0"):
+            data_file = DataFile.from_args(
+                **{
+                    **kwargs,
+                    **statistics.to_serialized_dict(),
+                }
+            )
+        else:
+            data_file = DataFile(
+                **{
+                    **kwargs,
+                    **statistics.to_serialized_dict(),
+                }
+            )
     else:
         from pyiceberg.io.pyarrow import fill_parquet_file_metadata
 
@@ -251,11 +259,15 @@ class IcebergWriteVisitors:
 
 
 def make_iceberg_record(partition_values: dict[str, Any] | None) -> IcebergRecord:
+    import pyiceberg
+    from packaging.version import parse
     from pyiceberg.typedef import Record as IcebergRecord
 
     if partition_values:
-        iceberg_part_vals = {k: to_partition_representation(v) for k, v in partition_values.items()}
-        return IcebergRecord(**iceberg_part_vals)
+        if parse(pyiceberg.__version__) >= parse("0.10.0"):
+            return IcebergRecord(*[to_partition_representation(v) for v in partition_values.values()])
+
+        return IcebergRecord(**{k: to_partition_representation(v) for k, v in partition_values.items()})
     else:
         return IcebergRecord()
 

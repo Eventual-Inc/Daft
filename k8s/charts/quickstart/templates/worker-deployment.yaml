@@ -1,0 +1,148 @@
+{{- if .Values.distributed }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "daft.fullname" . }}-worker
+  labels:
+    {{- include "daft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+    ray.io/node-type: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "daft.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+      ray.io/node-type: worker
+  template:
+    metadata:
+      labels:
+        {{- include "daft.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+        ray.io/node-type: worker
+        ray.io/cluster: {{ include "daft.fullname" . }}
+        ray.io/identifier: {{ include "daft.fullname" . }}-worker
+        ray.io/is-ray-node: "yes"
+    spec:
+      serviceAccountName: {{ include "daft.serviceAccountName" . }}
+      initContainers:
+      - name: wait-for-ray-head
+        image: "{{ .Values.image }}"
+        imagePullPolicy: "{{ .Values.imagePullPolicy }}"
+        command:
+          - /bin/sh
+          - -c
+          - --
+        args:
+          - |
+            until ray health-check --address $(FQ_RAY_IP):6379 > /dev/null 2>&1; do
+              echo "Waiting for GCS to be ready."
+              sleep 1
+            done
+            echo "GCS is ready."
+        env:
+        - name: FQ_RAY_IP
+          value: "{{ include "daft.headServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+      containers:
+      - name: ray-worker
+        image: "{{ .Values.image }}"
+        imagePullPolicy: "{{ .Values.imagePullPolicy }}"
+        command: ["/bin/bash", "-c", "--"]
+        args:
+        - |
+          ulimit -n 65536;
+          ray start --block \
+            --address={{ include "daft.headServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local:6379 \
+            --dashboard-agent-listen-port=52365 \
+            --memory={{ include "daft.calculateRayMemory" .Values.worker.resources.requests.memory }} \
+            --metrics-export-port=8080 \
+            --num-cpus={{ include "daft.calculateRayCpus" .Values.worker.resources.requests.cpu }} \
+        env:
+        - name: FQ_RAY_IP
+          value: "{{ include "daft.headServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+        - name: RAY_IP
+          value: "{{ include "daft.headServiceName" . }}"
+        - name: RAY_CLUSTER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['ray.io/cluster']
+        - name: RAY_CLOUD_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: RAY_NODE_TYPE_NAME
+          value: "worker"
+        - name: RAY_PORT
+          value: "6379"
+        - name: RAY_ADDRESS
+          value: "{{ include "daft.headServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local:6379"
+        - name: RAY_DASHBOARD_ENABLE_K8S_DISK_USAGE
+          value: "1"
+        {{- with .Values.worker.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - ray
+            - health-check
+          failureThreshold: 120
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - ray
+            - health-check
+          failureThreshold: 10
+          initialDelaySeconds: 1
+          periodSeconds: 1
+          successThreshold: 1
+          timeoutSeconds: 5
+        {{- with .Values.worker.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: shm
+        - mountPath: /tmp/ray
+          name: ray-state
+        {{- with .Values.worker.volumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+      - name: shm
+        emptyDir:
+          medium: Memory
+      - name: ray-state
+        emptyDir: {}
+      {{- with .Values.volumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
