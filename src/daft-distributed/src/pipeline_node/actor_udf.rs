@@ -7,7 +7,10 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use pyo3::{PyObject, Python, types::PyAnyMethods};
+use pyo3::{
+    PyObject, Python,
+    types::{PyAnyMethods, PyDict},
+};
 
 use super::{
     DisplayLevel, DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig,
@@ -63,6 +66,17 @@ impl UDFActors {
                 None => (0.0, 0.0, 0),
             };
 
+        let runtime_env = match &udf_properties.runtime_env {
+            Some(env) => Python::with_gil(|py| -> DaftResult<Option<PyObject>> {
+                let dict = PyDict::new(py);
+                if let Some(conda_env) = &env.conda_env {
+                    dict.set_item("conda", conda_env)?;
+                }
+                Ok(Some(dict.into()))
+            })?,
+            None => None,
+        };
+
         // Use async pattern similar to DistributedActorPoolProjectOperator
         let await_coroutine = async move {
             let result = Python::with_gil(|py| {
@@ -77,6 +91,7 @@ impl UDFActors {
                         cpu_request,
                         memory_request,
                         actor_ready_timeout,
+                        runtime_env,
                     ),
                 )?;
                 pyo3_async_runtimes::tokio::into_future(coroutine)
@@ -260,6 +275,14 @@ impl ActorUDF {
         } else {
             res.push("Resource request = None".to_string());
         }
+
+        if let Some(runtime_env) = self.udf_properties.runtime_env.clone() {
+            res.push(format!(
+                "Runtime env = {{ {} }}",
+                runtime_env.multiline_display().join(", ")
+            ));
+        }
+
         res
     }
 }
