@@ -3,12 +3,8 @@ name = "document-embedding"
 version = "0.1.0"
 description = "Benchmark for document embedding using AI models"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = "==3.12"
 dependencies = [
-  "boto3>=1.40.14",
-  "daft==0.5.21",
-  "ipython>=8.18.1",
-  "pillow>=11.3.0",
-  "pymupdf>=1.26.3",
-  "ray[default]>=2.48.0"
+  "daft==0.6.2",
+  "ray[default]==2.49.2"
 ]
