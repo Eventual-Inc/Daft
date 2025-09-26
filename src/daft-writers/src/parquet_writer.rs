@@ -21,7 +21,7 @@ use parquet::{
 };
 
 use crate::{
-    AsyncFileWriter,
+    AsyncFileWriter, WriteResult,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
 };
@@ -258,10 +258,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
+        let num_rows = data.len();
         let record_batches = data.get_tables()?;
 
         let row_group_writer_thread_handle = {
@@ -334,7 +335,10 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         self.total_bytes_written = file_writer.bytes_written();
         self.file_writer.replace(file_writer);
 
-        Ok(bytes_written)
+        Ok(WriteResult {
+            bytes_written,
+            rows_written: num_rows,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {

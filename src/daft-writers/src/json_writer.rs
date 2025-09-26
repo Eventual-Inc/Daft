@@ -11,7 +11,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
-    AsyncFileWriter,
+    AsyncFileWriter, WriteResult,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
 };
@@ -113,10 +113,11 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
+        let num_rows = data.len();
         // TODO(desmond): This is a hack to estimate the size in bytes. Arrow-json currently doesn't support getting the
         // bytes written, nor does it allow us to access the LineDelimitedWriter's inner writer which prevents
         // us from using a counting writer. We need to fix this upstream.
@@ -144,7 +145,10 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
         self.file_writer.replace(file_writer);
 
-        Ok(est_bytes_to_write)
+        Ok(WriteResult {
+            bytes_written: est_bytes_to_write,
+            rows_written: num_rows,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {

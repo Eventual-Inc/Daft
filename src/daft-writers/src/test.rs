@@ -11,7 +11,7 @@ use daft_recordbatch::RecordBatch;
 
 use crate::{
     AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, TargetFileSizeWriterFactory,
-    TargetInMemorySizeBytesCalculator, WriterFactory,
+    TargetInMemorySizeBytesCalculator, WriteResult, WriterFactory,
 };
 
 pub struct DummyWriterFactory;
@@ -49,11 +49,14 @@ impl AsyncFileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
         self.write_count += 1;
         let size_bytes = input.size_bytes().unwrap();
         self.byte_count += size_bytes;
-        Ok(size_bytes)
+        Ok(WriteResult {
+            bytes_written: size_bytes,
+            rows_written: input.len(),
+        })
     }
 
     fn bytes_written(&self) -> usize {
@@ -151,7 +154,7 @@ impl AsyncFileWriter for FailingWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
         if self.fail_on_write {
             return Err(common_error::DaftError::ValueError(
                 "Intentional failure in FailingWriter::write".to_string(),
@@ -161,7 +164,10 @@ impl AsyncFileWriter for FailingWriter {
         self.write_count += 1;
         let size_bytes = input.size_bytes().unwrap();
         self.byte_count += size_bytes;
-        Ok(size_bytes)
+        Ok(WriteResult {
+            bytes_written: size_bytes,
+            rows_written: input.len(),
+        })
     }
 
     fn bytes_written(&self) -> usize {

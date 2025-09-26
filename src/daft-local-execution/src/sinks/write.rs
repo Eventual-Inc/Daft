@@ -13,7 +13,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_writers::{AsyncFileWriter, WriterFactory};
+use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
@@ -25,15 +25,24 @@ use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
     ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, RuntimeStats},
 };
 
 #[derive(Default)]
 struct WriteStats {
     cpu_us: AtomicU64,
     rows_in: AtomicU64,
-    rows_out: AtomicU64, // TODO: Remove or rename to files written?
+    rows_written: AtomicU64,
     bytes_written: AtomicU64,
+}
+
+impl WriteStats {
+    fn add_write_result(&self, write_result: WriteResult) {
+        self.rows_written
+            .fetch_add(write_result.rows_written as u64, Ordering::Relaxed);
+        self.bytes_written
+            .fetch_add(write_result.bytes_written as u64, Ordering::Relaxed);
+    }
 }
 
 impl RuntimeStats for WriteStats {
@@ -45,7 +54,7 @@ impl RuntimeStats for WriteStats {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
+            "rows written"; Stat::Count(self.rows_written.load(ordering)),
             "bytes written"; Stat::Bytes(self.bytes_written.load(ordering)),
         ]
     }
@@ -54,8 +63,8 @@ impl RuntimeStats for WriteStats {
         self.rows_in.fetch_add(rows, Ordering::Relaxed);
     }
 
-    fn add_rows_out(&self, rows: u64) {
-        self.rows_out.fetch_add(rows, Ordering::Relaxed);
+    fn add_rows_out(&self, _rows: u64) {
+        unreachable!("WriteSink shouldn't emit rows")
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
@@ -131,14 +140,13 @@ impl BlockingSink for WriteSink {
         spawner
             .spawn(
                 async move {
-                    let bytes_written = state.writer.write(input).await?;
+                    let write_result = state.writer.write(input).await?;
 
                     builder
                         .as_any_arc()
                         .downcast_ref::<WriteStats>()
                         .expect("WriteStats should be the additional stats builder")
-                        .bytes_written
-                        .fetch_add(bytes_written as u64, std::sync::atomic::Ordering::Relaxed);
+                        .add_write_result(write_result);
 
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
