@@ -2692,16 +2692,16 @@ class WhenExpr(Expression):
     @staticmethod
     def _construct_pyexpr(cases: list[tuple[_PyExpr, _PyExpr]], otherwise: _PyExpr) -> _PyExpr:
         expr = otherwise
-        for condition, value in reversed(cases):
-            expr = condition.if_else(value, expr)
+        for condition, then in reversed(cases):
+            expr = condition.if_else(then, expr)
         return expr
 
-    def when(self, condition: Expression | bool, value: Expression | Any) -> WhenExpr:
+    def when(self, condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         """Adds a WHEN ... THEN ... clause to the CASE expression.
 
         Args:
             condition: The Boolean expression to evaluate
-            value: The value to return if the condition is true
+            then: The value to return if the condition is true
 
         Returns:
             A new WhenExpr with the added condition and value.
@@ -2710,8 +2710,8 @@ class WhenExpr(Expression):
             [`daft.functions.when`](https://docs.daft.ai/en/stable/api/functions/when/)
         """
         condition = Expression._to_expression(condition)
-        value = Expression._to_expression(value)
-        new_cases = self._cases + [(condition._expr, value._expr)]
+        then = Expression._to_expression(then)
+        new_cases = self._cases + [(condition._expr, then._expr)]
         return WhenExpr(new_cases)
 
     def otherwise(self, value: Expression | Any) -> Expression:

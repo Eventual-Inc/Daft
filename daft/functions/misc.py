@@ -728,15 +728,15 @@ def slice(expr: Expression, start: int | Expression, end: int | Expression | Non
     return Expression._call_builtin_scalar_fn("slice", expr, start, end=end)
 
 
-def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
+def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
     """Start a conditional expression, similar to SQL CASE WHEN.
 
-    If the condition is true, the value will be returned. Otherwise, the next `when` condition will be evaluated.
+    If the condition is true, the `then` value will be returned. Otherwise, the next `when` condition will be evaluated.
     If no conditions are true, the value will be set to the value provided in the `otherwise` clause, or null if not provided.
 
     Args:
         condition: The Boolean expression to evaluate
-        value: Expression to return when the condition is true
+        then: Expression to return when the condition is true
 
     Returns:
         A WhenExpr that can be chained with more `when` clauses and ended with `otherwise`
@@ -747,7 +747,7 @@ def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
         >>> from daft.functions import when
         >>>
         >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
-        >>> df = df.select(when(df["x"] > 3, "high").otherwise("low").alias("category"))
+        >>> df = df.select(when(df["x"] > 3, then="high").otherwise("low").alias("category"))
         >>> df.show()
         ╭──────────╮
         │ category │
@@ -770,9 +770,9 @@ def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
         Multiple conditions using chained `when` clauses:
         >>> df = daft.from_pydict({"score": [85, 92, 78, 65, 88]})
         >>> df = df.select(
-        ...     when(df["score"] >= 90, "A")
-        ...     .when(df["score"] >= 80, "B")
-        ...     .when(df["score"] >= 70, "C")
+        ...     when(df["score"] >= 90, then="A")
+        ...     .when(df["score"] >= 80, then="B")
+        ...     .when(df["score"] >= 70, then="C")
         ...     .otherwise("F")
         ...     .alias("grade")
         ... )
@@ -799,8 +799,8 @@ def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
         >>> df = daft.from_pydict({"name": ["Alice", "Bob", "Charlie"], "age": [25, 17, 35]})
         >>> df = df.select(
         ...     df["name"],
-        ...     when((df["age"] >= 18) & (df["age"] < 65), df["age"])
-        ...     .when(df["age"] < 18, -1)
+        ...     when((df["age"] >= 18) & (df["age"] < 65), then=df["age"])
+        ...     .when(df["age"] < 18, then=-1)
         ...     .otherwise(0)
         ...     .alias("working_age"),
         ... )
@@ -822,9 +822,9 @@ def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
         Handling null values:
         >>> df = daft.from_pydict({"value": [10, None, 20, 0]})
         >>> df = df.select(
-        ...     when(df["value"].is_null(), "missing")
-        ...     .when(df["value"] == 0, "zero")
-        ...     .when(df["value"] > 15, "high")
+        ...     when(df["value"].is_null(), then="missing")
+        ...     .when(df["value"] == 0, then="zero")
+        ...     .when(df["value"] > 15, then="high")
         ...     .otherwise("normal")
         ...     .alias("status")
         ... )
@@ -847,7 +847,7 @@ def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
 
         Without `otherwise` clause (returns null when no conditions match):
         >>> df = daft.from_pydict({"x": [1, 2, 3]})
-        >>> df = df.select(when(df["x"] > 1, "big").alias("result"))
+        >>> df = df.select(when(df["x"] > 1, then="big").alias("result"))
         >>> df.show()
         ╭────────╮
         │ result │
@@ -863,4 +863,4 @@ def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
-    return WhenExpr([]).when(condition, value)
+    return WhenExpr([]).when(condition, then)
