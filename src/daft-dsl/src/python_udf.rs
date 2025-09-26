@@ -1,6 +1,17 @@
-use std::{fmt::Display, sync::Arc};
+use std::{
+    fmt::Display,
+    io::{BufRead, BufReader, Write},
+    process::{Command, Stdio},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread,
+};
 
+use base64::Engine;
 use common_error::DaftResult;
+use crossbeam::channel::{Receiver, Sender, bounded};
 use daft_core::prelude::*;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -191,40 +202,228 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
     ) -> DaftResult<(Series, std::time::Duration)> {
-        use daft_core::python::PySeries;
-        use pyo3::prelude::*;
+        use common_py_serde::pickle_dumps;
+        use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
         let start_time = std::time::Instant::now();
-        Python::with_gil(|py| {
-            let gil_contention_time = start_time.elapsed();
-            let func = py
-                .import(pyo3::intern!(py, "daft.udf.row_wise"))?
-                .getattr(pyo3::intern!(py, "__call_func"))?;
+        let gil_contention_time = start_time.elapsed();
+        let (pickled_function, pickled_args) = pyo3::Python::with_gil(|py| {
+            let pickled_function = pickle_dumps(py, inner_ref).unwrap();
+            let pickled_args = pickle_dumps(py, args_ref).unwrap();
+            (pickled_function, pickled_args)
+        });
 
-            let mut py_args = Vec::with_capacity(args.len());
-            // pre-allocating py_args vector so we're not creating a new vector for each iteration
-            let outputs = (0..num_rows)
-                .map(|i| {
-                    for s in args {
-                        let idx = if s.len() == 1 { 0 } else { i };
-                        let lit = s.get_lit(idx);
-                        let pyarg = lit.into_pyobject(py)?;
-                        py_args.push(pyarg);
+        let num_cores = num_cpus::get();
+        let pool = WorkerPool::new(num_cores, pickled_function, pickled_args);
+
+        (0..num_rows).into_par_iter().for_each(|i| {
+            let mut serde_args = Vec::with_capacity(args.len());
+            for s in args {
+                let idx = if s.len() == 1 { 0 } else { i };
+                let lit = s.get_lit(idx);
+                serde_args.push(lit);
+            }
+            pool.process(i, serde_args);
+        });
+
+        let results = pool.get_results();
+        let results: Series = results.try_into().unwrap();
+        pool.shutdown();
+
+        Ok((
+            results.rename(name).cast(&self.return_dtype).unwrap(),
+            gil_contention_time,
+        ))
+    }
+}
+
+pub struct WorkerPool {
+    senders: Vec<Sender<(usize, Vec<Literal>)>>,
+    results: Arc<Mutex<Vec<(usize, Literal)>>>,
+    worker_threads: Vec<thread::JoinHandle<()>>,
+    pending_tasks: Arc<AtomicUsize>,
+    total_tasks: Arc<AtomicUsize>,
+}
+
+impl WorkerPool {
+    pub fn new(num_workers: usize, python_function: Vec<u8>, bound_args: Vec<u8>) -> Self {
+        let results = Arc::new(Mutex::new(Vec::new()));
+        let pending_tasks = Arc::new(AtomicUsize::new(0));
+        let total_tasks = Arc::new(AtomicUsize::new(0));
+        let mut senders = Vec::with_capacity(num_workers);
+        let mut worker_threads = Vec::with_capacity(num_workers);
+
+        for worker_id in 0..num_workers {
+            let (tx, rx) = bounded(100); // Bounded channel with capacity
+            senders.push(tx);
+
+            let results = Arc::clone(&results);
+            let python_function = python_function.clone();
+            let bound_args = bound_args.clone();
+            let pending = Arc::clone(&pending_tasks);
+
+            let handle = thread::spawn(move || {
+                Self::worker_process_loop(
+                    worker_id,
+                    rx,
+                    results,
+                    pending,
+                    python_function,
+                    bound_args,
+                );
+            });
+
+            worker_threads.push(handle);
+        }
+
+        WorkerPool {
+            senders,
+            results,
+            worker_threads,
+            pending_tasks,
+            total_tasks,
+        }
+    }
+
+    fn worker_process_loop(
+        worker_id: usize,
+        receiver: Receiver<(usize, Vec<Literal>)>,
+        results: Arc<Mutex<Vec<(usize, Literal)>>>,
+        pending_tasks: Arc<AtomicUsize>,
+        python_function: Vec<u8>,
+        args: Vec<u8>,
+    ) {
+        let base64_engine = base64::engine::general_purpose::STANDARD;
+        let f = base64_engine.encode(&python_function);
+        let args = base64_engine.encode(&args);
+
+        // 4. Use a more efficient base64 engine
+        // Launch Python process
+        let mut child = Command::new("python3")
+            .arg("-u")
+            .arg("-m")
+            .arg("daft.execution.scalar_udf_worker")
+            .arg(&f)
+            .arg(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to start Python worker process");
+
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        let stdout = child.stdout.take().expect("Failed to open stdout");
+        let mut stdout_reader = BufReader::new(stdout);
+
+        while let Ok((batch_idx, batch)) = receiver.recv() {
+            let serialized_batch: Vec<u8> = bincode::serialize(&batch).unwrap();
+
+            let request = base64_engine.encode(&serialized_batch);
+            match writeln!(stdin, "{}", request) {
+                Ok(_) => match stdin.flush() {
+                    Ok(_) => {
+                        let mut response = String::new();
+                        stdout_reader
+                            .read_line(&mut response)
+                            .expect("Failed to read from Python process");
+
+                        let response = response.trim();
+
+                        let result = base64_engine.decode(response).unwrap_or_default();
+                        let result: Literal =
+                            bincode::deserialize(&result).unwrap_or_else(|_| Literal::Null);
+                        let mut results_guard = results.lock().unwrap();
+                        results_guard.push((batch_idx, result));
+
+                        pending_tasks.fetch_sub(1, Ordering::SeqCst);
                     }
+                    Err(e) => {
+                        eprintln!(
+                            "Worker {}: Failed to flush stdin for batch {}: {:?}",
+                            worker_id, batch_idx, e
+                        );
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "Worker {}: Failed to flush stdin for batch {}: {:?}",
+                        worker_id, batch_idx, e
+                    );
+                }
+            };
+        }
+        eprintln!("Worker {}: All batches processed, sending EXIT", worker_id);
 
-                    let result = func.call1((inner_ref, args_ref, &py_args))?;
-                    py_args.clear();
-                    DaftResult::Ok(result)
-                })
-                .collect::<DaftResult<Vec<_>>>()?;
+        // Graceful shutdown:
+        // 1. Try to send EXIT command
+        let exit_result = writeln!(stdin, "EXIT");
+        eprintln!(
+            "Worker {}: EXIT command result: {:?}",
+            worker_id, exit_result
+        );
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_millis(100);
 
-            Ok((
-                PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series,
-                gil_contention_time,
-            ))
-        })
+        // Check if process exited
+        let mut exited = false;
+        while start.elapsed() < timeout {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    // Process already exited
+                    exited = true;
+                    break;
+                }
+                _ => {
+                    // Process still running, sleep a bit and check again
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        }
+
+        // If process didn't exit within timeout, force kill
+        if !exited {
+            let _ = child.kill();
+        }
+
+        // Wait for process to fully terminate
+        let _ = child.wait();
+    }
+    pub fn process(&self, batch_idx: usize, literals: Vec<Literal>) {
+        self.pending_tasks.fetch_add(1, Ordering::SeqCst);
+        self.total_tasks.fetch_add(1, Ordering::SeqCst);
+
+        let sender_idx = batch_idx % self.senders.len();
+        self.senders[sender_idx]
+            .send((batch_idx, literals))
+            .unwrap();
+    }
+
+    pub fn get_results(&self) -> Vec<Literal> {
+        loop {
+            let n_pending = self.pending_tasks.load(Ordering::SeqCst);
+            if n_pending == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        let results_guard = self.results.lock().unwrap();
+        let mut sorted_results = results_guard.clone();
+        sorted_results.sort_by_key(|(idx, _)| *idx);
+
+        let total = self.total_tasks.load(Ordering::SeqCst);
+        assert_eq!(sorted_results.len(), total, "Missing results");
+
+        sorted_results.into_iter().map(|(_, lit)| lit).collect()
+    }
+
+    pub fn shutdown(self) {
+        drop(self.senders);
+
+        for handle in self.worker_threads {
+            handle.join().unwrap();
+        }
     }
 }

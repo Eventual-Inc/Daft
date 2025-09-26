@@ -180,6 +180,21 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     literal_value(item).map(Expr::Literal).map(Into::into)
 }
 
+#[pyfunction]
+pub fn deserialize_literals(py: Python, items: Vec<u8>) -> PyResult<Vec<Bound<PyAny>>> {
+    let items: Vec<Literal> = bincode::deserialize(&items).unwrap();
+    items
+        .into_iter()
+        .map(|item| item.into_pyobject(py))
+        .collect::<PyResult<Vec<_>>>()
+}
+
+#[pyfunction]
+pub fn serialize_literal(obj: Bound<PyAny>) -> PyResult<Vec<u8>> {
+    let lit = literal_value(obj)?;
+    Ok(bincode::serialize(&lit).unwrap())
+}
+
 pub fn literal_value(item: Bound<PyAny>) -> PyResult<Literal> {
     if item.is_instance_of::<PyBool>() {
         let val = item.extract::<bool>()?;

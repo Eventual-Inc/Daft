@@ -5,7 +5,9 @@ import torch
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 import daft
+from daft import DataType as dt
 from daft import col
+from daft.io import IOConfig, S3Config
 
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
@@ -18,6 +20,8 @@ CHUNK_OVERLAP = 200
 EMBEDDING_BATCH_SIZE = 10
 
 daft.context.set_runner_ray()
+extract_text_type = dt.list(dt.struct({"text": dt.string(), "page_number": dt.int64()}))
+chunk_type = dt.list(dt.struct({"text": dt.string(), "chunk_id": dt.int64()}))
 
 
 def extract_text_from_parsed_pdf(pdf_bytes):
@@ -58,6 +62,7 @@ class Embedder:
         from sentence_transformers import SentenceTransformer
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device
         self.model = SentenceTransformer(EMBED_MODEL_ID, device=device)
         self.model.compile()
 
@@ -72,12 +77,12 @@ class Embedder:
 
 df = daft.read_parquet(INPUT_PATH)
 df = df.where(daft.col("file_name").str.endswith(".pdf"))
-df = df.with_column("pdf_bytes", df["uploaded_pdf_path"].url.download())
+df = df.with_column("pdf_bytes", df["uploaded_pdf_path"].url.download(io_config=IOConfig(s3=S3Config.from_env())))
 df = df.with_column(
     "pages",
     df["pdf_bytes"].apply(
         extract_text_from_parsed_pdf,
-        return_dtype=list[{"text": str, "page_number": int}],
+        return_dtype=extract_text_type,
     ),
 )
 df = df.explode("pages")
@@ -85,7 +90,7 @@ df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pag
 df = df.where(daft.col("page_text").not_null())
 df = df.with_column(
     "chunks",
-    df["page_text"].apply(chunk, return_dtype=list[{"text": str, "chunk_id": int}]),
+    df["page_text"].apply(chunk, return_dtype=chunk_type),
 )
 df = df.explode("chunks")
 df = df.with_columns({"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]})
