@@ -1010,6 +1010,7 @@ mod test {
             Some(Arc::new(Schema::empty())),
             None,
             false,
+            false,
         )
         .await
         .unwrap();
