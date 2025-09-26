@@ -774,6 +774,7 @@ class IOConfig:
     http: HTTPConfig
     unity: UnityConfig
     hf: HuggingFaceConfig
+    disable_suffix_range: bool
 
     def __init__(
         self,
@@ -783,6 +784,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
     ): ...
     def replace(
         self,
@@ -792,6 +794,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
