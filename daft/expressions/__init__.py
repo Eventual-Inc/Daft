@@ -10,6 +10,7 @@ from .expressions import (
     interval,
     struct,
     coalesce,
+    WhenExpr,
 )
 
 from .visitor import ExpressionVisitor

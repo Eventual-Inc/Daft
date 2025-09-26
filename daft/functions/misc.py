@@ -7,6 +7,7 @@ from typing import Any, Literal
 import daft.daft as native
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions import Expression
+from daft.expressions.expressions import WhenExpr
 from daft.series import item_to_series
 
 
@@ -725,3 +726,141 @@ def slice(expr: Expression, start: int | Expression, end: int | Expression | Non
         (Showing first 3 of 3 rows)
     """
     return Expression._call_builtin_scalar_fn("slice", expr, start, end=end)
+
+
+def when(condition: Expression | bool, value: Expression | Any) -> WhenExpr:
+    """Start a conditional expression, similar to SQL CASE WHEN.
+
+    If the condition is true, the value will be returned. Otherwise, the next `when` condition will be evaluated.
+    If no conditions are true, the value will be set to the value provided in the `otherwise` clause, or null if not provided.
+
+    Args:
+        condition: The Boolean expression to evaluate
+        value: Expression to return when the condition is true
+
+    Returns:
+        A WhenExpr that can be chained with more `when` clauses and ended with `otherwise`
+
+    Examples:
+        Simple conditional assignment:
+        >>> import daft
+        >>> from daft.functions import when
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
+        >>> df = df.select(when(df["x"] > 3, "high").otherwise("low").alias("category"))
+        >>> df.show()
+        ╭──────────╮
+        │ category │
+        │ ---      │
+        │ Utf8     │
+        ╞══════════╡
+        │ low      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ low      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ low      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ high     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ high     │
+        ╰──────────╯
+        <BLANKLINE>
+        (Showing first 5 of 5 rows)
+
+        Multiple conditions using chained `when` clauses:
+        >>> df = daft.from_pydict({"score": [85, 92, 78, 65, 88]})
+        >>> df = df.select(
+        ...     when(df["score"] >= 90, "A")
+        ...     .when(df["score"] >= 80, "B")
+        ...     .when(df["score"] >= 70, "C")
+        ...     .otherwise("F")
+        ...     .alias("grade")
+        ... )
+        >>> df.show()
+        ╭───────╮
+        │ grade │
+        │ ---   │
+        │ Utf8  │
+        ╞═══════╡
+        │ B     │
+        ├╌╌╌╌╌╌╌┤
+        │ A     │
+        ├╌╌╌╌╌╌╌┤
+        │ C     │
+        ├╌╌╌╌╌╌╌┤
+        │ F     │
+        ├╌╌╌╌╌╌╌┤
+        │ B     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 5 of 5 rows)
+
+        Using complex conditions and returning different data types:
+        >>> df = daft.from_pydict({"name": ["Alice", "Bob", "Charlie"], "age": [25, 17, 35]})
+        >>> df = df.select(
+        ...     df["name"],
+        ...     when((df["age"] >= 18) & (df["age"] < 65), df["age"])
+        ...     .when(df["age"] < 18, -1)
+        ...     .otherwise(0)
+        ...     .alias("working_age"),
+        ... )
+        >>> df.show()
+        ╭─────────┬─────────────╮
+        │ name    ┆ working_age │
+        │ ---     ┆ ---         │
+        │ Utf8    ┆ Int64       │
+        ╞═════════╪═════════════╡
+        │ Alice   ┆ 25          │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Bob     ┆ -1          │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Charlie ┆ 35          │
+        ╰─────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Handling null values:
+        >>> df = daft.from_pydict({"value": [10, None, 20, 0]})
+        >>> df = df.select(
+        ...     when(df["value"].is_null(), "missing")
+        ...     .when(df["value"] == 0, "zero")
+        ...     .when(df["value"] > 15, "high")
+        ...     .otherwise("normal")
+        ...     .alias("status")
+        ... )
+        >>> df.show()
+        ╭─────────╮
+        │ status  │
+        │ ---     │
+        │ Utf8    │
+        ╞═════════╡
+        │ normal  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ missing │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ high    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ zero    │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+        Without `otherwise` clause (returns null when no conditions match):
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.select(when(df["x"] > 1, "big").alias("result"))
+        >>> df.show()
+        ╭────────╮
+        │ result │
+        │ ---    │
+        │ Utf8   │
+        ╞════════╡
+        │ None   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ big    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ big    │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return WhenExpr([]).when(condition, value)
