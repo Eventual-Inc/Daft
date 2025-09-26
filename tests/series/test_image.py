@@ -769,7 +769,9 @@ def test_bad_cast_image():
     s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
-    with pytest.raises(ValueError, match="Expected Numpy array to be of type: UInt8"):
+    with pytest.raises(
+        ValueError, match="Images with mode RGB can only be created from tensors of type UInt8, found UInt64"
+    ):
         s.cast(target_dtype)
 
 

@@ -65,7 +65,9 @@
     * [Expressions](api/expressions.md)
     * [Functions](api/functions/)
     * [User-Defined Functions](api/udf.md)
-    * [Data Types](api/datatypes.md)
+    * Data Types
+        * [DataType](api/datatypes/index.md)
+        * [Type Conversions](api/datatypes/type_conversions.md)
     * [Window](api/window.md)
     * [Sessions](api/sessions.md)
     * [Catalogs & Tables](api/catalogs_tables.md)

@@ -151,10 +151,7 @@ def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
-    if isinstance(dtype, str):
-        dtype = DataType._from_pydatatype(native.sql_datatype(dtype))
-    else:
-        dtype = DataType._infer_type(dtype)
+    dtype = DataType._infer(dtype)
     expr = Expression._to_expression(expr)
     return Expression._from_pyexpr(expr._expr.cast(dtype._dtype))
 
