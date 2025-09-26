@@ -19,6 +19,7 @@ __all__ = [
     "Expression",
     "ExpressionVisitor",
     "ExpressionsProjection",
+    "WhenExpr",
     "coalesce",
     "col",
     "element",
