@@ -2,6 +2,21 @@
 
 <div class="examples-grid">
   <div class="example-card">
+    <a href="./mm_structured_outputs" class="example-image-link">
+      <div class="example-image">
+        <img src="../img/mm-structured-outputs-cover.png" alt="Multimodal Structured Outputs Cover " onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #36d1dc 0%, #5b86e5 100%);">
+          <span>📃</span>
+        </div>
+        <div class="example-overlay">
+          <h3>Multimodal Structured Outputs</h3>
+          <p>Evaluate Gemma 3n's image understanding with guided choice on vLLM</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="example-card">
     <a href="./document-processing" class="example-image-link">
       <div class="example-image">
         <img src="../img/document-processing-cover.jpg" alt="Document Processing">
@@ -34,7 +49,7 @@
         </div>
         <div class="example-overlay">
           <h3>MinHash Deduplication on Common Crawl</h3>
-          <p>Deduplicate web text at scale with MinHash, LSH, and Connected Components.</p>
+          <p>Deduplicate web text at scale with MinHash, LSH, and Connected Components</p>
         </div>
       </div>
     </a>
