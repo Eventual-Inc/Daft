@@ -36,7 +36,7 @@ This table shows the mapping from Daft DataTypes to Python types, as done in pla
 
 <!-- Note: the conversions here should match the behavior of `DataType.infer_from_type` : `daft/datatype.py`  -->
 
-This table shows the mapping from Daft DataTypes to Python types, such as when inferring the return type from the type hints of a function decorated with `@daft.func`.
+This table shows the mapping from Python types to Daft types, such as when inferring the return type from the type hints of a function decorated with `@daft.func`.
 
 To check the inferred DataType for a Python type, use [`DataType.infer_from_type`][daft.datatype.DataType.infer_from_type].
 

@@ -599,6 +599,8 @@ impl PythonArray {
             return Ok(self.clone().into_series());
         }
 
+        // TODO: optimize this.
+        // Currently this does PythonArray -> Vec<Literal> -> Series -> Series::cast
         let literals = Python::with_gil(|py| {
             self.values()
                 .iter()
