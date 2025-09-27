@@ -10,11 +10,13 @@ from pyiceberg.schema import visit
 
 import daft
 from daft.daft import (
+    CountMode,
     FileFormatConfig,
     ParquetSourceConfig,
     PyPartitionField,
     PyPartitionTransform,
     PyPushdowns,
+    PyRecordBatch,
     ScanTask,
     StorageConfig,
 )
@@ -23,6 +25,7 @@ from daft.dependencies import pa
 from daft.io.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
+from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -33,6 +36,21 @@ if TYPE_CHECKING:
     from pyiceberg.typedef import Record
 
 logger = logging.getLogger(__name__)
+
+
+def _iceberg_count_result_function(total_count: int, field_name: str) -> Iterator[PyRecordBatch]:
+    """Construct Iceberg count query result."""
+    try:
+        arrow_schema = pa.schema([pa.field(field_name, pa.uint64())])
+        arrow_array = pa.array([total_count], type=pa.uint64())
+        arrow_batch = pa.RecordBatch.from_arrays([arrow_array], [field_name])
+
+        logger.debug("Generated Iceberg count result: %s=%d", field_name, total_count)
+
+        yield RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema)._recordbatch
+    except Exception as e:
+        logger.error("Failed to construct Iceberg count result: %s", e)
+        raise
 
 
 def _iceberg_partition_field_to_daft_partition_field(
@@ -156,6 +174,33 @@ class IcebergScanOperator(ScanOperator):
         ]
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        # Check if there is a count aggregation pushdown
+        if (
+            pushdowns.aggregation is not None
+            and pushdowns.aggregation_count_mode() is not None
+            and pushdowns.aggregation_required_column_names()
+        ):
+            count_mode = pushdowns.aggregation_count_mode()
+            fields = pushdowns.aggregation_required_column_names()
+
+            if count_mode in self.supported_count_modes():
+                logger.info(
+                    "Using Iceberg count pushdown optimization for count mode: %s",
+                    count_mode,
+                )
+                yield from self._create_count_scan_task(pushdowns, fields[0])
+                return
+            else:
+                logger.warning(
+                    "Count mode %s is not supported for pushdown, falling back to regular scan",
+                    count_mode,
+                )
+
+        # Regular scan without count pushdown
+        yield from self._create_regular_scan_tasks(pushdowns)
+
+    def _create_regular_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        """Create regular scan tasks without count pushdown."""
         limit = pushdowns.limit
         iceberg_tasks = self._table.scan(limit=limit, snapshot_id=self._snapshot_id).plan_files()
 
@@ -210,6 +255,62 @@ class IcebergScanOperator(ScanOperator):
             scan_tasks.append(st)
         return iter(scan_tasks)
 
+    def _create_count_scan_task(self, pushdowns: PyPushdowns, field_name: str) -> Iterator[ScanTask]:
+        """Create count pushdown scan task using Iceberg metadata."""
+        try:
+            iceberg_tasks = self._table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
+            total_count = 0
+
+            # Aggregate row counts from all data files
+            for task in iceberg_tasks:
+                data_file = task.file
+                total_count += data_file.record_count
+
+            result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))
+
+            logger.info("Created Iceberg count pushdown task with total_count=%d for field=%s", total_count, field_name)
+            yield ScanTask.python_factory_func_scan_task(
+                module=_iceberg_count_result_function.__module__,
+                func_name=_iceberg_count_result_function.__name__,
+                func_args=(total_count, field_name),
+                schema=result_schema._schema,
+                num_rows=1,
+                size_bytes=8,
+                pushdowns=pushdowns,
+                stats=None,
+            )
+        except Exception as e:
+            logger.error("Failed to create Iceberg count pushdown task: %s, now falling back to regular scan", e)
+            yield from self._create_regular_scan_tasks(pushdowns)
+
+    def _has_delete_files(self) -> bool:
+        """Check if the table has any delete files.
+
+        This method quickly scans the table to determine if there are any delete files
+        present. If delete files are found, count pushdown should be disabled to avoid
+        complex delete file processing logic.
+
+        Returns:
+            True if the table has delete files, False otherwise
+        """
+        try:
+            # Get a limited scan to check for delete files
+            iceberg_tasks = self._table.scan(
+                limit=1,  # Only need to check if any delete files exist
+                snapshot_id=self._snapshot_id,
+            ).plan_files()
+
+            # Check if any task has delete files
+            for task in iceberg_tasks:
+                if task.delete_files and len(task.delete_files) > 0:
+                    logger.debug("Found delete files in table, count pushdown will be disabled")
+                    return True
+            return False
+
+        except Exception as e:
+            logger.warning("Error checking for delete files: %s, disabling count pushdown as precaution", e)
+            return True
+
     def can_absorb_filter(self) -> bool:
         return False
 
@@ -218,3 +319,9 @@ class IcebergScanOperator(ScanOperator):
 
     def can_absorb_select(self) -> bool:
         return True
+
+    def supports_count_pushdown(self) -> bool:
+        return True and not self._has_delete_files()
+
+    def supported_count_modes(self) -> list[CountMode]:
+        return [CountMode.All]
