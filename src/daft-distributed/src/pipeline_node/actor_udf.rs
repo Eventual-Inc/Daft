@@ -15,8 +15,8 @@ use super::{
 };
 use crate::{
     pipeline_node::append_plan_to_existing_task,
+    plan::{PlanConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
-    stage::{StageConfig, StageExecutionContext},
     utils::{
         channel::{Sender, create_channel},
         joinset::JoinSet,
@@ -142,14 +142,14 @@ impl ActorUDF {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -158,7 +158,7 @@ impl ActorUDF {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Ok(Self {
@@ -167,7 +167,7 @@ impl ActorUDF {
             child,
             projection,
             udf_properties,
-            actor_ready_timeout: stage_config.config.actor_udf_ready_timeout,
+            actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         })
     }
 
@@ -279,13 +279,13 @@ impl DistributedPipelineNode for ActorUDF {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop_fused(input_node, result_tx);
-        stage_context.spawn(execution_loop);
+        plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
     }

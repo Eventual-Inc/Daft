@@ -10,7 +10,7 @@ from daft import col
 
 NUM_GPU_NODES = 8
 INPUT_PATH = "s3://daft-public-datasets/imagenet/benchmark"
-OUTPUT_PATH = "s3://desmond-test/colin-test/image_classification_results"
+OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/image-classification-results"
 BATCH_SIZE = 100
 IMAGE_DIM = (3, 224, 224)
 

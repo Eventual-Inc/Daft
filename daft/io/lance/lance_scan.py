@@ -52,9 +52,10 @@ def _lancedb_count_result_function(
 
 
 class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
-    def __init__(self, ds: "lance.LanceDataset"):
+    def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None):
         self._ds = ds
         self._pushed_filters: Union[list[PyExpr], None] = None
+        self._fragment_group_size = fragment_group_size
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -203,30 +204,61 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
         fragments = self._ds.get_fragments()
-        for fragment in fragments:
-            # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
-            size_bytes = None
-            stats = None
+        pushed_expr = self._combine_filters_to_arrow()
 
-            # NOTE: `fragment.count_rows()` should result in 1 IO call for the data file
-            # (1 fragment = 1 data file) and 1 more IO call for the deletion file (if present).
-            # This could potentially be expensive to perform serially if there are thousands of files.
-            # Given that num_rows isn't leveraged for much at the moment, and without statistics
-            # we will probably end up materializing the data anyways for any operations, we leave this
-            # as None.
-            num_rows = None
-            pushed_expr = self._combine_filters_to_arrow()
+        if self._fragment_group_size is None or self._fragment_group_size <= 1:
+            # Default behavior: one fragment per task
+            for fragment in fragments:
+                size_bytes = None
+                stats = None
+                num_rows = None
+                if fragment.count_rows(pushed_expr) == 0:
+                    continue
 
-            yield ScanTask.python_factory_func_scan_task(
-                module=_lancedb_table_factory_function.__module__,
-                func_name=_lancedb_table_factory_function.__name__,
-                func_args=(self._ds, [fragment.fragment_id], required_columns, pushed_expr, pushdowns.limit),
-                schema=self.schema()._schema,
-                num_rows=num_rows,
-                size_bytes=size_bytes,
-                pushdowns=pushdowns,
-                stats=stats,
-            )
+                yield ScanTask.python_factory_func_scan_task(
+                    module=_lancedb_table_factory_function.__module__,
+                    func_name=_lancedb_table_factory_function.__name__,
+                    func_args=(self._ds, [fragment.fragment_id], required_columns, pushed_expr, pushdowns.limit),
+                    schema=self.schema()._schema,
+                    num_rows=num_rows,
+                    size_bytes=size_bytes,
+                    pushdowns=pushdowns,
+                    stats=stats,
+                )
+        else:
+            # Group fragments
+            fragment_groups = []
+            current_group = []
+
+            for fragment in fragments:
+                if fragment.count_rows(pushed_expr) == 0:
+                    continue
+                current_group.append(fragment)
+                if len(current_group) >= self._fragment_group_size:
+                    fragment_groups.append(current_group)
+                    current_group = []
+
+            # Add the last group if it has any fragments
+            if current_group:
+                fragment_groups.append(current_group)
+
+            # Create scan tasks for each fragment group
+            for fragment_group in fragment_groups:
+                fragment_ids = [fragment.fragment_id for fragment in fragment_group]
+                size_bytes = None
+                stats = None
+                num_rows = None
+
+                yield ScanTask.python_factory_func_scan_task(
+                    module=_lancedb_table_factory_function.__module__,
+                    func_name=_lancedb_table_factory_function.__name__,
+                    func_args=(self._ds, fragment_ids, required_columns, pushed_expr, pushdowns.limit),
+                    schema=self.schema()._schema,
+                    num_rows=num_rows,
+                    size_bytes=size_bytes,
+                    pushdowns=pushdowns,
+                    stats=stats,
+                )
 
     def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
         if self._pushed_filters is not None:

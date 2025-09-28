@@ -256,16 +256,6 @@ impl Series {
                     None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
                 }
             }
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                let downcasted = self.downcast::<PythonArray>()?;
-                match groups {
-                    Some(groups) => {
-                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
-                    }
-                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
-                }
-            }
             DataType::Utf8 => {
                 let downcasted = self.downcast::<Utf8Array>()?;
                 match groups {
@@ -276,7 +266,7 @@ impl Series {
                 }
             }
             _ => Err(DaftError::TypeError(format!(
-                "concat aggregation is only valid for List, Python types, or Utf8, got {}",
+                "concat aggregation is only valid for List or Utf8, got {}",
                 self.data_type()
             ))),
         }

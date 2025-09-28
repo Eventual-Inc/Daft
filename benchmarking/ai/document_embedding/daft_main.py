@@ -10,8 +10,8 @@ from daft import col
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 NUM_GPU_NODES = 8
-INPUT_PATH = "s3://eventual-data-test-bucket/digitalcorpora/metadata/original_file_name_to_s3_path_10k"
-OUTPUT_PATH = "s3://desmond-test/colin-test/document-embedding-results"
+INPUT_PATH = "s3://daft-public-datasets/digitalcorpora_metadata"
+OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/document-embedding-results"
 MAX_PDF_PAGES = 100
 CHUNK_SIZE = 2048
 CHUNK_OVERLAP = 200
@@ -66,10 +66,8 @@ class Embedder:
             return []
         embeddings = self.model.encode(
             text_col.to_pylist(),
-            convert_to_tensor=True,
-            torch_dtype=torch.bfloat16,
         )
-        return embeddings.cpu().numpy()
+        return embeddings
 
 
 df = daft.read_parquet(INPUT_PATH)
