@@ -207,9 +207,16 @@ impl Series {
     /// This will return an error if the Series is not of the physical type `T`
     /// # Example
     /// ```rust,no_run
+    /// # use daft_core::prelude::*;
+    /// # use common_error::DaftResult;
+    /// # fn example() -> DaftResult<()> {
+    /// # let series = Series::from_literals(vec![Literal::Int32(1), Literal::Int32(2), Literal::Int32(3)])?;
     /// let i32_arr: &[i32] = series.try_as_slice::<i32>()?;
     ///
+    /// # let series = Series::from_literals(vec![Literal::Float64(1.0), Literal::Float64(2.0), Literal::Float64(3.0)])?;
     /// let f64_arr: &[f64] = series.try_as_slice::<f64>()?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn try_as_slice<N: NumericNative>(
         &self,

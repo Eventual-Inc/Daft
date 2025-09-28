@@ -1749,7 +1749,8 @@ impl StructArray {
 
 #[cfg(test)]
 mod tests {
-    use arrow2::array::PrimitiveArray;
+    use arrow2::array::{Array, PrimitiveArray};
+    use chrono::TimeZone;
     use rand::{Rng, rng};
 
     use super::*;
@@ -1935,5 +1936,206 @@ mod tests {
                 .is_err(),
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
+    }
+
+    #[test]
+    fn timestamp_cast_converts_between_units() {
+        let physical_nanos = Int64Array::from(("ts", vec![2_000_000, 4_000_000]));
+        let ts_nanos = TimestampArray::new(
+            Field::new("ts", DataType::Timestamp(TimeUnit::Nanoseconds, None)),
+            physical_nanos,
+        );
+        let micros_series = ts_nanos
+            .cast(&DataType::Timestamp(TimeUnit::Microseconds, None))
+            .expect("casting nanoseconds to microseconds should succeed");
+        let micros = micros_series.downcast::<TimestampArray>().unwrap();
+        let micros_arrow = micros
+            .physical
+            .data()
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i64>>()
+            .unwrap();
+        assert_eq!(micros_arrow.values().as_slice(), &[2000, 4000]);
+
+        let physical_micros = Int64Array::from(("ts", vec![2_000, 4_000]));
+        let ts_micros = TimestampArray::new(
+            Field::new("ts", DataType::Timestamp(TimeUnit::Microseconds, None)),
+            physical_micros,
+        );
+        let nanos_series = ts_micros
+            .cast(&DataType::Timestamp(TimeUnit::Nanoseconds, None))
+            .expect("casting microseconds to nanoseconds should succeed");
+        let nanos = nanos_series.downcast::<TimestampArray>().unwrap();
+        let nanos_arrow = nanos
+            .physical
+            .data()
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i64>>()
+            .unwrap();
+        assert_eq!(nanos_arrow.values().as_slice(), &[2_000_000, 4_000_000]);
+    }
+
+    #[test]
+    fn timestamp_cast_to_utf8_respects_timezones() {
+        let physical = Int64Array::from((
+            "ts",
+            Box::new(PrimitiveArray::<i64>::from(vec![Some(0), None, Some(1)])),
+        ));
+
+        let naive_zero = chrono::NaiveDateTime::from_timestamp_opt(0, 0).unwrap();
+        let naive_one = chrono::NaiveDateTime::from_timestamp_opt(1, 0).unwrap();
+
+        let offset = chrono::FixedOffset::east_opt(5 * 3_600 + 30 * 60).unwrap();
+        let expected_offset = [
+            offset
+                .from_utc_datetime(&naive_zero)
+                .format("%Y-%m-%d %H:%M:%S%.f %:z")
+                .to_string(),
+            offset
+                .from_utc_datetime(&naive_one)
+                .format("%Y-%m-%d %H:%M:%S%.f %:z")
+                .to_string(),
+        ];
+
+        let ts_offset = TimestampArray::new(
+            Field::new(
+                "ts",
+                DataType::Timestamp(TimeUnit::Seconds, Some("+05:30".to_string())),
+            ),
+            physical.clone(),
+        );
+        let offset_series = ts_offset
+            .cast(&DataType::Utf8)
+            .expect("casting timestamp with offset to Utf8 should succeed");
+        let offset_utf8 = offset_series.utf8().unwrap();
+        let offset_arrow = offset_utf8.as_arrow();
+        assert_eq!(offset_arrow.value(0), expected_offset[0]);
+        assert!(offset_arrow.is_null(1));
+        assert_eq!(offset_arrow.value(2), expected_offset[1]);
+
+        let tz = chrono_tz::America::New_York;
+        let expected_tz = [
+            tz.from_utc_datetime(&naive_zero)
+                .format("%Y-%m-%d %H:%M:%S%.f %Z")
+                .to_string(),
+            tz.from_utc_datetime(&naive_one)
+                .format("%Y-%m-%d %H:%M:%S%.f %Z")
+                .to_string(),
+        ];
+
+        let ts_tz = TimestampArray::new(
+            Field::new(
+                "ts",
+                DataType::Timestamp(TimeUnit::Seconds, Some("America/New_York".to_string())),
+            ),
+            physical.clone(),
+        );
+        let tz_series = ts_tz
+            .cast(&DataType::Utf8)
+            .expect("casting timestamp with timezone to Utf8 should succeed");
+        let tz_utf8 = tz_series.utf8().unwrap();
+        let tz_arrow = tz_utf8.as_arrow();
+        assert_eq!(tz_arrow.value(0), expected_tz[0]);
+        assert!(tz_arrow.is_null(1));
+        assert_eq!(tz_arrow.value(2), expected_tz[1]);
+
+        let ts_naive = TimestampArray::new(
+            Field::new("ts", DataType::Timestamp(TimeUnit::Seconds, None)),
+            physical,
+        );
+        let expected_naive = [
+            naive_zero.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
+            naive_one.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
+        ];
+        let naive_series = ts_naive
+            .cast(&DataType::Utf8)
+            .expect("casting naive timestamp to Utf8 should succeed");
+        let naive_utf8 = naive_series.utf8().unwrap();
+        let naive_arrow = naive_utf8.as_arrow();
+        assert_eq!(naive_arrow.value(0), expected_naive[0]);
+        assert!(naive_arrow.is_null(1));
+        assert_eq!(naive_arrow.value(2), expected_naive[1]);
+    }
+
+    #[test]
+    fn list_cast_to_fixed_size_list_rejects_mismatched_lengths() {
+        let row0 = Int64Array::from(("item", vec![1, 2])).into_series();
+        let row1 = Int64Array::from(("item", vec![3])).into_series();
+        let rows = vec![Some(row0.clone()), Some(row1.clone())];
+        let list = ListArray::try_from(("list", rows.as_slice())).unwrap();
+        let result = list.cast(&DataType::FixedSizeList(Box::new(DataType::Int64), 2));
+        assert!(matches!(
+            result,
+            Err(DaftError::ComputeError(msg)) if msg.contains("Cannot cast List to FixedSizeList")
+        ));
+    }
+
+    #[test]
+    fn list_cast_to_fixed_size_list_inserts_null_placeholders() {
+        let row0 = Int64Array::from(("item", vec![1, 2])).into_series();
+        let row2 = Int64Array::from(("item", vec![3, 4])).into_series();
+        let rows = vec![Some(row0.clone()), None, Some(row2.clone())];
+        let list = ListArray::try_from(("list", rows.as_slice())).unwrap();
+
+        let result = list
+            .cast(&DataType::FixedSizeList(Box::new(DataType::Int64), 2))
+            .expect("casting list with nulls to FixedSizeList should succeed");
+        let fixed = result.fixed_size_list().unwrap();
+
+        assert_eq!(fixed.len(), 3);
+        let validity = fixed.validity().expect("expected validity bitmap");
+        assert!(validity.get_bit(0));
+        assert!(!validity.get_bit(1));
+        assert!(validity.get_bit(2));
+
+        let child = fixed.flat_child.i64().unwrap();
+        let child_arrow = child.as_arrow();
+        assert_eq!(child_arrow.len(), 6);
+        assert_eq!(child_arrow.value(0), 1);
+        assert_eq!(child_arrow.value(1), 2);
+        assert!(child_arrow.is_null(2));
+        assert!(child_arrow.is_null(3));
+        assert_eq!(child_arrow.value(4), 3);
+        assert_eq!(child_arrow.value(5), 4);
+    }
+
+    #[test]
+    fn struct_cast_fills_missing_fields_with_nulls() {
+        let field_a = Field::new("a", DataType::Int64);
+        let field_b = Field::new("b", DataType::Utf8);
+        let struct_array = StructArray::new(
+            Field::new(
+                "root",
+                DataType::Struct(vec![field_a.clone(), field_b.clone()]),
+            ),
+            vec![
+                Int64Array::from(("a", vec![1, 2])).into_series(),
+                Utf8Array::from(("b", ["x", "y"].as_slice())).into_series(),
+            ],
+            None,
+        );
+
+        let target_dtype = DataType::Struct(vec![
+            Field::new("b", DataType::Utf8),
+            Field::new("c", DataType::Int64),
+        ]);
+        let casted = struct_array
+            .cast(&target_dtype)
+            .expect("struct cast should succeed");
+        let struct_cast = casted.struct_().unwrap();
+
+        assert_eq!(struct_cast.children.len(), 2);
+        assert_eq!(struct_cast.children[0].name(), "b");
+        assert_eq!(struct_cast.children[1].name(), "c");
+
+        let b_values = struct_cast.children[0].utf8().unwrap();
+        let b_arrow = b_values.as_arrow();
+        assert_eq!(b_arrow.value(0), "x");
+        assert_eq!(b_arrow.value(1), "y");
+
+        let missing = struct_cast.children[1].i64().unwrap();
+        let missing_arrow = missing.as_arrow();
+        assert!(missing_arrow.is_null(0));
+        assert!(missing_arrow.is_null(1));
     }
 }
