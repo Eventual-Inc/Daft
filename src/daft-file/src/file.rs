@@ -8,7 +8,7 @@ use common_error::{DaftError, DaftResult};
 use common_file::FileReference;
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
 
-#[cfg_attr(feature = "python", pyo3::pyclass(name = "PyDaftFile"))]
+// #[cfg_attr(feature = "python", pyo3::pyclass(name = "PyDaftFile"))]
 pub struct DaftFile {
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
@@ -28,38 +28,46 @@ impl TryFrom<FileReference> for DaftFile {
 }
 
 impl DaftFile {
-    pub fn from_path(path: String, io_config_opt: Option<IOConfig>) -> DaftResult<Self> {
-        let io_config = io_config_opt.map(Arc::new);
-
-        let io_client = daft_io::get_io_client(true, io_config.clone().unwrap_or_default())?;
+    pub fn from_path(path: String, io_conf: Option<IOConfig>) -> DaftResult<Self> {
+        let io_client = daft_io::get_io_client(true, io_conf.map(Arc::new).unwrap_or_default())?;
         let rt = common_runtime::get_io_runtime(true);
 
-        let (source, path, file_size) = rt.block_within_async_context(async move {
-            let (source, path) = io_client
-                .get_source_and_path(&path)
-                .await
-                .map_err(DaftError::from)?;
-            // getting the size is pretty cheap, so we do it upfront
-            // we grab the size upfront so we can use it to determine if we are at the end of the file
-            let file_size = source
-                .get_size(&path, None)
-                .await
-                .map_err(|e| DaftError::ComputeError(e.to_string()))?;
-            DaftResult::Ok((source, path, file_size))
-        })??;
+        let (source, path, file_size, supports_range) =
+            rt.block_within_async_context(async move {
+                let (source, path) = io_client
+                    .get_source_and_path(&path)
+                    .await
+                    .map_err(DaftError::from)?;
+                // getting the size is pretty cheap, so we do it upfront
+                // we grab the size upfront so we can use it to determine if we are at the end of the file
+                let file_size = source
+                    .get_size(&path, None)
+                    .await
+                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+                let supports_range = source
+                    .supports_range(&path)
+                    .await
+                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+                DaftResult::Ok((source, path, file_size, supports_range))
+            })??;
 
-        // Default to 8MB buffer
-        const DEFAULT_BUFFER_SIZE: usize = 8 * 1024 * 1024;
+        // Default to 16MB buffer
+        const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
-        let reader = ObjectSourceReader::new(source, path, None, file_size, io_config);
+        let mut reader = ObjectSourceReader::new(source, path, None, file_size);
+        if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
+            let mut buf = Vec::with_capacity(file_size);
+            reader.read_to_end(&mut buf)?;
+            Ok(Self::from_bytes(buf))
+        } else {
+            // we wrap it in a BufReader so we are not making so many network requests for each byte read
+            let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
-        // we wrap it in a BufReader so we are not making so many network requests for each byte read
-        let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
-
-        Ok(Self {
-            cursor: Some(FileCursor::ObjectReader(buffered_reader)),
-            position: 0,
-        })
+            Ok(Self {
+                cursor: Some(FileCursor::ObjectReader(buffered_reader)),
+                position: 0,
+            })
+        }
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
@@ -83,12 +91,7 @@ pub(crate) struct ObjectSourceReader {
     pub(crate) uri: String,
     pub(crate) position: usize,
     pub(crate) io_stats: Option<IOStatsRef>,
-    // Cache for full file content when range requests aren't supported
-    cached_content: Option<Vec<u8>>,
-    // Flag to track if range requests are supported
-    supports_range: Option<bool>,
     size: usize,
-    pub(crate) io_config: Option<Arc<IOConfig>>,
 }
 
 impl ObjectSourceReader {
@@ -97,17 +100,13 @@ impl ObjectSourceReader {
         uri: String,
         io_stats: Option<IOStatsRef>,
         size: usize,
-        io_config: Option<Arc<IOConfig>>,
     ) -> Self {
         Self {
             source,
             uri,
             position: 0,
             io_stats,
-            cached_content: None,
-            supports_range: None,
             size,
-            io_config,
         }
     }
     // Helper to read the entire file content
@@ -143,144 +142,55 @@ impl Read for ObjectSourceReader {
             return Ok(0);
         }
 
-        // If we have cached content, serve from cache
-        if let Some(ref content) = self.cached_content {
-            if self.position >= content.len() {
-                return Ok(0); // EOF
-            }
-
-            let available = content.len() - self.position;
-            let bytes_to_read = std::cmp::min(buf.len(), available);
-
-            buf[..bytes_to_read]
-                .copy_from_slice(&content[self.position..self.position + bytes_to_read]);
-            self.position += bytes_to_read;
-
-            return Ok(bytes_to_read);
-        }
-
-        // First time reading, or range support is known
         let rt = common_runtime::get_io_runtime(true);
         let start = self.position;
         let end = start + buf.len();
 
-        // If we already know range requests aren't supported, read full content
-        if self.supports_range == Some(false) {
-            // Read entire file and cache it
-            let content = self.read_full_content()?;
-
-            // Determine how many bytes to return from the full content
-            let bytes_to_read = if start < content.len() {
-                let end = std::cmp::min(end, content.len());
-                let bytes_to_read = end - start;
-
-                // Copy the requested portion to the output buffer
-                buf[..bytes_to_read].copy_from_slice(&content[start..end]);
-
-                bytes_to_read
-            } else {
-                0 // Position is beyond EOF
-            };
-
-            // Update position and cache the content
-            self.position += bytes_to_read;
-            self.cached_content = Some(content);
-
-            return Ok(bytes_to_read);
-        }
-
-        // Try range request if support is unknown or known to be supported
         let range = Some(GetRange::Bounded(start..end));
         let source = self.source.clone();
         let uri = self.uri.clone();
         let io_stats = self.io_stats.clone();
-        let range_result = rt
+        let bytes = rt
             .block_within_async_context(async move {
                 match source.get(&uri, range, io_stats.clone()).await {
                     Ok(result) => {
                         let bytes = result.bytes().await.map_err(map_bytes_error)?;
-                        Ok((bytes.to_vec(), true)) // Range request succeeded
+                        Ok(bytes.to_vec())
                     }
                     Err(e) => {
-                        // EOF
-                        if let daft_io::Error::InvalidRangeRequest {
-                            source: daft_io::range::InvalidGetRange::StartTooLarge { .. },
-                        } = e
+                        let error_str = e.to_string();
+                        // Check if error suggests range requests aren't supported
+                        if error_str.contains("Requested Range Not Satisfiable")
+                            || error_str.contains("416")
                         {
-                            Ok((Vec::new(), true))
-                        } else {
-                            let error_str = e.to_string();
-                            // Check if error suggests range requests aren't supported
-                            if error_str.contains("Requested Range Not Satisfiable")
-                                || error_str.contains("416")
-                            {
-                                // Fall back to reading the entire file
-                                let result = source
-                                    .get(&uri, None, io_stats)
-                                    .await
-                                    .map_err(map_get_error)?;
+                            // Fall back to reading the entire file
+                            let result = source
+                                .get(&uri, None, io_stats)
+                                .await
+                                .map_err(map_get_error)?;
 
-                                let bytes = result.bytes().await.map_err(map_bytes_error)?;
-                                Ok((bytes.to_vec(), false)) // Range request not supported
-                            } else {
-                                Err(map_get_error(e))
-                            }
+                            let bytes = result.bytes().await.map_err(map_bytes_error)?;
+                            Ok(bytes.to_vec())
+                        } else {
+                            Err(map_get_error(e))
                         }
                     }
                 }
             })
             .map_err(map_async_error)??;
 
-        let (bytes, supports_range) = range_result;
-        self.supports_range = Some(supports_range);
-
-        if !supports_range {
-            // Range requests not supported - cache the full content
-            let bytes_to_read = if start < bytes.len() {
-                let end = std::cmp::min(end, bytes.len());
-                let bytes_to_read = end - start;
-
-                // Copy the requested portion to the output buffer
-                buf[..bytes_to_read].copy_from_slice(&bytes[start..end]);
-
-                bytes_to_read
-            } else {
-                0 // Position is beyond EOF
-            };
-
-            self.position += bytes_to_read;
-            self.cached_content = Some(bytes);
-
-            Ok(bytes_to_read)
-        } else {
-            // Range requests supported - use the returned bytes directly
-            if bytes.is_empty() {
-                return Ok(0);
-            }
-
-            let bytes_to_copy = std::cmp::min(buf.len(), bytes.len());
-            buf[..bytes_to_copy].copy_from_slice(&bytes[..bytes_to_copy]);
-
-            self.position += bytes_to_copy;
-            Ok(bytes_to_copy)
+        if bytes.is_empty() {
+            return Ok(0);
         }
+
+        let bytes_to_copy = std::cmp::min(buf.len(), bytes.len());
+        buf[..bytes_to_copy].copy_from_slice(&bytes[..bytes_to_copy]);
+
+        self.position += bytes_to_copy;
+        Ok(bytes_to_copy)
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        // If we have cached content, serve from cache
-        if let Some(ref content) = self.cached_content {
-            if self.position >= content.len() {
-                return Ok(0); // EOF
-            }
-
-            let bytes_to_read = content.len() - self.position;
-            buf.extend_from_slice(&content[self.position..]);
-
-            self.position = content.len();
-
-            return Ok(bytes_to_read);
-        }
-
         let content = self.read_full_content()?;
 
         if self.position >= content.len() {
@@ -290,8 +200,7 @@ impl Read for ObjectSourceReader {
         let bytes_to_read = content.len() - self.position;
         buf.extend_from_slice(&content[self.position..]);
 
-        self.cached_content = Some(content);
-        self.position = self.cached_content.as_ref().unwrap().len();
+        self.position = content.len();
 
         Ok(bytes_to_read)
     }

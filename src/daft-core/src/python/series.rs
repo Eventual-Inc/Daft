@@ -80,16 +80,16 @@ impl PySeries {
 
         Self::from_pylist_impl(name, vec_pyobj, dtype.dtype)
     }
+
     #[staticmethod]
     pub fn from_pylist_of_files(name: &str, pylist: Vec<PyObject>, py: Python) -> PyResult<Self> {
         let files = pylist
             .iter()
             .map(|item| {
                 let inner = item.getattr(py, "_inner")?;
-                let item = inner.getattr(py, "_get_file")?;
-                let item = item.call0(py)?;
+                let inner = inner.call_method0(py, "_get_file")?;
 
-                let daft_file: FileReference = item.extract(py)?;
+                let daft_file: FileReference = inner.extract(py)?;
 
                 PyResult::Ok(daft_file)
             })
