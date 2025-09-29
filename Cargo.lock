@@ -1847,6 +1847,7 @@ dependencies = [
  "daft-schema",
  "image",
  "ndarray",
+ "pyo3",
  "serde",
 ]
 
@@ -1898,6 +1899,7 @@ dependencies = [
 name = "common-ndarray"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-py-serde",
  "ndarray",
  "numpy",
  "pyo3",
@@ -2434,7 +2436,6 @@ dependencies = [
  "common-error",
  "daft-context",
  "daft-core",
- "daft-dsl",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-runners",
@@ -2546,10 +2547,8 @@ dependencies = [
  "image",
  "indexmap 2.11.4",
  "itertools 0.14.0",
- "log",
  "mur3",
  "num-traits",
- "numpy",
  "pyo3",
  "rand 0.9.1",
  "rstest",

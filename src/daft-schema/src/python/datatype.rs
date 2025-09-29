@@ -305,12 +305,6 @@ impl PyDataType {
     #[pyo3(signature = (dtype, shape=None))]
     pub fn tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
         // TODO(Clark): Add support for non-numeric (e.g. string) tensor columns.
-        if !dtype.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for a tensor column must be numeric, but got: {}",
-                dtype.dtype
-            )));
-        }
         let dtype = Box::new(dtype.dtype);
         match shape {
             Some(shape) => Ok(DataType::FixedShapeTensor(dtype, shape).into()),
@@ -325,12 +319,6 @@ impl PyDataType {
         shape: Option<Vec<u64>>,
         use_offset_indices: bool,
     ) -> PyResult<Self> {
-        if !dtype.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for a tensor column must be numeric, but got: {}",
-                dtype.dtype
-            )));
-        }
         let dtype = Box::new(dtype.dtype);
         match shape {
             Some(shape) => {

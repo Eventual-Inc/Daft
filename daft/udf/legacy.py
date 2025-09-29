@@ -603,7 +603,7 @@ def udf(
         ...         return self.model(data.to_pylist())
 
     """
-    inferred_return_dtype = DataType._infer_type(return_dtype)
+    inferred_return_dtype = DataType._infer(return_dtype)
 
     def _udf(f: UserDefinedPyFuncLike) -> UDF:
         # Grab a name for the UDF. It **should** be unique.

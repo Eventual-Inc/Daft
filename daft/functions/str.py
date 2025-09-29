@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from daft.daft import IOConfig, list_lit, sql_datatype
+from daft.daft import IOConfig, list_lit
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions import Expression, col, lit
 from daft.series import item_to_series
@@ -21,11 +21,7 @@ def deserialize(expr: Expression, format: Literal["json"], dtype: DataTypeLike) 
     Returns:
         Expression: A new expression with the deserialized value.
     """
-    if isinstance(dtype, str):
-        dtype = DataType._from_pydatatype(sql_datatype(dtype))
-    else:
-        assert isinstance(dtype, (DataType, type))
-        dtype = DataType._infer_type(dtype)
+    dtype = DataType._infer(dtype)
     return Expression._call_builtin_scalar_fn("deserialize", expr, format=format, dtype=dtype._dtype)
 
 
@@ -40,11 +36,7 @@ def try_deserialize(expr: Expression, format: Literal["json"], dtype: DataTypeLi
     Returns:
         Expression: A new expression with the deserialized value (or null).
     """
-    if isinstance(dtype, str):
-        dtype = DataType._from_pydatatype(sql_datatype(dtype))
-    else:
-        assert isinstance(dtype, (DataType, type))
-        dtype = DataType._infer_type(dtype)
+    dtype = DataType._infer(dtype)
     return Expression._call_builtin_scalar_fn("try_deserialize", expr, format=format, dtype=dtype._dtype)
 
 
