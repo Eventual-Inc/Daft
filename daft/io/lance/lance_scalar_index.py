@@ -5,7 +5,6 @@ import uuid
 from typing import Any
 
 import lance
-from lance.dataset import IndexConfig
 
 from daft import DataType, from_pylist
 from daft.dependencies import pa
@@ -34,7 +33,7 @@ class FragmentIndexHandler:
         self,
         lance_ds: lance.LanceDataset,
         column: str,
-        index_type: str | IndexConfig,
+        index_type: str,
         name: str,
         fragment_uuid: str,
         replace: bool,
@@ -115,14 +114,10 @@ def create_scalar_index_internal(
         raise ValueError("Column name cannot be empty")
 
     # Handle index_type validation
-    if isinstance(index_type, str):
-        # For distributed indexing, currently only support text-based indexes
-        if index_type not in ["INVERTED", "FTS"]:
-            raise ValueError(
-                f"Distributed indexing currently only supports 'INVERTED' and 'FTS' index types, not '{index_type}'"
-            )
-    elif not isinstance(index_type, IndexConfig):
-        raise ValueError(f"index_type must be a string literal or IndexConfig object, got {type(index_type)}")
+    if index_type not in ["INVERTED", "FTS"]:
+        raise ValueError(
+            f"Distributed indexing currently only supports 'INVERTED' and 'FTS' index types, not '{index_type}'"
+        )
 
     # Validate column exists and has correct type
     try:
