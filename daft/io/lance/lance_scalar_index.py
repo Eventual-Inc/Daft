@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
             "uuid": DataType.string(),
             "error": DataType.string(),
         }
-    ),
-    concurrency=1,
+    )
 )
 class FragmentIndexHandler:
     """UDF handler for distributed fragment index creation."""
@@ -97,7 +96,7 @@ def create_scalar_index_internal(
     uri: str,
     *,
     column: str,
-    index_type: str | IndexConfig = "INVERTED",
+    index_type: str = "INVERTED",
     name: str | None = None,
     replace: bool = True,
     storage_options: dict[str, str] | None = None,
@@ -117,9 +116,6 @@ def create_scalar_index_internal(
 
     # Handle index_type validation
     if isinstance(index_type, str):
-        valid_index_types = ["BTREE", "BITMAP", "LABEL_LIST", "INVERTED", "FTS", "NGRAM", "ZONEMAP"]
-        if index_type not in valid_index_types:
-            raise ValueError(f"Index type must be one of {valid_index_types}, not '{index_type}'")
         # For distributed indexing, currently only support text-based indexes
         if index_type not in ["INVERTED", "FTS"]:
             raise ValueError(
@@ -145,7 +141,7 @@ def create_scalar_index_internal(
 
     # Generate index name if not provided
     if name is None:
-        name = f"{column}_idx"
+        name = f"{column}_{index_type.lower()}_idx"
 
     # Handle replace parameter - check for existing index with same name
     if not replace:
@@ -225,11 +221,8 @@ def create_scalar_index_internal(
 
     logger.info("Starting index metadata merging by reloading dataset to get latest state")
     lance_ds = lance.LanceDataset(uri, storage_options=storage_options)
-    try:
-        lance_ds.merge_index_metadata(index_id, index_type)
-    except TypeError as e:
-        logger.warning("Lance version may not support index type, merging index metadata without type: %s", e)
-        lance_ds.merge_index_metadata(index_id)
+
+    lance_ds.merge_index_metadata(index_id, index_type)
 
     logger.info("Starting atomic index creation and commit")
     fields = successful_results[0]["fields"]

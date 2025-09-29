@@ -309,10 +309,10 @@ def create_scalar_index(
         from daft.io.lance.lance_scalar_index import create_scalar_index_internal
 
         lance_version = packaging_version.parse(lance.__version__)
-        min_required_version = packaging_version.parse("0.36.0")
+        min_required_version = packaging_version.parse("0.37.0")
         if lance_version < min_required_version:
             raise RuntimeError(
-                f"Distributed indexing requires pylance >= 0.36.0, but found {lance.__version__}. "
+                f"Distributed indexing requires pylance >= 0.37.0, but found {lance.__version__}. "
                 "The distribute-related interfaces are not available in older versions. "
                 "Please upgrade lance by running: pip install --upgrade pylance"
             )

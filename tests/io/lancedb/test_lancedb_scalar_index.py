@@ -214,7 +214,7 @@ class TestDistributedIndexing:
 
         with pytest.raises(
             ValueError,
-            match=r"Index type must be one of \['BTREE', 'BITMAP', 'LABEL_LIST', 'INVERTED', 'FTS', 'NGRAM', 'ZONEMAP'\], not 'INVALID'",
+            match=r"Distributed indexing currently only supports 'INVERTED' and 'FTS' index types, not 'INVALID'",
         ):
             create_scalar_index(
                 url=dataset_uri,
