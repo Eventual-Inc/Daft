@@ -373,7 +373,7 @@ pub async fn launch_server(
         .route("/api/queries", get(get_queries))
         .route("/api/queries", post(add_query))
         .route(
-            "/api/dataframes/:dataframe_id/cell",
+            "/api/dataframes/{dataframe_id}/cell",
             get(get_dataframe_cell),
         )
         .nest_service("/", ServeDir::new(ASSETS_DIR.path()))
