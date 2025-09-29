@@ -375,6 +375,8 @@ def test_repr_empty_struct():
 
 def test_interactive_html_with_record_batch():
     """Test interactive HTML generation with a RecordBatch directly."""
+    import requests
+
     from daft.dataframe.preview import PreviewFormatter
 
     # Create a DataFrame and get its RecordBatch
@@ -386,6 +388,10 @@ def test_interactive_html_with_record_batch():
     schema = df.schema()
     formatter = PreviewFormatter(preview, schema)
     html = formatter._generate_interactive_html()
+
+    # Extract the dataframe table id, which is a random uuid
+    table_id = html.find('id="dataframe-')
+    table_id = html[table_id + 14 : table_id + 14 + 36]
 
     # Extract the dataframe table part for exact testing
     table_start = html.find('<table class="dataframe"')
@@ -409,3 +415,8 @@ def test_interactive_html_with_record_batch():
     assert "side-pane" in html
     assert "showSidePane" in html
     assert "serverUrl" in html
+
+    # make the request for the dataframe cell
+    response = requests.get(f"http://localhost:3238/api/dataframes/{table_id}/cell?row=0&col=0")
+    assert response.status_code == 200
+    assert response.json()["value"] == "1"
