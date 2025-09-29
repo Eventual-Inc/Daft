@@ -376,7 +376,7 @@ pub async fn launch_server(
             "/api/dataframes/{dataframe_id}/cell",
             get(get_dataframe_cell),
         )
-        .nest_service("/", ServeDir::new(ASSETS_DIR.path()))
+        .fallback_service(ServeDir::new(ASSETS_DIR.path()))
         .layer(
             ServiceBuilder::new()
                 .layer(
