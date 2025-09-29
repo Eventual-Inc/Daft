@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Literal
 from daft.convert import from_pydict
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.functions import cast, contains, decompress, download, explode, split
+from daft.functions import cast, contains, decompress, download, explode, format, split
 from daft.io import read_warc
 
 if TYPE_CHECKING:
@@ -30,7 +30,10 @@ def _get_common_crawl_paths(
     # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
     # But from a preliminary microbenchmark on a local machine, this approach turns out to be 20-30% faster than read_csv.
     paths = from_pydict({"url": [paths_url]}).select(
-        explode(split(cast(decompress(download(col("url")), codec="gzip"), DataType.string()), "\n"))
+        format(
+            "s3://commoncrawl/{}",
+            explode(split(cast(decompress(download(col("url")), codec="gzip"), DataType.string()), "\n")),
+        ).alias("url")
     )
 
     if segment is not None:
@@ -41,14 +44,7 @@ def _get_common_crawl_paths(
 
     path_list = paths.select("url").to_pydict()["url"]
 
-    full_urls = []
-    for path in path_list:
-        if path:
-            # The paths in paths.gz are relative, so we need to construct full URLs.
-            # They look like: crawl-data/CC-MAIN-2025-38/segments/1757047533033.70/warc/CC-MAIN-20250909055722-20250909085722-00031.warc.gz
-            full_urls.append(f"s3://commoncrawl/{path}")
-
-    return full_urls
+    return path_list
 
 
 def common_crawl(
