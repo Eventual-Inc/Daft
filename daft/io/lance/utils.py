@@ -40,18 +40,18 @@ def distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> lis
     # This helps with better load balancing using the greedy algorithm
     fragment_info.sort(key=lambda x: x["size"], reverse=True)
 
-    # Initialize worker batches and their current workloads
-    worker_batches: list[list[int]] = [[] for _ in range(concurrency)]
-    worker_workloads = [0] * concurrency
+    # Initialize fragment groups for each worker
+    fragment_group_list: list[list[int]] = [[] for _ in range(concurrency)]
+    group_size_list = [0] * concurrency
 
     # Greedy assignment: assign each fragment to the worker with minimum workload
     for frag_info in fragment_info:
         # Find the worker with the minimum current workload
-        min_workload_idx = min(range(concurrency), key=lambda i: worker_workloads[i])
+        min_workload_idx = min(range(concurrency), key=lambda i: group_size_list[i])
 
         # Assign fragment to this worker
-        worker_batches[min_workload_idx].append(frag_info["id"])
-        worker_workloads[min_workload_idx] += frag_info["size"]
+        fragment_group_list[min_workload_idx].append(frag_info["id"])
+        group_size_list[min_workload_idx] += frag_info["size"]
 
     # Log distribution statistics for debugging
     total_size = sum(frag_info["size"] for frag_info in fragment_info)
@@ -62,7 +62,7 @@ def distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> lis
         concurrency,
     )
 
-    for i, (batch, workload) in enumerate(zip(worker_batches, worker_workloads)):
+    for i, (batch, workload) in enumerate(zip(fragment_group_list, group_size_list)):
         percentage = (workload / total_size * 100) if total_size > 0 else 0
         logger.info("  Worker %d: %d fragments, " "workload: %d (%d%%)", i, len(batch), workload, percentage)
 
@@ -71,7 +71,7 @@ def distribute_fragments_balanced(fragments: list[Any], concurrency: int) -> lis
         {
             "fragment_ids": batch,
         }
-        for batch in worker_batches
+        for batch in fragment_group_list
         if batch
     ]
 
