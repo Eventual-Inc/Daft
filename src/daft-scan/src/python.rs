@@ -136,7 +136,7 @@ pub mod pylib {
             infer_schema,
             schema=None,
             file_path_column=None,
-            passthrough_to_file_metadata=false
+            skip_glob=false
         ))]
         pub fn glob_scan(
             py: Python,
@@ -147,7 +147,7 @@ pub mod pylib {
             infer_schema: bool,
             schema: Option<PySchema>,
             file_path_column: Option<String>,
-            passthrough_to_file_metadata: bool,
+            skip_glob: bool,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let executor = common_runtime::get_io_runtime(true);
@@ -160,7 +160,7 @@ pub mod pylib {
                     schema.map(|s| s.schema),
                     file_path_column,
                     hive_partitioning,
-                    passthrough_to_file_metadata,
+                    skip_glob,
                 );
 
                 let operator = executor.block_within_async_context(task)??;

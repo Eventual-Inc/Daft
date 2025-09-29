@@ -80,6 +80,6 @@ def read_warc(
         storage_config=storage_config,
         file_path_column=file_path_column,
         hive_partitioning=False,
-        passthrough_to_file_metadata=True,
+        skip_glob=True,
     )
     return DataFrame(builder)
