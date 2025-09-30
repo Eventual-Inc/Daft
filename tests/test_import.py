@@ -20,7 +20,7 @@ for module_name in modules_to_remove:
     del sys.modules[module_name]
 
 # Import daft
-    import daft  # noqa: F401
+import daft  # noqa: F401
 
 # Check that no pyarrow modules were imported (including nested ones)
 pyarrow_modules = [name for name in sys.modules.keys() if name.startswith("pyarrow")]

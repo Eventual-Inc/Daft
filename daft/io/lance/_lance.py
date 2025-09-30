@@ -6,23 +6,18 @@ from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
-from daft.dependencies import pa
 from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
+    from daft.dependencies import pa
+
     try:
         from lance.udf import BatchUDF
     except ImportError:
         BatchUDF = None
-
-# Runtime import for BatchUDF
-try:
-    from lance.udf import BatchUDF
-except ImportError:
-    BatchUDF = None
 
 
 @PublicAPI
@@ -144,9 +139,9 @@ def merge_columns(
     url: str,
     io_config: Optional[IOConfig] = None,
     *,
-    transform: Union[dict[str, str], BatchUDF, Callable[[pa.lib.RecordBatch], pa.lib.RecordBatch]] = None,
+    transform: Union[dict[str, str], "BatchUDF", Callable[["pa.lib.RecordBatch"], "pa.lib.RecordBatch"]] = None,
     read_columns: Optional[list[str]] = None,
-    reader_schema: Optional[pa.Schema] = None,
+    reader_schema: Optional["pa.Schema"] = None,
     storage_options: Optional[dict[str, Any]] = None,
     daft_remote_args: Optional[dict[str, Any]] = None,
     concurrency: Optional[int] = None,
