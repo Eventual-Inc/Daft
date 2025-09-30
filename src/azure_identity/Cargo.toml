@@ -79,18 +79,6 @@ version = "2.2"
 version = "1.0"
 features = ["v4"]
 
-[dev-dependencies.clap]
-version = "4.4.16"
-features = ["derive"]
-
-[dev-dependencies.reqwest]
-version = "0.12"
-features = ["json"]
-default-features = false
-
-[dev-dependencies.serde_test]
-version = "1"
-
 [dev-dependencies.serial_test]
 version = "3.0"
 
@@ -100,9 +88,6 @@ features = [
   "macros",
   "rt-multi-thread"
 ]
-
-[dev-dependencies.tracing-subscriber]
-version = "0.3"
 
 [features]
 azureauth_cli = []
