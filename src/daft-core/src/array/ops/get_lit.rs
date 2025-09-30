@@ -39,33 +39,14 @@ impl StructArray {
             Literal::Struct(
                 self.children
                     .iter()
-                    .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
-                    .map(|child| (child.field().clone(), child.get_lit(idx)))
+                    // Below line is commented out because it significantly complicates Series <-> Literal conversion to do this.
+                    // Instead, we'll filter these empty fields out at the Literal to Python object boundary.
+                    // .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
+                    .map(|child| (child.name().to_string(), child.get_lit(idx)))
                     .collect(),
             )
         } else {
             Literal::Null
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl PythonArray {
-    pub fn get_lit(&self, idx: usize) -> Literal {
-        use pyo3::prelude::*;
-
-        assert!(
-            idx < self.len(),
-            "Out of bounds: {} vs len: {}",
-            idx,
-            self.len()
-        );
-
-        let v = self.get(idx);
-        if Python::with_gil(|py| v.is_none(py)) {
-            Literal::Null
-        } else {
-            Literal::Python(v.into())
         }
     }
 }
@@ -267,6 +248,8 @@ impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);
 impl_array_get_lit!(EmbeddingArray, Embedding);
 impl_array_get_lit!(FileArray, File);
+#[cfg(feature = "python")]
+impl_array_get_lit!(PythonArray, Python);
 
 impl_array_get_lit!(Decimal128Array, DataType::Decimal128(precision, scale) => |v| Literal::Decimal(v, *precision as _, *scale as _));
 impl_array_get_lit!(TimestampArray, DataType::Timestamp(tu, tz) => |v| Literal::Timestamp(v, *tu, tz.clone()));

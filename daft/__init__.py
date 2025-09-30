@@ -150,6 +150,7 @@ from daft.file import File
 import daft.context as context
 import daft.io as io
 import daft.runners as runners
+import daft.datasets as datasets
 import daft.functions as functions
 
 __all__ = [
@@ -190,6 +191,7 @@ __all__ = [
     "current_namespace",
     "current_provider",
     "current_session",
+    "datasets",
     "detach_catalog",
     "detach_function",
     "detach_provider",

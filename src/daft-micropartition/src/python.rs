@@ -1141,7 +1141,16 @@ pub fn read_pyfunc_into_table_iter(
     }).collect::<crate::Result<Vec<_>>>()?;
 
     let scan_task_limit = scan_task.pushdowns.limit;
-    let scan_task_filters = scan_task.pushdowns.filters.clone();
+    // If aggregation pushdown is present, the Python factory function is expected to have applied
+    // the filtering semantics already (e.g., filter+count pushdown), so we should not re-apply
+    // post-scan filters here to avoid double filtering on pre-aggregated results.
+    // This removes reliance on any hard-coded Python function names and makes the behavior generic
+    // for all sources that surface aggregation pushdowns.
+    let scan_task_filters = if scan_task.pushdowns.aggregation.is_some() {
+        None
+    } else {
+        scan_task.pushdowns.filters.clone()
+    };
     let res = table_iterators
         .into_iter()
         .flat_map(move |iter| {

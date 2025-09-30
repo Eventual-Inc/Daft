@@ -242,3 +242,138 @@ def between(expr: Expression, lower: Expression | int | float, upper: Expression
     upper = Expression._to_expression(upper)
 
     return Expression._from_pyexpr(expr._expr.between(lower._expr, upper._expr))
+
+
+def is_nan(expr: Expression) -> Expression:
+    """Checks if values are NaN (a special float value indicating not-a-number).
+
+    Returns:
+        Expression: Boolean Expression indicating whether values are invalid.
+
+    Note:
+        Nulls will be propagated! I.e. this operation will return a null for null values.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import is_nan
+        >>>
+        >>> df = daft.from_pydict({"data": [1.0, None, float("nan")]})
+        >>> df = df.select(is_nan(df["data"]))
+        >>> df.collect()
+        ╭─────────╮
+        │ data    │
+        │ ---     │
+        │ Boolean │
+        ╞═════════╡
+        │ false   │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ true    │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("is_nan", expr)
+
+
+def is_inf(expr: Expression) -> Expression:
+    """Checks if values in the Expression are Infinity.
+
+    Returns:
+        Expression: Boolean Expression indicating whether values are Infinity.
+
+    Note:
+        Nulls will be propagated! I.e. this operation will return a null for null values.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import is_inf
+        >>>
+        >>> df = daft.from_pydict({"data": [-float("inf"), 0.0, float("inf"), None]})
+        >>> df = df.select(is_inf(df["data"]))
+        >>> df.collect()
+        ╭─────────╮
+        │ data    │
+        │ ---     │
+        │ Boolean │
+        ╞═════════╡
+        │ true    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ false   │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ true    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("is_inf", expr)
+
+
+def not_nan(expr: Expression) -> Expression:
+    """Checks if values are not NaN (a special float value indicating not-a-number).
+
+    Returns:
+        Expression: Boolean Expression indicating whether values are not invalid.
+
+    Note:
+        Nulls will be propagated! I.e. this operation will return a null for null values.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import not_nan
+        >>>
+        >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
+        >>> df = df.select(not_nan(df["x"]))
+        >>> df.collect()
+        ╭─────────╮
+        │ x       │
+        │ ---     │
+        │ Boolean │
+        ╞═════════╡
+        │ true    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ false   │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("not_nan", expr)
+
+
+def fill_nan(expr: Expression, fill_value: Expression) -> Expression:
+    """Fills NaN values in the Expression with the provided fill_value.
+
+    Returns:
+        Expression: Expression with Nan values filled with the provided fill_value
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import fill_nan
+        >>>
+        >>> df = daft.from_pydict({"data": [1.1, float("nan"), 3.3]})
+        >>> df = df.with_column("filled", fill_nan(df["data"], 2.2))
+        >>> df.show()
+        ╭─────────┬─────────╮
+        │ data    ┆ filled  │
+        │ ---     ┆ ---     │
+        │ Float64 ┆ Float64 │
+        ╞═════════╪═════════╡
+        │ 1.1     ┆ 1.1     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ NaN     ┆ 2.2     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 3.3     ┆ 3.3     │
+        ╰─────────┴─────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("fill_nan", expr, fill_value)

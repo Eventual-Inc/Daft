@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import io
+import random
 from pathlib import Path
 
 import pytest
 
 import daft
 from daft import DataType as dt
-from daft.functions import file
+from daft.functions import file, file_size
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -81,7 +82,6 @@ def test_can_open_local_file(tmp_path: Path):
     temp_file.write_text("test content")
 
     df = daft.from_pydict({"path": [str(temp_file.absolute())]})
-
     df = df.select(file(df["path"]))
 
     @daft.func
@@ -230,3 +230,77 @@ def test_compatibility_with_json_file(tmp_path: Path):
 
     df = df.select(read_with_json(df["path"]).alias("skill"))
     assert df.to_pydict()["skill"] == ["Python"]
+
+
+def test_to_tempfile(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+
+    temp_file.write_text("test content")
+
+    file = daft.File(str(temp_file.absolute()))
+
+    with file.to_tempfile() as temp_file:
+        assert temp_file.read() == b"test content"
+
+    # to_tempfile consumes and closes the original file
+    assert file.closed()
+
+
+def test_to_tempfile_larger_data(tmp_path: Path):
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(data)
+
+    file = daft.File(str(temp_file.absolute()))
+
+    with file.to_tempfile() as f:
+        assert f.read() == data
+
+
+def test_to_tempfile_remote():
+    file = daft.File("https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/README.rst")
+
+    with file.to_tempfile() as temp_file:
+        text_wrapper = io.TextIOWrapper(temp_file)
+        first_line = text_wrapper.readline()
+        assert first_line == "|Banner|\n"
+
+
+def test_to_tempfile_from_bytes():
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    file = daft.File(data)
+    with file.to_tempfile() as temp_file:
+        assert temp_file.read() == data
+
+
+def test_file_size(tmp_path: Path):
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(data)
+    file = daft.File(str(temp_file.absolute()))
+    assert file.size() == 2048
+
+
+def test_file_size_from_bytes():
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    file = daft.File(data)
+    assert file.size() == 2048
+
+
+def test_filesize_expr(tmp_path: Path):
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(data)
+
+    df = daft.from_pydict({"file": [str(temp_file.absolute())]})
+
+    res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
+    assert res == 2048
+
+
+def test_filesize_expr_binary():
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    df = daft.from_pydict({"file": [data]})
+
+    res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
+    assert res == 2048

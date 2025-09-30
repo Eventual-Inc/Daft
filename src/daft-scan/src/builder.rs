@@ -116,6 +116,7 @@ impl ParquetScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -251,6 +252,7 @@ impl CsvScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -340,6 +342,7 @@ impl JsonScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );

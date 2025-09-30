@@ -46,7 +46,7 @@ class RowWiseUdf(Generic[P, T]):
                 )
 
             return_dtype = type_hints["return"]
-        self.return_dtype = DataType._infer_type(return_dtype)
+        self.return_dtype = DataType._infer(return_dtype)
 
         if self.unnest and not self.return_dtype.is_struct():
             raise ValueError(

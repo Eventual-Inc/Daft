@@ -325,7 +325,12 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     #[cfg(feature = "python")]
                     DataType::Python => {
-                        panic!("python deserialization not implemented for rust Serde");
+                        use crate::prelude::PythonArray;
+
+                        let pickled = map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter();
+                        Ok(PythonArray::from_iter_pickled(&field.name, pickled)
+                            .unwrap()
+                            .into_series())
                     }
                     DataType::Unknown => {
                         panic!("Unable to deserialize Unknown DataType");

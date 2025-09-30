@@ -1,0 +1,106 @@
+# Default values for daft Ray cluster Helm chart
+
+# Global chart configuration
+nameOverride: ""
+fullnameOverride: ""
+
+# Deployment mode configuration
+# Set to false for simple mode (single job), true for distributed mode (Ray cluster + job)
+distributed: false
+
+# Image for Ray cluster and job
+image: rayproject/ray:2.46.0-py312-cpu
+imagePullPolicy: IfNotPresent
+
+# Job configuration (always used - the main workload)
+job:
+  # Python script content to execute (populated via --set-file job.script=script.py)
+  # When provided, the script is mounted as /usr/src/main.py and executed with "uv run --python <version> python /usr/src/main.py"
+  script: ""
+
+  # Command/Entrypoint to run in the job.
+  command: []
+
+  # Additional arguments to pass to the command
+  args: []
+
+  # Job resource allocation
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      memory: "4Gi"
+
+  # Additional environment variables for the job
+  env: []
+
+  # Volume mounts for the job
+  volumeMounts: []
+
+  # Job execution settings
+  restartPolicy: Never
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+
+# Ray head node configuration (only used when distributed=true)
+head:
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      memory: "8Gi"
+
+  # Node placement
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Additional environment variables
+  env: []
+
+  # Volume mounts
+  volumeMounts: []
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    ports:
+      client: 10001
+      dashboard: 8265
+      gcs: 6379
+      metrics: 8080
+      serve: 8000
+    annotations: {}
+
+# Ray worker nodes configuration (only used when distributed=true)
+worker:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: "2Gi"
+    limits:
+      memory: "8Gi"
+
+  # Node placement
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Additional environment variables
+  env: []
+
+  # Volume mounts
+  volumeMounts: []
+
+# Shared volumes
+volumes: []
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""

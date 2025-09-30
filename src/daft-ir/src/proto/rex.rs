@@ -731,7 +731,7 @@ impl ToFromProto for ir::Literal {
                 let mut fields = vec![];
                 for field in struct_ {
                     fields.push(proto::literal::r#struct::Field {
-                        name: field.0.to_string(),
+                        name: field.0.clone(),
                         value: Some(field.1.to_proto()?),
                     });
                 }

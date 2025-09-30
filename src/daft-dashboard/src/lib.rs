@@ -17,7 +17,13 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::{cors::CorsLayer, services::ServeDir};
+use tower_http::{
+    LatencyUnit,
+    cors::CorsLayer,
+    services::ServeDir,
+    trace::{DefaultOnResponse, TraceLayer},
+};
+use tracing::Level;
 use uuid::Uuid;
 
 type StrRef = Arc<str>;
@@ -362,24 +368,29 @@ pub async fn launch_server(
     port: u16,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let listener = TcpListener::bind((DEFAULT_SERVER_ADDR, port)).await?;
-
     let app = Router::new()
         .route("/api/ping", get(ping))
         .route("/api/queries", get(get_queries))
         .route("/api/queries", post(add_query))
         .route(
-            "/api/dataframes/:dataframe_id/cell",
+            "/api/dataframes/{dataframe_id}/cell",
             get(get_dataframe_cell),
         )
-        .nest_service("/", ServeDir::new(ASSETS_DIR.path()))
+        .fallback_service(ServeDir::new(ASSETS_DIR.path()))
         .layer(
             ServiceBuilder::new()
-                // TODO: Add tracing layer
+                .layer(
+                    TraceLayer::new_for_http().on_request(()).on_response(
+                        DefaultOnResponse::new()
+                            .level(Level::INFO)
+                            .latency_unit(LatencyUnit::Micros),
+                    ),
+                )
                 .layer(CorsLayer::very_permissive()),
         );
 
     // Start the server
+    let listener = TcpListener::bind((DEFAULT_SERVER_ADDR, port)).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fn)
         .await

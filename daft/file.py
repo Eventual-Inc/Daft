@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 from typing import TYPE_CHECKING, Any
 
 from daft.daft import PyDaftFile
 
 if TYPE_CHECKING:
+    from tempfile import _TemporaryFileWrapper
+
     from daft.io import IOConfig
 
 
@@ -62,6 +66,18 @@ class File:
         file._inner = inner
         return file
 
+    @staticmethod
+    def _from_tuple(t: tuple[Any]) -> File:
+        inner = PyDaftFile._from_tuple(t)
+        file: File
+        if isinstance(t[0], str):
+            file = PathFile.__new__(PathFile)
+        else:
+            file = MemoryFile.__new__(MemoryFile)
+
+        file._inner = inner
+        return file
+
     def read(self, size: int = -1) -> bytes:
         return self._inner.read(size)
 
@@ -102,6 +118,41 @@ class File:
 
     def closed(self) -> bool:
         return self._inner.closed()
+
+    def size(self) -> int:
+        return self._inner.size()
+
+    def to_tempfile(self) -> _TemporaryFileWrapper[bytes]:
+        """Create a temporary file with the contents of this file.
+
+        Returns:
+            _TemporaryFileWrapper[bytes]: The temporary file object.
+
+        The temporary file will be automatically deleted when the returned context manager is closed.
+
+        It's important to note that `to_tempfile` closes the original file object, so it CANNOT be used after calling this method.
+
+        Example:
+            >>> with file.to_tempfile() as temp_path:
+            >>> # Do something with the temporary file
+            >>>     pass
+        """
+        temp_file = tempfile.NamedTemporaryFile(
+            prefix="daft_",
+        )
+        self.seek(0)
+
+        size = self._inner.size()
+        # if its either a really small file, or doesn't support range requests. Just read it normally
+        if not self._inner.supports_range_requests() or size < 1024:
+            temp_file.write(self.read())
+        else:
+            shutil.copyfileobj(self, temp_file, length=size)
+        # close it as `to_tempfile` is a consuming method
+        self.close()
+        temp_file.seek(0)
+
+        return temp_file
 
 
 class PathFile(File):

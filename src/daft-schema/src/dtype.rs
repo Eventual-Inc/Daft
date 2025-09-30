@@ -282,9 +282,15 @@ impl DataType {
                 logical_extension.to_arrow()
             }
             #[cfg(feature = "python")]
-            Self::Python => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
-            ))),
+            Self::Python => {
+                let physical = Box::new(Self::Binary);
+                let logical_extension = Self::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                logical_extension.to_arrow()
+            }
             Self::Unknown => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),

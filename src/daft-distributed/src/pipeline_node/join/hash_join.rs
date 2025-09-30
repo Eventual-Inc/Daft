@@ -12,11 +12,11 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         SubmittableTaskStream,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
 };
 
 pub(crate) struct HashJoinNode {
@@ -40,7 +40,7 @@ impl HashJoinNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Option<Vec<bool>>,
@@ -51,7 +51,7 @@ impl HashJoinNode {
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![left.node_id(), right.node_id()],
@@ -66,7 +66,7 @@ impl HashJoinNode {
             .collect::<Vec<_>>();
         let config = PipelineNodeConfig::new(
             output_schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(HashClusteringConfig::new(num_partitions, partition_cols).into()),
         );
         Self {
@@ -112,6 +112,7 @@ impl HashJoinNode {
             right_plan,
             self.left_on.clone(),
             self.right_on.clone(),
+            None,
             self.null_equals_nulls.clone(),
             self.join_type,
             self.config.schema.clone(),
@@ -174,11 +175,11 @@ impl DistributedPipelineNode for HashJoinNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let left_input = self.left.clone().produce_tasks(stage_context);
-        let right_input = self.right.clone().produce_tasks(stage_context);
-        let task_id_counter = stage_context.task_id_counter();
+        let left_input = self.left.clone().produce_tasks(plan_context);
+        let right_input = self.right.clone().produce_tasks(plan_context);
+        let task_id_counter = plan_context.task_id_counter();
 
         SubmittableTaskStream::new(
             left_input

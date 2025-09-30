@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.expressions import Expression
+
+if TYPE_CHECKING:
+    from daft.datatype import TimeUnit
 
 
 def date(expr: Expression) -> Expression:
@@ -1156,3 +1161,42 @@ def date_trunc(interval: str, expr: Expression, relative_to: Expression | None =
 
     """
     return Expression._call_builtin_scalar_fn("truncate", expr, relative_to, interval=interval)
+
+
+def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> Expression:
+    """Converts a datetime column to a Unix timestamp with the specified time unit. (default: seconds).
+
+    See [daft.datatype.TimeUnit](https://docs.daft.ai/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
+
+    Examples:
+        >>> import daft
+        >>> from datetime import date
+        >>>
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "dates": [
+        ...             date(2001, 1, 1),
+        ...             date(2001, 1, 2),
+        ...             date(2001, 1, 3),
+        ...             None,
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_column("timestamp", df["dates"].to_unix_epoch("ns")).show()
+        ╭────────────┬────────────────────╮
+        │ dates      ┆ timestamp          │
+        │ ---        ┆ ---                │
+        │ Date       ┆ Int64              │
+        ╞════════════╪════════════════════╡
+        │ 2001-01-01 ┆ 978307200000000000 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-02 ┆ 978393600000000000 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-03 ┆ 978480000000000000 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None       ┆ None               │
+        ╰────────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    return Expression._call_builtin_scalar_fn("to_unix_epoch", expr, time_unit=time_unit)
