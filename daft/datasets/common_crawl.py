@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Literal
 from daft.convert import from_pydict
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.functions import cast, contains, decompress, download, explode, format, split
+from daft.functions import cast, contains, decompress, download, format, split
 from daft.io import read_warc
 
 if TYPE_CHECKING:
@@ -30,11 +30,10 @@ def _get_common_crawl_paths(
     # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
     # But from a preliminary microbenchmark on a local machine, this approach turns out to be 20-30% faster than read_csv.
     paths = from_pydict({"url": [paths_url]}).select(
-        format(
-            "s3://commoncrawl/{}",
-            explode(split(cast(decompress(download(col("url")), codec="gzip"), DataType.string()), "\n")),
-        ).alias("url")
+        split(cast(decompress(download(col("url")), codec="gzip"), DataType.string()), "\n")
     )
+    paths = paths.explode("url")
+    paths = paths.select(format("s3://commoncrawl/{}", col("url")).alias("url"))
 
     if segment is not None:
         paths = paths.where(contains(col("url"), segment))
