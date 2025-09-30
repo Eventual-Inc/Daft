@@ -10,7 +10,7 @@ import pytest
 import daft
 from daft.daft import PyMicroPartition, PyNodeInfo
 from daft.recordbatch import MicroPartition
-from daft.subscribers import QuerySubscriber, StatType
+from daft.subscribers import StatType, Subscriber
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class MockSubscriber(QuerySubscriber):
+class MockSubscriber(Subscriber):
     query_unoptimized_plan: dict[str, str]
     query_optimized_plan: dict[str, str]
     query_node_stats: defaultdict[str, defaultdict[int, dict[str, Any]]]
@@ -63,7 +63,7 @@ class MockSubscriber(QuerySubscriber):
 def test_subscriber_template():
     subscriber = MockSubscriber()
     ctx = daft.context.get_context()
-    ctx.attach_subscriber(subscriber)
+    ctx.attach_subscriber("mock", subscriber)
 
     df = daft.from_pydict({"x": [1, 2, 3]})
     df = df.with_column("y", df["x"] + 1)
@@ -87,3 +87,11 @@ def test_subscriber_template():
         for stat_name, stat_value in stats.items():
             if stat_name == "rows_in" or stat_name == "rows_out":
                 assert stat_value == 3
+
+    # Verify detach
+    ctx.detach_subscriber("mock")
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.with_column("y", df["x"] + 1)
+    df.collect()
+    # Should only have the previous query
+    assert len(subscriber.query_unoptimized_plan) == 1

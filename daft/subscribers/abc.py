@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from daft.daft import PyMicroPartition, PyNodeInfo
 
 
-class QuerySubscriber(ABC):
+class Subscriber(ABC):
     """A framework for subscribing to Daft's query lifecycle.
 
     The engine triggers the subscriber methods as callbacks at the following points:
@@ -69,4 +69,4 @@ class QuerySubscriber(ABC):
         pass
 
 
-__all__ = ["QuerySubscriber", "StatType"]
+__all__ = ["StatType", "Subscriber"]

@@ -2,7 +2,7 @@ mod debug;
 #[cfg(feature = "python")]
 pub mod python;
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -10,7 +10,7 @@ use common_metrics::{NodeID, StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 
 #[async_trait]
-pub trait QuerySubscriber: Send + Sync + std::fmt::Debug + 'static {
+pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()>;
     fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()>;
     fn on_plan_start(&self, query_id: String) -> DaftResult<()>;
@@ -26,8 +26,8 @@ pub trait QuerySubscriber: Send + Sync + std::fmt::Debug + 'static {
     async fn on_exec_end(&self, query_id: String) -> DaftResult<()>;
 }
 
-pub fn default_subscribers() -> Vec<Arc<dyn QuerySubscriber>> {
-    let mut subscribers: Vec<Arc<dyn QuerySubscriber>> = Vec::new();
+pub fn default_subscribers() -> HashMap<String, Arc<dyn Subscriber>> {
+    let mut subscribers: HashMap<String, Arc<dyn Subscriber>> = HashMap::new();
 
     #[cfg(debug_assertions)]
     if let Ok(s) = std::env::var("DAFT_DEV_ENABLE_RUNTIME_STATS_DBG") {
@@ -35,7 +35,7 @@ pub fn default_subscribers() -> Vec<Arc<dyn QuerySubscriber>> {
         match s.as_ref() {
             "1" | "true" => {
                 use crate::subscribers::debug::DebugSubscriber;
-                subscribers.push(Arc::new(DebugSubscriber));
+                subscribers.insert("_debug".to_string(), Arc::new(DebugSubscriber));
             }
             _ => {}
         }

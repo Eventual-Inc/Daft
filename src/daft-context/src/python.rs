@@ -50,13 +50,18 @@ impl PyDaftContext {
         py.allow_threads(|| self.inner.set_planning_config(config.config));
     }
 
-    pub fn attach_subscriber(&self, py: Python, subscriber: PyObject) {
+    pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: PyObject) {
         py.allow_threads(|| {
-            self.inner
-                .attach_subscriber(Arc::new(subscribers::python::PyQuerySubscriberWrapper(
-                    subscriber,
-                )));
+            self.inner.attach_subscriber(
+                alias,
+                Arc::new(subscribers::python::PySubscriberWrapper(subscriber)),
+            );
         });
+    }
+
+    pub fn detach_subscriber(&self, py: Python, alias: &str) -> PyResult<()> {
+        py.allow_threads(|| self.inner.detach_subscriber(alias))?;
+        Ok(())
     }
 
     pub fn notify_query_start(

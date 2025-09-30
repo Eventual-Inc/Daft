@@ -8,10 +8,10 @@ use daft_micropartition::MicroPartitionRef;
 #[derive(Debug)]
 pub struct DebugSubscriber;
 
-use crate::subscribers::QuerySubscriber;
+use crate::subscribers::Subscriber;
 
 #[async_trait]
-impl QuerySubscriber for DebugSubscriber {
+impl Subscriber for DebugSubscriber {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         eprintln!(
             "Started query `{}` with unoptimized plan:\n{}",

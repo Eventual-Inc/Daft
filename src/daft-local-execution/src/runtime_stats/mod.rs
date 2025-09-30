@@ -17,7 +17,7 @@ use common_error::DaftResult;
 use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
 use common_tracing::should_enable_opentelemetry;
-use daft_context::QuerySubscriber;
+use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -36,7 +36,7 @@ use crate::{
     runtime_stats::subscribers::{
         RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
         opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
-        query::QuerySubscriberWrapper,
+        query::SubscriberWrapper,
     },
 };
 
@@ -93,7 +93,7 @@ impl RuntimeStatsManager {
     pub fn try_new(
         handle: &Handle,
         pipeline: &Box<dyn PipelineNode>,
-        query_subscribers: Vec<Arc<dyn QuerySubscriber>>,
+        query_subscribers: Vec<Arc<dyn Subscriber>>,
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
@@ -113,7 +113,7 @@ impl RuntimeStatsManager {
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         for subscriber in query_subscribers {
-            subscribers.push(Box::new(QuerySubscriberWrapper::try_new(
+            subscribers.push(Box::new(SubscriberWrapper::try_new(
                 subscriber,
                 &node_infos,
             )?));

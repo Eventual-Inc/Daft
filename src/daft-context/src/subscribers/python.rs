@@ -6,14 +6,14 @@ use common_metrics::{StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, PyObject, Python, intern};
 
-use crate::subscribers::{NodeID, QuerySubscriber};
+use crate::subscribers::{NodeID, Subscriber};
 
-/// Wrapper around a Python object that implements the QuerySubscriber trait
+/// Wrapper around a Python object that implements the Subscriber trait
 #[derive(Debug)]
-pub struct PyQuerySubscriberWrapper(pub(crate) PyObject);
+pub struct PySubscriberWrapper(pub(crate) PyObject);
 
 #[async_trait]
-impl QuerySubscriber for PyQuerySubscriberWrapper {
+impl Subscriber for PySubscriberWrapper {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0.call_method1(

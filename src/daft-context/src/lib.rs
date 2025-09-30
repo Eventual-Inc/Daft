@@ -3,7 +3,10 @@ pub mod partition_cache;
 pub mod python;
 mod subscribers;
 
-use std::sync::{Arc, OnceLock, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
@@ -11,7 +14,7 @@ use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-pub use crate::subscribers::QuerySubscriber;
+pub use crate::subscribers::Subscriber;
 
 #[derive(Debug, Default)]
 pub struct Config {
@@ -32,7 +35,7 @@ impl Config {
 struct ContextState {
     /// Shared configuration for the context
     config: Config,
-    subscribers: Vec<Arc<dyn QuerySubscriber>>,
+    subscribers: HashMap<String, Arc<dyn Subscriber>>,
 }
 
 /// Wrapper around the ContextState to provide a thread-safe interface.
@@ -91,17 +94,31 @@ impl DaftContext {
         self.with_state(|state| state.config.planning.default_io_config.clone())
     }
 
-    pub fn subscribers(&self) -> Vec<Arc<dyn QuerySubscriber>> {
-        self.with_state(|state| state.subscribers.clone())
+    pub fn subscribers(&self) -> Vec<Arc<dyn Subscriber>> {
+        self.with_state(|state| state.subscribers.values().cloned().collect())
     }
 
-    pub fn attach_subscriber(&self, subscriber: Arc<dyn QuerySubscriber>) {
-        self.with_state_mut(|state| state.subscribers.push(subscriber));
+    /// Attaches a subscriber to this context.
+    pub fn attach_subscriber(&self, alias: String, subscriber: Arc<dyn Subscriber>) {
+        self.with_state_mut(|state| state.subscribers.insert(alias, subscriber));
+    }
+
+    /// Detaches a subscriber from this context, err if does not exist.
+    pub fn detach_subscriber(&self, alias: &str) -> DaftResult<()> {
+        if self.with_state(|state| !state.subscribers.contains_key(alias)) {
+            return Err(DaftError::ValueError(format!(
+                "Subscriber `{}` not found in this context",
+                alias
+            )));
+        }
+
+        self.with_state_mut(|state| state.subscribers.remove(alias));
+        Ok(())
     }
 
     pub fn notify_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         self.with_state(|state| {
-            for subscriber in &state.subscribers {
+            for subscriber in state.subscribers.values() {
                 subscriber.on_query_start(query_id.clone(), unoptimized_plan.clone())?;
             }
             Ok::<(), DaftError>(())
@@ -114,7 +131,7 @@ impl DaftContext {
         results: Vec<MicroPartitionRef>,
     ) -> DaftResult<()> {
         self.with_state(move |state| {
-            for subscriber in &state.subscribers {
+            for subscriber in state.subscribers.values() {
                 subscriber.on_query_end(query_id.clone(), results.clone())?;
             }
             Ok::<(), DaftError>(())
@@ -123,7 +140,7 @@ impl DaftContext {
 
     pub fn notify_plan_start(&self, query_id: String) -> DaftResult<()> {
         self.with_state(|state| {
-            for subscriber in &state.subscribers {
+            for subscriber in state.subscribers.values() {
                 subscriber.on_plan_start(query_id.clone())?;
             }
             Ok::<(), DaftError>(())
@@ -132,7 +149,7 @@ impl DaftContext {
 
     pub fn notify_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         self.with_state(|state| {
-            for subscriber in &state.subscribers {
+            for subscriber in state.subscribers.values() {
                 subscriber.on_plan_end(query_id.clone(), optimized_plan.clone())?;
             }
             Ok::<(), DaftError>(())
