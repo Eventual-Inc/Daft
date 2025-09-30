@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import pytest
+from botocore import session
 
 import daft
 from daft.datatype import DataType, TimeUnit
@@ -15,7 +16,16 @@ def test_read_common_crawl(pytestconfig):
     if pytestconfig.getoption("--credentials") is not True:
         pytest.skip("Test can only run in a credentialled environment, and when run with the `--credentials` flag")
 
-    df = daft.datasets.common_crawl("CC-MAIN-2024-51", num_files=1).limit(10)
+    sess = session.Session()
+    creds = sess.get_credentials()
+
+    io_config = daft.IOConfig(
+        s3=daft.io.S3Config(
+            key_id=creds.access_key, access_key=creds.secret_key, session_token=creds.token, region_name="us-west-2"
+        )
+    )
+
+    df = daft.datasets.common_crawl("CC-MAIN-2024-51", num_files=1, io_config=io_config).limit(10)
     df = df.collect()
 
     expected_schema = Schema.from_pydict(

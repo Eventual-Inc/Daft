@@ -22,15 +22,17 @@ def _get_common_crawl_paths(
     segment: str | None,
     file_type: Literal["warc", "wet", "wat"],
     num_files: int | None,
+    io_config: IOConfig | None,
 ) -> list[str]:
     """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
     paths_url = _get_manifest_path(crawl, file_type)
+    print(f"io config: {io_config}")
 
     # The manifest file is a gzipped plaintext file with one path per line.
     # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
     # But from a preliminary microbenchmark on a local machine, this approach turns out to be 20-30% faster than read_csv.
     paths = from_pydict({"url": [paths_url]}).select(
-        split(cast(decompress(download(col("url")), codec="gzip"), DataType.string()), "\n")
+        split(cast(decompress(download(col("url"), io_config=io_config), codec="gzip"), DataType.string()), "\n")
     )
     paths = paths.explode("url")
     paths = paths.select(format("s3://commoncrawl/{}", col("url")).alias("url"))
@@ -146,6 +148,7 @@ def common_crawl(
         segment=segment,
         file_type=file_type,
         num_files=num_files,
+        io_config=io_config,
     )
 
     return read_warc(warc_paths, io_config=io_config)
