@@ -22,19 +22,22 @@ class MockSubscriber(Subscriber):
     query_unoptimized_plan: dict[str, str]
     query_optimized_plan: dict[str, str]
     query_node_stats: defaultdict[str, defaultdict[int, dict[str, Any]]]
-    query_results: dict[str, list[PyMicroPartition]]
+    query_results: defaultdict[str, list[PyMicroPartition]]
 
     def __init__(self):
         self.query_unoptimized_plan = {}
         self.query_optimized_plan = {}
         self.query_node_stats = defaultdict(lambda: defaultdict(dict))
-        self.query_results = {}
+        self.query_results = defaultdict(list)
 
     def on_query_start(self, query_id: str, unoptimized_plan: str) -> None:
         self.query_unoptimized_plan[query_id] = unoptimized_plan
 
-    def on_query_end(self, query_id: str, results: list[PyMicroPartition]) -> None:
-        self.query_results[query_id] = results
+    def on_query_end(self, query_id: str) -> None:
+        pass
+
+    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
+        self.query_results[query_id].append(result)
 
     def on_plan_start(self, query_id: str) -> None:
         pass

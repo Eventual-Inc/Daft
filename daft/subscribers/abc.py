@@ -28,9 +28,14 @@ class Subscriber(ABC):
         pass
 
     @abstractmethod
-    def on_query_end(self, query_id: str, output: list[PyMicroPartition]) -> None:
+    def on_query_end(self, query_id: str) -> None:
         """Called when a query has completed."""
         # TODO: Handle cancels, failures
+        pass
+
+    @abstractmethod
+    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
+        """Called when a result is emitted for a query."""
         pass
 
     @abstractmethod

@@ -12,7 +12,8 @@ use daft_micropartition::MicroPartitionRef;
 #[async_trait]
 pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()>;
-    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()>;
+    fn on_query_end(&self, query_id: String) -> DaftResult<()>;
+    fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()>;
     fn on_plan_start(&self, query_id: String) -> DaftResult<()>;
     fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()>;
     fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
@@ -35,7 +36,7 @@ pub fn default_subscribers() -> HashMap<String, Arc<dyn Subscriber>> {
         match s.as_ref() {
             "1" | "true" => {
                 use crate::subscribers::debug::DebugSubscriber;
-                subscribers.insert("_debug".to_string(), Arc::new(DebugSubscriber));
+                subscribers.insert("_debug".to_string(), Arc::new(DebugSubscriber::new()));
             }
             _ => {}
         }

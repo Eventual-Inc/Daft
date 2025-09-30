@@ -9,6 +9,7 @@ daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+dashmap = {workspace = true}
 
 [features]
 python = [

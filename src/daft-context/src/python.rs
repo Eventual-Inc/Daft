@@ -74,18 +74,18 @@ impl PyDaftContext {
         Ok(())
     }
 
-    pub fn notify_query_end(
+    pub fn notify_query_end(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_query_end(query_id))?;
+        Ok(())
+    }
+
+    pub fn notify_result_out(
         &self,
         py: Python,
         query_id: String,
-        results: Vec<PyMicroPartition>,
+        result: PyMicroPartition,
     ) -> PyResult<()> {
-        py.allow_threads(|| {
-            self.inner.notify_query_end(
-                query_id,
-                results.into_iter().map(|part| part.into()).collect(),
-            )
-        })?;
+        py.allow_threads(|| self.inner.notify_result_out(query_id, result.into()))?;
         Ok(())
     }
 

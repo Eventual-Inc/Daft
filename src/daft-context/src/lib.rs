@@ -125,14 +125,19 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_query_end(
-        &self,
-        query_id: String,
-        results: Vec<MicroPartitionRef>,
-    ) -> DaftResult<()> {
+    pub fn notify_query_end(&self, query_id: String) -> DaftResult<()> {
         self.with_state(move |state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_query_end(query_id.clone(), results.clone())?;
+                subscriber.on_query_end(query_id.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_result_out(query_id.clone(), result.clone())?;
             }
             Ok::<(), DaftError>(())
         })

@@ -25,18 +25,20 @@ impl Subscriber for PySubscriberWrapper {
         })
     }
 
-    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
+    fn on_query_end(&self, query_id: String) -> DaftResult<()> {
+        Python::with_gil(|py| {
+            self.0
+                .call_method1(py, intern!(py, "on_query_end"), (query_id,))?;
+            Ok(())
+        })
+    }
+
+    fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0.call_method1(
                 py,
-                intern!(py, "on_query_end"),
-                (
-                    query_id,
-                    results
-                        .into_iter()
-                        .map(PyMicroPartition::from)
-                        .collect::<Vec<_>>(),
-                ),
+                intern!(py, "on_result_out"),
+                (query_id, PyMicroPartition::from(result)),
             )?;
             Ok(())
         })

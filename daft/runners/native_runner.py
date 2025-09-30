@@ -103,12 +103,11 @@ class NativeRunner(Runner[MicroPartition]):
             {"query_id": query_id},
         )
 
-        notify_results = []
         for result in results_gen:
-            notify_results.append(result.partition())
+            ctx._notify_result_out(query_id, result.partition())
             yield result
 
-        ctx._notify_query_end(query_id, notify_results)
+        ctx._notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

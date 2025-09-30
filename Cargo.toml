@@ -277,6 +277,7 @@ daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
+dashmap = "6.1.0"
 derive_builder = "0.20.2"
 educe = "0.6.0"
 futures = "0.3.30"
