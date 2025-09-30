@@ -21,7 +21,10 @@ def test_read_common_crawl(pytestconfig):
 
     io_config = daft.IOConfig(
         s3=daft.io.S3Config(
-            key_id=creds.access_key, access_key=creds.secret_key, session_token=creds.token, region_name="us-west-2"
+            key_id=creds.access_key,
+            access_key=creds.secret_key,
+            session_token=creds.token,
+            region_name="us-east-1",  # Common Crawl is hosted in us-east-1.
         )
     )
 
