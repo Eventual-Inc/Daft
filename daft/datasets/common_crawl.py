@@ -26,7 +26,6 @@ def _get_common_crawl_paths(
 ) -> list[str]:
     """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
     paths_url = _get_manifest_path(crawl, file_type)
-    print(f"io config: {io_config}")
 
     # The manifest file is a gzipped plaintext file with one path per line.
     # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
