@@ -63,9 +63,9 @@ impl RuntimeStats for WriteStats {
         self.rows_in.fetch_add(rows, Ordering::Relaxed);
     }
 
-    fn add_rows_out(&self, _rows: u64) {
-        unreachable!("WriteSink shouldn't emit rows")
-    }
+    // The 'rows_out' for a WriteSink is the number of files written, which we only know upon 'finalize',
+    // so there's no benefit to adding it in runtime stats as it is not real time.
+    fn add_rows_out(&self, _rows: u64) {}
 
     fn add_cpu_us(&self, cpu_us: u64) {
         self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
