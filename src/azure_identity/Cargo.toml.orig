@@ -1,0 +1,77 @@
+[package]
+name = "azure_identity"
+version = "0.21.0"
+description = "Rust wrappers around Microsoft Azure REST APIs - Azure identity helper crate"
+readme = "README.md"
+authors = ["Microsoft Corp."]
+license = "MIT"
+repository = "https://github.com/azure/azure-sdk-for-rust"
+homepage = "https://github.com/azure/azure-sdk-for-rust/tree/legacy"
+documentation = "https://docs.rs/azure_identity"
+keywords = ["sdk", "azure", "rest", "iot", "cloud"]
+categories = ["api-bindings"]
+edition = "2021"
+
+[dependencies]
+azure_core = { path = "../core", version = "0.21" }
+async-lock = "3.0"
+oauth2 = { version = "4.0.0", default-features = false }
+url = "2.2"
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+time = { version = "0.3.10" }
+tracing = "0.1.40"
+async-trait = "0.1"
+openssl = { version = "0.10.46",  optional=true }
+uuid = { version = "1.0",  features = ["v4"] }
+pin-project = "1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-process = "2.0"
+
+[target.'cfg(unix)'.dependencies]
+tz-rs = { version = "0.6", optional = true }
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"], default-features = false }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = "0.3"
+serde_test = "1"
+azure_security_keyvault = { path = "../security_keyvault", default-features = false }
+serial_test = "3.0"
+clap = { version = "4.4.16", features = ["derive"] }
+
+[features]
+default = ["development", "enable_reqwest", "old_azure_cli"]
+enable_reqwest = ["azure_core/enable_reqwest"]
+enable_reqwest_rustls = ["azure_core/enable_reqwest_rustls"]
+development = []
+test_e2e = []
+client_certificate = ["openssl"]
+vendored_openssl = ["openssl/vendored"]
+azureauth_cli = []
+
+# If you are using and Azure CLI version older than 2.54.0 from November 2023,
+# upgrade your Azure CLI version or enable this feature.
+# Azure CLI 2.54.0 and above has an "expires_on" timestamp that we can use.
+# https://github.com/Azure/azure-cli/releases/tag/azure-cli-2.54.0
+# https://github.com/Azure/azure-cli/issues/19700
+old_azure_cli = ["time/local-offset", "tz-rs"]
+
+[package.metadata.docs.rs]
+features = [
+  "enable_reqwest",
+  "enable_reqwest_rustls",
+  "development",
+  "client_certificate",
+  "azureauth_cli",
+  "old_azure_cli",
+]
+
+[[example]]
+name = "client_certificate_credentials"
+required-features = ["client_certificate"]
+
+[[example]]
+name = "azureauth_cli_credential"
+required-features = ["azureauth_cli"]

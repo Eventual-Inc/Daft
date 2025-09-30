@@ -128,6 +128,7 @@ ignored = ["lzma-sys"]
 
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}
+azure_identity = {path = "src/azure_identity"}
 parquet-format-safe = {path = "src/parquet-format-safe"}
 parquet2 = {path = "src/parquet2"}
 
@@ -168,6 +169,7 @@ tikv-jemallocator = {version = "0.6.0", features = [
 [workspace]
 members = [
   "src/arrow2",
+  "src/azure_identity",
   "src/common/daft-config",
   "src/common/display",
   "src/common/error",
@@ -344,6 +346,11 @@ xxhash-rust = "0.8.12"
 [workspace.dependencies.arrow2]
 features = ["serde_types"]
 path = "src/arrow2"
+
+[workspace.dependencies.azure_identity]
+features = ["enable_reqwest_rustls"]
+default-features = false
+path = "src/azure_identity"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
