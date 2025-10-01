@@ -187,7 +187,8 @@ impl Series {
                             })
                             .collect::<Vec<_>>();
 
-                        Ok(Self::from_literals(child_values, None)?.rename(&f.name))
+                        Ok(Self::from_literals(child_values, Some(f.dtype.clone()))?
+                            .rename(&f.name))
                     })
                     .collect::<DaftResult<_>>()?;
 
